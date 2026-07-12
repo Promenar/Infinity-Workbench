@@ -44,9 +44,11 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
@@ -190,6 +192,101 @@ class RoomBackupDataSourceTest {
                 "provider_p1_name", "provider_p1_base_url", "language"
             )
         }
+    }
+
+    @Test
+    fun `restore topologically inserts child even when payload lists it before parent`() = runBlocking {
+        seedCompleteGraph()
+        db.messageDao().insert(
+            MessageEntity(
+                id = "tool-child",
+                sessionId = "session-1",
+                role = "tool",
+                content = "result",
+                parentMessageId = "message-1",
+                createdAt = 101L,
+            ),
+        )
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val childFirst = mutateRows(snapshot, "messages") { rows -> JsonArray(rows.reversed()) }
+
+        db.clearAllTables()
+        newDataSource().restore(childFirst)
+
+        assertThat(db.messageDao().getById("tool-child")?.parentMessageId).isEqualTo("message-1")
+    }
+
+    @Test
+    fun `restore rejects self reference and arbitrary parent cycle`() = runBlocking {
+        seedCompleteGraph()
+        db.messageDao().insert(
+            MessageEntity(
+                id = "tool-child",
+                sessionId = "session-1",
+                role = "tool",
+                content = "result",
+                parentMessageId = "message-1",
+                createdAt = 101L,
+            ),
+        )
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val selfCycle = mutateRows(snapshot, "messages") { rows ->
+            JsonArray(rows.map { element ->
+                val row = element.jsonObject
+                if (row.getValue("id").jsonPrimitive.content == "message-1") {
+                    JsonObject(row + ("parent_message_id" to JsonPrimitive("message-1")))
+                } else element
+            })
+        }
+        val arbitraryCycle = mutateRows(snapshot, "messages") { rows ->
+            JsonArray(rows.map { element ->
+                val row = element.jsonObject
+                when (row.getValue("id").jsonPrimitive.content) {
+                    "message-1" -> JsonObject(row + ("parent_message_id" to JsonPrimitive("tool-child")))
+                    "tool-child" -> JsonObject(row + ("parent_message_id" to JsonPrimitive("message-1")))
+                    else -> element
+                }
+            })
+        }
+
+        assertFails { newDataSource().restore(selfCycle) }
+        assertFails { newDataSource().restore(arbitraryCycle) }
+    }
+
+    @Test
+    fun `restore validates ten thousand deep message chain without stack overflow`() = runBlocking {
+        db.clearAllTables()
+        db.agentDao().insert(AgentEntity("deep-agent", "Deep", createdAt = 1L))
+        db.sessionDao().insert(
+            SessionEntity("deep-session", "deep-agent", createdAt = 1L, updatedAt = 1L),
+        )
+        db.messageDao().insert(
+            MessageEntity(
+                id = "seed",
+                sessionId = "deep-session",
+                role = "assistant",
+                content = "seed",
+                createdAt = 1L,
+            ),
+        )
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val deep = mutateRows(snapshot, "messages") { rows ->
+            val base = rows.single().jsonObject
+            JsonArray((0 until 10_000).map { index ->
+                JsonObject(
+                    base + mapOf(
+                        "id" to JsonPrimitive("deep-$index"),
+                        "parent_message_id" to if (index == 0) JsonNull else JsonPrimitive("deep-${index - 1}"),
+                        "created_at" to JsonPrimitive(index.toLong()),
+                    ),
+                )
+            }.reversed())
+        }
+
+        db.clearAllTables()
+        newDataSource().restore(deep)
+
+        assertThat(db.messageDao().countBySession("deep-session")).isEqualTo(10_000)
     }
 
     @Test
@@ -1104,16 +1201,18 @@ class RoomBackupDataSourceTest {
             arrayOf<Any?>("cache-1", "q", "c", "{}", 100L, 200L),
         )
         sqlite.execSQL(
-            "INSERT INTO vectorization_tasks(id,type,status,last_chunk_index,progress,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-            arrayOf<Any?>("vt-1", "doc", "pending", 0, 0.0, 100L, 100L),
+            """INSERT INTO vectorization_tasks(
+               id,type,status,last_chunk_index,progress,skip_vectorization,content_truncated,created_at,updated_at
+               ) VALUES(?,?,?,?,?,?,?,?,?)""",
+            arrayOf<Any?>("vt-1", "doc", "pending", 0, 0.0, 0, 0, 100L, 100L),
         )
         sqlite.execSQL(
             "INSERT INTO audit_logs(id,action,resource_type,status,created_at) VALUES(?,?,?,?,?)",
             arrayOf<Any?>("audit-1", "read", "file", "ok", 100L),
         )
         sqlite.execSQL(
-            "INSERT INTO tool_execution_ledger(session_id,assistant_message_id,tool_call_id,tool_name,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-            arrayOf<Any?>("session-1", "message-1", "call-1", "tool", "done", 100L, 100L),
+            "INSERT INTO tool_execution_ledger(session_id,assistant_message_id,tool_call_id,tool_name,requires_approval,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+            arrayOf<Any?>("session-1", "message-1", "call-1", "tool", 0, "SUCCEEDED", 100L, 100L),
         )
         sqlite.execSQL(
             "INSERT INTO file_versions(id,file_uuid,workspace_root_uuid,hash,content_path,created_at) VALUES(?,?,?,?,?,?)",

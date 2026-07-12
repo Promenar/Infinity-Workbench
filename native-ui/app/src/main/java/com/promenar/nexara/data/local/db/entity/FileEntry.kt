@@ -13,6 +13,7 @@ import androidx.room.PrimaryKey
         Index("hash"),
         Index("is_directory"),
         Index("in_recycle_bin", "physical_root_path", "recycled_at"),
+        Index(value = ["workspace_root_uuid", "uuid"], unique = true),
     ]
 )
 data class FileEntry(

@@ -57,6 +57,35 @@ class ChatViewModelTest {
     )
 
     @Test
+    fun mergeToolCallsByIdKeepsStableOrderAndLatestCompletePayload() {
+        val merged = mergeToolCallsById(
+            existing = listOf(
+                ToolCall("same", "", ""),
+                ToolCall("safe", "read_file", "{}"),
+            ),
+            incoming = listOf(
+                ToolCall("same", "write_file", "{\"path\":\"a\"}"),
+                ToolCall("safe", "read_file", "{}"),
+            ),
+        )
+
+        assertThat(merged.map { it.id }).containsExactly("same", "safe").inOrder()
+        assertThat(merged.first()).isEqualTo(
+            ToolCall("same", "write_file", "{\"path\":\"a\"}"),
+        )
+    }
+
+    @Test
+    fun fallbackToolCallIdIsStableForTheSameLogicalCall() {
+        val first = stableFallbackToolCallId("fallback", "write_file", "{\"path\":\"a\"}", 0)
+        val rebuilt = stableFallbackToolCallId("fallback", "write_file", "{\"path\":\"a\"}", 0)
+        val different = stableFallbackToolCallId("fallback", "write_file", "{\"path\":\"b\"}", 0)
+
+        assertThat(rebuilt).isEqualTo(first)
+        assertThat(different).isNotEqualTo(first)
+    }
+
+    @Test
     fun contextResultWithOnlyKgPathsKeepsRagStateAndBuildsKgUpdate() {
         val result = ContextBuilderResult(
             searchContext = "",
@@ -123,6 +152,7 @@ class ChatViewModelTest {
     private val savedSessions = mutableListOf<Session>()
     private val savedMessages = mutableListOf<Pair<Message, String>>()
     private val deletedMessages = mutableListOf<String>()
+    private var failScopedDelete = false
 
     private val stubSessionRepo = object : ISessionRepository {
         override suspend fun create(session: Session) {
@@ -202,6 +232,12 @@ class ChatViewModelTest {
                 savedSessions[index] = session.copy(messages = session.messages.filter { it.id != messageId })
             }
         }
+        override suspend fun deleteInSession(sessionId: String, messageId: String): Boolean {
+            if (failScopedDelete) throw IllegalStateException("delete blocked")
+            if (savedMessages.none { it.second == sessionId && it.first.id == messageId }) return false
+            delete(messageId)
+            return true
+        }
 
         override suspend fun deleteBySessionId(sessionId: String) {
             savedMessages.removeIf { it.second == sessionId }
@@ -237,10 +273,12 @@ class ChatViewModelTest {
     }
 
     private var fakeStreamChunks: List<StreamChunk> = emptyList()
+    private var protocolRequestCount = 0
 
     private val fakeProtocol = object : LlmProtocol {
         override val protocolType = ProtocolType.OpenAI_ChatCompletions
         override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> {
+            protocolRequestCount += 1
             return flow {
                 for (chunk in fakeStreamChunks) {
                     emit(chunk)
@@ -306,6 +344,8 @@ class ChatViewModelTest {
         savedMessages.clear()
         deletedMessages.clear()
         fakeStreamChunks = emptyList()
+        failScopedDelete = false
+        protocolRequestCount = 0
 
         stubAgentRepo.seed(Agent(
             id = "a1",
@@ -342,6 +382,8 @@ class ChatViewModelTest {
             agentId = "a1",
             title = "Test",
             modelId = "gpt-4o",
+            workspaceRootUuid = "test-workspace-root",
+            workspacePath = "/test/workspace",
             createdAt = 1000L,
             updatedAt = 1000L
         )
@@ -474,6 +516,22 @@ class ChatViewModelTest {
         val assistantMessages = messages.filter { it.role == MessageRole.ASSISTANT }
         assertThat(assistantMessages.any { it.content == "retry response" }).isTrue()
         
+    }
+
+    @Test
+    fun retryDeletionFailureDoesNotStartAnotherProtocolRequest() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession(); advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("first response"), StreamChunk.Done)
+        viewModel.sendMessage("hello"); advanceUntilIdle()
+        val requestsBeforeRetry = protocolRequestCount
+        failScopedDelete = true
+
+        viewModel.retryLastMessage(); advanceUntilIdle()
+
+        assertThat(protocolRequestCount).isEqualTo(requestsBeforeRetry)
+        assertThat(viewModel.uiState.value.error).contains("取消重试")
+        assertThat(viewModel.uiState.value.messages.any { it.content == "first response" }).isTrue()
     }
 
     @Test

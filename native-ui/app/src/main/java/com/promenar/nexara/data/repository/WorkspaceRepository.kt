@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import java.io.OutputStream
 
 class WorkspaceRepository(
     private val dao: FileEntryDao,
@@ -200,6 +201,53 @@ class WorkspaceRepository(
             name = name,
             hash = Sha256Utils.hash(content),
             sizeBytes = content.toByteArray(Charsets.UTF_8).size.toLong(),
+            physicalRootPath = root.physicalRootPath,
+            materializedPath = normalizedPath,
+            createdAt = now,
+            updatedAt = now,
+        ).also { entry ->
+            try {
+                (insertCommitter ?: dao::insertAbort).invoke(entry)
+            } catch (failure: Throwable) {
+                runCatching { fileOps.delete(rootPath, relative) }.exceptionOrNull()?.let(failure::addSuppressed)
+                throw failure
+            }
+        }
+    } }
+
+    override suspend fun createFileInWorkspaceStreaming(
+        workspaceRootUuid: String,
+        uuid: String,
+        name: String,
+        mimeType: String,
+        parentUuid: String?,
+        materializedPath: String,
+        maxBytes: Long,
+        writer: (OutputStream) -> Unit,
+    ): FileEntry = withContext(Dispatchers.IO) { withRootMutation(workspaceRootUuid) { root ->
+        require(maxBytes > 0) { "maxBytes 必须大于 0" }
+        val parent = requireParent(root, parentUuid)
+        validateName(name)
+        val normalizedPath = validateMaterializedPath(root, materializedPath)
+        if (normalizedPath.substringAfterLast('/') != name) throw SecurityException("文件名与路径不一致")
+        if (normalizedPath != joinMaterializedPath(parent.materializedPath, name)) {
+            throw SecurityException("文件路径与父目录不一致")
+        }
+        if (dao.getByRootAndMaterializedPath(workspaceRootUuid, normalizedPath) != null) {
+            throw IllegalStateException("工作区文件已存在: $normalizedPath")
+        }
+        val rootPath = File(root.physicalRootPath).toPath()
+        val relative = relative(normalizedPath)
+        val writeResult = fileOps.createFileStreaming(rootPath, relative, maxBytes, writer)
+        val now = System.currentTimeMillis()
+        FileEntry(
+            uuid = uuid,
+            workspaceRootUuid = workspaceRootUuid,
+            parentUuid = parentUuid,
+            name = name,
+            hash = writeResult.sha256,
+            mimeType = mimeType,
+            sizeBytes = writeResult.sizeBytes,
             physicalRootPath = root.physicalRootPath,
             materializedPath = normalizedPath,
             createdAt = now,

@@ -6,6 +6,10 @@ interface IMessageRepository {
     suspend fun insert(message: Message, sessionId: String)
     suspend fun updatePartial(messageId: String, updates: Map<String, Any?>)
     suspend fun delete(messageId: String)
+    suspend fun deleteInSession(sessionId: String, messageId: String): Boolean {
+        delete(messageId)
+        return true
+    }
     suspend fun deleteBySessionId(sessionId: String)
     suspend fun deleteMessagesAfter(sessionId: String, timestamp: Long)
     suspend fun getById(messageId: String): Message?

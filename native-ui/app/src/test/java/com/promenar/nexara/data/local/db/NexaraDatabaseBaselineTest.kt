@@ -25,6 +25,13 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
 class NexaraDatabaseBaselineTest {
+    @Test
+    fun backupSchemaGateMatchesExportedRoomIdentityHash() {
+        val schema = exportedSchema()
+
+        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V1_IDENTITY_HASH)
+            .isEqualTo(schema.identityHash)
+    }
     private lateinit var context: Context
     private val databaseName = "nexara-v2-baseline-test.db"
 
@@ -142,6 +149,7 @@ class NexaraDatabaseBaselineTest {
         assertToolExecutionLedger(database)
         assertFileVersions(database)
         assertWorkspaceRoot(database)
+        assertVectorizationTaskFileReferenceContract(database)
         assertAgentCustomizationColumns(database)
         assertMessageKgPathsColumn(database)
     }
@@ -194,6 +202,7 @@ class NexaraDatabaseBaselineTest {
             "assistant_message_id",
             "tool_call_id",
             "tool_name",
+            "requires_approval",
             "status",
             "result_message_id",
             "error",
@@ -227,6 +236,37 @@ class NexaraDatabaseBaselineTest {
     private fun assertWorkspaceRoot(database: SupportSQLiteDatabase) {
         val column = database.tableColumns("workspace_files").getValue("workspace_root_uuid")
         assertThat(column.notNull).isTrue()
+    }
+
+    private fun assertVectorizationTaskFileReferenceContract(database: SupportSQLiteDatabase) {
+        val columns = database.tableColumns("vectorization_tasks")
+        assertThat(columns.keys).containsAtLeast(
+            "workspace_root_uuid",
+            "kg_strategy",
+            "skip_vectorization",
+            "sub_status",
+            "source_mime_type",
+            "content_truncated",
+        )
+        assertThat(columns.getValue("session_id").notNull).isFalse()
+        val indexNames = database.stringColumnQuery("PRAGMA index_list(`vectorization_tasks`)", "name")
+        assertThat(indexNames).containsAtLeast(
+            "index_vectorization_tasks_workspace_root_uuid_doc_id",
+            "index_vectorization_tasks_workspace_root_uuid_doc_id_type",
+        )
+        val foreignKeyPairs = database.query("PRAGMA foreign_key_list(`vectorization_tasks`)").use { cursor ->
+            buildSet {
+                while (cursor.moveToNext()) {
+                    if (cursor.string("table") == "workspace_files") {
+                        add(cursor.string("from") to cursor.string("to"))
+                    }
+                }
+            }
+        }
+        assertThat(foreignKeyPairs).containsExactly(
+            "workspace_root_uuid" to "workspace_root_uuid",
+            "doc_id" to "uuid",
+        )
     }
 
     private fun assertAgentCustomizationColumns(database: SupportSQLiteDatabase) {

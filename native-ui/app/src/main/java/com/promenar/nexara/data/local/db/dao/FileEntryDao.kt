@@ -43,6 +43,16 @@ interface FileEntryDao {
     @Query("SELECT * FROM workspace_files WHERE uuid = workspace_root_uuid AND workspace_root_uuid != '' AND parent_uuid IS NULL")
     suspend fun getAllWorkspaceRootsForMaintenance(): List<FileEntry>
 
+    @Query("""
+        SELECT * FROM workspace_files
+        WHERE is_directory = 0
+          AND in_recycle_bin = 0
+          AND vectorized_at IS NULL
+          AND mime_type IN (:mimeTypes)
+        ORDER BY created_at ASC
+    """)
+    suspend fun getUnvectorizedSupportedFiles(mimeTypes: List<String>): List<FileEntry>
+
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND in_recycle_bin = 1 AND materialized_path != '/.recycle_bin' ORDER BY recycled_at DESC")
     fun observeRecycleBin(workspaceRootUuid: String): Flow<List<FileEntry>>
 

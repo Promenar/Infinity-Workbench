@@ -225,30 +225,29 @@ fun RagHomeScreen(
                 exit = fadeOut(tween(400)) + slideOutVertically(tween(400)) { -it }
             ) {
                 Column {
-                    if (isIndexing) {
-                        IndexingProgressBar(
-                            progress = indexingProgress,
-                            statusText = indexingStatus,
-                            subStatusText = indexingSubStatus,
-                            isError = lastQueueError != null
-                        )
-                    } else if (lastQueueError != null) {
-                        // 带关闭按钮的错误卡片
+                    if (lastQueueError != null) {
                         Box {
                             IndexingProgressBar(
                                 progress = indexingProgress.coerceAtLeast(0f),
-                                statusText = "向量化失败: ${lastQueueError?.take(80) ?: "未知错误"}",
-                                subStatusText = "请检查 Embedding 模型配置后重试 | 点击关闭",
+                                statusText = indexingStatus?.takeUnless { it.isBlank() }
+                                    ?: "向量化失败: ${lastQueueError?.take(80) ?: "未知错误"}",
+                                subStatusText = "点按此处重试文件索引",
                                 isError = true
                             )
-                            // 覆盖层关闭按钮
                             Box(
                                 modifier = Modifier
                                     .matchParentSize()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .clickable { viewModel.dismissQueueError() }
+                                    .clickable { viewModel.retryLastFailedIndex() }
                             )
                         }
+                    } else if (isIndexing) {
+                        IndexingProgressBar(
+                            progress = indexingProgress,
+                            statusText = indexingStatus,
+                            subStatusText = indexingSubStatus,
+                            isError = false
+                        )
                     }
                 }
             }

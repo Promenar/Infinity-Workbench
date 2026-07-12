@@ -13,6 +13,9 @@ interface VectorizationTaskDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(task: VectorizationTaskEntity)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(task: VectorizationTaskEntity): Long
+
     @Update
     suspend fun update(task: VectorizationTaskEntity)
 
@@ -28,6 +31,12 @@ interface VectorizationTaskDao {
     @Query("SELECT * FROM vectorization_tasks WHERE doc_id = :docId")
     suspend fun getByDocId(docId: String): List<VectorizationTaskEntity>
 
+    @Query("SELECT * FROM vectorization_tasks WHERE workspace_root_uuid = :workspaceRootUuid AND doc_id = :docId AND type = :type LIMIT 1")
+    suspend fun getByWorkspaceFile(workspaceRootUuid: String, docId: String, type: String): VectorizationTaskEntity?
+
+    @Query("SELECT COUNT(*) FROM vectorization_tasks WHERE workspace_root_uuid = :workspaceRootUuid AND doc_id = :docId AND status NOT IN ('completed')")
+    suspend fun countActiveForFile(workspaceRootUuid: String, docId: String): Int
+
     @Query("SELECT * FROM vectorization_tasks WHERE session_id = :sessionId")
     suspend fun getBySessionId(sessionId: String): List<VectorizationTaskEntity>
 
@@ -37,9 +46,17 @@ interface VectorizationTaskDao {
     @Query("SELECT * FROM vectorization_tasks WHERE status IN ('pending', 'interrupted') ORDER BY created_at ASC")
     suspend fun getRecoverableTasks(): List<VectorizationTaskEntity>
 
-    @Query("UPDATE vectorization_tasks SET status = 'interrupted' WHERE status = 'processing' AND updated_at < :staleThreshold")
+    @Query("SELECT * FROM vectorization_tasks WHERE type = 'document_reference' AND status IN ('failed', 'partial') ORDER BY updated_at DESC")
+    suspend fun getAttentionTasks(): List<VectorizationTaskEntity>
+
+    @Query("""
+        UPDATE vectorization_tasks
+        SET status = 'interrupted'
+        WHERE status IN ('processing', 'extracting_source', 'chunking', 'vectorizing', 'saving', 'extracting')
+          AND updated_at < :staleThreshold
+    """)
     suspend fun markStaleAsInterrupted(staleThreshold: Long)
 
-    @Query("DELETE FROM vectorization_tasks WHERE status IN ('completed', 'failed')")
+    @Query("DELETE FROM vectorization_tasks WHERE status = 'completed' OR (status = 'failed' AND type != 'document_reference')")
     suspend fun deleteCompletedTasks()
 }

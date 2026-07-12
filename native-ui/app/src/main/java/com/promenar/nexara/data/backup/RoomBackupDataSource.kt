@@ -31,6 +31,8 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.UUID
 
+internal const val ROOM_SCHEMA_V1_IDENTITY_HASH = "1cec46d28d19744e8cb885fe6abdfcf1"
+
 class RoomBackupDataSource(
     private val database: NexaraDatabase,
     private val preferences: TransactionalBackupPreferenceStore,
@@ -488,7 +490,19 @@ class RoomBackupDataSource(
         val fileIds = payload.ids(FILE_TABLE, "uuid")
         val taskIds = payload.ids("task_nodes", "id")
         payload.rows("sessions").forEach { requireReference(it, "agent_id", agents, "Agent") }
-        payload.rows("messages").forEach { requireReference(it, "session_id", sessions, "Session") }
+        val messageRows = payload.rows("messages")
+        val messageById = messageRows.associateBy { it.requiredString("id") }
+        messageRows.forEach { row ->
+            requireReference(row, "session_id", sessions, "Session")
+            row.optionalString("parent_message_id")?.let { parentId ->
+                val parent = messageById[parentId]
+                    ?: throw BackupValidationException("Message parent 不存在")
+                if (parent.requiredString("session_id") != row.requiredString("session_id")) {
+                    throw BackupValidationException("Message parent 跨 session")
+                }
+            }
+        }
+        sortMessagesParentFirst(messageRows)
         payload.rows("attachments").forEach { requireReference(it, "message_id", messages, "Message") }
         payload.rows("artifacts").forEach {
             requireReference(it, "session_id", sessions, "Session")
@@ -594,7 +608,12 @@ class RoomBackupDataSource(
             }
             if (columns.isEmpty()) throw BackupValidationException("当前 Room schema 缺少表: $table")
             val byName = columns.associateBy(RoomColumn::name)
-            payload.rows(table).forEach { row ->
+            val rows = if (table == "messages") {
+                sortMessagesParentFirst(payload.rows(table))
+            } else {
+                payload.rows(table)
+            }
+            rows.forEach { row ->
                 if (row.keys != byName.keys) throw BackupValidationException("$table 行列集合与当前 Room schema 不一致")
                 row.forEach { (name, value) -> validateSqlitePrimitive(table, byName.getValue(name), value) }
             }
@@ -604,6 +623,43 @@ class RoomBackupDataSource(
                 if (keys.size != keys.toSet().size) throw BackupValidationException("$table Room 主键重复")
             }
         }
+    }
+
+    private fun sortMessagesParentFirst(rows: List<JsonObject>): List<JsonObject> {
+        val byId = rows.associateBy { it.requiredString("id") }
+        if (byId.size != rows.size) throw BackupValidationException("Message id 重复")
+        val childrenByParent = mutableMapOf<String, MutableList<JsonObject>>()
+        val indegree = rows.associate { it.requiredString("id") to 0 }.toMutableMap()
+        rows.forEach { row ->
+            val id = row.requiredString("id")
+            row.optionalString("parent_message_id")?.let { parentId ->
+                if (parentId == id) throw BackupValidationException("Message 不得自引用")
+                val parent = byId[parentId] ?: throw BackupValidationException("Message parent 不存在")
+                if (parent.requiredString("session_id") != row.requiredString("session_id")) {
+                    throw BackupValidationException("Message parent 跨 session")
+                }
+                indegree[id] = 1
+                childrenByParent.getOrPut(parentId) { mutableListOf() } += row
+            }
+        }
+        val stableOrder = compareBy<JsonObject> { it.requiredLong("created_at") }
+            .thenBy { it.requiredString("id") }
+        var layer = rows.filter { indegree.getValue(it.requiredString("id")) == 0 }.sortedWith(stableOrder)
+        val ordered = ArrayList<JsonObject>(rows.size)
+        while (layer.isNotEmpty()) {
+            ordered += layer
+            val nextLayer = mutableListOf<JsonObject>()
+            layer.forEach { parent ->
+                childrenByParent[parent.requiredString("id")].orEmpty().forEach { child ->
+                    val childId = child.requiredString("id")
+                    indegree[childId] = indegree.getValue(childId) - 1
+                    if (indegree.getValue(childId) == 0) nextLayer += child
+                }
+            }
+            layer = nextLayer.sortedWith(stableOrder)
+        }
+        if (ordered.size != rows.size) throw BackupValidationException("Message parent 存在环")
+        return ordered
     }
 
     private fun validateSqlitePrimitive(table: String, column: RoomColumn, value: kotlinx.serialization.json.JsonElement) {
@@ -800,7 +856,12 @@ class RoomBackupDataSource(
     private fun insertPayload(payload: DatabaseBackupPayload) {
         val sqlite = database.openHelper.writableDatabase
         INSERT_ORDER.forEach { table ->
-            payload.rows(table).forEach { row ->
+            val rows = if (table == "messages") {
+                sortMessagesParentFirst(payload.rows(table))
+            } else {
+                payload.rows(table)
+            }
+            rows.forEach { row ->
                 val values = ContentValues(row.size)
                 row.forEach { (column, value) ->
                     when (value) {
@@ -1275,7 +1336,6 @@ class RoomBackupDataSource(
 
     private companion object {
         const val DATABASE_SCHEMA_VERSION = 1
-        const val ROOM_SCHEMA_V1_IDENTITY_HASH = "69f64c60400b6cbd7e7116f6d7086b15"
         const val FILE_TABLE = "workspace_files"
         const val OWNER_MARKER = ".restore-owner"
         const val OLD_CLEANUP_MARKER = ".restore-cleanup-owner"

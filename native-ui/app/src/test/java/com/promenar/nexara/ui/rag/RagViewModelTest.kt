@@ -20,6 +20,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -40,6 +41,7 @@ class RagViewModelTest {
     private val keywordSearcher: KeywordSearcher = mockk(relaxed = true)
 
     private lateinit var app: NexaraApplication
+    private lateinit var vectorizationQueue: com.promenar.nexara.data.rag.VectorizationQueue
 
     @BeforeEach
     fun setup() {
@@ -50,7 +52,15 @@ class RagViewModelTest {
 
         every { app.database } returns database
         every { app.getSharedPreferences(any(), any()) } returns mockk(relaxed = true)
-        every { app.vectorizationQueue } returns mockk(relaxed = true)
+        vectorizationQueue = mockk(relaxed = true)
+        every { vectorizationQueue.state } returns MutableStateFlow(
+            com.promenar.nexara.data.rag.VectorizationQueue.QueueState(
+                queue = emptyList(),
+                currentTask = null,
+                isProcessing = false,
+            )
+        )
+        every { app.vectorizationQueue } returns vectorizationQueue
         every { app.filesDir } returns java.io.File(System.getProperty("java.io.tmpdir"))
 
         coEvery { kgRepository.getNodeCount() } returns 0
@@ -67,6 +77,7 @@ class RagViewModelTest {
     }
 
     private fun createViewModel(): RagViewModel {
+        assertThat(app.vectorizationQueue).isSameInstanceAs(vectorizationQueue)
         val ragPrefs = mockk<android.content.SharedPreferences>(relaxed = true)
         val ragConfigPersistence = RagConfigPersistence(ragPrefs)
         return RagViewModel(
@@ -168,7 +179,7 @@ class RagViewModelTest {
     @Test
     fun `lastQueueError captures error when task fails`() = runTest {
         var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
-        every { app.vectorizationQueue.setOnStateChange(any()) } answers {
+        every { vectorizationQueue.setOnStateChange(any()) } answers {
             capturedCallback = firstArg()
         }
 
@@ -193,7 +204,7 @@ class RagViewModelTest {
     @Test
     fun `lastQueueError is cleared when new non-failed task starts`() = runTest {
         var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
-        every { app.vectorizationQueue.setOnStateChange(any()) } answers {
+        every { vectorizationQueue.setOnStateChange(any()) } answers {
             capturedCallback = firstArg()
         }
 
@@ -227,7 +238,7 @@ class RagViewModelTest {
     @Test
     fun `isIndexing stays true when task fails with error`() = runTest {
         var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
-        every { app.vectorizationQueue.setOnStateChange(any()) } answers {
+        every { vectorizationQueue.setOnStateChange(any()) } answers {
             capturedCallback = firstArg()
         }
 
@@ -250,11 +261,9 @@ class RagViewModelTest {
     @Test
     fun `indexingStatus reflects current task chunking state`() = runTest {
         var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
-        every { app.vectorizationQueue.setOnStateChange(any()) } answers {
+        every { vectorizationQueue.setOnStateChange(any()) } answers {
             capturedCallback = firstArg()
         }
-        every { app.vectorizationQueue.getState() } returns mockk(relaxed = true)
-
         val vm = createViewModel()
 
         val chunkingTask = com.promenar.nexara.data.rag.VectorizationTask(
@@ -273,11 +282,9 @@ class RagViewModelTest {
     @Test
     fun `indexingSubStatus mirrors task subStatus`() = runTest {
         var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
-        every { app.vectorizationQueue.setOnStateChange(any()) } answers {
+        every { vectorizationQueue.setOnStateChange(any()) } answers {
             capturedCallback = firstArg()
         }
-        every { app.vectorizationQueue.getState() } returns mockk(relaxed = true)
-
         val vm = createViewModel()
 
         val task = com.promenar.nexara.data.rag.VectorizationTask(

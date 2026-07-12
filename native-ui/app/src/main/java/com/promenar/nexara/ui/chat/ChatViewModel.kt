@@ -73,6 +73,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import java.security.MessageDigest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -87,6 +88,37 @@ enum class GenerationStatus {
     RECEIVING,
     COMPLETED,
     ERROR
+}
+
+internal fun mergeToolCallsById(
+    existing: List<ToolCall>,
+    incoming: List<ToolCall>,
+): List<ToolCall> {
+    val merged = linkedMapOf<String, ToolCall>()
+    existing.forEach { call -> merged.putIfAbsent(call.id, call) }
+    incoming.forEach { call ->
+        val previous = merged[call.id]
+        merged[call.id] = if (previous == null) {
+            call
+        } else {
+            previous.copy(
+                name = call.name.ifBlank { previous.name },
+                arguments = call.arguments.ifBlank { previous.arguments },
+            )
+        }
+    }
+    return merged.values.toList()
+}
+
+internal fun stableFallbackToolCallId(
+    prefix: String,
+    name: String,
+    arguments: String,
+    index: Int,
+): String {
+    val raw = "$prefix\u0000$name\u0000$arguments\u0000$index"
+    val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray())
+    return "${prefix}_" + digest.take(16).joinToString("") { "%02x".format(it) }
 }
 
 data class ChatUiState(
@@ -160,10 +192,22 @@ class ChatViewModel(
         kgProvider = kgProvider,
         taskRepository = (application as NexaraApplication).taskRepository
     )
-    private val toolExecutor = ToolExecutor(store, messageManager, skillRegistry, (application as NexaraApplication).taskRepository)
+    private val toolLedger = (application as NexaraApplication).toolExecutionLedger
+    private val toolExecutor = ToolExecutor(
+        store,
+        messageManager,
+        skillRegistry,
+        (application as NexaraApplication).taskRepository,
+        toolLedger,
+    )
     private val postProcessor = PostProcessor(store, sessionManager, messageManager, embeddingClient, vectorStore, textSplitter)
     private val summaryManager = SummaryManager(llmProvider)
-    private val approvalManager = ApprovalManager(store)
+    private val approvalManager = ApprovalManager(
+        store,
+        toolLedger,
+        messageManager,
+        sessionRepository,
+    )
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText
@@ -267,11 +311,16 @@ class ChatViewModel(
             onGenerateMessage = { sessionId, content, isResumption ->
                 generateMessage(sessionId, content, isResumption)
             },
-            onExecuteTools = { sessionId, targetMessageId ->
+            onExecuteTools = { sessionId, targetMessageId, allowedToolCallIds ->
                 val session = store.getSession(sessionId) ?: return@setCallbacks
                 val msg = session.messages.find { it.id == targetMessageId } ?: return@setCallbacks
                 if (msg.toolCalls != null) {
-                    toolExecutor.executeTools(sessionId, msg.toolCalls, targetMessageId)
+                    toolExecutor.executeTools(
+                        sessionId,
+                        targetMessageId,
+                        msg.toolCalls,
+                        allowedToolCallIds,
+                    )
                 }
             }
         )
@@ -714,7 +763,9 @@ class ChatViewModel(
             val fallbackCalls = extractToolCallsFromText(accumulatedContent)
             if (fallbackCalls.isNotEmpty()) {
                 // 将提取到的工具调用追加到累积列表
-                accumulatedToolCalls.addAll(fallbackCalls)
+                val mergedCalls = mergeToolCallsById(accumulatedToolCalls, fallbackCalls)
+                accumulatedToolCalls.clear()
+                accumulatedToolCalls.addAll(mergedCalls)
                 // 从显示内容中移除 JSON 代码块，避免用户在气泡中看到原始 JSON
                 accumulatedContent = stripToolCallJsonBlocks(accumulatedContent)
                 // 刷新 UI：用清洗后的内容更新消息
@@ -731,28 +782,60 @@ class ChatViewModel(
             val pendingIds = determinePendingToolIds(accumulatedToolCalls, executionMode)
 
             if (pendingIds.isNotEmpty()) {
-                messageManager.updateMessageContent(
-                    sessionId, assistantMsgId, accumulatedContent,
-                    UpdateMessageOptions(pendingApprovalToolIds = pendingIds)
-                )
-
                 val firstPendingTc = accumulatedToolCalls.find { it.id in pendingIds }
-                approvalManager.setApprovalRequest(sessionId, ApprovalRequest(
+                val approvalRequest = ApprovalRequest(
                     toolName = firstPendingTc?.name,
                     args = firstPendingTc?.arguments,
                     reason = "Execution mode: $executionMode",
                     type = "tool_approval"
-                ))
-                approvalManager.setLoopStatus(sessionId, com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_APPROVAL)
+                )
+                messageManager.flushNonApprovalUpdatesNow(sessionId, assistantMsgId)
+                val creation = toolLedger.createToolApproval(
+                    sessionId,
+                    assistantMsgId,
+                    accumulatedToolCalls.toList(),
+                    pendingIds.toSet(),
+                    approvalRequest,
+                )
+                if (creation == com.promenar.nexara.data.repository.ToolApprovalCreation.CONFLICT) {
+                    _error.update { "当前会话已有不一致的工具审批，请先处理现有审批。" }
+                    _isGenerating.update { false }
+                    return
+                }
+                messageManager.mirrorPersistedPendingApprovalState(
+                    sessionId,
+                    assistantMsgId,
+                    pendingIds,
+                )
+                store.updateSession(sessionId) {
+                    it.copy(
+                        approvalRequest = approvalRequest,
+                        loopStatus = com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_APPROVAL,
+                    )
+                }
 
-                val safeToolCalls = accumulatedToolCalls.filter { it.id !in pendingIds }
-                if (safeToolCalls.isNotEmpty()) {
-                    toolExecutor.executeTools(sessionId, safeToolCalls, assistantMsgId)
+                val safeToolCallIds = accumulatedToolCalls
+                    .asSequence()
+                    .map { it.id }
+                    .filterNot { it in pendingIds }
+                    .toSet()
+                // 即使没有安全工具也必须注册整批调用，确保审批回调只转换既有 PENDING 项。
+                if (creation != com.promenar.nexara.data.repository.ToolApprovalCreation.CONFLICT) {
+                    toolExecutor.executeTools(
+                        sessionId,
+                        assistantMsgId,
+                        accumulatedToolCalls.toList(),
+                        safeToolCallIds,
+                    )
                 }
 
                 _isGenerating.update { false }
             } else {
-                toolExecutor.executeTools(sessionId, accumulatedToolCalls.toList(), assistantMsgId)
+                toolExecutor.executeTools(
+                    sessionId,
+                    assistantMsgId,
+                    accumulatedToolCalls.toList(),
+                )
 
                 _isGenerating.update { false }
                 if (currentCoroutineContext().isActive) {
@@ -1066,7 +1149,18 @@ class ChatViewModel(
         cancelActiveGeneration()
         val sessionId = _currentSessionId.value
         if (sessionId != null) {
-            approvalManager.setLoopStatus(sessionId, com.promenar.nexara.data.model.LoopStatus.PAUSED)
+            viewModelScope.launch {
+                val waitingForApproval = store.getSession(sessionId)?.loopStatus ==
+                    com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_APPROVAL
+                if (waitingForApproval) {
+                    approvalManager.cancelPendingApproval(sessionId)
+                } else {
+                    approvalManager.setLoopStatus(
+                        sessionId,
+                        com.promenar.nexara.data.model.LoopStatus.PAUSED,
+                    )
+                }
+            }
         }
     }
 
@@ -1087,20 +1181,24 @@ class ChatViewModel(
 
         val lastAssistantMsg = session.messages.lastOrNull { it.role == MessageRole.ASSISTANT }
 
-        if (lastAssistantMsg != null) {
-            viewModelScope.launch {
-                messageManager.deleteMessage(sessionId, lastAssistantMsg.id)
-            }
-        }
-
         cancelActiveGeneration()
         generationJob = viewModelScope.launch {
-            enqueuePreparedUserTurn(
-                sessionId = sessionId,
-                session = session,
-                text = lastUserMsg.content,
-                imageDataUrls = lastUserMsg.userImages.orEmpty()
-            )
+            try {
+                if (lastAssistantMsg != null) {
+                    messageManager.deleteMessage(sessionId, lastAssistantMsg.id)
+                }
+                val updatedSession = store.getSession(sessionId) ?: return@launch
+                enqueuePreparedUserTurn(
+                    sessionId = sessionId,
+                    session = updatedSession,
+                    text = lastUserMsg.content,
+                    imageDataUrls = lastUserMsg.userImages.orEmpty(),
+                )
+            } catch (_: Exception) {
+                _error.update { "无法安全删除旧回复，已取消重试。" }
+                _generationStatus.update { GenerationStatus.ERROR }
+                _isGenerating.update { false }
+            }
         }
     }
 
@@ -1139,7 +1237,11 @@ class ChatViewModel(
             messageManager.updateMessageContent(sessionId, messageId, newContent, UpdateMessageOptions())
 
             val toRemove = session.messages.drop(msgIndex + 1).map { it.id }
-            toRemove.forEach { messageManager.deleteMessage(sessionId, it) }
+            toRemove.forEach { id ->
+                if (store.getSession(sessionId)?.messages?.any { it.id == id } == true) {
+                    messageManager.deleteMessage(sessionId, id)
+                }
+            }
 
             _inputText.update { "" }
             _error.update { null }
@@ -1694,10 +1796,11 @@ class ChatViewModel(
                         else -> JsonPrimitive(v.toString())
                     })
                 }}
+                val arguments = argsMap.toString()
                 ToolCall(
-                    id = "dsml_${System.currentTimeMillis()}_${results.size}",
+                    id = stableFallbackToolCallId("dsml", dc.toolName, arguments, results.size),
                     name = dc.toolName,
-                    arguments = argsMap.toString()
+                    arguments = arguments,
                 )
             }
             // DSML 结果同样需要工具名校验
@@ -1748,7 +1851,7 @@ class ChatViewModel(
                 if (funcName.isNotEmpty() && funcName.none { it == '{' || it == '<' }) {
                     if (isKnownTool(funcName)) {
                         results.add(ToolCall(
-                            id = "xml_${System.currentTimeMillis()}_${results.size}",
+                            id = stableFallbackToolCallId("xml", funcName, "{}", results.size),
                             name = funcName,
                             arguments = "{}"
                         ))
@@ -1798,7 +1901,7 @@ class ChatViewModel(
             else -> "{}"
         }
 
-        val id = "fallback_${System.currentTimeMillis()}_${name.hashCode()}_$index"
+        val id = stableFallbackToolCallId("fallback", name, arguments, index)
         return ToolCall(id = id, name = name, arguments = arguments)
     }
 

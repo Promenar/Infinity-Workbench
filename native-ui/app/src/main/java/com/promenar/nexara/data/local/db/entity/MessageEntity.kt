@@ -16,11 +16,19 @@ import kotlinx.serialization.Serializable
             parentColumns = ["id"],
             childColumns = ["session_id"],
             onDelete = ForeignKey.CASCADE,
-        )
+        ),
+        ForeignKey(
+            entity = MessageEntity::class,
+            parentColumns = ["session_id", "id"],
+            childColumns = ["session_id", "parent_message_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
     ],
     indices = [
         Index("session_id"),
         Index("session_id", "created_at"),
+        Index(value = ["session_id", "id"], unique = true),
+        Index(value = ["session_id", "parent_message_id"]),
     ]
 )
 data class MessageEntity(
@@ -57,6 +65,8 @@ data class MessageEntity(
     val pendingApprovalToolIds: String? = null,
     @ColumnInfo(name = "tool_call_id")
     val toolCallId: String? = null,
+    @ColumnInfo(name = "parent_message_id")
+    val parentMessageId: String? = null,
     val name: String? = null,
     @ColumnInfo(name = "planning_task")
     val planningTask: String? = null,

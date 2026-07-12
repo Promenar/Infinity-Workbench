@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.util.UUID
+import java.io.OutputStream
 
 /** Robolectric 会隔离 JDK 接口类加载器，因此仓储测试使用可回滚的真实磁盘夹具。 */
 class TestWorkspaceFileOps(
@@ -48,6 +49,47 @@ class TestWorkspaceFileOps(
         }
         hook?.invoke(WorkspaceFilePhase.BEFORE_MUTATION)
         Files.write(target, bytes, java.nio.file.StandardOpenOption.CREATE_NEW)
+    }
+
+    override fun createFileStreaming(
+        root: Path,
+        relative: List<String>,
+        maxBytes: Long,
+        writer: (OutputStream) -> Unit,
+    ): WorkspaceStreamWriteResult {
+        val target = resolve(root, relative)
+        val temporary = target.resolveSibling(".create-${UUID.randomUUID()}")
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        var size = 0L
+        try {
+            Files.newOutputStream(temporary, java.nio.file.StandardOpenOption.CREATE_NEW).use { output ->
+                writer(object : OutputStream() {
+                    override fun write(value: Int) {
+                        ensureCapacity(1)
+                        output.write(value)
+                        digest.update(value.toByte())
+                        size++
+                    }
+                    override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                        ensureCapacity(length)
+                        output.write(bytes, offset, length)
+                        digest.update(bytes, offset, length)
+                        size += length
+                    }
+                    private fun ensureCapacity(incoming: Int) {
+                        if (size > maxBytes - incoming) throw WorkspaceFileTooLargeException(maxBytes)
+                    }
+                })
+            }
+            hook?.invoke(WorkspaceFilePhase.BEFORE_MUTATION)
+            Files.move(temporary, target)
+            return WorkspaceStreamWriteResult(
+                size,
+                digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) },
+            )
+        } finally {
+            Files.deleteIfExists(temporary)
+        }
     }
 
     override fun createDirectory(root: Path, relative: List<String>) {

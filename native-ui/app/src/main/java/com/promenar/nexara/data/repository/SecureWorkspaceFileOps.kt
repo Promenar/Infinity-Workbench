@@ -10,6 +10,8 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.SecureDirectoryStream
 import java.nio.file.StandardOpenOption
+import java.io.OutputStream
+import java.nio.channels.Channels
 import java.util.UUID
 
 enum class WorkspaceFilePhase {
@@ -29,6 +31,12 @@ interface WorkspaceFileOps {
     ): String
     fun read(root: Path, relative: List<String>): ByteArray
     fun createFile(root: Path, relative: List<String>, bytes: ByteArray)
+    fun createFileStreaming(
+        root: Path,
+        relative: List<String>,
+        maxBytes: Long,
+        writer: (OutputStream) -> Unit,
+    ): WorkspaceStreamWriteResult
     fun createDirectory(root: Path, relative: List<String>)
     fun ensureDirectory(root: Path, relative: List<String>)
     fun replaceFile(root: Path, relative: List<String>, bytes: ByteArray): WorkspaceFileRollback
@@ -38,6 +46,12 @@ interface WorkspaceFileOps {
     fun delete(root: Path, source: List<String>)
     fun cleanupTombstones(root: Path)
 }
+
+data class WorkspaceStreamWriteResult(val sizeBytes: Long, val sha256: String)
+
+class WorkspaceFileTooLargeException(val limitBytes: Long) : java.io.IOException(
+    "工作区文件超过上限: $limitBytes bytes"
+)
 
 interface WorkspaceFileRollback {
     fun commit()
@@ -97,6 +111,70 @@ class SecureWorkspaceFileOps(
                 hook?.invoke(WorkspaceFilePhase.BEFORE_MUTATION)
                 verifyDirectoryBinding(root, relative.dropLast(1), directoryKey(parent))
                 parent.move(temporary, parent, name)
+            } finally {
+                runCatching { parent.deleteFile(temporary) }
+            }
+        }
+    }
+
+    override fun createFileStreaming(
+        root: Path,
+        relative: List<String>,
+        maxBytes: Long,
+        writer: (OutputStream) -> Unit,
+    ): WorkspaceStreamWriteResult {
+        require(maxBytes > 0) { "maxBytes 必须大于 0" }
+        return withParent(root, relative) { parent, name ->
+            val temporary = Paths.get(".create-${UUID.randomUUID()}")
+            try {
+                val result = parent.newByteChannel(
+                    temporary,
+                    setOf<OpenOption>(
+                        StandardOpenOption.CREATE_NEW,
+                        StandardOpenOption.WRITE,
+                        LinkOption.NOFOLLOW_LINKS,
+                    ),
+                ).use { channel ->
+                    val digest = java.security.MessageDigest.getInstance("SHA-256")
+                    var size = 0L
+                    val target = Channels.newOutputStream(channel)
+                    val limited = object : OutputStream() {
+                        override fun write(value: Int) {
+                            ensureCapacity(1)
+                            target.write(value)
+                            digest.update(value.toByte())
+                            size += 1
+                        }
+
+                        override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                            if (length == 0) return
+                            ensureCapacity(length)
+                            target.write(bytes, offset, length)
+                            digest.update(bytes, offset, length)
+                            size += length
+                        }
+
+                        override fun flush() = target.flush()
+
+                        private fun ensureCapacity(incoming: Int) {
+                            if (incoming < 0 || size > maxBytes - incoming) {
+                                throw WorkspaceFileTooLargeException(maxBytes)
+                            }
+                        }
+                    }
+                    writer(limited)
+                    limited.flush()
+                    (channel as? FileChannel)?.force(true)
+                        ?: throw IllegalStateException("当前文件系统不支持工作区文件 fsync")
+                    WorkspaceStreamWriteResult(
+                        sizeBytes = size,
+                        sha256 = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) },
+                    )
+                }
+                hook?.invoke(WorkspaceFilePhase.BEFORE_MUTATION)
+                verifyDirectoryBinding(root, relative.dropLast(1), directoryKey(parent))
+                parent.move(temporary, parent, name)
+                result
             } finally {
                 runCatching { parent.deleteFile(temporary) }
             }

@@ -77,6 +77,7 @@ import com.promenar.nexara.ui.chat.manager.skills.UpdatePlanSkill
 import com.promenar.nexara.ui.chat.manager.skills.GetPlanSkill
 import com.promenar.nexara.ui.chat.manager.skills.DropPlanSkill
 import com.promenar.nexara.data.repository.TaskRepository
+import com.promenar.nexara.data.repository.ToolExecutionLedgerRepository
 import com.promenar.nexara.data.repository.SkillRepository
 import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.data.repository.TokenStatsRepository
@@ -158,6 +159,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 java.util.concurrent.Executors.newSingleThreadExecutor()
             )
             .build()
+    }
+
+    val toolExecutionLedger by lazy {
+        ToolExecutionLedgerRepository(database)
     }
 
     val localInferenceEngine: LocalInferenceEngine by lazy {
@@ -339,6 +344,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                     backupRuntime
                 }
                 if (runtime.recoverBeforeWriters() == BackupStartupState.Ready) {
+                    withContext(Dispatchers.IO) {
+                        // 进程中断时无法判断外部副作用是否已发生，禁止自动重放 RUNNING 调用。
+                        toolExecutionLedger.recoverInterruptedRunning("进程在工具执行期间中断，请确认结果后重新发起")
+                        toolExecutionLedger.recoverApprovalState()
+                    }
                     _startupState.value = runCatching {
                         initializeAfterRecoveryOnce()
                         BackupStartupState.Ready

@@ -6,6 +6,12 @@ import com.promenar.nexara.data.local.db.dao.VectorizationTaskDao
 import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.security.MessageDigest
 import java.util.UUID
 
 class VectorizationQueue(
@@ -19,14 +25,22 @@ class VectorizationQueue(
     private val fileEntryDao: com.promenar.nexara.data.local.db.dao.FileEntryDao? = null
 ) {
     private val queue = mutableListOf<VectorizationTask>()
-    private var isProcessing = false
+    private val retainedAttention = mutableListOf<VectorizationTask>()
+    @Volatile private var isProcessing = false
+    private val queueLock = Any()
     private val retryCountMap = mutableMapOf<String, Int>()
     private val scope = CoroutineScope(dispatcher + SupervisorJob())
+    private val enqueueMutex = Mutex()
+    private val _state = MutableStateFlow(QueueState(emptyList(), null, false, restored = false))
+    val state: StateFlow<QueueState> = _state.asStateFlow()
+    @Volatile private var restored = false
 
     private var onStateChange: ((List<VectorizationTask>, VectorizationTask?) -> Unit)? = null
 
     fun setOnStateChange(callback: (List<VectorizationTask>, VectorizationTask?) -> Unit) {
         onStateChange = callback
+        val current = snapshotState()
+        callback(current.queue, current.currentTask)
     }
 
     suspend fun enqueueDocument(
@@ -49,13 +63,11 @@ class VectorizationQueue(
             userContent = content
         )
 
-        queue.add(task)
         saveTaskToDb(task)
+        synchronized(queueLock) { queue.add(task) }
         notifyStateChange()
 
-        if (!isProcessing) {
-            scope.launch { processNext() }
-        }
+        startProcessorIfNeeded()
     }
 
     suspend fun enqueueMemory(
@@ -80,25 +92,89 @@ class VectorizationQueue(
             status = "pending"
         )
 
-        queue.add(task)
         saveTaskToDb(task)
+        synchronized(queueLock) { queue.add(task) }
         notifyStateChange()
 
-        if (!isProcessing) {
-            scope.launch { processNext() }
-        }
+        startProcessorIfNeeded()
     }
 
+    /** 先持久化文件引用任务，再进入内存队列；返回即表示进程死亡后可恢复。 */
+    suspend fun enqueueDocumentReference(
+        workspaceRootUuid: String,
+        docId: String,
+        docTitle: String,
+        sourceMimeType: String,
+        kgStrategy: String? = null,
+        skipVectorization: Boolean = false,
+    ): String = enqueueMutex.withLock {
+        require(sourceMimeType in DocumentReferenceExtractor.SUPPORTED_MIME_TYPES) { "不支持索引 MIME" }
+        val id = deterministicReferenceTaskId(workspaceRootUuid, docId)
+        val existing = vectorizationTaskDao.getByWorkspaceFile(workspaceRootUuid, docId, TYPE_DOCUMENT_REFERENCE)
+        if (existing != null) return@withLock existing.id
+        val task = VectorizationTask(
+            id = id,
+            type = TYPE_DOCUMENT_REFERENCE,
+            docId = docId,
+            docTitle = docTitle,
+            workspaceRootUuid = workspaceRootUuid,
+            status = "pending",
+            kgStrategy = kgStrategy,
+            skipVectorization = skipVectorization,
+            sourceMimeType = sourceMimeType,
+            userContent = null,
+        )
+        val inserted = vectorizationTaskDao.insertIgnore(task.toEntity())
+        if (inserted == -1L) {
+            return@withLock checkNotNull(
+                vectorizationTaskDao.getByWorkspaceFile(workspaceRootUuid, docId, TYPE_DOCUMENT_REFERENCE)
+            ).id
+        }
+        synchronized(queueLock) { queue.add(task) }
+        notifyStateChange()
+        startProcessorIfNeeded()
+        id
+    }
+
+    suspend fun retryDocumentReference(workspaceRootUuid: String, docId: String): Boolean =
+        enqueueMutex.withLock {
+            val existing = vectorizationTaskDao.getByWorkspaceFile(
+                workspaceRootUuid,
+                docId,
+                TYPE_DOCUMENT_REFERENCE,
+            ) ?: return@withLock false
+            if (existing.status !in setOf("failed", "partial", "interrupted")) return@withLock false
+            val retried = existing.copy(
+                status = "pending",
+                progress = 0.0,
+                error = null,
+                subStatus = "等待重试",
+                contentTruncated = false,
+                updatedAt = System.currentTimeMillis(),
+            )
+            vectorizationTaskDao.insert(retried)
+            val task = retried.toTask()
+            synchronized(queueLock) {
+                retainedAttention.removeAll { it.id == task.id }
+                if (queue.none { it.id == task.id }) queue.add(task)
+            }
+            notifyStateChange()
+            startProcessorIfNeeded()
+            true
+        }
+
     private suspend fun processNext() {
-        if (queue.isEmpty()) {
+        val task = synchronized(queueLock) { queue.firstOrNull() }
+        if (task == null) {
             isProcessing = false
             notifyStateChange()
             return
         }
 
         isProcessing = true
-        val task = queue[0]
 
+        var delegatedRetry = false
+        var processingCancelled = false
         try {
             // 不在此处预设状态，交由具体处理函数逐步推进——
             // 避免 "vectorizing(0%)→chunking(15%)→vectorizing(30%)" 的进度回跳
@@ -108,17 +184,22 @@ class VectorizationQueue(
             when (task.type) {
                 "memory" -> processMemoryTask(task)
                 "document" -> processDocumentTask(task)
+                TYPE_DOCUMENT_REFERENCE -> processDocumentReferenceTask(task)
             }
 
-            if (task.status != "warning") {
-                task.status = "completed"
-            }
+            task.status = if (task.contentTruncated) "partial" else "completed"
             retryCountMap.remove(task.id)
             task.progress = 100.0
-            task.subStatus = "处理完成"
+            task.subStatus = if (task.contentTruncated) "已完成安全前缀索引（内容截断）" else "处理完成"
+            saveTaskToDb(task)
             NexaraLogger.log("[VectorQueue] 任务完成 type=${task.type} docTitle=${task.docTitle ?: "N/A"}")
             notifyStateChange()
-            removeTaskFromDb(task.id)
+            if (!task.contentTruncated) removeTaskFromDb(task.id)
+        } catch (cancelled: CancellationException) {
+            // 取消不是业务失败：不标 failed、不内部重试。当前持久阶段保留，由启动恢复标记 interrupted 后接管。
+            retryCountMap.remove(task.id)
+            processingCancelled = true
+            throw cancelled
         } catch (error: Exception) {
             NexaraLogger.logError("VectorQueue.processNext", error)
 
@@ -145,6 +226,7 @@ class VectorizationQueue(
 
                 val delayMs = minOf(3000L * (1L shl currentRetries), 15000L)
                 delay(delayMs)
+                delegatedRetry = true
                 processNext()
                 return
             } else {
@@ -162,19 +244,27 @@ class VectorizationQueue(
                 delay(2000)
             }
         } finally {
-            if (queue.isNotEmpty() && queue[0] === task) {
-                queue.removeAt(0)
-            }
-            notifyStateChange()
-
-            if (queue.isNotEmpty()) {
-                scope.launch {
-                    delay(500)
-                    processNext()
+            if (!delegatedRetry) {
+                synchronized(queueLock) {
+                    if (task.status in setOf("failed", "partial") && retainedAttention.none { it.id == task.id }) {
+                        retainedAttention.add(task)
+                    }
+                    if (queue.firstOrNull() === task) queue.removeAt(0)
                 }
-            } else {
-                isProcessing = false
-                cleanupCompletedTasks()
+                notifyStateChange()
+
+                if (processingCancelled) {
+                    isProcessing = false
+                    notifyStateChange()
+                } else if (synchronized(queueLock) { queue.isNotEmpty() }) {
+                    scope.launch {
+                        delay(500)
+                        processNext()
+                    }
+                } else {
+                    isProcessing = false
+                    cleanupCompletedTasks()
+                }
             }
         }
     }
@@ -227,28 +317,62 @@ class VectorizationQueue(
     }
 
     private suspend fun processDocumentTask(task: VectorizationTask) {
-        val docId = task.docId ?: throw IllegalStateException("Document task missing docId")
-        val docTitle = task.docTitle ?: "Untitled"
         val content = task.userContent
             ?: throw IllegalStateException("Document task missing content")
-
         task.status = "chunking"
         task.progress = 15.0
         task.subStatus = "正在对文档进行语义切块..."
         notifyStateChange()
-
         val splitter = TrigramTextSplitter(
             chunkSize = ragConfig.docChunkSize,
             chunkOverlap = ragConfig.chunkOverlap
         )
         val chunks = splitter.splitText(content)
+        processDocumentChunks(task, chunks, content)
+    }
+
+    private suspend fun processDocumentReferenceTask(task: VectorizationTask) {
+        val workspaceRootUuid = task.workspaceRootUuid
+            ?: throw IllegalStateException("Document reference missing workspaceRootUuid")
+        val docId = task.docId ?: throw IllegalStateException("Document reference missing docId")
+        val entry = fileEntryDao?.getByUuid(workspaceRootUuid, docId)
+            ?: throw IllegalStateException("Document reference file missing")
+        if (entry.mimeType != task.sourceMimeType) throw SecurityException("索引任务 MIME 与文件不一致")
+        task.status = "extracting_source"
+        task.progress = 8.0
+        task.subStatus = "正在安全读取工作区文件..."
+        saveTaskToDb(task)
+        notifyStateChange()
+        val extraction = DocumentReferenceExtractor(
+            chunkSize = ragConfig.docChunkSize,
+            chunkOverlap = ragConfig.chunkOverlap,
+        ).extract(entry)
+        task.contentTruncated = extraction.truncated
+        if (extraction.truncated) task.subStatus = "内容超过 16 MiB，已索引安全前缀"
+        processDocumentChunks(task, extraction.chunks, extraction.graphText)
+    }
+
+    private suspend fun processDocumentChunks(
+        task: VectorizationTask,
+        chunks: List<String>,
+        graphText: String,
+    ) {
+        val docId = task.docId ?: throw IllegalStateException("Document task missing docId")
+        val docTitle = task.docTitle ?: "Untitled"
         task.totalChunks = chunks.size
+        task.status = "chunking"
+        task.progress = 15.0
+        task.subStatus = if (task.contentTruncated) "已截断至 16 MiB 安全前缀，共 ${chunks.size} 个切块"
+        else "已生成 ${chunks.size} 个文档切块"
+        saveTaskToDb(task)
         NexaraLogger.log("[VectorQueue] Document chunking: ${chunks.size} chunks for doc=$docTitle")
 
         if (chunks.isEmpty()) {
             NexaraLogger.log("[VectorQueue] Document has no chunkable content, skipping: $docTitle")
             task.status = "completed"
             task.progress = 100.0
+            task.subStatus = if (task.contentTruncated) "部分内容可索引" else "文档无可索引内容"
+            saveTaskToDb(task)
             notifyStateChange()
             updateFileEntryVectorizedAt(
                 task.workspaceRootUuid ?: throw SecurityException("Document task missing workspaceRootUuid"),
@@ -258,32 +382,38 @@ class VectorizationQueue(
             return
         }
 
-        task.status = "vectorizing"
-        task.progress = 30.0
-        task.subStatus = "正在发送 ${chunks.size} 个切块至模型处理..."
-        notifyStateChange()
+        if (!task.skipVectorization) {
+            task.status = "vectorizing"
+            task.progress = 30.0
+            task.subStatus = "正在发送 ${chunks.size} 个切块至模型处理..."
+            saveTaskToDb(task)
+            notifyStateChange()
 
-        NexaraLogger.log("[VectorQueue] Document embedding: ${chunks.size} chunks for doc=$docTitle")
-        val embeddingResult = embeddingClient.embedDocuments(chunks)
+            NexaraLogger.log("[VectorQueue] Document embedding: ${chunks.size} chunks for doc=$docTitle")
+            val embeddingResult = embeddingClient.embedDocuments(chunks)
 
-        task.status = "saving"
-        task.progress = 70.0
-        task.subStatus = "正在持久化向量数据..."
-        notifyStateChange()
+            task.status = "saving"
+            task.progress = 70.0
+            task.subStatus = "正在持久化向量数据..."
+            saveTaskToDb(task)
+            notifyStateChange()
 
-        val records = chunks.mapIndexed { i, chunk ->
-            VectorStore.NewVectorRecord(
-                docId = docId,
-                sessionId = null,
-                content = chunk,
-                embedding = embeddingResult.embeddings[i],
-                metadata = """{"type":"document","fileUuid":"$docId","chunkIndex":$i}""",
-                startMessageId = docId,
-                endMessageId = docId
-            )
+            val records = chunks.mapIndexed { i, chunk ->
+                VectorStore.NewVectorRecord(
+                    docId = docId,
+                    sessionId = null,
+                    content = chunk,
+                    embedding = embeddingResult.embeddings[i],
+                    metadata = """{"type":"document","fileUuid":"$docId","chunkIndex":$i}""",
+                    startMessageId = docId,
+                    endMessageId = docId
+                )
+            }
+            vectorStore.addVectorRecords(records)
+            NexaraLogger.log("[VectorQueue] Document vectors saved: ${records.size} vectors for doc=$docTitle")
+        } else {
+            task.subStatus = "已按配置跳过向量化，继续处理知识图谱"
         }
-        vectorStore.addVectorRecords(records)
-        NexaraLogger.log("[VectorQueue] Document vectors saved: ${records.size} vectors for doc=$docTitle")
 
         task.progress = 95.0
         task.subStatus = "正在更新文件索引状态..."
@@ -303,127 +433,177 @@ class VectorizationQueue(
             notifyStateChange()
             NexaraLogger.log("[VectorQueue] KG extraction starting for doc=$docTitle")
             try {
-                graphExtractor.extractAndSave(content, docId)
+                graphExtractor.extractAndSave(graphText, docId)
                 NexaraLogger.log("[VectorQueue] KG extraction completed for doc=$docTitle")
             } catch (e: Exception) {
                 NexaraLogger.logError("VectorQueue.KGExtraction", e)
                 task.subStatus = "知识图谱提取跳过（非致命）"
+                saveTaskToDb(task)
             }
         }
     }
 
     /** 更新 FileEntry 的 vectorizedAt 时间戳 */
     private suspend fun updateFileEntryVectorizedAt(workspaceRootUuid: String, docId: String, timestamp: Long) {
-        try {
-            val dao = fileEntryDao ?: return
-            val entry = dao.getByUuid(workspaceRootUuid, docId) ?: return
-            dao.update(entry.copy(vectorizedAt = timestamp, updatedAt = timestamp))
-        } catch (_: Exception) { }
+        val dao = fileEntryDao ?: throw IllegalStateException("文件索引 DAO 未配置")
+        val entry = dao.getByUuid(workspaceRootUuid, docId)
+            ?: throw IllegalStateException("索引文件不存在")
+        dao.update(entry.copy(vectorizedAt = timestamp, updatedAt = timestamp))
     }
 
-    fun getQueueLength(): Int = queue.size
+    fun getQueueLength(): Int = synchronized(queueLock) { queue.size }
 
-    fun getState(): QueueState {
+    fun snapshotState(): QueueState {
+        val (snapshot, current) = synchronized(queueLock) {
+            (queue + retainedAttention) to (queue.firstOrNull() ?: retainedAttention.firstOrNull())
+        }
         return QueueState(
-            queue = queue.toList(),
-            currentTask = queue.firstOrNull(),
-            isProcessing = isProcessing
+            queue = snapshot,
+            currentTask = current,
+            isProcessing = isProcessing,
+            restored = restored,
         )
     }
 
     fun cancel(docId: String) {
-        queue.removeAll { it.docId == docId }
+        synchronized(queueLock) {
+            queue.removeAll { it.docId == docId }
+            retainedAttention.removeAll { it.docId == docId }
+        }
         notifyStateChange()
     }
 
     fun clear() {
-        queue.clear()
+        synchronized(queueLock) {
+            queue.clear()
+            retainedAttention.clear()
+        }
         isProcessing = false
         notifyStateChange()
     }
 
     private suspend fun saveTaskToDb(task: VectorizationTask) {
-        try {
-            vectorizationTaskDao.insert(
-                VectorizationTaskEntity(
-                    id = task.id,
-                    type = task.type,
-                    status = task.status,
-                    docId = task.docId,
-                    docTitle = task.docTitle,
-                    sessionId = if (task.type == "document") task.workspaceRootUuid else task.sessionId,
-                    userContent = task.userContent,
-                    aiContent = task.aiContent,
-                    userMessageId = task.userMessageId,
-                    assistantMessageId = task.assistantMessageId,
-                    lastChunkIndex = task.lastChunkIndex,
-                    totalChunks = task.totalChunks,
-                    progress = task.progress,
-                    error = task.error,
-                    createdAt = task.createdAt,
-                    updatedAt = task.updatedAt
-                )
-            )
-        } catch (e: Exception) {
-            // Persistence failure is non-critical
-        }
+        task.updatedAt = System.currentTimeMillis()
+        vectorizationTaskDao.insert(task.toEntity())
     }
 
+    private fun VectorizationTask.toEntity() = VectorizationTaskEntity(
+        id = id,
+        type = type,
+        status = status,
+        docId = docId,
+        docTitle = docTitle,
+        workspaceRootUuid = workspaceRootUuid,
+        sessionId = if (type == "memory") sessionId else null,
+        userContent = userContent,
+        aiContent = aiContent,
+        userMessageId = userMessageId,
+        assistantMessageId = assistantMessageId,
+        lastChunkIndex = lastChunkIndex,
+        totalChunks = totalChunks,
+        progress = progress,
+        error = error,
+        kgStrategy = kgStrategy,
+        skipVectorization = skipVectorization,
+        subStatus = subStatus,
+        sourceMimeType = sourceMimeType,
+        contentTruncated = contentTruncated,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+    )
+
     private suspend fun removeTaskFromDb(taskId: String) {
-        try {
-            val task = vectorizationTaskDao.getById(taskId) ?: return
-            vectorizationTaskDao.delete(task)
-        } catch (e: Exception) {
-            // Non-critical
-        }
+        val task = vectorizationTaskDao.getById(taskId) ?: return
+        vectorizationTaskDao.delete(task)
     }
 
     suspend fun cleanupCompletedTasks() {
-        try {
-            vectorizationTaskDao.deleteCompletedTasks()
-        } catch (e: Exception) {
-            // Non-critical
-        }
+        vectorizationTaskDao.deleteCompletedTasks()
     }
 
-    suspend fun resumeInterruptedTasks(): Result<Unit> = runCatching {
+    suspend fun resumeInterruptedTasks(): Result<Unit> = try {
             vectorizationTaskDao.markStaleAsInterrupted(System.currentTimeMillis() - 30_000)
             val interruptedTasks = vectorizationTaskDao.getRecoverableTasks()
 
-            if (interruptedTasks.isEmpty()) return@runCatching
+            val tasks = interruptedTasks.map { it.toTask() }
+            val attention = vectorizationTaskDao.getAttentionTasks().map { it.toTask() }
 
-            val tasks = interruptedTasks.map { entity ->
-                VectorizationTask(
-                    id = entity.id,
-                    type = entity.type,
-                    docId = entity.docId,
-                    docTitle = entity.docTitle,
-                    workspaceRootUuid = if (entity.type == "document") entity.sessionId else null,
-                    sessionId = entity.sessionId,
-                    userContent = entity.userContent,
-                    aiContent = entity.aiContent,
-                    userMessageId = entity.userMessageId,
-                    assistantMessageId = entity.assistantMessageId,
-                    status = entity.status,
-                    progress = entity.progress,
-                    totalChunks = entity.totalChunks,
-                    lastChunkIndex = entity.lastChunkIndex,
-                    error = entity.error,
-                    createdAt = entity.createdAt,
-                    updatedAt = entity.updatedAt
-                )
+            synchronized(queueLock) {
+                retainedAttention.clear()
+                retainedAttention.addAll(attention)
+                tasks.asReversed().forEach { task ->
+                    if (queue.none { it.id == task.id }) queue.add(0, task)
+                }
             }
-
-            queue.addAll(0, tasks)
+            restored = true
             notifyStateChange()
 
-            if (!isProcessing) {
-                scope.launch { processNext() }
+            if (tasks.isNotEmpty()) startProcessorIfNeeded()
+            enqueueMissingDocumentReferences()
+            Result.success(Unit)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        Result.failure(failure)
+    }
+
+    private suspend fun enqueueMissingDocumentReferences() {
+        val dao = fileEntryDao ?: return
+        dao.getUnvectorizedSupportedFiles(DocumentReferenceExtractor.SUPPORTED_MIME_TYPES.toList())
+            .forEach { entry ->
+                if (vectorizationTaskDao.countActiveForFile(entry.workspaceRootUuid, entry.uuid) == 0) {
+                    enqueueDocumentReference(
+                        workspaceRootUuid = entry.workspaceRootUuid,
+                        docId = entry.uuid,
+                        docTitle = entry.name,
+                        sourceMimeType = entry.mimeType ?: return@forEach,
+                    )
+                }
             }
     }
 
+    private fun VectorizationTaskEntity.toTask() = VectorizationTask(
+        id = id,
+        type = type,
+        docId = docId,
+        docTitle = docTitle,
+        workspaceRootUuid = workspaceRootUuid,
+        sessionId = sessionId,
+        userContent = userContent,
+        aiContent = aiContent,
+        userMessageId = userMessageId,
+        assistantMessageId = assistantMessageId,
+        status = status,
+        progress = progress,
+        totalChunks = totalChunks,
+        lastChunkIndex = lastChunkIndex,
+        error = error,
+        kgStrategy = kgStrategy,
+        skipVectorization = skipVectorization,
+        subStatus = subStatus,
+        sourceMimeType = sourceMimeType,
+        contentTruncated = contentTruncated,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+    )
+
     private fun notifyStateChange() {
-        onStateChange?.invoke(queue.toList(), queue.firstOrNull())
+        val (snapshot, current) = synchronized(queueLock) {
+            (queue + retainedAttention) to (queue.firstOrNull() ?: retainedAttention.firstOrNull())
+        }
+        _state.value = QueueState(snapshot, current, isProcessing, restored)
+        onStateChange?.invoke(snapshot, current)
+    }
+
+    private fun startProcessorIfNeeded() {
+        val shouldStart = synchronized(queueLock) {
+            if (isProcessing || queue.isEmpty()) false
+            else {
+                isProcessing = true
+                true
+            }
+        }
+        if (shouldStart) scope.launch { processNext() }
     }
 
     private fun simpleHash(str: String): String {
@@ -453,10 +633,19 @@ class VectorizationQueue(
     data class QueueState(
         val queue: List<VectorizationTask>,
         val currentTask: VectorizationTask?,
-        val isProcessing: Boolean
+        val isProcessing: Boolean,
+        val restored: Boolean = false,
     )
 
     companion object {
         private const val MAX_RETRIES = 3
+        const val TYPE_DOCUMENT_REFERENCE = "document_reference"
+
+        private fun deterministicReferenceTaskId(workspaceRootUuid: String, docId: String): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest("$workspaceRootUuid:$docId".toByteArray())
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            return "doc-ref-${digest.take(40)}"
+        }
     }
 }

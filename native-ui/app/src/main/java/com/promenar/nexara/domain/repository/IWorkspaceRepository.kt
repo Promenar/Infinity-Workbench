@@ -2,6 +2,7 @@ package com.promenar.nexara.domain.repository
 
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import kotlinx.coroutines.flow.Flow
+import java.io.OutputStream
 
 interface IWorkspaceRepository {
     suspend fun ensureSessionRoot(sessionId: String): FileEntry
@@ -25,6 +26,17 @@ interface IWorkspaceRepository {
         content: String,
         parentUuid: String?,
         materializedPath: String
+    ): FileEntry
+
+    suspend fun createFileInWorkspaceStreaming(
+        workspaceRootUuid: String,
+        uuid: String,
+        name: String,
+        mimeType: String,
+        parentUuid: String?,
+        materializedPath: String,
+        maxBytes: Long,
+        writer: (OutputStream) -> Unit,
     ): FileEntry
 
     suspend fun createDirectoryInWorkspace(

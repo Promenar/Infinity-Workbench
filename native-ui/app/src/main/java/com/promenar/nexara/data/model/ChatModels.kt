@@ -330,6 +330,7 @@ data class Message(
     val toolCalls: List<ToolCall>? = null,
     val pendingApprovalToolIds: List<String>? = null,
     val toolCallId: String? = null,
+    val parentMessageId: String? = null,
     val name: String? = null,
     val planningTask: TaskState? = null,
     val isArchived: Boolean = false,

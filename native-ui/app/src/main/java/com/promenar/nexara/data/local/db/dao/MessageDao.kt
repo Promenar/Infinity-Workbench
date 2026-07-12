@@ -26,6 +26,9 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE id = :messageId")
     suspend fun deleteById(messageId: String)
 
+    @Query("DELETE FROM messages WHERE session_id = :sessionId AND id = :messageId")
+    suspend fun deleteByIdInSession(sessionId: String, messageId: String): Int
+
     @Query("DELETE FROM messages WHERE session_id = :sessionId")
     suspend fun deleteBySessionId(sessionId: String)
 
@@ -43,6 +46,33 @@ interface MessageDao {
 
     @Query("UPDATE messages SET status = :status WHERE id = :messageId")
     suspend fun updateStatus(messageId: String, status: String)
+
+    @Query("UPDATE messages SET pending_approval_tool_ids = :pendingApprovalToolIds WHERE id = :messageId")
+    suspend fun updatePendingApprovalToolIds(messageId: String, pendingApprovalToolIds: String?): Int
+
+    @Query(
+        """UPDATE messages
+           SET tool_calls = :toolCalls,
+               pending_approval_tool_ids = :pendingApprovalToolIds
+           WHERE id = :messageId""",
+    )
+    suspend fun updateToolApprovalPayload(
+        messageId: String,
+        toolCalls: String,
+        pendingApprovalToolIds: String,
+    ): Int
+
+    @Query(
+        """UPDATE messages SET pending_approval_tool_ids = NULL
+           WHERE pending_approval_tool_ids IS NOT NULL
+             AND NOT EXISTS (
+               SELECT 1 FROM tool_execution_ledger ledger
+               WHERE ledger.session_id = messages.session_id
+                 AND ledger.assistant_message_id = messages.id
+                 AND ledger.status IN ('PENDING_APPROVAL', 'APPROVED')
+             )""",
+    )
+    suspend fun clearPendingApprovalWithoutLedger(): Int
 
     @Query("DELETE FROM messages WHERE session_id = :sessionId AND created_at >= :timestamp")
     suspend fun deleteBySessionIdAndTimestampAfter(sessionId: String, timestamp: Long)

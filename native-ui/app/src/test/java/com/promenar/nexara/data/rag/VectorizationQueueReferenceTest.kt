@@ -1,0 +1,152 @@
+package com.promenar.nexara.data.rag
+
+import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.local.db.dao.FileEntryDao
+import com.promenar.nexara.data.local.db.dao.VectorDao
+import com.promenar.nexara.data.local.db.dao.VectorizationTaskDao
+import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
+import io.mockk.*
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
+
+class VectorizationQueueReferenceTest {
+    @Test
+    fun `文件引用任务先持久化且document不再滥用session外键`() = runTest {
+        val taskDao = mockk<VectorizationTaskDao>()
+        coEvery { taskDao.getByWorkspaceFile(ROOT, DOC, VectorizationQueue.TYPE_DOCUMENT_REFERENCE) } returns null
+        coEvery { taskDao.insertIgnore(any()) } returns 1L
+        // StandardTestDispatcher 会在 runTest 收尾执行后台 processor；缺失文件会持久化失败状态并清理 completed。
+        coJustRun { taskDao.insert(any()) }
+        coJustRun { taskDao.deleteCompletedTasks() }
+        val queue = queue(taskDao, StandardTestDispatcher(testScheduler))
+
+        val id = queue.enqueueDocumentReference(ROOT, DOC, "note.txt", "text/plain")
+
+        assertThat(id).startsWith("doc-ref-")
+        assertThat(queue.getQueueLength()).isEqualTo(1)
+        coVerify(exactly = 1) {
+            taskDao.insertIgnore(match {
+                it.id == id && it.workspaceRootUuid == ROOT && it.docId == DOC &&
+                    it.sessionId == null && it.userContent == null &&
+                    it.type == VectorizationQueue.TYPE_DOCUMENT_REFERENCE
+            })
+        }
+        advanceUntilIdle()
+        coVerify(exactly = 1) { taskDao.deleteCompletedTasks() }
+    }
+
+    @Test
+    fun `任务持久化失败时不得进入内存队列或伪装成功`() = runTest {
+        val taskDao = mockk<VectorizationTaskDao>()
+        coEvery { taskDao.getByWorkspaceFile(ROOT, DOC, VectorizationQueue.TYPE_DOCUMENT_REFERENCE) } returns null
+        coEvery { taskDao.insertIgnore(any()) } throws IllegalStateException("disk full")
+        val queue = queue(taskDao, StandardTestDispatcher(testScheduler))
+
+        val failure = runCatching {
+            queue.enqueueDocumentReference(ROOT, DOC, "note.txt", "text/plain")
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(queue.getQueueLength()).isEqualTo(0)
+    }
+
+    @Test
+    fun `同一workspace文件任务按复合键幂等`() = runTest {
+        val taskDao = mockk<VectorizationTaskDao>()
+        val existing = entity("doc-ref-existing")
+        coEvery { taskDao.getByWorkspaceFile(ROOT, DOC, VectorizationQueue.TYPE_DOCUMENT_REFERENCE) } returns existing
+        val queue = queue(taskDao, StandardTestDispatcher(testScheduler))
+
+        val id = queue.enqueueDocumentReference(ROOT, DOC, "note.txt", "text/plain")
+
+        assertThat(id).isEqualTo(existing.id)
+        assertThat(queue.getQueueLength()).isEqualTo(0)
+        coVerify(exactly = 0) { taskDao.insertIgnore(any()) }
+    }
+
+    @Test
+    fun `恢复完成后新注册观察者立即收到持久化失败任务`() = runTest {
+        val taskDao = mockk<VectorizationTaskDao>()
+        val failed = entity("doc-ref-failed").copy(status = "failed", error = "embedding unavailable")
+        coJustRun { taskDao.markStaleAsInterrupted(any()) }
+        coEvery { taskDao.getRecoverableTasks() } returns emptyList()
+        coEvery { taskDao.getAttentionTasks() } returns listOf(failed)
+        val fileDao = mockk<FileEntryDao>()
+        coEvery { fileDao.getUnvectorizedSupportedFiles(any()) } returns emptyList()
+        val queue = VectorizationQueue(
+            vectorStore = mockk(relaxed = true),
+            embeddingClient = mockk(relaxed = true),
+            graphExtractor = null,
+            vectorDao = mockk(relaxed = true),
+            vectorizationTaskDao = taskDao,
+            dispatcher = StandardTestDispatcher(testScheduler),
+            fileEntryDao = fileDao,
+        )
+        assertThat(queue.resumeInterruptedTasks().isSuccess).isTrue()
+
+        var observed: VectorizationTask? = null
+        queue.setOnStateChange { _, current -> observed = current }
+
+        assertThat(observed?.id).isEqualTo(failed.id)
+        assertThat(queue.state.value.restored).isTrue()
+        assertThat(queue.state.value.currentTask?.status).isEqualTo("failed")
+        assertThat(queue.snapshotState()).isEqualTo(queue.state.value)
+    }
+
+    @Test
+    fun `处理协程取消不标记failed且不进入内部重试`() = runTest {
+        val taskDao = mockk<VectorizationTaskDao>(relaxed = true)
+        val saved = mutableListOf<VectorizationTaskEntity>()
+        coEvery { taskDao.insert(capture(saved)) } just Runs
+        val embeddingClient = mockk<EmbeddingClient>()
+        coEvery { embeddingClient.embedDocuments(any()) } throws CancellationException("stop")
+        val queue = VectorizationQueue(
+            vectorStore = mockk(relaxed = true),
+            embeddingClient = embeddingClient,
+            graphExtractor = null,
+            vectorDao = mockk(relaxed = true),
+            vectorizationTaskDao = taskDao,
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        queue.enqueueMemory("session", "user", "assistant", "user-id", "assistant-id")
+        advanceUntilIdle()
+
+        assertThat(saved.map { it.status }).doesNotContain("failed")
+        assertThat(queue.getQueueLength()).isEqualTo(0)
+        coVerify(exactly = 1) { embeddingClient.embedDocuments(any()) }
+    }
+
+    private fun queue(
+        taskDao: VectorizationTaskDao,
+        dispatcher: kotlinx.coroutines.CoroutineDispatcher,
+    ) = VectorizationQueue(
+        vectorStore = mockk(relaxed = true),
+        embeddingClient = mockk(relaxed = true),
+        graphExtractor = null,
+        vectorDao = mockk<VectorDao>(relaxed = true),
+        vectorizationTaskDao = taskDao,
+        dispatcher = dispatcher,
+        fileEntryDao = mockk<FileEntryDao>(relaxed = true),
+    )
+
+    private fun entity(id: String) = VectorizationTaskEntity(
+        id = id,
+        type = VectorizationQueue.TYPE_DOCUMENT_REFERENCE,
+        status = "pending",
+        docId = DOC,
+        docTitle = "note.txt",
+        workspaceRootUuid = ROOT,
+        sourceMimeType = "text/plain",
+        createdAt = 1,
+        updatedAt = 1,
+    )
+
+    private companion object {
+        const val ROOT = "workspace-root"
+        const val DOC = "doc-id"
+    }
+}

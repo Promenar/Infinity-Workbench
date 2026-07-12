@@ -65,6 +65,23 @@ interface SessionDao {
     @Query("UPDATE sessions SET active_task = :activeTask, updated_at = :updatedAt WHERE id = :sessionId")
     suspend fun updateActiveTask(sessionId: String, activeTask: String?, updatedAt: Long)
 
+    @Query(
+        """UPDATE sessions
+           SET approval_request = :approvalRequest,
+               loop_status = :loopStatus,
+               updated_at = :updatedAt
+           WHERE id = :sessionId""",
+    )
+    suspend fun updateToolApprovalState(
+        sessionId: String,
+        approvalRequest: String?,
+        loopStatus: String,
+        updatedAt: Long,
+    ): Int
+
+    @Query("SELECT * FROM sessions WHERE approval_request IS NOT NULL OR loop_status = 'waiting_for_approval'")
+    suspend fun getWithToolApprovalState(): List<SessionEntity>
+
     @Query("UPDATE sessions SET options = :options, rag_options = :ragOptions, updated_at = :updatedAt WHERE id = :sessionId")
     suspend fun updateOptions(sessionId: String, options: String?, ragOptions: String?, updatedAt: Long)
 }

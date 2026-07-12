@@ -50,6 +50,9 @@ open class MessageRepository(
         messageDao.deleteById(messageId)
     }
 
+    override suspend fun deleteInSession(sessionId: String, messageId: String): Boolean =
+        messageDao.deleteByIdInSession(sessionId, messageId) == 1
+
     override suspend fun deleteBySessionId(sessionId: String) {
         messageDao.deleteBySessionId(sessionId)
     }

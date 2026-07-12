@@ -9,6 +9,8 @@ class MainActivityStartupGateWiringTest {
     private val source = Files.readAllBytes(
         Path.of("app/src/main/java/com/promenar/nexara/MainActivity.kt")
     ).toString(Charsets.UTF_8)
+    private val manifest = Files.readAllBytes(Path.of("app/src/main/AndroidManifest.xml"))
+        .toString(Charsets.UTF_8)
 
     @Test
     fun `activity collects startup state before reading welcome preferences or building nav graph`() {
@@ -24,32 +26,56 @@ class MainActivityStartupGateWiringTest {
     }
 
     @Test
-    fun `share intents enter one queue path and stay cached until startup becomes ready`() {
+    fun `share intents stage durably before startup ready presentation`() {
         val onCreate = functionBody("override fun onCreate(savedInstanceState: Bundle?)")
         val onNewIntent = functionBody("override fun onNewIntent(intent: Intent)")
         val consume = functionBody("private fun consumeShareIntentsIfReady()")
 
-        assertThat(source).contains("by viewModels<ShareIntentViewModel>()")
-        assertThat(onCreate).contains("restoreConsumedState(savedInstanceState)")
-        assertThat(onCreate).contains("enqueueShareIntent(intent)")
-        assertThat(onNewIntent).contains("enqueueShareIntent(intent)")
+        assertThat(source).contains("ShareIntentViewModel.factory(durableShareInbox, applicationContext.contentResolver)")
+        assertThat(source).contains("shareIntentViewModel.stagingCoordinator.submit")
+        assertThat(onCreate).contains("stageShareIntent(intent)")
+        assertThat(onCreate).doesNotContain("restoreConsumedState")
+        assertThat(onNewIntent).contains("stageShareIntent(intent)")
         assertThat(consume).contains("BackupStartupState.Ready")
-        assertThat(consume).contains("shareIntentQueue.consumeAll")
+        assertThat(consume).contains("shareImportViewModel.presentNext()")
+        assertThat(source).doesNotContain("TODO: Implement workspace-based file import")
     }
 
     @Test
-    fun `only consumed state is saved and every share payload is immediately replaced`() {
-        val save = functionBody("override fun onSaveInstanceState(outState: Bundle)")
-        val enqueue = functionBody("private fun enqueueShareIntent(candidate: Intent?)")
+    fun `payload is replaced only after durable stage success or known duplicate`() {
+        val stage = functionBody("private fun handleShareStageOutcome(outcome: ShareStageOutcome)")
+        val accepted = stage.indexOf("ShareEnqueueResult.Accepted, ShareEnqueueResult.Duplicate")
+        val replace = stage.indexOf("setIntent(cleanMainIntent())")
 
-        assertThat(save).contains("saveConsumedState(outState)")
-        assertThat(save).doesNotContain("pending")
-        assertThat(enqueue).contains("ShareEnqueueResult.RejectedInvalid")
-        assertThat(enqueue).contains("ShareEnqueueResult.RejectedCapacity")
-        assertThat(enqueue).contains("setIntent(Intent(this, MainActivity::class.java)")
-        assertThat(enqueue).contains("Intent.ACTION_MAIN")
-        assertThat(enqueue).contains("R.string.share_intent_invalid")
-        assertThat(enqueue).contains("R.string.share_intent_queue_full")
+        assertThat(accepted).isAtLeast(0)
+        assertThat(replace).isGreaterThan(accepted)
+        assertThat(stage).contains("R.string.share_intent_invalid")
+        assertThat(stage).contains("R.string.share_intent_queue_full")
+        assertThat(stage).contains("revokeShareReadGrants")
+        val invalidBranch = stage.substring(stage.indexOf("ShareEnqueueResult.RejectedInvalid"))
+            .substringBefore("ShareEnqueueResult.RejectedCapacity")
+        assertThat(invalidBranch.indexOf("revokeShareReadGrants")).isAtLeast(0)
+        assertThat(invalidBranch.indexOf("setIntent(cleanMainIntent())"))
+            .isGreaterThan(invalidBranch.indexOf("revokeShareReadGrants"))
+        val acceptedBranch = stage.substring(accepted, stage.indexOf("ShareEnqueueResult.RejectedInvalid"))
+        val capacityBranch = stage.substring(stage.indexOf("ShareEnqueueResult.RejectedCapacity"))
+        assertThat(acceptedBranch).doesNotContain("revokeShareReadGrants")
+        assertThat(capacityBranch).doesNotContain("revokeShareReadGrants")
+        assertThat(acceptedBranch).contains("stagingCoordinator.acknowledge")
+        assertThat(invalidBranch).contains("stagingCoordinator.acknowledge")
+        assertThat(capacityBranch).doesNotContain("stagingCoordinator.acknowledge")
+        assertThat(source).doesNotContain("saveConsumedState(outState)")
+    }
+
+    @Test
+    fun `singleTask与ViewModel协调器保证唯一owner且不丢连续SEND`() {
+        assertThat(manifest).contains("android:launchMode=\"singleTask\"")
+        assertThat(source).doesNotContain("AtomicBoolean")
+        assertThat(source).doesNotContain("shareStaging")
+        val onNewIntent = functionBody("override fun onNewIntent(intent: Intent)")
+        assertThat(onNewIntent.indexOf("setIntent(intent)")).isAtLeast(0)
+        assertThat(onNewIntent.indexOf("stageShareIntent(intent)"))
+            .isGreaterThan(onNewIntent.indexOf("setIntent(intent)"))
     }
 
     private fun functionBody(signature: String): String {

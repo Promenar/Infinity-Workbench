@@ -218,6 +218,8 @@ data class VectorizationTask(
     var subStatus: String? = null,
     var kgStrategy: String? = null,
     var skipVectorization: Boolean = false,
+    var sourceMimeType: String? = null,
+    var contentTruncated: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     var updatedAt: Long = System.currentTimeMillis()
 )

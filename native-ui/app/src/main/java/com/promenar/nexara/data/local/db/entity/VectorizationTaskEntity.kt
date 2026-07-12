@@ -14,9 +14,21 @@ import androidx.room.PrimaryKey
             parentColumns = ["id"],
             childColumns = ["session_id"],
             onDelete = ForeignKey.CASCADE,
-        )
+        ),
+        ForeignKey(
+            entity = FileEntry::class,
+            parentColumns = ["workspace_root_uuid", "uuid"],
+            childColumns = ["workspace_root_uuid", "doc_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
     ],
-    indices = [Index("status"), Index("doc_id"), Index("session_id")]
+    indices = [
+        Index("status"),
+        Index("doc_id"),
+        Index("session_id"),
+        Index(value = ["workspace_root_uuid", "doc_id"]),
+        Index(value = ["workspace_root_uuid", "doc_id", "type"], unique = true),
+    ]
 )
 data class VectorizationTaskEntity(
     @PrimaryKey
@@ -27,6 +39,8 @@ data class VectorizationTaskEntity(
     val docId: String? = null,
     @ColumnInfo(name = "doc_title")
     val docTitle: String? = null,
+    @ColumnInfo(name = "workspace_root_uuid")
+    val workspaceRootUuid: String? = null,
     @ColumnInfo(name = "session_id")
     val sessionId: String? = null,
     @ColumnInfo(name = "user_content")
@@ -43,6 +57,16 @@ data class VectorizationTaskEntity(
     val totalChunks: Int? = null,
     val progress: Double = 0.0,
     val error: String? = null,
+    @ColumnInfo(name = "kg_strategy")
+    val kgStrategy: String? = null,
+    @ColumnInfo(name = "skip_vectorization")
+    val skipVectorization: Boolean = false,
+    @ColumnInfo(name = "sub_status")
+    val subStatus: String? = null,
+    @ColumnInfo(name = "source_mime_type")
+    val sourceMimeType: String? = null,
+    @ColumnInfo(name = "content_truncated")
+    val contentTruncated: Boolean = false,
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
     @ColumnInfo(name = "updated_at")

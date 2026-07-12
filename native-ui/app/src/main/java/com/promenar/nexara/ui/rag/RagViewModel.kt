@@ -158,24 +158,29 @@ class RagViewModel(
 
     private fun observeQueue() {
         app.vectorizationQueue.setOnStateChange { queue, currentTask ->
-            val isProcessing = app.vectorizationQueue.getState().isProcessing
+            val isProcessing = app.vectorizationQueue.state.value.isProcessing
             _isIndexing.value = isProcessing
             // 使用 currentTask 的进度；若队列空但有残留错误，保持上次进度
             _indexingProgress.value = (currentTask?.progress ?: 0.0).toFloat() / 100f
 
             // 更新正在索引中的文件 UUID 集合
-            _indexingDocIds.value = queue.filter { it.type == "document" && it.docId != null }
+            _indexingDocIds.value = queue.filter {
+                it.type in setOf("document", com.promenar.nexara.data.rag.VectorizationQueue.TYPE_DOCUMENT_REFERENCE) &&
+                    it.docId != null
+            }
                 .mapNotNull { it.docId }.toSet()
 
             val statusText = currentTask?.let { task ->
                 when (task.status) {
                     "pending" -> "等待队列中..."
+                    "extracting_source" -> "正在安全读取工作区文件..."
                     "chunking" -> "正在对文档进行语义切块..."
                     "vectorizing" -> "正在发送 ${task.totalChunks ?: "?"} 个切块至模型处理..."
                     "saving" -> "正在接受并持久化向量数据..."
                     "extracting" -> "正在构建知识图谱节点..."
                     "failed" -> "向量化失败: ${task.error?.take(80) ?: "未知错误"}"
                     "completed" -> "任务已完成"
+                    "partial" -> "已完成安全前缀索引（内容超过 16 MiB）"
                     "warning" -> "完成 (存在部分提取警告)"
                     else -> task.status
                 }
@@ -184,13 +189,21 @@ class RagViewModel(
             _indexingSubStatus.value = currentTask?.subStatus
 
             // 错误状态处理：记录并保持可见
-            if (currentTask?.status == "failed") {
-                _lastQueueError.value = currentTask.error ?: "向量化失败，请检查 Embedding 模型配置"
+            val task = currentTask
+            if (task != null && task.status in setOf("failed", "partial")) {
+                if (task.type == com.promenar.nexara.data.rag.VectorizationQueue.TYPE_DOCUMENT_REFERENCE &&
+                    task.workspaceRootUuid != null && task.docId != null
+                ) {
+                    lastFailedReference = task.workspaceRootUuid to task.docId
+                }
+                _lastQueueError.value = if (task.status == "partial") {
+                    "文件超过 16 MiB，仅完成安全前缀索引；可点按重试"
+                } else task.error ?: "向量化失败，请检查 Embedding 模型配置"
                 _isIndexing.value = true  // 保持错误卡片可见
-                _indexingProgress.value = (currentTask.progress / 100.0).toFloat()
+                _indexingProgress.value = (task.progress / 100.0).toFloat()
             }
             // 非失败/非警告状态且无历史错误时清空错误
-            if (currentTask != null && currentTask.status != "failed" && currentTask.status != "warning") {
+            if (currentTask != null && currentTask.status !in setOf("failed", "partial", "warning")) {
                 _lastQueueError.value = null
             }
 
@@ -216,6 +229,19 @@ class RagViewModel(
                         _kgExtractionStates.value = _kgExtractionStates.value + (kgDocId to KgStatus.FAILED)
                     }
                 }
+            }
+        }
+    }
+
+    private var lastFailedReference: Pair<String, String>? = null
+
+    fun retryLastFailedIndex() {
+        val (root, docId) = lastFailedReference ?: return
+        viewModelScope.launch {
+            if (app.vectorizationQueue.retryDocumentReference(root, docId)) {
+                lastFailedReference = null
+                _lastQueueError.value = null
+                _isIndexing.value = true
             }
         }
     }

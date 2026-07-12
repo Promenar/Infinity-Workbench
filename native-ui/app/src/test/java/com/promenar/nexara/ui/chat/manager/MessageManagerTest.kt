@@ -24,6 +24,9 @@ class MessageManagerTest {
     private lateinit var sessionManager: SessionManager
     private val partialUpdates = mutableListOf<Map<String, Any?>>()
     private var persistedMessage: Message? = null
+    private var persistedSessionId: String? = null
+    private var failScopedDelete = false
+    private var failPartialUpdate = false
 
     private val stubSessionRepo = object : ISessionRepository {
         override suspend fun create(session: Session) {}
@@ -36,8 +39,13 @@ class MessageManagerTest {
     private val stubMessageRepo = object : IMessageRepository {
         override suspend fun insert(message: Message, sessionId: String) {
             persistedMessage = message
+            persistedSessionId = sessionId
         }
         override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) {
+            if (failPartialUpdate) {
+                failPartialUpdate = false
+                throw IllegalStateException("db update failed")
+            }
             partialUpdates += updates
             persistedMessage = persistedMessage?.let { current ->
                 current.copy(
@@ -47,11 +55,21 @@ class MessageManagerTest {
                         @Suppress("UNCHECKED_CAST")
                         updates["kgPaths"] as List<KgPath>?
                     } else current.kgPaths,
+                    pendingApprovalToolIds = if ("pendingApprovalToolIds" in updates) {
+                        @Suppress("UNCHECKED_CAST")
+                        updates["pendingApprovalToolIds"] as List<String>?
+                    } else current.pendingApprovalToolIds,
                 )
             }
         }
         override suspend fun delete(messageId: String) {
             if (persistedMessage?.id == messageId) persistedMessage = null
+        }
+        override suspend fun deleteInSession(sessionId: String, messageId: String): Boolean {
+            if (failScopedDelete) throw IllegalStateException("db delete failed")
+            if (persistedSessionId != sessionId || persistedMessage?.id != messageId) return false
+            persistedMessage = null
+            return true
         }
         override suspend fun deleteBySessionId(sessionId: String) {
             persistedMessage = null
@@ -68,6 +86,9 @@ class MessageManagerTest {
     fun setUp() {
         partialUpdates.clear()
         persistedMessage = null
+        persistedSessionId = null
+        failScopedDelete = false
+        failPartialUpdate = false
         store = ChatStore()
         messageManager = MessageManager(store, stubMessageRepo, stubSessionRepo, testScope)
         sessionManager = SessionManager(store, stubSessionRepo)
@@ -104,6 +125,62 @@ class MessageManagerTest {
 
         val session = store.getSession("s1")!!
         assertThat(session.messages).isEmpty()
+    }
+
+    @Test
+    fun deleteAssistantRemovesAllToolDescendantsFromStoreImmediately() = testScope.runTest {
+        seedSession()
+        val assistant = Message(id = "a1", role = MessageRole.ASSISTANT, content = "tools")
+        val firstTool = Message(
+            id = "t1",
+            role = MessageRole.TOOL,
+            content = "one",
+            parentMessageId = assistant.id,
+        )
+        val nestedTool = Message(
+            id = "t2",
+            role = MessageRole.TOOL,
+            content = "two",
+            parentMessageId = firstTool.id,
+        )
+        val unrelated = Message(id = "a2", role = MessageRole.ASSISTANT, content = "keep")
+        listOf(assistant, firstTool, nestedTool, unrelated).forEach {
+            messageManager.addMessage("s1", it)
+        }
+        persistedMessage = assistant
+        persistedSessionId = "s1"
+
+        messageManager.deleteMessage("s1", assistant.id)
+        advanceUntilIdle()
+
+        assertThat(store.getSession("s1")!!.messages.map { it.id }).containsExactly("a2")
+    }
+
+    @Test
+    fun scopedDeleteWithWrongSessionKeepsStoreUntouched() = testScope.runTest {
+        seedSession("s1")
+        seedSession("s2")
+        val message = Message(id = "m1", role = MessageRole.ASSISTANT, content = "keep")
+        messageManager.addMessage("s1", message)
+
+        val failure = runCatching { messageManager.deleteMessage("s2", message.id) }.exceptionOrNull()
+
+        assertThat(failure).isNotNull()
+        assertThat(store.getSession("s1")!!.messages.map { it.id }).containsExactly(message.id)
+    }
+
+    @Test
+    fun databaseDeleteFailureKeepsStoreAndPropagates() = testScope.runTest {
+        seedSession("s1")
+        val message = Message(id = "m1", role = MessageRole.ASSISTANT, content = "keep")
+        messageManager.addMessage("s1", message)
+        failScopedDelete = true
+
+        val failure = runCatching { messageManager.deleteMessage("s1", message.id) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(store.getSession("s1")!!.messages.map { it.id }).containsExactly(message.id)
+        assertThat(persistedMessage?.id).isEqualTo(message.id)
     }
 
     @Test
@@ -160,6 +237,202 @@ class MessageManagerTest {
 
         val session = store.getSession("s1")!!
         assertThat(session.messages[0].layoutHeight).isEqualTo(200.0)
+    }
+
+    @Test
+    fun clearPendingApprovalCancelsQueuedUiAndDbUpdatesWithoutLosingOtherFields() = testScope.runTest {
+        seedSession()
+        val message = Message(
+            id = "m1",
+            role = MessageRole.ASSISTANT,
+            content = "before",
+            pendingApprovalToolIds = listOf("old"),
+        )
+        messageManager.addMessage("s1", message)
+        messageManager.updateMessageContent(
+            "s1",
+            "m1",
+            "after",
+            UpdateMessageOptions(pendingApprovalToolIds = listOf("queued")),
+        )
+
+        messageManager.clearPendingApprovalState("s1", "m1")
+        advanceTimeBy(600)
+        advanceUntilIdle()
+
+        val stored = store.getSession("s1")!!.messages.single()
+        assertThat(stored.content).isEqualTo("after")
+        assertThat(stored.pendingApprovalToolIds).isNull()
+        assertThat(persistedMessage?.content).isEqualTo("after")
+        assertThat(persistedMessage?.pendingApprovalToolIds).isNull()
+    }
+
+    @Test
+    fun clearPendingApprovalWaitsForInflightUiFlushAndNullRemainsLast() = testScope.runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        messageManager = MessageManager(
+            store,
+            stubMessageRepo,
+            stubSessionRepo,
+            testScope,
+            MessageManagerHooks(beforeUiApply = { entered.complete(Unit); release.await() }),
+        )
+        seedSession()
+        messageManager.addMessage(
+            "s1",
+            Message(id = "m1", role = MessageRole.ASSISTANT, content = "before"),
+        )
+        messageManager.updateMessageContent(
+            "s1",
+            "m1",
+            "after-inflight",
+            UpdateMessageOptions(pendingApprovalToolIds = listOf("inflight")),
+        )
+        advanceTimeBy(100)
+        runCurrent()
+        entered.await()
+
+        val clearJob = launch { messageManager.clearPendingApprovalState("s1", "m1") }
+        runCurrent()
+        assertThat(clearJob.isCompleted).isFalse()
+        release.complete(Unit)
+        advanceTimeBy(500)
+        advanceUntilIdle()
+
+        assertThat(clearJob.isCompleted).isTrue()
+        val stored = store.getSession("s1")!!.messages.single()
+        assertThat(stored.content).isEqualTo("after-inflight")
+        assertThat(stored.pendingApprovalToolIds).isNull()
+        assertThat(persistedMessage?.pendingApprovalToolIds).isNull()
+    }
+
+    @Test
+    fun mirrorPersistedApprovalSurvivesNonApprovalFlushFailureAndKeepsContent() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage(
+            "s1",
+            Message(id = "m1", role = MessageRole.ASSISTANT, content = "before"),
+        )
+        messageManager.updateMessageContent(
+            "s1",
+            "m1",
+            "after",
+            UpdateMessageOptions(pendingApprovalToolIds = listOf("stale")),
+        )
+        failPartialUpdate = true
+
+        messageManager.mirrorPersistedPendingApprovalState("s1", "m1", null)
+        val retryState = messageManager.coordinationState()
+        assertThat(retryState.pendingDb + retryState.dbJobs).isGreaterThan(0)
+        advanceTimeBy(600)
+        advanceUntilIdle()
+
+        val mirrored = store.getSession("s1")!!.messages.single()
+        assertThat(mirrored.content).isEqualTo("after")
+        assertThat(mirrored.pendingApprovalToolIds).isNull()
+        assertThat(persistedMessage?.content).isEqualTo("after")
+    }
+
+    @Test
+    fun mirrorNeverWritesApprovalOwnedToolCallsOrPendingIds() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage(
+            "s1",
+            Message(id = "m1", role = MessageRole.ASSISTANT, content = "before"),
+        )
+        messageManager.updateMessageContent(
+            "s1",
+            "m1",
+            "after",
+            UpdateMessageOptions(
+                toolCalls = listOf(ToolCall("call-1", "write_file", "{}")),
+                pendingApprovalToolIds = listOf("call-1"),
+            ),
+        )
+
+        messageManager.mirrorPersistedPendingApprovalState("s1", "m1", listOf("call-1"))
+        advanceUntilIdle()
+
+        assertThat(partialUpdates).isNotEmpty()
+        assertThat(partialUpdates.all { "toolCalls" !in it && "pendingApprovalToolIds" !in it }).isTrue()
+        assertThat(persistedMessage?.content).isEqualTo("after")
+    }
+
+    @Test
+    fun synchronousNonApprovalFlushFailureThrowsAndKeepsRetryVisibleUntilPersisted() =
+        testScope.runTest {
+            seedSession("session:with-colon")
+            messageManager.addMessage(
+                "session:with-colon",
+                Message(id = "m1", role = MessageRole.ASSISTANT, content = "before"),
+            )
+            messageManager.updateMessageContent(
+                "session:with-colon",
+                "m1",
+                "after",
+                UpdateMessageOptions(
+                    toolCalls = listOf(ToolCall("call-1", "read_file", "{}")),
+                    pendingApprovalToolIds = listOf("call-1"),
+                ),
+            )
+            failPartialUpdate = true
+
+            val failure = runCatching {
+                messageManager.flushNonApprovalUpdatesNow("session:with-colon", "m1")
+            }.exceptionOrNull()
+
+            assertThat(failure).isNotNull()
+            val retryState = messageManager.coordinationState()
+            assertThat(retryState.pendingDb + retryState.dbJobs).isGreaterThan(0)
+            advanceTimeBy(600)
+            advanceUntilIdle()
+            assertThat(persistedMessage?.content).isEqualTo("after")
+            assertThat(partialUpdates.all { "toolCalls" !in it && "pendingApprovalToolIds" !in it }).isTrue()
+            assertThat(messageManager.coordinationState()).isEqualTo(MessageCoordinationState())
+        }
+
+    @Test
+    fun successfulRetryDoesNotRemoveLaneThatReceivedConcurrentUpdate() = testScope.runTest {
+        val retryEntered = CompletableDeferred<Unit>()
+        val releaseRetry = CompletableDeferred<Unit>()
+        var dbWriteAttempt = 0
+        messageManager = MessageManager(
+            store,
+            stubMessageRepo,
+            stubSessionRepo,
+            testScope,
+            MessageManagerHooks(beforeDbWrite = {
+                dbWriteAttempt += 1
+                if (dbWriteAttempt == 2) {
+                    retryEntered.complete(Unit)
+                    releaseRetry.await()
+                }
+            }),
+        )
+        seedSession()
+        messageManager.addMessage(
+            "s1",
+            Message(id = "m1", role = MessageRole.ASSISTANT, content = "before"),
+        )
+        messageManager.updateMessageContent("s1", "m1", "first")
+        failPartialUpdate = true
+        messageManager.mirrorPersistedPendingApprovalState("s1", "m1", null)
+
+        advanceTimeBy(500)
+        runCurrent()
+        retryEntered.await()
+        messageManager.updateMessageContent("s1", "m1", "concurrent")
+        releaseRetry.complete(Unit)
+        runCurrent()
+
+        val concurrentState = messageManager.coordinationState()
+        assertThat(concurrentState.lanes).isEqualTo(1)
+        assertThat(concurrentState.pendingUi + concurrentState.uiJobs).isGreaterThan(0)
+
+        advanceUntilIdle()
+        assertThat(persistedMessage?.content).isEqualTo("concurrent")
+        assertThat(messageManager.coordinationState()).isEqualTo(MessageCoordinationState())
     }
 
     @Test

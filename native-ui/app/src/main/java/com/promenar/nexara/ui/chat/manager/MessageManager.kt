@@ -123,6 +123,138 @@ class MessageManager(
         }
     }
 
+    /**
+     * 将已经由跨表 Room 事务持久化的消息同步到内存 Store，禁止再次写库。
+     */
+    fun mirrorPersistedMessage(sessionId: String, message: Message) {
+        store.update { state ->
+            state.copy(
+                sessions = state.sessions.map { session ->
+                    if (session.id != sessionId || session.messages.any { it.id == message.id }) {
+                        session
+                    } else {
+                        val timeFormatter = SimpleDateFormat("HH:mm", Locale.getDefault())
+                        session.copy(
+                            messages = session.messages + message,
+                            lastMessage = message.content,
+                            time = timeFormatter.format(Date(message.createdAt)),
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    suspend fun setPendingApprovalState(
+        sessionId: String,
+        messageId: String,
+        toolCallIds: List<String>,
+    ) = commitPendingApprovalState(sessionId, messageId, toolCallIds)
+
+    suspend fun clearPendingApprovalState(sessionId: String, messageId: String) =
+        commitPendingApprovalState(sessionId, messageId, null)
+
+    suspend fun mirrorPersistedPendingApprovalState(
+        sessionId: String,
+        messageId: String,
+        toolCallIds: List<String>?,
+    ) = commitPendingApprovalState(
+        sessionId = sessionId,
+        messageId = messageId,
+        toolCallIds = toolCallIds,
+        persistApprovalField = false,
+    )
+
+    suspend fun flushNonApprovalUpdatesNow(sessionId: String, messageId: String) =
+        commitPendingApprovalState(
+            sessionId = sessionId,
+            messageId = messageId,
+            toolCallIds = store.getSession(sessionId)?.messages
+                ?.firstOrNull { it.id == messageId }?.pendingApprovalToolIds,
+            persistApprovalField = false,
+            retryOnFailure = false,
+        )
+
+    private suspend fun commitPendingApprovalState(
+        sessionId: String,
+        messageId: String,
+        toolCallIds: List<String>?,
+        persistApprovalField: Boolean = true,
+        retryOnFailure: Boolean = true,
+    ) {
+        val key = "$sessionId:$messageId"
+        lateinit var lane: MessageLane
+        var pendingUi: PendingUpdate? = null
+        var inFlightUi: PendingUpdate? = null
+        var pendingDb: DbPendingUpdate? = null
+        var retryUpdates: Map<String, Any?>? = null
+        var failure: Throwable? = null
+        synchronized(stateLock) {
+            purgingKeys += key
+            lane = lanes.getOrPut(key) { MessageLane() }
+            lane.epoch += 1
+            throttleJobs.remove(key)?.cancel()
+            dbDebounceJobs.remove(key)?.cancel()
+            pendingUi = pendingUpdates.remove(key)
+            inFlightUi = inFlightUiUpdates.remove(key)
+            pendingDb = dbPendingUpdates.remove(key)
+        }
+
+        try {
+            lane.mutex.withLock {
+                val updates = mutableMapOf<String, Any?>()
+                pendingDb?.updates?.let(updates::putAll)
+                inFlightUi?.toDbUpdates()?.let(updates::putAll)
+                pendingUi?.toDbUpdates()?.let(updates::putAll)
+                updates.remove("pendingApprovalToolIds")
+                if (!persistApprovalField) updates.remove("toolCalls")
+                if (persistApprovalField) updates["pendingApprovalToolIds"] = toolCallIds
+                if (updates.isNotEmpty()) {
+                    hooks.beforeDbWrite(key)
+                    if (persistApprovalField) {
+                        messageRepository.updatePartial(messageId, updates)
+                    } else {
+                        runCatching { messageRepository.updatePartial(messageId, updates) }
+                            .onFailure {
+                                retryUpdates = updates.toMap()
+                                failure = it
+                            }
+                    }
+                }
+
+                store.updateMessageInSession(sessionId, messageId) { current ->
+                    val withLatestPending = pendingUi?.let { pending ->
+                        applyPendingToMessage(
+                            current,
+                            pending,
+                            pending.tokens ?: current.tokens ?: TokenUsage(),
+                        )
+                    } ?: current
+                    withLatestPending.copy(pendingApprovalToolIds = toolCallIds)
+                }
+                synchronized(stateLock) {
+                    invalidateMessageStateLocked(key, lane)
+                    if (lanes[key] === lane) lanes.remove(key)
+                }
+            }
+        } finally {
+            finishPurge(setOf(key))
+        }
+        retryUpdates?.let { requeueNonApprovalDbUpdate(sessionId, messageId, it) }
+        if (!retryOnFailure) failure?.let { throw it }
+    }
+
+    private fun requeueNonApprovalDbUpdate(
+        sessionId: String,
+        messageId: String,
+        updates: Map<String, Any?>,
+    ) {
+        val epoch = synchronized(stateLock) {
+            lanes.getOrPut("$sessionId:$messageId") { MessageLane() }.epoch
+        }
+        debouncedDbUpdate(sessionId, messageId, epoch, updates)
+    }
+
     fun updateMessage(sessionId: String, messageId: String, message: Message) {
         scope.launch {
             try {
@@ -332,22 +464,45 @@ class MessageManager(
             dbDebounceJobs.remove(key)?.cancel()
             scope.launch(start = CoroutineStart.LAZY) {
                 delay(DB_DEBOUNCE_MS)
-                flushDbUpdate(key, messageId, lane)
+                flushDbUpdate(sessionId, key, messageId, lane)
             }.also { dbDebounceJobs[key] = it }
         }
         jobToStart.start()
     }
 
-    private suspend fun flushDbUpdate(key: String, messageId: String, lane: MessageLane) {
+    private suspend fun flushDbUpdate(
+        sessionId: String,
+        key: String,
+        messageId: String,
+        lane: MessageLane,
+    ) {
+        var retry: Map<String, Any?>? = null
+        var flushedEpoch: Long? = null
         lane.mutex.withLock {
             val pending = synchronized(stateLock) {
                 dbDebounceJobs.remove(key)
                 dbPendingUpdates.remove(key)?.takeIf { it.epoch == lane.epoch }
             } ?: return
+            flushedEpoch = pending.epoch
             hooks.beforeDbWrite(key)
             try {
                 messageRepository.updatePartial(messageId, pending.updates)
             } catch (_: Exception) {
+                retry = pending.updates.toMap()
+            }
+        }
+        retry?.let { updates ->
+            requeueNonApprovalDbUpdate(sessionId, messageId, updates)
+        } ?: synchronized(stateLock) {
+            val epoch = flushedEpoch ?: return@synchronized
+            val hasNewCoordinatedWork = pendingUpdates[key]?.epoch == epoch ||
+                inFlightUiUpdates[key]?.epoch == epoch ||
+                dbPendingUpdates[key]?.epoch == epoch ||
+                throttleJobs.containsKey(key) ||
+                dbDebounceJobs.containsKey(key) ||
+                key in purgingKeys
+            if (lanes[key] === lane && lane.epoch == epoch && !hasNewCoordinatedWork) {
+                lanes.remove(key)
             }
         }
     }
@@ -469,18 +624,31 @@ class MessageManager(
             }
         }
 
-        val purgeKeys = purgeMessageState(sessionId, listOf(messageId))
+        val storeMessages = store.getSession(sessionId)?.messages.orEmpty()
+        val persistedMessages = messageRepository.getBySession(sessionId)
+        val allMessages = (storeMessages + persistedMessages).distinctBy { it.id }
+        val removalIds = linkedSetOf(messageId)
+        var expanded: Boolean
+        do {
+            expanded = false
+            allMessages.forEach { message ->
+                if (message.parentMessageId in removalIds && removalIds.add(message.id)) {
+                    expanded = true
+                }
+            }
+        } while (expanded)
+
+        val purgeKeys = purgeMessageState(sessionId, removalIds)
         try {
-            try {
-                messageRepository.delete(messageId)
-            } catch (_: Exception) {
+            check(messageRepository.deleteInSession(sessionId, messageId)) {
+                "消息不存在或不属于当前会话"
             }
 
             store.update { state ->
                 state.copy(
                     sessions = state.sessions.map { s ->
                         if (s.id == sessionId) {
-                            s.copy(messages = s.messages.filter { it.id != messageId })
+                            s.copy(messages = s.messages.filterNot { it.id in removalIds })
                         } else s
                     }
                 )

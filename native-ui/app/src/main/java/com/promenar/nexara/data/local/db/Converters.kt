@@ -3,10 +3,23 @@ package com.promenar.nexara.data.local.db
 import androidx.room.TypeConverter
 import com.promenar.nexara.data.agent.AgentRagConfig
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.local.db.entity.ToolLedgerStatus
 import kotlinx.serialization.json.Json
 import java.nio.ByteBuffer
 
 object Converters {
+    @TypeConverter
+    @JvmStatic
+    fun toolLedgerStatusToString(value: ToolLedgerStatus): String = value.name
+
+    @TypeConverter
+    @JvmStatic
+    fun stringToToolLedgerStatus(value: String): ToolLedgerStatus = try {
+        ToolLedgerStatus.valueOf(value)
+    } catch (error: IllegalArgumentException) {
+        throw IllegalArgumentException("未知工具账本状态，拒绝读取数据库", error)
+    }
+
     @TypeConverter
     @JvmStatic
     fun floatArrayToBytes(value: FloatArray?): ByteArray? {
