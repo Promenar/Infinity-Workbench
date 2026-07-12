@@ -39,13 +39,16 @@ import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.SpaceGrotesk
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /**
  * 全站统一的短生命周期密钥输入框。
  *
- * 完整密钥只存在于当前组合的可清零 [CharArray] 中；该状态不使用 rememberSaveable，
- * 因而页面离开、配置变化或 Activity 重建后不会恢复明文。调用方的常驻 UiState 只应保存
- * `hasStoredSecret`，不得保存本组件临时显示的值。
+ * 持久 UiState 只保存密钥存在性；临时 reveal 使用可清零 [CharArray]，不进入 StateFlow 或
+ * rememberSaveable。Compose 文本输入和渲染必须使用 String，因此显示期间会产生平台无法原地
+ * 擦除的短生命周期 String；隐藏、失焦、离页与重建会立即删除其 Compose 状态引用并清零数组。
  */
 @Composable
 fun SecretField(
@@ -58,18 +61,32 @@ fun SecretField(
     placeholder: String = stringResource(R.string.secret_field_placeholder),
 ) {
     val scope = rememberCoroutineScope()
-    var transientSecret by remember(hasStoredSecret) { mutableStateOf<CharArray?>(null) }
+    var transientSecret by remember { mutableStateOf<CharArray?>(null) }
     var visible by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
+    var everFocused by remember { mutableStateOf(false) }
+    var revealRequested by remember { mutableStateOf(false) }
+    var revealGeneration by remember { mutableStateOf(0L) }
+    var revealJob by remember { mutableStateOf<Job?>(null) }
+    var pageActive by remember { mutableStateOf(true) }
 
     fun hide() {
+        revealGeneration += 1
+        revealRequested = false
+        revealJob?.cancel()
+        revealJob = null
         transientSecret?.fill('\u0000')
         transientSecret = null
         visible = false
     }
 
-    DisposableEffect(Unit) {
-        onDispose { transientSecret?.fill('\u0000') }
+    DisposableEffect(hasStoredSecret) {
+        pageActive = true
+        hide()
+        onDispose {
+            pageActive = false
+            hide()
+        }
     }
 
     val displayValue = when {
@@ -115,6 +132,7 @@ fun SecretField(
                     .semantics { contentDescription = placeholder }
                     .onFocusChanged {
                         focused = it.isFocused
+                        if (it.isFocused) everFocused = true
                         if (!it.isFocused) hide()
                     },
             )
@@ -129,10 +147,33 @@ fun SecretField(
         if (value.isNotEmpty() || hasStoredSecret) {
             IconButton(
                 onClick = {
-                    if (visible) hide() else if (value.isNotEmpty()) visible = true else scope.launch {
-                        transientSecret?.fill('\u0000')
-                        transientSecret = onRevealRequest()
-                        visible = transientSecret != null
+                    if (visible) {
+                        hide()
+                    } else if (value.isNotEmpty()) {
+                        visible = true
+                    } else {
+                        revealJob?.cancel()
+                        revealGeneration += 1
+                        val token = revealGeneration
+                        revealRequested = true
+                        revealJob = scope.launch {
+                            var loaded: CharArray? = null
+                            var accepted = false
+                            try {
+                                loaded = withContext(NonCancellable) { onRevealRequest() }
+                                if (token == revealGeneration && pageActive && revealRequested &&
+                                    (!everFocused || focused) && loaded != null
+                                ) {
+                                    transientSecret?.fill('\u0000')
+                                    transientSecret = loaded
+                                    loaded = null
+                                    visible = true
+                                    accepted = true
+                                }
+                            } finally {
+                                if (!accepted) loaded?.fill('\u0000')
+                            }
+                        }
                     }
                 },
                 modifier = Modifier.size(48.dp),

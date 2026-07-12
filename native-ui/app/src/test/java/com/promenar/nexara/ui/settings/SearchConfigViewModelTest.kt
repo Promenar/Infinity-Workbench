@@ -12,26 +12,39 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.Dispatchers
+import org.junit.After
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
+@OptIn(ExperimentalCoroutinesApi::class)
 class SearchConfigViewModelTest {
     private lateinit var app: Application
     private lateinit var secrets: MemorySecretStore
+    private val dispatcher = StandardTestDispatcher()
 
     @Before
     fun setUp() {
         app = ApplicationProvider.getApplicationContext()
         app.getSharedPreferences("nexara_search", 0).edit().clear().commit()
         secrets = MemorySecretStore()
+        Dispatchers.setMain(dispatcher)
     }
 
+    @After fun tearDown() = Dispatchers.resetMain()
+
     @Test
-    fun `旧 Tavily 明文初始化后迁入 SecretStore 且状态不回显`() {
+    fun `旧 Tavily 明文初始化后迁入 SecretStore 且状态不回显`() = runTest(dispatcher) {
         val prefs = app.getSharedPreferences("nexara_search", 0)
         prefs.edit().putString("tavily_api_key", "fake-tavily-key").commit()
 
-        val viewModel = SearchConfigViewModel(app, secrets)
+        val viewModel = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
 
         assertThat(secrets.text(SecretCatalog.tavilyApiKey)).isEqualTo("fake-tavily-key")
         assertThat(prefs.contains("tavily_api_key")).isFalse()
@@ -40,11 +53,16 @@ class SearchConfigViewModelTest {
     }
 
     @Test
-    fun `更新 Tavily Key 只写 SecretStore 并显式更新存在状态`() {
+    fun `更新 Tavily Key 只写 SecretStore 并显式更新存在状态`() = runTest(dispatcher) {
         val prefs = app.getSharedPreferences("nexara_search", 0)
-        val viewModel = SearchConfigViewModel(app, secrets)
+        val viewModel = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
+        val input = "fake-updated-key".toCharArray()
 
-        viewModel.updateTavilyApiKey("fake-updated-key")
+        assertThat(viewModel.saveTavilyApiKey(input)).isTrue()
+        assertThat(input).isEqualTo(CharArray("fake-updated-key".length))
+        assertThat(viewModel.uiState.value.hasTavilyApiKey).isFalse()
+        advanceUntilIdle()
 
         assertThat(secrets.text(SecretCatalog.tavilyApiKey)).isEqualTo("fake-updated-key")
         assertThat(prefs.contains("tavily_api_key")).isFalse()
@@ -52,9 +70,10 @@ class SearchConfigViewModelTest {
     }
 
     @Test
-    fun `完整 Tavily Key 只能通过临时可清零数组读取且不进入状态`() = runTest {
+    fun `完整 Tavily Key 只能通过临时可清零数组读取且不进入状态`() = runTest(dispatcher) {
         secrets.put(SecretCatalog.tavilyApiKey, "temporary-secret".encodeToByteArray())
-        val viewModel = SearchConfigViewModel(app, secrets)
+        val viewModel = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
 
         val revealed = viewModel.revealTavilyApiKey()
 
@@ -64,9 +83,28 @@ class SearchConfigViewModelTest {
         assertThat(revealed).isEqualTo(CharArray("temporary-secret".length))
     }
 
+    @Test
+    fun `保存失败不乐观更新存在状态且返回结构化错误`() = runTest(dispatcher) {
+        val viewModel = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
+        secrets.failPut = true
+
+        viewModel.saveTavilyApiKey("will-fail".toCharArray())
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.hasTavilyApiKey).isFalse()
+        assertThat(viewModel.uiState.value.secretOperation).isEqualTo(
+            SearchSecretOperation.Error(SearchSecretErrorCode.SAVE_FAILED),
+        )
+    }
+
     private class MemorySecretStore : SecretStore {
         private val values = mutableMapOf<SecretId, ByteArray>()
-        override fun put(id: SecretId, value: ByteArray) { values[id] = value.copyOf() }
+        var failPut = false
+        override fun put(id: SecretId, value: ByteArray) {
+            if (failPut) error("put failed")
+            values[id] = value.copyOf()
+        }
         override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
         override fun contains(id: SecretId): Boolean = id in values
         override fun remove(id: SecretId) { values.remove(id) }

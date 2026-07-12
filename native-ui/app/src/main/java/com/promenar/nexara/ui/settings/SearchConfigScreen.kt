@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.*
@@ -55,7 +56,6 @@ fun SearchConfigScreen(
     
     var newIncludeDomain by remember { mutableStateOf("") }
     var newExcludeDomain by remember { mutableStateOf("") }
-    var tavilyKeyEdit by remember { mutableStateOf("") }
 
     NexaraPageLayout(
         title = stringResource(R.string.search_config_title),
@@ -170,19 +170,7 @@ fun SearchConfigScreen(
         if (uiState.searchEngine == "tavily") {
             Text(text = stringResource(R.string.search_config_tavily_key_label), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
             Spacer(modifier = Modifier.height(8.dp))
-            SecretField(
-                value = tavilyKeyEdit,
-                onValueChange = {
-                    tavilyKeyEdit = it
-                    if (it.isNotBlank()) viewModel.updateTavilyApiKey(it)
-                },
-                hasStoredSecret = uiState.hasTavilyApiKey,
-                onRevealRequest = viewModel::revealTavilyApiKey,
-                onClear = {
-                    tavilyKeyEdit = ""
-                    viewModel.updateTavilyApiKey("")
-                },
-            )
+            TavilySecretEditor(viewModel, uiState)
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -289,6 +277,62 @@ fun SearchConfigScreen(
 }
 
 @Composable
+internal fun TavilySecretEditor(
+    viewModel: SearchConfigViewModel,
+    state: SearchConfigState,
+) {
+    var edit by remember { mutableStateOf("") }
+    LaunchedEffect(state.secretOperation) {
+        if (state.secretOperation is SearchSecretOperation.Saved) edit = ""
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SecretField(
+            value = edit,
+            onValueChange = { edit = it },
+            hasStoredSecret = state.hasTavilyApiKey,
+            onRevealRequest = viewModel::revealTavilyApiKey,
+            onClear = {
+                edit = ""
+                viewModel.clearTavilyApiKey()
+            },
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .clip(NexaraShapes.medium)
+                .background(NexaraColors.InversePrimary)
+                .clickable(
+                    enabled = edit.isNotBlank() && state.secretOperation !is SearchSecretOperation.Saving &&
+                        state.secretOperation !is SearchSecretOperation.Initializing,
+                ) {
+                    viewModel.saveTavilyApiKey(edit.toCharArray())
+                    edit = ""
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(stringResource(R.string.shared_btn_save), style = NexaraTypography.labelMedium, color = NexaraColors.OnPrimary)
+        }
+        when (val operation = state.secretOperation) {
+            SearchSecretOperation.Initializing -> Text(stringResource(R.string.search_secret_loading), color = NexaraColors.OnSurfaceVariant)
+            SearchSecretOperation.Saving -> Text(stringResource(R.string.search_secret_saving), color = NexaraColors.OnSurfaceVariant)
+            SearchSecretOperation.Saved -> Text(stringResource(R.string.search_secret_saved), color = NexaraColors.StatusSuccess)
+            is SearchSecretOperation.Error -> Text(
+                stringResource(
+                    when (operation.code) {
+                        SearchSecretErrorCode.LOAD_FAILED -> R.string.search_secret_load_failed
+                        SearchSecretErrorCode.SAVE_FAILED -> R.string.search_secret_save_failed
+                        SearchSecretErrorCode.CLEAR_FAILED -> R.string.search_secret_clear_failed
+                    },
+                ),
+                color = NexaraColors.Error,
+            )
+            SearchSecretOperation.Idle -> Unit
+        }
+    }
+}
+
+@Composable
 private fun DomainListSection(
     title: String,
     domains: List<String>,
@@ -337,7 +381,7 @@ private fun DomainListSection(
 
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(48.dp)
                 .clip(NexaraShapes.medium)
                 .background(NexaraColors.SurfaceHigh)
                 .border(0.5.dp, NexaraColors.GlassBorder, NexaraShapes.medium)
@@ -346,7 +390,7 @@ private fun DomainListSection(
         ) {
             Icon(
                 imageVector = Icons.Rounded.Add,
-                contentDescription = "Add",
+                contentDescription = stringResource(R.string.common_cd_add),
                 tint = NexaraColors.Primary,
                 modifier = Modifier.size(18.dp)
             )
@@ -374,7 +418,7 @@ private fun DomainListSection(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
-                        contentDescription = "Remove",
+                        contentDescription = stringResource(R.string.common_cd_remove),
                         tint = NexaraColors.OnSurfaceVariant,
                         modifier = Modifier.size(16.dp)
                     )

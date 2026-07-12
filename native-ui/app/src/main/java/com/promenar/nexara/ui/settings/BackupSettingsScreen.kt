@@ -12,10 +12,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudSync
@@ -78,6 +83,17 @@ fun BackupSettingsScreen(
 ) {
     val context = LocalContext.current
     val viewModel: BackupViewModel = viewModel(factory = BackupViewModel.factory(context.applicationContext as android.app.Application))
+    BackupSettingsScreen(onNavigateBack, viewModel)
+}
+
+/** 测试与预览可注入真实状态机；生产入口仍使用上方 Application factory。 */
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+internal fun BackupSettingsScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: BackupViewModel,
+) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
 
     var contentExpanded by remember { mutableStateOf(true) }
@@ -114,15 +130,29 @@ fun BackupSettingsScreen(
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
-        uri?.let {
-            context.contentResolver.openOutputStream(it)?.let { os ->
-                viewModel.export(
-                    os,
-                    backupPassword.takeIf { uiState.includeKeys }?.toCharArray(),
-                    passwordConfirmation.takeIf { uiState.includeKeys }?.toCharArray(),
-                )
-                clearPasswords()
+        var output: java.io.OutputStream? = null
+        var handedOff = false
+        try {
+            if (uri != null) {
+                output = context.contentResolver.openOutputStream(uri)
+                if (output == null) {
+                    viewModel.reportDocumentError(BackupErrorCode.DOCUMENT_CREATE_FAILED)
+                } else {
+                    handedOff = true
+                    viewModel.export(
+                        output,
+                        backupPassword.takeIf { uiState.includeKeys }?.toCharArray(),
+                        passwordConfirmation.takeIf { uiState.includeKeys }?.toCharArray(),
+                    )
+                }
             }
+        } catch (_: SecurityException) {
+            viewModel.reportDocumentError(BackupErrorCode.DOCUMENT_CREATE_FAILED)
+        } catch (_: java.io.IOException) {
+            viewModel.reportDocumentError(BackupErrorCode.DOCUMENT_CREATE_FAILED)
+        } finally {
+            if (!handedOff) runCatching { output?.close() }
+            clearPasswords()
         }
     }
 
@@ -190,7 +220,7 @@ fun BackupSettingsScreen(
                                     else -> NexaraColors.OnSurfaceVariant
                                 },
                             )
-                            if (!uiState.canExecute) {
+                            if (uiState.operation.isCancellable) {
                                 ActionButton(
                                     label = stringResource(R.string.common_btn_cancel),
                                     icon = Icons.Rounded.DeleteForever,
@@ -486,7 +516,10 @@ fun BackupSettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.7f)
+                    .fillMaxHeight(0.85f)
+                    .verticalScroll(rememberScrollState())
+                    .imePadding()
+                    .safeDrawingPadding()
                     .padding(24.dp)
                     .padding(bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -615,8 +648,22 @@ fun BackupSettingsScreen(
                     viewModel.restoreSelectedRemote(restorePassword.takeIf(String::isNotEmpty)?.toCharArray())
                 } else {
                     pendingRestoreUri?.let { uri ->
-                        context.contentResolver.openInputStream(uri)?.let { input ->
-                            viewModel.restoreLocal(input, restorePassword.takeIf(String::isNotEmpty)?.toCharArray())
+                        var input: java.io.InputStream? = null
+                        var handedOff = false
+                        try {
+                            input = context.contentResolver.openInputStream(uri)
+                            if (input == null) {
+                                viewModel.reportDocumentError(BackupErrorCode.DOCUMENT_OPEN_FAILED)
+                            } else {
+                                handedOff = true
+                                viewModel.restoreLocal(input, restorePassword.takeIf(String::isNotEmpty)?.toCharArray())
+                            }
+                        } catch (_: SecurityException) {
+                            viewModel.reportDocumentError(BackupErrorCode.DOCUMENT_OPEN_FAILED)
+                        } catch (_: java.io.IOException) {
+                            viewModel.reportDocumentError(BackupErrorCode.DOCUMENT_OPEN_FAILED)
+                        } finally {
+                            if (!handedOff) runCatching { input?.close() }
                         }
                     }
                 }
@@ -639,10 +686,16 @@ private fun backupOperationText(operation: BackupOperation): String? = when (ope
     BackupOperation.StagingRestore -> stringResource(R.string.backup_status_staging_restore)
     BackupOperation.CancellingRestore -> stringResource(R.string.backup_status_cancelling)
     BackupOperation.Restarting -> stringResource(R.string.backup_status_restarting)
-    is BackupOperation.Success -> stringResource(
-        if (operation.cleanupWarning) R.string.backup_status_success_cleanup_warning
-        else R.string.backup_status_success,
-    )
+    is BackupOperation.Success -> when {
+        operation.cleanupWarning -> stringResource(R.string.backup_status_success_cleanup_warning)
+        operation.code == BackupSuccessCode.REMOTE_LISTED -> stringResource(R.string.backup_status_remote_listed, operation.itemCount)
+        operation.code == BackupSuccessCode.CONFIG_SAVED -> stringResource(R.string.backup_status_config_saved)
+        operation.code == BackupSuccessCode.PASSWORD_CLEARED -> stringResource(R.string.backup_status_password_cleared)
+        operation.code == BackupSuccessCode.CONFIG_RESET -> stringResource(R.string.backup_status_config_reset)
+        operation.code == BackupSuccessCode.CONNECTION_TESTED -> stringResource(R.string.backup_status_connection_success)
+        operation.code == BackupSuccessCode.EXPORTED -> stringResource(R.string.backup_status_export_success)
+        else -> stringResource(R.string.backup_status_upload_success)
+    }
     is BackupOperation.Blocked -> backupErrorText(operation.code)
     is BackupOperation.Error -> backupErrorText(operation.code)
 }
@@ -661,6 +714,8 @@ private fun backupErrorText(code: BackupErrorCode): String = stringResource(
         BackupErrorCode.RESTORE_FAILED -> R.string.backup_error_restore
         BackupErrorCode.RESTART_FAILED -> R.string.backup_error_restart
         BackupErrorCode.RESTORE_CLEANUP_FAILED -> R.string.backup_error_cleanup
+        BackupErrorCode.DOCUMENT_CREATE_FAILED -> R.string.backup_error_document_create
+        BackupErrorCode.DOCUMENT_OPEN_FAILED -> R.string.backup_error_document_open
     },
 )
 
@@ -785,6 +840,7 @@ private fun ActionButton(
             .background(if (isPrimary) NexaraColors.InversePrimary else NexaraColors.SurfaceHigh)
             .border(0.5.dp, NexaraColors.GlassBorder, NexaraShapes.medium)
             .clickable(enabled = enabled, onClick = onClick)
+            .heightIn(min = 48.dp)
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center
     ) {

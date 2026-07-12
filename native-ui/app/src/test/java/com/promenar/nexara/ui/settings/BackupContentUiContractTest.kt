@@ -69,6 +69,7 @@ class BackupContentUiContractTest {
         )
         assertThat(resetSection).contains("BackupErrorCode.CONNECTION_FAILED")
         assertThat(resetSection).contains("BackupErrorCode.CONFIGURATION_MISSING")
+        assertThat(resetSection.substringBefore("backupOperationText")).doesNotContain("BackupErrorCode.RESTORE_FAILED")
         assertThat(resetSection).contains("stringResource(R.string.backup_reset_webdav_security)")
         assertThat(source).doesNotContain("\"Exporting...\"")
         assertThat(source).doesNotContain("\"Importing...\"")

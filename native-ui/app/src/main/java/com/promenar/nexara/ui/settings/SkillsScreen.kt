@@ -160,14 +160,14 @@ fun SkillsScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(44.dp)
+                                .size(48.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(NexaraColors.SurfaceContainer)
                                 .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
                                 .clickable { viewModel.updateLoopLimit((loopLimit - 1).coerceAtLeast(1)) },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.Remove, contentDescription = "Decrease", tint = NexaraColors.OnSurface, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Rounded.Remove, contentDescription = stringResource(R.string.common_cd_decrease), tint = NexaraColors.OnSurface, modifier = Modifier.size(20.dp))
                         }
                         Text(
                             if (loopLimit >= 100) stringResource(R.string.skills_unlimited) else "$loopLimit",
@@ -176,14 +176,14 @@ fun SkillsScreen(
                         )
                         Box(
                             modifier = Modifier
-                                .size(44.dp)
+                                .size(48.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(NexaraColors.SurfaceContainer)
                                 .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
                                 .clickable { viewModel.updateLoopLimit((loopLimit + 1).coerceAtMost(100)) },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.Add, contentDescription = "Increase", tint = NexaraColors.OnSurface, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_cd_increase), tint = NexaraColors.OnSurface, modifier = Modifier.size(20.dp))
                         }
                     }
                 }
@@ -590,8 +590,8 @@ private fun SkillCard(
             
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onConfig != null) {
-                    IconButton(onClick = { onConfig.invoke() }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Rounded.Settings, contentDescription = "Config", tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
+                    IconButton(onClick = { onConfig.invoke() }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.common_cd_config), tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
                     }
                 }
                 Switch(
@@ -711,11 +711,11 @@ private fun McpServerCard(
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(onClick = onSync, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Rounded.Sync, contentDescription = "Sync", tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(16.dp))
+                    IconButton(onClick = onSync, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Rounded.Sync, contentDescription = stringResource(R.string.common_cd_sync), tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(16.dp))
                     }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Rounded.Delete, contentDescription = "Delete", tint = NexaraColors.Error, modifier = Modifier.size(16.dp))
+                    IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_cd_delete), tint = NexaraColors.Error, modifier = Modifier.size(16.dp))
                     }
                 }
             }
@@ -782,7 +782,6 @@ private fun SearchConfigBottomSheet(
 ) {
     val searchViewModel: SearchConfigViewModel = viewModel()
     val searchState by searchViewModel.uiState.collectAsState()
-    var tavilyKeyEdit by remember { mutableStateOf("") }
     
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -847,19 +846,7 @@ private fun SearchConfigBottomSheet(
 
             if (skillId == "search_tavily" || (skillId == "web_search" && searchState.searchEngine == "tavily")) {
                 Text(stringResource(R.string.search_api_key), style = NexaraTypography.labelMedium)
-                SecretField(
-                    value = tavilyKeyEdit,
-                    onValueChange = {
-                        tavilyKeyEdit = it
-                        if (it.isNotBlank()) searchViewModel.updateTavilyApiKey(it)
-                    },
-                    hasStoredSecret = searchState.hasTavilyApiKey,
-                    onRevealRequest = searchViewModel::revealTavilyApiKey,
-                    onClear = {
-                        tavilyKeyEdit = ""
-                        searchViewModel.updateTavilyApiKey("")
-                    },
-                )
+                TavilySecretEditor(searchViewModel, searchState)
                 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.search_depth_label), style = NexaraTypography.labelMedium)

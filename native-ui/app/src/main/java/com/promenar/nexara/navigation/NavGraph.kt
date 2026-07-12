@@ -351,16 +351,17 @@ fun NexaraNavGraph(
                     }
                 },
                 onSave = { protocolType, baseUrl, credential, model, name ->
-                    val providerManager = com.promenar.nexara.data.manager.ProviderManager.getInstance()
-                    val existingSummary = providerId?.let(providerManager::getProviderSummary)
-                    val credentialPresent = when (credential) {
-                        is CredentialUpdate.Replace -> true
-                        CredentialUpdate.Clear -> false
-                        CredentialUpdate.Preserve -> existingSummary?.let {
-                            it.hasApiKey || it.hasVertexCredentials
-                        } ?: false
-                    }
-                    if (providerId == null) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                      val providerManager = com.promenar.nexara.data.manager.ProviderManager.getInstance()
+                      val existingSummary = providerId?.let(providerManager::getProviderSummary)
+                      val credentialPresent = when (credential) {
+                          is CredentialUpdate.Replace -> true
+                          CredentialUpdate.Clear -> false
+                          CredentialUpdate.Preserve -> existingSummary?.let {
+                              it.hasApiKey || it.hasVertexCredentials
+                          } ?: false
+                      }
+                      if (providerId == null) {
                         // 判断是首次配置还是新增额外提供商
                         val mainConfig = providerManager.getProviderSummary("default")
                         if (mainConfig == null || (!mainConfig.hasApiKey && !mainConfig.hasVertexCredentials)) {
@@ -385,10 +386,10 @@ fun NexaraNavGraph(
                                     credential,
                                 )
                         }
-                    } else if (providerId == "default") {
+                      } else if (providerId == "default") {
                         // 编辑主提供商
                         app.updateProvider(protocolType, baseUrl, credential, model, name)
-                    } else {
+                      } else {
                         // 编辑额外提供商
                         val item = com.promenar.nexara.data.model.ProviderListItem(
                             id = providerId,
@@ -406,6 +407,7 @@ fun NexaraNavGraph(
                                 item,
                                 credential,
                             )
+                      }
                     }
                 }
             )

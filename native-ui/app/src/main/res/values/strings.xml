@@ -42,11 +42,23 @@
     <string name="common_cd_pin">Pin</string>
     <string name="common_cd_unpin">Unpin</string>
     <string name="common_cd_selected">Selected</string>
+    <string name="common_cd_success">Success</string>
+    <string name="common_cd_failed">Failed</string>
+    <string name="common_cd_add">Add</string>
+    <string name="common_cd_remove">Remove</string>
+    <string name="common_cd_decrease">Decrease</string>
+    <string name="common_cd_increase">Increase</string>
+    <string name="common_cd_config">Configure</string>
+    <string name="common_cd_sync">Sync</string>
+    <string name="common_cd_delete">Delete</string>
     <string name="secret_field_placeholder">Enter a new secret</string>
     <string name="secret_field_show">Temporarily show full secret</string>
     <string name="secret_field_hide">Hide secret</string>
     <string name="secret_field_clear">Clear saved secret</string>
     <string name="provider_form_https_required">Cloud provider endpoints must use a valid HTTPS URL.</string>
+    <string name="provider_form_credential_kind_changed">This protocol uses a different credential type. Enter a replacement or explicitly clear the saved credential before saving.</string>
+    <string name="provider_form_saving">Saving securely…</string>
+    <string name="provider_form_save_failed">Provider settings could not be saved. The previous configuration is unchanged.</string>
     <string name="workbench_refresh">Refresh</string>
 
     <!-- ============ Navigation ============ -->
@@ -490,6 +502,13 @@
     <string name="backup_status_cancelling">Securely cleaning the cancelled restore…</string>
     <string name="backup_status_restarting">Restore is staged. Restarting safely…</string>
     <string name="backup_status_success">Operation completed</string>
+    <string name="backup_status_remote_listed">Loaded %1$d remote backups</string>
+    <string name="backup_status_config_saved">WebDAV configuration saved securely</string>
+    <string name="backup_status_password_cleared">WebDAV password cleared</string>
+    <string name="backup_status_config_reset">WebDAV security configuration reset</string>
+    <string name="backup_status_connection_success">Connection test succeeded</string>
+    <string name="backup_status_export_success">Backup exported</string>
+    <string name="backup_status_upload_success">Backup uploaded</string>
     <string name="backup_status_success_cleanup_warning">Backup uploaded, but some old remote backups could not be pruned.</string>
     <string name="backup_error_password_required">A password and matching confirmation are required when keys are included.</string>
     <string name="backup_error_configuration_missing">Complete the secure WebDAV configuration first.</string>
@@ -501,6 +520,8 @@
     <string name="backup_error_restore">Backup validation or restore staging failed.</string>
     <string name="backup_error_restart">Safe restart failed. Retry or cancel the pending restore.</string>
     <string name="backup_error_cleanup">Pending restore cleanup failed. Data operations remain blocked for safety.</string>
+    <string name="backup_error_document_create">The selected backup document could not be created or opened for writing.</string>
+    <string name="backup_error_document_open">The selected backup document could not be opened for reading.</string>
 
     <!-- LocalModelsScreen -->
     <string name="local_models_title">Local Models</string>
@@ -924,6 +945,12 @@
     <string name="search_sheet_tavily_title">Tavily Search Configuration</string>
     <string name="search_sheet_searxng_title">SearXNG Search Configuration</string>
     <string name="search_sheet_title">Search Configuration</string>
+    <string name="search_secret_loading">Securely loading the saved key…</string>
+    <string name="search_secret_saving">Securely saving…</string>
+    <string name="search_secret_saved">Key setting saved</string>
+    <string name="search_secret_load_failed">The saved key could not be loaded.</string>
+    <string name="search_secret_save_failed">The key could not be saved. The previous setting is unchanged.</string>
+    <string name="search_secret_clear_failed">The saved key could not be cleared.</string>
     <string name="chat_menu_clear_history">Clear History</string>
     <string name="chat_menu_rename">Rename</string>
     <string name="chat_menu_delete_session">Delete Session</string>

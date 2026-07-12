@@ -54,7 +54,11 @@ enum class BackupErrorCode {
     RESTORE_FAILED,
     RESTART_FAILED,
     RESTORE_CLEANUP_FAILED,
+    DOCUMENT_CREATE_FAILED,
+    DOCUMENT_OPEN_FAILED,
 }
+
+enum class BackupSuccessCode { CONFIG_SAVED, PASSWORD_CLEARED, CONFIG_RESET, CONNECTION_TESTED, REMOTE_LISTED, EXPORTED, UPLOADED }
 
 sealed interface BackupOperation {
     data object Initializing : BackupOperation
@@ -67,10 +71,19 @@ sealed interface BackupOperation {
     data object StagingRestore : BackupOperation
     data object CancellingRestore : BackupOperation
     data object Restarting : BackupOperation
-    data class Blocked(val code: BackupErrorCode, val message: String) : BackupOperation
-    data class Success(val message: String, val cleanupWarning: Boolean = false) : BackupOperation
-    data class Error(val code: BackupErrorCode, val message: String) : BackupOperation
+    data class Blocked(val code: BackupErrorCode) : BackupOperation
+    data class Success(
+        val code: BackupSuccessCode,
+        val itemCount: Int = 0,
+        val cleanupWarning: Boolean = false,
+    ) : BackupOperation
+    data class Error(val code: BackupErrorCode) : BackupOperation
 }
+
+val BackupOperation.isCancellable: Boolean
+    get() = this is BackupOperation.Testing || this is BackupOperation.ListingRemote ||
+        this is BackupOperation.Exporting || this is BackupOperation.Uploading ||
+        this is BackupOperation.StagingRestore
 
 data class BackupUiState(
     val includeKeys: Boolean = false,
@@ -88,26 +101,6 @@ data class BackupUiState(
     val keysChecked: Boolean get() = includeKeys
     val isExporting: Boolean get() = operation is BackupOperation.Exporting || operation is BackupOperation.Uploading
     val isImporting: Boolean get() = operation is BackupOperation.StagingRestore || operation is BackupOperation.Restarting
-    val statusMessage: String? get() = when (val current = operation) {
-        BackupOperation.Idle -> null
-        BackupOperation.Initializing -> "正在安全读取备份配置…"
-        BackupOperation.SavingConfig -> "正在安全保存 WebDAV 配置…"
-        BackupOperation.Testing -> "正在测试连接…"
-        BackupOperation.ListingRemote -> "正在读取远程备份…"
-        BackupOperation.Exporting -> "正在导出备份…"
-        BackupOperation.Uploading -> "正在上传备份…"
-        BackupOperation.StagingRestore -> "正在验证并暂存恢复包…"
-        BackupOperation.CancellingRestore -> "正在安全清理已取消的恢复事务…"
-        BackupOperation.Restarting -> "恢复包已暂存，正在安全重启…"
-        is BackupOperation.Blocked -> current.message
-        is BackupOperation.Success -> current.message
-        is BackupOperation.Error -> current.message
-    }
-    val error: String? get() = when (val current = operation) {
-        is BackupOperation.Error -> current.message
-        is BackupOperation.Blocked -> current.message
-        else -> null
-    }
     val canExecute: Boolean get() = operation !is BackupOperation.Testing &&
         operation !is BackupOperation.Initializing &&
         operation !is BackupOperation.SavingConfig &&
@@ -307,10 +300,10 @@ class BackupViewModel internal constructor(
                 try {
                     withContext(ioDispatcher) { saveWebDavConfigNow(url, user, ownedPassword, reservation) }
                 } catch (cancelled: CancellationException) {
-                    publishConfigFailureIfNeeded(reservation.revision, "WebDAV 配置保存已中断")
+                    publishConfigFailureIfNeeded(reservation.revision)
                     throw cancelled
                 } catch (error: Exception) {
-                    publishConfigFailureIfNeeded(reservation.revision, "保存 WebDAV 配置失败")
+                    publishConfigFailureIfNeeded(reservation.revision)
                 } catch (error: Error) {
                     hooks.afterConfigFailureReconciled(reservation.revision)
                     publishFatalConfigFailure(error, reservation.revision)
@@ -355,7 +348,7 @@ class BackupViewModel internal constructor(
                         webdavUrl = url,
                         webdavUser = user,
                         hasWebDavPassword = hasPassword,
-                        operation = BackupOperation.Success("WebDAV 配置已安全保存"),
+                        operation = BackupOperation.Success(BackupSuccessCode.CONFIG_SAVED),
                     )
                 }
             } else synchronized(operationLock) {
@@ -401,7 +394,7 @@ class BackupViewModel internal constructor(
                 }
                 completeConfigMutation(
                     reservation.revision,
-                    BackupOperation.Success("连接测试成功"),
+                    BackupOperation.Success(BackupSuccessCode.CONNECTION_TESTED),
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -433,10 +426,10 @@ class BackupViewModel internal constructor(
                 try {
                     withContext(ioDispatcher) { deleteWebDavPasswordNow(reservation) }
                 } catch (cancelled: CancellationException) {
-                    publishConfigFailureIfNeeded(reservation.revision, "WebDAV 密码删除已中断")
+                    publishConfigFailureIfNeeded(reservation.revision)
                     throw cancelled
                 } catch (error: Exception) {
-                    publishConfigFailureIfNeeded(reservation.revision, "删除 WebDAV 密码失败")
+                    publishConfigFailureIfNeeded(reservation.revision)
                 } catch (error: Error) {
                     hooks.afterConfigFailureReconciled(reservation.revision)
                     publishFatalConfigFailure(error, reservation.revision)
@@ -464,7 +457,7 @@ class BackupViewModel internal constructor(
             finishWebDavMutation(reservation.revision) {
                 it.copy(
                     hasWebDavPassword = false,
-                    operation = BackupOperation.Success("WebDAV 密码已删除"),
+                    operation = BackupOperation.Success(BackupSuccessCode.PASSWORD_CLEARED),
                 )
             }
             cleanupWebDavCachesBestEffort(current.endpoint, current.username)
@@ -518,7 +511,7 @@ class BackupViewModel internal constructor(
                     remoteBackups = emptyList(),
                     selectedRemote = null,
                     remoteConfigRevision = null,
-                    operation = BackupOperation.Success("WebDAV 安全配置已重置"),
+                    operation = BackupOperation.Success(BackupSuccessCode.CONFIG_RESET),
                 ) }
             }
             cleanupWebDavCachesBestEffort("", "")
@@ -533,11 +526,8 @@ class BackupViewModel internal constructor(
                 if (configMutationRevision == revision) configMutationRevision = null
                 webDavBlocked = !recovered
                 _uiState.update { state -> state.copy(
-                    operation = if (recovered) BackupOperation.Success("WebDAV 安全配置已重置")
-                    else BackupOperation.Blocked(
-                        BackupErrorCode.CONNECTION_FAILED,
-                        "WebDAV 安全配置重置失败",
-                    ),
+                    operation = if (recovered) BackupOperation.Success(BackupSuccessCode.CONFIG_RESET)
+                    else BackupOperation.Blocked(BackupErrorCode.CONNECTION_FAILED),
                     webdavUrl = if (recovered) "" else state.webdavUrl,
                     webdavUser = if (recovered) "" else state.webdavUser,
                     hasWebDavPassword = if (recovered) false else state.hasWebDavPassword,
@@ -555,7 +545,7 @@ class BackupViewModel internal constructor(
             val bound = readBoundWebDavConfig(revision)
             operations.testRemote(bound.config).getOrThrow()
             hooks.beforeStateCommit(BackupOperation.Testing)
-            complete(token, BackupOperation.Success("连接测试成功"), bound.revision)
+            complete(token, BackupOperation.Success(BackupSuccessCode.CONNECTION_TESTED), bound.revision)
         }
     }
 
@@ -572,7 +562,7 @@ class BackupViewModel internal constructor(
                             remoteBackups = backups,
                             selectedRemote = null,
                             remoteConfigRevision = bound.revision,
-                            operation = BackupOperation.Success("已读取 ${backups.size} 个远程备份"),
+                            operation = BackupOperation.Success(BackupSuccessCode.REMOTE_LISTED, itemCount = backups.size),
                         )
                     }
                 }
@@ -587,6 +577,15 @@ class BackupViewModel internal constructor(
             if (state.remoteConfigRevision != configRevision.get()) return false
             val accepted = state.remoteBackups.singleOrNull { it == remote } ?: return false
             _uiState.update { it.copy(selectedRemote = accepted) }
+            return true
+        }
+    }
+
+    fun reportDocumentError(code: BackupErrorCode): Boolean {
+        require(code == BackupErrorCode.DOCUMENT_CREATE_FAILED || code == BackupErrorCode.DOCUMENT_OPEN_FAILED)
+        synchronized(operationLock) {
+            if (!initialized || isBusyLocked()) return false
+            _uiState.update { it.copy(operation = BackupOperation.Error(code)) }
             return true
         }
     }
@@ -614,7 +613,7 @@ class BackupViewModel internal constructor(
                 bytes.fill(0)
             }
             hooks.beforeStateCommit(BackupOperation.Exporting)
-            recordBackupSuccess(token, "导出成功")
+            recordBackupSuccess(token, BackupSuccessCode.EXPORTED)
         }
 
     /** password/confirmation 由本方法取得所有权并清零。 */
@@ -636,7 +635,7 @@ class BackupViewModel internal constructor(
             hooks.beforeStateCommit(BackupOperation.Uploading)
             recordBackupSuccess(
                 token,
-                if (receipt.pruneWarning == null) "云端上传成功" else "云端上传成功，但旧备份清理不完整",
+                BackupSuccessCode.UPLOADED,
                 cleanupWarning = receipt.pruneWarning != null,
                 webDavRevision = bound.revision,
             )
@@ -668,7 +667,7 @@ class BackupViewModel internal constructor(
             password?.fill('\u0000')
             if (rejectedAsBusy) return false
             _uiState.update {
-                it.copy(operation = BackupOperation.Error(BackupErrorCode.STALE_SELECTION, "远程备份选择已失效，请刷新后重试"))
+                it.copy(operation = BackupOperation.Error(BackupErrorCode.STALE_SELECTION))
             }
             return false
         }
@@ -685,6 +684,9 @@ class BackupViewModel internal constructor(
     }
 
     fun cancelOperation() {
+        synchronized(operationLock) {
+            if (!_uiState.value.operation.isCancellable) return
+        }
         var restoreOperationId: String? = null
         val cancellation = synchronized(operationLock) {
             val restore = restoreControl
@@ -804,20 +806,14 @@ class BackupViewModel internal constructor(
                 ownedConfirmation == null || ownedConfirmation.isEmpty())) {
             ownedPassword?.fill('\u0000')
             ownedConfirmation?.fill('\u0000')
-            publishPasswordValidationFailure(
-                BackupErrorCode.PASSWORD_REQUIRED,
-                "包含密钥时必须输入并确认备份密码",
-            )
+            publishPasswordValidationFailure(BackupErrorCode.PASSWORD_REQUIRED)
             externalCleanup()
             return false
         }
         if (include && !constantTimeEquals(ownedPassword!!, ownedConfirmation!!)) {
             ownedPassword.fill('\u0000')
             ownedConfirmation.fill('\u0000')
-            publishPasswordValidationFailure(
-                BackupErrorCode.PASSWORD_MISMATCH,
-                "两次输入的备份密码不一致",
-            )
+            publishPasswordValidationFailure(BackupErrorCode.PASSWORD_MISMATCH)
             externalCleanup()
             return false
         }
@@ -872,7 +868,7 @@ class BackupViewModel internal constructor(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
-                    fail(token, errorCodeFor(phase), errorMessageFor(phase))
+                    fail(token, errorCodeFor(phase))
                 } finally {
                     synchronized(operationLock) {
                         if (currentOperationToken == token) {
@@ -905,7 +901,7 @@ class BackupViewModel internal constructor(
 
     private fun recordBackupSuccess(
         token: Long,
-        message: String,
+        code: BackupSuccessCode,
         cleanupWarning: Boolean = false,
         webDavRevision: Long? = null,
     ) {
@@ -913,7 +909,7 @@ class BackupViewModel internal constructor(
         val committed = synchronized(operationLock) {
             if (!isCurrentLocked(token, webDavRevision)) false else {
                 _uiState.update {
-                    it.copy(lastBackupTime = now, operation = BackupOperation.Success(message, cleanupWarning))
+                    it.copy(lastBackupTime = now, operation = BackupOperation.Success(code, cleanupWarning = cleanupWarning))
                 }
                 true
             }
@@ -927,10 +923,10 @@ class BackupViewModel internal constructor(
         }
     }
 
-    private fun fail(token: Long, code: BackupErrorCode, message: String) {
+    private fun fail(token: Long, code: BackupErrorCode) {
         synchronized(operationLock) {
             if (!restoreBlocked && !webDavBlocked && isCurrentLocked(token, null)) {
-                _uiState.update { it.copy(operation = BackupOperation.Error(code, message)) }
+                _uiState.update { it.copy(operation = BackupOperation.Error(code)) }
             }
         }
     }
@@ -955,10 +951,7 @@ class BackupViewModel internal constructor(
                 if (restoreControl?.operationId == operationId && restoreControl?.restartAuthorized == true) {
                     restoreBlocked = true
                     _uiState.update {
-                        it.copy(operation = BackupOperation.Blocked(
-                            BackupErrorCode.RESTART_FAILED,
-                            "恢复包已安全暂存，重启派发失败；只能重试或取消恢复",
-                        ))
+                        it.copy(operation = BackupOperation.Blocked(BackupErrorCode.RESTART_FAILED))
                     }
                 }
             }
@@ -1031,10 +1024,7 @@ class BackupViewModel internal constructor(
             if (restoreControl?.operationId == operationId) {
                 restoreBlocked = true
                 _uiState.update {
-                    it.copy(operation = BackupOperation.Blocked(
-                        BackupErrorCode.RESTORE_CLEANUP_FAILED,
-                        "已取消的恢复事务清理失败，已禁止继续操作",
-                    ))
+                    it.copy(operation = BackupOperation.Blocked(BackupErrorCode.RESTORE_CLEANUP_FAILED))
                 }
             }
         }
@@ -1046,10 +1036,7 @@ class BackupViewModel internal constructor(
             if (control?.operationId == operationId) {
                 control.recoverableResourceCloseBlock = recoverable
                 restoreBlocked = true
-                _uiState.update { it.copy(operation = BackupOperation.Blocked(
-                    BackupErrorCode.RESTORE_CLEANUP_FAILED,
-                    "恢复输入流关闭失败，正在确认暂存事务是否已安全清理",
-                )) }
+                _uiState.update { it.copy(operation = BackupOperation.Blocked(BackupErrorCode.RESTORE_CLEANUP_FAILED)) }
             }
         }
     }
@@ -1070,10 +1057,7 @@ class BackupViewModel internal constructor(
         synchronized(operationLock) {
             if (restoreControl?.operationId == operationId && restoreControl?.restartAuthorized == true) {
                 restoreBlocked = true
-                _uiState.update { it.copy(operation = BackupOperation.Blocked(
-                    BackupErrorCode.RESTART_FAILED,
-                    "恢复事务授权或重启失败；只能重试或取消恢复",
-                )) }
+                _uiState.update { it.copy(operation = BackupOperation.Blocked(BackupErrorCode.RESTART_FAILED)) }
             }
         }
     }
@@ -1084,10 +1068,10 @@ class BackupViewModel internal constructor(
     private fun isBusyLocked(): Boolean =
         currentJob != null || configMutationRevision != null || restoreControl != null || restoreBlocked || cleared
 
-    private fun publishPasswordValidationFailure(code: BackupErrorCode, message: String) {
+    private fun publishPasswordValidationFailure(code: BackupErrorCode) {
         synchronized(operationLock) {
             if (!initialized || isBusyLocked() || restoreControl?.restartAuthorized == true) return
-            _uiState.update { it.copy(operation = BackupOperation.Error(code, message)) }
+            _uiState.update { it.copy(operation = BackupOperation.Error(code)) }
         }
     }
 
@@ -1102,10 +1086,7 @@ class BackupViewModel internal constructor(
         } catch (error: Exception) {
             synchronized(operationLock) {
                 webDavBlocked = true
-                _uiState.update { it.copy(operation = BackupOperation.Blocked(
-                    BackupErrorCode.CONNECTION_FAILED,
-                    "WebDAV 安全认证记录损坏，已禁止连接",
-                )) }
+                _uiState.update { it.copy(operation = BackupOperation.Blocked(BackupErrorCode.CONNECTION_FAILED)) }
             }
             throw error
         }
@@ -1219,13 +1200,8 @@ class BackupViewModel internal constructor(
                 webdavUrl = endpoint ?: state.webdavUrl,
                 webdavUser = username ?: state.webdavUser,
                 hasWebDavPassword = if (canonicalAvailable) hasPassword else state.hasWebDavPassword,
-                operation = if (canonicalAvailable) BackupOperation.Error(
-                    BackupErrorCode.CONFIGURATION_MISSING,
-                    "WebDAV 配置操作已中断，已按安全存储中的实际结果恢复",
-                ) else BackupOperation.Blocked(
-                    BackupErrorCode.CONNECTION_FAILED,
-                    "WebDAV 配置操作中断且安全记录无法读取，已故障关闭",
-                ),
+                operation = if (canonicalAvailable) BackupOperation.Error(BackupErrorCode.CONFIGURATION_MISSING)
+                else BackupOperation.Blocked(BackupErrorCode.CONNECTION_FAILED),
             ) }
         }
         if (canonicalAvailable) cleanupWebDavCachesBestEffort(endpoint.orEmpty(), username.orEmpty())
@@ -1254,13 +1230,8 @@ class BackupViewModel internal constructor(
                 webdavUrl = endpoint ?: state.webdavUrl,
                 webdavUser = username ?: state.webdavUser,
                 hasWebDavPassword = if (auth == null) state.hasWebDavPassword else hasPassword,
-                operation = if (webDavBlocked) BackupOperation.Blocked(
-                    BackupErrorCode.CONNECTION_FAILED,
-                    "WebDAV 保存或测试失败，已故障关闭",
-                ) else BackupOperation.Error(
-                    BackupErrorCode.CONNECTION_FAILED,
-                    "WebDAV 配置已按 canonical 结果保存，但连接测试失败",
-                ),
+                operation = if (webDavBlocked) BackupOperation.Blocked(BackupErrorCode.CONNECTION_FAILED)
+                else BackupOperation.Error(BackupErrorCode.CONNECTION_FAILED),
             ) }
         }
         if (auth != null) cleanupWebDavCachesBestEffort(endpoint.orEmpty(), username.orEmpty())
@@ -1317,10 +1288,7 @@ class BackupViewModel internal constructor(
         } catch (_: Exception) {
             synchronized(operationLock) {
                 webDavBlocked = true
-                _uiState.update { it.copy(operation = BackupOperation.Blocked(
-                    BackupErrorCode.CONNECTION_FAILED,
-                    "WebDAV 安全认证记录无法读取，已故障关闭",
-                )) }
+                _uiState.update { it.copy(operation = BackupOperation.Blocked(BackupErrorCode.CONNECTION_FAILED)) }
             }
         }
     }
@@ -1401,10 +1369,7 @@ class BackupViewModel internal constructor(
                 configMutationRevision = null
                 if (error is Error) {
                     webDavBlocked = true
-                    _uiState.update { it.copy(operation = BackupOperation.Blocked(
-                        BackupErrorCode.CONNECTION_FAILED,
-                        "WebDAV 配置保存遭遇严重错误，已故障关闭",
-                    )) }
+                    _uiState.update { it.copy(operation = BackupOperation.Blocked(BackupErrorCode.CONNECTION_FAILED)) }
                 }
             }
         }
@@ -1421,15 +1386,12 @@ class BackupViewModel internal constructor(
         }
     }
 
-    private fun publishConfigFailureIfNeeded(revision: Long, message: String) {
+    private fun publishConfigFailureIfNeeded(revision: Long) {
         synchronized(operationLock) {
             if (configRevision.get() != revision) return
             if (configMutationRevision != null && configMutationRevision != revision) return
             if (_uiState.value.operation is BackupOperation.SavingConfig) {
-                _uiState.update { it.copy(operation = BackupOperation.Error(
-                    BackupErrorCode.CONFIGURATION_MISSING,
-                    message,
-                )) }
+                _uiState.update { it.copy(operation = BackupOperation.Error(BackupErrorCode.CONFIGURATION_MISSING)) }
             }
         }
     }
@@ -1440,10 +1402,7 @@ class BackupViewModel internal constructor(
             if (revision != null && configMutationRevision != null && configMutationRevision != revision) return
             configMutationRevision = null
             webDavBlocked = true
-            _uiState.update { it.copy(operation = BackupOperation.Blocked(
-                BackupErrorCode.CONFIGURATION_MISSING,
-                "WebDAV 安全配置遇到严重错误：${error::class.java.simpleName}",
-            )) }
+            _uiState.update { it.copy(operation = BackupOperation.Blocked(BackupErrorCode.CONFIGURATION_MISSING)) }
         }
     }
 
@@ -1463,15 +1422,6 @@ class BackupViewModel internal constructor(
         BackupOperation.Uploading -> BackupErrorCode.UPLOAD_FAILED
         BackupOperation.StagingRestore -> BackupErrorCode.RESTORE_FAILED
         else -> BackupErrorCode.RESTORE_FAILED
-    }
-
-    private fun errorMessageFor(phase: BackupOperation) = when (phase) {
-        BackupOperation.Testing -> "连接测试失败，请检查地址、账号和密码"
-        BackupOperation.ListingRemote -> "读取远程备份失败"
-        BackupOperation.Exporting -> "导出失败"
-        BackupOperation.Uploading -> "上传失败"
-        BackupOperation.StagingRestore -> "恢复包验证或暂存失败"
-        else -> "操作失败"
     }
 
     companion object {

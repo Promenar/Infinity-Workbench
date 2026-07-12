@@ -23,6 +23,10 @@ class SecureSecretUiContractTest {
         assertThat(form).doesNotContain("apiKey = config.apiKey")
         assertThat(form).contains("getProviderSummary(providerId)")
         assertThat(nav).doesNotContain("apiKey.toCredentialUpdate()")
+        assertThat(nav).contains("withContext(kotlinx.coroutines.Dispatchers.IO)")
+        assertThat(form).contains("credentialKindMismatch")
+        assertThat(form).contains("isSaving")
+        assertThat(form).contains("catch (_: Exception)")
     }
 
     @Test
@@ -42,7 +46,7 @@ class SecureSecretUiContractTest {
         assertThat(stateFields).doesNotContain("tavilyApiKey")
         assertThat(stateFields).contains("hasTavilyApiKey")
         assertThat(screen).contains("SecretField(")
-        assertThat(skills).contains("SecretField(")
+        assertThat(skills).contains("TavilySecretEditor(searchViewModel, searchState)")
         assertThat(skills).doesNotContain("Paste API Key here")
     }
 
@@ -55,6 +59,10 @@ class SecureSecretUiContractTest {
         assertThat(field).contains("fill('\\u0000')")
         assertThat(field).doesNotContain("rememberSaveable(")
         assertThat(field).contains("Modifier.size(48.dp)")
+        assertThat(field).contains("revealGeneration")
+        assertThat(field).contains("revealJob?.cancel()")
+        assertThat(field).contains("DisposableEffect(hasStoredSecret)")
+        assertThat(field).doesNotContain("remember(hasStoredSecret)")
     }
 
     @Test
@@ -70,5 +78,21 @@ class SecureSecretUiContractTest {
         assertThat(screen).contains("showUploadPasswordDialog")
         assertThat(screen).contains("showRestorePasswordDialog")
         assertThat(screen).contains("uiState.canExecute")
+        assertThat(screen).contains("uiState.operation.isCancellable")
+        assertThat(screen).contains("imePadding()")
+        assertThat(screen).contains("viewModel.reportDocumentError(")
+        assertThat(source("ui/settings/BackupViewModel.kt")).doesNotContain("val statusMessage: String?")
+    }
+
+    @Test
+    fun `search editors persist only on explicit save`() {
+        val screen = source("ui/settings/SearchConfigScreen.kt")
+        val skills = source("ui/settings/SkillsScreen.kt")
+
+        assertThat(screen).contains("saveTavilyApiKey(")
+        assertThat(skills).contains("TavilySecretEditor(searchViewModel, searchState)")
+        assertThat(screen).doesNotContain("if (it.isNotBlank()) viewModel.updateTavilyApiKey(it)")
+        assertThat(skills).doesNotContain("if (it.isNotBlank()) searchViewModel.updateTavilyApiKey(it)")
+        assertThat(source("ui/settings/SearchConfigViewModel.kt")).contains("SearchSecretOperation.Saving")
     }
 }

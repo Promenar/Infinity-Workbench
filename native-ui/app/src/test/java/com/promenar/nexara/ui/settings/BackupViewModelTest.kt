@@ -58,6 +58,32 @@ class BackupViewModelTest {
     }
 
     @Test
+    fun `only genuinely cancellable operation phases expose cancel`() {
+        assertThat(BackupOperation.Testing.isCancellable).isTrue()
+        assertThat(BackupOperation.ListingRemote.isCancellable).isTrue()
+        assertThat(BackupOperation.Exporting.isCancellable).isTrue()
+        assertThat(BackupOperation.Uploading.isCancellable).isTrue()
+        assertThat(BackupOperation.StagingRestore.isCancellable).isTrue()
+        assertThat(BackupOperation.Initializing.isCancellable).isFalse()
+        assertThat(BackupOperation.SavingConfig.isCancellable).isFalse()
+        assertThat(BackupOperation.CancellingRestore.isCancellable).isFalse()
+        assertThat(BackupOperation.Restarting.isCancellable).isFalse()
+    }
+
+    @Test
+    fun `document errors accept only stable document codes while idle`() {
+        val vm = newViewModel()
+
+        assertThat(vm.reportDocumentError(BackupErrorCode.DOCUMENT_OPEN_FAILED)).isTrue()
+        assertThat(vm.uiState.value.operation).isEqualTo(
+            BackupOperation.Error(BackupErrorCode.DOCUMENT_OPEN_FAILED),
+        )
+        assertThrows<IllegalArgumentException> {
+            vm.reportDocumentError(BackupErrorCode.RESTORE_FAILED)
+        }
+    }
+
+    @Test
     fun `startup migrates nonempty plaintext once without overwriting an existing secret`() {
         val settings = FakeSettings(webDavPasswordPlaintext = "legacy")
         val secrets = FakeSecrets()
