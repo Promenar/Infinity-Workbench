@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import java.nio.file.Files
 import java.nio.file.Path
 import org.junit.jupiter.api.Test
+import com.promenar.nexara.data.remote.protocol.ProtocolType
 
 class SecureSecretUiContractTest {
     private fun source(relative: String): String = String(
@@ -27,6 +28,7 @@ class SecureSecretUiContractTest {
         assertThat(form).contains("credentialKindMismatch")
         assertThat(form).contains("isSaving")
         assertThat(form).contains("catch (_: Exception)")
+        assertThat(source("ui/settings/SettingsViewModel.kt")).contains("suspend fun getProviderSummary")
     }
 
     @Test
@@ -63,6 +65,15 @@ class SecureSecretUiContractTest {
         assertThat(field).contains("revealJob?.cancel()")
         assertThat(field).contains("DisposableEffect(hasStoredSecret)")
         assertThat(field).doesNotContain("remember(hasStoredSecret)")
+        assertThat(field).doesNotContain("everFocused")
+        assertThat(field).contains("focusGeneration")
+    }
+
+    @Test
+    fun `local effective protocol bypasses cloud HTTPS while custom cloud stays protected`() {
+        assertThat(isProviderEndpointAllowed(ProtocolType.Local, "")).isTrue()
+        assertThat(isProviderEndpointAllowed(ProtocolType.Generic_OpenAI_Compat, "http://plain.invalid")).isFalse()
+        assertThat(isProviderEndpointAllowed(ProtocolType.Generic_OpenAI_Compat, "https://secure.invalid")).isTrue()
     }
 
     @Test

@@ -298,13 +298,33 @@ class ProviderManager private constructor(
     }
 
     fun getProviderSummary(providerId: String): ProviderSummary? {
-        val config = getProviderConfig(providerId) ?: return null
+        val protocolType: ProtocolType
+        val baseUrl: String
+        val model: String
+        val name: String?
+        if (providerId == "default") {
+            val protocolName = providerPrefs.getString("protocol_id", null) ?: return null
+            protocolType = ProtocolType.fromLegacyName(protocolName)
+            baseUrl = providerPrefs.getString("base_url", "").orEmpty()
+            model = providerPrefs.getString("model", "").orEmpty()
+            name = providerPrefs.getString("provider_name", null)
+        } else {
+            val count = settingsPrefs.getInt("extra_providers_count", 0)
+            val index = (0 until count).firstOrNull { resolveExtraProviderId(it) == providerId } ?: return null
+            val prefix = "extra_provider_$index"
+            val protocolName = settingsPrefs.getString("${prefix}_protocol", null)
+                ?: settingsPrefs.getString("${prefix}_type", null) ?: return null
+            protocolType = ProtocolType.fromLegacyName(protocolName)
+            baseUrl = settingsPrefs.getString("${prefix}_base_url", "").orEmpty()
+            model = settingsPrefs.getString("${prefix}_model", "").orEmpty()
+            name = settingsPrefs.getString("${prefix}_name", null)
+        }
         return ProviderSummary(
             id = providerId,
-            name = config.name ?: config.protocolType.displayName,
-            protocolType = config.protocolType,
-            baseUrl = config.baseUrl,
-            model = config.model,
+            name = name ?: protocolType.displayName,
+            protocolType = protocolType,
+            baseUrl = baseUrl,
+            model = model,
             hasApiKey = secretStore.contains(SecretCatalog.providerApiKey(providerId)),
             hasVertexCredentials = secretStore.contains(SecretCatalog.vertexServiceAccount(providerId)),
         )

@@ -414,7 +414,7 @@ private fun DomainListSection(
                 )
                 IconButton(
                     onClick = { onRemove(domain) },
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Close,

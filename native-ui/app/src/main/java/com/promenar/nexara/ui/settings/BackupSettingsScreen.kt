@@ -686,15 +686,16 @@ private fun backupOperationText(operation: BackupOperation): String? = when (ope
     BackupOperation.StagingRestore -> stringResource(R.string.backup_status_staging_restore)
     BackupOperation.CancellingRestore -> stringResource(R.string.backup_status_cancelling)
     BackupOperation.Restarting -> stringResource(R.string.backup_status_restarting)
-    is BackupOperation.Success -> when {
-        operation.cleanupWarning -> stringResource(R.string.backup_status_success_cleanup_warning)
-        operation.code == BackupSuccessCode.REMOTE_LISTED -> stringResource(R.string.backup_status_remote_listed, operation.itemCount)
-        operation.code == BackupSuccessCode.CONFIG_SAVED -> stringResource(R.string.backup_status_config_saved)
-        operation.code == BackupSuccessCode.PASSWORD_CLEARED -> stringResource(R.string.backup_status_password_cleared)
-        operation.code == BackupSuccessCode.CONFIG_RESET -> stringResource(R.string.backup_status_config_reset)
-        operation.code == BackupSuccessCode.CONNECTION_TESTED -> stringResource(R.string.backup_status_connection_success)
-        operation.code == BackupSuccessCode.EXPORTED -> stringResource(R.string.backup_status_export_success)
-        else -> stringResource(R.string.backup_status_upload_success)
+    is BackupOperation.Success -> if (operation.cleanupWarning) {
+        stringResource(R.string.backup_status_success_cleanup_warning)
+    } else when (operation.code) {
+        BackupSuccessCode.REMOTE_LISTED -> stringResource(R.string.backup_status_remote_listed, operation.itemCount)
+        BackupSuccessCode.CONFIG_SAVED -> stringResource(R.string.backup_status_config_saved)
+        BackupSuccessCode.PASSWORD_CLEARED -> stringResource(R.string.backup_status_password_cleared)
+        BackupSuccessCode.CONFIG_RESET -> stringResource(R.string.backup_status_config_reset)
+        BackupSuccessCode.CONNECTION_TESTED -> stringResource(R.string.backup_status_connection_success)
+        BackupSuccessCode.EXPORTED -> stringResource(R.string.backup_status_export_success)
+        BackupSuccessCode.UPLOADED -> stringResource(R.string.backup_status_upload_success)
     }
     is BackupOperation.Blocked -> backupErrorText(operation.code)
     is BackupOperation.Error -> backupErrorText(operation.code)

@@ -152,9 +152,9 @@ fun ProviderFormScreen(
     }
 
     val isEditing = providerId != null
-    val isLocal = selectedPreset.protocolType == ProtocolType.Local
-    val endpointValid = isLocal || isSecureProviderEndpoint(baseUrl)
     val effectiveProtocol = if (selectedPreset.name == "Custom") localProto else selectedPreset.protocolType
+    val isLocal = effectiveProtocol is ProtocolType.Local
+    val endpointValid = isProviderEndpointAllowed(effectiveProtocol, baseUrl)
     val selectedUsesVertex = effectiveProtocol is ProtocolType.Google_VertexAI
     val credentialKindMismatch = hasCredential && credentialUpdate is CredentialUpdate.Preserve &&
         originalUsesVertex != null && originalUsesVertex != selectedUsesVertex
@@ -309,7 +309,7 @@ fun ProviderFormScreen(
 
         if (selectedPreset.name == "Custom") {
             Spacer(modifier = Modifier.height(24.dp))
-            Text("协议类型", style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
+            Text(stringResource(R.string.provider_form_protocol_type), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
             Spacer(modifier = Modifier.height(12.dp))
             com.promenar.nexara.ui.common.ProtocolSelector(
                 selected = localProto,
@@ -604,6 +604,9 @@ internal fun isSecureProviderEndpoint(value: String): Boolean = runCatching {
     val uri = java.net.URI(value)
     uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
 }.getOrDefault(false)
+
+internal fun isProviderEndpointAllowed(protocol: ProtocolType, value: String): Boolean =
+    protocol is ProtocolType.Local || isSecureProviderEndpoint(value)
 
 @Composable
 private fun PresetItem(

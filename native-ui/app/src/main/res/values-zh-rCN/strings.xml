@@ -59,6 +59,7 @@
     <string name="provider_form_credential_kind_changed">该协议使用不同类型的凭证。保存前请填写新凭证，或明确清除已保存凭证。</string>
     <string name="provider_form_saving">正在安全保存…</string>
     <string name="provider_form_save_failed">无法保存提供商设置，原配置保持不变。</string>
+    <string name="provider_form_protocol_type">协议类型</string>
     <string name="workbench_refresh">刷新</string>
 
     <!-- ============ Navigation ============ -->
@@ -945,6 +946,11 @@
     <string name="search_secret_load_failed">无法读取已保存密钥。</string>
     <string name="search_secret_save_failed">无法保存密钥，原设置保持不变。</string>
     <string name="search_secret_clear_failed">无法清除已保存密钥。</string>
+    <string name="skills_metadata">元数据</string>
+    <string name="skills_tool_name_hint">工具名称（例如 my_custom_tool）</string>
+    <string name="skills_description_hint">描述</string>
+    <string name="skills_implementation">实现（JS/Kotlin 沙箱）</string>
+    <string name="skills_code_example">// 示例：\n// return "我的工具结果";</string>
     <string name="chat_status_thinking">思考中...</string>
     <string name="chat_status_thought">已完成思考</string>
     <string name="chat_menu_clear_history">清除历史</string>

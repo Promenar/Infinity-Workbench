@@ -59,6 +59,7 @@
     <string name="provider_form_credential_kind_changed">This protocol uses a different credential type. Enter a replacement or explicitly clear the saved credential before saving.</string>
     <string name="provider_form_saving">Saving securely…</string>
     <string name="provider_form_save_failed">Provider settings could not be saved. The previous configuration is unchanged.</string>
+    <string name="provider_form_protocol_type">Protocol type</string>
     <string name="workbench_refresh">Refresh</string>
 
     <!-- ============ Navigation ============ -->
@@ -951,6 +952,11 @@
     <string name="search_secret_load_failed">The saved key could not be loaded.</string>
     <string name="search_secret_save_failed">The key could not be saved. The previous setting is unchanged.</string>
     <string name="search_secret_clear_failed">The saved key could not be cleared.</string>
+    <string name="skills_metadata">Metadata</string>
+    <string name="skills_tool_name_hint">Tool name (for example, my_custom_tool)</string>
+    <string name="skills_description_hint">Description</string>
+    <string name="skills_implementation">Implementation (JS/Kotlin sandbox)</string>
+    <string name="skills_code_example">// Example:\n// return "Result from my tool";</string>
     <string name="chat_menu_clear_history">Clear History</string>
     <string name="chat_menu_rename">Rename</string>
     <string name="chat_menu_delete_session">Delete Session</string>

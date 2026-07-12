@@ -64,7 +64,7 @@ fun SecretField(
     var transientSecret by remember { mutableStateOf<CharArray?>(null) }
     var visible by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
-    var everFocused by remember { mutableStateOf(false) }
+    var focusGeneration by remember { mutableStateOf(0L) }
     var revealRequested by remember { mutableStateOf(false) }
     var revealGeneration by remember { mutableStateOf(0L) }
     var revealJob by remember { mutableStateOf<Job?>(null) }
@@ -131,8 +131,8 @@ fun SecretField(
                     .fillMaxWidth()
                     .semantics { contentDescription = placeholder }
                     .onFocusChanged {
+                        if (focused && !it.isFocused) focusGeneration += 1
                         focused = it.isFocused
-                        if (it.isFocused) everFocused = true
                         if (!it.isFocused) hide()
                     },
             )
@@ -155,14 +155,15 @@ fun SecretField(
                         revealJob?.cancel()
                         revealGeneration += 1
                         val token = revealGeneration
+                        val focusToken = focusGeneration
                         revealRequested = true
                         revealJob = scope.launch {
                             var loaded: CharArray? = null
                             var accepted = false
                             try {
                                 loaded = withContext(NonCancellable) { onRevealRequest() }
-                                if (token == revealGeneration && pageActive && revealRequested &&
-                                    (!everFocused || focused) && loaded != null
+                                if (token == revealGeneration && focusToken == focusGeneration &&
+                                    pageActive && revealRequested && loaded != null
                                 ) {
                                     transientSecret?.fill('\u0000')
                                     transientSecret = loaded

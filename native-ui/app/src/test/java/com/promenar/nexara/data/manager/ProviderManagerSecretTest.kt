@@ -13,6 +13,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -78,14 +80,19 @@ class ProviderManagerSecretTest {
             credentialUpdate = CredentialUpdate.Replace("fake-secret-key"),
             model = "fake-model",
         )
+        secrets.getCalls = 0
+        secrets.containsThreads.clear()
 
-        val summary = manager.getProviderSummary("default")!!
+        val summary = runBlocking(Dispatchers.IO) { manager.getProviderSummary("default")!! }
 
         assertThat(summary.hasApiKey).isTrue()
         assertThat(summary.hasVertexCredentials).isFalse()
         assertThat(summary.toString()).doesNotContain("fake-secret-key")
         assertThat(manager.providers.value.single().toString()).doesNotContain("fake-secret-key")
         assertThat(app.getSharedPreferences("nexara_provider", 0).contains("api_key")).isFalse()
+        assertThat(secrets.getCalls).isEqualTo(0)
+        assertThat(secrets.containsThreads).isNotEmpty()
+        assertThat(secrets.containsThreads).doesNotContain(Thread.currentThread().name)
     }
 
     @Test
@@ -317,8 +324,16 @@ class ProviderManagerSecretTest {
             if (id == failOn) error("fake write failure")
             values[id] = value.copyOf()
         }
-        override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
-        override fun contains(id: SecretId): Boolean = id in values
+        var getCalls = 0
+        val containsThreads = mutableListOf<String>()
+        override fun get(id: SecretId): ByteArray? {
+            getCalls++
+            return values[id]?.copyOf()
+        }
+        override fun contains(id: SecretId): Boolean {
+            containsThreads += Thread.currentThread().name
+            return id in values
+        }
         override fun remove(id: SecretId) { values.remove(id) }
         fun text(id: SecretId): String? = get(id)?.toString(Charsets.UTF_8)
         fun snapshot(): Map<SecretId, String> = values.mapValues { (_, value) -> value.toString(Charsets.UTF_8) }

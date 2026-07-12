@@ -361,7 +361,10 @@ class SettingsViewModel(
         return pm.getProviderConfig(providerId)
     }
 
-    fun getProviderSummary(providerId: String) = pm.getProviderSummary(providerId)
+    suspend fun getProviderSummary(providerId: String) =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            pm.getProviderSummary(providerId)
+        }
 
     suspend fun revealProviderCredential(providerId: String, vertex: Boolean): CharArray? =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

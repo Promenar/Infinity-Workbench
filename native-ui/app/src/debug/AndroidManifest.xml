@@ -1,4 +1,3 @@
-<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <activity
@@ -12,5 +11,7 @@
                 <action android:name="com.promenar.nexara.debug.TEST_RESTORE_RELAY" />
             </intent-filter>
         </receiver>
+        <activity android:name=".ui.settings.SecretFieldTestActivity" android:exported="false" />
+        <activity android:name=".ui.settings.BackupTestActivity" android:exported="false" />
     </application>
 </manifest>

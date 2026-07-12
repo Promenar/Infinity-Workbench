@@ -465,7 +465,7 @@ fun SkillsScreen(
                     color = NexaraColors.OnSurface
                 )
                 
-                Text("Metadata", style = NexaraTypography.labelSmall, color = NexaraColors.Primary)
+                Text(stringResource(R.string.skills_metadata), style = NexaraTypography.labelSmall, color = NexaraColors.Primary)
                 
                 NexaraGlassCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
                     BasicTextField(
@@ -474,7 +474,7 @@ fun SkillsScreen(
                         textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
                         modifier = Modifier.fillMaxWidth().padding(12.dp),
                         decorationBox = { inner ->
-                            if (skillName.isEmpty()) Text("Tool Name (e.g. my_custom_tool)", style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
+                            if (skillName.isEmpty()) Text(stringResource(R.string.skills_tool_name_hint), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
                             inner()
                         }
                     )
@@ -486,13 +486,13 @@ fun SkillsScreen(
                         textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
                         modifier = Modifier.fillMaxWidth().padding(12.dp),
                         decorationBox = { inner ->
-                            if (skillDesc.isEmpty()) Text("Description", style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
+                            if (skillDesc.isEmpty()) Text(stringResource(R.string.skills_description_hint), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
                             inner()
                         }
                     )
                 }
                 
-                Text("Implementation (JS/Kotlin Sandbox)", style = NexaraTypography.labelSmall, color = NexaraColors.Primary)
+                Text(stringResource(R.string.skills_implementation), style = NexaraTypography.labelSmall, color = NexaraColors.Primary)
                 
                 NexaraGlassCard(
                     modifier = Modifier.fillMaxWidth().height(240.dp),
@@ -504,7 +504,7 @@ fun SkillsScreen(
                         textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = NexaraColors.OnSurface),
                         modifier = Modifier.fillMaxWidth().padding(12.dp),
                         decorationBox = { inner ->
-                            if (skillCode.isEmpty()) Text("// Example:\n// return \"Result from my tool\";", style = NexaraTypography.bodySmall, color = NexaraColors.OnSurfaceVariant)
+                            if (skillCode.isEmpty()) Text(stringResource(R.string.skills_code_example), style = NexaraTypography.bodySmall, color = NexaraColors.OnSurfaceVariant)
                             inner()
                         }
                     )
