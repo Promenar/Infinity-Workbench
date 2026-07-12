@@ -61,13 +61,18 @@ class AndroidSecureWorkspaceFileOpsTest {
         assertThat(Files.exists(root.resolve("archive/note.txt"))).isFalse()
 
         ops.createFile(root, listOf("docs", "rollback.txt"), "keep".toByteArray())
-        ops.stageDelete(root, listOf("docs", "rollback.txt")).rollback()
+        val rollbackToken = workspaceDeletionToken("android-test-rollback")
+        ops.stageDelete(root, listOf("docs", "rollback.txt"), rollbackToken).rollback()
         assertThat(ops.read(root, listOf("docs", "rollback.txt")).toString(Charsets.UTF_8)).isEqualTo("keep")
-        ops.stageDelete(root, listOf("docs", "rollback.txt")).commit()
+        ops.stageDelete(root, listOf("docs", "rollback.txt"), rollbackToken).commit()
         assertThat(Files.exists(root.resolve("docs/rollback.txt"))).isFalse()
 
         ops.createFile(root, listOf("docs", "cleanup.txt"), "cleanup".toByteArray())
-        ops.stageDelete(root, listOf("docs", "cleanup.txt"))
+        ops.stageDelete(
+            root,
+            listOf("docs", "cleanup.txt"),
+            workspaceDeletionToken("android-test-cleanup"),
+        )
         ops.cleanupTombstones(root)
         assertThat(Files.list(root.resolve(".nexara_tombstones")).use { it.count() }).isEqualTo(0L)
 
@@ -224,7 +229,12 @@ class AndroidSecureWorkspaceFileOpsTest {
                     createdAt = now, updatedAt = now,
                 ),
             )
-            val workspace = WorkspaceRepository(db.fileEntryDao(), db.workspaceSeqDao(), fileOps = ops)
+            val workspace = WorkspaceRepository(
+                db.fileEntryDao(),
+                db.workspaceSeqDao(),
+                fileOps = ops,
+                deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
+            )
 
             workspace.rename("root-perf", "tree", "renamed")
             assertThat(contentReads).isEqualTo(0)
