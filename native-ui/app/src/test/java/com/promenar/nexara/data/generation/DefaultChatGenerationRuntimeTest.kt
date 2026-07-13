@@ -5,6 +5,7 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderRequestRouter
@@ -30,6 +31,7 @@ import com.promenar.nexara.domain.usecase.AgentConfigResolver
 import com.promenar.nexara.ui.chat.ChatState
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.manager.ContextBuilder
+import com.promenar.nexara.ui.chat.manager.ContextBuilderResult
 import com.promenar.nexara.ui.chat.manager.MessageManager
 import com.promenar.nexara.ui.chat.manager.PostProcessor
 import com.promenar.nexara.ui.chat.manager.SessionManager
@@ -47,6 +49,147 @@ import kotlinx.coroutines.CancellationException
 import org.junit.Test
 
 class DefaultChatGenerationRuntimeTest {
+    @Test
+    fun `RAG引用必须在网络建连前同步持久化且可从Repository重载`() = runTest {
+        val settings = mockk<SharedPreferences>()
+        every { settings.getStringSet(any(), any()) } returns emptySet()
+        every { settings.getString(any(), any()) } returns ""
+        every { settings.getFloat(any(), any()) } answers { secondArg() }
+        every { settings.getInt(any(), any()) } answers { secondArg() }
+        val assistant = Message("a-rag", MessageRole.ASSISTANT, "")
+        val store = ChatStore().apply {
+            update {
+                ChatState(
+                    sessions = listOf(
+                        Session(
+                            id = "s-rag",
+                            agentId = "agent",
+                            modelId = "local::model",
+                            messages = listOf(
+                                Message("u-rag", MessageRole.USER, "question"),
+                                assistant,
+                            ),
+                        ),
+                    ),
+                )
+            }
+        }
+        val persistedMessages = mutableMapOf(assistant.id to assistant)
+        val messageRepository = object : IMessageRepository {
+            override suspend fun insert(message: Message, sessionId: String) {
+                persistedMessages[message.id] = message
+            }
+
+            override suspend fun updatePartial(messageId: String, updates: Map<String, Any?>) {
+                val current = requireNotNull(persistedMessages[messageId])
+                @Suppress("UNCHECKED_CAST")
+                persistedMessages[messageId] = current.copy(
+                    content = updates["content"] as? String ?: current.content,
+                    ragReferences = if ("ragReferences" in updates) {
+                        updates["ragReferences"] as? List<RagReference>
+                    } else {
+                        current.ragReferences
+                    },
+                )
+            }
+
+            override suspend fun delete(messageId: String) {
+                persistedMessages.remove(messageId)
+            }
+
+            override suspend fun deleteBySessionId(sessionId: String) = Unit
+            override suspend fun deleteMessagesAfter(sessionId: String, timestamp: Long) = Unit
+            override suspend fun getById(messageId: String): Message? = persistedMessages[messageId]?.copy()
+            override suspend fun getBySession(sessionId: String): List<Message> = persistedMessages.values.map { it.copy() }
+            override suspend fun updateVectorizationStatus(
+                messageId: String,
+                status: String,
+                isArchived: Boolean?,
+            ) = Unit
+        }
+        val sessionRepository = object : ISessionRepository {
+            override suspend fun create(session: Session) = Unit
+            override suspend fun updatePartial(id: String, updates: Map<String, Any?>) = Unit
+            override suspend fun delete(id: String) = Unit
+            override suspend fun getById(id: String): Session? = null
+            override suspend fun getAll(): List<Session> = emptyList()
+        }
+        val messageManager = MessageManager(store, messageRepository, sessionRepository, this)
+        val reference = RagReference(
+            id = "chunk-1",
+            content = "持久化引用正文",
+            source = "产品文档",
+            score = 0.92f,
+            documentId = "doc-1",
+        )
+        val contextBuilder = mockk<ContextBuilder>()
+        coEvery { contextBuilder.buildContext(any()) } returns ContextBuilderResult(
+            searchContext = "",
+            ragContext = "持久化引用正文",
+            citations = emptyList(),
+            ragReferences = listOf(reference),
+            ragUsage = null,
+            finalSystemPrompt = "system with rag",
+        )
+        var reloadedAtNetworkEntry: Message? = null
+        val protocol = object : LlmProtocol {
+            override val protocolType = ProtocolType.Local
+            override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> {
+                reloadedAtNetworkEntry = messageRepository.getById(assistant.id)
+                return flow { emit(StreamChunk.Done) }
+            }
+
+            override suspend fun sendPromptSync(request: PromptRequest) = PromptResponse("")
+            override fun cancel() = Unit
+        }
+        val provider = LlmProvider(protocol)
+        val router = object : ProviderRequestRouter {
+            override fun resolve(modelId: String): ProviderResolution = ProviderResolution.Success(
+                ResolvedProviderModel(
+                    modelId,
+                    "model",
+                    "local",
+                    "Local",
+                    UnifiedProviderConfig(ProtocolType.Local, "", "", "model"),
+                ),
+            )
+
+            override fun createClient(resolved: ResolvedProviderModel): UnifiedLlmClient = error("local")
+        }
+        val runtime = DefaultChatGenerationRuntime(
+            settings = settings,
+            applicationScope = this,
+            store = store,
+            agentRepository = mockk<IAgentRepository> { coEvery { getById(any()) } returns null },
+            configResolver = AgentConfigResolver(settings),
+            routeGate = ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)),
+            contextBuilder = contextBuilder,
+            messageManager = messageManager,
+            localProviderFactory = { provider },
+            provider = provider,
+            toolLedger = mockk(relaxed = true),
+            toolExecutor = mockk(relaxed = true),
+            postProcessor = mockk(relaxed = true),
+            memoryManager = null,
+            summaryManager = mockk(relaxed = true),
+            sessionManager = SessionManager(store, sessionRepository),
+            contentStrategy = mockk(relaxed = true),
+            ui = mockk(relaxed = true),
+        )
+        val request = GenerationRequest(
+            "s-rag", "a-rag", "u-rag", "question", emptyList(),
+            GenerationRuntimePolicy.BACKGROUND_ALLOWED,
+        )
+
+        runtime.prepare(request)
+        runtime.buildContext(request)
+        runtime.stream(request, attempt = 0)
+
+        assertThat(reloadedAtNetworkEntry).isNotNull()
+        assertThat(reloadedAtNetworkEntry!!.ragReferences).isEqualTo(listOf(reference))
+        assertThat(store.getSession("s-rag")?.messages?.last()?.ragReferences).containsExactly(reference)
+    }
+
     @Test
     fun `Context构建取消必须上抛且不得写业务error终态`() = runTest {
         val settings = mockk<SharedPreferences>()

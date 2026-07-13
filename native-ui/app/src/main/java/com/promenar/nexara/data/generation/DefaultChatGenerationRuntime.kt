@@ -187,6 +187,7 @@ internal class DefaultChatGenerationRuntime(
         }
         context.toMessageRagUpdateOptions()?.let {
             messageManager.updateMessageContent(request.sessionId, assistantMessageId(request), "", it)
+            messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
         }
         val tools = contentStrategy.buildTools(session)
         val inference = session.inferenceParams ?: InferenceParams(

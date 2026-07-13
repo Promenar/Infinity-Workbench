@@ -416,6 +416,40 @@ class MessageManagerTest {
     }
 
     @Test
+    fun synchronousNonApprovalFlushPreservesCompleteRetrievalMetadata() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage(
+            "s1",
+            Message(id = "m1", role = MessageRole.ASSISTANT, content = "before"),
+        )
+        val reference = RagReference(id = "chunk-1", content = "正文", source = "文档")
+        val citation = Citation(title = "来源", url = "https://example.test/source")
+        val path = kgPath()
+        val metadata = RagMetadata(chunkCount = 1, totalTokens = 12, retrievalTimeMs = 5)
+        messageManager.updateMessageContent(
+            "s1",
+            "m1",
+            "after",
+            UpdateMessageOptions(
+                citations = listOf(citation),
+                ragReferences = listOf(reference),
+                kgPaths = listOf(path),
+                ragReferencesLoading = false,
+                ragMetadata = metadata,
+            ),
+        )
+
+        messageManager.flushNonApprovalUpdatesNow("s1", "m1")
+
+        val persisted = partialUpdates.last()
+        assertThat(persisted["citations"]).isEqualTo(listOf(citation))
+        assertThat(persisted["ragReferences"]).isEqualTo(listOf(reference))
+        assertThat(persisted["kgPaths"]).isEqualTo(listOf(path))
+        assertThat(persisted["ragReferencesLoading"]).isEqualTo(false)
+        assertThat(persisted["ragMetadata"]).isEqualTo(metadata)
+    }
+
+    @Test
     fun synchronousNonApprovalFlushFailureThrowsAndKeepsRetryVisibleUntilPersisted() =
         testScope.runTest {
             seedSession("session:with-colon")

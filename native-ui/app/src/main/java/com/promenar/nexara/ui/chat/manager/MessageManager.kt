@@ -538,6 +538,11 @@ class MessageManager(
         status?.let { put("status", it) }
         tokens?.let { put("tokens", it) }
         reasoning?.let { put("reasoning", it) }
+        citations?.let { put("citations", it) }
+        ragReferences?.let { put("ragReferences", it) }
+        kgPaths?.let { put("kgPaths", it) }
+        ragReferencesLoading?.let { put("ragReferencesLoading", it) }
+        ragMetadata?.let { put("ragMetadata", it) }
         thoughtSignature?.let { put("thoughtSignature", it) }
         taskState?.let { put("planningTask", it) }
         executionSteps?.let { put("executionSteps", it) }
