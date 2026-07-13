@@ -63,8 +63,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLocale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.promenar.nexara.R
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.common.FileIndexStatus
@@ -76,7 +79,6 @@ import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 import kotlinx.coroutines.flow.flowOf
 
 @Composable
@@ -190,20 +192,36 @@ private fun BatchActionBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("已选 $selectedCount 项", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                Text(
+                    stringResource(R.string.files_selected_count, selectedCount),
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.OnSurface,
+                )
                 TextButton(onClick = onClear) {
-                    Text("取消", style = NexaraTypography.labelSmall, color = NexaraColors.Primary)
+                    Text(
+                        stringResource(R.string.files_cancel),
+                        style = NexaraTypography.labelSmall,
+                        color = NexaraColors.Primary,
+                    )
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onReindexAll != null) {
                     TextButton(onClick = onReindexAll) {
-                        Text("重索引", style = NexaraTypography.labelSmall, color = NexaraColors.Primary)
+                        Text(
+                            stringResource(R.string.files_reindex),
+                            style = NexaraTypography.labelSmall,
+                            color = NexaraColors.Primary,
+                        )
                     }
                 }
                 if (onDeleteAll != null) {
                     TextButton(onClick = onDeleteAll) {
-                        Text("删除", style = NexaraTypography.labelSmall, color = NexaraColors.Error)
+                        Text(
+                            stringResource(R.string.shared_btn_delete),
+                            style = NexaraTypography.labelSmall,
+                            color = NexaraColors.Error,
+                        )
                     }
                 }
             }
@@ -287,19 +305,19 @@ private fun FileTreeNode(
             if (!file.isDirectory) {
                 if (onReindex != null) {
                     DropdownMenuItem(
-                        text = { Text("重新索引", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+                        text = { Text(stringResource(R.string.files_reindex), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                         onClick = { showMenu = false; onReindex(file.uuid) }
                     )
                 }
                 if (onExtractKG != null) {
                     DropdownMenuItem(
-                        text = { Text("提取知识图谱", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+                        text = { Text(stringResource(R.string.files_extract_knowledge_graph), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                         onClick = { showMenu = false; onExtractKG(file.uuid) }
                     )
                 }
                 if (onViewKG != null) {
                     DropdownMenuItem(
-                        text = { Text("查看图谱", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+                        text = { Text(stringResource(R.string.files_view_graph), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                         onClick = { showMenu = false; onViewKG(file.uuid) }
                     )
                 }
@@ -307,38 +325,38 @@ private fun FileTreeNode(
                 // 目录: 查看图谱
                 if (onViewKG != null) {
                     DropdownMenuItem(
-                        text = { Text("查看目录图谱", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+                        text = { Text(stringResource(R.string.files_view_folder_graph), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                         onClick = { showMenu = false; onViewKG(file.uuid) }
                     )
                 }
             }
             if (onRename != null) {
                 DropdownMenuItem(
-                    text = { Text("重命名", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+                    text = { Text(stringResource(R.string.files_rename), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                     onClick = { showMenu = false; showRenameDialog = true }
                 )
             }
             if (onMove != null && !file.isDirectory) {
                 DropdownMenuItem(
-                    text = { Text("移动到…", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+                    text = { Text(stringResource(R.string.files_move_to), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                     onClick = { showMenu = false; showMoveSheet = true }
                 )
             }
             if (onCopy != null && !file.isDirectory) {
                 DropdownMenuItem(
-                    text = { Text("复制", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+                    text = { Text(stringResource(R.string.shared_btn_copy), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                     onClick = { showMenu = false; onCopy(file.uuid) }
                 )
             }
             if (!isMultiSelectMode) {
                 DropdownMenuItem(
-                    text = { Text("多选模式", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+                    text = { Text(stringResource(R.string.files_multi_select), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                     onClick = { showMenu = false; selectedIds.add(file.uuid) }
                 )
             }
             if (onDelete != null) {
                 DropdownMenuItem(
-                    text = { Text("删除", style = NexaraTypography.labelMedium, color = NexaraColors.Error) },
+                    text = { Text(stringResource(R.string.shared_btn_delete), style = NexaraTypography.labelMedium, color = NexaraColors.Error) },
                     onClick = { showMenu = false; onDelete(file.uuid) }
                 )
             }
@@ -472,22 +490,22 @@ private fun RenameDialog(
     var name by rememberSaveable { mutableStateOf(currentName) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("重命名", style = NexaraTypography.headlineSmall) },
+        title = { Text(stringResource(R.string.files_rename), style = NexaraTypography.headlineSmall) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("新名称") },
+                label = { Text(stringResource(R.string.files_new_name)) },
                 modifier = Modifier.fillMaxWidth()
             )
         },
         confirmButton = {
             TextButton(onClick = { if (name.isNotBlank()) onConfirm(name.trim()) }, enabled = name.isNotBlank()) {
-                Text("确定")
+                Text(stringResource(R.string.files_confirm))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.files_cancel)) }
         }
     )
 }
@@ -512,9 +530,13 @@ private fun MoveToSheet(
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(24.dp).padding(bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("移动到…", style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
+            Text(stringResource(R.string.files_move_to), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
             if (directoryList.isEmpty()) {
-                Text("没有可用的目录", style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
+                Text(
+                    stringResource(R.string.files_no_available_folders),
+                    style = NexaraTypography.bodyMedium,
+                    color = NexaraColors.OnSurfaceVariant,
+                )
             }
             // 根目录选项
             Row(
@@ -523,7 +545,7 @@ private fun MoveToSheet(
             ) {
                 Icon(Icons.Rounded.FolderOpen, null, tint = NexaraColors.Primary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
-                Text("根目录", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                Text(stringResource(R.string.files_root_directory), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
             }
             directoryList.forEach { dir ->
                 Row(
@@ -548,8 +570,12 @@ private fun EmptyFilesState() {
     ) {
         Icon(Icons.Rounded.FolderOpen, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(48.dp))
         Spacer(modifier = Modifier.height(12.dp))
-        Text("暂无文件", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-        Text("工作区文件将在 AI 操作时自动创建", style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
+        Text(stringResource(R.string.files_empty_title), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+        Text(
+            stringResource(R.string.files_empty_subtitle),
+            style = NexaraTypography.bodyMedium,
+            color = NexaraColors.OnSurfaceVariant,
+        )
     }
 }
 
@@ -579,6 +605,7 @@ private fun resolveKgStatus(file: FileEntry, kgExtractionStates: Map<String, KgS
     return KgStatus.NOT_STARTED
 }
 
+@Composable
 private fun formatFileMetadata(file: FileEntry): String {
     val size = formatFileSize(file.sizeBytes)
     val time = formatRelativeTime(file.updatedAt)
@@ -593,14 +620,16 @@ private fun formatFileSize(bytes: Long): String {
     return "${"%.0f".format(value)} ${units[digitGroups]}"
 }
 
+@Composable
 private fun formatRelativeTime(timestamp: Long): String {
     val now = System.currentTimeMillis()
     val diff = now - timestamp
+    val locale = LocalLocale.current.platformLocale
     return when {
-        diff < 60_000L -> "刚刚"
-        diff < 3_600_000L -> "${diff / 60_000L} 分钟前"
-        diff < 86_400_000L -> "${diff / 3_600_000L} 小时前"
-        diff < 604_800_000L -> "${diff / 86_400_000L} 天前"
-        else -> { SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(timestamp)) }
+        diff < 60_000L -> stringResource(R.string.files_time_just_now)
+        diff < 3_600_000L -> stringResource(R.string.files_time_minutes_ago, diff / 60_000L)
+        diff < 86_400_000L -> stringResource(R.string.files_time_hours_ago, diff / 3_600_000L)
+        diff < 604_800_000L -> stringResource(R.string.files_time_days_ago, diff / 86_400_000L)
+        else -> SimpleDateFormat("MMM d", locale).format(Date(timestamp))
     }
 }

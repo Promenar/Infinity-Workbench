@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -52,6 +53,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -64,28 +66,33 @@ import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
-import androidx.compose.ui.text.font.FontWeight
 import com.promenar.nexara.ui.theme.SpaceGrotesk
 
 private val ModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
-private val ModelTypeLabels = listOf("Chat", "Reasoning", "Image", "Embed", "Rerank")
+private val ModelTypeLabelResources = listOf(
+    R.string.provider_models_type_chat,
+    R.string.provider_models_type_reasoning,
+    R.string.provider_models_type_image,
+    R.string.provider_models_type_embedding,
+    R.string.provider_models_type_rerank,
+)
 
 private data class CapabilityTag(
     val key: String,
-    val label: String,
+    @param:StringRes val labelRes: Int,
     val icon: String,
     val color: androidx.compose.ui.graphics.Color
 )
 
 private val CapabilityTags = listOf(
-    CapabilityTag("vision", "Vision", "visibility", NexaraColors.StatusError.copy(alpha = 0.8f)),
-    CapabilityTag("internet", "Internet", "public", NexaraColors.StatusInfo),
-    CapabilityTag("audioinput", "Audio In", "mic", NexaraColors.StatusSuccess),
-    CapabilityTag("audiooutput", "Audio Out", "volume_up", NexaraColors.StatusSuccess),
-    CapabilityTag("videounderstanding", "Video", "videocam", NexaraColors.Tertiary),
-    CapabilityTag("structuredoutput", "JSON", "data_object", NexaraColors.Primary),
-    CapabilityTag("promptcaching", "Cache", "cached", NexaraColors.StatusWarning),
-    CapabilityTag("computeruse", "Computer", "computer", NexaraColors.Secondary)
+    CapabilityTag("vision", R.string.provider_models_capability_vision, "visibility", NexaraColors.StatusError.copy(alpha = 0.8f)),
+    CapabilityTag("internet", R.string.provider_models_capability_internet, "public", NexaraColors.StatusInfo),
+    CapabilityTag("audioinput", R.string.provider_models_capability_audio_input, "mic", NexaraColors.StatusSuccess),
+    CapabilityTag("audiooutput", R.string.provider_models_capability_audio_output, "volume_up", NexaraColors.StatusSuccess),
+    CapabilityTag("videounderstanding", R.string.provider_models_capability_video, "videocam", NexaraColors.Tertiary),
+    CapabilityTag("structuredoutput", R.string.provider_models_capability_structured_output, "data_object", NexaraColors.Primary),
+    CapabilityTag("promptcaching", R.string.provider_models_capability_prompt_caching, "cached", NexaraColors.StatusWarning),
+    CapabilityTag("computeruse", R.string.provider_models_capability_computer_use, "computer", NexaraColors.Secondary)
 )
 
 /** type → 基础能力推导表。当用户在 UI 中切换 type 时联动刷新 capabilities。 */
@@ -103,7 +110,7 @@ private val AllBaseCapKeys = TypeToBaseCaps.values.flatten().toSet()
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ProviderModelsScreen(
-    providerName: String = "Provider",
+    providerName: String = "",
     providerId: String = "",
     onNavigateBack: () -> Unit
 ) {
@@ -124,7 +131,9 @@ fun ProviderModelsScreen(
     val provider = remember(providers, providerId) {
         providers.find { it.id == providerId }
     }
-    val effectiveTitle = provider?.name ?: providerName
+    val effectiveTitle = provider?.name
+        ?: providerName.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.provider_models_default_provider)
 
     // 按提供商过滤模型（主提供商显示所有模型，其他只显示关联模型）
     val scopedModels = remember(models, providerId, provider) {
@@ -236,7 +245,7 @@ fun ProviderModelsScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Close,
-                                contentDescription = "关闭",
+                                contentDescription = stringResource(R.string.shared_btn_close),
                                 tint = if (isError) NexaraColors.StatusError.copy(alpha = 0.6f)
                                 else NexaraColors.StatusSuccess.copy(alpha = 0.6f),
                                 modifier = Modifier.size(14.dp)
@@ -304,7 +313,7 @@ fun ProviderModelsScreen(
         ) {
             Column {
                 Text(
-                    text = "Model ID",
+                    text = stringResource(R.string.provider_models_field_model_id),
                     style = NexaraTypography.labelMedium,
                     color = NexaraColors.OnSurfaceVariant
                 )
@@ -312,12 +321,12 @@ fun ProviderModelsScreen(
                 NexaraSearchBar(
                     value = newModelId,
                     onValueChange = { newModelId = it },
-                    placeholder = "e.g. model-id"
+                    placeholder = stringResource(R.string.provider_models_placeholder_model_id)
                 )
             }
             Column {
                 Text(
-                    text = "Display Name",
+                    text = stringResource(R.string.provider_models_field_display_name),
                     style = NexaraTypography.labelMedium,
                     color = NexaraColors.OnSurfaceVariant
                 )
@@ -325,7 +334,7 @@ fun ProviderModelsScreen(
                 NexaraSearchBar(
                     value = newModelName,
                     onValueChange = { newModelName = it },
-                    placeholder = "Optional"
+                    placeholder = stringResource(R.string.provider_models_placeholder_optional)
                 )
             }
 
@@ -592,7 +601,7 @@ private fun EnhancedModelCard(
                             .padding(2.dp),
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        ModelTypeLabels.forEachIndexed { index, label ->
+                        ModelTypeLabelResources.forEachIndexed { index, labelRes ->
                             val type = ModelTypes[index]
                             val isSelected = selectedType == type
                             val chipBg by animateColorAsState(
@@ -610,7 +619,7 @@ private fun EnhancedModelCard(
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(
-                                    text = label,
+                                    text = stringResource(labelRes),
                                     style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
                                     color = if (isSelected) NexaraColors.OnSurface else NexaraColors.Outline
                                 )
@@ -648,7 +657,7 @@ private fun EnhancedModelCard(
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = cap.label,
+                                text = stringResource(cap.labelRes),
                                 style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
                                 color = if (isActive) cap.color else NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f)
                             )
@@ -692,7 +701,7 @@ private fun EnhancedModelCard(
                 }
                 
                 Text(
-                    text = "tokens",
+                    text = stringResource(R.string.provider_models_tokens_unit),
                     style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
                     color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f)
                 )
@@ -715,7 +724,10 @@ private fun EnhancedModelCard(
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "Output: ${formatTokens(model.maxOutputTokens)}",
+                                text = stringResource(
+                                    R.string.provider_models_output_tokens,
+                                    formatTokens(model.maxOutputTokens),
+                                ),
                                 style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
                                 color = NexaraColors.Primary
                             )
@@ -730,7 +742,10 @@ private fun EnhancedModelCard(
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "截止: ${model.knowledgeCutoff!!}",
+                                text = stringResource(
+                                    R.string.provider_models_knowledge_cutoff,
+                                    model.knowledgeCutoff!!,
+                                ),
                                 style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
                                 color = NexaraColors.StatusWarning
                             )

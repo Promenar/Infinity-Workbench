@@ -40,8 +40,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.promenar.nexara.R
 import com.promenar.nexara.ui.chat.components.FilesPanel
 import com.promenar.nexara.ui.chat.components.RecycleBinPanel
 import com.promenar.nexara.ui.chat.components.ResourceExplorerViewModel
@@ -87,13 +89,13 @@ fun ResourceExplorerSheet(
     NexaraBottomSheet(
         show = show,
         onDismiss = onDismiss,
-        title = "资源管理器"
+        title = stringResource(R.string.resource_explorer_title)
     ) {
         Column {
             NexaraSearchBar(
                 value = searchQuery,
                 onValueChange = { viewModel.updateSearchQuery(it) },
-                placeholder = "搜索文件..."
+                placeholder = stringResource(R.string.resource_explorer_search_placeholder)
             )
 
             Row(
@@ -106,7 +108,12 @@ fun ResourceExplorerSheet(
                 ) {
                     Icon(Icons.Rounded.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (isImporting) "正在导入" else "导入文件")
+                    Text(
+                        stringResource(
+                            if (isImporting) R.string.resource_explorer_importing
+                            else R.string.resource_explorer_import_files,
+                        ),
+                    )
                 }
             }
 
@@ -128,7 +135,9 @@ fun ResourceExplorerSheet(
                         color = NexaraColors.Error,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = viewModel::retryLoadSession) { Text("重试") }
+                    TextButton(onClick = viewModel::retryLoadSession) {
+                        Text(stringResource(R.string.shared_btn_retry))
+                    }
                 }
             }
             if (importItems.isNotEmpty()) {
@@ -172,7 +181,12 @@ fun ResourceExplorerSheet(
                             modifier = Modifier.size(20.dp)
                         )
                     },
-                    text = { Text("文件", style = NexaraTypography.labelMedium) },
+                    text = {
+                        Text(
+                            stringResource(R.string.resource_explorer_tab_files),
+                            style = NexaraTypography.labelMedium,
+                        )
+                    },
                     selectedContentColor = NexaraColors.Primary,
                     unselectedContentColor = NexaraColors.OnSurfaceVariant
                 )
@@ -188,7 +202,11 @@ fun ResourceExplorerSheet(
                     },
                     text = {
                         Text(
-                            if (recycleBinCount > 0) "回收站 ($recycleBinCount)" else "回收站",
+                            if (recycleBinCount > 0) {
+                                stringResource(R.string.resource_explorer_recycle_bin_count, recycleBinCount)
+                            } else {
+                                stringResource(R.string.resource_explorer_recycle_bin)
+                            },
                             style = NexaraTypography.labelMedium
                         )
                     },
@@ -239,8 +257,14 @@ private fun ImportStatusList(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
-            Text("导入状态", style = NexaraTypography.labelMedium, modifier = Modifier.weight(1f))
-            TextButton(onClick = onClear, enabled = !isImporting) { Text("收起") }
+            Text(
+                stringResource(R.string.resource_explorer_import_status),
+                style = NexaraTypography.labelMedium,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onClear, enabled = !isImporting) {
+                Text(stringResource(R.string.resource_explorer_collapse))
+            }
         }
         LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 168.dp)) {
             items(items, key = { it.uri.toString() }) { item ->
@@ -257,10 +281,13 @@ private fun ImportStatusList(
                     )
                     Text(
                         text = when (item.status) {
-                            ShareImportStatus.Pending -> "等待中"
-                            ShareImportStatus.Importing -> "导入中"
-                            ShareImportStatus.Created -> "已导入"
-                            ShareImportStatus.Rejected -> "已拒绝：${rejectReasonLabel(item.reason)}"
+                            ShareImportStatus.Pending -> stringResource(R.string.resource_explorer_status_pending)
+                            ShareImportStatus.Importing -> stringResource(R.string.resource_explorer_status_importing)
+                            ShareImportStatus.Created -> stringResource(R.string.resource_explorer_status_created)
+                            ShareImportStatus.Rejected -> stringResource(
+                                R.string.resource_explorer_status_rejected,
+                                rejectReasonLabel(item.reason),
+                            )
                         },
                         style = NexaraTypography.labelSmall,
                         color = if (item.status == ShareImportStatus.Rejected) NexaraColors.Error else NexaraColors.Primary,
@@ -269,7 +296,7 @@ private fun ImportStatusList(
                         TextButton(
                             onClick = { onRetry(item.uri) },
                             enabled = !isImporting,
-                        ) { Text("重试") }
+                        ) { Text(stringResource(R.string.shared_btn_retry)) }
                     }
                 }
             }
@@ -277,20 +304,23 @@ private fun ImportStatusList(
     }
 }
 
-private fun rejectReasonLabel(reason: ShareRejectReason?): String = when (reason) {
-    ShareRejectReason.TargetRequired -> "工作区未就绪"
-    ShareRejectReason.UnsupportedMime -> "不支持的格式"
-    ShareRejectReason.MimeMismatch -> "文件类型不匹配"
-    ShareRejectReason.InvalidName -> "文件名无效"
-    ShareRejectReason.PermissionDenied -> "无读取权限"
-    ShareRejectReason.EmptyFile -> "文件为空"
-    ShareRejectReason.ItemTooLarge -> "文件过大"
-    ShareRejectReason.BatchTooLarge -> "批次过大"
-    ShareRejectReason.ReadFailed -> "读取失败"
-    ShareRejectReason.WriteFailed -> "写入失败"
-    ShareRejectReason.IndexScheduleFailed -> "索引排队失败"
-    null -> "未知原因"
-}
+@Composable
+private fun rejectReasonLabel(reason: ShareRejectReason?): String = stringResource(
+    when (reason) {
+        ShareRejectReason.TargetRequired -> R.string.share_import_reason_target
+        ShareRejectReason.UnsupportedMime -> R.string.share_import_reason_mime
+        ShareRejectReason.MimeMismatch -> R.string.share_import_reason_mismatch
+        ShareRejectReason.InvalidName -> R.string.share_import_reason_name
+        ShareRejectReason.PermissionDenied -> R.string.share_import_reason_permission
+        ShareRejectReason.EmptyFile -> R.string.share_import_reason_empty
+        ShareRejectReason.ItemTooLarge -> R.string.share_import_reason_item_large
+        ShareRejectReason.BatchTooLarge -> R.string.share_import_reason_batch_large
+        ShareRejectReason.ReadFailed -> R.string.share_import_reason_read
+        ShareRejectReason.WriteFailed -> R.string.share_import_reason_write
+        ShareRejectReason.IndexScheduleFailed -> R.string.share_import_reason_index
+        null -> R.string.resource_explorer_reason_unknown
+    },
+)
 
 internal fun shouldOfferImportRetry(item: ShareImportItem): Boolean =
     item.status == ShareImportStatus.Rejected && item.reason?.retryable == true
