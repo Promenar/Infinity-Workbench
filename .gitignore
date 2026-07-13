@@ -5,7 +5,14 @@
 
 # === Kotlin / Gradle (native-ui) ===
 .kotlin/
+.gradle/
+**/build/
 *.orig.*
+
+# === Generated runtime artifacts ===
+__pycache__/
+*.pyc
+.agent/tmp-agent-reports/*
 
 # === Android ===
 *.jks
