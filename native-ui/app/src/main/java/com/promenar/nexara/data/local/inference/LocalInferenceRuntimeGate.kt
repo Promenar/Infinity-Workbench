@@ -8,6 +8,14 @@ import com.promenar.nexara.BuildConfig
 class LocalInferenceRuntimeGate(
     val isAvailable: Boolean,
 ) {
+    /**
+     * 仅在当前构建包含本地推理能力时创建依赖。
+     *
+     * [factory] 保持惰性，避免无本地原生库的发行变体在构造远程能力时触发本地引擎门禁。
+     */
+    fun <T> createIfAvailable(factory: () -> T): T? =
+        if (isAvailable) factory() else null
+
     fun startupModelPath(
         localModelsEnabled: Boolean,
         autoLoadEnabled: Boolean,

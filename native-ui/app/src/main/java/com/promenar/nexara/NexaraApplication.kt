@@ -688,7 +688,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             ?.ifBlank { presetRemoteModel }
             ?: presetRemoteModel
         NexaraLogger.log("[EmbeddingClient] 构建: model=$model resolvedBy=$resolvedBy baseUrlSet=${baseUrl.isNotBlank()} apiKeySet=${apiKey.isNotBlank()}")
-        return EmbeddingClient(baseUrl = baseUrl, apiKey = apiKey, model = model, localEngine = localInferenceEngine)
+        return EmbeddingClient(
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            model = model,
+            localEngine = localInferenceRuntimeGate.createIfAvailable { localInferenceEngine },
+        )
     }
 
     fun rebuildEmbeddingClient() {

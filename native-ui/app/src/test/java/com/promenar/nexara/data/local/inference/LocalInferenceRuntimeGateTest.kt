@@ -6,6 +6,32 @@ import org.junit.Test
 
 class LocalInferenceRuntimeGateTest {
     @Test
+    fun `能力不可用时可选依赖不会被求值`() {
+        var factoryCalls = 0
+
+        val value = LocalInferenceRuntimeGate(isAvailable = false).createIfAvailable {
+            factoryCalls += 1
+            "engine"
+        }
+
+        assertThat(value).isNull()
+        assertThat(factoryCalls).isEqualTo(0)
+    }
+
+    @Test
+    fun `能力可用时可选依赖只求值一次`() {
+        var factoryCalls = 0
+
+        val value = LocalInferenceRuntimeGate(isAvailable = true).createIfAvailable {
+            factoryCalls += 1
+            "engine"
+        }
+
+        assertThat(value).isEqualTo("engine")
+        assertThat(factoryCalls).isEqualTo(1)
+    }
+
+    @Test
     fun `启动链具有独立的本地推理能力门`() {
         val unavailable = LocalInferenceRuntimeGate(isAvailable = false)
 
