@@ -1,0 +1,93 @@
+name: Android CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - codex/v0.2-beta
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: JVM、Lint、Android 编译与 Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: 配置 JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 配置 Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+            cmake;3.22.1
+
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          dependency-graph: disabled
+
+      - name: 执行当前可用质量门禁
+        working-directory: native-ui
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace \
+            clean \
+            :app:testDebugUnitTest \
+            :app:lintDebug \
+            :app:assembleDebug \
+            :app:compileDebugAndroidTestKotlin
+
+      - name: 上传 JVM 测试报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-ci-jvm-reports-${{ github.run_attempt }}
+          path: |
+            native-ui/app/build/reports/tests/testDebugUnitTest/
+            native-ui/app/build/test-results/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: 上传 Lint 报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-ci-lint-reports-${{ github.run_attempt }}
+          path: |
+            native-ui/app/build/reports/lint-results-debug.html
+            native-ui/app/build/reports/lint-results-debug.xml
+            native-ui/app/build/reports/lint-results-debug.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: 上传 Android 测试编译报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-ci-android-test-reports-${{ github.run_attempt }}
+          path: |
+            native-ui/app/build/reports/androidTests/
+            native-ui/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
+          retention-days: 14

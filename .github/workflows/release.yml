@@ -1,0 +1,166 @@
+name: Publish v0.2-beta APK
+
+on:
+  push:
+    tags:
+      - v0.2-beta
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-v0.2-beta
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: 验证、签名并发布侧载 APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: release
+
+    steps:
+      - name: 检出已存在的发行标签
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 校验固定标签与发行输入
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_TYPE}" = "tag"
+          test "${GITHUB_REF_NAME}" = "v0.2-beta"
+          test -f docs/release/v0.2-beta.md || {
+            echo "::error::缺少已审阅的 docs/release/v0.2-beta.md，拒绝发布。"
+            exit 1
+          }
+
+      - name: 配置 JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 配置 Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+            cmake;3.22.1
+
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          dependency-graph: disabled
+
+      - name: 校验受保护环境变量
+        env:
+          NEXARA_KEYSTORE_BASE64: ${{ secrets.NEXARA_KEYSTORE_BASE64 }}
+          NEXARA_STORE_PASSWORD: ${{ secrets.NEXARA_STORE_PASSWORD }}
+          NEXARA_KEY_ALIAS: ${{ secrets.NEXARA_KEY_ALIAS }}
+          NEXARA_KEY_PASSWORD: ${{ secrets.NEXARA_KEY_PASSWORD }}
+          NEXARA_SIGNING_CERT_SHA256: ${{ vars.NEXARA_SIGNING_CERT_SHA256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${NEXARA_KEYSTORE_BASE64}" || { echo "::error::release environment 缺少 NEXARA_KEYSTORE_BASE64"; exit 1; }
+          test -n "${NEXARA_STORE_PASSWORD}" || { echo "::error::release environment 缺少 NEXARA_STORE_PASSWORD"; exit 1; }
+          test -n "${NEXARA_KEY_ALIAS}" || { echo "::error::release environment 缺少 NEXARA_KEY_ALIAS"; exit 1; }
+          test -n "${NEXARA_KEY_PASSWORD}" || { echo "::error::release environment 缺少 NEXARA_KEY_PASSWORD"; exit 1; }
+          test -n "${NEXARA_SIGNING_CERT_SHA256}" || { echo "::error::release environment 缺少公开变量 NEXARA_SIGNING_CERT_SHA256"; exit 1; }
+
+      - name: 临时还原发行 keystore
+        env:
+          NEXARA_KEYSTORE_BASE64: ${{ secrets.NEXARA_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          encoded = os.environ["NEXARA_KEYSTORE_BASE64"]
+          target = Path(os.environ["RUNNER_TEMP"]) / "nexara-release.jks"
+          target.write_bytes(base64.b64decode(encoded, validate=True))
+          if target.stat().st_size == 0:
+              raise SystemExit("keystore 解码结果为空")
+          PY
+
+      - name: 执行全门禁并构建签名 APK
+        working-directory: native-ui
+        env:
+          NEXARA_KEYSTORE_PATH: ${{ runner.temp }}/nexara-release.jks
+          NEXARA_STORE_PASSWORD: ${{ secrets.NEXARA_STORE_PASSWORD }}
+          NEXARA_KEY_ALIAS: ${{ secrets.NEXARA_KEY_ALIAS }}
+          NEXARA_KEY_PASSWORD: ${{ secrets.NEXARA_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! grep -q 'NEXARA_KEYSTORE_PATH' app/build.gradle.kts; then
+            echo "::error::Phase4-A 尚未完成：Gradle 未接入 NEXARA_KEYSTORE_PATH 环境变量签名。"
+            exit 1
+          fi
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace \
+            clean \
+            :app:testDebugUnitTest \
+            :app:lintDebug \
+            :app:assembleDebug \
+            :app:compileDebugAndroidTestKotlin \
+            :app:assembleRelease
+
+      - name: 删除临时 keystore
+        if: always()
+        shell: bash
+        run: rm -f "${RUNNER_TEMP}/nexara-release.jks"
+
+      - name: 上传失败报告
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-gate-reports-${{ github.run_attempt }}
+          path: |
+            native-ui/app/build/reports/tests/testDebugUnitTest/
+            native-ui/app/build/test-results/testDebugUnitTest/
+            native-ui/app/build/reports/lint-results-debug.html
+            native-ui/app/build/reports/lint-results-debug.xml
+            native-ui/app/build/reports/lint-results-debug.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: 验证并整理发行 APK
+        env:
+          NEXARA_SIGNING_CERT_SHA256: ${{ vars.NEXARA_SIGNING_CERT_SHA256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp native-ui/app/build/outputs/apk/release/app-release.apk dist/nexara-v0.2-beta.apk
+          python3 scripts/verify-release-apk.py \
+            dist/nexara-v0.2-beta.apk \
+            --expected-package com.promenar.nexara.native \
+            --expected-version-code 2 \
+            --expected-version-name 0.2-beta \
+            --expected-cert-sha256 "${NEXARA_SIGNING_CERT_SHA256}" \
+            --checksum-output dist/nexara-v0.2-beta.apk.sha256
+
+      - name: 创建 GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create v0.2-beta \
+            dist/nexara-v0.2-beta.apk \
+            dist/nexara-v0.2-beta.apk.sha256 \
+            --verify-tag \
+            --prerelease \
+            --latest=false \
+            --title "Nexara v0.2-beta" \
+            --notes-file docs/release/v0.2-beta.md

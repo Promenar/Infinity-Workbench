@@ -9,16 +9,24 @@
 
 # === Android ===
 *.jks
+*.keystore
+*.jks.b64
+*.keystore.b64
 *.p8
 *.p12
 *.key
 *.mobileprovision
+secure.properties
 
 # === macOS ===
 .DS_Store
 *.pem
 
 # === Environment ===
+.env
+.env.*
+!.env.example
+!.env.*.example
 .env*.local
 
 # === Logs ===
