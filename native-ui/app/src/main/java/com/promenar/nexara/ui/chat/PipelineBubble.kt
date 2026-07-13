@@ -149,7 +149,14 @@ fun PipelineBubble(
         return
     }
 
-    val allSteps = remember(group.messages) { buildPipelineSteps(group.messages) }
+    val renderPlan = remember(group.messages, isGenerating, streamingContent.isNotEmpty()) {
+        buildPipelineRenderPlan(
+            messages = group.messages,
+            isGenerating = isGenerating,
+            hasStreamingContent = streamingContent.isNotEmpty()
+        )
+    }
+    val allSteps = renderPlan.steps
 
     Surface(
         modifier = modifier
@@ -221,8 +228,7 @@ fun PipelineBubble(
 
             // ── 生成中闪烁光标：仅在 pipeline 无 Content 步骤时（TTFT 期）渲染 ──
             //    有 Content 步骤时由 MarkdownText 内部的 StreamingCursor 接管
-            val hasContentStep = allSteps.any { it is PipelineStep.Content }
-            if (isGenerating && !hasContentStep) {
+            if (renderPlan.showStandaloneCursor) {
                 StreamingCursor()
             }
         }
@@ -268,7 +274,7 @@ fun PipelineBubble(
 //  Pipeline 步骤构建
 // ─────────────────────────────────────────────────────────────────
 
-private sealed class PipelineStep {
+internal sealed class PipelineStep {
     data class Thinking(
         val reasoning: String
     ) : PipelineStep()
@@ -281,6 +287,30 @@ private sealed class PipelineStep {
     data class Content(
         val content: String,
     ) : PipelineStep()
+}
+
+internal data class PipelineRenderPlan(
+    val steps: List<PipelineStep>,
+    val showStandaloneCursor: Boolean
+)
+
+internal fun buildPipelineRenderPlan(
+    messages: List<Message>,
+    isGenerating: Boolean,
+    hasStreamingContent: Boolean
+): PipelineRenderPlan {
+    val steps = buildPipelineSteps(messages).toMutableList()
+    val finalAssistant = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
+    val finalAssistantIsPlaceholder = finalAssistant != null && finalAssistant.content.isBlank()
+
+    if (isGenerating && hasStreamingContent && finalAssistantIsPlaceholder) {
+        steps.add(PipelineStep.Content(content = ""))
+    }
+
+    return PipelineRenderPlan(
+        steps = steps,
+        showStandaloneCursor = isGenerating && steps.none { it is PipelineStep.Content }
+    )
 }
 
 // ── 工具内容嗅探：覆盖 JSON 代码块、裸 JSON、分隔符文本、XML 四种格式 ──
