@@ -51,12 +51,17 @@ class SharedFileImporter(
         request: ShareRequest,
         workspaceRootUuid: String,
         retryUris: Set<Uri>? = null,
+        parentUuid: String = workspaceRootUuid,
     ): ShareImportBatchResult = withContext(Dispatchers.IO) {
-        if (workspaceRootUuid.isBlank()) {
+        if (workspaceRootUuid.isBlank() || parentUuid.isBlank()) {
             return@withContext ShareImportBatchResult(
                 inspect(request).map { it.reject(ShareRejectReason.TargetRequired) }
             )
         }
+        val target = resolveTarget(workspaceRootUuid, parentUuid)
+            ?: return@withContext ShareImportBatchResult(
+                inspect(request).map { it.reject(ShareRejectReason.TargetRequired) }
+            )
         var acceptedBytes = 0L
         val results = mutableListOf<ShareImportItem>()
         for (uri in request.uris) {
@@ -128,6 +133,8 @@ class SharedFileImporter(
                 val itemLimit = minOf(MAX_ITEM_BYTES, remainingBatch)
                 val creation = createWithStableName(
                     workspaceRootUuid = workspaceRootUuid,
+                    parentUuid = target.uuid,
+                    parentPath = target.materializedPath,
                     requestedName = safeName,
                     mimeType = resolved,
                     maxBytes = itemLimit,
@@ -239,6 +246,8 @@ class SharedFileImporter(
 
     private suspend fun createWithStableName(
         workspaceRootUuid: String,
+        parentUuid: String,
+        parentPath: String,
         requestedName: String,
         mimeType: String,
         maxBytes: Long,
@@ -247,7 +256,7 @@ class SharedFileImporter(
     ): FileCreation {
         repeat(MAX_NAME_ATTEMPTS) { collisionIndex ->
             val name = collisionName(requestedName, collisionIndex)
-            val path = "/$name"
+            val path = childPath(parentPath, name)
             workspace.getByMaterializedPath(workspaceRootUuid, path)?.let { existing ->
                 if (expectedHash != null && existing.hash == expectedHash) {
                     return FileCreation(existing, createdNow = false)
@@ -260,7 +269,7 @@ class SharedFileImporter(
                     uuid = UUID.randomUUID().toString(),
                     name = name,
                     mimeType = mimeType,
-                    parentUuid = workspaceRootUuid,
+                    parentUuid = parentUuid,
                     materializedPath = path,
                     maxBytes = maxBytes,
                     writer = writer,
@@ -271,6 +280,30 @@ class SharedFileImporter(
         }
         throw IllegalStateException("同名文件过多")
     }
+
+    private suspend fun resolveTarget(workspaceRootUuid: String, parentUuid: String): ImportTarget? {
+        if (parentUuid == workspaceRootUuid) {
+            return ImportTarget(parentUuid, "/")
+        }
+        val entry = try {
+            workspace.getByUuid(workspaceRootUuid, parentUuid)
+        } catch (_: IOException) {
+            return null
+        } catch (_: IllegalArgumentException) {
+            return null
+        } catch (_: IllegalStateException) {
+            return null
+        } catch (_: android.database.SQLException) {
+            return null
+        } ?: return null
+        if (!entry.isDirectory || entry.inRecycleBin ||
+            (entry.workspaceRootUuid.isNotBlank() && entry.workspaceRootUuid != workspaceRootUuid) ||
+            !isSafeParentPath(entry.materializedPath)
+        ) return null
+        return ImportTarget(entry.uuid, entry.materializedPath)
+    }
+
+    private data class ImportTarget(val uuid: String, val materializedPath: String)
 
     private suspend fun rollbackIfCreatedNow(
         workspaceRootUuid: String,
@@ -320,6 +353,12 @@ class SharedFileImporter(
             val extension = if (dot == null) "" else original.substring(dot)
             return "$base ($index)$extension"
         }
+
+        private fun childPath(parentPath: String, name: String): String =
+            if (parentPath == "/") "/$name" else "${parentPath.trimEnd('/')}/$name"
+
+        private fun isSafeParentPath(path: String): Boolean =
+            path.startsWith('/') && path.split('/').none { it == "." || it == ".." }
 
         private fun normalizeMime(value: String): String = value.substringBefore(';').trim().lowercase()
 

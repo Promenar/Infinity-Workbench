@@ -1,10 +1,12 @@
 package com.promenar.nexara.ui.rag
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.ShareRequest
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.VectorStats
@@ -31,6 +33,12 @@ import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import com.promenar.nexara.ui.common.ModelItem
 import com.promenar.nexara.ui.common.ModelCapability
 import com.promenar.nexara.ui.common.KgStatus
+import com.promenar.nexara.share.core.AndroidSafContentSource
+import com.promenar.nexara.share.core.AndroidSafImportRequestFactory
+import com.promenar.nexara.share.core.AndroidShareIndexScheduler
+import com.promenar.nexara.share.core.ShareImportItem
+import com.promenar.nexara.share.core.SharedFileImporter
+import kotlinx.coroutines.CancellationException
 
 data class RagStats(
     val documentCount: Int = 0,
@@ -56,10 +64,20 @@ class RagViewModel(
     private val kgRepository: IKnowledgeGraphRepository,
     private val fileOperationRepository: IFileOperationRepository,
     private val ragConfigPersistence: RagConfigPersistence,
-    private val keywordSearcher: KeywordSearcher
+    private val keywordSearcher: KeywordSearcher,
+    injectedImporter: SharedFileImporter? = null,
+    injectedRequestFactory: ((Uri, String) -> ShareRequest)? = null,
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
+
+    private val sharedFileImporter = injectedImporter ?: SharedFileImporter(
+        source = AndroidSafContentSource(app.contentResolver),
+        workspace = workspaceRepository,
+        indexScheduler = AndroidShareIndexScheduler(app),
+    )
+    private val importRequestFactory = injectedRequestFactory
+        ?: AndroidSafImportRequestFactory(app.contentResolver)::create
 
     private val vectorStatsService = VectorStatsService(vectorRepository)
 
@@ -534,76 +552,41 @@ class RagViewModel(
         }
     }
 
-    fun importDocuments(uris: List<android.net.Uri>, folderId: String? = null) {
+    fun importDocuments(uris: List<Uri>, folderId: String? = null) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
             val rootUuid = _workspaceRootUuid.value ?: return@launch
             val parentUuid = folderId ?: rootUuid
-            val importedFiles = mutableListOf<FileEntry>()
+            val imported = mutableListOf<ShareImportItem>()
+            val failures = mutableListOf<String>()
+            _lastQueueError.value = null
 
-            for (uri in uris) {
-                var fileName: String? = null
+            for (uri in uris.distinct()) {
                 try {
-                    val contentResolver = app.contentResolver
-                    val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
-                    fileName = resolveFileName(uri, contentResolver)
-                        ?: "imported_${System.currentTimeMillis()}.bin"
-
-                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: continue
-
-                    // 根据文件类型选择提取器
-                    val content = when {
-                        mimeType == "application/pdf" || fileName!!.endsWith(".pdf", ignoreCase = true) -> {
-                            val result = com.promenar.nexara.data.rag.PdfExtractor.extract(app, uri)
-                            result.getOrNull()?.text ?: String(bytes, Charsets.UTF_8)
-                        }
-                        mimeType.contains("wordprocessingml") || fileName!!.endsWith(".docx", ignoreCase = true) -> {
-                            com.promenar.nexara.data.rag.DocumentImporter.extractWord(uri, contentResolver)
-                        }
-                        mimeType.startsWith("text/") || isPlainTextFile(fileName!!) -> {
-                            String(bytes, Charsets.UTF_8)
-                        }
-                        else -> {
-                            // 二进制文件：存储原始内容
-                            "Binary file: ${fileName!!} (${formatBytes(bytes.size.toLong())})"
-                        }
-                    }
-
-                    val uuid = java.util.UUID.randomUUID().toString()
-                    val parentPath = workspaceRepository.getByUuid(rootUuid, parentUuid)?.materializedPath
-                        ?: continue
-                    val matPath = (parentPath.trimEnd('/') + "/${fileName}").let { if (it.startsWith('/')) it else "/$it" }
-
-                    val entry = workspaceRepository.createFileInWorkspace(
+                    val request = importRequestFactory(uri, rootUuid)
+                    val result = sharedFileImporter.import(
+                        request = request,
                         workspaceRootUuid = rootUuid,
-                        uuid = uuid,
-                        name = fileName!!,
-                        content = content,
                         parentUuid = parentUuid,
-                        materializedPath = matPath
                     )
-
-                    importedFiles.add(entry)
-
-                    // 触发自动向量化（若用户开启了 KG，同步触发图谱抽取）
-                    if (!content.startsWith("Binary file:") && !content.startsWith("[Error]")) {
-                        val kgStrategy = if (_config.value.enableKnowledgeGraph) "full" else null
-                        app.vectorizationQueue.enqueueDocument(
-                            workspaceRootUuid = rootUuid,
-                            docId = uuid,
-                            docTitle = fileName!!,
-                            content = content,
-                            kgStrategy = kgStrategy
-                        )
+                    imported += result.created
+                    failures += result.rejected.map { item ->
+                        "${item.displayName} (${item.reason?.name ?: "Rejected"})"
                     }
-                } catch (e: Exception) {
-                    _lastQueueError.value = "导入失败: ${fileName ?: "未知文件"} - ${e.message?.take(80)}"
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    failures += "${uri.lastPathSegment ?: "未知文件"} - ${failure.message?.take(80) ?: "未知错误"}"
                 }
             }
 
-            if (importedFiles.isNotEmpty()) {
-                _lastQueueError.value = null
+            if (failures.isNotEmpty()) {
+                _lastQueueError.value = "导入失败: ${failures.joinToString("；").take(240)}"
+                _indexingStatus.value = null
+                _indexingSubStatus.value = null
+                _isIndexing.value = true
+            }
+            if (imported.isNotEmpty()) {
                 loadStats()
             }
         }
@@ -715,39 +698,6 @@ class RagViewModel(
                 )
             } catch (_: Exception) { }
         }
-    }
-
-    /** 判断是否为纯文本文件扩展名 */
-    private fun isPlainTextFile(fileName: String): Boolean {
-        val textExtensions = setOf("txt", "md", "json", "xml", "csv", "yml", "yaml", "log", "kt", "java", "py", "js", "ts", "html", "css", "sql")
-        val ext = fileName.substringAfterLast('.', "").lowercase()
-        return ext in textExtensions
-    }
-
-    private fun formatBytes(bytes: Long): String {
-        if (bytes <= 0) return "0 B"
-        val units = arrayOf("B", "KB", "MB", "GB")
-        val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.size - 1)
-        val value = bytes / Math.pow(1024.0, digitGroups.toDouble())
-        return "${"%.1f".format(value)} ${units[digitGroups]}"
-    }
-
-    /**
-     * 从 Content URI 解析文件显示名。
-     * 优先使用 OpenableColumns.DISPLAY_NAME，回退到 URI 最后一段。
-     */
-    private fun resolveFileName(uri: android.net.Uri, resolver: android.content.ContentResolver): String? {
-        var name: String? = null
-        resolver.query(uri, null, null, null, null)?.use { cursor ->
-            val nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-            if (nameIdx >= 0 && cursor.moveToFirst()) {
-                name = cursor.getString(nameIdx)
-            }
-        }
-        if (name.isNullOrBlank()) {
-            name = uri.lastPathSegment?.substringAfterLast('/')
-        }
-        return name
     }
 
     fun extractKnowledgeGraph(docId: String, kgStrategy: String) {

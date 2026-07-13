@@ -1,9 +1,7 @@
 package com.promenar.nexara.ui.chat.components
 
 import android.app.Application
-import android.content.ContentResolver
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -12,15 +10,12 @@ import com.promenar.nexara.ShareRequest
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.share.core.AndroidShareIndexScheduler
+import com.promenar.nexara.share.core.AndroidSafContentSource
+import com.promenar.nexara.share.core.AndroidSafImportRequestFactory
 import com.promenar.nexara.share.core.ShareImportItem
 import com.promenar.nexara.share.core.ShareImportStatus
 import com.promenar.nexara.share.core.ShareRejectReason
-import com.promenar.nexara.share.core.SharedContentMetadata
-import com.promenar.nexara.share.core.SharedContentSource
 import com.promenar.nexara.share.core.SharedFileImporter
-import java.io.IOException
-import java.io.InputStream
-import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -40,12 +35,13 @@ class ResourceExplorerViewModel(
 
     private val importer by lazy {
         injectedImporter ?: SharedFileImporter(
-            source = SafContentSource(application.contentResolver),
+            source = AndroidSafContentSource(application.contentResolver),
             workspace = workspaceRepo,
             indexScheduler = AndroidShareIndexScheduler(application as NexaraApplication),
         )
     }
     private val contentResolver = application.contentResolver
+    private val requestFactory = AndroidSafImportRequestFactory(contentResolver)
 
     private val _workspaceRootUuid = MutableStateFlow<String?>(null)
     val workspaceRootUuid: StateFlow<String?> = _workspaceRootUuid.asStateFlow()
@@ -226,15 +222,7 @@ class ResourceExplorerViewModel(
     }
 
     private fun createRequest(uri: Uri, rootUuid: String): ShareRequest {
-        val mimeType = contentResolver.getType(uri) ?: mimeTypeFromName(uri.lastPathSegment)
-        return ShareRequest(
-            uris = listOf(uri),
-            mimeType = mimeType,
-            fingerprint = uri.toString(),
-            canonicalSizeBytes = uri.toString().length,
-            requestId = UUID.randomUUID().toString(),
-            targetWorkspaceRootUuid = rootUuid,
-        )
+        return requestFactory.create(uri, rootUuid)
     }
 
     private fun updateImportItem(index: Int, transform: (ShareImportItem) -> ShareImportItem) {
@@ -278,44 +266,5 @@ class ResourceExplorerViewModel(
                 }
             }
 
-        private fun mimeTypeFromName(name: String?): String = when {
-            name?.endsWith(".pdf", ignoreCase = true) == true -> "application/pdf"
-            name?.endsWith(".md", ignoreCase = true) == true -> "text/markdown"
-            name?.endsWith(".json", ignoreCase = true) == true -> "application/json"
-            else -> "text/plain"
-        }
-    }
-
-    private class SafContentSource(
-        private val resolver: ContentResolver,
-    ) : SharedContentSource {
-        override fun metadata(uri: Uri): SharedContentMetadata {
-            var displayName: String? = null
-            var sizeBytes: Long? = null
-            resolver.query(
-                uri,
-                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
-                null,
-                null,
-                null,
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        .takeIf { it >= 0 }
-                        ?.let { displayName = cursor.getString(it) }
-                    cursor.getColumnIndex(OpenableColumns.SIZE)
-                        .takeIf { it >= 0 && !cursor.isNull(it) }
-                        ?.let { sizeBytes = cursor.getLong(it) }
-                }
-            }
-            return SharedContentMetadata(
-                displayName = displayName,
-                mimeType = resolver.getType(uri) ?: mimeTypeFromName(displayName ?: uri.lastPathSegment),
-                sizeBytes = sizeBytes,
-            )
-        }
-
-        override fun open(uri: Uri): InputStream = resolver.openInputStream(uri)
-            ?: throw IOException("无法打开所选文件")
     }
 }

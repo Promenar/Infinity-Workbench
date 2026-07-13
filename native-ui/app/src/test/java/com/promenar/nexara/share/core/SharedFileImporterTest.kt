@@ -13,6 +13,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.InputStream
 
 @RunWith(RobolectricTestRunner::class)
@@ -99,6 +100,87 @@ class SharedFileImporterTest {
         )
 
         assertThat(result.created.single().displayName).isEqualTo("report (2).md")
+    }
+
+    @Test
+    fun `指定文件夹时使用父目录路径创建并调度文件引用`() = runTest {
+        val uri = Uri.parse("content://fixture/note.txt")
+        val folder = folder("docs", "/docs")
+        val source = FakeSource(
+            metadata = mapOf(uri to meta("note.txt", "text/plain", 4)),
+            bytes = mapOf(uri to "body".toByteArray()),
+        )
+        val repository = repository(folder = folder)
+        val scheduled = mutableListOf<FileEntry>()
+        val importer = SharedFileImporter(source, repository, ShareIndexScheduler { root, entry ->
+            assertThat(root).isEqualTo(ROOT)
+            scheduled += entry
+            ShareIndexReceipt("task-${entry.uuid}", entry.uuid)
+        })
+
+        val result = importer.import(
+            request = request(listOf(uri)),
+            workspaceRootUuid = ROOT,
+            parentUuid = folder.uuid,
+        )
+
+        assertThat(result.created.single().created?.parentUuid).isEqualTo(folder.uuid)
+        assertThat(result.created.single().created?.materializedPath).isEqualTo("/docs/note.txt")
+        assertThat(scheduled.single().materializedPath).isEqualTo("/docs/note.txt")
+        coVerify(exactly = 1) {
+            repository.createFileInWorkspaceStreaming(
+                workspaceRootUuid = ROOT,
+                uuid = any(),
+                name = "note.txt",
+                mimeType = "text/plain",
+                parentUuid = folder.uuid,
+                materializedPath = "/docs/note.txt",
+                maxBytes = any(),
+                writer = any(),
+            )
+        }
+    }
+
+    @Test
+    fun `索引排队失败会回滚指定文件夹内本轮新建文件`() = runTest {
+        val uri = Uri.parse("content://fixture/rollback.txt")
+        val folder = folder("docs", "/docs")
+        val source = FakeSource(
+            metadata = mapOf(uri to meta("rollback.txt", "text/plain", 4)),
+            bytes = mapOf(uri to "body".toByteArray()),
+        )
+        val repository = repository(folder = folder)
+        val importer = SharedFileImporter(source, repository, ShareIndexScheduler { _, _ ->
+            throw IOException("queue unavailable")
+        })
+
+        val result = importer.import(
+            request = request(listOf(uri)),
+            workspaceRootUuid = ROOT,
+            parentUuid = folder.uuid,
+        )
+
+        assertThat(result.rejected.single().reason).isEqualTo(ShareRejectReason.IndexScheduleFailed)
+        coVerify(exactly = 1) { repository.permanentDelete(ROOT, "entry-rollback.txt") }
+    }
+
+    @Test
+    fun `不存在或非目录的导入目标会在读取前被拒绝`() = runTest {
+        val uri = Uri.parse("content://fixture/note.txt")
+        val source = FakeSource(
+            metadata = mapOf(uri to meta("note.txt", "text/plain", 4)),
+            bytes = mapOf(uri to "body".toByteArray()),
+        )
+        val repository = repository()
+
+        val result = SharedFileImporter(source, repository).import(
+            request = request(listOf(uri)),
+            workspaceRootUuid = ROOT,
+            parentUuid = "missing-folder",
+        )
+
+        assertThat(result.rejected.single().reason).isEqualTo(ShareRejectReason.TargetRequired)
+        coVerify(exactly = 0) { repository.createFileInWorkspaceStreaming(any(), any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -213,11 +295,15 @@ class SharedFileImporterTest {
     private fun repository(
         existingPaths: Set<String> = emptySet(),
         reportedSizes: Map<String, Long> = emptyMap(),
+        folder: FileEntry? = null,
     ): IWorkspaceRepository {
         val repository = mockk<IWorkspaceRepository>()
+        coEvery { repository.getByUuid(ROOT, any()) } answers {
+            folder?.takeIf { it.uuid == secondArg<String>() }
+        }
         coEvery { repository.getByMaterializedPath(ROOT, any()) } answers {
             val path = secondArg<String>()
-            if (path in existingPaths) entry(path.removePrefix("/"), 1) else null
+            if (path in existingPaths) entry(path.substringAfterLast('/'), 1, materializedPath = path) else null
         }
         coEvery {
             repository.createFileInWorkspaceStreaming(
@@ -225,16 +311,23 @@ class SharedFileImporterTest {
                 uuid = any(),
                 name = any(),
                 mimeType = any(),
-                parentUuid = ROOT,
+                parentUuid = any(),
                 materializedPath = any(),
                 maxBytes = any(),
                 writer = any(),
             )
         } coAnswers {
             val name = arg<String>(2)
+            val parentUuid = arg<String?>(4)
+            val materializedPath = arg<String>(5)
             val output = ByteArrayOutputStream()
             arg<(java.io.OutputStream) -> Unit>(7)(output)
-            entry(name, reportedSizes[name] ?: output.size().toLong())
+            entry(
+                name = name,
+                size = reportedSizes[name] ?: output.size().toLong(),
+                parentUuid = parentUuid,
+                materializedPath = materializedPath,
+            )
         }
         coJustRun { repository.permanentDelete(any(), any()) }
         return repository
@@ -248,16 +341,34 @@ class SharedFileImporterTest {
         requestId = "request",
     )
 
-    private fun entry(name: String, size: Long) = FileEntry(
+    private fun entry(
+        name: String,
+        size: Long,
+        parentUuid: String? = ROOT,
+        materializedPath: String = "/$name",
+    ) = FileEntry(
         uuid = "entry-$name",
         workspaceRootUuid = ROOT,
-        parentUuid = ROOT,
+        parentUuid = parentUuid,
         name = name,
         hash = "hash",
         mimeType = if (name.endsWith(".md")) "text/markdown" else "text/plain",
         sizeBytes = size,
         physicalRootPath = "/workspace",
-        materializedPath = "/$name",
+        materializedPath = materializedPath,
+        createdAt = 1,
+        updatedAt = 1,
+    )
+
+    private fun folder(name: String, path: String) = FileEntry(
+        uuid = "folder-$name",
+        workspaceRootUuid = ROOT,
+        parentUuid = ROOT,
+        name = name,
+        hash = "",
+        isDirectory = true,
+        physicalRootPath = "/workspace",
+        materializedPath = path,
         createdAt = 1,
         updatedAt = 1,
     )

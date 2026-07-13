@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.rag
 
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.ShareRequest
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IFileOperationRepository
@@ -12,6 +13,11 @@ import com.promenar.nexara.data.rag.KeywordSearcher
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
+import com.promenar.nexara.share.core.ShareImportBatchResult
+import com.promenar.nexara.share.core.ShareImportItem
+import com.promenar.nexara.share.core.ShareImportStatus
+import com.promenar.nexara.share.core.ShareRejectReason
+import com.promenar.nexara.share.core.SharedFileImporter
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -22,6 +28,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -76,15 +83,115 @@ class RagViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createViewModel(): RagViewModel {
+    private fun createViewModel(
+        importer: SharedFileImporter? = null,
+        requestFactory: ((android.net.Uri, String) -> ShareRequest)? = null,
+    ): RagViewModel {
         assertThat(app.vectorizationQueue).isSameInstanceAs(vectorizationQueue)
         val ragPrefs = mockk<android.content.SharedPreferences>(relaxed = true)
         val ragConfigPersistence = RagConfigPersistence(ragPrefs)
         return RagViewModel(
             app, workspaceRepository, vectorRepository, kgRepository,
-            fileOperationRepository, ragConfigPersistence, keywordSearcher
+            fileOperationRepository, ragConfigPersistence, keywordSearcher,
+            injectedImporter = importer,
+            injectedRequestFactory = requestFactory,
         )
     }
+
+    @Test
+    fun `知识库导入复用共享安全管线并保留目标文件夹`() = runTest {
+        val uri = mockk<android.net.Uri>()
+        every { uri.lastPathSegment } returns "unsafe.bin"
+        every { uri.toString() } returns "content://fixture/unsafe.bin"
+        val request = ShareRequest(
+            uris = listOf(uri),
+            mimeType = "application/octet-stream",
+            fingerprint = "fixture",
+            canonicalSizeBytes = 7,
+            requestId = "request",
+            targetWorkspaceRootUuid = "rag-root",
+        )
+        val importer = mockk<SharedFileImporter>()
+        coEvery {
+            importer.import(request, "rag-root", null, "folder-docs")
+        } returns ShareImportBatchResult(
+            listOf(
+                ShareImportItem(
+                    uri = uri,
+                    displayName = "unsafe.bin",
+                    mimeType = "application/octet-stream",
+                    sizeBytes = 4,
+                    status = ShareImportStatus.Rejected,
+                    reason = ShareRejectReason.UnsupportedMime,
+                )
+            )
+        )
+        val vm = createViewModel(
+            importer = importer,
+            requestFactory = { requestedUri, root ->
+                assertThat(requestedUri).isEqualTo(uri)
+                assertThat(root).isEqualTo("rag-root")
+                request
+            },
+        )
+
+        vm.importDocuments(listOf(uri), folderId = "folder-docs")
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            importer.import(request, "rag-root", null, "folder-docs")
+        }
+        assertThat(vm.lastQueueError.value).contains("unsafe.bin")
+        assertThat(vm.lastQueueError.value).contains("UnsupportedMime")
+    }
+
+    @Test
+    fun `共享导入器异常会成为可见失败且不会被部分成功清除`() = runTest {
+        val good = mockk<android.net.Uri>()
+        val failed = mockk<android.net.Uri>()
+        every { good.lastPathSegment } returns "good.txt"
+        every { good.toString() } returns "content://fixture/good.txt"
+        every { failed.lastPathSegment } returns "failed.txt"
+        every { failed.toString() } returns "content://fixture/failed.txt"
+        val importer = mockk<SharedFileImporter>()
+        val goodRequest = requestFor(good)
+        val failedRequest = requestFor(failed)
+        coEvery { importer.import(goodRequest, "rag-root", null, "rag-root") } returns
+            ShareImportBatchResult(
+                listOf(
+                    ShareImportItem(
+                        uri = good,
+                        displayName = "good.txt",
+                        mimeType = "text/plain",
+                        sizeBytes = 4,
+                        status = ShareImportStatus.Created,
+                    )
+                )
+            )
+        coEvery { importer.import(failedRequest, "rag-root", null, "rag-root") } throws
+            java.io.IOException("provider died")
+        val vm = createViewModel(
+            importer = importer,
+            requestFactory = { uri, _ ->
+                if (uri.lastPathSegment == "good.txt") goodRequest else failedRequest
+            },
+        )
+
+        vm.importDocuments(listOf(good, failed))
+        advanceUntilIdle()
+
+        assertThat(vm.lastQueueError.value).contains("failed.txt")
+        assertThat(vm.lastQueueError.value).contains("provider died")
+    }
+
+    private fun requestFor(uri: android.net.Uri) = ShareRequest(
+        uris = listOf(uri),
+        mimeType = "text/plain",
+        fingerprint = uri.toString(),
+        canonicalSizeBytes = uri.toString().length,
+        requestId = uri.lastPathSegment.orEmpty(),
+        targetWorkspaceRootUuid = "rag-root",
+    )
 
     @Test
     fun `init loadStats uses document count from workspace`() = runTest {
