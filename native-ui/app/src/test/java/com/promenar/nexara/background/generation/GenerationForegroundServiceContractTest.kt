@@ -25,16 +25,42 @@ class GenerationForegroundServiceContractTest {
     fun `TRACK先进入前台再观察且Service不承诺进程死亡恢复`() {
         val track = functionBody("private fun handleTrack(intent: Intent)")
         assertThat(track.indexOf("startImmediately(initial)")).isAtLeast(0)
-        assertThat(track.indexOf("coordinator.observe(sessionId)"))
+        assertThat(track.indexOf("activeCoordinator.observe(sessionId)"))
             .isGreaterThan(track.indexOf("startImmediately(initial)"))
         assertThat(service).contains("return START_NOT_STICKY")
         assertThat(service).contains("stopSelfResult(latestStartId)")
     }
 
     @Test
+    fun `冷启动先用占位通知晋升且恢复期不构造Coordinator`() {
+        val onCreate = functionBody("override fun onCreate()")
+        assertThat(onCreate).doesNotContain("generationCoordinator")
+
+        val onStart = functionBody(
+            "override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int",
+        )
+        val trackBranch = onStart.indexOf("ACTION_TRACK")
+        val promotion = onStart.indexOf("promoteForCommand()")
+        val dispatch = onStart.indexOf("handleTrack(intent)")
+        assertThat(trackBranch).isAtLeast(0)
+        assertThat(promotion).isGreaterThan(trackBranch)
+        assertThat(dispatch).isGreaterThan(promotion)
+
+        val track = functionBody("private fun handleTrack(intent: Intent)")
+        val startupGuard = track.indexOf("app.startupState.value != BackupStartupState.Ready")
+        val coordinatorAccess = track.indexOf("app.generationCoordinator")
+        assertThat(startupGuard).isAtLeast(0)
+        assertThat(coordinatorAccess).isGreaterThan(startupGuard)
+
+        val stop = functionBody("private fun handleStop(intent: Intent)")
+        assertThat(stop).contains("app.startupState.value != BackupStartupState.Ready")
+        assertThat(stop).contains("stopUnconditionally()")
+    }
+
+    @Test
     fun `API35 timeout精确取消当前task后无条件停止`() {
         val timeout = functionBody("override fun onTimeout(startId: Int, fgsType: Int)")
-        assertThat(timeout).contains("coordinator.cancel(it, CancellationReason.TIMEOUT)")
+        assertThat(timeout).contains("coordinator?.cancel(it, CancellationReason.TIMEOUT)")
         assertThat(timeout).contains("stopUnconditionally()")
         assertThat(functionBody("private fun stopUnconditionally()" )).contains("stopSelf()")
     }
@@ -42,9 +68,14 @@ class GenerationForegroundServiceContractTest {
     @Test
     fun `陈旧STOP在取消与停止之前先校验当前taskId`() {
         val stop = functionBody("private fun handleStop(intent: Intent)")
+        val noTrackedTask = stop.indexOf(
+            "if (trackedTaskId == null) {\n            stopSelfResult(latestStartId)\n            return\n        }",
+        )
         val guard = stop.indexOf("if (!shouldHandleGenerationStop(trackedTaskId, taskId)) return")
+        assertThat(noTrackedTask).isAtLeast(0)
+        assertThat(guard).isGreaterThan(noTrackedTask)
         assertThat(guard).isAtLeast(0)
-        assertThat(stop.indexOf("coordinator.cancel")).isGreaterThan(guard)
+        assertThat(stop.indexOf("coordinator?.cancel")).isGreaterThan(guard)
         assertThat(stop.indexOf("stopTracking(taskId)")).isGreaterThan(guard)
     }
 
@@ -61,7 +92,7 @@ class GenerationForegroundServiceContractTest {
         assertThat(failure).contains("if (trackedTaskId != taskId) return")
         assertThat(failure).contains("ForegroundServiceFailureOutcome.GENERATION_STOPPED")
         assertThat(failure).contains(
-            "coordinator.cancel(taskId, CancellationReason.BACKGROUND_UNAVAILABLE)",
+            "coordinator?.cancel(taskId, CancellationReason.BACKGROUND_UNAVAILABLE)",
         )
         assertThat(failure).contains("stopUnconditionally()")
 
@@ -81,7 +112,7 @@ class GenerationForegroundServiceContractTest {
         )
 
         val track = functionBody("private fun handleTrack(intent: Intent)")
-        assertThat(track).contains("if (trackedTaskId == null) stopSelfResult(latestStartId)")
+        assertThat(track).contains("stopUnconditionally()")
         val stop = functionBody("private fun handleStop(intent: Intent)")
         assertThat(stop).contains("if (trackedTaskId == null) stopSelfResult(latestStartId)")
     }

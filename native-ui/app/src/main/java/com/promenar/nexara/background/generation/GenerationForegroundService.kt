@@ -1,5 +1,7 @@
 package com.promenar.nexara.background.generation
 
+import android.app.Notification
+import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
@@ -7,7 +9,10 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
 import androidx.core.app.ServiceCompat
+import androidx.core.app.NotificationCompat
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.R
+import com.promenar.nexara.data.backup.BackupStartupState
 import com.promenar.nexara.domain.generation.CancellationReason
 import com.promenar.nexara.domain.generation.GenerationCoordinator
 import com.promenar.nexara.domain.generation.GenerationPhase
@@ -22,8 +27,9 @@ import kotlinx.coroutines.launch
 
 class GenerationForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private lateinit var app: NexaraApplication
     private lateinit var notificationFactory: GenerationNotificationFactory
-    private lateinit var coordinator: GenerationCoordinator
+    private var coordinator: GenerationCoordinator? = null
     private var failureReporter: ForegroundServiceFailureReporter? = null
     private var observerJob: Job? = null
     private var trackedTaskId: String? = null
@@ -31,16 +37,15 @@ class GenerationForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val app = application as NexaraApplication
+        app = application as NexaraApplication
         notificationFactory = GenerationNotificationFactory(this, app.appIntentRouter)
-        coordinator = app.generationCoordinator
         failureReporter = app.generationForegroundController as? ForegroundServiceFailureReporter
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         latestStartId = startId
         when (intent?.action) {
-            ACTION_TRACK -> handleTrack(intent)
+            ACTION_TRACK -> if (promoteForCommand()) handleTrack(intent) else Unit
             ACTION_STOP -> handleStop(intent)
             else -> if (trackedTaskId == null) stopSelfResult(startId) else Unit
         }
@@ -48,7 +53,7 @@ class GenerationForegroundService : Service() {
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        trackedTaskId?.let { coordinator.cancel(it, CancellationReason.TIMEOUT) }
+        trackedTaskId?.let { coordinator?.cancel(it, CancellationReason.TIMEOUT) }
         stopUnconditionally()
     }
 
@@ -61,13 +66,19 @@ class GenerationForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun handleTrack(intent: Intent) {
+        if (app.startupState.value != BackupStartupState.Ready) {
+            stopUnconditionally()
+            return
+        }
         val taskId = intent.getStringExtra(EXTRA_TASK_ID)?.takeIf(String::isNotBlank)
         val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)?.takeIf(String::isNotBlank)
         val assistantMessageId = intent.getStringExtra(EXTRA_ASSISTANT_MESSAGE_ID).orEmpty()
         if (taskId == null || sessionId == null) {
-            if (trackedTaskId == null) stopSelfResult(latestStartId)
+            stopUnconditionally()
             return
         }
+        val activeCoordinator = app.generationCoordinator
+        coordinator = activeCoordinator
         val initial = GenerationTaskSnapshot(
             taskId = taskId,
             sessionId = sessionId,
@@ -80,7 +91,7 @@ class GenerationForegroundService : Service() {
         if (!startImmediately(initial)) return
         observerJob?.cancel()
         observerJob = serviceScope.launch {
-            coordinator.observe(sessionId).collect { snapshot ->
+            activeCoordinator.observe(sessionId).collect { snapshot ->
                 when (val decision = reduceGenerationForeground(taskId, snapshot)) {
                     is GenerationForegroundDecision.Update -> updateNotification(decision.snapshot)
                     is GenerationForegroundDecision.Stop -> stopTracking(decision.taskId)
@@ -90,15 +101,66 @@ class GenerationForegroundService : Service() {
     }
 
     private fun handleStop(intent: Intent) {
+        if (app.startupState.value != BackupStartupState.Ready) {
+            stopUnconditionally()
+            return
+        }
         val taskId = intent.getStringExtra(EXTRA_TASK_ID)?.takeIf(String::isNotBlank)
         if (taskId == null) {
             if (trackedTaskId == null) stopSelfResult(latestStartId)
             return
         }
+        if (trackedTaskId == null) {
+            stopSelfResult(latestStartId)
+            return
+        }
         if (!shouldHandleGenerationStop(trackedTaskId, taskId)) return
-        coordinator.cancel(taskId, CancellationReason.USER)
+        coordinator?.cancel(taskId, CancellationReason.USER)
         stopTracking(taskId)
     }
+
+    private fun promoteForCommand(): Boolean = try {
+        ensureStartingChannel()
+        ServiceCompat.startForeground(
+            this,
+            GenerationNotificationFactory.NOTIFICATION_ID,
+            startingNotification(),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+        )
+        true
+    } catch (_: RuntimeException) {
+        stopUnconditionally()
+        false
+    }
+
+    private fun ensureStartingChannel() {
+        val manager = getSystemService(NotificationManager::class.java)
+        if (manager.getNotificationChannel(GenerationNotificationFactory.CHANNEL_ID) != null) return
+        manager.createNotificationChannel(
+            NotificationChannel(
+                GenerationNotificationFactory.CHANNEL_ID,
+                getString(R.string.generation_notification_channel),
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                description = getString(R.string.generation_notification_channel_description)
+                setShowBadge(false)
+            },
+        )
+    }
+
+    private fun startingNotification(): Notification =
+        NotificationCompat.Builder(this, GenerationNotificationFactory.CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(getString(R.string.generation_notification_title))
+            .setContentText(getString(R.string.generation_notification_preparing))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .build()
 
     private fun startImmediately(snapshot: GenerationTaskSnapshot): Boolean = try {
         ServiceCompat.startForeground(
@@ -138,7 +200,7 @@ class GenerationForegroundService : Service() {
             taskId,
             ForegroundServiceFailureOutcome.GENERATION_STOPPED,
         )
-        coordinator.cancel(taskId, CancellationReason.BACKGROUND_UNAVAILABLE)
+        coordinator?.cancel(taskId, CancellationReason.BACKGROUND_UNAVAILABLE)
         stopUnconditionally()
     }
 

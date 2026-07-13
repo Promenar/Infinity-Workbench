@@ -2,6 +2,7 @@ package com.promenar.nexara.background.generation
 
 import android.app.Application
 import android.app.Notification
+import android.app.NotificationManager
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.MainActivity
@@ -40,5 +41,30 @@ class GenerationNotificationFactoryTest {
             .isEqualTo(MainActivity::class.java.name)
         assertThat(factory.stopIntent(snapshot.taskId).component?.className)
             .isEqualTo(GenerationForegroundService::class.java.name)
+    }
+
+    @Test
+    fun `通知渠道使用低重要性且不显示角标`() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        notificationManager.deleteNotificationChannel(GenerationNotificationFactory.CHANNEL_ID)
+
+        GenerationNotificationFactory(context, AppIntentRouter()).create(
+            GenerationTaskSnapshot(
+                taskId = "channel-task",
+                sessionId = "channel-session",
+                assistantMessageId = "channel-assistant",
+                phase = GenerationPhase.STREAMING,
+                generatedChars = 0,
+                startedAt = 1L,
+            ),
+        )
+
+        val channel = notificationManager.getNotificationChannel(
+            GenerationNotificationFactory.CHANNEL_ID,
+        )
+        assertThat(channel).isNotNull()
+        assertThat(channel.importance).isEqualTo(NotificationManager.IMPORTANCE_LOW)
+        assertThat(channel.canShowBadge()).isFalse()
     }
 }
