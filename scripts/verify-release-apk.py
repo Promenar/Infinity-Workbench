@@ -27,6 +27,11 @@ SENSITIVE_PATTERNS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
     ("疑似 OpenAI 兼容密钥", re.compile(rb"sk-[A-Za-z0-9_-]{20,}")),
 )
 
+LOCAL_INFERENCE_LIBRARY_PATTERN = re.compile(
+    r"(?:libnexara_llama|libllama.*|libggml.*)\.so\Z",
+    re.IGNORECASE,
+)
+
 
 class VerificationError(RuntimeError):
     pass
@@ -97,6 +102,21 @@ def verify_zip(apk: Path) -> None:
         raise VerificationError("APK 不是有效 ZIP 文件") from error
     if corrupt is not None:
         raise VerificationError(f"APK ZIP 条目损坏：{corrupt}")
+
+
+def verify_no_local_inference_artifacts(apk: Path) -> None:
+    """确认发行 APK 未携带本地推理原生库或 GGUF 模型。"""
+    findings: list[str] = []
+    with zipfile.ZipFile(apk) as archive:
+        for info in archive.infolist():
+            normalized_name = info.filename.replace("\\", "/")
+            basename = normalized_name.rsplit("/", 1)[-1]
+            if basename.lower().endswith(".gguf") or LOCAL_INFERENCE_LIBRARY_PATTERN.fullmatch(
+                basename
+            ):
+                findings.append(normalized_name)
+    if findings:
+        raise VerificationError(f"APK 包含禁用的本地推理制品：{', '.join(sorted(findings))}")
 
 
 def verify_badging(apk: Path, expected_package: str, version_code: str, version_name: str) -> None:
@@ -178,6 +198,7 @@ def main() -> int:
         raise VerificationError(f"APK 大小不合规：{size} bytes，上限 {args.max_size_bytes} bytes")
 
     verify_zip(apk)
+    verify_no_local_inference_artifacts(apk)
     verify_badging(apk, args.expected_package, args.expected_version_code, args.expected_version_name)
     verify_signature(apk, args.expected_cert_sha256)
     scan_sensitive_content(apk)
