@@ -16,6 +16,8 @@ class MemoryManager(
         val enableMemory: Boolean = true,
         val enableDocs: Boolean = true,
         val activeDocIds: List<String> = emptyList(),
+        /** 当前数据层尚不能安全展开文件夹；保留范围信息，且文件夹本身绝不能触发全库回退。 */
+        val activeFolderIds: List<String> = emptyList(),
         val isGlobal: Boolean = false,
         val sessionId: String = "",
         val enableRerank: Boolean = false,  // 从 RagOptions 传递，结合 ragConfig.enableRerank 共同决定
@@ -60,7 +62,9 @@ class MemoryManager(
             options.activeDocIds.toSet()
         } else null
 
-        val canSearchDocs = options.enableDocs
+        // 非全局检索必须具有显式文档范围。activeFolderIds 尚未安全展开时按零文档处理，
+        // 禁止把空/未解析范围解释为“搜索全部文档”。
+        val canSearchDocs = options.enableDocs && (options.isGlobal || authorizedDocIds != null)
         val canSearchMemory = options.enableMemory
         // Rerank 决策: 用户开关 (RagOptions.enableRerank) AND 配置门 (ragConfig.enableRerank) 两者都开才执行
         val canRerank = options.enableRerank && effectiveConfig.enableRerank && rerankClient != null
@@ -191,9 +195,15 @@ class MemoryManager(
                         options = KeywordSearcher.SearchOptions(
                             sessionId = if (options.isGlobal) null else sessionId,
                             docIds = authorizedDocIds,
-                            excludeDocs = !options.enableDocs
+                            excludeDocs = !canSearchDocs
                         )
                     )
+                }.filter { result ->
+                    if (result.docId != null) {
+                        canSearchDocs && (options.isGlobal || result.docId in authorizedDocIds.orEmpty())
+                    } else {
+                        canSearchMemory && (options.isGlobal || result.sessionId == sessionId)
+                    }
                 }
                 val fused = rrfFusion(results, keywordResults, effectiveConfig)
                 NexaraLogger.log("[$TAG] hybrid fusion: ${results.size} vector + ${keywordResults.size} keyword → ${fused.size} fused")

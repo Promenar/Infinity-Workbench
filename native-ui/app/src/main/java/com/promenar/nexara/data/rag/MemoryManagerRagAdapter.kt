@@ -19,6 +19,7 @@ class MemoryManagerRagAdapter(
             enableMemory = options.enableMemory,
             enableDocs = options.enableDocs,
             activeDocIds = options.activeDocIds,
+            activeFolderIds = options.activeFolderIds,
             isGlobal = options.isGlobal,
             sessionId = sessionId,
             enableRerank = options.enableRerank,  // 传递用户重排开关
