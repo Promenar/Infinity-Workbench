@@ -49,7 +49,7 @@ android {
         versionCode = 2
         versionName = "0.2-beta"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.promenar.nexara.MainActivityE2eRunner"
 
         androidResources {
             localeFilters += listOf("en", "zh-rCN")

@@ -59,6 +59,7 @@ import com.promenar.nexara.ui.chat.manager.registry.McpSkillRegistry
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import com.promenar.nexara.ui.chat.manager.skills.CalculatorSkill
 import com.promenar.nexara.ui.chat.ChatStore
+import com.promenar.nexara.ui.chat.ChatRouteDependencies
 import com.promenar.nexara.ui.chat.manager.KgProvider
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchSkill
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchSearXNGSkill
@@ -118,6 +119,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     open val secretStore: SecretStore by lazy { AndroidKeystoreSecretStore(this) }
+
+    /** 生产默认依赖保持不变；instrumentation 可通过 Application 子类注入可验证端口。 */
+    open fun createChatRouteDependencies(): ChatRouteDependencies =
+        ChatRouteDependencies.production(this)
 
     private lateinit var backupRuntime: BackupRuntime
     var restoreRelayEarlyExit: Boolean = false

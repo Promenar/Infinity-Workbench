@@ -676,7 +676,9 @@ private fun ChatInputTopBar(
         NexaraGlassCard(
             onClick = onModelClick,
             shape = RoundedCornerShape(50),
-            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            modifier = Modifier
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .testTag(UiTags.CHAT_MODEL_SELECTOR)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),

@@ -192,6 +192,9 @@ class ChatViewModelTest {
                 if (updates.containsKey("draft")) {
                     session = session.copy(draft = updates["draft"] as String?)
                 }
+                if (updates.containsKey("modelId")) {
+                    session = session.copy(modelId = updates["modelId"] as String?)
+                }
                 savedSessions[index] = session
             }
         }
@@ -494,6 +497,20 @@ class ChatViewModelTest {
         )
         savedSessions.add(session)
         viewModel.loadSession(id)
+    }
+
+    @Test
+    fun updateModelId通过会话管理器同步Store并持久化同一模型() = runTest {
+        seedSession()
+        advanceUntilIdle()
+
+        viewModel.updateModelId("provider-b::model-b")
+        advanceUntilIdle()
+
+        assertThat((ApplicationProvider.getApplicationContext() as TestNexaraApplication)
+            .chatStore.getSession("s1")?.modelId).isEqualTo("provider-b::model-b")
+        assertThat(savedSessions.single { it.id == "s1" }.modelId)
+            .isEqualTo("provider-b::model-b")
     }
 
     @Test

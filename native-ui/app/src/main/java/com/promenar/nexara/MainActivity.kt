@@ -50,11 +50,18 @@ internal fun allowOnboardingEmptyModelsOverride(
     requestedByIntent: Boolean,
 ): Boolean = isDebugBuild && requestedByIntent
 
+internal fun debugChatSessionId(
+    isDebugBuild: Boolean,
+    requestedSessionId: String?,
+): String? = requestedSessionId
+    ?.trim()
+    ?.takeIf { isDebugBuild && it.isNotEmpty() }
+
 open class MainActivity : ComponentActivity() {
     /** 供真实 Activity E2E 以子类覆写依赖，生产默认不暴露全局可变测试注册表。 */
     protected open fun provideChatRouteDependencies(
         application: NexaraApplication,
-    ): ChatRouteDependencies = ChatRouteDependencies.production(application)
+    ): ChatRouteDependencies = application.createChatRouteDependencies()
 
     private val appIntentRouter: AppIntentRouter
         get() = (application as NexaraApplication).appIntentRouter
@@ -134,10 +141,16 @@ open class MainActivity : ComponentActivity() {
                         val importState by shareImportViewModel.state.collectAsStateWithLifecycle()
                         val onboardingState by onboardingStore.state.collectAsStateWithLifecycle()
                         val openGenerationRequest by appIntentRouter.pending.collectAsStateWithLifecycle()
-                        val startDestination = if (onboardingState.step == OnboardingStep.COMPLETED) {
-                            NavDestinations.MAIN_TAB_SCAFFOLD
-                        } else {
-                            NavDestinations.WELCOME
+                        val debugChatSessionId = debugChatSessionId(
+                            isDebugBuild = BuildConfig.DEBUG,
+                            requestedSessionId = intent.getStringExtra(
+                                EXTRA_CHAT_SESSION_ID_FOR_TESTING,
+                            ),
+                        )
+                        val startDestination = when {
+                            onboardingState.step == OnboardingStep.COMPLETED ->
+                                NavDestinations.MAIN_TAB_SCAFFOLD
+                            else -> NavDestinations.WELCOME
                         }
 
                         NexaraNavGraph(
@@ -172,6 +185,14 @@ open class MainActivity : ComponentActivity() {
                             openGenerationRequest = openGenerationRequest,
                             onOpenGenerationConsumed = appIntentRouter::consume,
                         )
+                        LaunchedEffect(debugChatSessionId) {
+                            debugChatSessionId?.let { sessionId ->
+                                navController.navigate(NavDestinations.chatHero(sessionId)) {
+                                    popUpTo(startDestination) { inclusive = true }
+                                    launchSingleTop = true
+                                }
+                            }
+                        }
                         LaunchedEffect(startupState, backStackEntry) {
                             currentSessionId = backStackEntry?.arguments?.getString("sessionId")
                             if (startupState == BackupStartupState.Ready) shareImportViewModel.presentNext()
@@ -311,5 +332,8 @@ open class MainActivity : ComponentActivity() {
         @VisibleForTesting
         internal const val EXTRA_ONBOARDING_LOCAL_PROBE_FAILURE_FOR_TESTING =
             "com.promenar.nexara.extra.ONBOARDING_LOCAL_PROBE_FAILURE_FOR_TESTING"
+        @VisibleForTesting
+        internal const val EXTRA_CHAT_SESSION_ID_FOR_TESTING =
+            "com.promenar.nexara.extra.CHAT_SESSION_ID_FOR_TESTING"
     }
 }
