@@ -2,8 +2,6 @@ package com.promenar.nexara.data.rag
 
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.utils.NexaraLogger
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 class MemoryManager(
     private val vectorStore: VectorStore,
@@ -268,12 +266,7 @@ class MemoryManager(
             val sourceLabel = when {
                 isMemory -> "对话记忆"
                 r.docId != null -> {
-                    // 从 metadata 提取 fileUuid 作为文档标识
-                    val fileUuid = try {
-                        kotlinx.serialization.json.Json.parseToJsonElement(r.metadata ?: "{}")
-                            .jsonObject["fileUuid"]?.jsonPrimitive?.content?.take(8)
-                    } catch (_: Exception) { null }
-                    "文档: ${fileUuid ?: r.docId.take(8)}"
+                    documentReferenceSource(r.metadata, r.docId)
                 }
                 else -> "文档片段"
             }
@@ -425,14 +418,8 @@ class MemoryManager(
     }
 
     private fun parseTypeFromMetadata(metadata: String?): String? {
-        if (metadata == null) return null
-        return try {
-            val json = kotlinx.serialization.json.Json.parseToJsonElement(metadata).jsonObject
-            val type = json["type"]?.jsonPrimitive?.content
-            if (type == "document") "doc" else type
-        } catch (e: Exception) {
-            null
-        }
+        val type = vectorMetadataType(metadata)
+        return if (type == "document") "doc" else type
     }
 
     private fun emptyResult(searchTimeMs: Long) = RetrieveResult(

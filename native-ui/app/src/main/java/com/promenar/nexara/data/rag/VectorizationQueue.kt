@@ -473,7 +473,7 @@ class VectorizationQueue(
                     sessionId = null,
                     content = chunk,
                     embedding = embeddingResult.embeddings[i],
-                    metadata = """{"type":"document","fileUuid":"$docId","chunkIndex":$i}""",
+                    metadata = documentVectorMetadata(docId, i, docTitle),
                     startMessageId = docId,
                     endMessageId = docId
                 )

@@ -54,13 +54,15 @@ interface VectorDao {
     @Query("SELECT * FROM vectors WHERE doc_id IN (:docIds)")
     suspend fun getByDocIds(docIds: List<String>): List<VectorEntity>
 
-    @Query("SELECT * FROM vectors WHERE json_extract(metadata, '$.type') = :type")
+    // 向量 metadata 由应用统一编码为以根字段 type 开头的紧凑 JSON；使用标准 substr
+    // 避免依赖并非所有 SQLite runtime 都编译启用的 JSON1 扩展。
+    @Query("SELECT * FROM vectors WHERE substr(metadata, 1, length('{\"type\":\"') + length(:type) + 1) = '{\"type\":\"' || :type || '\"'")
     suspend fun getByType(type: String): List<VectorEntity>
 
-    @Query("SELECT * FROM vectors WHERE session_id = :sessionId AND json_extract(metadata, '$.type') = :type")
+    @Query("SELECT * FROM vectors WHERE session_id = :sessionId AND substr(metadata, 1, length('{\"type\":\"') + length(:type) + 1) = '{\"type\":\"' || :type || '\"'")
     suspend fun getBySessionIdAndType(sessionId: String, type: String): List<VectorEntity>
 
-    @Query("SELECT * FROM vectors WHERE json_extract(metadata, '$.type') = :type AND doc_id IN (:docIds)")
+    @Query("SELECT * FROM vectors WHERE substr(metadata, 1, length('{\"type\":\"') + length(:type) + 1) = '{\"type\":\"' || :type || '\"' AND doc_id IN (:docIds)")
     suspend fun getByTypeAndDocIds(type: String, docIds: List<String>): List<VectorEntity>
 
     @Query("SELECT vectors.* FROM vectors_fts JOIN vectors ON vectors.rowid = vectors_fts.rowid WHERE vectors_fts MATCH :query")

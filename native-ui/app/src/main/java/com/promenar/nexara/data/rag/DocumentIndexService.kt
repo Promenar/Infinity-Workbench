@@ -83,7 +83,7 @@ class WorkspaceDocumentIndexCandidateBuilder(
                     docId = event.fileUuid,
                     content = content,
                     embedding = embedding[index].toBlob(),
-                    metadata = "{\"type\":\"document\",\"fileUuid\":\"${event.fileUuid}\",\"chunkIndex\":$index}",
+                    metadata = documentVectorMetadata(event.fileUuid, index, entry.name),
                     startMessageId = event.fileUuid,
                     endMessageId = event.fileUuid,
                     createdAt = timestamp,
