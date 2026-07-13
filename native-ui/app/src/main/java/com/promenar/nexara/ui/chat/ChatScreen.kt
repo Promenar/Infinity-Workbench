@@ -1,12 +1,5 @@
 package com.promenar.nexara.ui.chat
 
-import android.Manifest
-import android.app.Activity
-import android.content.pm.PackageManager
-import android.os.Build
-import android.view.WindowManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
@@ -76,7 +69,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -84,9 +76,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -105,7 +95,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -119,32 +108,19 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.data.model.PostProcessTask
-import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
-import com.promenar.nexara.ui.common.EditorMode
-import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.NexaraSnackbarHost
-import com.promenar.nexara.ui.common.SnackbarType
-import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
-import com.promenar.nexara.background.generation.GENERATION_NOTIFICATION_PERMISSION_ASKED
-import com.promenar.nexara.background.generation.GENERATION_NOTIFICATION_PERMISSION_PREFS
-import com.promenar.nexara.background.generation.NotificationPermissionPromptState
-import com.promenar.nexara.background.generation.NotificationPermissionOverlayState
-import com.promenar.nexara.background.generation.shouldExplainNotificationPermission
-import com.promenar.nexara.background.generation.shouldShowNotificationPermissionDialog
-import androidx.core.content.ContextCompat
+import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -155,96 +131,67 @@ internal fun Message.hasRagArtifacts(): Boolean =
 internal fun selectRagActiveMessage(messages: List<Message>): Message? =
     messages.find { it.hasRagArtifacts() } ?: messages.lastOrNull()
 
+internal fun chatRenderStateTag(uiState: ChatUiState): String = when {
+    uiState.error != null -> UiTags.CHAT_STATE_ERROR
+    uiState.approvalRequest != null -> UiTags.CHAT_STATE_APPROVAL
+    uiState.isGenerating -> UiTags.CHAT_STATE_GENERATING
+    uiState.isLoading -> UiTags.CHAT_STATE_LOADING
+    uiState.messages.isEmpty() -> UiTags.CHAT_STATE_EMPTY
+    else -> UiTags.CHAT_STATE_READY
+}
+
+data class ChatScreenState(
+    val uiState: ChatUiState = ChatUiState(),
+    val inputText: String = "",
+    val tokenState: ChatViewModel.TokenIndicatorState = ChatViewModel.TokenIndicatorState(),
+    val ragPhases: List<com.promenar.nexara.data.model.RagPhase> = emptyList(),
+    val compressionState: ChatViewModel.CompressionState = ChatViewModel.CompressionState(),
+    val postProcessTasks: List<PostProcessTask> = emptyList(),
+    val selectedImageUris: List<android.net.Uri> = emptyList(),
+)
+
+data class ChatScreenActions(
+    val onNavigateBack: () -> Unit = {},
+    val onOpenWorkspace: () -> Unit = {},
+    val onOpenSettings: () -> Unit = {},
+    val onOpenPromptEditor: () -> Unit = {},
+    val onOpenClearDialog: () -> Unit = {},
+    val onOpenRenameDialog: () -> Unit = {},
+    val onOpenDeleteDialog: () -> Unit = {},
+    val onContentChange: (String, String) -> Unit = { _, _ -> },
+    val onCopy: (String) -> Unit = {},
+    val onDeleteMessage: (String) -> Unit = {},
+    val onRegenerateMessage: (String) -> Unit = {},
+    val onApprove: () -> Unit = {},
+    val onDecline: () -> Unit = {},
+    val onRemovePostProcessTask: (String) -> Unit = {},
+    val onManualSummary: () -> Unit = {},
+    val onTextChange: (String) -> Unit = {},
+    val onSend: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
+    val onStop: () -> Unit = {},
+    val onPickImages: () -> Unit = {},
+    val onRemoveImage: (Int) -> Unit = {},
+    val onSnackbarAction: () -> Unit = {},
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ChatScreen(
-    sessionId: String,
-    onNavigateBack: () -> Unit = {}
+fun ChatScreenContent(
+    state: ChatScreenState,
+    actions: ChatScreenActions,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    snackbarData: NexaraSnackbarData? = null,
+    taskPanel: @Composable () -> Unit = {},
 ) {
-    val context = LocalContext.current
-    val application = context.applicationContext as NexaraApplication
-    val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(application))
-    val uiState by chatViewModel.uiState.collectAsState()
-    val inputText by chatViewModel.inputText.collectAsState()
-    val tokenState by chatViewModel.tokenIndicatorState.collectAsState()
-    val ragPhases by chatViewModel.ragPhases.collectAsState()
-    val compressionState by chatViewModel.compressionState.collectAsState()
-    val taskRepo = application.taskRepository
-
-    val snackbarHostState = remember { SnackbarHostState() }
-    var snackbarData by remember { mutableStateOf<NexaraSnackbarData?>(null) }
-    var snackbarAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-
+    val uiState = state.uiState
+    val inputText = state.inputText
+    val tokenState = state.tokenState
+    val ragPhases = state.ragPhases
+    val compressionState = state.compressionState
+    val selectedImageUris = state.selectedImageUris
     val listState = rememberLazyListState()
-    var showWorkspaceSheet by remember { mutableStateOf(false) }
-    var showModelSettingsSheet by remember { mutableStateOf(false) }
-    var showSessionPromptEditor by remember { mutableStateOf(false) }
-    var showTruncateDialog by remember { mutableStateOf(false) }
-    var showClearDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var showRenameDialog by remember { mutableStateOf(false) }
-    var pendingTruncateAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var showModelHint by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    var selectedImageUris by remember { mutableStateOf<List<android.net.Uri>>(emptyList()) }
-    var pendingNotificationPermission by remember {
-        mutableStateOf<NotificationPermissionRequest?>(null)
-    }
-    val hasBlockingChatOverlay = showTruncateDialog || showClearDialog ||
-        showDeleteDialog || showRenameDialog || showWorkspaceSheet ||
-        showModelSettingsSheet || showSessionPromptEditor
-    val permissionDialogVisible = shouldShowNotificationPermissionDialog(
-        NotificationPermissionOverlayState(
-            hasPendingRequest = pendingNotificationPermission != null,
-            hasBlockingOverlay = hasBlockingChatOverlay,
-        ),
-    )
-    val notificationPermissionPrefs = remember(context) {
-        context.getSharedPreferences(GENERATION_NOTIFICATION_PERMISSION_PREFS, 0)
-    }
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        notificationPermissionPrefs.edit()
-            .putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true)
-            .apply()
-        pendingNotificationPermission?.let { request ->
-            chatViewModel.onNotificationPermissionResult(request.taskId, granted)
-        }
-        pendingNotificationPermission = null
-    }
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
-    ) { uris -> selectedImageUris = uris }
-
-    LaunchedEffect(chatViewModel) {
-        chatViewModel.notificationPermissionRequests.collect { request ->
-            if (request == null) {
-                pendingNotificationPermission = null
-                return@collect
-            }
-            val granted = Build.VERSION.SDK_INT < 33 ||
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS,
-                ) == PackageManager.PERMISSION_GRANTED
-            val shouldExplain = shouldExplainNotificationPermission(
-                NotificationPermissionPromptState(
-                    sdkInt = Build.VERSION.SDK_INT,
-                    granted = granted,
-                    alreadyAsked = notificationPermissionPrefs.getBoolean(
-                        GENERATION_NOTIFICATION_PERMISSION_ASKED,
-                        false,
-                    ),
-                ),
-            )
-            if (granted) {
-                chatViewModel.onNotificationPermissionResult(request.taskId, granted = true)
-            } else if (shouldExplain) {
-                pendingNotificationPermission = request
-            }
-        }
-    }
 
     LaunchedEffect(showModelHint) {
         if (showModelHint) {
@@ -282,70 +229,9 @@ fun ChatScreen(
         }
     }
 
-    val activity = LocalContext.current as? Activity
-
-    // 离开会话界面时持久化未发送的输入文字
-    DisposableEffect(sessionId) {
-        onDispose { chatViewModel.saveCurrentDraft() }
-    }
-
-    LaunchedEffect(uiState.isGenerating) {
-        if (uiState.isGenerating) {
-            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
-            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-    }
-
-    LaunchedEffect(sessionId) {
-        chatViewModel.loadSession(sessionId)
-    }
-
-    val dismissLabel = stringResource(R.string.common_dismiss)
-    val copiedLabel = stringResource(R.string.chat_copy_success)
     val describeImagePrompt = stringResource(R.string.chat_image_only_prompt)
     val approvalArgumentsLabel = stringResource(R.string.chat_approval_arguments)
     val approvalFallback = stringResource(R.string.chat_approval_fallback)
-    LaunchedEffect(uiState.error, permissionDialogVisible) {
-        if (permissionDialogVisible) {
-            snackbarHostState.currentSnackbarData?.dismiss()
-            return@LaunchedEffect
-        }
-        val errorMessage = uiState.error ?: return@LaunchedEffect
-        snackbarAction = { chatViewModel.clearError() }
-        snackbarData = NexaraSnackbarData(
-            message = errorMessage,
-            type = SnackbarType.ERROR,
-            actionLabel = dismissLabel
-        )
-        snackbarHostState.currentSnackbarData?.dismiss()
-        snackbarHostState.showSnackbar(
-            message = errorMessage,
-            actionLabel = dismissLabel,
-            duration = SnackbarDuration.Long
-        )
-        chatViewModel.clearError()
-    }
-    LaunchedEffect(uiState.backgroundWarning, uiState.error, permissionDialogVisible) {
-        if (permissionDialogVisible) {
-            snackbarHostState.currentSnackbarData?.dismiss()
-            return@LaunchedEffect
-        }
-        if (uiState.error != null) return@LaunchedEffect
-        val warning = uiState.backgroundWarning ?: return@LaunchedEffect
-        snackbarAction = { chatViewModel.clearBackgroundWarning(warning.taskId) }
-        snackbarData = NexaraSnackbarData(
-            message = warning.message,
-            type = SnackbarType.INFO,
-            actionLabel = dismissLabel,
-        )
-        snackbarHostState.currentSnackbarData?.dismiss()
-        snackbarHostState.showSnackbar(
-            message = warning.message,
-            actionLabel = dismissLabel,
-            duration = SnackbarDuration.Long,
-        )
-    }
 
     // ═══════════════════════════════════════════════════════════
     //  智能视角追踪 — Pin to Bottom
@@ -438,13 +324,13 @@ fun ChatScreen(
             ChatTopBar(
                 title = sessionTitle,
                 subtitle = if (uiState.isGenerating) stringResource(R.string.chat_status_thinking) else agentName.ifBlank { sessionTitle },
-                onBack = onNavigateBack,
-                onWorkspace = { showWorkspaceSheet = true },
-                onSettings = { showModelSettingsSheet = true },
-                onSessionPrompt = { showSessionPromptEditor = true },
-                onClearHistory = { showClearDialog = true },
-                onRename = { showRenameDialog = true },
-                onDeleteSession = { showDeleteDialog = true }
+                onBack = actions.onNavigateBack,
+                onWorkspace = actions.onOpenWorkspace,
+                onSettings = actions.onOpenSettings,
+                onSessionPrompt = actions.onOpenPromptEditor,
+                onClearHistory = actions.onOpenClearDialog,
+                onRename = actions.onOpenRenameDialog,
+                onDeleteSession = actions.onOpenDeleteDialog,
             )
         },
         snackbarHost = {
@@ -453,14 +339,20 @@ fun ChatScreen(
                     hostState = snackbarHostState,
                     snackbarData = snackbarData,
                     onAction = {
-                        snackbarAction?.invoke()
-                        snackbarHostState.currentSnackbarData?.dismiss()
+                        actions.onSnackbarAction()
                     }
                 )
             }
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding).imePadding()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .imePadding()
+                .testTag(UiTags.CHAT_ROOT),
+        ) {
+            val renderStateTag = chatRenderStateTag(uiState)
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -468,7 +360,8 @@ fun ChatScreen(
                     .fillMaxHeight()
                     .widthIn(max = 960.dp)
                     .fillMaxWidth()
-                    .nestedScroll(userScrollConnection),
+                    .nestedScroll(userScrollConnection)
+                    .testTag(renderStateTag),
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 150.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -505,26 +398,14 @@ fun ChatScreen(
                             fontSize = uiState.session?.options?.fontSize ?: 13,
                             onContentChange = { newContent ->
                                 group.assistantMessages.lastOrNull()?.let { lastMsg ->
-                                    chatViewModel.updateMessageContentOnly(lastMsg.id, newContent)
+                                    actions.onContentChange(lastMsg.id, newContent)
                                 }
                             },
                             onCopy = { text ->
-                                copyToClipboard(context, text)
-                                snackbarAction = null
-                                snackbarData = NexaraSnackbarData(
-                                    message = copiedLabel,
-                                    type = SnackbarType.SUCCESS
-                                )
-                                scope.launch {
-                                    snackbarHostState.currentSnackbarData?.dismiss()
-                                    snackbarHostState.showSnackbar(
-                                        message = copiedLabel,
-                                        duration = SnackbarDuration.Short
-                                    )
-                                }
+                                actions.onCopy(text)
                             },
-                            onDelete = { chatViewModel.deleteMessage(it) },
-                            onRegenerate = { chatViewModel.regenerateMessage(it) }
+                            onDelete = actions.onDeleteMessage,
+                            onRegenerate = actions.onRegenerateMessage,
                         )
                     }
 
@@ -549,8 +430,8 @@ fun ChatScreen(
                                         approvalArgumentsLabel,
                                         approvalFallback,
                                     ),
-                                    onApprove = { chatViewModel.approveRequest() },
-                                    onDecline = { chatViewModel.rejectRequest() }
+                                    onApprove = actions.onApprove,
+                                    onDecline = actions.onDecline,
                                 )
                             }
                         }
@@ -572,28 +453,9 @@ fun ChatScreen(
                     .widthIn(max = 960.dp)
                     .fillMaxWidth()
                     .padding(bottom = 160.dp)
+                    .testTag(UiTags.CHAT_LOADING_SKELETON)
             ) {
                 ChatSkeleton(modifier = Modifier.fillMaxSize())
-            }
-
-            if (showTruncateDialog) {
-                Dialog(onDismissRequest = { showTruncateDialog = false }) {
-                    NexaraConfirmDialog(
-                        title = stringResource(R.string.chat_confirm_truncate_title),
-                        message = stringResource(R.string.chat_confirm_truncate_message),
-                        confirmText = stringResource(R.string.common_btn_confirm),
-                        onConfirm = {
-                            pendingTruncateAction?.invoke()
-                            showTruncateDialog = false
-                            pendingTruncateAction = null
-                        },
-                        onCancel = {
-                            showTruncateDialog = false
-                            pendingTruncateAction = null
-                        },
-                        isDestructive = true
-                    )
-                }
             }
 
                 // ── 宽幅低矮版 MD3 风格浮岛 (Optimized Solid MD3 Island) ──
@@ -619,14 +481,13 @@ fun ChatScreen(
                                 findModelSpec(id)?.note ?: id
                             } ?: ""
                         }
-                        val postProcessTasks by chatViewModel.postProcessTasks.collectAsState()
                         ChatInputTopBar(
                             modelName = modelDisplayName,
                             tokenState = tokenState,
-                            postProcessTasks = postProcessTasks,
-                            onRemovePostProcessTask = { chatViewModel.removePostProcessTask(it) },
-                            onModelClick = { showModelSettingsSheet = true },
-                            onManualSummary = { chatViewModel.summarizeHistory() }
+                            postProcessTasks = state.postProcessTasks,
+                            onRemovePostProcessTask = actions.onRemovePostProcessTask,
+                            onModelClick = actions.onOpenSettings,
+                            onManualSummary = actions.onManualSummary,
                         )
 
                         if (selectedImageUris.isNotEmpty()) {
@@ -644,7 +505,7 @@ fun ChatScreen(
                                             contentScale = ContentScale.Crop
                                         )
                                         IconButton(
-                                            onClick = { selectedImageUris = selectedImageUris.toMutableList().apply { removeAt(index) } },
+                                            onClick = { actions.onRemoveImage(index) },
                                             modifier = Modifier
                                                 .align(Alignment.TopEnd)
                                                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
@@ -662,30 +523,24 @@ fun ChatScreen(
                         }
 
                         // 任务浮动面板
-                        TaskFloatingPanel(
-                            sessionId = sessionId,
-                            taskRepo = taskRepo,
-                            goalTitle = uiState.session?.activeTask?.title ?: "",
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
+                        taskPanel()
 
                         Box(modifier = Modifier.fillMaxWidth()) {
                             ChatInputBar(
                                 text = inputText,
                                 placeholder = if (agentName.isNotBlank()) stringResource(R.string.chat_input_placeholder, agentName) else stringResource(R.string.chat_input_placeholder_default),
-                                onTextChange = { chatViewModel.updateInputText(it) },
+                                onTextChange = actions.onTextChange,
                                 onSend = {
                                     if (inputText.isNotBlank() || selectedImageUris.isNotEmpty()) {
                                         val textToSend = inputText.ifBlank { describeImagePrompt }
-                                        chatViewModel.sendMessage(textToSend, selectedImageUris)
-                                        selectedImageUris = emptyList()
+                                        actions.onSend(textToSend, selectedImageUris)
                                     }
                                 },
                                 status = uiState.status,
-                                onStop = { chatViewModel.stopGeneration() },
+                                onStop = actions.onStop,
                                 isModelSelected = uiState.session?.modelId?.isNotBlank() == true,
                                 onModelHint = { showModelHint = true },
-                                onPickImage = { imagePickerLauncher.launch("image/*") },
+                                onPickImage = actions.onPickImages,
                                 hasImages = selectedImageUris.isNotEmpty()
                             )
     
@@ -745,104 +600,6 @@ fun ChatScreen(
             }
         }
 
-    pendingNotificationPermission?.takeIf { permissionDialogVisible }?.let { request ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = {
-                notificationPermissionPrefs.edit()
-                    .putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true)
-                    .apply()
-                chatViewModel.onNotificationPermissionResult(request.taskId, granted = false)
-                pendingNotificationPermission = null
-            },
-            title = { Text(stringResource(R.string.generation_notification_permission_title)) },
-            text = { Text(stringResource(R.string.generation_notification_permission_explanation)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        notificationPermissionPrefs.edit()
-                            .putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true)
-                            .apply()
-                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    },
-                ) { Text(stringResource(R.string.generation_notification_permission_continue)) }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        notificationPermissionPrefs.edit()
-                            .putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true)
-                            .apply()
-                        chatViewModel.onNotificationPermissionResult(request.taskId, granted = false)
-                        pendingNotificationPermission = null
-                    },
-                ) { Text(stringResource(R.string.common_btn_cancel)) }
-            },
-        )
-    }
-
-    if (showClearDialog) {
-        Dialog(onDismissRequest = { showClearDialog = false }) {
-            NexaraConfirmDialog(
-                title = stringResource(R.string.chat_dialog_clear_history_title),
-                message = stringResource(R.string.chat_dialog_clear_history_msg),
-                confirmText = stringResource(R.string.common_btn_confirm),
-                onConfirm = {
-                    chatViewModel.clearHistory()
-                    showClearDialog = false
-                },
-                onCancel = { showClearDialog = false }
-            )
-        }
-    }
-
-    if (showDeleteDialog) {
-        Dialog(onDismissRequest = { showDeleteDialog = false }) {
-            NexaraConfirmDialog(
-                title = stringResource(R.string.chat_dialog_delete_session_title),
-                message = stringResource(R.string.chat_dialog_delete_session_msg),
-                confirmText = stringResource(R.string.shared_btn_delete),
-                onConfirm = {
-                    chatViewModel.deleteSession()
-                    showDeleteDialog = false
-                    onNavigateBack()
-                },
-                onCancel = { showDeleteDialog = false }
-            )
-        }
-    }
-
-    if (showRenameDialog) {
-        RenameDialog(
-            currentName = sessionTitle,
-            onDismiss = { showRenameDialog = false },
-            onConfirm = { newName ->
-                chatViewModel.renameSession(newName)
-                showRenameDialog = false
-            }
-        )
-    }
-
-    ResourceExplorerSheet(
-        show = showWorkspaceSheet,
-        onDismiss = { showWorkspaceSheet = false },
-        sessionId = sessionId
-    )
-
-    SessionSettingsSheet(
-        show = showModelSettingsSheet,
-        onDismiss = { showModelSettingsSheet = false },
-        sessionId = sessionId
-    )
-
-    UnifiedPromptEditor(
-        show = showSessionPromptEditor,
-        onDismiss = { showSessionPromptEditor = false },
-        onSave = { text -> chatViewModel.updateCustomPrompt(text); showSessionPromptEditor = false },
-        initialText = uiState.session?.customPrompt ?: "",
-        title = stringResource(R.string.chat_session_prompt_title),
-        placeholder = stringResource(R.string.chat_session_prompt_placeholder),
-        mode = EditorMode.DIALOG
-    )
 }
 
 private fun approvalDescription(
@@ -1075,7 +832,10 @@ fun ChatTopBar(
                 )
             }
             Box {
-                IconButton(onClick = { showMenu = true }) {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.testTag(UiTags.CHAT_OPTIONS),
+                ) {
                     Icon(
                         Icons.Rounded.MoreVert,
                         stringResource(R.string.chat_cd_options),
@@ -1089,6 +849,7 @@ fun ChatTopBar(
                 ) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_menu_session_settings), style = NexaraTypography.labelMedium) },
+                        modifier = Modifier.testTag(UiTags.CHAT_SESSION_SETTINGS),
                         onClick = {
                             showMenu = false
                             onSettings()
@@ -1237,7 +998,8 @@ fun ChatInputBar(
                 onValueChange = onTextChange,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 8.dp)
+                    .testTag(UiTags.CHAT_INPUT),
                 textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnBackground),
                 cursorBrush = SolidColor(NexaraColors.Primary),
                 enabled = !isGenerating,
@@ -1415,7 +1177,7 @@ private fun GenerationStatusButton(
                     LiveRegionMode.Polite
                 }
             }
-            .testTag("chat_generation_action"),
+            .testTag(UiTags.CHAT_GENERATION_ACTION),
         enabled = (status == GenerationStatus.IDLE || status == GenerationStatus.RECEIVING || status == GenerationStatus.THINKING || status == GenerationStatus.UPLOADING)
     ) {
         Icon(

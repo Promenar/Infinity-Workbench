@@ -1,18 +1,11 @@
 package com.promenar.nexara.ui.chat
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -36,7 +29,6 @@ import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Chat
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Info
@@ -48,16 +40,12 @@ import androidx.compose.material.icons.rounded.Token
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Description
-import androidx.compose.material.icons.rounded.Compress
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
@@ -68,8 +56,6 @@ import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,19 +67,24 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import com.promenar.nexara.data.manager.ProviderManager
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.*
+import com.promenar.nexara.ui.settings.ModelInfo
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.launch
 
 private data class ThinkingLevelOption(
@@ -142,15 +133,15 @@ private val capabilityColorMap: Map<ModelCapability, Pair<Color, Color>> = mapOf
 fun SessionSettingsSheet(
     show: Boolean,
     onDismiss: () -> Unit,
-    sessionId: String
+    chatViewModel: ChatViewModel,
 ) {
     if (!show) return
 
     val context = androidx.compose.ui.platform.LocalContext.current
-    val chatViewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(context.applicationContext as android.app.Application))
     val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
+    val providerModels by settingsViewModel.providerModels.collectAsStateWithLifecycle()
     
-    val uiState by chatViewModel.uiState.collectAsState()
+    val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
     val session = uiState.session
     
     val configuration = LocalConfiguration.current
@@ -251,7 +242,7 @@ fun SessionSettingsSheet(
                             chatViewModel.updateModelId(modelId)
                             onDismiss()
                         },
-                        settingsViewModel = settingsViewModel
+                        allModels = providerModels,
                     )
                     1 -> ParamsPanel(
                         session = session,
@@ -270,14 +261,13 @@ fun SessionSettingsSheet(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ModelPanel(
+internal fun ModelPanel(
     selectedModelId: String,
     onSelect: (String) -> Unit,
-    settingsViewModel: SettingsViewModel
+    allModels: List<ModelInfo>,
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    val allModels by settingsViewModel.providerModels.collectAsState()
-    
+
     val modelItems = allModels.filter { 
         it.enabled && (it.type in listOf("chat", "reasoning", "image") || it.capabilities.any { cap -> cap.lowercase() in listOf("chat", "reasoning", "vision") })
     }.map { info ->
@@ -329,13 +319,17 @@ private fun ModelPanel(
 
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag(UiTags.CHAT_MODEL_LIST)
         ) {
             items(filtered) { model ->
                 val isSelected = model.id == selectedModelId
                 NexaraGlassCard(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .testTag(UiTags.chatModelOption(model.id))
+                        .semantics { selected = isSelected }
                         .then(
                             if (isSelected) Modifier.border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
                             else Modifier
@@ -811,7 +805,7 @@ private fun SettingsPanel(
     val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
     val ragOptions = session?.ragOptions ?: com.promenar.nexara.data.model.RagOptions()
 
-    val presetRerankModel by ProviderManager.getInstance().rerankModelId.collectAsState()
+    val presetRerankModel by ProviderManager.getInstance().rerankModelId.collectAsStateWithLifecycle()
     val isRerankAvailable = presetRerankModel.isNotBlank()
 
     var currentSummaryThreshold by remember(params.autoSummaryThreshold) { mutableStateOf(params.autoSummaryThreshold.toFloat()) }

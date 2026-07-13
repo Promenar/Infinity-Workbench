@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
@@ -28,6 +29,8 @@ import com.promenar.nexara.onboarding.OnboardingState
 import com.promenar.nexara.onboarding.OnboardingStateStore
 import com.promenar.nexara.onboarding.OnboardingStep
 import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.ui.chat.ChatRoute
+import com.promenar.nexara.ui.chat.ChatRouteDependencies
 import com.promenar.nexara.share.core.AndroidShareIndexScheduler
 import com.promenar.nexara.share.core.DurableShareInbox
 import com.promenar.nexara.share.core.ShareImportTargetProvider
@@ -47,7 +50,12 @@ internal fun allowOnboardingEmptyModelsOverride(
     requestedByIntent: Boolean,
 ): Boolean = isDebugBuild && requestedByIntent
 
-class MainActivity : ComponentActivity() {
+open class MainActivity : ComponentActivity() {
+    /** 供真实 Activity E2E 以子类覆写依赖，生产默认不暴露全局可变测试注册表。 */
+    protected open fun provideChatRouteDependencies(
+        application: NexaraApplication,
+    ): ChatRouteDependencies = ChatRouteDependencies.production(application)
+
     private val appIntentRouter: AppIntentRouter
         get() = (application as NexaraApplication).appIntentRouter
     private val onboardingStore by lazy { OnboardingStateStore(applicationContext) }
@@ -112,6 +120,9 @@ class MainActivity : ComponentActivity() {
         val app = application as NexaraApplication
         setContent {
             NexaraTheme {
+                val chatRouteDependencies = remember(app) {
+                    provideChatRouteDependencies(app)
+                }
                 val startupState by app.startupState.collectAsStateWithLifecycle()
                 StartupGate(
                     state = startupState,
@@ -151,6 +162,13 @@ class MainActivity : ComponentActivity() {
                                     false,
                                 ),
                             ),
+                            chatDestination = { sessionId, onNavigateBack ->
+                                ChatRoute(
+                                    sessionId = sessionId,
+                                    onNavigateBack = onNavigateBack,
+                                    dependencies = chatRouteDependencies,
+                                )
+                            },
                             openGenerationRequest = openGenerationRequest,
                             onOpenGenerationConsumed = appIntentRouter::consume,
                         )

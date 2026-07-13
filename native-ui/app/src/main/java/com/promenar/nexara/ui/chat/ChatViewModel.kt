@@ -1365,7 +1365,11 @@ class ChatViewModel(
         private val FOREGROUND_STOPPING_PHASES = TERMINAL_GENERATION_PHASES +
             com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL
 
-        fun factory(application: Application): ViewModelProvider.Factory =
+        fun factory(
+            application: Application,
+            generationCoordinatorOverride:
+                com.promenar.nexara.domain.generation.GenerationCoordinator? = null,
+        ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1391,7 +1395,8 @@ class ChatViewModel(
                         exportSessionUseCase = ExportSessionUseCase(
                             app.messageRepository as com.promenar.nexara.domain.repository.IMessageRepository,
                             app.sessionRepository as com.promenar.nexara.domain.repository.ISessionRepository
-                        )
+                        ),
+                        generationCoordinatorOverride = generationCoordinatorOverride,
                     ) as T
                 }
             }

@@ -33,7 +33,7 @@ import com.promenar.nexara.onboarding.OnboardingStep
 import com.promenar.nexara.onboarding.OnboardingLanguageSelectionCoordinator
 import com.promenar.nexara.onboarding.createOnboardingAgentSession
 import com.promenar.nexara.onboarding.isSuccessfulOnboardingAssistant
-import com.promenar.nexara.ui.chat.ChatScreen
+import com.promenar.nexara.ui.chat.ChatRoute
 import com.promenar.nexara.ui.chat.SessionSettingsScreen
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreen
 import com.promenar.nexara.ui.hub.AgentEditScreen
@@ -107,6 +107,8 @@ object NavDestinations {
         "rag_folder/$folderId/$folderName"
 }
 
+typealias ChatDestination = @Composable (sessionId: String, onNavigateBack: () -> Unit) -> Unit
+
 @Composable
 private fun PlaceholderScreen(title: String) {
     Box(
@@ -126,6 +128,9 @@ fun NexaraNavGraph(
     forceLocalProbeFailureForTesting: Boolean = false,
     openGenerationRequest: OpenGenerationRequest? = null,
     onOpenGenerationConsumed: (String) -> Boolean = { false },
+    chatDestination: ChatDestination = { sessionId, onNavigateBack ->
+        ChatRoute(sessionId = sessionId, onNavigateBack = onNavigateBack)
+    },
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as NexaraApplication
@@ -352,10 +357,7 @@ fun NexaraNavGraph(
             arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: ""
-            ChatScreen(
-                sessionId = sessionId,
-                onNavigateBack = { navController.popBackStack() }
-            )
+            chatDestination(sessionId) { navController.popBackStack() }
         }
 
         composable(
