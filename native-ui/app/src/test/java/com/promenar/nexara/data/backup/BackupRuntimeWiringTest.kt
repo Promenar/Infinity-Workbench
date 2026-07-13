@@ -108,7 +108,8 @@ class BackupRuntimeWiringTest {
             "prefs.registerOnSharedPreferenceChangeListener(providerListener)",
             "prepared.settingsPrefs.registerOnSharedPreferenceChangeListener(settingsListener)",
             "prepared.providerManager.configurationChanges",
-            "prepared.inferenceEngine.loadModel",
+            "checkNotNull(prepared.inferenceEngine)",
+            ".loadModel(SlotType.MAIN, modelPath)",
             "prepared.vectorizationQueue.resumeInterruptedTasks()",
         )
     }
