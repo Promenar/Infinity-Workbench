@@ -4,9 +4,6 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -15,8 +12,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -58,8 +53,6 @@ import com.promenar.nexara.ui.settings.SearchConfigScreen
 import com.promenar.nexara.ui.settings.SkillsScreen
 import com.promenar.nexara.ui.settings.ThemeScreen
 import com.promenar.nexara.ui.settings.TokenUsageScreen
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.welcome.WelcomeScreen
 import com.promenar.nexara.ui.welcome.eligibleOnboardingModels
 import com.promenar.nexara.util.LocaleController
@@ -77,8 +70,6 @@ object NavDestinations {
     const val AGENT_EDIT = "agent_edit/{agentId}"
     const val AGENT_RAG_CONFIG = "agent_rag_config/{agentId}"
     const val AGENT_ADVANCED_RETRIEVAL = "agent_advanced_retrieval/{agentId}"
-    const val SESSION_SETTINGS_SHEET = "session_settings_sheet/{sessionId}"
-    const val WORKSPACE_SHEET = "workspace_sheet/{sessionId}"
     const val DOC_EDITOR = "doc_editor/{workspaceRootUuid}/{docId}"
     const val KNOWLEDGE_GRAPH = "knowledge_graph"
     const val RAG_ADVANCED = "rag_advanced"
@@ -109,16 +100,6 @@ object NavDestinations {
 }
 
 typealias ChatDestination = @Composable (sessionId: String, onNavigateBack: () -> Unit) -> Unit
-
-@Composable
-private fun PlaceholderScreen(title: String) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(title, style = NexaraTypography.headlineMedium, color = NexaraColors.OnBackground)
-    }
-}
 
 @Composable
 fun NexaraNavGraph(
@@ -407,20 +388,6 @@ fun NexaraNavGraph(
                 scopeLabel = "Agent",
                 onNavigateBack = { navController.popBackStack() }
             )
-        }
-
-        composable(
-            route = NavDestinations.SESSION_SETTINGS_SHEET,
-            arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
-        ) { _ ->
-            PlaceholderScreen("Session Settings Sheet")
-        }
-
-        composable(
-            route = NavDestinations.WORKSPACE_SHEET,
-            arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
-        ) { _ ->
-            PlaceholderScreen("Workspace Sheet")
         }
 
         composable(
