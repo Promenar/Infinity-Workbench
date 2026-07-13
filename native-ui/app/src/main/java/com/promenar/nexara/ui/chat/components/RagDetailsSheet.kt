@@ -32,13 +32,15 @@ import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlin.math.roundToInt
 
-import androidx.compose.ui.platform.LocalUriHandler
+import com.promenar.nexara.R
 import com.promenar.nexara.data.model.Citation
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 
-private enum class InspectionTab(val label: String) {
-    Retrieved("知识检索"),
-    WebSearch("联网搜索"),
-    KnowledgeGraph("知识图谱")
+private enum class InspectionTab(val labelRes: Int) {
+    Retrieved(R.string.rag_details_tab_retrieved),
+    WebSearch(R.string.rag_details_tab_web_search),
+    KnowledgeGraph(R.string.rag_details_tab_knowledge_graph)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,7 +79,7 @@ fun RagDetailsSheet(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
             Text(
-                text = "引用内容",
+                text = stringResource(R.string.rag_details_title),
                 style = NexaraTypography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = NexaraColors.OnSurface,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -105,7 +107,7 @@ fun RagDetailsSheet(
                         onClick = { selectedTab = index },
                         text = {
                             Text(
-                                text = tab.label,
+                                text = stringResource(tab.labelRes),
                                 style = NexaraTypography.labelMedium.copy(
                                     fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
                                 ),
@@ -132,7 +134,10 @@ fun RagDetailsSheet(
                                 contentPadding = PaddingValues(bottom = 32.dp)
                             ) {
                                 item {
-                                    SectionHeader(title = "检索片段 (Retrieved Chunks)", icon = Icons.Rounded.Source)
+                                    SectionHeader(
+                                        title = stringResource(R.string.rag_details_section_retrieved),
+                                        icon = Icons.Rounded.Source
+                                    )
                                 }
                                 itemsIndexed(references!!) { index, ref ->
                                     RagReferenceCard(ref = ref, rank = index + 1)
@@ -150,7 +155,10 @@ fun RagDetailsSheet(
                                 contentPadding = PaddingValues(bottom = 32.dp)
                             ) {
                                 item {
-                                    SectionHeader(title = "联网引用 (Web Search Citations)", icon = Icons.Rounded.TravelExplore)
+                                    SectionHeader(
+                                        title = stringResource(R.string.rag_details_section_web_search),
+                                        icon = Icons.Rounded.TravelExplore
+                                    )
                                 }
                                 itemsIndexed(citations!!) { index, citation ->
                                     WebSearchReferenceCard(citation = citation, rank = index + 1)
@@ -179,10 +187,11 @@ fun RagDetailsSheet(
 @Composable
 private fun WebSearchReferenceCard(citation: Citation, rank: Int) {
     val uriHandler = LocalUriHandler.current
+    val openLinkLabel = stringResource(R.string.rag_details_open_link)
     NexaraGlassCard(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable {
+            .clickable(onClickLabel = openLinkLabel) {
                 try {
                     uriHandler.openUri(citation.url)
                 } catch (e: Exception) {
@@ -218,7 +227,7 @@ private fun WebSearchReferenceCard(citation: Citation, rank: Int) {
                         )
                     }
                     Text(
-                        text = citation.title.ifBlank { "未知网页" },
+                        text = citation.title.ifBlank { stringResource(R.string.rag_details_unknown_webpage) },
                         style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
                         color = NexaraColors.OnSurface,
                         maxLines = 1,
@@ -285,7 +294,7 @@ private fun WebSearchReferenceCard(citation: Citation, rank: Int) {
                 )
                 Icon(
                     Icons.Rounded.OpenInNew,
-                    contentDescription = null,
+                    contentDescription = openLinkLabel,
                     tint = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
                     modifier = Modifier.size(12.dp)
                 )
@@ -301,7 +310,7 @@ private fun EmptyStateText() {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = "暂无数据",
+            text = stringResource(R.string.rag_details_empty),
             style = NexaraTypography.bodyMedium,
             color = NexaraColors.OnSurfaceVariant
         )
@@ -359,10 +368,18 @@ private fun RagReferenceCard(ref: RagReference, rank: Int) {
                 // Scores
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (ref.score > 0f) {
-                        ScoreBadge(label = "Vector", score = ref.score, color = NexaraColors.Tertiary)
+                        ScoreBadge(
+                            label = stringResource(R.string.rag_details_score_vector),
+                            score = ref.score,
+                            color = NexaraColors.Tertiary
+                        )
                     }
                     if (ref.rerankScore != null) {
-                        ScoreBadge(label = "Rerank", score = ref.rerankScore, color = NexaraColors.Primary)
+                        ScoreBadge(
+                            label = stringResource(R.string.rag_details_score_rerank),
+                            score = ref.rerankScore,
+                            color = NexaraColors.Primary
+                        )
                     }
                 }
             }
@@ -379,7 +396,10 @@ private fun RagReferenceCard(ref: RagReference, rank: Int) {
                         modifier = Modifier.size(14.dp)
                     )
                     Text(
-                        text = "重排排名${if (ref.rankChange > 0) "上升" else "下降"} ${kotlin.math.abs(ref.rankChange)} 位",
+                        text = stringResource(
+                            if (ref.rankChange > 0) R.string.rag_details_rank_up else R.string.rag_details_rank_down,
+                            kotlin.math.abs(ref.rankChange)
+                        ),
                         style = NexaraTypography.labelSmall,
                         color = if (ref.rankChange > 0) successColor else errorColor
                     )
@@ -447,13 +467,16 @@ private fun KgPathSection(path: KgPath, index: Int) {
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    "P$index",
+                    stringResource(R.string.rag_details_path_label, index),
                     style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold),
                     color = NexaraColors.Tertiary
                 )
             }
             Text(
-                text = "关键词: ${path.queryKeywords.joinToString(", ")}",
+                text = stringResource(
+                    R.string.rag_details_keywords,
+                    path.queryKeywords.joinToString(", ")
+                ),
                 style = NexaraTypography.labelSmall,
                 color = NexaraColors.OnSurfaceVariant
             )

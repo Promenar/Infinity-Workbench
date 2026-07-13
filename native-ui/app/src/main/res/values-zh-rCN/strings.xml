@@ -1101,4 +1101,41 @@
     <string name="generation_notification_permission_explanation">允许通知后，可查看后台生成进度，并使用“停止”或“打开”快捷操作。无论允许或拒绝，当前回复都会继续生成。</string>
     <string name="generation_notification_permission_continue">允许通知</string>
     <string name="generation_background_service_stopped">后台服务启动失败，本次生成已停止。</string>
+
+    <!-- 发行可达的 RAG 详情与回收站 -->
+    <string name="rag_details_title">引用内容</string>
+    <string name="rag_details_tab_retrieved">知识检索</string>
+    <string name="rag_details_tab_web_search">联网搜索</string>
+    <string name="rag_details_tab_knowledge_graph">知识图谱</string>
+    <string name="rag_details_section_retrieved">检索片段</string>
+    <string name="rag_details_section_web_search">联网引用</string>
+    <string name="rag_details_unknown_webpage">未知网页</string>
+    <string name="rag_details_empty">暂无数据</string>
+    <string name="rag_details_score_vector">向量</string>
+    <string name="rag_details_score_rerank">重排</string>
+    <string name="rag_details_rank_up">重排排名上升 %1$d 位</string>
+    <string name="rag_details_rank_down">重排排名下降 %1$d 位</string>
+    <string name="rag_details_path_label">路径 %1$d</string>
+    <string name="rag_details_keywords">关键词：%1$s</string>
+    <string name="rag_details_open_link">打开链接</string>
+
+    <string name="recycle_bin_auto_cleanup">回收站中的项目将在 30 天后自动清理</string>
+    <string name="recycle_bin_permanent_delete_title">永久删除</string>
+    <string name="recycle_bin_permanent_delete_message">永久删除“%1$s”？此操作不可撤销。</string>
+    <string name="recycle_bin_empty_title">清空回收站</string>
+    <string name="recycle_bin_empty_message">永久删除此工作区回收站中的所有文件？此操作不可撤销。</string>
+    <string name="recycle_bin_empty_confirm">清空全部</string>
+    <string name="recycle_bin_restore_all">恢复全部</string>
+    <string name="recycle_bin_clear_count">清空（%1$d）</string>
+    <string name="recycle_bin_original_path">原始路径：%1$s</string>
+    <string name="recycle_bin_restore">恢复</string>
+    <string name="recycle_bin_empty_state">回收站为空</string>
+
+    <!-- 发行可达的检索能力状态 -->
+    <string name="sheet_tool_economy_mode">Token 节约模式</string>
+    <string name="sheet_tool_gemini_grounding">Gemini 联网 Grounding</string>
+    <string name="sheet_settings_rerank_unavailable">未配置默认重排模型，重排序已禁用。</string>
+    <string name="retrieval_rerank_model_unconfigured">未配置模型</string>
+    <string name="retrieval_rerank_model_unavailable_message">未检测到已配置的重排模型。重排序可提升多数据源融合后的相关性，请先前往“提供商管理”添加 Rerank 服务并设为默认重排模型。</string>
+    <string name="agent_retrieval_rerank_model_unavailable_message">未检测到已配置的重排模型，此开关已禁用。请先前往“提供商管理”添加 Rerank 模型并设为默认重排模型。</string>
 </resources>

@@ -252,7 +252,7 @@ fun AgentAdvancedRetrievalScreen(
                                         .padding(horizontal = 8.dp, vertical = 3.dp)
                                 ) {
                                     Text(
-                                        "未配置模型",
+                                        stringResource(R.string.retrieval_rerank_model_unconfigured),
                                         style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
                                         color = NexaraColors.StatusWarning
                                     )
@@ -275,7 +275,7 @@ fun AgentAdvancedRetrievalScreen(
                     }
                     if (!isRerankAvailable) {
                         Text(
-                            text = "⚠️ 未检测到已配置的重排模型。此开关已自动灰置禁用，请先前往「提供商管理」添加 Rerank 模型并设为默认重排模型。",
+                            text = stringResource(R.string.agent_retrieval_rerank_model_unavailable_message),
                             style = NexaraTypography.bodySmall.copy(fontSize = 11.sp, lineHeight = 16.sp),
                             color = NexaraColors.StatusWarning.copy(alpha = 0.9f)
                         )

@@ -200,7 +200,11 @@ fun GlobalRagConfigScreen(
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(label, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                                Text(if (value == 0f) "自动" else value.toInt().toString(), style = NexaraTypography.bodySmall, color = NexaraColors.Primary)
+                                Text(
+                                    if (value == 0f) stringResource(R.string.common_mode_auto) else value.toInt().toString(),
+                                    style = NexaraTypography.bodySmall,
+                                    color = NexaraColors.Primary
+                                )
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             NexaraSlider(

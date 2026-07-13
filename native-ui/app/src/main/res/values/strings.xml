@@ -1100,4 +1100,41 @@
     <string name="generation_notification_permission_explanation">Allow notifications to see background generation progress and use Stop or Open shortcuts. Your response continues whether you allow or decline.</string>
     <string name="generation_notification_permission_continue">Allow notifications</string>
     <string name="generation_background_service_stopped">The background service failed to start, so this generation has stopped.</string>
+
+    <!-- Release-reachable RAG details and recycle bin -->
+    <string name="rag_details_title">References</string>
+    <string name="rag_details_tab_retrieved">Knowledge retrieval</string>
+    <string name="rag_details_tab_web_search">Web search</string>
+    <string name="rag_details_tab_knowledge_graph">Knowledge graph</string>
+    <string name="rag_details_section_retrieved">Retrieved chunks</string>
+    <string name="rag_details_section_web_search">Web search citations</string>
+    <string name="rag_details_unknown_webpage">Unknown webpage</string>
+    <string name="rag_details_empty">No data</string>
+    <string name="rag_details_score_vector">Vector</string>
+    <string name="rag_details_score_rerank">Rerank</string>
+    <string name="rag_details_rank_up">Rerank rank moved up %1$d places</string>
+    <string name="rag_details_rank_down">Rerank rank moved down %1$d places</string>
+    <string name="rag_details_path_label">Path %1$d</string>
+    <string name="rag_details_keywords">Keywords: %1$s</string>
+    <string name="rag_details_open_link">Open link</string>
+
+    <string name="recycle_bin_auto_cleanup">Items in the recycle bin are automatically deleted after 30 days</string>
+    <string name="recycle_bin_permanent_delete_title">Permanently delete</string>
+    <string name="recycle_bin_permanent_delete_message">Permanently delete “%1$s”? This action cannot be undone.</string>
+    <string name="recycle_bin_empty_title">Empty recycle bin</string>
+    <string name="recycle_bin_empty_message">Permanently delete all files in this workspace recycle bin? This action cannot be undone.</string>
+    <string name="recycle_bin_empty_confirm">Delete all</string>
+    <string name="recycle_bin_restore_all">Restore all</string>
+    <string name="recycle_bin_clear_count">Delete all (%1$d)</string>
+    <string name="recycle_bin_original_path">Original path: %1$s</string>
+    <string name="recycle_bin_restore">Restore</string>
+    <string name="recycle_bin_empty_state">Recycle bin is empty</string>
+
+    <!-- Release-reachable retrieval availability -->
+    <string name="sheet_tool_economy_mode">Token economy mode</string>
+    <string name="sheet_tool_gemini_grounding">Gemini web grounding</string>
+    <string name="sheet_settings_rerank_unavailable">No default rerank model is configured. Reranking has been disabled.</string>
+    <string name="retrieval_rerank_model_unconfigured">Model not configured</string>
+    <string name="retrieval_rerank_model_unavailable_message">No rerank model is configured. Reranking improves relevance across multiple retrieval sources. Add a Rerank service in Provider Management and set it as the default rerank model.</string>
+    <string name="agent_retrieval_rerank_model_unavailable_message">No rerank model is configured, so this option is disabled. Add a Rerank model in Provider Management and set it as the default rerank model.</string>
 </resources>

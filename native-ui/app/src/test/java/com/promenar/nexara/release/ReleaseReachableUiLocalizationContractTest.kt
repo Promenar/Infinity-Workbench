@@ -10,6 +10,12 @@ class ReleaseReachableUiLocalizationContractTest {
     private val sourcePaths = listOf(
         "ui/chat/ResourceExplorerSheet.kt",
         "ui/chat/components/FilesPanel.kt",
+        "ui/chat/components/RagDetailsSheet.kt",
+        "ui/chat/components/RecycleBinPanel.kt",
+        "ui/chat/SessionSettingsSheet.kt",
+        "ui/rag/AdvancedRetrievalScreen.kt",
+        "ui/rag/GlobalRagConfigScreen.kt",
+        "ui/hub/AgentAdvancedRetrievalScreen.kt",
         "ui/settings/ProviderModelsScreen.kt",
     )
 
@@ -32,6 +38,38 @@ class ReleaseReachableUiLocalizationContractTest {
         "provider_models_field_display_name",
         "provider_models_output_tokens",
         "provider_models_knowledge_cutoff",
+        "rag_details_title",
+        "rag_details_tab_retrieved",
+        "rag_details_tab_web_search",
+        "rag_details_tab_knowledge_graph",
+        "rag_details_section_retrieved",
+        "rag_details_section_web_search",
+        "rag_details_unknown_webpage",
+        "rag_details_empty",
+        "rag_details_score_vector",
+        "rag_details_score_rerank",
+        "rag_details_rank_up",
+        "rag_details_rank_down",
+        "rag_details_path_label",
+        "rag_details_keywords",
+        "rag_details_open_link",
+        "recycle_bin_auto_cleanup",
+        "recycle_bin_permanent_delete_title",
+        "recycle_bin_permanent_delete_message",
+        "recycle_bin_empty_title",
+        "recycle_bin_empty_message",
+        "recycle_bin_empty_confirm",
+        "recycle_bin_restore_all",
+        "recycle_bin_clear_count",
+        "recycle_bin_original_path",
+        "recycle_bin_restore",
+        "recycle_bin_empty_state",
+        "sheet_tool_economy_mode",
+        "sheet_tool_gemini_grounding",
+        "sheet_settings_rerank_unavailable",
+        "retrieval_rerank_model_unconfigured",
+        "retrieval_rerank_model_unavailable_message",
+        "agent_retrieval_rerank_model_unavailable_message",
     )
 
     @Test
@@ -46,6 +84,14 @@ class ReleaseReachableUiLocalizationContractTest {
             "\"Model ID\"", "\"Display Name\"", "\"Optional\"", "\"tokens\"",
             "\"Output:", "\"截止:", "\"Chat\"", "\"Reasoning\"", "\"Vision\"",
             "\"Internet\"", "\"Audio In\"", "\"Audio Out\"", "\"Computer\"",
+            "\"引用内容\"", "\"知识检索\"", "\"联网搜索\"", "\"知识图谱\"",
+            "\"检索片段 (Retrieved Chunks)\"", "\"联网引用 (Web Search Citations)\"",
+            "\"未知网页\"", "\"暂无数据\"", "\"重排排名", "\"关键词:",
+            "\"30 天后自动清理\"", "\"永久删除\"", "\"清空回收站\"",
+            "\"恢复全部\"", "\"清空 (", "\"原始路径:", "\"恢复\"", "\"回收站为空\"",
+            "\"Token 节约模式\"", "\"Gemini 联网 Grounding\"",
+            "\"⚠️ 未配置默认重排模型", "\"未配置模型\"", "\"⚠️ 未检测到已配置的重排模型",
+            "if (value == 0f) \"自动\"",
         )
 
         banned.forEach { literal ->
@@ -66,6 +112,41 @@ class ReleaseReachableUiLocalizationContractTest {
         assertThat(valueOf(chinese, "resource_explorer_title")).isEqualTo("资源管理器")
         assertThat(valueOf(english, "provider_models_output_tokens")).contains("Output")
         assertThat(valueOf(chinese, "provider_models_output_tokens")).contains("输出")
+        assertThat(valueOf(english, "rag_details_title")).isEqualTo("References")
+        assertThat(valueOf(chinese, "rag_details_title")).isEqualTo("引用内容")
+        assertThat(valueOf(english, "recycle_bin_restore")).isEqualTo("Restore")
+        assertThat(valueOf(chinese, "recycle_bin_restore")).isEqualTo("恢复")
+        assertThat(valueOf(english, "retrieval_rerank_model_unconfigured")).doesNotContain("未配置")
+        assertThat(valueOf(chinese, "retrieval_rerank_model_unconfigured")).contains("未配置")
+
+        requiredKeys.forEach { key ->
+            assertThat(valueOf(english, key)).doesNotMatch(".*[\\u4E00-\\u9FFF].*")
+            assertThat(formatArguments(valueOf(english, key)))
+                .containsExactlyElementsIn(formatArguments(valueOf(chinese, key)))
+        }
+    }
+
+    @Test
+    fun `英文和简体中文字符串资源键完全一致`() {
+        val english = resource("values/strings.xml")
+        val chinese = resource("values-zh-rCN/strings.xml")
+
+        assertThat(resourceKeys(english)).containsExactlyElementsIn(resourceKeys(chinese))
+    }
+
+    @Test
+    fun `回收站图标操作提供至少48dp触控目标和可本地化语义`() {
+        val recycleBin = source("ui/chat/components/RecycleBinPanel.kt")
+        val accessibleIconButtons = Regex(
+            "IconButton\\s*\\([\\s\\S]{0,220}?Modifier\\.size\\(48\\.dp\\)",
+        ).findAll(recycleBin).count()
+
+        assertThat(accessibleIconButtons).isAtLeast(2)
+        assertThat(recycleBin).contains("contentDescription = stringResource(R.string.recycle_bin_restore)")
+        assertThat(recycleBin).contains("contentDescription = stringResource(R.string.recycle_bin_permanent_delete_title)")
+        assertThat(recycleBin).contains("R.string.files_time_minutes_ago")
+        assertThat(recycleBin).contains("R.string.files_time_hours_ago")
+        assertThat(recycleBin).contains("R.string.files_time_days_ago")
     }
 
     private fun source(relative: String): String = Files.readAllBytes(
@@ -80,4 +161,16 @@ class ReleaseReachableUiLocalizationContractTest {
         val pattern = Regex("<string name=\\\"${Regex.escape(key)}\\\">(.*?)</string>")
         return pattern.find(xml)?.groupValues?.get(1) ?: error("缺少资源键: $key")
     }
+
+    private fun resourceKeys(xml: String): Set<String> =
+        Regex("<string name=\\\"([^\\\"]+)\\\"")
+            .findAll(xml)
+            .map { it.groupValues[1] }
+            .toSet()
+
+    private fun formatArguments(value: String): List<String> =
+        Regex("%\\d+\\$[0-9.]*[a-zA-Z]")
+            .findAll(value)
+            .map { it.value }
+            .toList()
 }

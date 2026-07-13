@@ -769,13 +769,13 @@ private fun ToolsPanel(
         }
 
         var economyMode by remember(options.economyMode) { mutableStateOf(options.economyMode) }
-        ToolToggleRow("Token 节约模式", Icons.Rounded.Tune, economyMode) {
+        ToolToggleRow(stringResource(R.string.sheet_tool_economy_mode), Icons.Rounded.Tune, economyMode) {
             economyMode = it
             onToggle("economyMode", it)
         }
 
         if (isGeminiModel) {
-            ToolToggleRow("Gemini 联网 Grounding", Icons.Rounded.Language, geminiSearchEnabled) {
+            ToolToggleRow(stringResource(R.string.sheet_tool_gemini_grounding), Icons.Rounded.Language, geminiSearchEnabled) {
                 geminiSearchEnabled = it
                 onToggle("enableGeminiSearch", it)
             }
@@ -947,7 +947,7 @@ private fun SettingsPanel(
                 }
                 if (!isRerankAvailable) {
                     Text(
-                        text = "⚠️ 未配置默认重排模型，重排序已强制静默禁用",
+                        text = stringResource(R.string.sheet_settings_rerank_unavailable),
                         style = NexaraTypography.bodySmall.copy(fontSize = 11.sp),
                         color = NexaraColors.StatusWarning.copy(alpha = 0.85f),
                         modifier = Modifier.padding(start = 12.dp, top = 2.dp, bottom = 4.dp)

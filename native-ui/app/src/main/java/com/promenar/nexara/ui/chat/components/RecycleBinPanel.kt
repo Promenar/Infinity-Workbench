@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.RestoreFromTrash
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -32,8 +33,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalLocale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.promenar.nexara.R
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.common.FileIndexStatus
@@ -46,7 +50,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 @Composable
 fun RecycleBinPanel(
@@ -108,7 +111,7 @@ fun RecycleBinPanel(
 
                 item {
                     Text(
-                        text = "30 天后自动清理",
+                        text = stringResource(R.string.recycle_bin_auto_cleanup),
                         style = NexaraTypography.labelSmall,
                         color = NexaraColors.RagPending,
                         modifier = Modifier
@@ -124,9 +127,9 @@ fun RecycleBinPanel(
     showPermanentDeleteConfirm?.let { target ->
         androidx.compose.ui.window.Dialog(onDismissRequest = { showPermanentDeleteConfirm = null }) {
             NexaraConfirmDialog(
-                title = "永久删除",
-                message = "永久删除「${target.name}」？此操作不可撤销。",
-                confirmText = "永久删除",
+                title = stringResource(R.string.recycle_bin_permanent_delete_title),
+                message = stringResource(R.string.recycle_bin_permanent_delete_message, target.name),
+                confirmText = stringResource(R.string.recycle_bin_permanent_delete_title),
                 onConfirm = {
                     workspaceRootUuid?.let { root ->
                         scope.launch { workspaceRepo.permanentDelete(root, target.uuid) }
@@ -142,9 +145,9 @@ fun RecycleBinPanel(
     if (showEmptyConfirm) {
         androidx.compose.ui.window.Dialog(onDismissRequest = { showEmptyConfirm = false }) {
             NexaraConfirmDialog(
-                title = "清空回收站",
-                message = "清空此工作区的回收站？所有文件将被永久删除。此操作不可撤销。",
-                confirmText = "清空全部",
+                title = stringResource(R.string.recycle_bin_empty_title),
+                message = stringResource(R.string.recycle_bin_empty_message),
+                confirmText = stringResource(R.string.recycle_bin_empty_confirm),
                 onConfirm = {
                     if (workspaceRootUuid != null) {
                         scope.launch { workspaceRepo.emptyRecycleBin(workspaceRootUuid) }
@@ -171,14 +174,14 @@ private fun ActionBar(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         ActionButton(
-            label = "恢复全部",
+            label = stringResource(R.string.recycle_bin_restore_all),
             icon = Icons.Rounded.RestoreFromTrash,
             color = NexaraColors.Primary,
             onClick = onRestore,
             modifier = Modifier.weight(1f)
         )
         ActionButton(
-            label = "清空 ($itemCount)",
+            label = stringResource(R.string.recycle_bin_clear_count, itemCount),
             icon = Icons.Rounded.DeleteForever,
             color = NexaraColors.Error,
             onClick = onPermanentDelete,
@@ -260,7 +263,7 @@ private fun RecycleBinItem(
                 )
                 file.originalMaterializedPath?.let { path ->
                     Text(
-                        text = "原始路径: $path",
+                        text = stringResource(R.string.recycle_bin_original_path, path),
                         style = NexaraTypography.labelSmall,
                         color = NexaraColors.OnSurfaceVariant,
                         maxLines = 1,
@@ -287,24 +290,28 @@ private fun RecycleBinItem(
                 IndexStatusBadge(status = resolveIndexStatus(file))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(
-                        imageVector = Icons.Rounded.RestoreFromTrash,
-                        contentDescription = "恢复",
-                        tint = NexaraColors.Primary,
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable(onClick = onRestore)
-                    )
-                    Icon(
-                        imageVector = Icons.Rounded.DeleteForever,
-                        contentDescription = "永久删除",
-                        tint = NexaraColors.Error,
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable(onClick = onPermanentDelete)
-                    )
+                    IconButton(
+                        modifier = Modifier.size(48.dp),
+                        onClick = onRestore
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.RestoreFromTrash,
+                            contentDescription = stringResource(R.string.recycle_bin_restore),
+                            tint = NexaraColors.Primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(
+                        modifier = Modifier.size(48.dp),
+                        onClick = onPermanentDelete
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.DeleteForever,
+                            contentDescription = stringResource(R.string.recycle_bin_permanent_delete_title),
+                            tint = NexaraColors.Error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
@@ -328,7 +335,7 @@ private fun EmptyRecycleBinState() {
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "回收站为空",
+            text = stringResource(R.string.recycle_bin_empty_state),
             style = NexaraTypography.labelMedium,
             color = NexaraColors.OnSurface
         )
@@ -341,14 +348,18 @@ private fun resolveIndexStatus(file: FileEntry): FileIndexStatus {
     return FileIndexStatus.INDEXED
 }
 
+@Composable
 private fun formatRecycledTime(timestamp: Long): String {
     val now = System.currentTimeMillis()
-    val diff = now - timestamp
+    val diff = (now - timestamp).coerceAtLeast(0L)
+    val locale = LocalLocale.current.platformLocale
     return when {
-        diff < 86_400_000L -> "${diff / 3_600_000L} 小时前"
-        diff < 604_800_000L -> "${diff / 86_400_000L} 天前"
+        diff < 60_000L -> stringResource(R.string.files_time_just_now)
+        diff < 3_600_000L -> stringResource(R.string.files_time_minutes_ago, diff / 60_000L)
+        diff < 86_400_000L -> stringResource(R.string.files_time_hours_ago, diff / 3_600_000L)
+        diff < 604_800_000L -> stringResource(R.string.files_time_days_ago, diff / 86_400_000L)
         else -> {
-            val sdf = SimpleDateFormat("MMM d", Locale.getDefault())
+            val sdf = SimpleDateFormat("MMM d", locale)
             sdf.format(Date(timestamp))
         }
     }
