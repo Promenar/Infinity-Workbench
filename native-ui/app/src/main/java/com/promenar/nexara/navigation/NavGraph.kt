@@ -124,6 +124,8 @@ fun NexaraNavGraph(
     onboardingStateStore: OnboardingStateStore? = null,
     onboardingModelsOverride: List<ModelInfo>? = null,
     forceLocalProbeFailureForTesting: Boolean = false,
+    openGenerationRequest: OpenGenerationRequest? = null,
+    onOpenGenerationConsumed: (String) -> Boolean = { false },
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as NexaraApplication
@@ -164,6 +166,15 @@ fun NexaraNavGraph(
                 launchSingleTop = true
             }
         }
+    }
+
+    LaunchedEffect(openGenerationRequest, onboardingState.step) {
+        val request = openGenerationRequest ?: return@LaunchedEffect
+        if (onboardingState.step != OnboardingStep.COMPLETED) return@LaunchedEffect
+        navController.navigate(NavDestinations.chatHero(request.sessionId)) {
+            launchSingleTop = true
+        }
+        onOpenGenerationConsumed(request.requestId)
     }
 
     NavHost(

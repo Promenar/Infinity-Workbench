@@ -1031,4 +1031,19 @@
     <string name="sheet_settings_font_size">Font Size</string>
     <string name="sheet_settings_font_size_unit">px</string>
     <string name="chat_hint_select_model">Select a session model from the controls above</string>
+    <string name="generation_notification_channel">Background generation</string>
+    <string name="generation_notification_channel_description">Shows active response generation</string>
+    <string name="generation_notification_title">Nexara is generating</string>
+    <string name="generation_notification_preparing">Preparing the response</string>
+    <string name="generation_notification_thinking">Thinking</string>
+    <string name="generation_notification_generating">Generating the response</string>
+    <string name="generation_notification_finishing">Finishing the generation task</string>
+    <string name="generation_notification_current_session">Current session · %1$d characters</string>
+    <string name="generation_notification_stop">Stop</string>
+    <string name="generation_background_unavailable">This response is still generating, but it may stop if you leave the app.</string>
+    <string name="generation_notifications_unavailable">Background generation is active, but notification progress and shortcuts are unavailable. You can enable notifications in system settings.</string>
+    <string name="generation_notification_permission_title">Keep generation visible</string>
+    <string name="generation_notification_permission_explanation">Allow notifications to see background generation progress and use Stop or Open shortcuts. Your response continues whether you allow or decline.</string>
+    <string name="generation_notification_permission_continue">Allow notifications</string>
+    <string name="generation_background_service_stopped">The background service failed to start, so this generation has stopped.</string>
 </resources>

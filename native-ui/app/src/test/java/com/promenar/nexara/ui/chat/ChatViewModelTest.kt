@@ -47,6 +47,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import androidx.test.core.app.ApplicationProvider
 
+private const val BACKGROUND_UNAVAILABLE_MESSAGE = "background generation unavailable"
+private const val NOTIFICATIONS_UNAVAILABLE_MESSAGE = "notifications unavailable"
+private const val BACKGROUND_SERVICE_STOPPED_MESSAGE = "background service stopped"
+
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(application = TestNexaraApplication::class)
@@ -55,6 +59,15 @@ class ChatViewModelTest {
 
     private lateinit var viewModel: ChatViewModel
     private lateinit var generationScope: CoroutineScope
+    private val foregroundTrackedTasks = mutableListOf<
+        com.promenar.nexara.domain.generation.GenerationTaskSnapshot
+    >()
+    private var foregroundStartResult:
+        com.promenar.nexara.background.generation.ForegroundStartResult =
+        com.promenar.nexara.background.generation.ForegroundStartResult.StartedWithNotifications
+    private val foregroundFailures = kotlinx.coroutines.flow.MutableSharedFlow<
+        com.promenar.nexara.background.generation.ForegroundServiceFailure
+    >(extraBufferCapacity = 4)
 
     private val kgPath = KgPath(
         queryKeywords = listOf("Nexara"),
@@ -364,6 +377,9 @@ class ChatViewModelTest {
         protocolRequestCount = 0
         holdStreamOpen = false
         providerCancelled = false
+        foregroundTrackedTasks.clear()
+        foregroundStartResult =
+            com.promenar.nexara.background.generation.ForegroundStartResult.StartedWithNotifications
         forcedProviderFailure = null
 
         stubAgentRepo.seed(Agent(
@@ -435,6 +451,27 @@ class ChatViewModelTest {
             configResolver = configResolver,
             generationCoordinatorOverride = generationCoordinator,
             generationPresentationStoreOverride = presentationStore,
+            generationForegroundControllerOverride =
+                object : com.promenar.nexara.background.generation.GenerationForegroundController {
+                    override val failures = foregroundFailures
+                    override fun track(
+                        snapshot: com.promenar.nexara.domain.generation.GenerationTaskSnapshot,
+                    ): com.promenar.nexara.background.generation.ForegroundStartResult {
+                        foregroundTrackedTasks += snapshot
+                        return foregroundStartResult
+                    }
+                },
+            stringResourceResolverOverride = { resourceId ->
+                when (resourceId) {
+                    com.promenar.nexara.R.string.generation_background_unavailable ->
+                        BACKGROUND_UNAVAILABLE_MESSAGE
+                    com.promenar.nexara.R.string.generation_notifications_unavailable ->
+                        NOTIFICATIONS_UNAVAILABLE_MESSAGE
+                    com.promenar.nexara.R.string.generation_background_service_stopped ->
+                        BACKGROUND_SERVICE_STOPPED_MESSAGE
+                    else -> error("unexpected string resource: $resourceId")
+                }
+            },
         )
     }
 
@@ -483,6 +520,7 @@ class ChatViewModelTest {
         assertThat(uiState.messages).hasSize(2)
         assertThat(uiState.messages[0].role).isEqualTo(MessageRole.USER)
         assertThat(uiState.messages[1].role).isEqualTo(MessageRole.ASSISTANT)
+        assertThat(foregroundTrackedTasks.map { it.sessionId }).containsExactly("s1")
         
     }
 
@@ -598,6 +636,148 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `FGS启动不允许时提示回复仍在生成而不是误报取消`() = runTest {
+        seedSession("fgs-not-allowed")
+        advanceUntilIdle()
+        holdStreamOpen = true
+        foregroundStartResult = com.promenar.nexara.background.generation.ForegroundStartResult.NotAllowed(
+            android.app.ForegroundServiceStartNotAllowedException("blocked"),
+        )
+
+        viewModel.sendMessage("hello")
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.backgroundWarning?.message)
+            .isEqualTo(BACKGROUND_UNAVAILABLE_MESSAGE)
+        assertThat(viewModel.uiState.value.isGenerating).isTrue()
+    }
+
+    @Test
+    fun `FGS权限异常时降级提示且应用内Stop仍可取消当前task`() = runTest {
+        seedSession("fgs-permission")
+        advanceUntilIdle()
+        holdStreamOpen = true
+        foregroundStartResult = com.promenar.nexara.background.generation.ForegroundStartResult.PermissionDenied(
+            SecurityException("fgs permission"),
+        )
+
+        viewModel.sendMessage("hello")
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.backgroundWarning?.message)
+            .isEqualTo(BACKGROUND_UNAVAILABLE_MESSAGE)
+
+        viewModel.stopGeneration()
+        advanceUntilIdle()
+        assertThat(providerCancelled).isTrue()
+    }
+
+    @Test
+    fun `通知未授权时生成继续并按taskId发出一次权限请求且授权后清warning`() = runTest {
+        seedSession("notification-permission")
+        advanceUntilIdle()
+        holdStreamOpen = true
+        foregroundStartResult =
+            com.promenar.nexara.background.generation.ForegroundStartResult.StartedWithoutNotifications
+        assertThat(viewModel.notificationPermissionRequests.value).isNull()
+        viewModel.sendMessage("hello")
+        advanceUntilIdle()
+
+        val permissionRequest = requireNotNull(viewModel.notificationPermissionRequests.value)
+        val warning = viewModel.uiState.value.backgroundWarning!!
+        assertThat(permissionRequest.taskId).isEqualTo(warning.taskId)
+        assertThat(warning.kind).isEqualTo(BackgroundWarningKind.NOTIFICATIONS_UNAVAILABLE)
+        assertThat(viewModel.uiState.value.isGenerating).isTrue()
+
+        viewModel.onNotificationPermissionResult(permissionRequest.taskId, granted = true)
+        assertThat(viewModel.uiState.value.backgroundWarning).isNull()
+        assertThat(viewModel.notificationPermissionRequests.value).isNull()
+    }
+
+    @Test
+    fun `clearError不清除独立后台warning`() = runTest {
+        seedSession("warning-clear")
+        advanceUntilIdle()
+        holdStreamOpen = true
+        foregroundStartResult =
+            com.promenar.nexara.background.generation.ForegroundStartResult.StartedWithoutNotifications
+
+        viewModel.sendMessage("hello")
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.backgroundWarning).isNotNull()
+
+        viewModel.clearError()
+        assertThat(viewModel.uiState.value.backgroundWarning).isNotNull()
+    }
+
+    @Test
+    fun `后台promotion失败在终态竞态后仍显示同task停止错误且切session清理`() = runTest {
+        seedSession("warning-A")
+        advanceUntilIdle()
+        holdStreamOpen = true
+        viewModel.sendMessage("hello")
+        advanceUntilIdle()
+        val taskId = foregroundTrackedTasks.single().taskId
+
+        foregroundFailures.tryEmit(
+            com.promenar.nexara.background.generation.ForegroundServiceFailure(
+                "stale",
+                com.promenar.nexara.background.generation.ForegroundServiceFailureOutcome.GENERATION_STOPPED,
+            ),
+        )
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.error).isNull()
+
+        viewModel.stopGeneration()
+        advanceUntilIdle()
+        foregroundFailures.tryEmit(
+            com.promenar.nexara.background.generation.ForegroundServiceFailure(
+                taskId,
+                com.promenar.nexara.background.generation.ForegroundServiceFailureOutcome.GENERATION_STOPPED,
+            ),
+        )
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.error).isEqualTo(BACKGROUND_SERVICE_STOPPED_MESSAGE)
+
+        seedSession("warning-B")
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.error).isNull()
+    }
+
+    @Test
+    fun `停止错误遮挡普通错误时两次清理按展示层依次暴露`() = runTest {
+        seedSession("layered-errors")
+        advanceUntilIdle()
+        holdStreamOpen = true
+        viewModel.sendMessage("hello")
+        advanceUntilIdle()
+        val taskId = foregroundTrackedTasks.single().taskId
+        foregroundFailures.tryEmit(
+            com.promenar.nexara.background.generation.ForegroundServiceFailure(
+                taskId,
+                com.promenar.nexara.background.generation.ForegroundServiceFailureOutcome.GENERATION_STOPPED,
+            ),
+        )
+        advanceUntilIdle()
+
+        @Suppress("UNCHECKED_CAST")
+        val ordinaryError = ChatViewModel::class.java.getDeclaredField("_error").run {
+            isAccessible = true
+            get(viewModel) as kotlinx.coroutines.flow.MutableStateFlow<String?>
+        }
+        ordinaryError.value = "new provider error"
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.error).isEqualTo(BACKGROUND_SERVICE_STOPPED_MESSAGE)
+
+        viewModel.clearError()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.error).isEqualTo("new provider error")
+
+        viewModel.clearError()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.error).isNull()
+    }
+
+    @Test
     fun `A生成时B发送返回Busy且不留幽灵消息并且B停止不取消A`() = runTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession("A")
@@ -607,6 +787,7 @@ class ChatViewModelTest {
         viewModel.sendMessage("from A")
         advanceUntilIdle()
         assertThat(protocolRequestCount).isEqualTo(1)
+        assertThat(foregroundTrackedTasks.map { it.sessionId }).containsExactly("A")
 
         seedSession("B")
         advanceUntilIdle()
@@ -620,6 +801,7 @@ class ChatViewModelTest {
         assertThat(viewModel.uiState.value.isGenerating).isFalse()
         assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.ERROR)
         assertThat(protocolRequestCount).isEqualTo(1)
+        assertThat(foregroundTrackedTasks.map { it.sessionId }).containsExactly("A")
         assertThat(providerCancelled).isFalse()
 
         viewModel.stopGeneration()
@@ -724,6 +906,7 @@ class ChatViewModelTest {
         val messages = viewModel.uiState.value.messages
         val assistantMessages = messages.filter { it.role == MessageRole.ASSISTANT }
         assertThat(assistantMessages.any { it.content == "retry response" }).isTrue()
+        assertThat(foregroundTrackedTasks).hasSize(2)
         
     }
 

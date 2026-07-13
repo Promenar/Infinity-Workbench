@@ -24,7 +24,7 @@ sealed interface StartGenerationResult {
     data class Rejected(val error: GenerationError) : StartGenerationResult
 }
 
-enum class CancellationReason { USER, TIMEOUT, REPLACED, SHUTDOWN }
+enum class CancellationReason { USER, TIMEOUT, REPLACED, SHUTDOWN, BACKGROUND_UNAVAILABLE }
 
 interface GenerationCoordinator {
     val active: StateFlow<GenerationTaskSnapshot?>

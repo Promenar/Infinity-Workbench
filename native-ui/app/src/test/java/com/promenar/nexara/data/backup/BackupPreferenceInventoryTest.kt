@@ -28,6 +28,12 @@ class BackupPreferenceInventoryTest {
             "ui/settings/SearchConfigViewModel.kt#prefs" to "nexara_search",
             "ui/rag/RagViewModel.kt#prefs" to "rag_settings",
             "ui/rag/RagViewModel.kt#settingsPrefs" to "nexara_settings",
+            "ui/chat/ChatScreen.kt#notificationPermissionPrefs" to
+                "generation_notification_permission",
+            "ui/chat/ChatViewModel.kt#prefs" to "nexara_settings",
+            "data/generation/DefaultChatGenerationRuntime.kt#settings" to "nexara_settings",
+            "data/generation/ChatGenerationContentStrategy.kt#settings" to "nexara_settings",
+            "onboarding/OnboardingStateStore.kt#preferences" to "nexara_onboarding",
             "MainActivity.kt#prefs" to "nexara_prefs",
             "util/LocaleHelper.kt#prefs" to "nexara_settings",
             "ui/chat/manager/WebSearchContextProvider.kt#prefs" to "nexara_search",
@@ -176,5 +182,23 @@ class BackupPreferenceInventoryTest {
         ).forEach { key ->
             assertWithMessage(key).that(BackupPreferencePolicy.isAllowed("settings", key)).isFalse()
         }
+    }
+
+    @Test
+    fun `通知权限询问状态属于设备本地状态且不得进入备份`() {
+        assertWithMessage("设备权限状态应登记为已知")
+            .that(
+                BackupPreferencePolicy.isKnown(
+                    "generation_notification_permission",
+                    "post_notifications_asked",
+                ),
+            ).isTrue()
+        assertWithMessage("设备权限状态不得随备份迁移")
+            .that(
+                BackupPreferencePolicy.isAllowed(
+                    "generation_notification_permission",
+                    "post_notifications_asked",
+                ),
+            ).isFalse()
     }
 }

@@ -23,6 +23,7 @@ import androidx.navigation.compose.rememberNavController
 import com.promenar.nexara.data.backup.BackupStartupState
 import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.navigation.NexaraNavGraph
+import com.promenar.nexara.navigation.AppIntentRouter
 import com.promenar.nexara.onboarding.OnboardingState
 import com.promenar.nexara.onboarding.OnboardingStateStore
 import com.promenar.nexara.onboarding.OnboardingStep
@@ -47,6 +48,8 @@ internal fun allowOnboardingEmptyModelsOverride(
 ): Boolean = isDebugBuild && requestedByIntent
 
 class MainActivity : ComponentActivity() {
+    private val appIntentRouter: AppIntentRouter
+        get() = (application as NexaraApplication).appIntentRouter
     private val onboardingStore by lazy { OnboardingStateStore(applicationContext) }
     private val durableShareInbox by lazy { DurableShareInbox.get(noBackupFilesDir) }
     private val shareIntentViewModel by viewModels<ShareIntentViewModel> {
@@ -105,6 +108,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         stageShareIntent(intent)
+        routeOpenGenerationIntent(intent)
         val app = application as NexaraApplication
         setContent {
             NexaraTheme {
@@ -118,6 +122,7 @@ class MainActivity : ComponentActivity() {
                         val backStackEntry by navController.currentBackStackEntryAsState()
                         val importState by shareImportViewModel.state.collectAsStateWithLifecycle()
                         val onboardingState by onboardingStore.state.collectAsStateWithLifecycle()
+                        val openGenerationRequest by appIntentRouter.pending.collectAsStateWithLifecycle()
                         val startDestination = if (onboardingState.step == OnboardingStep.COMPLETED) {
                             NavDestinations.MAIN_TAB_SCAFFOLD
                         } else {
@@ -146,6 +151,8 @@ class MainActivity : ComponentActivity() {
                                     false,
                                 ),
                             ),
+                            openGenerationRequest = openGenerationRequest,
+                            onOpenGenerationConsumed = appIntentRouter::consume,
                         )
                         LaunchedEffect(startupState, backStackEntry) {
                             currentSessionId = backStackEntry?.arguments?.getString("sessionId")
@@ -175,7 +182,7 @@ class MainActivity : ComponentActivity() {
         if (ShareIntentQueue.isShareIntent(intent)) {
             setIntent(intent)
             stageShareIntent(intent)
-        } else if (currentShareSubmissionId == null) {
+        } else if (!routeOpenGenerationIntent(intent) && currentShareSubmissionId == null) {
             setIntent(intent)
         }
     }
@@ -231,6 +238,12 @@ class MainActivity : ComponentActivity() {
 
     private fun cleanMainIntent() = Intent(this, MainActivity::class.java).apply {
         action = Intent.ACTION_MAIN
+    }
+
+    private fun routeOpenGenerationIntent(candidate: Intent?): Boolean {
+        if (!appIntentRouter.offer(candidate)) return false
+        setIntent(cleanMainIntent())
+        return true
     }
 
     private fun revokeShareReadGrants(candidate: Intent) {

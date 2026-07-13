@@ -1,6 +1,9 @@
 package com.promenar.nexara.ui.chat
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -135,6 +138,13 @@ import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.background.generation.GENERATION_NOTIFICATION_PERMISSION_ASKED
+import com.promenar.nexara.background.generation.GENERATION_NOTIFICATION_PERMISSION_PREFS
+import com.promenar.nexara.background.generation.NotificationPermissionPromptState
+import com.promenar.nexara.background.generation.NotificationPermissionOverlayState
+import com.promenar.nexara.background.generation.shouldExplainNotificationPermission
+import com.promenar.nexara.background.generation.shouldShowNotificationPermissionDialog
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -177,9 +187,64 @@ fun ChatScreen(
     var showModelHint by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var selectedImageUris by remember { mutableStateOf<List<android.net.Uri>>(emptyList()) }
+    var pendingNotificationPermission by remember {
+        mutableStateOf<NotificationPermissionRequest?>(null)
+    }
+    val hasBlockingChatOverlay = showTruncateDialog || showClearDialog ||
+        showDeleteDialog || showRenameDialog || showWorkspaceSheet ||
+        showModelSettingsSheet || showSessionPromptEditor
+    val permissionDialogVisible = shouldShowNotificationPermissionDialog(
+        NotificationPermissionOverlayState(
+            hasPendingRequest = pendingNotificationPermission != null,
+            hasBlockingOverlay = hasBlockingChatOverlay,
+        ),
+    )
+    val notificationPermissionPrefs = remember(context) {
+        context.getSharedPreferences(GENERATION_NOTIFICATION_PERMISSION_PREFS, 0)
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        notificationPermissionPrefs.edit()
+            .putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true)
+            .apply()
+        pendingNotificationPermission?.let { request ->
+            chatViewModel.onNotificationPermissionResult(request.taskId, granted)
+        }
+        pendingNotificationPermission = null
+    }
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris -> selectedImageUris = uris }
+
+    LaunchedEffect(chatViewModel) {
+        chatViewModel.notificationPermissionRequests.collect { request ->
+            if (request == null) {
+                pendingNotificationPermission = null
+                return@collect
+            }
+            val granted = Build.VERSION.SDK_INT < 33 ||
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED
+            val shouldExplain = shouldExplainNotificationPermission(
+                NotificationPermissionPromptState(
+                    sdkInt = Build.VERSION.SDK_INT,
+                    granted = granted,
+                    alreadyAsked = notificationPermissionPrefs.getBoolean(
+                        GENERATION_NOTIFICATION_PERMISSION_ASKED,
+                        false,
+                    ),
+                ),
+            )
+            if (granted) {
+                chatViewModel.onNotificationPermissionResult(request.taskId, granted = true)
+            } else if (shouldExplain) {
+                pendingNotificationPermission = request
+            }
+        }
+    }
 
     LaunchedEffect(showModelHint) {
         if (showModelHint) {
@@ -241,7 +306,11 @@ fun ChatScreen(
     val describeImagePrompt = stringResource(R.string.chat_image_only_prompt)
     val approvalArgumentsLabel = stringResource(R.string.chat_approval_arguments)
     val approvalFallback = stringResource(R.string.chat_approval_fallback)
-    LaunchedEffect(uiState.error) {
+    LaunchedEffect(uiState.error, permissionDialogVisible) {
+        if (permissionDialogVisible) {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            return@LaunchedEffect
+        }
         val errorMessage = uiState.error ?: return@LaunchedEffect
         snackbarAction = { chatViewModel.clearError() }
         snackbarData = NexaraSnackbarData(
@@ -256,6 +325,26 @@ fun ChatScreen(
             duration = SnackbarDuration.Long
         )
         chatViewModel.clearError()
+    }
+    LaunchedEffect(uiState.backgroundWarning, uiState.error, permissionDialogVisible) {
+        if (permissionDialogVisible) {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            return@LaunchedEffect
+        }
+        if (uiState.error != null) return@LaunchedEffect
+        val warning = uiState.backgroundWarning ?: return@LaunchedEffect
+        snackbarAction = { chatViewModel.clearBackgroundWarning(warning.taskId) }
+        snackbarData = NexaraSnackbarData(
+            message = warning.message,
+            type = SnackbarType.INFO,
+            actionLabel = dismissLabel,
+        )
+        snackbarHostState.currentSnackbarData?.dismiss()
+        snackbarHostState.showSnackbar(
+            message = warning.message,
+            actionLabel = dismissLabel,
+            duration = SnackbarDuration.Long,
+        )
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -655,6 +744,41 @@ fun ChatScreen(
                 }
             }
         }
+
+    pendingNotificationPermission?.takeIf { permissionDialogVisible }?.let { request ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                notificationPermissionPrefs.edit()
+                    .putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true)
+                    .apply()
+                chatViewModel.onNotificationPermissionResult(request.taskId, granted = false)
+                pendingNotificationPermission = null
+            },
+            title = { Text(stringResource(R.string.generation_notification_permission_title)) },
+            text = { Text(stringResource(R.string.generation_notification_permission_explanation)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        notificationPermissionPrefs.edit()
+                            .putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true)
+                            .apply()
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    },
+                ) { Text(stringResource(R.string.generation_notification_permission_continue)) }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        notificationPermissionPrefs.edit()
+                            .putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true)
+                            .apply()
+                        chatViewModel.onNotificationPermissionResult(request.taskId, granted = false)
+                        pendingNotificationPermission = null
+                    },
+                ) { Text(stringResource(R.string.common_btn_cancel)) }
+            },
+        )
+    }
 
     if (showClearDialog) {
         Dialog(onDismissRequest = { showClearDialog = false }) {

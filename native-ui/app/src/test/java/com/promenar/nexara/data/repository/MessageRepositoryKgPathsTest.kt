@@ -28,6 +28,7 @@ class MessageRepositoryKgPathsTest {
         )
         val dao = mockk<MessageDao>(relaxed = true)
         coEvery { dao.getById("m1") } returns original
+        coEvery { dao.update(any()) } returns 1
         val repository = MessageRepository(dao)
 
         repository.updatePartial("m1", mapOf("kgPaths" to listOf(path)))

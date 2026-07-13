@@ -197,6 +197,15 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val generationPresentationStore by lazy {
         com.promenar.nexara.data.generation.GenerationPresentationStore()
     }
+    val generationForegroundController:
+        com.promenar.nexara.background.generation.GenerationForegroundController by lazy {
+        com.promenar.nexara.background.generation.AndroidGenerationForegroundController(this)
+    }
+    val appIntentRouter by lazy {
+        com.promenar.nexara.navigation.AppIntentRouter { taskId, sessionId ->
+            generationCoordinator.observe(sessionId).value?.taskId == taskId
+        }
+    }
     private val generationSessionManager by lazy {
         com.promenar.nexara.ui.chat.manager.SessionManager(chatStore, sessionRepository)
     }

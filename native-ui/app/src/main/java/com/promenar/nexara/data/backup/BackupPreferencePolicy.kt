@@ -50,6 +50,14 @@ internal object BackupPreferencePolicy {
         ),
     )
 
+    // 设备权限询问状态不能随备份迁移，否则新设备可能在未授权时永久跳过说明。
+    private val exactDenied = mapOf(
+        "generation_notification_permission" to setOf("post_notifications_asked"),
+        "onboarding" to setOf(
+            "step", "language", "provider_id", "model_id", "agent_id", "session_id",
+        ),
+    )
+
     fun isAllowed(namespace: String, key: String): Boolean {
         val normalizedNamespace = normalizeNamespace(namespace)
         val normalizedKey = normalize(key)
@@ -58,7 +66,13 @@ internal object BackupPreferencePolicy {
             dynamicAllowed[normalizedNamespace].orEmpty().any { it.matches(normalizedKey) }
     }
 
-    fun isKnown(namespace: String, key: String): Boolean = isAllowed(namespace, key) || isDenied(key)
+    fun isKnown(namespace: String, key: String): Boolean {
+        val normalizedNamespace = normalizeNamespace(namespace)
+        val normalizedKey = normalize(key)
+        return isAllowed(namespace, key) ||
+            normalizedKey in exactDenied[normalizedNamespace].orEmpty() ||
+            isDenied(key)
+    }
 
     fun isDenied(key: String): Boolean {
         val normalized = normalize(key)
@@ -72,6 +86,7 @@ internal object BackupPreferencePolicy {
         "nexara_search", "search" -> "search"
         "nexara_prefs", "ui" -> "ui"
         "nexara_backup_settings", "backup" -> "backup"
+        "nexara_onboarding", "onboarding" -> "onboarding"
         else -> normalize(value)
     }
 

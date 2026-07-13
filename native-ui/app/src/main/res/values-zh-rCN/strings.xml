@@ -1032,4 +1032,19 @@
     <string name="chat_dialog_rename_title">重命名会话</string>
     <string name="chat_dialog_rename_placeholder">输入新名称...</string>
     <string name="chat_hint_select_model">请先点击顶部配置会话模型</string>
+    <string name="generation_notification_channel">后台生成</string>
+    <string name="generation_notification_channel_description">显示正在进行的回复生成任务</string>
+    <string name="generation_notification_title">Nexara 正在生成</string>
+    <string name="generation_notification_preparing">正在准备回复</string>
+    <string name="generation_notification_thinking">正在思考</string>
+    <string name="generation_notification_generating">正在生成回复</string>
+    <string name="generation_notification_finishing">正在结束生成任务</string>
+    <string name="generation_notification_current_session">当前会话 · 已生成 %1$d 字</string>
+    <string name="generation_notification_stop">停止</string>
+    <string name="generation_background_unavailable">当前回复仍在生成，但离开应用后可能中断。</string>
+    <string name="generation_notifications_unavailable">后台生成已启动，但通知进度与快捷操作不可用。可在系统设置中开启通知。</string>
+    <string name="generation_notification_permission_title">保持后台生成可见</string>
+    <string name="generation_notification_permission_explanation">允许通知后，可查看后台生成进度，并使用“停止”或“打开”快捷操作。无论允许或拒绝，当前回复都会继续生成。</string>
+    <string name="generation_notification_permission_continue">允许通知</string>
+    <string name="generation_background_service_stopped">后台服务启动失败，本次生成已停止。</string>
 </resources>

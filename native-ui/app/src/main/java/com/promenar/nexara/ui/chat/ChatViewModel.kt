@@ -138,8 +138,18 @@ data class ChatUiState(
     val status: GenerationStatus = GenerationStatus.IDLE,
     val streamingContent: String = "",
     val error: String? = null,
+    val backgroundWarning: BackgroundGenerationWarning? = null,
     val approvalRequest: ApprovalRequest? = null
 )
+
+enum class BackgroundWarningKind { FGS_UNAVAILABLE, NOTIFICATIONS_UNAVAILABLE }
+data class BackgroundGenerationWarning(
+    val taskId: String,
+    val kind: BackgroundWarningKind,
+    val message: String,
+)
+data class BackgroundServiceStoppedError(val taskId: String, val message: String)
+data class NotificationPermissionRequest(val taskId: String)
 
 internal fun ContextBuilderResult.hasPersistableRagContext(): Boolean =
     ragContext.isNotBlank() || ragReferences.isNotEmpty() || citations.isNotEmpty() ||
@@ -183,6 +193,9 @@ class ChatViewModel(
     private val exportSessionUseCase: ExportSessionUseCase? = null,
     generationCoordinatorOverride: com.promenar.nexara.domain.generation.GenerationCoordinator? = null,
     generationPresentationStoreOverride: com.promenar.nexara.data.generation.GenerationPresentationStore? = null,
+    generationForegroundControllerOverride:
+        com.promenar.nexara.background.generation.GenerationForegroundController? = null,
+    stringResourceResolverOverride: ((Int) -> String)? = null,
 ) : ViewModel() {
 
     private val store = (application as NexaraApplication).chatStore
@@ -190,6 +203,9 @@ class ChatViewModel(
         ?: (application as NexaraApplication).generationCoordinator
     private val generationPresentationStore = generationPresentationStoreOverride
         ?: (application as NexaraApplication).generationPresentationStore
+    private val generationForegroundController = generationForegroundControllerOverride
+        ?: (application as NexaraApplication).generationForegroundController
+    private val stringResourceResolver = stringResourceResolverOverride ?: application::getString
 
     private val sessionManager = SessionManager(store, sessionRepository)
     private val messageManager = MessageManager(store, messageRepository, sessionRepository)
@@ -217,6 +233,14 @@ class ChatViewModel(
 
     private val _streamingContent = MutableStateFlow("")
     private val _error = MutableStateFlow<String?>(null)
+    private val _backgroundServiceStoppedError =
+        MutableStateFlow<BackgroundServiceStoppedError?>(null)
+    private val _backgroundWarning = MutableStateFlow<BackgroundGenerationWarning?>(null)
+    private var foregroundTrackedTaskId: String? = null
+    private val mutableNotificationPermissionRequest =
+        MutableStateFlow<NotificationPermissionRequest?>(null)
+    val notificationPermissionRequests: StateFlow<NotificationPermissionRequest?> =
+        mutableNotificationPermissionRequest
     private val _providerResolutionFailure = MutableStateFlow<ProviderResolution.Failure?>(null)
     val providerResolutionFailure: StateFlow<ProviderResolution.Failure?> = _providerResolutionFailure
     private val _isGenerating = MutableStateFlow(false)
@@ -286,7 +310,9 @@ class ChatViewModel(
         _isLoading,
         _generationStatus,
         _streamingContent,
-        _error
+        _error,
+        _backgroundServiceStoppedError,
+        _backgroundWarning,
     ) { args: Array<Any?> ->
         val state = args[0] as com.promenar.nexara.ui.chat.ChatState
         val sessionId = args[1] as String?
@@ -296,6 +322,8 @@ class ChatViewModel(
         val status = args[5] as GenerationStatus
         val streamingContent = args[6] as String
         val error = args[7] as String?
+        val backgroundServiceStoppedError = args[8] as BackgroundServiceStoppedError?
+        val backgroundWarning = args[9] as BackgroundGenerationWarning?
 
         val session = state.sessions.find { it.id == sessionId }
         if (session != null) {
@@ -309,7 +337,8 @@ class ChatViewModel(
             isLoading = isLoading,
             status = status,
             streamingContent = streamingContent,
-            error = error,
+            error = backgroundServiceStoppedError?.message ?: error,
+            backgroundWarning = backgroundWarning,
             approvalRequest = session?.approvalRequest
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ChatUiState())
@@ -364,6 +393,7 @@ class ChatViewModel(
         viewModelScope.launch {
             _currentSessionId.collectLatest { sessionId ->
                 if (sessionId == null) return@collectLatest
+                var observedTaskId: String? = null
                 try {
                     combine(
                         generationCoordinator.observe(sessionId),
@@ -372,11 +402,17 @@ class ChatViewModel(
                         .collect { (task, presentation) ->
                         if (task == null) {
                             _isGenerating.value = false
+                            observedTaskId?.let {
+                                clearBackgroundWarningForTask(it)
+                                clearNotificationPermissionRequestForTask(it)
+                            }
+                            observedTaskId = null
                             if (_generationStatus.value == GenerationStatus.COMPLETED) {
                                 _generationStatus.value = GenerationStatus.IDLE
                             }
                             return@collect
                         }
+                        observedTaskId = task.taskId
                         _isGenerating.value = task.phase !in setOf(
                             com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED,
                             com.promenar.nexara.domain.generation.GenerationPhase.FAILED,
@@ -399,6 +435,8 @@ class ChatViewModel(
                             com.promenar.nexara.domain.generation.GenerationPhase.POST_PROCESSING -> GenerationStatus.RECEIVING
                         }
                         if (task.phase in TERMINAL_GENERATION_PHASES) {
+                            clearBackgroundWarningForTask(task.taskId)
+                            clearNotificationPermissionRequestForTask(task.taskId)
                             val terminalPresentation = presentation
                                 ?.takeIf { it.taskId == task.taskId }
                                 ?.takeIf {
@@ -418,6 +456,22 @@ class ChatViewModel(
                         }
                 } finally {
                     generationCoordinator.release(sessionId)
+                }
+            }
+        }
+        viewModelScope.launch {
+            generationForegroundController.failures.collect { failure ->
+                if (
+                    failure.outcome ==
+                    com.promenar.nexara.background.generation.ForegroundServiceFailureOutcome.GENERATION_STOPPED &&
+                    foregroundTrackedTaskId == failure.taskId
+                ) {
+                    _backgroundServiceStoppedError.value = BackgroundServiceStoppedError(
+                        taskId = failure.taskId,
+                        message = stringResourceResolver(
+                            R.string.generation_background_service_stopped,
+                        ),
+                    )
                 }
             }
         }
@@ -457,6 +511,8 @@ class ChatViewModel(
                 _generationStatus.update { GenerationStatus.UPLOADING }
                 _isGenerating.update { true }
                 _error.update { null }
+                _backgroundServiceStoppedError.value = null
+                _backgroundWarning.value = null
                 _providerResolutionFailure.value = null
 
                 val imageDataUrls = if (imageUris.isNotEmpty()) {
@@ -589,8 +645,14 @@ class ChatViewModel(
         )
         return generationCoordinator.start(request).also { result ->
             when (result) {
-            is com.promenar.nexara.domain.generation.StartGenerationResult.Started,
-            is com.promenar.nexara.domain.generation.StartGenerationResult.Existing -> Unit
+            is com.promenar.nexara.domain.generation.StartGenerationResult.Started -> {
+                generationCoordinator.observe(sessionId).value
+                    ?.takeIf { it.taskId == result.taskId }
+                    ?.let(::trackForegroundGeneration)
+            }
+            is com.promenar.nexara.domain.generation.StartGenerationResult.Existing -> {
+                trackForegroundGeneration(result.snapshot)
+            }
             is com.promenar.nexara.domain.generation.StartGenerationResult.Busy -> {
                 _error.value = "已有会话正在生成：${result.activeSessionId}"
             }
@@ -599,6 +661,61 @@ class ChatViewModel(
                 _generationStatus.value = GenerationStatus.ERROR
             }
         }
+        }
+    }
+
+    private fun trackForegroundGeneration(
+        snapshot: com.promenar.nexara.domain.generation.GenerationTaskSnapshot,
+    ) {
+        val current = generationCoordinator.observe(snapshot.sessionId).value
+        if (current?.taskId != snapshot.taskId || current.phase in FOREGROUND_STOPPING_PHASES) return
+        foregroundTrackedTaskId = current.taskId
+        when (generationForegroundController.track(current)) {
+            com.promenar.nexara.background.generation.ForegroundStartResult.StartedWithNotifications -> {
+                clearBackgroundWarningForTask(current.taskId)
+            }
+            com.promenar.nexara.background.generation.ForegroundStartResult.StartedWithoutNotifications -> {
+                publishBackgroundWarning(current.taskId, BackgroundWarningKind.NOTIFICATIONS_UNAVAILABLE)
+                mutableNotificationPermissionRequest.value =
+                    NotificationPermissionRequest(current.taskId)
+            }
+            is com.promenar.nexara.background.generation.ForegroundStartResult.NotAllowed,
+            is com.promenar.nexara.background.generation.ForegroundStartResult.PermissionDenied -> {
+                publishBackgroundWarning(current.taskId, BackgroundWarningKind.FGS_UNAVAILABLE)
+            }
+        }
+    }
+
+    fun onNotificationPermissionResult(taskId: String, granted: Boolean) {
+        clearNotificationPermissionRequestForTask(taskId)
+        if (granted) clearBackgroundWarningForTask(taskId)
+    }
+
+    fun clearBackgroundWarning(taskId: String) {
+        clearBackgroundWarningForTask(taskId)
+    }
+
+    private fun publishBackgroundWarning(taskId: String, kind: BackgroundWarningKind) {
+        _backgroundWarning.value = BackgroundGenerationWarning(
+            taskId = taskId,
+            kind = kind,
+            message = stringResourceResolver(
+                when (kind) {
+                    BackgroundWarningKind.FGS_UNAVAILABLE -> R.string.generation_background_unavailable
+                    BackgroundWarningKind.NOTIFICATIONS_UNAVAILABLE ->
+                        R.string.generation_notifications_unavailable
+                },
+            ),
+        )
+    }
+
+    private fun clearBackgroundWarningForTask(taskId: String) {
+        if (_backgroundWarning.value?.taskId == taskId) _backgroundWarning.value = null
+    }
+
+    private fun clearNotificationPermissionRequestForTask(taskId: String) {
+        if (mutableNotificationPermissionRequest.value?.taskId == taskId) {
+            mutableNotificationPermissionRequest.value = null
         }
     }
 
@@ -689,6 +806,10 @@ class ChatViewModel(
         _postProcessTasks.value = emptyList()
         _ragPhases.value = emptyList()
         _error.value = null
+        _backgroundServiceStoppedError.value = null
+        _backgroundWarning.value = null
+        foregroundTrackedTaskId = null
+        mutableNotificationPermissionRequest.value = null
         _providerResolutionFailure.value = null
         _generationStatus.value = GenerationStatus.IDLE
         _isGenerating.value = false
@@ -844,6 +965,10 @@ class ChatViewModel(
     }
 
     fun clearError() {
+        if (_backgroundServiceStoppedError.value != null) {
+            _backgroundServiceStoppedError.value = null
+            return
+        }
         _currentSessionId.value?.let { sessionId ->
             generationCoordinator.observe(sessionId).value
                 ?.takeIf {
@@ -1237,6 +1362,8 @@ class ChatViewModel(
             com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED,
             com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
         )
+        private val FOREGROUND_STOPPING_PHASES = TERMINAL_GENERATION_PHASES +
+            com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL
 
         fun factory(application: Application): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
