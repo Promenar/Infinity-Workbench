@@ -236,7 +236,12 @@ fun UserSettingsHomeScreen(
                                 showModelPickerType = type
                             },
                             onAboutClick = {
-                                onNavigateToSecondary("developer_panel")
+                                context.startActivity(
+                                    android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse("https://github.com/Promenar/Nexara"),
+                                    ),
+                                )
                             }
                         )
                     }
@@ -548,7 +553,7 @@ private fun AppSettingsContent(
             NexaraSettingsItem(
                 icon = Icons.Rounded.Tune,
                 title = stringResource(R.string.settings_about_nexara),
-                subtitle = stringResource(R.string.settings_version, "0.1"),
+                subtitle = stringResource(R.string.settings_version, BuildConfig.VERSION_NAME),
                 onClick = onAboutClick
             )
         }

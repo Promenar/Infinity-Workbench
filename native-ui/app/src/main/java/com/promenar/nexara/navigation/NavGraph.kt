@@ -615,10 +615,12 @@ fun NexaraNavGraph(
             }
         }
 
-        composable(NavDestinations.DEVELOPER_PANEL) {
-            DeveloperScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
+        if (BuildConfig.DEBUG) {
+            composable(NavDestinations.DEVELOPER_PANEL) {
+                DeveloperScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
