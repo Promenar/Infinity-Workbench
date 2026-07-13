@@ -366,15 +366,36 @@ fun RagOmniIndicator(
 }
 
 private val RAG_DEFAULT_PHASES = listOf(
-    RagPhase("query_intent", "分析查询意图", PhaseStatus.DONE, 100),
-    RagPhase("vector_search", "向量库检索", PhaseStatus.DONE, 100),
-    RagPhase("keyword_search", "关键词检索", PhaseStatus.DONE, 100),
-    RagPhase("hybrid_merge", "混合检索融合", PhaseStatus.DONE, 100),
-    RagPhase("kg_retrieval", "知识图谱关系检索", PhaseStatus.DONE, 100),
-    RagPhase("rerank", "相关性重排过滤", PhaseStatus.DONE, 100),
-    RagPhase("context_compress", "上下文提示词压缩", PhaseStatus.DONE, 100),
-    RagPhase("prompt_build", "注入大模型上下文", PhaseStatus.DONE, 100)
+    RagPhase("query_intent", "query_intent", PhaseStatus.DONE, 100),
+    RagPhase("vector_search", "vector_search", PhaseStatus.DONE, 100),
+    RagPhase("keyword_search", "keyword_search", PhaseStatus.DONE, 100),
+    RagPhase("hybrid_merge", "hybrid_merge", PhaseStatus.DONE, 100),
+    RagPhase("kg_retrieval", "kg_retrieval", PhaseStatus.DONE, 100),
+    RagPhase("rerank", "rerank", PhaseStatus.DONE, 100),
+    RagPhase("context_compress", "context_compress", PhaseStatus.DONE, 100),
+    RagPhase("prompt_build", "prompt_build", PhaseStatus.DONE, 100)
 )
+
+@Composable
+private fun localizedRagPhaseName(phase: RagPhase): String {
+    val resourceId = when (phase.id) {
+        "query_intent" -> R.string.chat_rag_phase_query_intent
+        "embed" -> R.string.chat_rag_phase_embedding
+        "memory" -> R.string.chat_rag_phase_memory
+        "vector_search", "docs" -> R.string.chat_rag_phase_documents
+        "keyword_search" -> R.string.chat_rag_phase_keyword
+        "hybrid_merge", "hybrid" -> R.string.chat_rag_phase_hybrid
+        "rank" -> R.string.chat_rag_phase_ranking
+        "rerank" -> R.string.chat_rag_phase_rerank
+        "kg_retrieval", "kg" -> R.string.chat_rag_phase_knowledge_graph
+        "context_compress" -> R.string.chat_rag_phase_context_compress
+        "prompt_build" -> R.string.chat_rag_phase_prompt_build
+        "ready" -> R.string.chat_rag_phase_context_ready
+        "retrieved" -> R.string.chat_rag_phase_retrieved
+        else -> null
+    }
+    return resourceId?.let { stringResource(it) } ?: phase.name
+}
 
 @Composable
 fun RagProgressCard(
@@ -399,30 +420,30 @@ fun RagProgressCard(
     }
 
     val activePhase = displayPhases.find { it.status == PhaseStatus.ACTIVE }
+    val visiblePhase = activePhase
+        ?: displayPhases.lastOrNull { it.id == "ready" && it.status == PhaseStatus.DONE }
+    val retrievalReady = isComplete || visiblePhase?.id == "ready"
 
     // 自动匹配当前精细状态描述
     val currentText = when {
         isComplete -> {
-            if (hasCitations && (hasReferences || hasKgPaths)) "✓ 引用内容就绪"
-            else if (hasCitations) "✓ 联网搜索就绪"
-            else "✓ 知识检索就绪"
+            if (hasCitations && (hasReferences || hasKgPaths)) stringResource(R.string.chat_rag_ready_references)
+            else if (hasCitations) stringResource(R.string.chat_rag_ready_web)
+            else stringResource(R.string.chat_rag_ready_knowledge)
         }
-        activePhase != null -> {
-            val name = activePhase.name
-            val detail = activePhase.detail
-            if (!detail.isNullOrBlank()) "$name • $detail" else name
-        }
-        displayPhases.isNotEmpty() -> "正在准备检索上下文..."
+        visiblePhase != null -> localizedRagPhaseName(visiblePhase)
+        displayPhases.isNotEmpty() -> stringResource(R.string.chat_rag_preparing)
         else -> {
-            if (hasCitations && (hasReferences || hasKgPaths)) "✓ 引用内容就绪"
-            else if (hasCitations) "✓ 联网搜索就绪"
-            else "✓ 检索就绪"
+            if (hasCitations && (hasReferences || hasKgPaths)) stringResource(R.string.chat_rag_ready_references)
+            else if (hasCitations) stringResource(R.string.chat_rag_ready_web)
+            else stringResource(R.string.chat_rag_ready_generic)
         }
     }
 
     NexaraGlassCard(
         modifier = modifier
             .fillMaxWidth(0.7f)
+            .heightIn(min = 48.dp)
             .padding(vertical = 4.dp)
             .clickable(enabled = true) { showDetailsSheet = true },
         shape = RoundedCornerShape(16.dp)
@@ -503,7 +524,7 @@ fun RagProgressCard(
                         Text(
                             text = text,
                             style = NexaraTypography.labelMedium.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
-                            color = if (isComplete) NexaraColors.OnSurfaceVariant.copy(alpha = 0.8f) else NexaraColors.OnSurface,
+                            color = if (retrievalReady) NexaraColors.OnSurfaceVariant.copy(alpha = 0.8f) else NexaraColors.OnSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -513,9 +534,9 @@ fun RagProgressCard(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 // 右侧微标
-                if (isComplete) {
+                if (retrievalReady) {
                     Text(
-                        text = "Done",
+                        text = stringResource(R.string.chat_rag_done),
                         style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = NexaraColors.StatusSuccess
                     )
@@ -531,7 +552,7 @@ fun RagProgressCard(
                     )
                 } else {
                     Text(
-                        text = "Active",
+                        text = stringResource(R.string.chat_rag_active),
                         style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = NexaraColors.Primary
                     )
@@ -539,7 +560,7 @@ fun RagProgressCard(
             }
 
             if (displayPhases.isNotEmpty()) {
-                NeonMicroRail(phases = displayPhases, isComplete = isComplete)
+                NeonMicroRail(phases = displayPhases, isComplete = retrievalReady)
             }
         }
     }
@@ -814,14 +835,6 @@ private fun TimelineStep(
                     color = if (isActive) NexaraColors.Tertiary else NexaraColors.Primary.copy(alpha = 0.7f)
                 )
                 
-                // Add execution time if available (Mock for now to match design)
-                if (!isActive) {
-                    Text(
-                        text = "1.2s", // In real app, would come from step.duration
-                        style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
-                        color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                }
             }
         }
     }
@@ -856,8 +869,8 @@ fun PostProcessChip(
     onRemove: () -> Unit
 ) {
     val label = when (task.type) {
-        PostProcessType.ARCHIVE_TO_RAG -> "Memory"
-        PostProcessType.AUTO_SUMMARY -> "Summary"
+        PostProcessType.ARCHIVE_TO_RAG -> stringResource(R.string.chat_postprocess_memory)
+        PostProcessType.AUTO_SUMMARY -> stringResource(R.string.chat_postprocess_summary)
     }
 
     val iconColor = when (task.status) {
@@ -1157,7 +1170,7 @@ fun ApprovalCard(
                         )
                     } else if (executionTime != null) {
                         Text(
-                            text = "Approved by You at $executionTime",
+                            text = stringResource(R.string.chat_approval_executed_at, executionTime),
                             style = NexaraTypography.labelSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
                             color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.7f)
                         )

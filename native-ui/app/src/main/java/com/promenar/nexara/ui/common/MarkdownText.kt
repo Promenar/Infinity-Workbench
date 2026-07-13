@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -55,6 +56,7 @@ import com.mikepenz.markdown.compose.elements.MarkdownText as MarkdownElementTex
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.utils.getUnescapedTextInNode
 import com.promenar.nexara.ui.renderer.CodeBlockWithHeader
+import com.promenar.nexara.R
 import com.promenar.nexara.ui.renderer.EChartsBlock
 import com.promenar.nexara.ui.renderer.GfmAlertBlock
 import com.promenar.nexara.ui.renderer.ImageLightbox
@@ -713,6 +715,7 @@ internal fun sanitizeStreamingMarkdown(text: String): String {
 
 @Composable
 private fun StreamingCursor() {
+    val generatingDescription = stringResource(R.string.chat_cd_generating_response)
     val transition = rememberInfiniteTransition(label = "cursor")
     val alpha by transition.animateFloat(
         initialValue = 1f,
@@ -731,7 +734,7 @@ private fun StreamingCursor() {
             .alpha(alpha)
             .background(NexaraColors.Primary, RoundedCornerShape(1.dp))
             .semantics {
-                contentDescription = "Generating response"
+                contentDescription = generatingDescription
             }
     )
 }
@@ -752,6 +755,7 @@ private fun anchoredHeading(
 ): MarkdownComponent = { model ->
     val headingText = model.node.getUnescapedTextInNode(model.content)
     val slug = slugify(headingText)
+    val headingDescription = stringResource(R.string.chat_cd_heading, headingText)
     MarkdownElementText(
         content = model.content,
         node = model.node,
@@ -761,7 +765,7 @@ private fun anchoredHeading(
             .testTag("heading-$slug")
             .semantics {
                 heading()
-                contentDescription = "标题: $headingText"
+                contentDescription = headingDescription
             }
     )
 }

@@ -21,9 +21,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraColors
 
 @Composable
@@ -32,12 +38,16 @@ fun AgentAvatar(
     customImageUri: String? = null,
     backgroundColor: Color,
     size: Dp = 80.dp,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    contentDescription: String? = null
 ) {
     var pressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (pressed) 0.95f else 1f,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f)
+    )
+    val avatarDescription = contentDescription ?: stringResource(
+        if (onClick != null) R.string.agent_avatar_edit else R.string.agent_avatar
     )
 
     Box(
@@ -54,12 +64,17 @@ fun AgentAvatar(
                     Modifier.clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
+                        onClickLabel = avatarDescription,
                         onClick = onClick
                     )
                 } else {
                     Modifier
                 }
-            ),
+            )
+            .semantics {
+                this.contentDescription = avatarDescription
+                if (onClick != null) role = Role.Button
+            },
         contentAlignment = Alignment.Center
     ) {
         if (customImageUri != null) {

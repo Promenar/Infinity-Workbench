@@ -1131,6 +1131,39 @@
     <string name="recycle_bin_restore">恢复</string>
     <string name="recycle_bin_empty_state">回收站为空</string>
 
+    <!-- 发布可达的聊天展示层 -->
+    <string name="chat_tool_default_name">工具</string>
+    <string name="chat_tool_error">工具指令有误</string>
+    <string name="chat_tool_arguments">调用参数：%1$s</string>
+    <string name="chat_cd_tool_image">工具返回的图片</string>
+    <string name="chat_cd_attached_image">消息附带的图片</string>
+    <string name="chat_rag_phase_query_intent">分析查询意图</string>
+    <string name="chat_rag_phase_embedding">生成查询向量</string>
+    <string name="chat_rag_phase_memory">检索会话记忆</string>
+    <string name="chat_rag_phase_documents">检索知识库文档</string>
+    <string name="chat_rag_phase_keyword">执行关键词检索</string>
+    <string name="chat_rag_phase_hybrid">融合检索结果</string>
+    <string name="chat_rag_phase_ranking">排序检索结果</string>
+    <string name="chat_rag_phase_rerank">重排检索结果</string>
+    <string name="chat_rag_phase_knowledge_graph">检索知识图谱</string>
+    <string name="chat_rag_phase_context_compress">压缩检索上下文</string>
+    <string name="chat_rag_phase_prompt_build">准备模型上下文</string>
+    <string name="chat_rag_phase_context_ready">检索上下文已就绪</string>
+    <string name="chat_rag_phase_retrieved">已检索上下文</string>
+    <string name="chat_rag_ready_references">✓ 引用内容就绪</string>
+    <string name="chat_rag_ready_web">✓ 联网搜索就绪</string>
+    <string name="chat_rag_ready_knowledge">✓ 知识检索就绪</string>
+    <string name="chat_rag_ready_generic">✓ 检索就绪</string>
+    <string name="chat_rag_preparing">正在准备检索上下文…</string>
+    <string name="chat_rag_done">完成</string>
+    <string name="chat_postprocess_memory">记忆</string>
+    <string name="chat_postprocess_summary">摘要</string>
+    <string name="chat_approval_executed_at">你已于 %1$s 批准</string>
+    <string name="chat_cd_generating_response">正在生成回复</string>
+    <string name="chat_cd_heading">标题：%1$s</string>
+    <string name="agent_avatar">智能体头像</string>
+    <string name="agent_avatar_edit">编辑智能体头像</string>
+
     <!-- 发行可达的检索能力状态 -->
     <string name="sheet_tool_economy_mode">Token 节约模式</string>
     <string name="sheet_tool_gemini_grounding">Gemini 联网 Grounding</string>

@@ -13,6 +13,10 @@ class ReleaseReachableUiLocalizationContractTest {
         "ui/chat/components/RagDetailsSheet.kt",
         "ui/chat/components/RecycleBinPanel.kt",
         "ui/chat/SessionSettingsSheet.kt",
+        "ui/chat/PipelineBubble.kt",
+        "ui/chat/ChatInlineComponents.kt",
+        "ui/common/MarkdownText.kt",
+        "ui/common/AgentAvatar.kt",
         "ui/rag/AdvancedRetrievalScreen.kt",
         "ui/rag/GlobalRagConfigScreen.kt",
         "ui/hub/AgentAdvancedRetrievalScreen.kt",
@@ -70,6 +74,37 @@ class ReleaseReachableUiLocalizationContractTest {
         "retrieval_rerank_model_unconfigured",
         "retrieval_rerank_model_unavailable_message",
         "agent_retrieval_rerank_model_unavailable_message",
+        "chat_tool_default_name",
+        "chat_tool_error",
+        "chat_tool_arguments",
+        "chat_cd_tool_image",
+        "chat_cd_attached_image",
+        "chat_rag_phase_query_intent",
+        "chat_rag_phase_embedding",
+        "chat_rag_phase_memory",
+        "chat_rag_phase_documents",
+        "chat_rag_phase_keyword",
+        "chat_rag_phase_hybrid",
+        "chat_rag_phase_ranking",
+        "chat_rag_phase_rerank",
+        "chat_rag_phase_knowledge_graph",
+        "chat_rag_phase_context_compress",
+        "chat_rag_phase_prompt_build",
+        "chat_rag_phase_context_ready",
+        "chat_rag_phase_retrieved",
+        "chat_rag_ready_references",
+        "chat_rag_ready_web",
+        "chat_rag_ready_knowledge",
+        "chat_rag_ready_generic",
+        "chat_rag_preparing",
+        "chat_rag_done",
+        "chat_postprocess_memory",
+        "chat_postprocess_summary",
+        "chat_approval_executed_at",
+        "chat_cd_generating_response",
+        "chat_cd_heading",
+        "agent_avatar",
+        "agent_avatar_edit",
     )
 
     @Test
@@ -92,11 +127,37 @@ class ReleaseReachableUiLocalizationContractTest {
             "\"Token 节约模式\"", "\"Gemini 联网 Grounding\"",
             "\"⚠️ 未配置默认重排模型", "\"未配置模型\"", "\"⚠️ 未检测到已配置的重排模型",
             "if (value == 0f) \"自动\"",
+            "\"正在思考\"", "\"思考完成\"", "\"工具\"", "\"指令有误\"",
+            "\"调用参数: ", "\"复制正文\"", "\"重发\"", "\"重新生成\"", "\"删除消息\"",
+            "\"分析查询意图\"", "\"向量库检索\"", "\"关键词检索\"", "\"混合检索融合\"",
+            "\"知识图谱关系检索\"", "\"相关性重排过滤\"", "\"上下文提示词压缩\"",
+            "\"注入大模型上下文\"", "\"✓ 引用内容就绪\"", "\"✓ 联网搜索就绪\"",
+            "\"✓ 知识检索就绪\"", "\"正在准备检索上下文...\"", "\"✓ 检索就绪\"",
+            "text = \"Done\"", "text = \"Active\"", "-> \"Memory\"", "-> \"Summary\"",
+            "\"Approved by You at ", "contentDescription = \"Generating response\"",
+            "contentDescription = \"标题: ",
         )
 
         banned.forEach { literal ->
             assertThat(sources.values.joinToString("\n")).doesNotContain(literal)
         }
+    }
+
+    @Test
+    fun `聊天展示层不伪造工具耗时且交互语义可本地化`() {
+        val pipeline = source("ui/chat/PipelineBubble.kt")
+        val inline = source("ui/chat/ChatInlineComponents.kt")
+        val avatar = source("ui/common/AgentAvatar.kt")
+
+        assertThat(inline).doesNotContain("1.2s")
+        assertThat(inline).doesNotContain("Mock for now")
+        assertThat(pipeline).contains("stringResource(R.string.chat_action_copy)")
+        assertThat(pipeline).contains("stringResource(R.string.chat_action_regenerate)")
+        assertThat(pipeline).contains("stringResource(R.string.chat_action_delete)")
+        assertThat(avatar).contains("Role.Button")
+        assertThat(avatar).contains("R.string.agent_avatar_edit")
+        assertThat(avatar).contains("onClickLabel = avatarDescription")
+        assertThat(inline).contains("\"ready\" -> R.string.chat_rag_phase_context_ready")
     }
 
     @Test

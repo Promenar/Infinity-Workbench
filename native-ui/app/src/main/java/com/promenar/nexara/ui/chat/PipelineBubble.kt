@@ -26,6 +26,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -347,11 +351,11 @@ private fun buildSyntheticExecutionSteps(
 
     toolCalls.forEachIndexed { index, args ->
         val toolName = runCatching {
-            JSONObject(args).optString("name")
-                ?: JSONObject(args).optString("tool")
-                ?: JSONObject(args).optString("function")
-                ?: "工具调用"
-        }.getOrDefault("工具调用")
+            val payload = JSONObject(args)
+            sequenceOf("name", "tool", "function")
+                .map { payload.optString(it) }
+                .firstOrNull { it.isNotBlank() }
+        }.getOrNull()
 
         steps.add(
             ExecutionStep(
@@ -472,6 +476,7 @@ private fun InlineThinkingRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth(0.7f) // 进一步缩减指示器宽度
+                    .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(NexaraColors.Primary.copy(alpha = 0.08f))
                     .border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
@@ -506,7 +511,11 @@ private fun InlineThinkingRow(
                     )
                 }
                 Text(
-                    text = if (isGenerating) "正在思考" else "思考完成",
+                    text = if (isGenerating) {
+                        stringResource(R.string.chat_status_thinking)
+                    } else {
+                        stringResource(R.string.chat_status_thought)
+                    },
                     style = NexaraTypography.labelSmall.copy(fontSize = (fontSize - 1).coerceAtLeast(10).sp, fontWeight = FontWeight.Medium),
                     color = NexaraColors.Primary
                 )
@@ -581,7 +590,8 @@ private fun InlineToolRow(
     val callSteps = steps.filter { it.type == "tool_call" || it.toolName != null }
     val resultSteps = steps.filter { it.type == "tool_result" || it.type == "error" }
     val hasError = steps.any { it.type == "error" }
-    val toolName = steps.firstOrNull()?.toolName ?: "工具"
+    val toolName = steps.firstOrNull()?.toolName?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.chat_tool_default_name)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -593,6 +603,7 @@ private fun InlineToolRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth(0.7f) // 进一步缩减指示器宽度
+                    .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(NexaraColors.Tertiary.copy(alpha = 0.08f))
                     .border(0.5.dp, NexaraColors.Tertiary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
@@ -639,7 +650,7 @@ private fun InlineToolRow(
                 )
                 if (hasError && !isExecuting) {
                     Text(
-                        text = "指令有误",
+                        text = stringResource(R.string.chat_tool_error),
                         style = NexaraTypography.labelSmall.copy(fontSize = (fontSize - 3).coerceAtLeast(9).sp),
                         color = NexaraColors.Error.copy(alpha = 0.8f)
                     )
@@ -672,7 +683,7 @@ private fun InlineToolRow(
                                     .padding(bottom = 2.dp)
                             ) {
                                 Text(
-                                    text = "调用参数: ${call.toolArgs}",
+                                    text = stringResource(R.string.chat_tool_arguments, call.toolArgs!!),
                                     modifier = Modifier.padding(8.dp),
                                     style = NexaraTypography.labelSmall.copy(
                                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
@@ -696,7 +707,7 @@ private fun InlineToolRow(
                             toolImages.take(4).forEach { imageModel ->
                                 coil3.compose.AsyncImage(
                                     model = imageModel,
-                                    contentDescription = null,
+                                    contentDescription = stringResource(R.string.chat_cd_tool_image),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .heightIn(min = 120.dp, max = 220.dp)
@@ -905,7 +916,7 @@ fun UserMessageBubble(
                             message.userImages!!.forEach { dataUrl ->
                                 coil3.compose.AsyncImage(
                                     model = dataUrl,
-                                    contentDescription = null,
+                                    contentDescription = stringResource(R.string.chat_cd_attached_image),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .heightIn(max = 200.dp)
@@ -962,6 +973,7 @@ fun UserMessageBubble(
 
 @Composable
 private fun StreamingCursor() {
+    val generatingDescription = stringResource(R.string.chat_cd_generating_response)
     val transition = rememberInfiniteTransition(label = "cursor")
     val alpha by transition.animateFloat(
         initialValue = 1f, targetValue = 0.2f,
@@ -982,6 +994,7 @@ private fun StreamingCursor() {
                 .height(20.dp)
                 .alpha(alpha)
                 .background(NexaraColors.Primary, RoundedCornerShape(2.dp))
+                .semantics { contentDescription = generatingDescription }
         )
     }
 }
@@ -1006,7 +1019,7 @@ fun MessageContextMenu(
         offset = offset
     ) {
         DropdownMenuItem(
-            text = { Text("复制正文", style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+            text = { Text(stringResource(R.string.chat_action_copy), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
             onClick = {
                 onCopy()
                 onDismiss()
@@ -1017,7 +1030,11 @@ fun MessageContextMenu(
             DropdownMenuItem(
                 text = { 
                     Text(
-                        text = if (isUser) "重发" else "重新生成", 
+                        text = if (isUser) {
+                            stringResource(R.string.chat_action_resend)
+                        } else {
+                            stringResource(R.string.chat_action_regenerate)
+                        },
                         style = NexaraTypography.labelMedium,
                         color = NexaraColors.OnSurface
                     ) 
@@ -1032,7 +1049,7 @@ fun MessageContextMenu(
         DropdownMenuItem(
             text = { 
                 Text(
-                    text = "删除消息", 
+                    text = stringResource(R.string.chat_action_delete),
                     style = NexaraTypography.labelMedium,
                     color = NexaraColors.Error
                 ) 

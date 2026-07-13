@@ -1130,6 +1130,39 @@
     <string name="recycle_bin_restore">Restore</string>
     <string name="recycle_bin_empty_state">Recycle bin is empty</string>
 
+    <!-- Release-reachable chat presentation -->
+    <string name="chat_tool_default_name">Tool</string>
+    <string name="chat_tool_error">Invalid tool request</string>
+    <string name="chat_tool_arguments">Arguments: %1$s</string>
+    <string name="chat_cd_tool_image">Image returned by a tool</string>
+    <string name="chat_cd_attached_image">Image attached to the message</string>
+    <string name="chat_rag_phase_query_intent">Analyzing query intent</string>
+    <string name="chat_rag_phase_embedding">Embedding query</string>
+    <string name="chat_rag_phase_memory">Searching memory</string>
+    <string name="chat_rag_phase_documents">Searching documents</string>
+    <string name="chat_rag_phase_keyword">Searching keywords</string>
+    <string name="chat_rag_phase_hybrid">Merging retrieval results</string>
+    <string name="chat_rag_phase_ranking">Ranking results</string>
+    <string name="chat_rag_phase_rerank">Reranking results</string>
+    <string name="chat_rag_phase_knowledge_graph">Searching knowledge graph</string>
+    <string name="chat_rag_phase_context_compress">Compressing context</string>
+    <string name="chat_rag_phase_prompt_build">Preparing model context</string>
+    <string name="chat_rag_phase_context_ready">Retrieval context ready</string>
+    <string name="chat_rag_phase_retrieved">Retrieved context</string>
+    <string name="chat_rag_ready_references">✓ References ready</string>
+    <string name="chat_rag_ready_web">✓ Web results ready</string>
+    <string name="chat_rag_ready_knowledge">✓ Knowledge retrieval ready</string>
+    <string name="chat_rag_ready_generic">✓ Retrieval ready</string>
+    <string name="chat_rag_preparing">Preparing retrieval context…</string>
+    <string name="chat_rag_done">Done</string>
+    <string name="chat_postprocess_memory">Memory</string>
+    <string name="chat_postprocess_summary">Summary</string>
+    <string name="chat_approval_executed_at">Approved by you at %1$s</string>
+    <string name="chat_cd_generating_response">Generating response</string>
+    <string name="chat_cd_heading">Heading: %1$s</string>
+    <string name="agent_avatar">Agent avatar</string>
+    <string name="agent_avatar_edit">Edit agent avatar</string>
+
     <!-- Release-reachable retrieval availability -->
     <string name="sheet_tool_economy_mode">Token economy mode</string>
     <string name="sheet_tool_gemini_grounding">Gemini web grounding</string>
