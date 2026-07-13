@@ -57,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
@@ -76,6 +77,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.SecretField
+import com.promenar.nexara.ui.testing.UiTags
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -221,6 +223,7 @@ internal fun BackupSettingsScreen(
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 text = status,
+                                modifier = Modifier.testTag(UiTags.BACKUP_OPERATION_STATUS),
                                 style = NexaraTypography.bodyMedium,
                                 color = when {
                                     uiState.operation is BackupOperation.Error || uiState.operation is BackupOperation.Blocked -> NexaraColors.Error
@@ -327,7 +330,7 @@ internal fun BackupSettingsScreen(
                             icon = Icons.Rounded.Download,
                             title = stringResource(R.string.backup_export_title),
                             subtitle = if (uiState.isExporting) stringResource(R.string.backup_exporting) else stringResource(R.string.backup_export_subtitle),
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().testTag(UiTags.BACKUP_EXPORT),
                             enabled = uiState.canExecute,
                             onClick = onExportClick,
                         )
@@ -335,7 +338,7 @@ internal fun BackupSettingsScreen(
                             icon = Icons.Rounded.Upload,
                             title = stringResource(R.string.backup_import_title),
                             subtitle = if (uiState.isImporting) stringResource(R.string.backup_importing) else stringResource(R.string.backup_import_subtitle),
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().testTag(UiTags.BACKUP_IMPORT),
                             enabled = uiState.canExecute,
                             onClick = onImportClick,
                         )
@@ -349,7 +352,7 @@ internal fun BackupSettingsScreen(
                             icon = Icons.Rounded.Download,
                             title = stringResource(R.string.backup_export_title),
                             subtitle = if (uiState.isExporting) stringResource(R.string.backup_exporting) else stringResource(R.string.backup_export_subtitle),
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).testTag(UiTags.BACKUP_EXPORT),
                             enabled = uiState.canExecute,
                             onClick = onExportClick,
                         )
@@ -357,7 +360,7 @@ internal fun BackupSettingsScreen(
                             icon = Icons.Rounded.Upload,
                             title = stringResource(R.string.backup_import_title),
                             subtitle = if (uiState.isImporting) stringResource(R.string.backup_importing) else stringResource(R.string.backup_import_subtitle),
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).testTag(UiTags.BACKUP_IMPORT),
                             enabled = uiState.canExecute,
                             onClick = onImportClick,
                         )
