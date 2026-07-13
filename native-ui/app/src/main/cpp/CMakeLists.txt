@@ -1,6 +1,21 @@
 cmake_minimum_required(VERSION 3.22.1)
 project("nexara_llama")
 
+option(NEXARA_ENABLE_LOCAL_INFERENCE "Build the local llama.cpp inference engine" OFF)
+
+if(NOT NEXARA_ENABLE_LOCAL_INFERENCE)
+    # AGP 会为 externalNativeBuild 注入这些通用变量；显式读取可避免在无 target
+    # 的发行变体中产生“manually-specified variables were not used”噪声。
+    set(_nexara_disabled_variant_inputs
+        "${CMAKE_EXPORT_COMPILE_COMMANDS}"
+        "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
+        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
+    unset(_nexara_disabled_variant_inputs)
+    message(STATUS "Nexara local inference is disabled for this variant")
+    return()
+endif()
+
 # ──────────────────────────────────────────────────────────────
 # Option: Use pre-built llama.cpp .so files instead of building
 # from source. Set -DNEXARA_LLAMA_PREBUILT=ON to enable.

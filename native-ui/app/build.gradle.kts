@@ -1,6 +1,3 @@
-import java.io.FileInputStream
-import java.util.Properties
-
 val realLlmEnvironmentNames = listOf(
     "NEXARA_TEST_LLM_BASE_URL",
     "NEXARA_TEST_LLM_API_KEY",
@@ -9,17 +6,30 @@ val realLlmEnvironmentNames = listOf(
     "NEXARA_TEST_LLM_REASONING_MODEL",
     "NEXARA_TEST_LLM_BALANCED_MULTIMODAL_MODEL",
 )
-val requestedTaskNames = gradle.startParameter.taskNames
-val credentialFreeIntegrationInvocation = requestedTaskNames.any {
-    it.contains("integration", ignoreCase = true)
-} && requestedTaskNames.none {
-    it.contains("release", ignoreCase = true)
+val releaseSigningEnvironment = mapOf(
+    "NEXARA_KEYSTORE_PATH" to providers.environmentVariable("NEXARA_KEYSTORE_PATH").orNull?.trim(),
+    "NEXARA_STORE_PASSWORD" to providers.environmentVariable("NEXARA_STORE_PASSWORD").orNull,
+    "NEXARA_KEY_ALIAS" to providers.environmentVariable("NEXARA_KEY_ALIAS").orNull?.trim(),
+    "NEXARA_KEY_PASSWORD" to providers.environmentVariable("NEXARA_KEY_PASSWORD").orNull,
+)
+val missingReleaseSigningEnvironment = releaseSigningEnvironment
+    .filterValues { it.isNullOrBlank() }
+    .keys
+    .sorted()
+val finalReleaseArtifactTasks = setOf(
+    "assemblerelease",
+    "bundlerelease",
+    "packagerelease",
+    "packagereleasebundle",
+    "packagereleaseuniversalapk",
+    "signreleasebundle",
+    "installrelease",
+)
+
+fun releaseArtifactTask(taskName: String): Boolean {
+    val normalized = taskName.lowercase()
+    return normalized in finalReleaseArtifactTasks || normalized.startsWith("publishrelease")
 }
-val credentialFreeReleaseManifestInspection = requestedTaskNames.isNotEmpty() && requestedTaskNames.all {
-    it.contains("processRelease", ignoreCase = true) && it.contains("Manifest", ignoreCase = true)
-}
-val credentialFreeInvocation =
-    credentialFreeIntegrationInvocation || credentialFreeReleaseManifestInspection
 
 plugins {
     id("com.android.application")
@@ -36,8 +46,8 @@ android {
         applicationId = "com.promenar.nexara.native"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -45,29 +55,15 @@ android {
             localeFilters += listOf("en", "zh-rCN")
         }
 
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
     }
 
     signingConfigs {
         create("release") {
-            // 兼容 macOS 与 Windows 路径
-            val secureEnvPath = if (System.getProperty("os.name").lowercase().contains("mac")) {
-                "/Users/promenar/Codex/Nexara/secure_env"
-            } else {
-                "K:/Nexara/secure_env"
-            }
-            
-            val keystorePropertiesFile = file("$secureEnvPath/secure.properties")
-            if (!credentialFreeInvocation && keystorePropertiesFile.exists()) {
-                val keystoreProperties = Properties()
-                keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-                
-                storeFile = file("$secureEnvPath/promenar.keystore")
-                storePassword = keystoreProperties["KEYSTORE_PASSWORD"] as String
-                keyAlias = keystoreProperties["KEY_ALIAS"] as String
-                keyPassword = keystoreProperties["KEY_PASSWORD"] as String
+            if (missingReleaseSigningEnvironment.isEmpty()) {
+                storeFile = file(requireNotNull(releaseSigningEnvironment["NEXARA_KEYSTORE_PATH"]))
+                storePassword = requireNotNull(releaseSigningEnvironment["NEXARA_STORE_PASSWORD"])
+                keyAlias = requireNotNull(releaseSigningEnvironment["NEXARA_KEY_ALIAS"])
+                keyPassword = requireNotNull(releaseSigningEnvironment["NEXARA_KEY_PASSWORD"])
             }
         }
     }
@@ -76,11 +72,26 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             resValue("string", "app_name", "Nexara Native (Dev)")
+            buildConfigField("boolean", "LOCAL_INFERENCE_AVAILABLE", "true")
+            ndk {
+                abiFilters += listOf("arm64-v8a")
+            }
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DNEXARA_ENABLE_LOCAL_INFERENCE=ON"
+                }
+            }
         }
         release {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             resValue("string", "app_name", "Nexara Native")
+            buildConfigField("boolean", "LOCAL_INFERENCE_AVAILABLE", "false")
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DNEXARA_ENABLE_LOCAL_INFERENCE=OFF"
+                }
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -114,6 +125,18 @@ android {
         }
     }
 
+}
+
+gradle.taskGraph.whenReady {
+    val needsReleaseSigning = allTasks.any { task ->
+        task.project.path == project.path && releaseArtifactTask(task.name)
+    }
+    if (needsReleaseSigning && missingReleaseSigningEnvironment.isNotEmpty()) {
+        throw GradleException(
+            "Release signing environment is incomplete. Missing: " +
+                missingReleaseSigningEnvironment.joinToString(", ")
+        )
+    }
 }
 
 ksp {
