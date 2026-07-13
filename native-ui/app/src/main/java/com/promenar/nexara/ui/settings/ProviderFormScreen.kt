@@ -693,12 +693,15 @@ fun ProviderFormScreen(
                 }
             }
 
+            val saveEnabled = endpointValid && !credentialKindMismatch && !isSaving
+            val saveContainerColor = if (saveEnabled) NexaraColors.Primary else NexaraColors.SurfaceHighest
+            val saveContentColor = if (saveEnabled) NexaraColors.OnPrimary else NexaraColors.OnSurfaceVariant
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .clip(NexaraShapes.medium)
-                    .background(NexaraColors.InversePrimary)
-                    .clickable(enabled = endpointValid && !credentialKindMismatch && !isSaving) {
+                    .background(saveContainerColor)
+                    .clickable(enabled = saveEnabled) {
                         isSaving = true
                         saveFailed = false
                         scope.launch {
@@ -733,13 +736,13 @@ fun ProviderFormScreen(
                     Icon(
                         imageVector = Icons.Rounded.Save,
                         contentDescription = null,
-                        tint = NexaraColors.OnPrimary,
+                        tint = saveContentColor,
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
                         text = stringResource(if (isSaving) R.string.provider_form_saving else R.string.provider_form_btn_save),
                         style = NexaraTypography.labelMedium,
-                        color = NexaraColors.OnPrimary
+                        color = saveContentColor
                     )
                 }
             }
