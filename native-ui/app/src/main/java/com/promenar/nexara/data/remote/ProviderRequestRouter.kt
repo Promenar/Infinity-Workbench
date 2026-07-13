@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.remote
 
+import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.ProviderListItem
@@ -32,6 +33,7 @@ enum class ProviderResolutionError {
     BASE_URL_INVALID,
     MODEL_PROVIDER_MISMATCH,
     PROTOCOL_MISMATCH,
+    LOCAL_INFERENCE_UNAVAILABLE,
     VERTEX_CREDENTIAL_INVALID,
 }
 
@@ -56,6 +58,7 @@ class DefaultProviderRequestRouter(
     private val modelResolver: (String) -> ModelInfo?,
     private val providerResolver: (String) -> ProviderListItem?,
     private val configResolver: (String) -> ProviderConfig?,
+    private val localInferenceAvailable: () -> Boolean = { BuildConfig.LOCAL_INFERENCE_AVAILABLE },
     private val clientFactory: (UnifiedProviderConfig) -> UnifiedLlmClient = { config ->
         UnifiedLlmClient(providerConfigResolver = { config })
     },
@@ -89,6 +92,9 @@ class DefaultProviderRequestRouter(
             ?: return failure(ProviderResolutionError.PROVIDER_NOT_FOUND, modelId, providerId)
         if (raw.protocolType::class != provider.protocolType::class) {
             return failure(ProviderResolutionError.PROTOCOL_MISMATCH, modelId, providerId)
+        }
+        if (raw.protocolType is ProtocolType.Local && !localInferenceAvailable()) {
+            return failure(ProviderResolutionError.LOCAL_INFERENCE_UNAVAILABLE, modelId, providerId)
         }
         if (raw.protocolType !is ProtocolType.Local && !isSecureCloudEndpoint(raw.baseUrl)) {
             return failure(ProviderResolutionError.BASE_URL_INVALID, modelId, providerId)

@@ -156,7 +156,7 @@ open class MainActivity : ComponentActivity() {
                                 null
                             },
                             forceLocalProbeFailureForTesting = allowOnboardingEmptyModelsOverride(
-                                isDebugBuild = BuildConfig.DEBUG,
+                                isDebugBuild = BuildConfig.DEBUG && BuildConfig.LOCAL_INFERENCE_AVAILABLE,
                                 requestedByIntent = intent.getBooleanExtra(
                                     EXTRA_ONBOARDING_LOCAL_PROBE_FAILURE_FOR_TESTING,
                                     false,

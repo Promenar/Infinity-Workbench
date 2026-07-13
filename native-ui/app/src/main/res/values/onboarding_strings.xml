@@ -15,6 +15,7 @@
     <string name="onboarding_model_probe_failed">This model did not pass the chat capability check. Choose another model or refresh the list.</string>
     <string name="onboarding_model_pending_label">%1$s · verification required</string>
     <string name="onboarding_local_model_unavailable">No loaded local chat model was detected. Open Local Models, load a main model, then test again.</string>
+    <string name="local_inference_release_unavailable">This release does not include local inference. The restored Local provider remains saved but cannot be used; select a cloud provider to continue.</string>
     <string name="onboarding_agent_title">Create your first agent</string>
     <string name="onboarding_agent_desc">Give the agent a name. You can customize its instructions later.</string>
     <string name="onboarding_agent_name">Agent name</string>

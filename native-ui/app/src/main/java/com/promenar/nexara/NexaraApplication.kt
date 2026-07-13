@@ -11,6 +11,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.room.Room
 import java.io.File
 import com.promenar.nexara.data.local.inference.LocalInferenceEngine
+import com.promenar.nexara.data.local.inference.LocalInferenceRuntimeGate
 import com.promenar.nexara.data.local.inference.SlotType
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.backup.BackupRuntime
@@ -165,7 +166,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         ToolExecutionLedgerRepository(database)
     }
 
+    val localInferenceRuntimeGate: LocalInferenceRuntimeGate by lazy {
+        LocalInferenceRuntimeGate.fromBuildConfig()
+    }
+
     val localInferenceEngine: LocalInferenceEngine by lazy {
+        localInferenceRuntimeGate.requireAvailable()
         LocalInferenceEngine(this)
     }
 
@@ -473,15 +479,18 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         // 第一阶段仅执行读取和不注册外部资源的对象构造。
         val settingsPrefs = getSharedPreferences("nexara_settings", MODE_PRIVATE)
         val nextHapticEnabled = settingsPrefs.getBoolean("haptic_enabled", true)
-        val lastModelToLoad = if (
-            settingsPrefs.getBoolean("local_models_enabled", false) &&
-            settingsPrefs.getBoolean("local_auto_load", false)
-        ) prefs.getString("last_local_model", null) else null
-        val inferenceEngine = localInferenceEngine
-        val processObserver = object : DefaultLifecycleObserver {
-            override fun onStop(owner: LifecycleOwner) {
-                inferenceEngine.mainSlot.value.modelPath?.let { mainPath ->
-                    prefs.edit().putString("last_local_model", mainPath).apply()
+        val lastModelToLoad = localInferenceRuntimeGate.startupModelPath(
+            localModelsEnabled = settingsPrefs.getBoolean("local_models_enabled", false),
+            autoLoadEnabled = settingsPrefs.getBoolean("local_auto_load", false),
+            persistedModelPath = prefs.getString("last_local_model", null),
+        )
+        val inferenceEngine = if (localInferenceRuntimeGate.isAvailable) localInferenceEngine else null
+        val processObserver = inferenceEngine?.let { engine ->
+            object : DefaultLifecycleObserver {
+                override fun onStop(owner: LifecycleOwner) {
+                    engine.mainSlot.value.modelPath?.let { mainPath ->
+                        prefs.edit().putString("last_local_model", mainPath).apply()
+                    }
                 }
             }
         }
@@ -515,10 +524,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         prepared: PreparedStartupWriters,
     ): List<StartupWriterRegistration> {
         return listOfNotNull(
-            reversibleRegistration(
-                register = { ProcessLifecycleOwner.get().lifecycle.addObserver(prepared.processObserver) },
-                rollback = { ProcessLifecycleOwner.get().lifecycle.removeObserver(prepared.processObserver) },
-            ),
+            prepared.processObserver?.let { observer ->
+                reversibleRegistration(
+                    register = { ProcessLifecycleOwner.get().lifecycle.addObserver(observer) },
+                    rollback = { ProcessLifecycleOwner.get().lifecycle.removeObserver(observer) },
+                )
+            },
             reversibleRegistration(
                 register = { prefs.registerOnSharedPreferenceChangeListener(providerListener) },
                 rollback = { prefs.unregisterOnSharedPreferenceChangeListener(providerListener) },
@@ -556,7 +567,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                         task = StartupBackgroundTask.LOCAL_MODEL_AUTO_LOAD,
                         start = CoroutineStart.LAZY,
                     ) {
-                        prepared.inferenceEngine.loadModel(SlotType.MAIN, modelPath).getOrThrow()
+                        checkNotNull(prepared.inferenceEngine) { "本地推理启动计划与运行时能力不一致" }
+                            .loadModel(SlotType.MAIN, modelPath).getOrThrow()
                     }
                 }
             },
@@ -633,10 +645,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         val providerManager: ProviderManager,
         val settingsPrefs: SharedPreferences,
         val hapticEnabled: Boolean,
-        val inferenceEngine: LocalInferenceEngine,
+        val inferenceEngine: LocalInferenceEngine?,
         val vectorizationQueue: VectorizationQueue,
         val lastModelToLoad: String?,
-        val processObserver: DefaultLifecycleObserver,
+        val processObserver: DefaultLifecycleObserver?,
         val jobs: MutableList<Job> = mutableListOf(),
     )
 
@@ -975,6 +987,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     fun switchToLocalProvider(modelName: String = "") {
+        localInferenceRuntimeGate.requireAvailable()
         localProviderOverride = modelName
         _providerConfigurationVersion.value += 1
     }
@@ -999,6 +1012,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     private fun buildUnifiedProviderConfig(): com.promenar.nexara.data.remote.UnifiedProviderConfig? {
         val config = getSavedProviderConfig() ?: return null
+        if (config.protocolType is ProtocolType.Local && !localInferenceRuntimeGate.isAvailable) return null
         if (config.apiKey.isBlank() && config.vertexServiceAccountJson.isBlank() && config.protocolType !is ProtocolType.Local) return null
         return com.promenar.nexara.data.remote.UnifiedProviderConfig(
             protocolType = config.protocolType,
@@ -1011,10 +1025,20 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     private fun buildCredentialResolvingProvider(): LlmProvider {
-        localProviderOverride?.let { return LlmProvider.local(localInferenceEngine, it) }
+        localProviderOverride?.let {
+            return if (localInferenceRuntimeGate.isAvailable) {
+                LlmProvider.local(localInferenceEngine, it)
+            } else {
+                buildUnavailableLocalPlaceholderProvider()
+            }
+        }
         val summary = ProviderManager.getInstance().getProviderSummary("default")
         if (summary?.protocolType is ProtocolType.Local) {
-            return LlmProvider.local(localInferenceEngine, summary.model)
+            return if (localInferenceRuntimeGate.isAvailable) {
+                LlmProvider.local(localInferenceEngine, summary.model)
+            } else {
+                buildUnavailableLocalPlaceholderProvider()
+            }
         }
         val protocolType = summary?.protocolType ?: ProtocolType.OpenAI_ChatCompletions
         return LlmProvider.resolving(protocolType) { buildProviderFromPrefs().protocol }
@@ -1028,7 +1052,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                     config.protocolType is ProtocolType.Local
                 )) {
             if (config.protocolType is ProtocolType.Local) {
-                LlmProvider.local(localInferenceEngine, config.model)
+                if (localInferenceRuntimeGate.isAvailable) {
+                    LlmProvider.local(localInferenceEngine, config.model)
+                } else {
+                    buildUnavailableLocalPlaceholderProvider()
+                }
             } else if (config.protocolType is ProtocolType.Google_VertexAI) {
                 LlmProvider.builder()
                     .protocolType(config.protocolType)
@@ -1045,14 +1073,18 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                     .build()
             }
         } else {
-            LlmProvider.builder()
-                .protocolType(ProtocolType.OpenAI_ChatCompletions)
-                .baseUrl("")
-                .apiKey("")
-                .model("")
-                .build()
+            buildUnavailableLocalPlaceholderProvider()
         }
     }
+
+    /** 仅供旧版依赖持有可取消的 Provider；实际生成会先由 ProviderRequestRouter 返回明确错误。 */
+    private fun buildUnavailableLocalPlaceholderProvider(): LlmProvider =
+        LlmProvider.builder()
+            .protocolType(ProtocolType.OpenAI_ChatCompletions)
+            .baseUrl("")
+            .apiKey("")
+            .model("")
+            .build()
 
     private fun readSecret(id: SecretId): String =
         secretStore.get(id)?.toString(Charsets.UTF_8).orEmpty()

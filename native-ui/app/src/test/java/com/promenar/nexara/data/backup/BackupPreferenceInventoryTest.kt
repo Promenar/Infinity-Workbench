@@ -30,6 +30,8 @@ class BackupPreferenceInventoryTest {
             "ui/rag/RagViewModel.kt#settingsPrefs" to "nexara_settings",
             "ui/chat/ChatScreen.kt#notificationPermissionPrefs" to
                 "generation_notification_permission",
+            "ui/chat/ChatRoute.kt#permissionPrefs" to
+                "generation_notification_permission",
             "ui/chat/ChatViewModel.kt#prefs" to "nexara_settings",
             "data/generation/DefaultChatGenerationRuntime.kt#settings" to "nexara_settings",
             "data/generation/ChatGenerationContentStrategy.kt#settings" to "nexara_settings",
@@ -200,5 +202,23 @@ class BackupPreferenceInventoryTest {
                     "post_notifications_asked",
                 ),
             ).isFalse()
+    }
+
+    @Test
+    fun `本地推理运行时偏好属于设备能力且不得进入备份`() {
+        listOf(
+            "local_models_enabled",
+            "local_auto_load",
+            "last_local_model",
+        ).forEach { key ->
+            assertWithMessage("本地运行时偏好应登记为已知: $key")
+                .that(BackupPreferencePolicy.isKnown("settings", key)).isTrue()
+            assertWithMessage("本地运行时偏好不得跨设备恢复: $key")
+                .that(BackupPreferencePolicy.isAllowed("settings", key)).isFalse()
+        }
+        assertWithMessage("旧 provider namespace 中的本地模型路径也不得备份")
+            .that(BackupPreferencePolicy.isKnown("provider", "last_local_model")).isTrue()
+        assertWithMessage("旧 provider namespace 中的本地模型路径不得恢复")
+            .that(BackupPreferencePolicy.isAllowed("provider", "last_local_model")).isFalse()
     }
 }

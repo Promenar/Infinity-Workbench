@@ -102,6 +102,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.BuildConfig
 import java.io.File
 
 private enum class SettingsTab(val labelRes: Int) {
@@ -522,13 +523,15 @@ private fun AppSettingsContent(
             )
         }
 
-        item {
-            NexaraSettingsItem(
-                icon = Icons.Rounded.Edit,
-                title = stringResource(R.string.settings_local_models),
-                subtitle = stringResource(R.string.settings_local_models_desc),
-                onClick = { onNavigateToSecondary("local_models") }
-            )
+        if (BuildConfig.LOCAL_INFERENCE_AVAILABLE) {
+            item {
+                NexaraSettingsItem(
+                    icon = Icons.Rounded.Edit,
+                    title = stringResource(R.string.settings_local_models),
+                    subtitle = stringResource(R.string.settings_local_models_desc),
+                    onClick = { onNavigateToSecondary("local_models") }
+                )
+            }
         }
 
         item {

@@ -25,6 +25,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.domain.usecase.IdGenerator
@@ -511,8 +512,10 @@ fun NexaraNavGraph(
                     }
                 },
                 onNavigateToLocalModels = {
-                    navController.navigate(NavDestinations.LOCAL_MODELS) {
-                        popUpTo(NavDestinations.PROVIDER_FORM) { inclusive = true }
+                    if (BuildConfig.LOCAL_INFERENCE_AVAILABLE) {
+                        navController.navigate(NavDestinations.LOCAL_MODELS) {
+                            popUpTo(NavDestinations.PROVIDER_FORM) { inclusive = true }
+                        }
                     }
                 },
                 onboardingMode = onboardingMode,
@@ -637,10 +640,12 @@ fun NexaraNavGraph(
             )
         }
 
-        composable(NavDestinations.LOCAL_MODELS) {
-            LocalModelsScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
+        if (BuildConfig.LOCAL_INFERENCE_AVAILABLE) {
+            composable(NavDestinations.LOCAL_MODELS) {
+                LocalModelsScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
 
         composable(NavDestinations.DEVELOPER_PANEL) {

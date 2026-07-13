@@ -26,6 +26,29 @@ class ProviderRequestRouterTest {
     )
 
     @Test
+    fun `本地推理不可用具有独立且可呈现的解析错误`() {
+        assertThat(ProviderResolutionError.valueOf("LOCAL_INFERENCE_UNAVAILABLE").name)
+            .isEqualTo("LOCAL_INFERENCE_UNAVAILABLE")
+    }
+
+    @Test
+    fun `本地推理能力关闭时旧 Local 配置明确失败且不创建客户端`() {
+        seedLocal()
+        val unavailableRouter = DefaultProviderRequestRouter(
+            modelResolver = models::get,
+            providerResolver = providers::get,
+            configResolver = configs::get,
+            localInferenceAvailable = { false },
+            clientFactory = { error("不可创建客户端") },
+        )
+
+        val failure = unavailableRouter.resolve("local::local-model") as ProviderResolution.Failure
+
+        assertThat(failure.reason).isEqualTo(ProviderResolutionError.LOCAL_INFERENCE_UNAVAILABLE)
+        assertThat(failure.providerId).isEqualTo("local")
+    }
+
+    @Test
     fun `两个 Provider 的同名远端模型按复合标识独立解析`() {
         seed("provider-a", "same-model", "key-a")
         seed("provider-b", "same-model", "key-b")
@@ -144,6 +167,15 @@ class ProviderRequestRouterTest {
 
     @Test
     fun `本地协议允许空 endpoint 与空 Key`() {
+        seedLocal()
+
+        val result = router.resolve("local::local-model") as ProviderResolution.Success
+
+        assertThat(result.value.config.protocolType).isEqualTo(ProtocolType.Local)
+        assertThat(result.value.remoteModelId).isEqualTo("local-model")
+    }
+
+    private fun seedLocal() {
         val providerId = "local"
         providers[providerId] = ProviderListItem(
             id = providerId,
@@ -155,11 +187,6 @@ class ProviderRequestRouterTest {
             model = "local-model",
         )
         models["local::local-model"] = model(providerId, "local-model")
-
-        val result = router.resolve("local::local-model") as ProviderResolution.Success
-
-        assertThat(result.value.config.protocolType).isEqualTo(ProtocolType.Local)
-        assertThat(result.value.remoteModelId).isEqualTo("local-model")
     }
 
     private fun seed(providerId: String, remoteModelId: String, key: String, baseUrl: String = "https://$providerId.invalid") {

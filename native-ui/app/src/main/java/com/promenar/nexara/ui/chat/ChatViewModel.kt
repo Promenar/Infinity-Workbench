@@ -42,6 +42,7 @@ import com.promenar.nexara.data.remote.protocol.ImageInput
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.ProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderResolution
+import com.promenar.nexara.data.remote.ProviderResolutionError
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.generation.ChatGenerationRunner
 import com.promenar.nexara.data.generation.ChatGenerationRuntime
@@ -1403,8 +1404,12 @@ class ChatViewModel(
     }
 
     private fun providerRoutingErrorMessage(failure: ProviderResolution.Failure): String =
-        "Provider 路由失败：${failure.reason.name}；请打开对应 Provider 设置" +
-            (failure.providerId?.let { "（$it）" } ?: "")
+        if (failure.reason == ProviderResolutionError.LOCAL_INFERENCE_UNAVAILABLE) {
+            application.getString(R.string.local_inference_release_unavailable)
+        } else {
+            "Provider 路由失败：${failure.reason.name}；请打开对应 Provider 设置" +
+                (failure.providerId?.let { "（$it）" } ?: "")
+        }
 
     private fun updateTokenIndicator(session: Session) {
         viewModelScope.launch {

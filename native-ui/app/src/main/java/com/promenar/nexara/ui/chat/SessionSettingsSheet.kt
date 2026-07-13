@@ -79,6 +79,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.promenar.nexara.R
+import com.promenar.nexara.BuildConfig
+import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.ModelInfo
 import com.promenar.nexara.ui.settings.SettingsViewModel
@@ -128,6 +130,18 @@ private val capabilityColorMap: Map<ModelCapability, Pair<Color, Color>> = mapOf
     ModelCapability.IMAGE to (Color(0xFFFCD34D) to Color(0xFF451A03))
 )
 
+internal fun filterLocalInferenceModels(
+    models: List<ModelInfo>,
+    localProviderIds: Set<String>,
+    localInferenceAvailable: Boolean,
+): List<ModelInfo> {
+    if (localInferenceAvailable || localProviderIds.isEmpty()) return models
+    return models.filterNot { model ->
+        val providerId = model.providerId ?: model.id.substringBefore("::").takeIf { "::" in model.id }
+        providerId in localProviderIds
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SessionSettingsSheet(
@@ -140,6 +154,12 @@ fun SessionSettingsSheet(
     val context = androidx.compose.ui.platform.LocalContext.current
     val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
     val providerModels by settingsViewModel.providerModels.collectAsStateWithLifecycle()
+    val providers by settingsViewModel.providers.collectAsStateWithLifecycle()
+    val visibleProviderModels = filterLocalInferenceModels(
+        models = providerModels,
+        localProviderIds = providers.filter { it.protocolType is ProtocolType.Local }.mapTo(mutableSetOf()) { it.id },
+        localInferenceAvailable = BuildConfig.LOCAL_INFERENCE_AVAILABLE,
+    )
     
     val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
     val session = uiState.session
@@ -242,7 +262,7 @@ fun SessionSettingsSheet(
                             chatViewModel.updateModelId(modelId)
                             onDismiss()
                         },
-                        allModels = providerModels,
+                        allModels = visibleProviderModels,
                     )
                     1 -> ParamsPanel(
                         session = session,

@@ -10,14 +10,14 @@ internal object BackupPreferencePolicy {
 
     private val exactAllowed = mapOf(
         "provider" to setOf(
-            "protocol_id", "protocol_id_name", "base_url", "model", "provider_name", "last_local_model",
+            "protocol_id", "protocol_id_name", "base_url", "model", "provider_name",
             "embedding_base_url", "embedding_model",
         ),
         "settings" to setOf(
             "language", "theme_mode", "haptic_enabled", "loop_limit", "user_name", "user_avatar",
             "extra_providers_count", "extra_providers_ids", "all_models", "enabled_models", "all_models_order",
             "preset_summary_model", "preset_image_model", "preset_embedding_model", "preset_rerank_model",
-            "local_models_enabled", "local_auto_load", "last_local_model", "preset_skills_migrated_v3",
+            "preset_skills_migrated_v3",
             "enabled_skills",
             "default_model", "default_temperature", "default_top_p", "default_max_tokens",
         ),
@@ -50,8 +50,10 @@ internal object BackupPreferencePolicy {
         ),
     )
 
-    // 设备权限询问状态不能随备份迁移，否则新设备可能在未授权时永久跳过说明。
+    // 权限询问与本地推理能力属于设备状态，不能随备份迁移到能力或授权不同的新设备。
     private val exactDenied = mapOf(
+        "provider" to setOf("last_local_model"),
+        "settings" to setOf("local_models_enabled", "local_auto_load", "last_local_model"),
         "generation_notification_permission" to setOf("post_notifications_asked"),
         "onboarding" to setOf(
             "step", "language", "provider_id", "model_id", "agent_id", "session_id",

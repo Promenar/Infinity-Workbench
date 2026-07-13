@@ -150,9 +150,16 @@ fun ProviderFormScreen(
     val viewModel: SettingsViewModel = viewModel(
         factory = SettingsViewModel.factory(app)
     )
+    val availableProviderPresets = remember(app.localInferenceRuntimeGate.isAvailable) {
+        if (app.localInferenceRuntimeGate.isAvailable) {
+            PROVIDER_PRESETS
+        } else {
+            PROVIDER_PRESETS.filterNot { it.protocolType is ProtocolType.Local }
+        }
+    }
 
     var name by remember { mutableStateOf("") }
-    var selectedPreset by remember { mutableStateOf(PROVIDER_PRESETS[0]) }
+    var selectedPreset by remember { mutableStateOf(availableProviderPresets.first()) }
     var presetMenuExpanded by remember { mutableStateOf(false) }
     var baseUrl by remember { mutableStateOf(PROVIDER_PRESETS[0].defaultBaseUrl) }
     var apiKey by remember { mutableStateOf("") }
@@ -162,6 +169,7 @@ fun ProviderFormScreen(
     var isSaving by remember { mutableStateOf(false) }
     var saveFailed by remember { mutableStateOf(false) }
     var localConnectionFailed by remember { mutableStateOf(false) }
+    var unavailableLocalConfiguration by remember { mutableStateOf(false) }
     var localProto by remember { mutableStateOf<ProtocolType>(ProtocolType.Generic_OpenAI_Compat) }
     val scope = rememberCoroutineScope()
 
@@ -181,16 +189,20 @@ fun ProviderFormScreen(
                 viewModel.getProviderSummary(providerId)
             }
             if (config != null) {
+                unavailableLocalConfiguration =
+                    config.protocolType is ProtocolType.Local && !app.localInferenceRuntimeGate.isAvailable
                 name = config.name
                 baseUrl = config.baseUrl
                 hasCredential = config.hasApiKey || config.hasVertexCredentials
                 originalUsesVertex = config.hasVertexCredentials
-                val matched = PROVIDER_PRESETS.find { 
+                val matched = availableProviderPresets.find {
                     it.protocolType == config.protocolType && (it.name != "Custom" || config.protocolType == ProtocolType.Generic_OpenAI_Compat)
                 }
-                selectedPreset = matched ?: PROVIDER_PRESETS.last()
+                selectedPreset = matched ?: availableProviderPresets.last()
                 if (selectedPreset.name == "Custom") {
-                    localProto = config.protocolType
+                    localProto = config.protocolType.takeUnless {
+                        it is ProtocolType.Local && !app.localInferenceRuntimeGate.isAvailable
+                    } ?: ProtocolType.Generic_OpenAI_Compat
                 }
             }
         }
@@ -226,6 +238,15 @@ fun ProviderFormScreen(
             style = NexaraTypography.bodyMedium,
             color = NexaraColors.OnSurfaceVariant
         )
+
+        if (unavailableLocalConfiguration) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.local_inference_release_unavailable),
+                style = NexaraTypography.bodyMedium,
+                color = NexaraColors.Error,
+            )
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -299,7 +320,7 @@ fun ProviderFormScreen(
                 expanded = presetMenuExpanded,
                 onDismissRequest = { presetMenuExpanded = false }
             ) {
-                PROVIDER_PRESETS.forEach { preset ->
+                availableProviderPresets.forEach { preset ->
                     val isSelected = selectedPreset.name == preset.name
                     DropdownMenuItem(
                         text = {

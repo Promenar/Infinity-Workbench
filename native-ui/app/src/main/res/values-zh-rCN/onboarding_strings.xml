@@ -15,6 +15,7 @@
     <string name="onboarding_model_probe_failed">该模型未通过对话能力验证，请选择其他模型或刷新列表。</string>
     <string name="onboarding_model_pending_label">%1$s · 待验证</string>
     <string name="onboarding_local_model_unavailable">未检测到已加载的本地对话模型。请打开本地模型，加载主模型后重新测试。</string>
+    <string name="local_inference_release_unavailable">当前发行版本不包含本地推理。恢复的 Local 提供商配置仍会保留但无法使用，请选择云端提供商后继续。</string>
     <string name="onboarding_agent_title">创建首个 Agent</string>
     <string name="onboarding_agent_desc">先设置名称，稍后仍可完善指令与其他选项。</string>
     <string name="onboarding_agent_name">Agent 名称</string>
