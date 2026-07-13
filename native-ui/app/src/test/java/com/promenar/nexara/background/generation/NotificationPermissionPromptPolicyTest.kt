@@ -55,4 +55,30 @@ class NotificationPermissionPromptPolicyTest {
             ),
         ).isFalse()
     }
+
+    @Test
+    fun `发送后台生成前的时序判定覆盖授权拒绝首问与低版本`() {
+        assertThat(resolveBackgroundGenerationPolicy(null))
+            .isEqualTo(BackgroundGenerationPolicy.BACKGROUND_ALLOWED)
+        assertThat(
+            resolveBackgroundGenerationPolicy(
+                NotificationPermissionPromptState(32, granted = false, alreadyAsked = false),
+            ),
+        ).isEqualTo(BackgroundGenerationPolicy.BACKGROUND_ALLOWED)
+        assertThat(
+            resolveBackgroundGenerationPolicy(
+                NotificationPermissionPromptState(35, granted = true, alreadyAsked = false),
+            ),
+        ).isEqualTo(BackgroundGenerationPolicy.BACKGROUND_ALLOWED)
+        assertThat(
+            resolveBackgroundGenerationPolicy(
+                NotificationPermissionPromptState(33, granted = false, alreadyAsked = false),
+            ),
+        ).isEqualTo(BackgroundGenerationPolicy.REQUIRES_PERMISSION)
+        assertThat(
+            resolveBackgroundGenerationPolicy(
+                NotificationPermissionPromptState(35, granted = false, alreadyAsked = true),
+            ),
+        ).isEqualTo(BackgroundGenerationPolicy.FOREGROUND_ONLY)
+    }
 }

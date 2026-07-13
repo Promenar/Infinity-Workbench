@@ -152,6 +152,18 @@ data class BackgroundGenerationWarning(
 data class BackgroundServiceStoppedError(val taskId: String, val message: String)
 data class NotificationPermissionRequest(val taskId: String)
 
+/**
+ * 等待通知权限裁决的待发送轮次：仅当 [BackgroundGenerationPolicy.REQUIRES_PERMISSION] 时暂存，
+ * 取得系统权限结果后再按授权/拒绝恢复为后台或仅前台生成。
+ */
+internal data class PendingPermissionTurn(
+    val token: String,
+    val sessionId: String,
+    val text: String,
+    val imageDataUrls: List<String>,
+    val assistantMessageIdToReplace: String? = null,
+)
+
 internal fun ContextBuilderResult.hasPersistableRagContext(): Boolean =
     ragContext.isNotBlank() || ragReferences.isNotEmpty() || citations.isNotEmpty() ||
         kgPaths.isNotEmpty() || ragUsage != null
@@ -196,6 +208,8 @@ class ChatViewModel(
     generationPresentationStoreOverride: com.promenar.nexara.data.generation.GenerationPresentationStore? = null,
     generationForegroundControllerOverride:
         com.promenar.nexara.background.generation.GenerationForegroundController? = null,
+    notificationPermissionGateway:
+        com.promenar.nexara.background.generation.NotificationPermissionGateway? = null,
     stringResourceResolverOverride: ((Int) -> String)? = null,
 ) : ViewModel() {
 
@@ -206,6 +220,7 @@ class ChatViewModel(
         ?: (application as NexaraApplication).generationPresentationStore
     private val generationForegroundController = generationForegroundControllerOverride
         ?: (application as NexaraApplication).generationForegroundController
+    private val notificationPermissionGateway = notificationPermissionGateway
     private val stringResourceResolver = stringResourceResolverOverride ?: application::getString
 
     private val sessionManager = SessionManager(store, sessionRepository)
@@ -242,6 +257,7 @@ class ChatViewModel(
         MutableStateFlow<NotificationPermissionRequest?>(null)
     val notificationPermissionRequests: StateFlow<NotificationPermissionRequest?> =
         mutableNotificationPermissionRequest
+    private var pendingPermissionTurn: PendingPermissionTurn? = null
     private val _providerResolutionFailure = MutableStateFlow<ProviderResolution.Failure?>(null)
     val providerResolutionFailure: StateFlow<ProviderResolution.Failure?> = _providerResolutionFailure
     private val _isGenerating = MutableStateFlow(false)
@@ -531,9 +547,114 @@ class ChatViewModel(
                     emptyList()
                 }
 
-                enqueuePreparedUserTurn(sessionId, session, text, imageDataUrls)
+                applyBackgroundPolicyGate(sessionId, session, text, imageDataUrls)
             }
         }
+    }
+
+    private fun currentBackgroundAllowed(): Boolean {
+        val snapshot = notificationPermissionGateway?.current() ?: return true
+        return snapshot.sdkInt < 33 || snapshot.granted
+    }
+
+    /**
+     * 发送后台可持续生成前的权限时序门：在添加消息/启动生成之前决定运行策略。
+     * 未授权且从未问过时必须先解释并取得系统结果，因此暂存该轮次并发出权限请求，
+     * 绝不在此状态下以 BACKGROUND_ALLOWED 启动前台服务。
+     */
+    private suspend fun applyBackgroundPolicyGate(
+        sessionId: String,
+        session: Session,
+        text: String,
+        imageDataUrls: List<String>,
+        assistantMessageIdToReplace: String? = null,
+    ) {
+        when (
+            com.promenar.nexara.background.generation.resolveBackgroundGenerationPolicy(
+                notificationPermissionGateway?.current(),
+            )
+        ) {
+            com.promenar.nexara.background.generation.BackgroundGenerationPolicy.BACKGROUND_ALLOWED ->
+                enqueuePreparedUserTurnAfterReplacement(
+                    sessionId,
+                    session,
+                    text,
+                    imageDataUrls,
+                    backgroundAllowed = true,
+                    assistantMessageIdToReplace = assistantMessageIdToReplace,
+                )
+            com.promenar.nexara.background.generation.BackgroundGenerationPolicy.FOREGROUND_ONLY ->
+                enqueuePreparedUserTurnAfterReplacement(
+                    sessionId,
+                    session,
+                    text,
+                    imageDataUrls,
+                    backgroundAllowed = false,
+                    assistantMessageIdToReplace = assistantMessageIdToReplace,
+                )
+            com.promenar.nexara.background.generation.BackgroundGenerationPolicy.REQUIRES_PERMISSION -> {
+                val token = IdGenerator.message("perm")
+                pendingPermissionTurn = PendingPermissionTurn(
+                    token,
+                    sessionId,
+                    text,
+                    imageDataUrls,
+                    assistantMessageIdToReplace,
+                )
+                mutableNotificationPermissionRequest.value = NotificationPermissionRequest(token)
+                _isGenerating.value = false
+                _generationStatus.value = GenerationStatus.IDLE
+            }
+        }
+    }
+
+    private fun resumePendingPermissionTurn(token: String, granted: Boolean) {
+        val pending = pendingPermissionTurn ?: return
+        if (pending.token != token) return
+        pendingPermissionTurn = null
+        clearNotificationPermissionRequestForTask(token)
+        generationJob = viewModelScope.launch {
+            sendPreparationMutex.withLock {
+                if (_currentSessionId.value != pending.sessionId) return@withLock
+                _generationStatus.update { GenerationStatus.UPLOADING }
+                _isGenerating.update { true }
+                _error.update { null }
+                _backgroundServiceStoppedError.value = null
+                _backgroundWarning.value = null
+                _providerResolutionFailure.value = null
+                val session = store.getSession(pending.sessionId)
+                if (session == null) {
+                    _isGenerating.update { false }
+                    return@withLock
+                }
+                try {
+                    enqueuePreparedUserTurnAfterReplacement(
+                        pending.sessionId,
+                        session,
+                        pending.text,
+                        pending.imageDataUrls,
+                        backgroundAllowed = granted,
+                        assistantMessageIdToReplace = pending.assistantMessageIdToReplace,
+                    )
+                } catch (_: Exception) {
+                    _error.update { "无法安全删除旧回复，已取消重试。" }
+                    _generationStatus.update { GenerationStatus.ERROR }
+                    _isGenerating.update { false }
+                }
+            }
+        }
+    }
+
+    private suspend fun enqueuePreparedUserTurnAfterReplacement(
+        sessionId: String,
+        session: Session,
+        text: String,
+        imageDataUrls: List<String>,
+        backgroundAllowed: Boolean,
+        assistantMessageIdToReplace: String?,
+    ) {
+        assistantMessageIdToReplace?.let { messageManager.deleteMessage(sessionId, it) }
+        enqueuePreparedUserTurn(sessionId, session, text, imageDataUrls, backgroundAllowed)
     }
 
     private fun uriToDataUrl(uri: Uri): String? {
@@ -550,7 +671,8 @@ class ChatViewModel(
         sessionId: String,
         session: Session,
         text: String,
-        imageDataUrls: List<String>
+        imageDataUrls: List<String>,
+        backgroundAllowed: Boolean,
     ) {
         val userMsgId = IdGenerator.message("user")
         val assistantMsgId = IdGenerator.message("ai")
@@ -574,7 +696,7 @@ class ChatViewModel(
             )
             messageManager.addMessage(sessionId, assistantMessage)
 
-            when (val start = generateMessage(sessionId, "", false, assistantMsgId, userMsgId, text)) {
+            when (val start = generateMessage(sessionId, "", false, assistantMsgId, userMsgId, text, backgroundAllowed)) {
                 is com.promenar.nexara.domain.generation.StartGenerationResult.Started,
                 is com.promenar.nexara.domain.generation.StartGenerationResult.Existing -> {
                     _inputText.value = ""
@@ -626,6 +748,7 @@ class ChatViewModel(
         existingAssistantMsgId: String? = null,
         userMsgId: String? = null,
         userContent: String? = null,
+        backgroundAllowed: Boolean = currentBackgroundAllowed(),
     ): com.promenar.nexara.domain.generation.StartGenerationResult? {
         val session = store.getSession(sessionId) ?: return null
         val assistantMsgId = existingAssistantMsgId
@@ -641,18 +764,26 @@ class ChatViewModel(
             userMessageId = userMsgId,
             userContent = effectiveUserContent,
             imageDataUrls = session.messages.lastOrNull { it.id == userMsgId }?.userImages.orEmpty(),
-            runtimePolicy = com.promenar.nexara.domain.generation.GenerationRuntimePolicy.BACKGROUND_ALLOWED,
+            runtimePolicy = if (backgroundAllowed) {
+                com.promenar.nexara.domain.generation.GenerationRuntimePolicy.BACKGROUND_ALLOWED
+            } else {
+                com.promenar.nexara.domain.generation.GenerationRuntimePolicy.FOREGROUND_ONLY
+            },
             requestId = IdGenerator.message("generation"),
         )
         return generationCoordinator.start(request).also { result ->
             when (result) {
             is com.promenar.nexara.domain.generation.StartGenerationResult.Started -> {
-                generationCoordinator.observe(sessionId).value
-                    ?.takeIf { it.taskId == result.taskId }
-                    ?.let(::trackForegroundGeneration)
+                if (backgroundAllowed) {
+                    generationCoordinator.observe(sessionId).value
+                        ?.takeIf { it.taskId == result.taskId }
+                        ?.let(::trackForegroundGeneration)
+                }
             }
             is com.promenar.nexara.domain.generation.StartGenerationResult.Existing -> {
-                trackForegroundGeneration(result.snapshot)
+                if (backgroundAllowed) {
+                    trackForegroundGeneration(result.snapshot)
+                }
             }
             is com.promenar.nexara.domain.generation.StartGenerationResult.Busy -> {
                 _error.value = "已有会话正在生成：${result.activeSessionId}"
@@ -688,6 +819,11 @@ class ChatViewModel(
     }
 
     fun onNotificationPermissionResult(taskId: String, granted: Boolean) {
+        val pending = pendingPermissionTurn
+        if (pending != null && pending.token == taskId) {
+            resumePendingPermissionTurn(taskId, granted)
+            return
+        }
         clearNotificationPermissionRequestForTask(taskId)
         if (granted) clearBackgroundWarningForTask(taskId)
     }
@@ -810,6 +946,7 @@ class ChatViewModel(
         _backgroundServiceStoppedError.value = null
         _backgroundWarning.value = null
         foregroundTrackedTaskId = null
+        pendingPermissionTurn = null
         mutableNotificationPermissionRequest.value = null
         _providerResolutionFailure.value = null
         _generationStatus.value = GenerationStatus.IDLE
@@ -907,6 +1044,12 @@ class ChatViewModel(
     private fun cancelPendingPreparation() {
         generationJob?.cancel()
         generationJob = null
+        if (pendingPermissionTurn != null) {
+            pendingPermissionTurn = null
+            mutableNotificationPermissionRequest.value = null
+            _isGenerating.value = false
+            _generationStatus.value = GenerationStatus.IDLE
+        }
     }
 
     private fun cancelCurrentSessionGeneration() {
@@ -932,15 +1075,12 @@ class ChatViewModel(
         cancelCurrentSessionGeneration()
         generationJob = viewModelScope.launch {
             try {
-                if (lastAssistantMsg != null) {
-                    messageManager.deleteMessage(sessionId, lastAssistantMsg.id)
-                }
-                val updatedSession = store.getSession(sessionId) ?: return@launch
-                enqueuePreparedUserTurn(
-                    sessionId = sessionId,
-                    session = updatedSession,
-                    text = lastUserMsg.content,
-                    imageDataUrls = lastUserMsg.userImages.orEmpty(),
+                applyBackgroundPolicyGate(
+                    sessionId,
+                    session,
+                    lastUserMsg.content,
+                    lastUserMsg.userImages.orEmpty(),
+                    assistantMessageIdToReplace = lastAssistantMsg?.id,
                 )
             } catch (_: Exception) {
                 _error.update { "无法安全删除旧回复，已取消重试。" }
@@ -1398,6 +1538,27 @@ class ChatViewModel(
                             app.sessionRepository as com.promenar.nexara.domain.repository.ISessionRepository
                         ),
                         generationCoordinatorOverride = generationCoordinatorOverride,
+                        notificationPermissionGateway = {
+                            val prefs = application.getSharedPreferences(
+                                com.promenar.nexara.background.generation
+                                    .GENERATION_NOTIFICATION_PERMISSION_PREFS,
+                                0,
+                            )
+                            com.promenar.nexara.background.generation
+                                .NotificationPermissionPromptState(
+                                    sdkInt = android.os.Build.VERSION.SDK_INT,
+                                    granted = android.os.Build.VERSION.SDK_INT < 33 ||
+                                        androidx.core.content.ContextCompat.checkSelfPermission(
+                                            application,
+                                            android.Manifest.permission.POST_NOTIFICATIONS,
+                                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED,
+                                    alreadyAsked = prefs.getBoolean(
+                                        com.promenar.nexara.background.generation
+                                            .GENERATION_NOTIFICATION_PERMISSION_ASKED,
+                                        false,
+                                    ),
+                                )
+                        },
                     ) as T
                 }
             }

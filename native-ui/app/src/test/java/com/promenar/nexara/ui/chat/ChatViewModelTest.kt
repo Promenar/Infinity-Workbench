@@ -68,6 +68,8 @@ class ChatViewModelTest {
     private val foregroundFailures = kotlinx.coroutines.flow.MutableSharedFlow<
         com.promenar.nexara.background.generation.ForegroundServiceFailure
     >(extraBufferCapacity = 4)
+    private var notificationPermissionState:
+        com.promenar.nexara.background.generation.NotificationPermissionPromptState? = null
 
     private val kgPath = KgPath(
         queryKeywords = listOf("Nexara"),
@@ -384,6 +386,7 @@ class ChatViewModelTest {
         foregroundStartResult =
             com.promenar.nexara.background.generation.ForegroundStartResult.StartedWithNotifications
         forcedProviderFailure = null
+        notificationPermissionState = null
 
         stubAgentRepo.seed(Agent(
             id = "a1",
@@ -464,6 +467,7 @@ class ChatViewModelTest {
                         return foregroundStartResult
                     }
                 },
+            notificationPermissionGateway = { notificationPermissionState },
             stringResourceResolverOverride = { resourceId ->
                 when (resourceId) {
                     com.promenar.nexara.R.string.generation_background_unavailable ->
@@ -711,6 +715,123 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `Android13首次发送先等待权限结果且不落消息不启动生成`() = runTest {
+        notificationPermissionState =
+            com.promenar.nexara.background.generation.NotificationPermissionPromptState(
+                sdkInt = 35,
+                granted = false,
+                alreadyAsked = false,
+            )
+        seedSession("permission-first-send")
+        advanceUntilIdle()
+
+        viewModel.sendMessage("hello")
+        advanceUntilIdle()
+
+        assertThat(viewModel.notificationPermissionRequests.value).isNotNull()
+        assertThat(savedMessages).isEmpty()
+        assertThat(protocolRequestCount).isEqualTo(0)
+        assertThat(foregroundTrackedTasks).isEmpty()
+        assertThat(viewModel.uiState.value.isGenerating).isFalse()
+        assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.IDLE)
+    }
+
+    @Test
+    fun `首次授权后恢复后台生成并清除权限请求`() = runTest {
+        notificationPermissionState =
+            com.promenar.nexara.background.generation.NotificationPermissionPromptState(
+                sdkInt = 35,
+                granted = false,
+                alreadyAsked = false,
+            )
+        seedSession("permission-granted")
+        advanceUntilIdle()
+        viewModel.sendMessage("hello")
+        advanceUntilIdle()
+        val token = requireNotNull(viewModel.notificationPermissionRequests.value).taskId
+
+        notificationPermissionState = notificationPermissionState!!.copy(
+            granted = true,
+            alreadyAsked = true,
+        )
+        viewModel.onNotificationPermissionResult(token, granted = true)
+        advanceUntilIdle()
+
+        assertThat(viewModel.notificationPermissionRequests.value).isNull()
+        assertThat(savedMessages.map { it.first.role })
+            .containsExactly(MessageRole.USER, MessageRole.ASSISTANT)
+            .inOrder()
+        assertThat(protocolRequestCount).isEqualTo(1)
+        assertThat(foregroundTrackedTasks.map { it.sessionId })
+            .containsExactly("permission-granted")
+    }
+
+    @Test
+    fun `首次拒绝后仅前台生成且后续发送不重复提示不启动前台服务`() = runTest {
+        notificationPermissionState =
+            com.promenar.nexara.background.generation.NotificationPermissionPromptState(
+                sdkInt = 35,
+                granted = false,
+                alreadyAsked = false,
+            )
+        seedSession("permission-denied")
+        advanceUntilIdle()
+        viewModel.sendMessage("first")
+        advanceUntilIdle()
+        val token = requireNotNull(viewModel.notificationPermissionRequests.value).taskId
+
+        notificationPermissionState = notificationPermissionState!!.copy(alreadyAsked = true)
+        viewModel.onNotificationPermissionResult(token, granted = false)
+        advanceUntilIdle()
+
+        assertThat(viewModel.notificationPermissionRequests.value).isNull()
+        assertThat(protocolRequestCount).isEqualTo(1)
+        assertThat(savedMessages).hasSize(2)
+        assertThat(foregroundTrackedTasks).isEmpty()
+
+        viewModel.sendMessage("second")
+        advanceUntilIdle()
+
+        assertThat(viewModel.notificationPermissionRequests.value).isNull()
+        assertThat(protocolRequestCount).isEqualTo(2)
+        assertThat(savedMessages).hasSize(4)
+        assertThat(foregroundTrackedTasks).isEmpty()
+    }
+
+    @Test
+    fun `取消或切换会话后过期权限token不能重放待发送消息`() = runTest {
+        notificationPermissionState =
+            com.promenar.nexara.background.generation.NotificationPermissionPromptState(
+                sdkInt = 35,
+                granted = false,
+                alreadyAsked = false,
+            )
+        seedSession("permission-stale-A")
+        advanceUntilIdle()
+        viewModel.sendMessage("cancelled")
+        advanceUntilIdle()
+        val cancelledToken = requireNotNull(viewModel.notificationPermissionRequests.value).taskId
+
+        viewModel.stopGeneration()
+        viewModel.onNotificationPermissionResult(cancelledToken, granted = true)
+        advanceUntilIdle()
+        assertThat(savedMessages).isEmpty()
+        assertThat(protocolRequestCount).isEqualTo(0)
+
+        viewModel.sendMessage("switched")
+        advanceUntilIdle()
+        val switchedToken = requireNotNull(viewModel.notificationPermissionRequests.value).taskId
+        seedSession("permission-stale-B")
+        advanceUntilIdle()
+        viewModel.onNotificationPermissionResult(switchedToken, granted = true)
+        advanceUntilIdle()
+
+        assertThat(viewModel.notificationPermissionRequests.value).isNull()
+        assertThat(savedMessages).isEmpty()
+        assertThat(protocolRequestCount).isEqualTo(0)
+    }
+
+    @Test
     fun `clearError不清除独立后台warning`() = runTest {
         seedSession("warning-clear")
         advanceUntilIdle()
@@ -925,6 +1046,37 @@ class ChatViewModelTest {
         assertThat(assistantMessages.any { it.content == "retry response" }).isTrue()
         assertThat(foregroundTrackedTasks).hasSize(2)
         
+    }
+
+    @Test
+    fun `重试首次触发权限且取消等待时保留旧回复`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession("retry-permission")
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("existing reply"), StreamChunk.Done)
+        viewModel.sendMessage("hello")
+        advanceUntilIdle()
+        assertThat(savedMessages.map { it.first.content })
+            .containsExactly("hello", "existing reply")
+            .inOrder()
+
+        notificationPermissionState =
+            com.promenar.nexara.background.generation.NotificationPermissionPromptState(
+                sdkInt = 35,
+                granted = false,
+                alreadyAsked = false,
+            )
+        viewModel.retryLastMessage()
+        advanceUntilIdle()
+
+        assertThat(viewModel.notificationPermissionRequests.value).isNotNull()
+        viewModel.stopGeneration()
+        advanceUntilIdle()
+
+        assertThat(savedMessages.map { it.first.content })
+            .containsExactly("hello", "existing reply")
+            .inOrder()
+        assertThat(viewModel.uiState.value.messages.any { it.content == "existing reply" }).isTrue()
     }
 
     @Test
