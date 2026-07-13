@@ -205,6 +205,7 @@ fun PipelineBubble(
                         ContentSegment(
                             content = displayContent,
                             isStreaming = isLastInGroup && isGenerating,
+                            showStreamingCursor = renderPlan.showContentCursor,
                             fontSize = fontSize,
                             onContentChange = onContentChange,
                             onCopy = messageCopyOverride(onCopy, copySource),
@@ -227,7 +228,7 @@ fun PipelineBubble(
             }
 
             // ── 生成中闪烁光标：仅在 pipeline 无 Content 步骤时（TTFT 期）渲染 ──
-            //    有 Content 步骤时由 MarkdownText 内部的 StreamingCursor 接管
+            //    正文可见后不再追加独立块光标，避免尾部出现悬空色块。
             if (renderPlan.showStandaloneCursor) {
                 StreamingCursor()
             }
@@ -291,7 +292,8 @@ internal sealed class PipelineStep {
 
 internal data class PipelineRenderPlan(
     val steps: List<PipelineStep>,
-    val showStandaloneCursor: Boolean
+    val showStandaloneCursor: Boolean,
+    val showContentCursor: Boolean
 )
 
 internal fun buildPipelineRenderPlan(
@@ -309,7 +311,8 @@ internal fun buildPipelineRenderPlan(
 
     return PipelineRenderPlan(
         steps = steps,
-        showStandaloneCursor = isGenerating && steps.none { it is PipelineStep.Content }
+        showStandaloneCursor = isGenerating && steps.none { it is PipelineStep.Content },
+        showContentCursor = false
     )
 }
 
@@ -741,6 +744,7 @@ private fun InlineToolRow(
 private fun ContentSegment(
     content: String,
     isStreaming: Boolean,
+    showStreamingCursor: Boolean,
     fontSize: Int,
     onContentChange: ((String) -> Unit)?,
     onCopy: (() -> Unit)? = null,
@@ -767,6 +771,7 @@ private fun ContentSegment(
             MarkdownText(
                 markdown = content,
                 isStreaming = isStreaming,
+                showCursor = showStreamingCursor,
                 fontSize = fontSize,
                 onContentChange = onContentChange,
                 compactSpacing = true,

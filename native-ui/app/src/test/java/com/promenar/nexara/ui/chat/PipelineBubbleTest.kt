@@ -56,6 +56,7 @@ class PipelineBubbleTest {
             .containsExactly("Thinking", "ToolExec", "Content")
             .inOrder()
         assertThat(plan.showStandaloneCursor).isFalse()
+        assertThat(plan.showContentCursor).isFalse()
     }
 
     @Test
@@ -74,5 +75,6 @@ class PipelineBubbleTest {
 
         assertThat(plan.steps).isEmpty()
         assertThat(plan.showStandaloneCursor).isTrue()
+        assertThat(plan.showContentCursor).isFalse()
     }
 }
