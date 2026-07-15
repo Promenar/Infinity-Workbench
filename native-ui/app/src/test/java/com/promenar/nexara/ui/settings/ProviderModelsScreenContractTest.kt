@@ -194,4 +194,20 @@ class ProviderModelsScreenContractTest {
             "confirmButtonModifier = Modifier.testTag(UiTags.PROVIDER_MODELS_DELETE_ALL_CONFIRM_BUTTON)",
         )
     }
+
+    @Test
+    fun `同步反馈条使用MaterialTheme排版而非固定字号`() {
+        val source = String(
+            Files.readAllBytes(
+                Path.of("app/src/main/java/com/promenar/nexara/ui/settings/ProviderModelsScreen.kt"),
+            ),
+            Charsets.UTF_8,
+        )
+        val noticeBanner = source.substringAfter("internal fun ModelSyncNoticeBanner(")
+            .substringBefore("private fun ProviderModelsListMessage(")
+
+        assertThat(noticeBanner).contains("style = MaterialTheme.typography.bodySmall")
+        assertThat(noticeBanner).doesNotContain("fontSize = 12.sp")
+        assertThat(noticeBanner).doesNotContain("NexaraTypography")
+    }
 }

@@ -347,6 +347,14 @@
     <string name="settings_delete_provider_title">删除提供商</string>
     <string name="settings_delete_provider_message">确定要删除此提供商吗？此操作无法撤销。</string>
     <string name="settings_manage_models">管理模型</string>
+    <string name="settings_provider_status_summary">%1$s · %2$s</string>
+    <string name="settings_provider_state_enabled">已启用</string>
+    <string name="settings_provider_state_disabled">已停用</string>
+    <string name="settings_provider_api_key_configured">API Key 已配置</string>
+    <string name="settings_provider_api_key_not_configured">API Key 未配置</string>
+    <string name="settings_provider_vertex_credentials_configured">Vertex 凭证已配置</string>
+    <string name="settings_provider_vertex_credentials_not_configured">Vertex 凭证未配置</string>
+    <string name="settings_provider_credentials_not_required">无需凭证</string>
     <string name="settings_edit_name">编辑名称</string>
     <string name="settings_edit_name_placeholder">输入你的显示名称</string>
     <string name="settings_btn_save">保存</string>

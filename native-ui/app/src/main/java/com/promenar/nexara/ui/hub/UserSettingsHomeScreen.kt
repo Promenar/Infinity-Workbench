@@ -91,6 +91,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -893,6 +894,35 @@ private fun ProviderCard(
     val editDescription = stringResource(R.string.shared_btn_edit)
     val deleteDescription = stringResource(R.string.shared_btn_delete)
     val actionsDescription = "${provider.name}: $editDescription / $deleteDescription"
+    val enabledStatus = stringResource(
+        if (provider.enabled) {
+            R.string.settings_provider_state_enabled
+        } else {
+            R.string.settings_provider_state_disabled
+        },
+    )
+    val credentialStatus = when (provider.protocolType) {
+        ProtocolType.Google_VertexAI -> stringResource(
+            if (provider.hasVertexCredentials) {
+                R.string.settings_provider_vertex_credentials_configured
+            } else {
+                R.string.settings_provider_vertex_credentials_not_configured
+            },
+        )
+        ProtocolType.Local -> stringResource(R.string.settings_provider_credentials_not_required)
+        else -> stringResource(
+            if (provider.hasApiKey) {
+                R.string.settings_provider_api_key_configured
+            } else {
+                R.string.settings_provider_api_key_not_configured
+            },
+        )
+    }
+    val providerStateDescription = stringResource(
+        R.string.settings_provider_status_summary,
+        enabledStatus,
+        credentialStatus,
+    )
     val localizedTypeName = when (provider.typeName) {
         ProtocolType.Generic_OpenAI_Compat.displayName ->
             stringResource(R.string.settings_provider_type_generic_openai)
@@ -947,6 +977,7 @@ private fun ProviderCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(UiTags.settingsProviderCard(provider.id))
+            .semantics { stateDescription = providerStateDescription }
             .clickable(
                 role = Role.Button,
                 onClickLabel = manageDescription,
@@ -984,6 +1015,11 @@ private fun ProviderCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = providerStateDescription,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             },

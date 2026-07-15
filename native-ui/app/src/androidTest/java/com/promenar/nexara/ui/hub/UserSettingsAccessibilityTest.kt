@@ -328,18 +328,34 @@ class UserSettingsAccessibilityTest {
 
     @Test
     fun providerRowsExposeDistinctManageAndOverflowTargetsForEachProvider() {
+        val apiConfiguredSummary = resources.getString(
+            R.string.settings_provider_status_summary,
+            resources.getString(R.string.settings_provider_state_enabled),
+            resources.getString(R.string.settings_provider_api_key_configured),
+        )
+        val apiMissingSummary = resources.getString(
+            R.string.settings_provider_status_summary,
+            resources.getString(R.string.settings_provider_state_disabled),
+            resources.getString(R.string.settings_provider_api_key_not_configured),
+        )
         val providers = listOf(
             ProviderListItem(
                 id = "provider-alpha",
                 name = "Alpha Provider",
                 typeName = ProtocolType.Generic_OpenAI_Compat.displayName,
                 baseUrl = "https://api.alpha.example.com/v1",
+                protocolType = ProtocolType.Generic_OpenAI_Compat,
+                hasApiKey = true,
+                enabled = true,
             ),
             ProviderListItem(
                 id = "provider-beta",
                 name = "Beta Provider",
                 typeName = ProtocolType.Anthropic_Messages.displayName,
                 baseUrl = "https://api.beta.example.com/v1",
+                protocolType = ProtocolType.Anthropic_Messages,
+                hasApiKey = false,
+                enabled = false,
             ),
         )
 
@@ -358,10 +374,22 @@ class UserSettingsAccessibilityTest {
         rule.onNodeWithTag(UiTags.settingsProviderCard("provider-alpha"))
             .assertHasClickAction()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    apiConfiguredSummary,
+                ),
+            )
             .assertHeightIsAtLeast(48.dp)
         rule.onNodeWithTag(UiTags.settingsProviderCard("provider-beta"))
             .assertHasClickAction()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    apiMissingSummary,
+                ),
+            )
             .assertHeightIsAtLeast(48.dp)
         rule.onNodeWithTag(
             UiTags.settingsProviderActions("provider-alpha"),
@@ -379,6 +407,139 @@ class UserSettingsAccessibilityTest {
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
             .assertHeightIsAtLeast(48.dp)
             .assertWidthIsAtLeast(48.dp)
+        rule.onNodeWithText(apiConfiguredSummary, useUnmergedTree = true)
+            .assertIsDisplayed()
+        rule.onNodeWithText(apiMissingSummary, useUnmergedTree = true)
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun providerRowsShowVertexCredentialStateAt2xWithoutLosingTalkBackOrOverflow() {
+        val enabled = resources.getString(R.string.settings_provider_state_enabled)
+        val disabled = resources.getString(R.string.settings_provider_state_disabled)
+        val vertexConfigured =
+            resources.getString(R.string.settings_provider_vertex_credentials_configured)
+        val vertexMissing =
+            resources.getString(R.string.settings_provider_vertex_credentials_not_configured)
+        val configuredSummary = resources.getString(
+            R.string.settings_provider_status_summary,
+            enabled,
+            vertexConfigured,
+        )
+        val missingSummary = resources.getString(
+            R.string.settings_provider_status_summary,
+            disabled,
+            vertexMissing,
+        )
+
+        rule.setContent {
+            val currentDensity = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(currentDensity.density, fontScale = 2f),
+            ) {
+                NexaraTheme {
+                    Box(modifier = androidx.compose.ui.Modifier.width(360.dp)) {
+                        UserSettingsHomeScreenContent(
+                            state = UserSettingsHomeScreenState(
+                                selectedTab = SettingsTab.PROVIDER,
+                                providers = listOf(
+                                    ProviderListItem(
+                                        id = "provider-vertex-configured",
+                                        name = "Vertex Configured",
+                                        typeName = ProtocolType.Google_VertexAI.displayName,
+                                        baseUrl = "https://vertex.example.com/v1",
+                                        protocolType = ProtocolType.Google_VertexAI,
+                                        hasVertexCredentials = true,
+                                        enabled = true,
+                                    ),
+                                    ProviderListItem(
+                                        id = "provider-vertex-missing",
+                                        name = "Vertex Missing",
+                                        typeName = ProtocolType.Google_VertexAI.displayName,
+                                        baseUrl = "https://vertex-missing.example.com/v1",
+                                        protocolType = ProtocolType.Google_VertexAI,
+                                        hasVertexCredentials = false,
+                                        enabled = false,
+                                    ),
+                                ),
+                            ),
+                            actions = UserSettingsHomeScreenActions(),
+                        )
+                    }
+                }
+            }
+        }
+
+        listOf(
+            "provider-vertex-configured" to configuredSummary,
+            "provider-vertex-missing" to missingSummary,
+        ).forEach { (providerId, summary) ->
+            rule.onNodeWithTag(UiTags.SETTINGS_PROVIDER_LIST)
+                .performScrollToNode(hasText(summary))
+            rule.onNodeWithText(summary, useUnmergedTree = true)
+                .assertIsDisplayed()
+            rule.onNodeWithTag(UiTags.settingsProviderCard(providerId))
+                .assertHasClickAction()
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.StateDescription,
+                        summary,
+                    ),
+                )
+            rule.onNodeWithTag(
+                UiTags.settingsProviderActions(providerId),
+                useUnmergedTree = true,
+            )
+                .assertHasClickAction()
+                .assertHeightIsAtLeast(48.dp)
+                .assertWidthIsAtLeast(48.dp)
+        }
+    }
+
+    @Test
+    fun localProviderReportsNoCredentialsRequiredWithoutApiOrVertexMislabeling() {
+        val expectedSummary = resources.getString(
+            R.string.settings_provider_status_summary,
+            resources.getString(R.string.settings_provider_state_enabled),
+            resources.getString(R.string.settings_provider_credentials_not_required),
+        )
+
+        rule.setContent {
+            NexaraTheme {
+                UserSettingsHomeScreenContent(
+                    state = UserSettingsHomeScreenState(
+                        selectedTab = SettingsTab.PROVIDER,
+                        providers = listOf(
+                            ProviderListItem(
+                                id = "provider-local",
+                                name = "Local Inference",
+                                typeName = ProtocolType.Local.displayName,
+                                protocolType = ProtocolType.Local,
+                                hasApiKey = true,
+                                hasVertexCredentials = true,
+                                enabled = true,
+                            ),
+                        ),
+                    ),
+                    actions = UserSettingsHomeScreenActions(),
+                )
+            }
+        }
+
+        rule.onNodeWithText(expectedSummary, useUnmergedTree = true)
+            .assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.settingsProviderCard("provider-local"))
+            .assertHasClickAction()
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    expectedSummary,
+                ),
+            )
+        rule.onNodeWithTag(
+            UiTags.settingsProviderActions("provider-local"),
+            useUnmergedTree = true,
+        ).assertHasClickAction()
     }
 
     @Test

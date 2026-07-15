@@ -77,7 +77,6 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
@@ -88,7 +87,6 @@ import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
-import com.promenar.nexara.ui.theme.NexaraTypography
 
 private val ModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
 private val ModelTypeLabelResources = listOf(
@@ -998,7 +996,7 @@ internal fun ModelSyncNoticeBanner(
         ) {
             Text(
                 text = message,
-                style = NexaraTypography.labelMedium.copy(fontSize = 12.sp),
+                style = MaterialTheme.typography.bodySmall,
                 color = color.foreground,
                 modifier = Modifier.weight(1f),
             )

@@ -146,6 +146,18 @@ class UserSettingsHomeScreenContractTest {
         assertThat(providerRow).contains("provider.name")
         assertThat(providerRow).contains("provider.typeName")
         assertThat(providerRow).contains("provider.baseUrl")
+        assertThat(providerRow).contains("settings_provider_status_summary")
+        assertThat(providerRow).contains("settings_provider_state_enabled")
+        assertThat(providerRow).contains("settings_provider_state_disabled")
+        assertThat(providerRow).contains("settings_provider_api_key_configured")
+        assertThat(providerRow).contains("settings_provider_api_key_not_configured")
+        assertThat(providerRow).contains("settings_provider_vertex_credentials_configured")
+        assertThat(providerRow).contains("settings_provider_vertex_credentials_not_configured")
+        assertThat(providerRow).contains(
+            "ProtocolType.Local -> stringResource(R.string.settings_provider_credentials_not_required)",
+        )
+        assertThat(providerRow).contains("stateDescription = providerStateDescription")
+        assertThat(providerRow).contains("MaterialTheme.typography.labelMedium")
         assertThat(providerRow).doesNotContain("provider.model")
         assertThat(providerRow).doesNotContain("connectionStatus")
         assertThat(providerRow).doesNotContain("modelCount")
