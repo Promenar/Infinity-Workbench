@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.google.common.truth.Truth.assertThat
@@ -54,5 +55,15 @@ class NexaraThemeTokenTest {
         assertThat(NexaraDarkColorScheme.surfaceContainer).isEqualTo(NexaraColors.SurfaceContainer)
         assertThat(NexaraDarkColorScheme.surfaceContainerHigh).isEqualTo(NexaraColors.SurfaceHigh)
         assertThat(NexaraDarkColorScheme.surfaceContainerHighest).isEqualTo(NexaraColors.SurfaceHighest)
+    }
+
+    @Test
+    fun `次级容器为深色消息容器且前景保持高对比`() {
+        assertThat(NexaraColors.SecondaryContainer).isEqualTo(Color(0xFF2A2A2C))
+        assertThat(NexaraColors.SecondaryContainer).isEqualTo(NexaraColors.SurfaceHigh)
+        assertThat(NexaraColors.OnSecondaryContainer).isEqualTo(Color(0xFFE5E1E4))
+        assertThat(NexaraColors.OnSecondaryContainer).isEqualTo(NexaraColors.OnSurface)
+        assertThat(NexaraDarkColorScheme.secondaryContainer).isEqualTo(NexaraColors.SecondaryContainer)
+        assertThat(NexaraDarkColorScheme.onSecondaryContainer).isEqualTo(NexaraColors.OnSecondaryContainer)
     }
 }

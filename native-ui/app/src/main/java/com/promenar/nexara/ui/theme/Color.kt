@@ -21,8 +21,8 @@ object NexaraColors {
 
     val Secondary = Color(0xFFC8C5CA)
     val OnSecondary = Color(0xFF303033)
-    val SecondaryContainer = Color(0xFF47464A)
-    val OnSecondaryContainer = Color(0xFFB6B4B8)
+    val SecondaryContainer = Color(0xFF2A2A2C)
+    val OnSecondaryContainer = Color(0xFFE5E1E4)
 
     val Tertiary = Color(0xFFFFB783)
     val OnTertiary = Color(0xFF4F2500)

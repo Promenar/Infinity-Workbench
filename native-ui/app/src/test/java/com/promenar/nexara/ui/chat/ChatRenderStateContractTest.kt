@@ -33,6 +33,69 @@ class ChatRenderStateContractTest {
     }
 
     @Test
+    fun `模型与上下文动作使用低对比 AssistChip 而非选择型 FilterChip`() {
+        val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/ChatScreen.kt",
+        ).readText()
+        val inputActions = source
+            .substringAfter("private fun ChatInputTopBar(")
+            .substringBefore("private fun TokenDetailRow(")
+
+        assertThat(inputActions).contains("AssistChip(")
+        assertThat(inputActions).contains("AssistChipDefaults.assistChipColors(")
+        assertThat(inputActions).contains("surfaceContainerLow")
+        assertThat(inputActions).doesNotContain("FilterChip(")
+    }
+
+    @Test
+    fun `生成中追尾应随输入区实测高度变化重新校正且尊重用户上滚`() {
+        val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/ChatScreen.kt",
+        ).readText()
+        val streamingFollowEffect = source
+            .substringAfter("// 生成中跟随当前 AI item 的尾部")
+            .substringBefore("// IME 键盘避让")
+
+        assertThat(streamingFollowEffect).contains("composerHeightPx,")
+        assertThat(streamingFollowEffect).contains(
+            "if (uiState.isGenerating && autoFollowEnabled)",
+        )
+        assertThat(streamingFollowEffect).doesNotContain("delay(16)")
+        assertThat(streamingFollowEffect).doesNotContain("withFrameNanos { }")
+        assertThat(streamingFollowEffect).contains("scrollToStreamingTail()")
+    }
+
+    @Test
+    fun `横屏会话列表压缩顶部与条目间距且不依赖初始索引裁剪消息`() {
+        val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/ChatScreen.kt",
+        ).readText()
+        val conversationList = source
+            .substringAfter("BoxWithConstraints(")
+            .substringBefore("// ── Skeleton")
+
+        assertThat(conversationList).contains("val isLandscape = maxWidth > maxHeight")
+        assertThat(conversationList).contains(
+            "top = if (isLandscape) NexaraSpacing.Small else NexaraSpacing.Large",
+        )
+        assertThat(conversationList).contains(
+            "if (isLandscape) NexaraSpacing.Small else NexaraSpacing.Medium",
+        )
+        assertThat(source).doesNotContain("initialStreamingIndex")
+        assertThat(source).doesNotContain("LocalConfiguration")
+        assertThat(source).doesNotContain("Configuration.ORIENTATION_LANDSCAPE")
+    }
+
+    @Test
     fun `five representative states have stable render anchors`() {
         assertThat(
             listOf(

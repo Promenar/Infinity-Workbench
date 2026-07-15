@@ -21,6 +21,7 @@ object UiTags {
     const val CHAT_THINKING_TRACE = "chat_thinking_trace"
     const val CHAT_THINKING_TOGGLE = "chat_thinking_toggle"
     const val CHAT_THINKING_CONTENT = "chat_thinking_content"
+    const val CHAT_THINKING_COLLAPSED_CONNECTOR = "chat_thinking_collapsed_connector"
     const val CHAT_INPUT_ISLAND = "chat_input_island"
     const val CHAT_INPUT_BAR_SURFACE = "chat_input_bar_surface"
     const val CHAT_OPTIONS = "chat_options"

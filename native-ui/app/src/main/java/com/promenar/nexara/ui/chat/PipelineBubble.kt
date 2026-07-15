@@ -226,8 +226,8 @@ fun PipelineBubble(
                     }
                 }
 
-                // ── 步骤间的垂直连接线 (仅在有后续步骤时显示) ──
-                if (index < allSteps.lastIndex) {
+                // ── 步骤间的垂直连接线（思考轨迹自行绘制连接）──
+                if (index < allSteps.lastIndex && step !is PipelineStep.Thinking) {
                     Box(
                         modifier = Modifier
                             .padding(start = 20.dp, top = 2.dp, bottom = 2.dp)
@@ -550,7 +550,7 @@ internal fun ThinkingTrace(
                 )
             }
         }
-        AnimatedVisibility(visible = internalExpanded && reasoning.isNotBlank()) {
+        if (internalExpanded && reasoning.isNotBlank()) {
             val lineColor = MaterialTheme.colorScheme.primary
             Box(
                 modifier = Modifier
@@ -586,6 +586,29 @@ internal fun ThinkingTrace(
                     compactSpacing = true
                 )
             }
+        } else if (reasoning.isNotBlank()) {
+            val lineColor = MaterialTheme.colorScheme.primary
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(NexaraSpacing.XLarge)
+                    .testTag(UiTags.CHAT_THINKING_COLLAPSED_CONNECTOR)
+                    .drawBehind {
+                        val lineX = NexaraSpacing.XLarge.toPx()
+                        val nodeY = NexaraSpacing.Large.toPx()
+                        drawLine(
+                            color = lineColor,
+                            start = Offset(lineX, 0f),
+                            end = Offset(lineX, nodeY),
+                            strokeWidth = 2.dp.toPx()
+                        )
+                        drawCircle(
+                            color = lineColor,
+                            radius = NexaraSpacing.XSmall.toPx(),
+                            center = Offset(lineX, nodeY)
+                        )
+                    }
+            )
         }
     }
 }

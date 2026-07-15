@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
@@ -60,12 +61,13 @@ import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -322,10 +324,10 @@ fun ChatScreenContent(
         autoFollowEnabled,
         latestAssistantMsg?.id,
         followContentLength,
-        ragPhases.size
+        ragPhases.size,
+        composerHeightPx,
     ) {
         if (uiState.isGenerating && autoFollowEnabled) {
-            delay(16)
             scrollToStreamingTail()
         }
     }
@@ -372,13 +374,14 @@ fun ChatScreenContent(
             }
         }
     ) { padding ->
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .imePadding()
                 .testTag(UiTags.CHAT_ROOT),
         ) {
+            val isLandscape = maxWidth > maxHeight
             val renderStateTag = chatRenderStateTag(uiState)
             LazyColumn(
                 state = listState,
@@ -392,10 +395,12 @@ fun ChatScreenContent(
                 contentPadding = PaddingValues(
                     start = NexaraSpacing.Large,
                     end = NexaraSpacing.Large,
-                    top = NexaraSpacing.Large,
+                    top = if (isLandscape) NexaraSpacing.Small else NexaraSpacing.Large,
                     bottom = composerInsets.contentBottom,
                 ),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(
+                    if (isLandscape) NexaraSpacing.Small else NexaraSpacing.Medium,
+                ),
             ) {
                 // pipelineGroups 已在外部通过 remember 计算，此处直接引用
                 items(pipelineGroups.size, key = { pipelineGroups[it].messages.first().id }) { idx ->
@@ -709,12 +714,23 @@ private fun ChatInputTopBar(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // Model Indicator
-        FilterChip(
-            selected = true,
+        AssistChip(
             onClick = onModelClick,
             modifier = Modifier
                 .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                 .testTag(UiTags.CHAT_MODEL_SELECTOR),
+            shape = CircleShape,
+            colors = AssistChipDefaults.assistChipColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                labelColor = MaterialTheme.colorScheme.onSurface,
+                leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                trailingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+            border = AssistChipDefaults.assistChipBorder(
+                enabled = true,
+                borderColor = Color.Transparent,
+                disabledBorderColor = Color.Transparent,
+            ),
             label = {
                 Text(
                     text = modelName.ifBlank { stringResource(R.string.chat_model_placeholder) },
@@ -751,12 +767,23 @@ private fun TokenIndicator(
     var showTooltip by remember { mutableStateOf(false) }
 
     Box {
-        FilterChip(
-            selected = false,
+        AssistChip(
             onClick = { showTooltip = !showTooltip },
             modifier = Modifier
                 .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                 .testTag(UiTags.CHAT_TOKEN_INDICATOR),
+            shape = CircleShape,
+            colors = AssistChipDefaults.assistChipColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                labelColor = MaterialTheme.colorScheme.onSurface,
+                leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                trailingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+            border = AssistChipDefaults.assistChipBorder(
+                enabled = true,
+                borderColor = Color.Transparent,
+                disabledBorderColor = Color.Transparent,
+            ),
             label = {
                 Text(
                     text = "${state.used / 1000}K / ${state.max / 1000}K",

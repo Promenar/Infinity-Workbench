@@ -117,7 +117,10 @@ class PipelineBubbleTest {
             .substringAfter("internal fun ThinkingTrace(")
             .substringBefore("//  InlineToolRow")
         assertThat(thinkingTraceSource).contains(".drawBehind")
+        assertThat(thinkingTraceSource).contains("CHAT_THINKING_COLLAPSED_CONNECTOR")
+        assertThat(thinkingTraceSource).doesNotContain("AnimatedVisibility(visible = internalExpanded")
         assertThat(thinkingTraceSource).doesNotContain(".fillMaxHeight()")
+        assertThat(source).contains("index < allSteps.lastIndex && step !is PipelineStep.Thinking")
         assertThat(source).doesNotContain("private fun InlineThinkingRow(")
         assertThat(source).doesNotContain("import com.promenar.nexara.ui.common.NexaraGlassCard")
     }
