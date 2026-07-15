@@ -35,14 +35,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Settings
@@ -50,10 +51,15 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedTextField
@@ -78,21 +84,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.ModelItem
 import com.promenar.nexara.ui.common.ModelCapability
 import com.promenar.nexara.ui.common.ModelPicker
-import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.SettingsToggle
@@ -100,10 +105,8 @@ import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
-import com.promenar.nexara.ui.theme.SpaceGrotesk
 import com.promenar.nexara.ui.theme.Manrope
 import com.yalantis.ucrop.UCrop
 import android.net.Uri
@@ -718,8 +721,8 @@ private fun ProviderSettingsContent(
         modifier = Modifier
             .fillMaxSize()
             .testTag(UiTags.SETTINGS_PROVIDER_LIST),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = NexaraSpacing.XLarge),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
     ) {
         item {
             AddProviderButton(onClick = { actions.onNavigateToSecondary("provider_form") })
@@ -730,15 +733,37 @@ private fun ProviderSettingsContent(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 48.dp),
-                    contentAlignment = Alignment.Center
+                        .padding(
+                            horizontal = NexaraSpacing.XLarge,
+                            vertical = NexaraSpacing.XXLarge,
+                        ),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = stringResource(R.string.settings_provider_empty),
-                        style = NexaraTypography.bodyMedium,
-                        color = NexaraColors.OnSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large),
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(64.dp),
+                            shape = MaterialTheme.shapes.extraLarge,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Psychology,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.size(NexaraSpacing.XXLarge),
+                                )
+                            }
+                        }
+                        Text(
+                            text = stringResource(R.string.settings_provider_empty),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
         } else {
@@ -747,7 +772,7 @@ private fun ProviderSettingsContent(
                     provider = provider,
                     onClick = { actions.onNavigateToSecondary("provider_models/${provider.id}") },
                     onEdit = { actions.onNavigateToSecondary("provider_form?providerId=${provider.id}") },
-                    onDelete = { actions.onRequestDeleteProvider(provider.id) }
+                    onDelete = { actions.onRequestDeleteProvider(provider.id) },
                 )
             }
         }
@@ -833,36 +858,25 @@ private fun UserProfileHeader(
 
 @Composable
 private fun AddProviderButton(
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
-    NexaraGlassCard(
+    Button(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .testTag(UiTags.SETTINGS_ADD_PROVIDER)
-            .sizeIn(minHeight = 48.dp)
-            .clickable(role = Role.Button) { onClick() },
-        shape = NexaraShapes.medium as RoundedCornerShape
+            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = null,
-                tint = NexaraColors.Primary,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = stringResource(R.string.settings_add_provider),
-                style = NexaraTypography.labelLarge,
-                color = NexaraColors.Primary
-            )
-        }
+        Icon(
+            imageVector = Icons.Rounded.Add,
+            contentDescription = null,
+            modifier = Modifier.size(NexaraSpacing.XLarge),
+        )
+        Spacer(modifier = Modifier.width(NexaraSpacing.Small))
+        Text(
+            text = stringResource(R.string.settings_add_provider),
+            style = MaterialTheme.typography.labelLarge,
+        )
     }
 }
 
@@ -871,11 +885,14 @@ private fun ProviderCard(
     provider: ProviderListItem,
     onClick: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
 ) {
+    var menuExpanded by remember(provider.id) { mutableStateOf(false) }
+    val useLargeTextLayout = LocalDensity.current.fontScale >= 1.5f
     val manageDescription = stringResource(R.string.settings_manage_models)
     val editDescription = stringResource(R.string.shared_btn_edit)
     val deleteDescription = stringResource(R.string.shared_btn_delete)
+    val actionsDescription = "${provider.name}: $editDescription / $deleteDescription"
     val localizedTypeName = when (provider.typeName) {
         ProtocolType.Generic_OpenAI_Compat.displayName ->
             stringResource(R.string.settings_provider_type_generic_openai)
@@ -883,7 +900,50 @@ private fun ProviderCard(
             stringResource(R.string.settings_provider_type_local)
         else -> provider.typeName
     }
-    NexaraGlassCard(
+    val providerIcon = remember(provider.typeName) {
+        ProtocolType.entries.find { it.displayName == provider.typeName }?.iconRes
+    }
+    val iconContainerColor = if (provider.enabled) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    val iconColor = if (provider.enabled) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val leadingContent: (@Composable () -> Unit)? = if (useLargeTextLayout) {
+        null
+    } else {
+        {
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = MaterialTheme.shapes.medium,
+                color = iconContainerColor,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (providerIcon != null) {
+                        Icon(
+                            painter = painterResource(id = providerIcon),
+                            contentDescription = null,
+                            tint = iconColor,
+                            modifier = Modifier.size(NexaraSpacing.XLarge),
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.Psychology,
+                            contentDescription = null,
+                            tint = iconColor,
+                            modifier = Modifier.size(NexaraSpacing.XLarge),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(UiTags.settingsProviderCard(provider.id))
@@ -892,117 +952,126 @@ private fun ProviderCard(
                 onClickLabel = manageDescription,
                 onClick = onClick,
             ),
-        shape = NexaraShapes.medium as RoundedCornerShape
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            val providerIcon = remember(provider.typeName) {
-                ProtocolType.entries.find { it.displayName == provider.typeName }?.iconRes
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(NexaraColors.Primary.copy(alpha = 0.1f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (providerIcon != null) {
-                        Icon(
-                            painter = painterResource(id = providerIcon),
-                            contentDescription = null,
-                            tint = NexaraColors.Primary,
-                            modifier = Modifier.size(24.dp)
-                        )
+        ListItem(
+            modifier = Modifier.fillMaxWidth(),
+            colors = ListItemDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            ),
+            headlineContent = {
+                Text(
+                    text = provider.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (provider.enabled) {
+                        MaterialTheme.colorScheme.onSurface
                     } else {
-                        Icon(
-                            imageVector = Icons.Rounded.Psychology,
-                            contentDescription = null,
-                            tint = NexaraColors.Primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            },
+            supportingContent = {
+                Column {
                     Text(
-                        text = provider.name,
-                        style = NexaraTypography.headlineMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold),
-                        color = NexaraColors.OnSurface,
+                        text = localizedTypeName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = provider.baseUrl.removePrefix("https://").removePrefix("http://"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     )
-
-                    Text(
-                        text = localizedTypeName,
-                        style = NexaraTypography.labelMedium,
-                        color = NexaraColors.OnSurfaceVariant,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    )
-
-                    Text(
-                        text = provider.baseUrl.removePrefix("https://").removePrefix("http://"),
-                        style = NexaraTypography.labelMedium.copy(fontFamily = SpaceGrotesk, fontSize = 11.sp),
-                        color = NexaraColors.Outline,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    )
                 }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(UiTags.settingsProviderActions(provider.id)),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
-            ) {
-                IconButton(
-                    onClick = onClick,
-                    modifier = Modifier.size(48.dp),
+            },
+            leadingContent = leadingContent,
+            trailingContent = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Tune,
-                        contentDescription = manageDescription,
-                        tint = NexaraColors.Primary,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    if (!useLargeTextLayout) {
+                        Icon(
+                            imageVector = Icons.Rounded.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(NexaraSpacing.XLarge),
+                        )
+                    }
+                    Box {
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                            modifier = Modifier
+                                .testTag(UiTags.settingsProviderActions(provider.id))
+                                .sizeIn(
+                                    minWidth = NexaraSpacing.MinimumTouchTarget,
+                                    minHeight = NexaraSpacing.MinimumTouchTarget,
+                                ),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.MoreVert,
+                                contentDescription = actionsDescription,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = editDescription,
+                                        style = MaterialTheme.typography.labelLarge,
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onEdit()
+                                },
+                                modifier = Modifier
+                                    .testTag("${UiTags.settingsProviderActions(provider.id)}:edit")
+                                    .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+                                    .semantics { role = Role.Button },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Edit,
+                                        contentDescription = null,
+                                    )
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = deleteDescription,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDelete()
+                                },
+                                modifier = Modifier
+                                    .testTag("${UiTags.settingsProviderActions(provider.id)}:delete")
+                                    .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+                                    .semantics { role = Role.Button },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                            )
+                        }
+                    }
                 }
-                IconButton(
-                    onClick = onEdit,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Edit,
-                        contentDescription = editDescription,
-                        tint = NexaraColors.OnSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Delete,
-                        contentDescription = deleteDescription,
-                        tint = NexaraColors.StatusError.copy(alpha = 0.7f),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-        }
+            },
+        )
     }
 }
 

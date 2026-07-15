@@ -9,6 +9,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -22,6 +23,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -40,6 +42,7 @@ import com.promenar.nexara.ui.testing.UiTags
 import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class UserSettingsAccessibilityTest {
     @get:Rule
@@ -297,6 +300,9 @@ class UserSettingsAccessibilityTest {
 
         rule.onNodeWithTag(UiTags.SETTINGS_ADD_PROVIDER)
             .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
             .performClick()
 
         rule.waitForIdle()
@@ -321,7 +327,7 @@ class UserSettingsAccessibilityTest {
     }
 
     @Test
-    fun providerCardsExposeStableCardAndActionsTagsForEachProvider() {
+    fun providerRowsExposeDistinctManageAndOverflowTargetsForEachProvider() {
         val providers = listOf(
             ProviderListItem(
                 id = "provider-alpha",
@@ -349,15 +355,173 @@ class UserSettingsAccessibilityTest {
             }
         }
 
-        rule.onNodeWithTag(UiTags.settingsProviderCard("provider-alpha")).assertHasClickAction()
-        rule.onNodeWithTag(UiTags.settingsProviderCard("provider-beta")).assertHasClickAction()
+        rule.onNodeWithTag(UiTags.settingsProviderCard("provider-alpha"))
+            .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag(UiTags.settingsProviderCard("provider-beta"))
+            .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
         rule.onNodeWithTag(
             UiTags.settingsProviderActions("provider-alpha"),
             useUnmergedTree = true,
-        ).assertExists()
+        )
+            .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
         rule.onNodeWithTag(
             UiTags.settingsProviderActions("provider-beta"),
             useUnmergedTree = true,
-        ).assertExists()
+        )
+            .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
+    }
+
+    @Test
+    fun providerManageAndOverflowEditDispatchDifferentRoutes() {
+        val providerId = "provider-actions"
+        val lastRoute = AtomicReference<String>()
+
+        rule.setContent {
+            NexaraTheme {
+                UserSettingsHomeScreenContent(
+                    state = UserSettingsHomeScreenState(
+                        selectedTab = SettingsTab.PROVIDER,
+                        providers = listOf(
+                            ProviderListItem(
+                                id = providerId,
+                                name = "Actions Provider",
+                                typeName = ProtocolType.Generic_OpenAI_Compat.displayName,
+                                baseUrl = "https://api.example.com/v1",
+                            ),
+                        ),
+                    ),
+                    actions = UserSettingsHomeScreenActions(
+                        onNavigateToSecondary = lastRoute::set,
+                    ),
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.settingsProviderCard(providerId))
+            .performClick()
+        com.google.common.truth.Truth.assertThat(lastRoute.get())
+            .isEqualTo("provider_models/$providerId")
+
+        lastRoute.set(null)
+        rule.onNodeWithTag(
+            UiTags.settingsProviderActions(providerId),
+            useUnmergedTree = true,
+        ).performClick()
+        com.google.common.truth.Truth.assertThat(lastRoute.get()).isNull()
+        rule.onNodeWithTag("${UiTags.settingsProviderActions(providerId)}:edit")
+            .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        rule.waitForIdle()
+        com.google.common.truth.Truth.assertThat(lastRoute.get())
+            .isEqualTo("provider_form?providerId=$providerId")
+    }
+
+    @Test
+    fun providerOverflowDeleteDispatchesConfirmationRequest() {
+        val providerId = "provider-delete"
+        val deletedProvider = AtomicReference<String>()
+
+        rule.setContent {
+            NexaraTheme {
+                UserSettingsHomeScreenContent(
+                    state = UserSettingsHomeScreenState(
+                        selectedTab = SettingsTab.PROVIDER,
+                        providers = listOf(
+                            ProviderListItem(
+                                id = providerId,
+                                name = "Delete Provider",
+                                typeName = ProtocolType.Anthropic_Messages.displayName,
+                                baseUrl = "https://api.example.com/v1",
+                            ),
+                        ),
+                    ),
+                    actions = UserSettingsHomeScreenActions(
+                        onRequestDeleteProvider = deletedProvider::set,
+                    ),
+                )
+            }
+        }
+
+        rule.onNodeWithTag(
+            UiTags.settingsProviderActions(providerId),
+            useUnmergedTree = true,
+        ).performClick()
+        rule.onNodeWithTag("${UiTags.settingsProviderActions(providerId)}:delete")
+            .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        rule.waitForIdle()
+        com.google.common.truth.Truth.assertThat(deletedProvider.get()).isEqualTo(providerId)
+    }
+
+    @Test
+    fun providerLongNameReflowsAt360DpAnd2xFontScale() {
+        val longName =
+            "OpenAI Compatible Internal Aggregator for International Production Workspaces"
+
+        rule.setContent {
+            val currentDensity = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(currentDensity.density, fontScale = 2f),
+            ) {
+                NexaraTheme {
+                    Box(modifier = androidx.compose.ui.Modifier.width(360.dp)) {
+                        UserSettingsHomeScreenContent(
+                            state = UserSettingsHomeScreenState(
+                                selectedTab = SettingsTab.PROVIDER,
+                                providers = listOf(
+                                    ProviderListItem(
+                                        id = "provider-long-name",
+                                        name = longName,
+                                        typeName = ProtocolType.Generic_OpenAI_Compat.displayName,
+                                        baseUrl = "https://internal.example.com/v1",
+                                    ),
+                                ),
+                            ),
+                            actions = UserSettingsHomeScreenActions(),
+                        )
+                    }
+                }
+            }
+        }
+
+        rule.onNodeWithText(longName, useUnmergedTree = true)
+            .assertWidthIsAtLeast(220.dp)
+            .assertHeightIsAtLeast(120.dp)
+    }
+
+    @Test
+    fun providerEmptyStateKeepsOneAddAction() {
+        rule.setContent {
+            NexaraTheme {
+                UserSettingsHomeScreenContent(
+                    state = UserSettingsHomeScreenState(
+                        selectedTab = SettingsTab.PROVIDER,
+                        providers = emptyList(),
+                    ),
+                    actions = UserSettingsHomeScreenActions(),
+                )
+            }
+        }
+
+        rule.onNodeWithText(resources.getString(R.string.settings_provider_empty))
+            .assertIsDisplayed()
+        rule.onAllNodesWithTag(UiTags.SETTINGS_ADD_PROVIDER)
+            .assertCountEquals(1)
     }
 }

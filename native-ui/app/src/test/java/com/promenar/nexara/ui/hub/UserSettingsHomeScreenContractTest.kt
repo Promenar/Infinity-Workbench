@@ -101,6 +101,63 @@ class UserSettingsHomeScreenContractTest {
     }
 
     @Test
+    fun `provider screen has one material add action and a clear empty state`() {
+        val providerContent = sourceBlock(
+            start = "private fun ProviderSettingsContent(",
+            end = "private fun UserProfileHeader(",
+        )
+        val addAction = sourceBlock(
+            start = "private fun AddProviderButton(",
+            end = "private fun ProviderCard(",
+        )
+
+        assertThat(providerContent).contains("AddProviderButton(")
+        assertThat(providerContent).contains("settings_provider_empty")
+        assertThat(providerContent).contains("MaterialTheme.typography")
+        assertThat(providerContent).contains("NexaraSpacing.XLarge")
+        assertThat(providerContent).doesNotContain("NexaraTypography")
+        assertThat(providerContent).doesNotContain("NexaraColors")
+
+        assertThat(addAction).contains("Button(")
+        assertThat(addAction).contains("UiTags.SETTINGS_ADD_PROVIDER")
+        assertThat(addAction).contains("NexaraSpacing.MinimumTouchTarget")
+        assertThat(addAction).contains("MaterialTheme.typography")
+        assertThat(addAction).doesNotContain("NexaraGlassCard")
+        assertThat(addAction).doesNotContain(".clickable(")
+    }
+
+    @Test
+    fun `provider row has one manage target and overflow owns edit and delete`() {
+        val providerRow = sourceBlock(
+            start = "private fun ProviderCard(",
+            end = "private fun NameEditDialog(",
+        )
+
+        assertThat(providerRow).contains("Surface(")
+        assertThat(providerRow).contains("ListItem(")
+        assertThat(providerRow).contains("Icons.Rounded.ChevronRight")
+        assertThat(providerRow).contains("Icons.Rounded.MoreVert")
+        assertThat(providerRow).contains("DropdownMenu(")
+        assertThat(providerRow).contains("DropdownMenuItem(")
+        assertThat(providerRow).contains("UiTags.settingsProviderCard(provider.id)")
+        assertThat(providerRow).contains("UiTags.settingsProviderActions(provider.id)")
+        assertThat(providerRow).contains("}:edit")
+        assertThat(providerRow).contains("}:delete")
+        assertThat(providerRow).contains("provider.name")
+        assertThat(providerRow).contains("provider.typeName")
+        assertThat(providerRow).contains("provider.baseUrl")
+        assertThat(providerRow).doesNotContain("provider.model")
+        assertThat(providerRow).doesNotContain("connectionStatus")
+        assertThat(providerRow).doesNotContain("modelCount")
+        assertThat(providerRow).doesNotContain("NexaraGlassCard")
+        assertThat(providerRow).doesNotContain("NexaraTypography")
+        assertThat(providerRow).doesNotContain("NexaraColors")
+        assertThat(providerRow).doesNotContain("fontSize =")
+        assertThat(providerRow.split("IconButton(").size - 1).isEqualTo(1)
+        assertThat(providerRow.split("onClick = onClick").size - 1).isEqualTo(1)
+    }
+
+    @Test
     fun `content seam exposes state actions and content without view model or android side effects`() {
         val source = screenSource.readText()
         assertThat(source).contains("data class UserSettingsHomeScreenState(")

@@ -1114,8 +1114,8 @@ fun userSettingsAppChineseCompactLargeFontReleasePreview() {
 @PreviewTest
 @Preview(
     name = "User settings provider English large font",
-    widthDp = PHONE_WIDTH_DP,
-    heightDp = PHONE_HEIGHT_DP,
+    widthDp = 360,
+    heightDp = 800,
     locale = "en",
     fontScale = 2f,
     uiMode = Configuration.UI_MODE_NIGHT_YES,
@@ -1140,6 +1140,29 @@ fun userSettingsProviderLargeFontReleasePreview() {
                         baseUrl = "https://generativelanguage.googleapis.com/v1beta/projects/nexara-production",
                     ),
                 ),
+                localInferenceAvailable = false,
+            ),
+            actions = UserSettingsHomeScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "User settings provider empty Chinese large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun userSettingsProviderEmptyChineseLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        UserSettingsHomeScreenContent(
+            state = UserSettingsHomeScreenState(
+                selectedTab = SettingsTab.PROVIDER,
+                providers = emptyList(),
                 localInferenceAvailable = false,
             ),
             actions = UserSettingsHomeScreenActions(),
