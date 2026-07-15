@@ -885,8 +885,9 @@ fun PostProcessChip(
         PostProcessStatus.ERROR -> Icons.Rounded.Error
     }
 
-    NexaraGlassCard(
-        shape = RoundedCornerShape(50),
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier
     ) {
         Row(

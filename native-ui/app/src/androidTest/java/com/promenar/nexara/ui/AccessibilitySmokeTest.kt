@@ -1,7 +1,7 @@
 package com.promenar.nexara.ui
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.Column
-import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,22 +12,31 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
-import android.content.res.Configuration
 import com.promenar.nexara.R
-import java.util.Locale
+import com.promenar.nexara.data.model.PostProcessStatus
+import com.promenar.nexara.data.model.PostProcessTask
+import com.promenar.nexara.data.model.PostProcessType
+import com.promenar.nexara.data.model.TaskState
+import com.promenar.nexara.data.model.TaskStep
+import com.promenar.nexara.domain.repository.ITaskRepository
+import com.promenar.nexara.domain.repository.PlanPatchOp
 import com.promenar.nexara.ui.chat.ChatApprovalLiveRegion
 import com.promenar.nexara.ui.chat.ChatInputBar
 import com.promenar.nexara.ui.chat.ChatScreenActions
 import com.promenar.nexara.ui.chat.ChatScreenContent
 import com.promenar.nexara.ui.chat.ChatScreenState
 import com.promenar.nexara.ui.chat.GenerationStatus
+import com.promenar.nexara.ui.chat.PostProcessChip
+import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.ui.rag.DocEditorFailureCode
@@ -38,6 +47,9 @@ import com.promenar.nexara.ui.rag.DocEditorScreenState
 import com.promenar.nexara.ui.rag.DocEditorUiState
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
+import java.util.Locale
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -288,5 +300,84 @@ class AccessibilitySmokeTest {
         val chinese = resourcesFor("zh-CN")
         assertTrue(chinese.getString(R.string.nav_tab_chat).contains("对话"))
         assertTrue(chinese.getString(R.string.chat_status_thinking).contains("思考"))
+    }
+
+    @Test
+    fun postProcessChipAndTaskFloatingPanelAccessibilityCoverage() {
+        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
+        val postProcessLabel = resources.getString(R.string.chat_postprocess_summary)
+
+        val fakeTask = PostProcessTask(
+            id = "task-1",
+            type = PostProcessType.AUTO_SUMMARY,
+            status = PostProcessStatus.RUNNING,
+        )
+
+        val rootNode = TaskStep(
+            id = "step-1",
+            title = "分析文档结构",
+            status = "doing",
+            children = listOf(
+                TaskStep(id = "step-1-1", title = "提取大纲", status = "done"),
+                TaskStep(id = "step-1-2", title = "生成脑图", status = "pending"),
+            ),
+        )
+        val fakeRepo = object : ITaskRepository {
+            override fun observeActiveTree(sessionId: String): Flow<List<TaskStep>> =
+                flowOf(listOf(rootNode))
+
+            override suspend fun initializePlan(
+                sessionId: String,
+                goal: String,
+                tree: List<TaskStep>,
+            ): TaskState = TaskState()
+
+            override suspend fun updatePlan(
+                sessionId: String,
+                operations: List<PlanPatchOp>,
+            ): TaskState = TaskState()
+
+            override suspend fun getPlan(sessionId: String): TaskState? = null
+            override suspend fun dropPlan(sessionId: String, reason: String) {}
+            override fun deriveParentStatus(children: List<TaskStep>): String = "doing"
+            override fun countLeafProgress(steps: List<TaskStep>): Pair<Int, Int> = 1 to 2
+        }
+
+        composeRule.setContent {
+            NexaraTheme {
+                Column {
+                    PostProcessChip(
+                        task = fakeTask,
+                        onRemove = {},
+                    )
+                    TaskFloatingPanel(
+                        sessionId = "session-1",
+                        taskRepo = fakeRepo,
+                        goalTitle = "分析文档结构",
+                    )
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText(postProcessLabel).assertIsDisplayed()
+
+        composeRule.onNodeWithText("🎯 分析文档结构", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("1/2 步骤 · 50%", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("提取大纲", substring = true).assertIsDisplayed()
+
+        val headerRow = composeRule.onNodeWithTag("task_floating_panel_header")
+        headerRow.assertExists()
+        headerRow.assertHasClickAction()
+        headerRow.assertHeightIsAtLeast(48.dp)
+
+        headerRow.performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("提取大纲", substring = true).assertDoesNotExist()
+
+        headerRow.performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("提取大纲", substring = true).assertIsDisplayed()
     }
 }

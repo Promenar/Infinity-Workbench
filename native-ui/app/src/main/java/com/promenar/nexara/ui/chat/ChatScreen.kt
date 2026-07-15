@@ -345,8 +345,6 @@ fun ChatScreenContent(
         }
     }
 
-
-
     Scaffold(
         containerColor = NexaraColors.CanvasBackground,
         topBar = {
@@ -399,81 +397,81 @@ fun ChatScreenContent(
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                    // pipelineGroups 已在外部通过 remember 计算，此处直接引用
-                    items(pipelineGroups.size, key = { pipelineGroups[it].messages.first().id }) { idx ->
-                        val group = pipelineGroups[idx]
-                        val isGeneratingGroup = idx == pipelineGroups.lastIndex && uiState.isGenerating
+                // pipelineGroups 已在外部通过 remember 计算，此处直接引用
+                items(pipelineGroups.size, key = { pipelineGroups[it].messages.first().id }) { idx ->
+                    val group = pipelineGroups[idx]
+                    val isGeneratingGroup = idx == pipelineGroups.lastIndex && uiState.isGenerating
 
-                        if (!group.isUser) {
-                            val ragActiveMsg = selectRagActiveMessage(group.assistantMessages)
+                    if (!group.isUser) {
+                        val ragActiveMsg = selectRagActiveMessage(group.assistantMessages)
 
-                            if (ragActiveMsg != null) {
-                                val targetPhases = if (isGeneratingGroup) ragPhases else emptyList()
-                                val hasRagArtifacts = ragActiveMsg.hasRagArtifacts()
-                                val ragLoading = isGeneratingGroup && targetPhases.any { it.status == PhaseStatus.ACTIVE }
-                                val ragComplete = targetPhases.isNotEmpty() && targetPhases.all { it.status == PhaseStatus.DONE }
-                                if (targetPhases.isNotEmpty() || hasRagArtifacts) {
-                                    RagProgressCard(
-                                        phases = targetPhases,
-                                        references = ragActiveMsg.ragReferences,
-                                        kgPaths = ragActiveMsg.kgPaths,
-                                        citations = ragActiveMsg.citations,
-                                        isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true
-                                    )
-                                }
-                            }
-                        }
-
-                        PipelineBubble(
-                            group = group,
-                            isGenerating = isGeneratingGroup,
-                            status = uiState.status,
-                            streamingContent = uiState.streamingContent,
-                            fontSize = uiState.session?.options?.fontSize ?: 13,
-                            onContentChange = { newContent ->
-                                group.assistantMessages.lastOrNull()?.let { lastMsg ->
-                                    actions.onContentChange(lastMsg.id, newContent)
-                                }
-                            },
-                            onCopy = { text ->
-                                actions.onCopy(text)
-                            },
-                            onDelete = actions.onDeleteMessage,
-                            onRegenerate = actions.onRegenerateMessage,
-                        )
-                    }
-
-                    if (compressionState.isCompressing || compressionState.result != null) {
-                        item(key = "summary_card") {
-                            SummaryCard(
-                                isCompressing = compressionState.isCompressing,
-                                progress = compressionState.progress,
-                                detail = compressionState.detail,
-                                result = compressionState.result
-                            )
-                        }
-                    }
-
-                    uiState.approvalRequest?.let { request ->
-                        item(key = "approval_request") {
-                            ChatApprovalLiveRegion {
-                                ApprovalCard(
-                                    toolName = request.toolName ?: stringResource(R.string.chat_approval_unknown_tool),
-                                    description = approvalDescription(
-                                        request,
-                                        approvalArgumentsLabel,
-                                        approvalFallback,
-                                    ),
-                                    onApprove = actions.onApprove,
-                                    onDecline = actions.onDecline,
+                        if (ragActiveMsg != null) {
+                            val targetPhases = if (isGeneratingGroup) ragPhases else emptyList()
+                            val hasRagArtifacts = ragActiveMsg.hasRagArtifacts()
+                            val ragLoading = isGeneratingGroup && targetPhases.any { it.status == PhaseStatus.ACTIVE }
+                            val ragComplete = targetPhases.isNotEmpty() && targetPhases.all { it.status == PhaseStatus.DONE }
+                            if (targetPhases.isNotEmpty() || hasRagArtifacts) {
+                                RagProgressCard(
+                                    phases = targetPhases,
+                                    references = ragActiveMsg.ragReferences,
+                                    kgPaths = ragActiveMsg.kgPaths,
+                                    citations = ragActiveMsg.citations,
+                                    isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true
                                 )
                             }
                         }
                     }
 
-                    item(key = "bottom_spacer") {
-                        Spacer(modifier = Modifier.height(16.dp))
+                    PipelineBubble(
+                        group = group,
+                        isGenerating = isGeneratingGroup,
+                        status = uiState.status,
+                        streamingContent = uiState.streamingContent,
+                        fontSize = uiState.session?.options?.fontSize ?: 13,
+                        onContentChange = { newContent ->
+                            group.assistantMessages.lastOrNull()?.let { lastMsg ->
+                                actions.onContentChange(lastMsg.id, newContent)
+                            }
+                        },
+                        onCopy = { text ->
+                            actions.onCopy(text)
+                        },
+                        onDelete = actions.onDeleteMessage,
+                        onRegenerate = actions.onRegenerateMessage,
+                    )
+                }
+
+                if (compressionState.isCompressing || compressionState.result != null) {
+                    item(key = "summary_card") {
+                        SummaryCard(
+                            isCompressing = compressionState.isCompressing,
+                            progress = compressionState.progress,
+                            detail = compressionState.detail,
+                            result = compressionState.result
+                        )
                     }
+                }
+
+                uiState.approvalRequest?.let { request ->
+                    item(key = "approval_request") {
+                        ChatApprovalLiveRegion {
+                            ApprovalCard(
+                                toolName = request.toolName ?: stringResource(R.string.chat_approval_unknown_tool),
+                                description = approvalDescription(
+                                    request,
+                                    approvalArgumentsLabel,
+                                    approvalFallback,
+                                ),
+                                onApprove = actions.onApprove,
+                                onDecline = actions.onDecline,
+                            )
+                        }
+                    }
+                }
+
+                item(key = "bottom_spacer") {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
 
             // ── Skeleton 与其他 Overlay 需在 LazyColumn 之上但独立于输入框 ──
@@ -492,149 +490,152 @@ fun ChatScreenContent(
                 ChatSkeleton(modifier = Modifier.fillMaxSize())
             }
 
-                // ── 单层稳定 Material 3 composer ──
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .widthIn(max = 960.dp)
-                        .fillMaxWidth()
-                        .onSizeChanged { composerHeightPx = it.height }
-                        .testTag(UiTags.CHAT_COMPOSER),
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = NexaraElevation.Level0,
-                    shadowElevation = NexaraElevation.Level0,
+            // ── 单层稳定 Material 3 composer ──
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .widthIn(max = 960.dp)
+                    .fillMaxWidth()
+                    .onSizeChanged { composerHeightPx = it.height }
+                    .testTag(UiTags.CHAT_COMPOSER),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = NexaraElevation.Level0,
+                shadowElevation = NexaraElevation.Level0,
+            ) {
+                Column(
+                    modifier = Modifier.padding(
+                        horizontal = NexaraSpacing.Large,
+                        vertical = NexaraSpacing.Small,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                 ) {
-                    Column(
-                        modifier = Modifier.padding(
-                            horizontal = NexaraSpacing.Large,
-                            vertical = NexaraSpacing.Small,
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                    ) {
-                        val modelDisplayName = remember(uiState.session?.modelId) {
-                            uiState.session?.modelId?.let { id ->
-                                findModelSpec(id)?.note ?: id
-                            } ?: ""
-                        }
-                        ChatInputTopBar(
-                            modelName = modelDisplayName,
-                            tokenState = tokenState,
-                            postProcessTasks = state.postProcessTasks,
-                            onRemovePostProcessTask = actions.onRemovePostProcessTask,
-                            onModelClick = actions.onOpenSettings,
-                            onManualSummary = actions.onManualSummary,
-                        )
+                    val modelDisplayName = remember(uiState.session?.modelId) {
+                        uiState.session?.modelId?.let { id ->
+                            findModelSpec(id)?.note ?: id
+                        } ?: ""
+                    }
+                    ChatInputTopBar(
+                        modelName = modelDisplayName,
+                        tokenState = tokenState,
+                        postProcessTasks = state.postProcessTasks,
+                        onRemovePostProcessTask = actions.onRemovePostProcessTask,
+                        onModelClick = actions.onOpenSettings,
+                        onManualSummary = actions.onManualSummary,
+                    )
 
-                        if (selectedImageUris.isNotEmpty()) {
-                            LazyRow(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                items(selectedImageUris.size) { index ->
-                                    val uri = selectedImageUris[index]
-                                    Box(modifier = Modifier.size(64.dp).clip(RoundedCornerShape(8.dp))) {
-                                        coil3.compose.AsyncImage(
-                                            model = uri,
-                                            contentDescription = stringResource(R.string.chat_cd_selected_image),
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop
+                    if (selectedImageUris.isNotEmpty()) {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(selectedImageUris.size) { index ->
+                                val uri = selectedImageUris[index]
+                                Box(modifier = Modifier.size(64.dp).clip(RoundedCornerShape(8.dp))) {
+                                    coil3.compose.AsyncImage(
+                                        model = uri,
+                                        contentDescription = stringResource(R.string.chat_cd_selected_image),
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                    IconButton(
+                                        onClick = { actions.onRemoveImage(index) },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Close,
+                                            stringResource(R.string.chat_cd_remove_image),
+                                            tint = Color.White,
+                                            modifier = Modifier.size(18.dp),
                                         )
-                                        IconButton(
-                                            onClick = { actions.onRemoveImage(index) },
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Rounded.Close,
-                                                stringResource(R.string.chat_cd_remove_image),
-                                                tint = Color.White,
-                                                modifier = Modifier.size(18.dp),
-                                            )
-                                        }
                                     }
                                 }
                             }
                         }
+                    }
 
-                        // 任务浮动面板
-                        taskPanel()
+                    // 任务浮动面板
+                    taskPanel()
 
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            ChatInputBar(
-                                text = inputText,
-                                placeholder = if (agentName.isNotBlank()) stringResource(R.string.chat_input_placeholder, agentName) else stringResource(R.string.chat_input_placeholder_default),
-                                onTextChange = actions.onTextChange,
-                                onSend = {
-                                    if (inputText.isNotBlank() || selectedImageUris.isNotEmpty()) {
-                                        val textToSend = inputText.ifBlank { describeImagePrompt }
-                                        actions.onSend(textToSend, selectedImageUris)
-                                    }
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        ChatInputBar(
+                            text = inputText,
+                            placeholder = if (agentName.isNotBlank()) {
+                                stringResource(R.string.chat_input_placeholder, agentName)
+                            } else {
+                                stringResource(R.string.chat_input_placeholder_default)
+                            },
+                            onTextChange = actions.onTextChange,
+                            onSend = {
+                                if (inputText.isNotBlank() || selectedImageUris.isNotEmpty()) {
+                                    val textToSend = inputText.ifBlank { describeImagePrompt }
+                                    actions.onSend(textToSend, selectedImageUris)
+                                }
                             },
                             status = uiState.status,
                             onStop = actions.onStop,
                             isModelSelected = uiState.session?.modelId?.isNotBlank() == true,
                             onModelHint = { showModelHint = true },
                             onPickImage = actions.onPickImages,
-                            hasImages = selectedImageUris.isNotEmpty()
-                            )
+                            hasImages = selectedImageUris.isNotEmpty(),
+                        )
 
-                            // ── 模型未选择提示气泡 ──
-                            androidx.compose.animation.AnimatedVisibility(
-                                visible = showModelHint,
-                                enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
-                                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom),
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .offset(y = (-45).dp, x = (-10).dp)
+                        // ── 模型未选择提示气泡 ──
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = showModelHint,
+                            enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
+                            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom),
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(y = (-45).dp, x = (-10).dp)
+                        ) {
+                            Surface(
+                                color = NexaraColors.Primary,
+                                shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 12.dp, bottomEnd = 2.dp),
+                                shadowElevation = 8.dp
                             ) {
-                                Surface(
-                                    color = NexaraColors.Primary,
-                                    shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 12.dp, bottomEnd = 2.dp),
-                                    shadowElevation = 8.dp
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.chat_hint_select_model),
-                                        style = NexaraTypography.labelMedium,
-                                        color = NexaraColors.OnPrimary,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                                    )
-                                }
+                                Text(
+                                    text = stringResource(R.string.chat_hint_select_model),
+                                    style = NexaraTypography.labelMedium,
+                                    color = NexaraColors.OnPrimary,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                )
                             }
                         }
                     }
                 }
-            
-                AnimatedVisibility(
-                    visible = isUserScrolledAway && (!uiState.isGenerating || !autoFollowEnabled),
-                    enter = fadeIn(),
-                    exit = fadeOut(),
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = composerInsets.fabBottom)
+            }
+
+            AnimatedVisibility(
+                visible = isUserScrolledAway && (!uiState.isGenerating || !autoFollowEnabled),
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = composerInsets.fabBottom)
+            ) {
+                FloatingActionButton(
+                    onClick = {
+                        autoFollowEnabled = true
+                        scope.launch {
+                            scrollToStreamingTail()
+                        }
+                    },
+                    containerColor = NexaraColors.SurfaceHigh,
+                    contentColor = NexaraColors.Primary,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .testTag("chat_scroll_bottom")
                 ) {
-                    FloatingActionButton(
-                        onClick = {
-                            autoFollowEnabled = true
-                            scope.launch {
-                                scrollToStreamingTail()
-                            }
-                        },
-                        containerColor = NexaraColors.SurfaceHigh,
-                        contentColor = NexaraColors.Primary,
-                        shape = CircleShape,
-                        modifier = Modifier
-                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                            .testTag("chat_scroll_bottom")
-                    ) {
-                        Icon(
-                            Icons.Rounded.ArrowDownward,
-                            stringResource(R.string.chat_cd_scroll_bottom),
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
+                    Icon(
+                        Icons.Rounded.ArrowDownward,
+                        stringResource(R.string.chat_cd_scroll_bottom),
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
             }
         }
-
+    }
 }
 
 private fun approvalDescription(

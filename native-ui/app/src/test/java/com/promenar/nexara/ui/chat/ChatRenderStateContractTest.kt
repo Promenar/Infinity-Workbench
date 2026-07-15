@@ -1,11 +1,11 @@
 package com.promenar.nexara.ui.chat
 
 import com.google.common.truth.Truth.assertThat
-import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.domain.generation.GenerationFailure
 import com.promenar.nexara.domain.generation.GenerationFailureCode
+import com.promenar.nexara.ui.testing.UiTags
 import java.io.File
 import org.junit.Test
 
@@ -103,5 +103,31 @@ class ChatRenderStateContractTest {
         )
 
         assertThat(chatRenderStateTag(state)).isEqualTo(UiTags.CHAT_STATE_ERROR)
+    }
+
+    @Test
+    fun `PostProcessChip与TaskFloatingPanel不包含旧Glass组件和硬编码圆角`() {
+        val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val inlineComponentsSource = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/ChatInlineComponents.kt",
+        ).readText()
+        val taskFloatingPanelSource = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/components/TaskFloatingPanel.kt",
+        ).readText()
+        val postProcessChipSource = inlineComponentsSource
+            .substringAfter("fun PostProcessChip(")
+            .substringBefore("\n@Composable\nfun SummaryCard(")
+
+        assertThat(postProcessChipSource).doesNotContain("NexaraGlassCard")
+        assertThat(postProcessChipSource).doesNotContain("GlassSurface")
+        assertThat(postProcessChipSource).doesNotContain("GlassBorder")
+        assertThat(postProcessChipSource).doesNotContain("RoundedCornerShape(50)")
+
+        assertThat(taskFloatingPanelSource).doesNotContain("NexaraGlassCard")
+        assertThat(taskFloatingPanelSource).doesNotContain("GlassSurface")
+        assertThat(taskFloatingPanelSource).doesNotContain("GlassBorder")
+        assertThat(taskFloatingPanelSource).doesNotContain("RoundedCornerShape(16.dp)")
     }
 }
