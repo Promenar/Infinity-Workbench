@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -447,7 +448,7 @@ private fun buildPipelineSteps(messages: List<Message>): List<PipelineStep> {
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  InlineThinkingRow — 紧凑思考指示器（气泡内联版本）
+//  ThinkingTrace — 紧凑思考指示器（气泡内联版本）
 // ─────────────────────────────────────────────────────────────────
 
 @Composable
@@ -475,6 +476,10 @@ internal fun ThinkingTrace(
         if (isGenerating) streamingReasoningPreview(reasoning) else reasoning
     }
     val targetFontSize = (fontSize - 2).coerceAtLeast(10)
+    val expansionStateDescription = stringResource(
+        if (internalExpanded) R.string.common_state_expanded
+        else R.string.common_state_collapsed
+    )
 
     Column(
         modifier = modifier
@@ -489,6 +494,7 @@ internal fun ThinkingTrace(
                     collapsePending = false
                     internalExpanded = !internalExpanded
                 }
+                .semantics { stateDescription = expansionStateDescription }
                 .testTag(UiTags.CHAT_THINKING_TOGGLE),
             color = MaterialTheme.colorScheme.surfaceContainerLow,
             shape = MaterialTheme.shapes.medium

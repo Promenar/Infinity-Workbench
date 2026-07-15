@@ -44,6 +44,8 @@
     <string name="common_cd_clear">Clear</string>
     <string name="common_cd_collapse">Collapse</string>
     <string name="common_cd_expand">Expand</string>
+    <string name="common_state_collapsed">Collapsed</string>
+    <string name="common_state_expanded">Expanded</string>
     <string name="common_cd_navigate">Navigate</string>
     <string name="common_cd_pin">Pin</string>
     <string name="common_cd_unpin">Unpin</string>

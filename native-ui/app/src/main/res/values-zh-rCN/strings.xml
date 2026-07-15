@@ -44,6 +44,8 @@
     <string name="common_cd_clear">清除</string>
     <string name="common_cd_collapse">收起</string>
     <string name="common_cd_expand">展开</string>
+    <string name="common_state_collapsed">已折叠</string>
+    <string name="common_state_expanded">已展开</string>
     <string name="common_cd_navigate">导航</string>
     <string name="common_cd_pin">置顶</string>
     <string name="common_cd_unpin">取消置顶</string>
