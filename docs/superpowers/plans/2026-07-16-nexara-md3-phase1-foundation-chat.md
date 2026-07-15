@@ -266,23 +266,20 @@ val NexaraShapes = Shapes(
 )
 ```
 
-`Type.kt` 使用真实名称，并让旧名称暂时成为兼容别名，避免扩大首阶段改动面：
+`Type.kt` 使用真实名称，并让旧名称暂时成为无弃用警告的兼容别名，避免扩大首阶段改动面；普通辅助文案继续使用系统无衬线，只有模型 ID、Token 与代码在局部显式使用等宽字体：
 
 ```kotlin
 val NexaraSans = FontFamily.SansSerif
 val NexaraMonospace = FontFamily.Monospace
 
-@Deprecated("使用 NexaraSans")
 val Manrope = NexaraSans
 
-@Deprecated("使用 NexaraSans")
 val Inter = NexaraSans
 
-@Deprecated("使用 NexaraMonospace")
 val SpaceGrotesk = NexaraMonospace
 ```
 
-将 `NexaraTypography` 内部的新引用替换成 `NexaraSans` / `NexaraMonospace`；字号、行高和字体粗细保持现状，避免视觉与可读性同时产生不可归因变化。
+将 `NexaraTypography` 内部的新引用替换成 `NexaraSans`，包括 `bodySmall`；需要等宽的模型 ID、Token 与代码片段在组件局部显式使用 `NexaraMonospace`。字号、行高和字体粗细保持现状，避免视觉与可读性同时产生不可归因变化。
 
 - [ ] **Step 6: 验证主题测试与编译**
 
