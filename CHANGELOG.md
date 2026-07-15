@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 重设计第一阶段：主题基线与主会话母版（2026-07-16）
+
+- **稳定技术基线**：Compose BOM 升级到 `2026.06.00`，Material 3 使用稳定版 `1.4.0`；统一深色 edge-to-edge 色阶、形状、间距与 elevation 令牌，不引入 Alpha Expressive API。
+- **主会话视觉母版**：会话页改为低层级 MD3 表面、tonal 用户消息、全宽思考轨迹、正文直排、单层 composer 与紧凑操作胶囊；RAG 进度、摘要、审批卡和 Token 详情菜单移除嵌套玻璃壳。
+- **交互与无障碍**：输入框、模型/Token 选择器、摘要展开与助手长按区保持至少 48dp 目标；输入框同时通过可聚焦输入、IME 回退和 2× 字体不裁切验证；长模型 ID 单行省略并保留行尾时间戳。
+- **验证结果**：36/36 截图基线、完整 JVM/Lint/Debug/deviceTest 构建门禁、Pixel 7 API 36 的 124 项常规设备套件（3 项按设计跳过）及 2 项逐次 force-stop 冷启动测试全部通过；独立最终复核结论为无 P0/P1。
+- **阶段边界**：本阶段只确立全站主题与聊天视觉母版；RAG 详情、设置、Provider/模型管理、资源管理器等管理面继续在后续阶段逐页迁移，当前不宣称全站视觉改造完成。
+
 ### v0.2-beta 发行候选收口（2026-07-13）
 
 > 当前状态：代码与发行文档正在集成；完整设备/截图矩阵、真实 API 四模型 smoke、分支 Android CI 及稳定证书签名 R8 APK 的 API 35/36 冷安装已通过。GitHub 可验证 tag、签名候选真机 TalkBack/人工业务验收和 GitHub Release 仍待关闭。以下条目描述已经落地并有源码或专项测试证据的变更，不代表版本已经发布。
