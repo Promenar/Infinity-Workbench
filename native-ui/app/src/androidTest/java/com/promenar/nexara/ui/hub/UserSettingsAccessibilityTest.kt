@@ -11,17 +11,23 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.R
@@ -170,6 +176,106 @@ class UserSettingsAccessibilityTest {
             .assertIsSelected()
         com.google.common.truth.Truth.assertThat(selectedTab)
             .isEqualTo(SettingsTab.PROVIDER)
+    }
+
+    @Test
+    fun appLanguageEntryDispatchesRealDialogAction() {
+        val opened = AtomicBoolean(false)
+
+        rule.setContent {
+            NexaraTheme {
+                UserSettingsHomeScreenContent(
+                    state = UserSettingsHomeScreenState(selectedTab = SettingsTab.APP),
+                    actions = UserSettingsHomeScreenActions(
+                        onShowLanguageDialog = { opened.set(true) },
+                    ),
+                )
+            }
+        }
+
+        rule.onNodeWithText(resources.getString(R.string.settings_language))
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        rule.waitForIdle()
+        com.google.common.truth.Truth.assertThat(opened.get()).isTrue()
+    }
+
+    @Test
+    fun languageOptionExposesRadioButtonSelectionAnd48DpTarget() {
+        val selected = AtomicBoolean(false)
+
+        rule.setContent {
+            NexaraTheme {
+                LanguageOption(
+                    label = "中文",
+                    isSelected = true,
+                    onSelect = { selected.set(true) },
+                )
+            }
+        }
+
+        rule.onNodeWithText("中文")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
+            .assertIsSelected()
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        rule.waitForIdle()
+        com.google.common.truth.Truth.assertThat(selected.get()).isTrue()
+    }
+
+    @Test
+    fun appSettingsLongSubtitleReflowsAt2xAndAboutRemainsReachable() {
+        val longModelName =
+            "MiniMax-M3 multimodal reasoning and tool-calling production model with extended context"
+        val aboutOpened = AtomicBoolean(false)
+
+        rule.setContent {
+            val currentDensity = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(
+                    density = currentDensity.density,
+                    fontScale = 2f,
+                ),
+            ) {
+                NexaraTheme {
+                    Box(modifier = androidx.compose.ui.Modifier.width(360.dp)) {
+                        UserSettingsHomeScreenContent(
+                            state = UserSettingsHomeScreenState(
+                                selectedTab = SettingsTab.APP,
+                                summaryModelName = longModelName,
+                                imageModelName = "FLUX.1 Schnell",
+                                embeddingModelName = "BAAI/bge-m3",
+                                rerankModelName = "Cohere Rerank v3",
+                                versionName = "ACCESSIBILITY-ABOUT-DESTINATION",
+                            ),
+                            actions = UserSettingsHomeScreenActions(
+                                onAboutClick = { aboutOpened.set(true) },
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+        rule.onNodeWithText(longModelName)
+            .assertHeightIsAtLeast(96.dp)
+
+        rule.onNodeWithTag(UiTags.SETTINGS_APP_LIST)
+            .performScrollToNode(
+                hasText("ACCESSIBILITY-ABOUT-DESTINATION", substring = true),
+            )
+
+        rule.onNodeWithText("ACCESSIBILITY-ABOUT-DESTINATION", substring = true)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .performClick()
+
+        rule.waitForIdle()
+        com.google.common.truth.Truth.assertThat(aboutOpened.get()).isTrue()
     }
 
     @Test

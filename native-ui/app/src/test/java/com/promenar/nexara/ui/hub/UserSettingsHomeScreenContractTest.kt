@@ -22,6 +22,84 @@ class UserSettingsHomeScreenContractTest {
         "src/main/java/com/promenar/nexara/ui/testing/UiTags.kt",
     )
 
+    private fun sourceBlock(start: String, end: String): String =
+        screenSource.readText().substringAfter(start).substringBefore(end)
+
+    @Test
+    fun `app shell uses material small top bar and primary tab row`() {
+        val content = sourceBlock(
+            start = "internal fun UserSettingsHomeScreenContent(",
+            end = "internal fun TabBar(",
+        )
+        val tabs = sourceBlock(
+            start = "internal fun TabBar(",
+            end = "private fun AppSettingsContent(",
+        )
+
+        assertThat(content).contains("TopAppBar(")
+        assertThat(content).contains("MaterialTheme.typography.titleLarge")
+        assertThat(content).contains("MaterialTheme.colorScheme.surface")
+        assertThat(content).contains("NexaraSpacing.ScreenHorizontal")
+        assertThat(content).doesNotContain("NexaraColors.CanvasBackground.copy")
+        assertThat(content).doesNotContain("NexaraTypography.headlineLarge")
+        assertThat(content).doesNotContain("padding(horizontal = 20.dp)")
+
+        assertThat(tabs).contains("PrimaryTabRow(")
+        assertThat(tabs).contains("Tab(")
+        assertThat(tabs).contains("MaterialTheme.colorScheme")
+        assertThat(tabs).doesNotContain("animateColorAsState")
+        assertThat(tabs).doesNotContain("height(2.dp)")
+        assertThat(tabs).doesNotContain("NexaraColors")
+    }
+
+    @Test
+    fun `app settings are grouped into continuous material lists`() {
+        val app = sourceBlock(
+            start = "private fun AppSettingsContent(",
+            end = "internal fun GitHubProjectFooter(",
+        )
+
+        assertThat(app).contains("SettingsGroup(")
+        assertThat(app).contains("HorizontalDivider(")
+        assertThat(app).contains("settings_section_general")
+        assertThat(app).contains("settings_section_model_presets")
+        assertThat(app).contains("settings_section_knowledge")
+        assertThat(app).contains("settings_section_tools")
+        assertThat(app).contains("settings_section_data")
+        assertThat(app).contains("settings_section_about")
+        assertThat(app).contains("MaterialTheme.typography.titleSmall")
+        assertThat(app).doesNotContain("SettingsSectionHeader")
+        assertThat(app).doesNotContain("NexaraGlassCard")
+        assertThat(app).doesNotContain("verticalArrangement = Arrangement.spacedBy(8.dp)")
+    }
+
+    @Test
+    fun `profile and github footer use material roles without legacy glass or hardcoded type`() {
+        val profile = sourceBlock(
+            start = "private fun UserProfileHeader(",
+            end = "private fun AddProviderButton(",
+        )
+        val footer = sourceBlock(
+            start = "internal fun GitHubProjectFooter(",
+            end = "private fun ProviderSettingsContent(",
+        )
+
+        assertThat(profile).contains("Surface(")
+        assertThat(profile).contains("MaterialTheme.colorScheme.surfaceContainerLow")
+        assertThat(profile).contains("MaterialTheme.typography")
+        assertThat(profile).contains("NexaraSpacing.MinimumTouchTarget")
+        assertThat(profile).doesNotContain("NexaraGlassCard")
+        assertThat(profile).doesNotContain("Brush.linearGradient")
+        assertThat(profile).doesNotContain("NexaraColors")
+
+        assertThat(footer).contains("MaterialTheme.typography")
+        assertThat(footer).contains("MaterialTheme.colorScheme")
+        assertThat(footer).doesNotContain("fontSize = 11.sp")
+        assertThat(footer).doesNotContain("fontSize = 12.sp")
+        assertThat(footer).doesNotContain("NexaraTypography")
+        assertThat(footer).doesNotContain("SpaceGrotesk")
+    }
+
     @Test
     fun `content seam exposes state actions and content without view model or android side effects`() {
         val source = screenSource.readText()

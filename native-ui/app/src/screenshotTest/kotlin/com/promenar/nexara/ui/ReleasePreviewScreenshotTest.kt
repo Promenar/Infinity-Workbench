@@ -1083,6 +1083,36 @@ fun userSettingsAppChineseTabletReleasePreview() {
 
 @PreviewTest
 @Preview(
+    name = "User settings app Chinese compact large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun userSettingsAppChineseCompactLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        UserSettingsHomeScreenContent(
+            state = UserSettingsHomeScreenState(
+                selectedTab = SettingsTab.APP,
+                userName = "黎明",
+                tokenCost = "¥12.46",
+                language = "zh",
+                summaryModelName = "MiniMax-M3 多模态推理与工具调用增强版",
+                imageModelName = "FLUX.1 Schnell",
+                embeddingModelName = "BAAI/bge-m3",
+                rerankModelName = "Cohere Rerank v3",
+                versionName = "0.2-beta",
+                localInferenceAvailable = false,
+            ),
+            actions = UserSettingsHomeScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
     name = "User settings provider English large font",
     widthDp = PHONE_WIDTH_DP,
     heightDp = PHONE_HEIGHT_DP,
