@@ -596,15 +596,18 @@ fun ChatScreenContent(
                                 .offset(y = (-45).dp, x = (-10).dp)
                         ) {
                             Surface(
-                                color = NexaraColors.Primary,
-                                shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 12.dp, bottomEnd = 2.dp),
-                                shadowElevation = 8.dp
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = MaterialTheme.shapes.medium,
+                                shadowElevation = NexaraElevation.Level3,
                             ) {
                                 Text(
                                     text = stringResource(R.string.chat_hint_select_model),
                                     style = NexaraTypography.labelMedium,
-                                    color = NexaraColors.OnPrimary,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(
+                                        horizontal = NexaraSpacing.Medium,
+                                        vertical = NexaraSpacing.Small,
+                                    ),
                                 )
                             }
                         }
@@ -802,44 +805,35 @@ private fun TokenIndicator(
         )
 
         if (showTooltip) {
-            MaterialTheme(
-                shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(24.dp))
+            DropdownMenu(
+                expanded = showTooltip,
+                onDismissRequest = { showTooltip = false },
+                offset = DpOffset(x = (-60).dp, y = (-8).dp),
+                modifier = Modifier.width(220.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                tonalElevation = NexaraElevation.Level2,
             ) {
-                DropdownMenu(
-                    expanded = showTooltip,
-                    onDismissRequest = { showTooltip = false },
-                    offset = DpOffset(x = (-60).dp, y = (-8).dp),
-                    modifier = Modifier.background(Color.Transparent).width(220.dp)
-                ) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                        shape = MaterialTheme.shapes.large,
-                        tonalElevation = NexaraElevation.Level2,
-                    ) {
-                        Column(modifier = Modifier.padding(NexaraSpacing.Large)) {
-                            Text(
-                                stringResource(R.string.chat_context_usage_title),
-                                style = NexaraTypography.titleSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            Spacer(modifier = Modifier.height(NexaraSpacing.Medium))
-                            TokenDetailRow(stringResource(R.string.chat_context_label_system), state.systemTokens)
-                            TokenDetailRow(stringResource(R.string.chat_context_label_summary), state.summaryTokens)
-                            TokenDetailRow(stringResource(R.string.chat_context_label_active), state.activeTokens)
-                            TokenDetailRow(stringResource(R.string.chat_context_label_rag), state.ragTokens)
-                            HorizontalDivider(modifier = Modifier.padding(vertical = NexaraSpacing.Medium))
+                Column(modifier = Modifier.padding(NexaraSpacing.Large)) {
+                    Text(
+                        stringResource(R.string.chat_context_usage_title),
+                        style = NexaraTypography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(modifier = Modifier.height(NexaraSpacing.Medium))
+                    TokenDetailRow(stringResource(R.string.chat_context_label_system), state.systemTokens)
+                    TokenDetailRow(stringResource(R.string.chat_context_label_summary), state.summaryTokens)
+                    TokenDetailRow(stringResource(R.string.chat_context_label_active), state.activeTokens)
+                    TokenDetailRow(stringResource(R.string.chat_context_label_rag), state.ragTokens)
+                    HorizontalDivider(modifier = Modifier.padding(vertical = NexaraSpacing.Medium))
 
-                            Button(
-                                onClick = {
-                                    onManualSummary()
-                                    showTooltip = false
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text(stringResource(R.string.chat_context_btn_compress))
-                            }
-                        }
+                    Button(
+                        onClick = {
+                            onManualSummary()
+                            showTooltip = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.chat_context_btn_compress))
                     }
                 }
             }
@@ -1048,27 +1042,33 @@ fun ChatInputBar(
                 onValueChange = onTextChange,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(vertical = 8.dp)
-                    .then(
+                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                    .semantics {
                         if (placeholder.isNotBlank()) {
-                            Modifier.semantics { contentDescription = placeholder }
-                        } else {
-                            Modifier
+                            contentDescription = placeholder
                         }
-                    )
+                    }
                     .testTag(UiTags.CHAT_INPUT),
                 textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnBackground),
                 cursorBrush = SolidColor(NexaraColors.Primary),
                 enabled = !isGenerating,
                 decorationBox = { innerTextField ->
-                    if (text.isEmpty()) {
-                        Text(
-                            text = placeholder,
-                            style = NexaraTypography.bodyMedium,
-                            color = NexaraColors.OnSurfaceVariant
-                        )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                            .padding(vertical = NexaraSpacing.Small),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (text.isEmpty()) {
+                            Text(
+                                text = placeholder,
+                                style = NexaraTypography.bodyMedium,
+                                color = NexaraColors.OnSurfaceVariant
+                            )
+                        }
+                        innerTextField()
                     }
-                    innerTextField()
                 }
             )
 

@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -252,7 +253,9 @@ fun PipelineBubble(
         val timestamp = remember(lastMsg.createdAt) { timeFormat.format(java.util.Date(lastMsg.createdAt)) }
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(top = 4.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp)
         ) {
             val metaStyle = NexaraTypography.labelSmall.copy(
                 color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
@@ -262,10 +265,18 @@ fun PipelineBubble(
                 Text(
                     text = lastMsg.modelId!!,
                     style = metaStyle,
-                    modifier = Modifier.padding(end = 8.dp)
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(text = timestamp, style = metaStyle)
+            Text(
+                text = timestamp,
+                style = metaStyle,
+                maxLines = 1
+            )
         }
     }
 
@@ -810,6 +821,7 @@ private fun ContentSegment(
             color = Color.Transparent,
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                 .combinedClickable(
                     onClick = {},
                     onLongClick = {

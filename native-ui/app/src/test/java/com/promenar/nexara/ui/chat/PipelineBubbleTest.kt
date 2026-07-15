@@ -124,4 +124,43 @@ class PipelineBubbleTest {
         assertThat(source).doesNotContain("private fun InlineThinkingRow(")
         assertThat(source).doesNotContain("import com.promenar.nexara.ui.common.NexaraGlassCard")
     }
+
+    @Test
+    fun `模型 ID 左对齐占满剩余宽度且超长时省略`() {
+        val moduleRoot = java.io.File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/PipelineBubble.kt",
+        ).readText()
+        val metadataRow = source
+            .substringAfter("// ── 元信息行（模型名 + 时间戳）──")
+            .substringBefore("// ── 错误信息 ──")
+        val modelText = metadataRow
+            .substringAfter("if (!lastMsg.modelId.isNullOrBlank())")
+            .substringBefore("text = timestamp")
+
+        assertThat(metadataRow).contains(".fillMaxWidth()")
+        assertThat(modelText).contains(".weight(1f)")
+        assertThat(modelText).contains("maxLines = 1")
+        assertThat(modelText).contains("overflow = TextOverflow.Ellipsis")
+    }
+
+    @Test
+    fun `助手短回答长按区保持最小触摸高度`() {
+        val moduleRoot = java.io.File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/PipelineBubble.kt",
+        ).readText()
+        val contentSegment = source
+            .substringAfter("private fun ContentSegment(")
+            .substringBefore("//  PipelineConnector")
+
+        assertThat(contentSegment).contains(
+            ".heightIn(min = NexaraSpacing.MinimumTouchTarget)\n" +
+                "                .combinedClickable(",
+        )
+    }
 }

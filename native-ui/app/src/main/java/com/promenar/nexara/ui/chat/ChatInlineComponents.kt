@@ -46,6 +46,8 @@ import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraColors
+import com.promenar.nexara.ui.theme.NexaraElevation
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 /**
@@ -440,13 +442,16 @@ fun RagProgressCard(
         }
     }
 
-    NexaraGlassCard(
+    Surface(
+        onClick = { showDetailsSheet = true },
         modifier = modifier
             .fillMaxWidth(0.7f)
-            .heightIn(min = 48.dp)
-            .padding(vertical = 4.dp)
-            .clickable(enabled = true) { showDetailsSheet = true },
-        shape = RoundedCornerShape(16.dp)
+            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+            .padding(vertical = NexaraSpacing.XSmall),
+        enabled = true,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = NexaraElevation.Level0
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -949,11 +954,13 @@ fun SummaryCard(
 ) {
     var isExpanded by remember { mutableStateOf(false) }
 
-    NexaraGlassCard(
+    Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        shape = RoundedCornerShape(24.dp)
+            .padding(vertical = NexaraSpacing.XSmall),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = NexaraElevation.Level0
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -1065,6 +1072,7 @@ fun SummaryCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                         .clip(RoundedCornerShape(8.dp))
                         .clickable { isExpanded = !isExpanded }
                         .padding(vertical = 4.dp),
@@ -1118,12 +1126,15 @@ fun ApprovalCard(
 ) {
     val accentColor = if (isExecuted) NexaraColors.Primary else NexaraColors.Tertiary
 
-    NexaraGlassCard(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
+            .padding(vertical = NexaraSpacing.Small)
             .testTag(UiTags.CHAT_APPROVAL_CARD),
-        shape = RoundedCornerShape(16.dp)
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = NexaraElevation.Level0,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
             Box(

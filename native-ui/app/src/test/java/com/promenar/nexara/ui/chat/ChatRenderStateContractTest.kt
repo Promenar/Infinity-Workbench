@@ -51,6 +51,52 @@ class ChatRenderStateContractTest {
     }
 
     @Test
+    fun `Token 明细使用单层 Material3 DropdownMenu`() {
+        val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/ChatScreen.kt",
+        ).readText()
+        val tokenIndicator = source
+            .substringAfter("private fun TokenIndicator(")
+            .substringBefore("private fun TokenDetailRow(")
+
+        assertThat(tokenIndicator).contains("DropdownMenu(")
+        assertThat(tokenIndicator).doesNotContain("shapes.copy(extraSmall")
+        assertThat(tokenIndicator).doesNotContain("RoundedCornerShape(24.dp)")
+        assertThat(tokenIndicator).doesNotContain("Surface(")
+        assertThat(tokenIndicator).doesNotContain("background(Color.Transparent)")
+        assertThat(tokenIndicator).contains(
+            "containerColor = MaterialTheme.colorScheme.surfaceContainer",
+        )
+        assertThat(tokenIndicator).contains("tonalElevation = NexaraElevation.Level2")
+        assertThat(tokenIndicator).contains("Modifier.padding(NexaraSpacing.Large)")
+    }
+
+    @Test
+    fun `未选模型提示使用 M3 语义容器和标准圆角层级`() {
+        val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/ChatScreen.kt",
+        ).readText()
+        val modelHint = source
+            .substringAfter("// ── 模型未选择提示气泡 ──")
+            .substringBefore("visible = isUserScrolledAway")
+
+        assertThat(modelHint).contains("shape = MaterialTheme.shapes.medium")
+        assertThat(modelHint).contains(
+            "color = MaterialTheme.colorScheme.primaryContainer",
+        )
+        assertThat(modelHint).contains("color = MaterialTheme.colorScheme.onPrimaryContainer")
+        assertThat(modelHint).contains("shadowElevation = NexaraElevation.Level3")
+        assertThat(modelHint).doesNotContain("RoundedCornerShape(")
+        assertThat(modelHint).doesNotContain("shadowElevation = 8.dp")
+    }
+
+    @Test
     fun `生成中追尾应随输入区实测高度变化重新校正且尊重用户上滚`() {
         val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
             if (root.resolve("src/main").isDirectory) root else root.resolve("app")
@@ -192,5 +238,44 @@ class ChatRenderStateContractTest {
         assertThat(taskFloatingPanelSource).doesNotContain("GlassSurface")
         assertThat(taskFloatingPanelSource).doesNotContain("GlassBorder")
         assertThat(taskFloatingPanelSource).doesNotContain("RoundedCornerShape(16.dp)")
+    }
+
+    @Test
+    fun `主会话内联卡片使用 Material3 语义表面而非旧玻璃容器`() {
+        val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/ChatInlineComponents.kt",
+        ).readText()
+        val cardSources = listOf(
+            source
+                .substringAfter("fun RagProgressCard(")
+                .substringBefore("\n@Composable\nprivate fun NeonMicroRail("),
+            source
+                .substringAfter("fun SummaryCard(")
+                .substringBefore("\n@Composable\nfun ApprovalCard("),
+            source.substringAfter("fun ApprovalCard("),
+        )
+
+        cardSources.forEach { cardSource ->
+            assertThat(cardSource).contains("Surface(")
+            assertThat(cardSource).doesNotContain("NexaraGlassCard")
+            assertThat(cardSource).doesNotContain("GlassSurface")
+            assertThat(cardSource).doesNotContain("GlassBorder")
+        }
+        assertThat(cardSources[0]).contains("MaterialTheme.colorScheme.surfaceContainerLow")
+        assertThat(cardSources[0]).contains("onClick = { showDetailsSheet = true }")
+        assertThat(cardSources[0]).contains(
+            "heightIn(min = NexaraSpacing.MinimumTouchTarget)",
+        )
+        assertThat(cardSources[1]).contains("MaterialTheme.colorScheme.surfaceContainerLow")
+        assertThat(cardSources[1]).contains("shape = MaterialTheme.shapes.large")
+        assertThat(cardSources[1]).doesNotContain("shape = MaterialTheme.shapes.extraLarge")
+        assertThat(cardSources[1]).contains(
+            "heightIn(min = NexaraSpacing.MinimumTouchTarget)",
+        )
+        assertThat(cardSources[2]).contains("MaterialTheme.colorScheme.surfaceContainer")
+        assertThat(cardSources[2]).contains("MaterialTheme.colorScheme.outlineVariant")
     }
 }

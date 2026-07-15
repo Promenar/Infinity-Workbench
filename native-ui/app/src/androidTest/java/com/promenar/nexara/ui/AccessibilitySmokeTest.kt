@@ -75,6 +75,8 @@ class AccessibilitySmokeTest {
         composeRule.onNodeWithTag(UiTags.CHAT_TOKEN_INDICATOR)
             .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag(UiTags.CHAT_INPUT)
+            .assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithTag(UiTags.CHAT_COMPOSER)
             .assertIsDisplayed()
     }
