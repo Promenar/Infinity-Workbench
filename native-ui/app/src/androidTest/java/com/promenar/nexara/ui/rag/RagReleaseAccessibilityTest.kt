@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.rag
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -8,18 +9,29 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.R
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.ui.chat.components.FileBatchOperationResult
+import com.promenar.nexara.ui.common.FileIndexStatus
+import com.promenar.nexara.ui.common.IndexStatusBadge
+import com.promenar.nexara.ui.common.KgStatus
+import com.promenar.nexara.ui.common.KgStatusIcon
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Rule
@@ -28,6 +40,57 @@ import org.junit.Test
 class RagReleaseAccessibilityTest {
     @get:Rule
     val rule = createComposeRule()
+
+    @Test
+    fun indexAndKnowledgeGraphStatusesExposeLocalizedTextAndStateDescriptions() {
+        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
+        val fileStatuses = listOf(
+            FileIndexStatus.INDEXED to R.string.rag_status_ready,
+            FileIndexStatus.INDEXING to R.string.rag_status_indexing,
+            FileIndexStatus.NOT_INDEXED to R.string.rag_status_pending,
+            FileIndexStatus.FAILED to R.string.rag_status_error,
+        )
+
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                Column {
+                    fileStatuses.forEach { (status, _) ->
+                        IndexStatusBadge(
+                            status = status,
+                            modifier = Modifier.testTag("file-status-${status.name}"),
+                        )
+                    }
+                    KgStatusIcon(
+                        status = KgStatus.NOT_STARTED,
+                        modifier = Modifier.testTag("kg-status-not-started"),
+                    )
+                }
+            }
+        }
+
+        fileStatuses.forEach { (status, labelResource) ->
+            val label = resources.getString(labelResource)
+            rule.onNodeWithTag("file-status-${status.name}")
+                .assertTextEquals(label)
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.StateDescription,
+                        label,
+                    ),
+                )
+        }
+
+        val graphDescription = resources.getString(
+            R.string.kg_title,
+        ) + ": " + resources.getString(R.string.rag_status_pending)
+        rule.onNodeWithTag("kg-status-not-started")
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    graphDescription,
+                ),
+            )
+    }
 
     @Test
     fun releaseNavigationAndPrimaryActionsUseStableTags() {

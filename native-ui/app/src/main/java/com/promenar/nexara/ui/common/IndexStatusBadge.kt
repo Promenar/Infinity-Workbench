@@ -1,131 +1,125 @@
 package com.promenar.nexara.ui.common
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Error
-import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.HourglassEmpty
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.annotation.StringRes
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraTypography
 
 enum class FileIndexStatus {
     INDEXED,
     INDEXING,
     STALE,
     NOT_INDEXED,
-    FAILED
+    FAILED,
 }
-
-private val FileIndexStatus.color: Color
-    get() = when (this) {
-        FileIndexStatus.INDEXED -> NexaraColors.RagReady
-        FileIndexStatus.INDEXING -> NexaraColors.RagIndexing
-        FileIndexStatus.STALE -> NexaraColors.StatusWarning
-        FileIndexStatus.NOT_INDEXED -> NexaraColors.RagPending
-        FileIndexStatus.FAILED -> NexaraColors.RagError
-    }
 
 @StringRes
 internal fun FileIndexStatus.labelResource(): Int = when (this) {
-        FileIndexStatus.INDEXED -> R.string.rag_status_ready
-        FileIndexStatus.INDEXING -> R.string.rag_status_indexing
-        FileIndexStatus.STALE -> R.string.rag_status_pending
-        FileIndexStatus.NOT_INDEXED -> R.string.rag_status_pending
-        FileIndexStatus.FAILED -> R.string.rag_status_error
-    }
+    FileIndexStatus.INDEXED -> R.string.rag_status_ready
+    FileIndexStatus.INDEXING -> R.string.rag_status_indexing
+    FileIndexStatus.STALE -> R.string.rag_status_pending
+    FileIndexStatus.NOT_INDEXED -> R.string.rag_status_pending
+    FileIndexStatus.FAILED -> R.string.rag_status_error
+}
+
+private data class FileStatusVisuals(
+    val icon: ImageVector,
+    val containerColor: Color,
+    val contentColor: Color,
+)
 
 @Composable
-fun IndexStatusBadge(
-    status: FileIndexStatus,
-    modifier: Modifier = Modifier
-) {
-    val statusLabel = stringResource(status.labelResource())
-    Row(
-        modifier = modifier
-            .semantics(mergeDescendants = true) {
-                stateDescription = statusLabel
-            }
-            .clip(RoundedCornerShape(50))
-            .background(status.color.copy(alpha = 0.15f))
-            .padding(horizontal = 6.dp, vertical = 3.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (status == FileIndexStatus.INDEXING) {
-            PulseDot(color = status.color)
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(status.color)
-            )
-        }
-        Text(
-            text = statusLabel,
-            style = NexaraTypography.labelSmall,
-            color = status.color
+private fun FileIndexStatus.visuals(): FileStatusVisuals {
+    val colors = MaterialTheme.colorScheme
+    return when (this) {
+        FileIndexStatus.INDEXED -> FileStatusVisuals(
+            icon = Icons.Rounded.CheckCircle,
+            containerColor = colors.primaryContainer,
+            contentColor = colors.onPrimaryContainer,
+        )
+        FileIndexStatus.INDEXING -> FileStatusVisuals(
+            icon = Icons.Rounded.Sync,
+            containerColor = colors.secondaryContainer,
+            contentColor = colors.onSecondaryContainer,
+        )
+        FileIndexStatus.STALE -> FileStatusVisuals(
+            icon = Icons.Rounded.Sync,
+            containerColor = colors.tertiaryContainer,
+            contentColor = colors.onTertiaryContainer,
+        )
+        FileIndexStatus.NOT_INDEXED -> FileStatusVisuals(
+            icon = Icons.Rounded.HourglassEmpty,
+            containerColor = colors.surfaceContainerHighest,
+            contentColor = colors.onSurfaceVariant,
+        )
+        FileIndexStatus.FAILED -> FileStatusVisuals(
+            icon = Icons.Rounded.Error,
+            containerColor = colors.errorContainer,
+            contentColor = colors.onErrorContainer,
         )
     }
 }
 
 @Composable
-private fun PulseDot(
-    color: Color,
-    modifier: Modifier = Modifier
+fun IndexStatusBadge(
+    status: FileIndexStatus,
+    modifier: Modifier = Modifier,
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 0.8f,
-        targetValue = 1.2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseScale"
-    )
-    Box(
-        modifier = modifier
-            .size(8.dp)
-            .scale(scale)
-            .clip(CircleShape)
-            .background(color)
-    )
+    val statusLabel = stringResource(status.labelResource())
+    val visuals = status.visuals()
+
+    Surface(
+        modifier = modifier.semantics(mergeDescendants = true) {
+            stateDescription = statusLabel
+        },
+        shape = MaterialTheme.shapes.small,
+        color = visuals.containerColor,
+        contentColor = visuals.contentColor,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = visuals.icon,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                text = statusLabel,
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
 }
 
 enum class KgStatus {
     COMPLETED,
     IN_PROGRESS,
     FAILED,
-    NOT_STARTED
+    NOT_STARTED,
 }
 
 @StringRes
@@ -139,58 +133,33 @@ internal fun KgStatus.descriptionResource(): Int = when (this) {
 @Composable
 fun KgStatusIcon(
     status: KgStatus,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val statusDescription = buildString {
         append(stringResource(R.string.kg_title))
         append(": ")
         append(stringResource(status.descriptionResource()))
     }
-    val accessibleModifier = modifier.semantics {
-        stateDescription = statusDescription
+    val colors = MaterialTheme.colorScheme
+    val icon = when (status) {
+        KgStatus.COMPLETED -> Icons.Rounded.CheckCircle
+        KgStatus.IN_PROGRESS -> Icons.Rounded.Sync
+        KgStatus.FAILED -> Icons.Rounded.Error
+        KgStatus.NOT_STARTED -> Icons.Rounded.AccountTree
     }
-    when (status) {
-        KgStatus.COMPLETED -> {
-            Icon(
-                imageVector = Icons.Rounded.CheckCircle,
-                contentDescription = null,
-                tint = NexaraColors.StatusSuccess,
-                modifier = accessibleModifier.size(14.dp)
-            )
-        }
-        KgStatus.IN_PROGRESS -> {
-            val infiniteTransition = rememberInfiniteTransition(label = "kgPulse")
-            val alpha by infiniteTransition.animateFloat(
-                initialValue = 0.3f,
-                targetValue = 1.0f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 800),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "kgPulseAlpha"
-            )
-            Icon(
-                imageVector = Icons.Rounded.AccountTree,
-                contentDescription = null,
-                tint = NexaraColors.Primary.copy(alpha = alpha),
-                modifier = accessibleModifier.size(14.dp)
-            )
-        }
-        KgStatus.FAILED -> {
-            Icon(
-                imageVector = Icons.Rounded.Error,
-                contentDescription = null,
-                tint = NexaraColors.StatusError,
-                modifier = accessibleModifier.size(14.dp)
-            )
-        }
-        KgStatus.NOT_STARTED -> {
-            Icon(
-                imageVector = Icons.Rounded.RadioButtonUnchecked,
-                contentDescription = null,
-                tint = NexaraColors.Outline.copy(alpha = 0.3f),
-                modifier = accessibleModifier.size(14.dp)
-            )
-        }
+    val tint = when (status) {
+        KgStatus.COMPLETED -> colors.tertiary
+        KgStatus.IN_PROGRESS -> colors.primary
+        KgStatus.FAILED -> colors.error
+        KgStatus.NOT_STARTED -> colors.onSurfaceVariant
     }
+
+    Icon(
+        imageVector = icon,
+        contentDescription = null,
+        tint = tint,
+        modifier = modifier
+            .semantics { stateDescription = statusDescription }
+            .size(16.dp),
+    )
 }
