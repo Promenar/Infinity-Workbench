@@ -146,15 +146,6 @@ fun NexaraNavGraph(
         }
     }
 
-    LaunchedEffect(onboardingState.step) {
-        if (onboardingState.step == OnboardingStep.COMPLETED) {
-            navController.navigate(NavDestinations.MAIN_TAB_SCAFFOLD) {
-                popUpTo(NavDestinations.WELCOME) { inclusive = true }
-                launchSingleTop = true
-            }
-        }
-    }
-
     LaunchedEffect(openGenerationRequest, onboardingState.step) {
         val request = openGenerationRequest ?: return@LaunchedEffect
         if (onboardingState.step != OnboardingStep.COMPLETED) return@LaunchedEffect
@@ -294,7 +285,7 @@ fun NexaraNavGraph(
                 },
                 onOpenFirstChat = {
                     onboardingState.sessionId?.let { sessionId ->
-                        navController.navigate(NavDestinations.chatHero(sessionId))
+                        openOnboardingFirstChat(navController, sessionId)
                     }
                 },
             )

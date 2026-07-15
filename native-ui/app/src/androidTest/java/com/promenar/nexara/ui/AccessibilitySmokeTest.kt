@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +25,9 @@ import com.promenar.nexara.R
 import java.util.Locale
 import com.promenar.nexara.ui.chat.ChatApprovalLiveRegion
 import com.promenar.nexara.ui.chat.ChatInputBar
+import com.promenar.nexara.ui.chat.ChatScreenActions
+import com.promenar.nexara.ui.chat.ChatScreenContent
+import com.promenar.nexara.ui.chat.ChatScreenState
 import com.promenar.nexara.ui.chat.GenerationStatus
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
@@ -41,6 +46,27 @@ import org.junit.Test
 class AccessibilitySmokeTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun chatInputTopChipsKeep48DpTargetsWith34DpVisualSurfaces() {
+        composeRule.setContent {
+            NexaraTheme {
+                ChatScreenContent(
+                    state = ChatScreenState(),
+                    actions = ChatScreenActions(),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(UiTags.CHAT_MODEL_SELECTOR)
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag(UiTags.CHAT_MODEL_SELECTOR_VISUAL, useUnmergedTree = true)
+            .assertHeightIsEqualTo(34.dp)
+        composeRule.onNodeWithTag(UiTags.CHAT_TOKEN_INDICATOR)
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag(UiTags.CHAT_TOKEN_INDICATOR_VISUAL, useUnmergedTree = true)
+            .assertHeightIsEqualTo(34.dp)
+    }
 
     @Test
     fun criticalChatActionsMeetTouchTargetAndExposeLiveStatus() {

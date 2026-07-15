@@ -27,6 +27,32 @@ sealed class ModelPattern {
         is StringPattern -> modelId.lowercase().contains(value.lowercase())
         is RegexPattern -> regex.containsMatchIn(modelId)
     }
+
+    /**
+     * 匹配优先级不依赖 MODEL_SPECS 的声明顺序：
+     * 精确字符串 > 整体正则 > 具体度更高的部分匹配 > 通用家族回退。
+     */
+    fun rank(modelId: String): ModelPatternRank? {
+        if (!matches(modelId)) return null
+        return when (this) {
+            is StringPattern -> ModelPatternRank(
+                exactness = if (modelId.equals(value, ignoreCase = true)) 2 else 0,
+                specificity = value.count { it.isLetterOrDigit() },
+            )
+            is RegexPattern -> ModelPatternRank(
+                exactness = if (regex.matches(modelId)) 1 else 0,
+                specificity = regex.pattern.count { it.isLetterOrDigit() },
+            )
+        }
+    }
+}
+
+data class ModelPatternRank(
+    val exactness: Int,
+    val specificity: Int,
+) : Comparable<ModelPatternRank> {
+    override fun compareTo(other: ModelPatternRank): Int =
+        compareValuesBy(this, other, ModelPatternRank::exactness, ModelPatternRank::specificity)
 }
 
 data class ModelSpec(
@@ -756,6 +782,37 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
 
     // ==================== MiniMax ====================
     ModelSpec(
+        pattern = ModelPattern.StringPattern("MiniMax-M3"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(
+            vision = true,
+            reasoning = true,
+            videoUnderstanding = true,
+        ),
+        icon = "minimax",
+        note = "MiniMax M3",
+        maxOutputTokens = 524288,
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("MiniMax-M2.7-highspeed"),
+        contextLength = 204800,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true),
+        icon = "minimax",
+        note = "MiniMax M2.7 Highspeed",
+        maxOutputTokens = 204800,
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("MiniMax-M2.7"),
+        contextLength = 204800,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true),
+        icon = "minimax",
+        note = "MiniMax M2.7",
+        maxOutputTokens = 204800,
+    ),
+    ModelSpec(
         pattern = ModelPattern.StringPattern("abab6.5"),
         contextLength = 128000,
         type = ModelType.CHAT,
@@ -1462,19 +1519,29 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
         pattern = ModelPattern.StringPattern("deepseek-v4-pro"),
         contextLength = 1000000,
         type = ModelType.CHAT,
-        capabilities = ModelCapabilities(reasoning = true, vision = true),
+        capabilities = ModelCapabilities(reasoning = true, structuredOutput = true),
         icon = "deepseek",
         note = "DeepSeek V4 Pro (Apr 2026, 1.6T MoE, MIT)",
-        maxOutputTokens = 65536,
+        maxOutputTokens = 384000,
         knowledgeCutoff = "202604"
+    ),
+    ModelSpec(
+        pattern = ModelPattern.StringPattern("deepseek-v4-flash"),
+        contextLength = 1000000,
+        type = ModelType.CHAT,
+        capabilities = ModelCapabilities(reasoning = true, structuredOutput = true),
+        icon = "deepseek",
+        note = "DeepSeek V4 Flash",
+        maxOutputTokens = 384000,
     ),
     ModelSpec(
         pattern = ModelPattern.RegexPattern(Regex("""deepseek-v4""", RegexOption.IGNORE_CASE)),
         contextLength = 1000000,
         type = ModelType.CHAT,
-        capabilities = ModelCapabilities(reasoning = true),
+        capabilities = ModelCapabilities(reasoning = true, structuredOutput = true),
         icon = "deepseek",
-        note = "DeepSeek V4 Series"
+        note = "DeepSeek V4 Series",
+        maxOutputTokens = 384000,
     ),
 
     // ==================== Alibaba Qwen 3.6 (2026 Apr) ====================
@@ -1656,12 +1723,7 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
 )
 
 fun findContextLength(modelId: String): Int? {
-    for (spec in MODEL_SPECS) {
-        if (spec.pattern.matches(modelId)) {
-            return spec.contextLength
-        }
-    }
-    return null
+    return findModelSpec(modelId)?.contextLength
 }
 
 fun extractContextLengthFromName(text: String): Int? {
@@ -1678,12 +1740,10 @@ fun extractContextLengthFromName(text: String): Int? {
 }
 
 fun findModelSpec(modelId: String): ModelSpec? {
-    for (spec in MODEL_SPECS) {
-        if (spec.pattern.matches(modelId)) {
-            return spec
-        }
-    }
-    return null
+    return MODEL_SPECS
+        .mapNotNull { spec -> spec.pattern.rank(modelId)?.let { rank -> spec to rank } }
+        .maxByOrNull { (_, rank) -> rank }
+        ?.first
 }
 
 data class ModelPricing(

@@ -27,9 +27,9 @@ import com.promenar.nexara.data.backup.BackupStartupState
 import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.navigation.NexaraNavGraph
 import com.promenar.nexara.navigation.AppIntentRouter
+import com.promenar.nexara.navigation.initialOnboardingDestination
 import com.promenar.nexara.onboarding.OnboardingState
 import com.promenar.nexara.onboarding.OnboardingStateStore
-import com.promenar.nexara.onboarding.OnboardingStep
 import com.promenar.nexara.ui.settings.ModelInfo
 import com.promenar.nexara.ui.chat.ChatRoute
 import com.promenar.nexara.ui.chat.ChatRouteDependencies
@@ -145,7 +145,6 @@ open class MainActivity : ComponentActivity() {
                         val navController = rememberNavController()
                         val backStackEntry by navController.currentBackStackEntryAsState()
                         val importState by shareImportViewModel.state.collectAsStateWithLifecycle()
-                        val onboardingState by onboardingStore.state.collectAsStateWithLifecycle()
                         val openGenerationRequest by appIntentRouter.pending.collectAsStateWithLifecycle()
                         val debugChatSessionId = debugChatSessionId(
                             isDebugBuild = BuildConfig.DEBUG,
@@ -153,10 +152,8 @@ open class MainActivity : ComponentActivity() {
                                 EXTRA_CHAT_SESSION_ID_FOR_TESTING,
                             ),
                         )
-                        val startDestination = when {
-                            onboardingState.step == OnboardingStep.COMPLETED ->
-                                NavDestinations.MAIN_TAB_SCAFFOLD
-                            else -> NavDestinations.WELCOME
+                        val startDestination = remember(onboardingStore) {
+                            initialOnboardingDestination(onboardingStore.state.value.step)
                         }
 
                         NexaraNavGraph(

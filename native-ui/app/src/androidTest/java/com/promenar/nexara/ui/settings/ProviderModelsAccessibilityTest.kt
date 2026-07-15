@@ -13,8 +13,10 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
@@ -87,6 +89,55 @@ class ProviderModelsAccessibilityTest {
             .assertIsNotEnabled()
             .assertWidthIsAtLeast(48.dp)
             .assertHeightIsAtLeast(48.dp)
+            .assertHeightIsEqualTo(48.dp)
+    }
+
+    @Test
+    fun modelTypeCapabilityAndContextKeepDenseVisualsInsideAccessibleTargets() {
+        val modelId = "provider-alpha::model-a"
+        rule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1f)) {
+                NexaraTheme {
+                    Box(Modifier.width(360.dp)) {
+                        EnhancedModelCard(
+                            model = ModelInfo(
+                                name = "Model A",
+                                id = modelId,
+                                description = "desc",
+                                enabled = true,
+                                type = "chat",
+                                contextLength = 65_536,
+                                capabilities = listOf("chat", "vision"),
+                                providerId = "provider-alpha",
+                            ),
+                            testState = ModelTestState.Idle,
+                            onUpdate = {},
+                            onToggle = {},
+                            onTest = {},
+                            onDelete = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.providerModelsTypeAction(modelId, "chat"))
+            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag(
+            UiTags.providerModelsTypeVisual(modelId, "chat"),
+            useUnmergedTree = true,
+        )
+            .assertHeightIsEqualTo(36.dp)
+        rule.onNodeWithTag(UiTags.providerModelsCapabilityAction(modelId, "vision"))
+            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag(
+            UiTags.providerModelsCapabilityVisual(modelId, "vision"),
+            useUnmergedTree = true,
+        )
+            .assertHeightIsEqualTo(36.dp)
+        rule.onNodeWithTag(UiTags.providerModelsContextField(modelId))
+            .assertWidthIsEqualTo(112.dp)
+            .assertHeightIsEqualTo(48.dp)
     }
 
     @Test

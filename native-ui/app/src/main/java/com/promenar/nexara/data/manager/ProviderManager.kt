@@ -565,6 +565,14 @@ class ProviderManager private constructor(
         hasStoredCutoff: Boolean
     ): ModelInfo {
         val spec = com.promenar.nexara.data.model.findModelSpec(model.remoteModelId) ?: return model
+        migrateShadowedAutoMetadataFingerprint(
+            model = model,
+            resolvedSpec = spec,
+            hasStoredCaps = hasStoredCaps,
+            hasStoredContext = hasStoredContext,
+            hasStoredMaxOutput = hasStoredMaxOutput,
+            hasStoredCutoff = hasStoredCutoff,
+        )?.let { return it }
         var changed = false
 
         // 1. 修复名称：如果是原始 ID 且 Spec 中有更好的名字，则替换
@@ -609,6 +617,55 @@ class ProviderManager private constructor(
                 knowledgeCutoff = newCutoff
             )
         } else model
+    }
+
+    /**
+     * 旧版按声明顺序取首个匹配项，可能把具体模型持久化为通用家族元数据。
+     * 只有全部持久化字段仍精确等于旧自动生成指纹时才整体迁移；任一字段被用户
+     * 修改都放弃迁移，避免把自定义名称、能力或上下文误当成旧数据覆盖。
+     */
+    private fun migrateShadowedAutoMetadataFingerprint(
+        model: ModelInfo,
+        resolvedSpec: com.promenar.nexara.data.model.ModelSpec,
+        hasStoredCaps: Boolean,
+        hasStoredContext: Boolean,
+        hasStoredMaxOutput: Boolean,
+        hasStoredCutoff: Boolean,
+    ): ModelInfo? {
+        val legacySpec = com.promenar.nexara.data.model.MODEL_SPECS
+            .firstOrNull { it.pattern.matches(model.remoteModelId) }
+            ?: return null
+        if (legacySpec === resolvedSpec) return null
+
+        val legacyType = legacySpec.type?.name?.lowercase() ?: "chat"
+        val legacyName = legacySpec.note ?: model.remoteModelId
+        val legacyCapabilities = buildModelCapabilities(legacyType, legacySpec)
+        val cutoffStorageMatches = if (legacySpec.knowledgeCutoff == null) {
+            !hasStoredCutoff && model.knowledgeCutoff == null
+        } else {
+            hasStoredCutoff && model.knowledgeCutoff == legacySpec.knowledgeCutoff
+        }
+        val isUntouchedLegacyFingerprint =
+            hasStoredCaps &&
+                hasStoredContext &&
+                hasStoredMaxOutput &&
+                cutoffStorageMatches &&
+                model.name == legacyName &&
+                model.type == legacyType &&
+                model.contextLength == legacySpec.contextLength &&
+                model.capabilities.toSet() == legacyCapabilities.toSet() &&
+                model.maxOutputTokens == legacySpec.maxOutputTokens
+        if (!isUntouchedLegacyFingerprint) return null
+
+        val resolvedType = resolvedSpec.type?.name?.lowercase() ?: legacyType
+        return model.copy(
+            name = resolvedSpec.note ?: model.remoteModelId,
+            type = resolvedType,
+            contextLength = resolvedSpec.contextLength,
+            capabilities = buildModelCapabilities(resolvedType, resolvedSpec),
+            maxOutputTokens = resolvedSpec.maxOutputTokens,
+            knowledgeCutoff = resolvedSpec.knowledgeCutoff,
+        )
     }
 
     /**

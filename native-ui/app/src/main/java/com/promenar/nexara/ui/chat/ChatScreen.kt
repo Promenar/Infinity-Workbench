@@ -16,6 +16,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -102,11 +105,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -484,7 +489,8 @@ fun ChatScreenContent(
                         .padding(horizontal = 4.dp) // 极窄外边距，显著加宽
                         .padding(bottom = 8.dp)
                         .widthIn(max = 960.dp)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .testTag(UiTags.CHAT_INPUT_ISLAND),
                     color = NexaraColors.SurfaceLow, // 调整颜色为更深的 SurfaceLow，契合 Header
                     shape = RoundedCornerShape(24.dp), // 略微减小圆角，配合加宽效果
                     border = BorderStroke(1.dp, NexaraColors.OutlineVariant.copy(alpha = 0.3f)),
@@ -492,8 +498,8 @@ fun ChatScreenContent(
                 ) {
                     Column(
                         modifier = Modifier
-                            .padding(horizontal = 8.dp, vertical = 10.dp), // 降低水平间距从 18dp -> 8dp，拓宽本体
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         val modelDisplayName = remember(uiState.session?.modelId) {
                             uiState.session?.modelId?.let { id ->
@@ -678,6 +684,39 @@ fun ContextCircularIndicator(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
+private fun CompactInputChip(
+    onClick: () -> Unit,
+    interactionTag: String,
+    visualTag: String,
+    modifier: Modifier = Modifier,
+    visualHeight: Dp = 34.dp,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .semantics(mergeDescendants = true) {}
+            .clickable(role = Role.Button, onClick = onClick)
+            .testTag(interactionTag),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            modifier = Modifier
+                .height(visualHeight)
+                .testTag(visualTag)
+                .clip(RoundedCornerShape(50))
+                .background(NexaraColors.GlassSurface)
+                .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(50))
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            content = content,
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
 private fun ChatInputTopBar(
     modelName: String,
     tokenState: ChatViewModel.TokenIndicatorState,
@@ -692,25 +731,21 @@ private fun ChatInputTopBar(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // Model Indicator
-        NexaraGlassCard(
+        CompactInputChip(
             onClick = onModelClick,
-            shape = RoundedCornerShape(50),
-            modifier = Modifier
-                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                .testTag(UiTags.CHAT_MODEL_SELECTOR)
+            interactionTag = UiTags.CHAT_MODEL_SELECTOR,
+            visualTag = UiTags.CHAT_MODEL_SELECTOR_VISUAL,
+            visualHeight = 34.dp,
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Icon(Icons.Rounded.Memory, null, tint = NexaraColors.Primary, modifier = Modifier.size(14.dp))
-                Text(
-                    text = modelName.ifBlank { stringResource(R.string.chat_model_placeholder) },
-                    style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                    color = if (modelName.isBlank()) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurface
-                )
-            }
+            Icon(Icons.Rounded.Memory, null, tint = NexaraColors.Primary, modifier = Modifier.size(14.dp))
+            Text(
+                text = modelName.ifBlank { stringResource(R.string.chat_model_placeholder) },
+                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
+                color = if (modelName.isBlank()) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 176.dp),
+            )
         }
 
         // Token Indicator
@@ -735,27 +770,23 @@ private fun TokenIndicator(
     var showTooltip by remember { mutableStateOf(false) }
 
     Box {
-        NexaraGlassCard(
+        CompactInputChip(
             onClick = { showTooltip = !showTooltip },
-            shape = RoundedCornerShape(50),
-            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            interactionTag = UiTags.CHAT_TOKEN_INDICATOR,
+            visualTag = UiTags.CHAT_TOKEN_INDICATOR_VISUAL,
+            visualHeight = 34.dp,
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                ContextCircularIndicator(
-                    progress = (state.used.toFloat() / state.max.toFloat()).coerceIn(0f, 1f),
-                    color = if (state.used > state.max * 0.8) NexaraColors.StatusWarning else NexaraColors.StatusSuccess,
-                    modifier = Modifier.size(12.dp)
-                )
-                Text(
-                    text = "${state.used / 1000}K / ${state.max / 1000}K",
-                    style = NexaraTypography.labelMedium.copy(fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                    color = NexaraColors.OnSurface
-                )
-            }
+            ContextCircularIndicator(
+                progress = (state.used.toFloat() / state.max.toFloat()).coerceIn(0f, 1f),
+                color = if (state.used > state.max * 0.8) NexaraColors.StatusWarning else NexaraColors.StatusSuccess,
+                modifier = Modifier.size(12.dp)
+            )
+            Text(
+                text = "${state.used / 1000}K / ${state.max / 1000}K",
+                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                color = NexaraColors.OnSurface,
+                maxLines = 1,
+            )
         }
 
         if (showTooltip) {
@@ -991,14 +1022,18 @@ fun ChatInputBar(
     hasImages: Boolean = false
 ) {
     val isGenerating = status != GenerationStatus.IDLE
-    NexaraGlassCard(
-        modifier = Modifier.fillMaxWidth().animateContentSize(),
-        shape = NexaraShapes.extraLarge as RoundedCornerShape
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize()
+            .clip(NexaraShapes.extraLarge as RoundedCornerShape)
+            .background(NexaraColors.SurfaceHighest.copy(alpha = 0.45f))
+            .testTag(UiTags.CHAT_INPUT_BAR_SURFACE),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 4.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                .padding(start = 4.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(

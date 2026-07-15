@@ -13,10 +13,10 @@ class MainActivityStartupGateWiringTest {
         .toString(Charsets.UTF_8)
 
     @Test
-    fun `activity opens startup gate before collecting onboarding state or building nav graph`() {
+    fun `activity opens startup gate before reading the frozen onboarding snapshot or building nav graph`() {
         val collect = source.indexOf("startupState.collectAsStateWithLifecycle()")
         val gate = source.indexOf("StartupGate(")
-        val onboarding = source.indexOf("onboardingStore.state.collectAsStateWithLifecycle()")
+        val onboarding = source.indexOf("onboardingStore.state.value.step")
         val nav = source.indexOf("NexaraNavGraph(")
 
         assertThat(collect).isAtLeast(0)

@@ -41,6 +41,7 @@ import com.promenar.nexara.share.core.AndroidShareIndexScheduler
 import com.promenar.nexara.share.core.ShareImportItem
 import com.promenar.nexara.share.core.SharedFileImporter
 import kotlinx.coroutines.CancellationException
+import kotlin.coroutines.CoroutineContext
 
 data class RagStats(
     val documentCount: Int = 0,
@@ -69,6 +70,7 @@ class RagViewModel(
     private val keywordSearcher: KeywordSearcher,
     injectedImporter: SharedFileImporter? = null,
     injectedRequestFactory: ((Uri, String) -> ShareRequest)? = null,
+    ragWorkspaceIoContext: CoroutineContext = kotlinx.coroutines.Dispatchers.IO,
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
@@ -80,13 +82,9 @@ class RagViewModel(
     )
     private val importRequestFactory = injectedRequestFactory
         ?: AndroidSafImportRequestFactory(app.contentResolver)::create
+    private val ragWorkspaceIoContext = ragWorkspaceIoContext
 
     private val vectorStatsService = VectorStatsService(vectorRepository)
-
-    /** RAG 知识库工作区物理根目录 */
-    private val ragWorkspaceRoot: java.io.File by lazy {
-        java.io.File(app.filesDir, "rag_workspace")
-    }
 
     /** 当前工作区根目录的 FileEntry UUID（首个根目录，用于 FilesPanel） */
     private val _workspaceRootUuid = MutableStateFlow<String?>(null)
@@ -164,21 +162,23 @@ class RagViewModel(
     /** 为全局知识库建立不可见的系统 Session owner，再通过统一 repository 认领真实 root。 */
     private fun ensureRagWorkspaceRoot() {
         viewModelScope.launch {
-            val sessionId = "__nexara_rag_workspace__"
-            if (app.database.sessionDao().getById(sessionId) == null) {
-                val now = System.currentTimeMillis()
-                app.database.sessionDao().insert(
-                    com.promenar.nexara.data.local.db.entity.SessionEntity(
-                        id = sessionId,
-                        agentId = "__system__",
-                        title = "RAG Workspace",
-                        workspacePath = ragWorkspaceRoot.absolutePath,
-                        createdAt = now,
-                        updatedAt = now,
-                    ),
+            try {
+                _workspaceRootUuid.value = RagWorkspaceProvisioner(
+                    filesDir = app.filesDir,
+                    database = app.database,
+                    workspaceRepository = workspaceRepository,
+                    ioContext = ragWorkspaceIoContext,
+                ).ensureRoot().uuid
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                NexaraLogger.logError("[RagViewModel] ensureRagWorkspaceRoot failed", failure)
+                _indexingNotice.value = UiStatusNotice(
+                    severity = NoticeSeverity.Error,
+                    code = IndexingNotice.CODE_FAILED,
+                    technical = failure::class.simpleName,
                 )
             }
-            _workspaceRootUuid.value = workspaceRepository.ensureSessionRoot(sessionId).uuid
         }
     }
 

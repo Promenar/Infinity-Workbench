@@ -7,6 +7,31 @@ import org.junit.jupiter.api.Test
 
 class ProviderModelsScreenContractTest {
     @Test
+    fun `模型管理密度契约应避免重复48dp尺寸与漂浮小标签`() {
+        val source = String(
+            Files.readAllBytes(
+                Path.of("app/src/main/java/com/promenar/nexara/ui/settings/ProviderModelsScreen.kt"),
+            ),
+            Charsets.UTF_8,
+        )
+        val actionChip = source.substringAfter("internal fun ActionChip(")
+            .substringBefore("internal fun EnhancedModelCard(")
+        val modelCard = source.substringAfter("internal fun EnhancedModelCard(")
+            .substringBefore("private fun formatTokens")
+
+        assertThat(actionChip).contains(".height(48.dp)")
+        assertThat(actionChip).doesNotContain(".padding(vertical = 6.dp)")
+        assertThat(actionChip).doesNotContain(".heightIn(min = 48.dp)")
+        assertThat(modelCard).contains("CompactSelectableChip(")
+        assertThat(modelCard).contains("visualHeight = 36.dp")
+        assertThat(modelCard).contains(".width(112.dp)")
+        assertThat(modelCard).contains(".height(48.dp)")
+        assertThat(modelCard).contains("contentAlignment = Alignment.CenterStart")
+        assertThat(modelCard).contains("KeyboardType.Number")
+        assertThat(modelCard).contains("model.remoteModelId.ifBlank")
+    }
+
+    @Test
     fun `content contract contains stable state actions and no vm or context usage`() {
         val source = String(
             Files.readAllBytes(

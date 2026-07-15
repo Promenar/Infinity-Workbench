@@ -11,6 +11,29 @@ import org.junit.Test
 
 class ChatRenderStateContractTest {
     @Test
+    fun `输入浮岛胶囊应分离48dp触控热区与紧凑视觉面`() {
+        val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/ChatScreen.kt",
+        ).readText()
+        val tags = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/testing/UiTags.kt",
+        ).readText()
+        val topBar = source.substringAfter("private fun ChatInputTopBar(")
+            .substringBefore("private fun TokenDetailRow")
+
+        assertThat(topBar).contains("CompactInputChip(")
+        assertThat(topBar).contains("visualHeight = 34.dp")
+        assertThat(topBar).contains("maxLines = 1")
+        assertThat(topBar).contains("overflow = TextOverflow.Ellipsis")
+        assertThat(tags).contains("chat_model_selector_visual")
+        assertThat(tags).contains("chat_token_indicator")
+        assertThat(tags).contains("chat_token_indicator_visual")
+    }
+
+    @Test
     fun `five representative states have stable render anchors`() {
         assertThat(
             listOf(

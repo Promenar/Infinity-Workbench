@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.model
 
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -91,6 +92,12 @@ class ModelSpecsTest {
         }
 
         @Test
+        @DisplayName("Context lookup shares the specific V4 resolver instead of the DeepSeek fallback")
+        fun deepseekV4Flash() {
+            assertThat(findContextLength("deepseek-v4-flash")).isEqualTo(1000000)
+        }
+
+        @Test
         @DisplayName("GLM-4.7 returns 128000 via regex")
         fun glm47() {
             assertThat(findContextLength("glm-4.7")).isEqualTo(128000)
@@ -129,10 +136,9 @@ class ModelSpecsTest {
         }
 
         @Test
-        @DisplayName("MiniMax M2.7 returns 4096 (falls through to openai generic or no match)")
+        @DisplayName("MiniMax M2.7 returns its verified 204800 context")
         fun minimaxM27() {
-            val result = findContextLength("MiniMax-M2.7")
-            assertThat(result).isNull()
+            assertThat(findContextLength("MiniMax-M2.7")).isEqualTo(204800)
         }
     }
 
@@ -200,6 +206,96 @@ class ModelSpecsTest {
         fun deepseekR1ForcedReasoning() {
             val spec = findModelSpec("deepseek-r1")!!
             assertThat(spec.type).isEqualTo(ModelType.REASONING)
+            assertThat(spec.forcedReasoning).isTrue()
+        }
+
+        @Test
+        @DisplayName("DeepSeek V4 Pro must beat the earlier DeepSeek family fallback")
+        fun deepseekV4ProBeatsGenericFallback() {
+            val spec = findModelSpec("deepseek-v4-pro")!!
+
+            assertThat(spec.note).contains("DeepSeek V4 Pro")
+            assertThat(spec.contextLength).isEqualTo(1000000)
+            assertThat(spec.capabilities?.reasoning).isTrue()
+            assertThat(spec.capabilities?.structuredOutput).isTrue()
+            assertThat(spec.maxOutputTokens).isEqualTo(384000)
+        }
+
+        @Test
+        @DisplayName("DeepSeek V4 Flash resolves to the V4 series rule instead of the 64K fallback")
+        fun deepseekV4FlashUsesSeriesRule() {
+            val spec = findModelSpec("deepseek-v4-flash")!!
+
+            assertThat(spec.note).isEqualTo("DeepSeek V4 Flash")
+            assertThat(spec.contextLength).isEqualTo(1000000)
+            assertThat(spec.capabilities?.reasoning).isTrue()
+            assertThat(spec.capabilities?.structuredOutput).isTrue()
+            assertThat(spec.maxOutputTokens).isEqualTo(384000)
+        }
+
+        @Test
+        @DisplayName("MiniMax M3 exact metadata covers its verified multimodal 1M contract")
+        fun minimaxM3ExactMetadata() {
+            val spec = findModelSpec("MiniMax-M3")!!
+
+            assertThat(spec.note).isEqualTo("MiniMax M3")
+            assertThat(spec.contextLength).isEqualTo(1000000)
+            assertThat(spec.capabilities?.reasoning).isTrue()
+            assertThat(spec.capabilities?.vision).isTrue()
+            assertThat(spec.capabilities?.videoUnderstanding).isTrue()
+            assertThat(spec.maxOutputTokens).isEqualTo(524288)
+        }
+
+        @Test
+        @DisplayName("MiniMax M2.7 Highspeed exact metadata keeps its verified 200K text contract")
+        fun minimaxM27HighspeedExactMetadata() {
+            val spec = findModelSpec("MiniMax-M2.7-highspeed")!!
+
+            assertThat(spec.note).isEqualTo("MiniMax M2.7 Highspeed")
+            assertThat(spec.contextLength).isEqualTo(204800)
+            assertThat(spec.capabilities?.reasoning).isTrue()
+            assertThat(spec.capabilities?.vision).isFalse()
+            assertThat(spec.capabilities?.videoUnderstanding).isFalse()
+            assertThat(spec.maxOutputTokens).isEqualTo(204800)
+        }
+
+        @Test
+        @DisplayName("Qwen Long keeps its exact 10M context metadata")
+        fun qwenLongBeatsGenericFallback() {
+            val spec = findModelSpec("qwen-long")!!
+
+            assertThat(spec.note).isEqualTo("Qwen Long (10M context)")
+            assertThat(spec.contextLength).isEqualTo(10000000)
+        }
+
+        @Test
+        @DisplayName("Grok 4.1 keeps its exact 2M context and capabilities")
+        fun grok41BeatsGenericFallback() {
+            val spec = findModelSpec("grok-4.1")!!
+
+            assertThat(spec.note).contains("Grok 4.1")
+            assertThat(spec.contextLength).isEqualTo(2000000)
+            assertThat(spec.capabilities?.vision).isTrue()
+            assertThat(spec.capabilities?.reasoning).isTrue()
+        }
+
+        @Test
+        @DisplayName("Gemma 4 31B keeps its exact 256K metadata")
+        fun gemma431bBeatsGenericFallback() {
+            val spec = findModelSpec("gemma-4-31b")!!
+
+            assertThat(spec.note).contains("Gemma 4 31B")
+            assertThat(spec.contextLength).isEqualTo(256000)
+            assertThat(spec.capabilities?.vision).isTrue()
+        }
+
+        @Test
+        @DisplayName("O3 Pro exact rule beats the earlier O3 family rule")
+        fun o3ProBeatsGenericFallback() {
+            val spec = findModelSpec("o3-pro")!!
+
+            assertThat(spec.note).isEqualTo("O3 Pro (2026)")
+            assertThat(spec.maxOutputTokens).isEqualTo(100000)
             assertThat(spec.forcedReasoning).isTrue()
         }
 
@@ -272,6 +368,21 @@ class ModelSpecsTest {
         fun specCount() {
             assertThat(MODEL_SPECS.size).isAtLeast(100)
             assertThat(MODEL_SPECS.size).isAtMost(500)
+        }
+
+        @Test
+        @DisplayName("Every exact string rule beats any earlier less-specific family fallback")
+        fun exactStringRulesAreReachable() {
+            MODEL_SPECS.forEach { expected ->
+                val exactPattern = expected.pattern as? ModelPattern.StringPattern
+                    ?: return@forEach
+                val resolved = findModelSpec(exactPattern.value)
+                val resolvedPattern = resolved?.pattern as? ModelPattern.StringPattern
+
+                assertWithMessage("resolved pattern for exact model ID ${exactPattern.value}")
+                    .that(resolvedPattern?.value)
+                    .isEqualTo(exactPattern.value)
+            }
         }
 
         @Test

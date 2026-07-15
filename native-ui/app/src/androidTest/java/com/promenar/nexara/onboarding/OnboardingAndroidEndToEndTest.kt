@@ -21,6 +21,9 @@ import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.manager.ProviderManager
+import com.promenar.nexara.data.local.db.entity.SessionEntity
+import com.promenar.nexara.ui.testing.UiTags
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.After
 import org.junit.Before
@@ -140,6 +143,24 @@ class OnboardingAndroidEndToEndTest {
         recreateAndAssert(OnboardingStep.FIRST_CHAT, "onboarding_step_first_chat")
 
         val app = rule.activity.application as NexaraApplication
+        runBlocking {
+            val sessionDao = app.database.sessionDao()
+            val now = System.currentTimeMillis()
+            val existing = sessionDao.getById("session-test")
+            val fixture = existing?.copy(
+                agentId = "agent-test",
+                modelId = "provider-test::model-test",
+                updatedAt = now,
+            ) ?: SessionEntity(
+                id = "session-test",
+                agentId = "agent-test",
+                title = "Onboarding E2E",
+                modelId = "provider-test::model-test",
+                createdAt = now,
+                updatedAt = now,
+            )
+            if (existing == null) sessionDao.insert(fixture) else sessionDao.update(fixture)
+        }
         rule.runOnIdle {
             app.chatStore.update { state ->
                 state.copy(
@@ -169,6 +190,8 @@ class OnboardingAndroidEndToEndTest {
         }
         rule.waitForIdle()
         assertStep(OnboardingStep.FIRST_CHAT)
+        rule.onNodeWithText(rule.activity.getString(R.string.onboarding_first_chat_action)).performClick()
+        rule.onNodeWithTag(UiTags.CHAT_ROOT).assertIsDisplayed()
 
         rule.runOnIdle {
             app.chatStore.updateSession("session-test") { session ->
@@ -208,7 +231,26 @@ class OnboardingAndroidEndToEndTest {
             }
         }
         waitForStep(OnboardingStep.COMPLETED)
-        rule.onAllNodesWithTag("onboarding_step_first_chat").assertCountEquals(0)
+        rule.onNodeWithTag(UiTags.CHAT_ROOT).assertIsDisplayed()
+
+        rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        rule.onNodeWithTag(UiTags.HUB_ROOT).assertIsDisplayed()
+        rule.onNodeWithText(rule.activity.getString(R.string.nav_tab_library)).performClick()
+        rule.onNodeWithTag(UiTags.RAG_HOME_ROOT).assertIsDisplayed()
+
+        rule.onNodeWithText(rule.activity.getString(R.string.nav_tab_settings)).performClick()
+        rule.onNodeWithTag(UiTags.SETTINGS_ROOT).assertIsDisplayed()
+        rule.onNodeWithText(rule.activity.getString(R.string.settings_rag_config))
+            .performScrollTo()
+            .performClick()
+        rule.onNodeWithText(rule.activity.getString(R.string.rag_config_title)).assertIsDisplayed()
+
+        rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        rule.onNodeWithTag(UiTags.SETTINGS_ROOT).assertIsDisplayed()
+        rule.onNodeWithText(rule.activity.getString(R.string.settings_advanced_retrieval))
+            .performScrollTo()
+            .performClick()
+        rule.onNodeWithText(rule.activity.getString(R.string.retrieval_title)).assertIsDisplayed()
     }
 
     @Test

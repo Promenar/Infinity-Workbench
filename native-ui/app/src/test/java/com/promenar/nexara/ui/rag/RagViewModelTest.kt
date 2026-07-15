@@ -3,6 +3,8 @@ package com.promenar.nexara.ui.rag
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.ShareRequest
 import com.promenar.nexara.data.local.db.NexaraDatabase
+import com.promenar.nexara.data.local.db.dao.SessionDao
+import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
@@ -23,6 +25,7 @@ import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.slot
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -52,16 +55,20 @@ class RagViewModelTest {
     private val keywordSearcher: KeywordSearcher = mockk(relaxed = true)
 
     private lateinit var app: NexaraApplication
+    private lateinit var sessionDao: SessionDao
     private lateinit var vectorizationQueue: com.promenar.nexara.data.rag.VectorizationQueue
+    private lateinit var filesDir: java.io.File
 
     @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
 
         val database = mockk<NexaraDatabase>(relaxed = true)
+        sessionDao = mockk(relaxed = true)
         app = mockk<NexaraApplication>(relaxed = true)
 
         every { app.database } returns database
+        every { database.sessionDao() } returns sessionDao
         every { app.getSharedPreferences(any(), any()) } returns mockk(relaxed = true)
         vectorizationQueue = mockk(relaxed = true)
         every { vectorizationQueue.state } returns MutableStateFlow(
@@ -72,7 +79,8 @@ class RagViewModelTest {
             )
         )
         every { app.vectorizationQueue } returns vectorizationQueue
-        every { app.filesDir } returns java.io.File(System.getProperty("java.io.tmpdir"))
+        filesDir = java.nio.file.Files.createTempDirectory("nexara-rag-vm").toFile()
+        every { app.filesDir } returns filesDir
 
         coEvery { kgRepository.getNodeCount() } returns 0
         coEvery { workspaceRepository.ensureSessionRoot(any()) } returns rootEntry()
@@ -85,6 +93,76 @@ class RagViewModelTest {
     @AfterEach
     fun teardown() {
         Dispatchers.resetMain()
+        filesDir.deleteRecursively()
+    }
+
+    @Test
+    fun `新装全局知识库会让仓库选择统一受信父目录而不声明旧路径`() = runTest {
+        coEvery { sessionDao.getById(any()) } returns null
+        val inserted = slot<SessionEntity>()
+        coEvery { sessionDao.insert(capture(inserted)) } returns Unit
+
+        createViewModel()
+        advanceUntilIdle()
+
+        assertThat(inserted.captured.id).isEqualTo("__nexara_rag_workspace__")
+        assertThat(inserted.captured.workspacePath).isNull()
+        coVerify(exactly = 1) {
+            workspaceRepository.ensureSessionRoot("__nexara_rag_workspace__")
+        }
+    }
+
+    @Test
+    fun `已有旧知识库目录时保守沿用旧路径避免静默丢失数据`() = runTest {
+        val legacyRoot = java.io.File(filesDir, "rag_workspace").apply { mkdirs() }
+        java.io.File(legacyRoot, "legacy-note.txt").writeText("keep me")
+        coEvery { sessionDao.getById(any()) } returns null
+        val inserted = slot<SessionEntity>()
+        coEvery { sessionDao.insert(capture(inserted)) } returns Unit
+
+        createViewModel()
+        advanceUntilIdle()
+
+        assertThat(inserted.captured.workspacePath).isEqualTo(legacyRoot.canonicalPath)
+        assertThat(java.io.File(legacyRoot, "legacy-note.txt").readText()).isEqualTo("keep me")
+    }
+
+    @Test
+    fun `旧版失败残留的空路径声明会清除后改用统一受信父目录`() = runTest {
+        val legacyRoot = java.io.File(filesDir, "rag_workspace")
+        val stale = SessionEntity(
+            id = "__nexara_rag_workspace__",
+            agentId = "__system__",
+            title = "RAG Workspace",
+            workspacePath = legacyRoot.absolutePath,
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        coEvery { sessionDao.getById(stale.id) } returns stale
+        val updated = slot<SessionEntity>()
+        coEvery { sessionDao.update(capture(updated)) } returns Unit
+
+        createViewModel()
+        advanceUntilIdle()
+
+        assertThat(updated.captured.workspacePath).isNull()
+        coVerify(exactly = 1) { workspaceRepository.ensureSessionRoot(stale.id) }
+    }
+
+    @Test
+    fun `全局知识库根初始化失败会转为可见错误而不会逃逸到主线程`() = runTest {
+        coEvery { sessionDao.getById(any()) } returns null
+        coEvery { workspaceRepository.ensureSessionRoot(any()) } throws
+            SecurityException("fixture identity failure")
+
+        val result = runCatching {
+            createViewModel().also { advanceUntilIdle() }
+        }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrThrow().indexingNotice.value).isNotNull()
+        assertThat(result.getOrThrow().indexingNotice.value!!.severity)
+            .isEqualTo(NoticeSeverity.Error)
     }
 
     private fun createViewModel(
@@ -99,6 +177,7 @@ class RagViewModelTest {
             fileOperationRepository, ragConfigPersistence, keywordSearcher,
             injectedImporter = importer,
             injectedRequestFactory = requestFactory,
+            ragWorkspaceIoContext = testDispatcher,
         )
     }
 

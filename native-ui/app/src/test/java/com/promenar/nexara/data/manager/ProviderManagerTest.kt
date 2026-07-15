@@ -154,6 +154,58 @@ class ProviderManagerTest {
     }
 
     @Test
+    fun `旧版自动生成的 DeepSeek V4 Flash 指纹整体迁移到新规格`() {
+        persistLegacyDeepSeekV4FlashFingerprint()
+
+        val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+        val migrated = reloaded.providerModels.value.single {
+            it.id == "default::deepseek-v4-flash"
+        }
+
+        assertThat(migrated.id).isEqualTo("default::deepseek-v4-flash")
+        assertThat(migrated.remoteModelId).isEqualTo("deepseek-v4-flash")
+        assertThat(migrated.providerId).isEqualTo("default")
+        assertThat(migrated.enabled).isTrue()
+        assertThat(migrated.name).isEqualTo("DeepSeek V4 Flash")
+        assertThat(migrated.type).isEqualTo("chat")
+        assertThat(migrated.contextLength).isEqualTo(1000000)
+        assertThat(migrated.capabilities)
+            .containsExactly("chat", "reasoning", "structuredoutput")
+        assertThat(migrated.maxOutputTokens).isEqualTo(384000)
+        assertThat(migrated.knowledgeCutoff).isNull()
+    }
+
+    @Test
+    fun `旧指纹名称被用户修改后不得迁移任何元数据`() {
+        persistLegacyDeepSeekV4FlashFingerprint(name = "我的 DeepSeek")
+
+        val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+        val preserved = reloaded.providerModels.value.single {
+            it.id == "default::deepseek-v4-flash"
+        }
+
+        assertThat(preserved.name).isEqualTo("我的 DeepSeek")
+        assertThat(preserved.contextLength).isEqualTo(64000)
+        assertThat(preserved.capabilities).containsExactly("chat")
+        assertThat(preserved.maxOutputTokens).isEqualTo(0)
+    }
+
+    @Test
+    fun `旧指纹上下文被用户修改后不得迁移任何元数据`() {
+        persistLegacyDeepSeekV4FlashFingerprint(contextLength = 131072)
+
+        val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+        val preserved = reloaded.providerModels.value.single {
+            it.id == "default::deepseek-v4-flash"
+        }
+
+        assertThat(preserved.name).isEqualTo("DeepSeek")
+        assertThat(preserved.contextLength).isEqualTo(131072)
+        assertThat(preserved.capabilities).containsExactly("chat")
+        assertThat(preserved.maxOutputTokens).isEqualTo(0)
+    }
+
+    @Test
     fun `deleting and readding provider clears prior model suppression`() {
         addExtraProviderWithModel()
         manager.deleteAllModels("extra-a")
@@ -176,6 +228,28 @@ class ProviderManagerTest {
             ),
             CredentialUpdate.Replace("extra-test-key"),
         )
+    }
+
+    private fun persistLegacyDeepSeekV4FlashFingerprint(
+        name: String = "DeepSeek",
+        contextLength: Int = 64000,
+    ) {
+        val id = "default::deepseek-v4-flash"
+        val prefix = "model_info_$id"
+        app.getSharedPreferences("nexara_settings", 0).edit()
+            .clear()
+            .putStringSet("all_models", setOf(id))
+            .putStringSet("enabled_models", setOf(id))
+            .putString("all_models_order", id)
+            .putString("${prefix}_name", name)
+            .putString("${prefix}_type", "chat")
+            .putInt("${prefix}_context", contextLength)
+            .putStringSet("${prefix}_caps", setOf("chat"))
+            .putString("${prefix}_provider", "同名提供商")
+            .putString("${prefix}_provider_id", "default")
+            .putString("${prefix}_remote_model_id", "deepseek-v4-flash")
+            .putInt("${prefix}_maxoutput", 0)
+            .commit()
     }
 
     private fun model(providerId: String?, id: String) = ModelInfo(

@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Block
@@ -64,7 +64,9 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -555,42 +557,70 @@ internal fun ActionChip(
 
     Box(
         modifier = modifier
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .sizeIn(minWidth = 48.dp)
+            .height(48.dp)
             .semantics(mergeDescendants = true) {}
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(vertical = 6.dp),
+            .clip(NexaraShapes.medium)
+            .background(bgColor)
+            .border(0.5.dp, NexaraColors.GlassBorder, NexaraShapes.medium)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier
+                    .size(16.dp)
+                    .then(iconModifier),
+            )
+            Text(
+                text = label,
+                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
+                color = contentColor,
+                maxLines = 2,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactSelectableChip(
+    selected: Boolean,
+    role: Role,
+    onClick: () -> Unit,
+    visualTag: String,
+    backgroundColor: Color,
+    borderColor: Color,
+    modifier: Modifier = Modifier,
+    visualModifier: Modifier = Modifier,
+    visualHeight: Dp = 36.dp,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .semantics { this.selected = selected }
+            .clickable(role = role, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .clip(NexaraShapes.medium)
-                .background(bgColor)
-                .border(0.5.dp, NexaraColors.GlassBorder, NexaraShapes.medium)
+            modifier = visualModifier
+                .height(visualHeight)
+                .testTag(visualTag)
+                .clip(RoundedCornerShape(6.dp))
+                .background(backgroundColor)
+                .border(0.5.dp, borderColor, RoundedCornerShape(6.dp))
                 .padding(horizontal = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = contentColor,
-                    modifier = Modifier
-                        .size(16.dp)
-                        .then(iconModifier),
-                )
-                Text(
-                    text = label,
-                    style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                    color = contentColor,
-                    maxLines = 2,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
-            }
+            content()
         }
     }
 }
@@ -713,7 +743,7 @@ internal fun EnhancedModelCard(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = editId,
+                    text = model.remoteModelId.ifBlank { editId.substringAfter("::", editId) },
                     style = NexaraTypography.bodyMedium.copy(
                         fontSize = 11.sp,
                         fontFamily = SpaceGrotesk,
@@ -806,48 +836,42 @@ internal fun EnhancedModelCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                androidx.compose.foundation.layout.FlowRow(
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(NexaraColors.SurfaceLow)
-                            .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(6.dp))
-                            .padding(2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        ModelTypeLabelResources.forEachIndexed { index, labelRes ->
-                            val type = ModelTypes[index]
-                            val isSelected = selectedType == type
-                            val chipBg by animateColorAsState(
-                                targetValue = if (isSelected) NexaraColors.SurfaceHighest else NexaraColors.SurfaceLow.copy(alpha = 0f),
-                                animationSpec = tween(200),
-                                label = "typeChipBg",
-                            )
+                    ModelTypeLabelResources.forEachIndexed { index, labelRes ->
+                        val type = ModelTypes[index]
+                        val isSelected = selectedType == type
+                        val chipBg by animateColorAsState(
+                            targetValue = if (isSelected) NexaraColors.SurfaceHighest else NexaraColors.SurfaceLow,
+                            animationSpec = tween(200),
+                            label = "typeChipBg",
+                        )
 
-                            Box(
-                                modifier = Modifier
-                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                    .semantics { selected = isSelected }
-                                    .clickable(role = Role.RadioButton) { selectedType = type },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(chipBg)
-                                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                                ) {
-                                    Text(
-                                        text = stringResource(labelRes),
-                                        style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                        color = if (isSelected) NexaraColors.OnSurface else NexaraColors.Outline,
-                                    )
-                                }
-                            }
+                        CompactSelectableChip(
+                            selected = isSelected,
+                            role = Role.RadioButton,
+                            onClick = { selectedType = type },
+                            visualTag = UiTags.providerModelsTypeVisual(model.id, type),
+                            backgroundColor = chipBg,
+                            borderColor = if (isSelected) {
+                                NexaraColors.Primary.copy(alpha = 0.35f)
+                            } else {
+                                NexaraColors.GlassBorder
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag(UiTags.providerModelsTypeAction(model.id, type)),
+                            visualModifier = Modifier.fillMaxWidth(),
+                            visualHeight = 36.dp,
+                        ) {
+                            Text(
+                                text = stringResource(labelRes),
+                                style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
+                                color = if (isSelected) NexaraColors.OnSurface else NexaraColors.Outline,
+                                maxLines = 1,
+                            )
                         }
                     }
                 }
@@ -855,43 +879,42 @@ internal fun EnhancedModelCard(
                 // Capabilities Row (Multi-select)
                 androidx.compose.foundation.layout.FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
                     CapabilityTags.filter { 
                         it.key !in listOf("reasoning", "image", "embedding", "rerank")
                     }.forEach { cap ->
                         val isActive = activeCaps.contains(cap.key)
-                        Box(
-                            modifier = Modifier
-                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                .semantics { selected = isActive }
-                                .clickable(role = Role.Checkbox) {
+                        CompactSelectableChip(
+                            selected = isActive,
+                            role = Role.Checkbox,
+                            onClick = {
                                     activeCaps = if (isActive) activeCaps - cap.key
                                     else activeCaps + cap.key
-                                },
-                            contentAlignment = Alignment.Center,
+                            },
+                            visualTag = UiTags.providerModelsCapabilityVisual(model.id, cap.key),
+                            backgroundColor = if (isActive) {
+                                cap.color.copy(alpha = 0.15f)
+                            } else {
+                                NexaraColors.GlassSurface
+                            },
+                            borderColor = if (isActive) {
+                                cap.color.copy(alpha = 0.3f)
+                            } else {
+                                NexaraColors.GlassBorder
+                            },
+                            modifier = Modifier.testTag(
+                                UiTags.providerModelsCapabilityAction(model.id, cap.key),
+                            ),
+                            visualHeight = 36.dp,
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(
-                                        if (isActive) cap.color.copy(alpha = 0.15f)
-                                        else NexaraColors.GlassSurface,
-                                    )
-                                    .border(
-                                        0.5.dp,
-                                        if (isActive) cap.color.copy(alpha = 0.3f) else NexaraColors.GlassBorder,
-                                        RoundedCornerShape(6.dp),
-                                    )
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                            ) {
-                                Text(
-                                    text = stringResource(cap.labelRes),
-                                    style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                    color = if (isActive) cap.color else NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
-                                )
-                            }
+                            Text(
+                                text = stringResource(cap.labelRes),
+                                style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
+                                color = if (isActive) cap.color else NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
+                                maxLines = 1,
+                            )
                         }
                     }
                 }
@@ -912,23 +935,29 @@ internal fun EnhancedModelCard(
 
                 Box(
                     modifier = Modifier
-                        .width(90.dp)
+                        .width(112.dp)
+                        .height(48.dp)
+                        .testTag(UiTags.providerModelsContextField(model.id))
                         .clip(RoundedCornerShape(4.dp))
                         .background(NexaraColors.SurfaceLow)
                         .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(4.dp))
-                        .sizeIn(minHeight = 48.dp)
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.CenterStart,
                 ) {
                     BasicTextField(
                         value = editContext,
-                        onValueChange = { editContext = it },
+                        onValueChange = { value ->
+                            if (value.all(Char::isDigit)) editContext = value
+                        },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         textStyle = NexaraTypography.bodyMedium.copy(
                             fontSize = 11.sp,
                             fontFamily = SpaceGrotesk,
                             color = NexaraColors.OnSurface,
                         ),
                         cursorBrush = SolidColor(NexaraColors.Primary),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
 

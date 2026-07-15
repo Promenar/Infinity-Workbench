@@ -16,11 +16,16 @@ object UiTags {
     const val CHAT_STATE_READY = "chat_state_ready"
     const val CHAT_LOADING_SKELETON = "chat_loading_skeleton"
     const val CHAT_GENERATION_ACTION = "chat_generation_action"
+    const val CHAT_INPUT_ISLAND = "chat_input_island"
+    const val CHAT_INPUT_BAR_SURFACE = "chat_input_bar_surface"
     const val CHAT_OPTIONS = "chat_options"
     const val CHAT_SESSION_SETTINGS = "chat_session_settings"
     const val CHAT_INPUT = "chat_input"
     const val PROMPT_EDITOR_INPUT = "prompt_editor_input"
     const val CHAT_MODEL_SELECTOR = "chat_model_selector"
+    const val CHAT_MODEL_SELECTOR_VISUAL = "chat_model_selector_visual"
+    const val CHAT_TOKEN_INDICATOR = "chat_token_indicator"
+    const val CHAT_TOKEN_INDICATOR_VISUAL = "chat_token_indicator_visual"
     const val CHAT_MODEL_LIST = "chat_model_list"
     private const val CHAT_MODEL_OPTION_PREFIX = "chat_model_option:"
 
@@ -95,11 +100,25 @@ object UiTags {
     private const val PROVIDER_MODELS_MODEL_TEST_PREFIX = "provider_models_test:"
     private const val PROVIDER_MODELS_MODEL_DELETE_PREFIX = "provider_models_delete:"
     private const val PROVIDER_MODELS_MODEL_TOGGLE_PREFIX = "provider_models_toggle:"
+    private const val PROVIDER_MODELS_TYPE_PREFIX = "provider_models_type:"
+    private const val PROVIDER_MODELS_TYPE_VISUAL_PREFIX = "provider_models_type_visual:"
+    private const val PROVIDER_MODELS_CAPABILITY_PREFIX = "provider_models_capability:"
+    private const val PROVIDER_MODELS_CAPABILITY_VISUAL_PREFIX = "provider_models_capability_visual:"
+    private const val PROVIDER_MODELS_CONTEXT_PREFIX = "provider_models_context:"
 
     fun providerModelsModelCard(modelId: String): String = "$PROVIDER_MODELS_MODEL_CARD_PREFIX$modelId"
     fun providerModelsTestAction(modelId: String): String = "$PROVIDER_MODELS_MODEL_TEST_PREFIX$modelId"
     fun providerModelsDeleteAction(modelId: String): String = "$PROVIDER_MODELS_MODEL_DELETE_PREFIX$modelId"
     fun providerModelsToggleAction(modelId: String): String = "$PROVIDER_MODELS_MODEL_TOGGLE_PREFIX$modelId"
+    fun providerModelsTypeAction(modelId: String, type: String): String =
+        "$PROVIDER_MODELS_TYPE_PREFIX$modelId:$type"
+    fun providerModelsTypeVisual(modelId: String, type: String): String =
+        "$PROVIDER_MODELS_TYPE_VISUAL_PREFIX$modelId:$type"
+    fun providerModelsCapabilityAction(modelId: String, capability: String): String =
+        "$PROVIDER_MODELS_CAPABILITY_PREFIX$modelId:$capability"
+    fun providerModelsCapabilityVisual(modelId: String, capability: String): String =
+        "$PROVIDER_MODELS_CAPABILITY_VISUAL_PREFIX$modelId:$capability"
+    fun providerModelsContextField(modelId: String): String = "$PROVIDER_MODELS_CONTEXT_PREFIX$modelId"
 
     // ============ RAG Home ==========
     const val RAG_HOME_ROOT = "RAG_HOME_ROOT"
