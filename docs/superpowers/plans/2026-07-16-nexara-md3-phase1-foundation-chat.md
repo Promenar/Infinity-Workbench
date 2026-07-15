@@ -392,6 +392,7 @@ fun `会话输入区使用语义化 M3 控件和实测高度`() {
 
     assertThat(source).doesNotContain("CompactInputChip(")
     assertThat(source).doesNotContain("visualHeight = 34.dp")
+    assertThat(source).doesNotContain("NexaraGlassCard(")
     assertThat(source).doesNotContain("NexaraColors.GlassSurface")
     assertThat(source).doesNotContain("NexaraColors.GlassBorder")
     assertThat(source).contains("onSizeChanged")
@@ -606,7 +607,53 @@ Surface(
 
 实际提交必须保留全部现有 `TokenDetailRow`、摘要按钮和任务移除回调，不得以省略参数的示例替换生产代码。
 
-- [ ] **Step 6: 强化 IME 测试对实测 composer 的约束**
+- [ ] **Step 6: 将会话重命名弹窗迁移到稳定 M3 组件**
+
+先把同文件中的 `RenameDialog` 从 `Dialog + NexaraGlassCard + BasicTextField` 迁移到稳定 M3 组件，确保主会话源码彻底停止使用 Glass 公共组件：
+
+```kotlin
+@Composable
+fun RenameDialog(
+    currentName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var text by remember { mutableStateOf(currentName) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.chat_dialog_rename_title)) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text(stringResource(R.string.chat_dialog_rename_placeholder))
+                },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(text) },
+                enabled = text.isNotBlank(),
+            ) {
+                Text(stringResource(R.string.common_btn_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_btn_cancel))
+            }
+        },
+    )
+}
+```
+
+清理 `ChatScreen.kt` 不再使用的 `NexaraGlassCard`、`Dialog`、`BasicTextField`、`SolidColor` 等 imports；如果同文件其他代码仍消费其中某项，则保留该项。
+
+- [ ] **Step 7: 强化 IME 测试对实测 composer 的约束**
 
 在 `inputBar_staysAboveIme_afterTyping` 中增加：
 
@@ -618,7 +665,7 @@ assertThat(composerBottom).isAtMost(visibleBottomPx + tolerancePx)
 
 现有 `lastMessage_remainsVisible_whenImeShows`、`openingIme_doesNotStealDeliberateUpScroll` 和返回键测试保持不变。
 
-- [ ] **Step 7: 运行会话单测、编译和 instrumentation**
+- [ ] **Step 8: 运行会话单测、编译和 instrumentation**
 
 Run: `cd native-ui && ./gradlew :app:testDebugUnitTest --tests 'com.promenar.nexara.ui.chat.ChatComposerInsetsTest' --tests 'com.promenar.nexara.ui.chat.ChatRenderStateContractTest' :app:compileDebugKotlin`
 
@@ -628,7 +675,7 @@ Run（连接 API 31+ 模拟器或真机）: `cd native-ui && ./gradlew :app:conn
 
 Expected: 所有目标测试 PASS；若本机无设备，记录为设备门禁待执行，不得伪称通过。
 
-- [ ] **Step 8: 提交单层 composer**
+- [ ] **Step 9: 提交单层 composer**
 
 ```bash
 git add native-ui/app/src/main/java/com/promenar/nexara/ui/chat/ChatScreen.kt \
