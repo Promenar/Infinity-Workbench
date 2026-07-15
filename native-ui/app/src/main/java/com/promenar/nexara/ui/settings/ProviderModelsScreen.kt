@@ -2,14 +2,11 @@ package com.promenar.nexara.ui.settings
 
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,7 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -34,14 +30,19 @@ import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +53,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,28 +65,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
-import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.status.NoticeSeverity
@@ -93,7 +89,6 @@ import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
-import com.promenar.nexara.ui.theme.SpaceGrotesk
 
 private val ModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
 private val ModelTypeLabelResources = listOf(
@@ -217,6 +212,7 @@ internal fun ProviderModelsScreenContent(
     state: ProviderModelsScreenState,
     actions: ProviderModelsScreenActions,
     onNavigateBack: () -> Unit,
+    initiallyExpandedModelIds: Set<String> = emptySet(),
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var showDeleteAllDialog by remember { mutableStateOf(false) }
@@ -336,6 +332,7 @@ internal fun ProviderModelsScreenContent(
                             }
                         },
                         onDelete = { actions.onDelete(model.id) },
+                        initiallyExpanded = model.id in initiallyExpandedModelIds,
                         modifier = Modifier.testTag(UiTags.providerModelsModelCard(model.id)),
                     )
                 }
@@ -580,41 +577,6 @@ internal fun ProviderModelsTopActions(
     }
 }
 
-@Composable
-private fun CompactSelectableChip(
-    selected: Boolean,
-    role: Role,
-    onClick: () -> Unit,
-    visualTag: String,
-    backgroundColor: Color,
-    borderColor: Color,
-    modifier: Modifier = Modifier,
-    visualModifier: Modifier = Modifier,
-    visualHeight: Dp = 36.dp,
-    content: @Composable () -> Unit,
-) {
-    Box(
-        modifier = modifier
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .semantics { this.selected = selected }
-            .clickable(role = role, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = visualModifier
-                .height(visualHeight)
-                .testTag(visualTag)
-                .clip(RoundedCornerShape(6.dp))
-                .background(backgroundColor)
-                .border(0.5.dp, borderColor, RoundedCornerShape(6.dp))
-                .padding(horizontal = 8.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            content()
-        }
-    }
-}
-
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun EnhancedModelCard(
@@ -625,11 +587,14 @@ internal fun EnhancedModelCard(
     onTest: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
+    initiallyExpanded: Boolean = false,
 ) {
     val isTesting = testState == ModelTestState.Testing
+    val remoteModelId = model.remoteModelId.ifBlank { model.id.substringAfter("::", model.id) }
+    var expanded by remember(model.id) { mutableStateOf(initiallyExpanded) }
+    var showDeleteConfirmation by remember(model.id) { mutableStateOf(false) }
     var selectedType by remember(model.id) { mutableStateOf(model.type) }
     var editName by remember(model.id) { mutableStateOf(model.name) }
-    val editId = model.id
     var editContext by remember(model.id) { mutableStateOf(model.contextLength.toString()) }
     var activeCaps by remember(model.id) { mutableStateOf(model.capabilities.toSet()) }
 
@@ -646,16 +611,6 @@ internal fun EnhancedModelCard(
         activeCaps = model.capabilities.toSet()
     }
 
-    // type 变更时联动刷新基础能力（chat/reasoning/image/embedding/rerank），
-    // 同时保留用户手动选择的修饰能力（vision, internet）
-    LaunchedEffect(selectedType) {
-        val oldBase = TypeToBaseCaps[model.type] ?: setOf("chat")
-        val newBase = TypeToBaseCaps[selectedType] ?: setOf("chat")
-        if (oldBase != newBase) {
-            activeCaps = (activeCaps - AllBaseCapKeys) + newBase
-        }
-    }
-
     LaunchedEffect(selectedType, editName, editContext, activeCaps) {
         val updated = model.copy(
             type = selectedType,
@@ -668,15 +623,10 @@ internal fun EnhancedModelCard(
         }
     }
 
-    val rotation by animateFloatAsState(
-        targetValue = if (isTesting) 360f else 0f,
-        animationSpec = tween(1000),
-        label = "testRotation",
-    )
     val resultColor = when (testState) {
-        is ModelTestState.Success -> NexaraColors.StatusSuccess
-        is ModelTestState.Error -> NexaraColors.StatusError
-        else -> NexaraColors.Primary
+        is ModelTestState.Success -> MaterialTheme.colorScheme.tertiary
+        is ModelTestState.Error -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.primary
     }
     val testStatusMessage = when (testState) {
         ModelTestState.Testing -> stringResource(R.string.shared_loading)
@@ -687,324 +637,303 @@ internal fun EnhancedModelCard(
         is ModelTestState.Error -> modelTestErrorMessage(testState)
         else -> null
     }
+    val summaryCapabilities = activeCaps
+        .filterNot { it == "chat" }
+        .ifEmpty { listOf(selectedType) }
+        .distinct()
+    val remainingCapabilityCount = (summaryCapabilities.size - 2).coerceAtLeast(0)
+    val expansionStateDescription = stringResource(
+        if (expanded) R.string.common_state_expanded else R.string.common_state_collapsed,
+    )
 
-    NexaraGlassCard(
+    Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = NexaraShapes.large as RoundedCornerShape,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.shapes.large,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(NexaraColors.SurfaceContainer.copy(alpha = 0.3f))
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(NexaraColors.SurfaceLow.copy(alpha = 0.5f))
-                        .border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                        .sizeIn(minHeight = 48.dp)
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                ) {
-                    BasicTextField(
-                        value = editName,
-                        onValueChange = { editName = it },
-                        singleLine = false,
-                        maxLines = 2,
-                        textStyle = NexaraTypography.headlineSmall.copy(
-                            color = NexaraColors.OnSurface,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                        cursorBrush = SolidColor(NexaraColors.Primary),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    if (editName.isEmpty()) {
-                        Text(
-                            text = model.name,
-                            style = NexaraTypography.headlineSmall.copy(fontSize = 15.sp),
-                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = model.remoteModelId.ifBlank { editId.substringAfter("::", editId) },
-                    style = NexaraTypography.bodyMedium.copy(
-                        fontSize = 11.sp,
-                        fontFamily = SpaceGrotesk,
-                        color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
-                    ),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-
-                if (testStatusMessage != null) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = testStatusMessage,
-                        style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
-                        color = resultColor,
-                        modifier = Modifier.semantics {
-                            liveRegion = LiveRegionMode.Polite
-                            stateDescription = testStatusMessage
-                        },
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Spacer(modifier = Modifier.weight(1f))
-                    IconButton(
-                        onClick = onTest,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag(UiTags.providerModelsTestAction(model.id)),
-                    ) {
-                        Icon(
-                            imageVector = if (isTesting) Icons.Rounded.Sync else Icons.Rounded.Bolt,
-                            contentDescription = if (isTesting) {
-                                stringResource(R.string.settings_btn_cancel)
-                            } else {
-                                stringResource(R.string.provider_models_cd_test)
-                            },
-                            tint = resultColor,
-                            modifier = Modifier
-                                .size(16.dp)
-                                .then(if (isTesting) Modifier.rotate(rotation) else Modifier),
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag(UiTags.providerModelsDeleteAction(model.id)),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Delete,
-                            contentDescription = stringResource(R.string.shared_btn_delete),
-                            tint = NexaraColors.StatusError.copy(alpha = 0.7f),
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
-
-                    Switch(
-                        checked = model.enabled,
-                        onCheckedChange = { onToggle() },
-                        modifier = Modifier
-                            .minimumInteractiveComponentSize()
-                            .size(48.dp)
-                            .testTag(UiTags.providerModelsToggleAction(model.id)),
-                        colors = SwitchDefaults.colors(
-                            checkedTrackColor = NexaraColors.Primary,
-                            checkedThumbColor = NexaraColors.OnPrimary,
-                        ),
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(0.5.dp)
-                    .background(NexaraColors.GlassBorder),
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Model Type & Capabilities
-            Column(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    ModelTypeLabelResources.forEachIndexed { index, labelRes ->
-                        val type = ModelTypes[index]
-                        val isSelected = selectedType == type
-                        val chipBg by animateColorAsState(
-                            targetValue = if (isSelected) NexaraColors.SurfaceHighest else NexaraColors.SurfaceLow,
-                            animationSpec = tween(200),
-                            label = "typeChipBg",
-                        )
-
-                        CompactSelectableChip(
-                            selected = isSelected,
-                            role = Role.RadioButton,
-                            onClick = { selectedType = type },
-                            visualTag = UiTags.providerModelsTypeVisual(model.id, type),
-                            backgroundColor = chipBg,
-                            borderColor = if (isSelected) {
-                                NexaraColors.Primary.copy(alpha = 0.35f)
-                            } else {
-                                NexaraColors.GlassBorder
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag(UiTags.providerModelsTypeAction(model.id, type)),
-                            visualModifier = Modifier.fillMaxWidth(),
-                            visualHeight = 36.dp,
-                        ) {
-                            Text(
-                                text = stringResource(labelRes),
-                                style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                color = if (isSelected) NexaraColors.OnSurface else NexaraColors.Outline,
-                                maxLines = 1,
-                            )
-                        }
-                    }
+                    Text(
+                        text = model.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = remoteModelId,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .testTag(UiTags.providerModelsRemoteId(model.id))
+                            .semantics { contentDescription = remoteModelId },
+                    )
                 }
-
-                // Capabilities Row (Multi-select)
-                androidx.compose.foundation.layout.FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(0.dp),
-                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                IconButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag(UiTags.providerModelsExpandAction(model.id))
+                        .semantics {
+                            stateDescription = expansionStateDescription
+                        },
                 ) {
-                    CapabilityTags.filter { 
-                        it.key !in listOf("reasoning", "image", "embedding", "rerank")
-                    }.forEach { cap ->
-                        val isActive = activeCaps.contains(cap.key)
-                        CompactSelectableChip(
-                            selected = isActive,
-                            role = Role.Checkbox,
-                            onClick = {
-                                    activeCaps = if (isActive) activeCaps - cap.key
-                                    else activeCaps + cap.key
-                            },
-                            visualTag = UiTags.providerModelsCapabilityVisual(model.id, cap.key),
-                            backgroundColor = if (isActive) {
-                                cap.color.copy(alpha = 0.15f)
-                            } else {
-                                NexaraColors.GlassSurface
-                            },
-                            borderColor = if (isActive) {
-                                cap.color.copy(alpha = 0.3f)
-                            } else {
-                                NexaraColors.GlassBorder
-                            },
-                            modifier = Modifier.testTag(
-                                UiTags.providerModelsCapabilityAction(model.id, cap.key),
-                            ),
-                            visualHeight = 36.dp,
-                        ) {
-                            Text(
-                                text = stringResource(cap.labelRes),
-                                style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                color = if (isActive) cap.color else NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
-                                maxLines = 1,
-                            )
-                        }
-                    }
+                    Icon(
+                        imageVector = if (expanded) {
+                            Icons.Rounded.ExpandLess
+                        } else {
+                            Icons.Rounded.ExpandMore
+                        },
+                        contentDescription = stringResource(
+                            if (expanded) R.string.common_cd_collapse else R.string.common_cd_expand,
+                        ),
+                    )
                 }
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = stringResource(R.string.provider_models_context_label),
-                    style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                    color = NexaraColors.OnSurfaceVariant,
-                )
-
-                Box(
-                    modifier = Modifier
-                        .width(112.dp)
-                        .height(48.dp)
-                        .testTag(UiTags.providerModelsContextField(model.id))
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(NexaraColors.SurfaceLow)
-                        .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(4.dp))
-                        .padding(horizontal = 10.dp),
-                    contentAlignment = Alignment.CenterStart,
+                androidx.compose.foundation.layout.FlowRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    BasicTextField(
-                        value = editContext,
-                        onValueChange = { value ->
-                            if (value.all(Char::isDigit)) editContext = value
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        textStyle = NexaraTypography.bodyMedium.copy(
-                            fontSize = 11.sp,
-                            fontFamily = SpaceGrotesk,
-                            color = NexaraColors.OnSurface,
-                        ),
-                        cursorBrush = SolidColor(NexaraColors.Primary),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    summaryCapabilities.take(2).forEach { capability ->
+                        val labelRes = capabilityLabelResource(capability)
+                        AssistChip(
+                            onClick = { expanded = true },
+                            label = {
+                                Text(
+                                    text = labelRes?.let { stringResource(it) } ?: capability,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                            modifier = Modifier.sizeIn(minHeight = 48.dp),
+                        )
+                    }
+                    if (remainingCapabilityCount > 0) {
+                        Text(
+                            text = "+$remainingCapabilityCount",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
+                        )
+                    }
                 }
-
-                Text(
-                    text = stringResource(R.string.provider_models_tokens_unit),
-                    style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                    color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
+                Switch(
+                    checked = model.enabled,
+                    onCheckedChange = { onToggle() },
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .size(48.dp)
+                        .testTag(UiTags.providerModelsToggleAction(model.id)),
                 )
             }
 
-            // 最大输出 / 知识截止日期（来自 ModelSpec 数据库自动匹配）
-            if (model.maxOutputTokens > 0 || model.knowledgeCutoff != null) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(UiTags.providerModelsDetails(model.id)),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    if (model.maxOutputTokens > 0) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(NexaraColors.Primary.copy(alpha = 0.08f))
-                                .border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = stringResource(
-                                    R.string.provider_models_output_tokens,
-                                    formatTokens(model.maxOutputTokens),
-                                ),
-                                style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                color = NexaraColors.Primary,
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text(stringResource(R.string.provider_models_field_display_name)) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(UiTags.providerModelsNameField(model.id)),
+                        maxLines = 2,
+                    )
+
+                    androidx.compose.foundation.layout.FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ModelTypeLabelResources.forEachIndexed { index, labelRes ->
+                            val type = ModelTypes[index]
+                            FilterChip(
+                                selected = selectedType == type,
+                                onClick = {
+                                    val newBase = TypeToBaseCaps[type] ?: setOf("chat")
+                                    activeCaps = (activeCaps - AllBaseCapKeys) + newBase
+                                    selectedType = type
+                                },
+                                label = { Text(stringResource(labelRes)) },
+                                modifier = Modifier.testTag(
+                                    UiTags.providerModelsTypeAction(model.id, type),
+                                ).sizeIn(minHeight = 48.dp),
                             )
                         }
                     }
-                    if (model.knowledgeCutoff != null) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(NexaraColors.StatusWarning.copy(alpha = 0.08f))
-                                .border(0.5.dp, NexaraColors.StatusWarning.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = stringResource(
-                                    R.string.provider_models_knowledge_cutoff,
-                                    model.knowledgeCutoff!!,
-                                ),
-                                style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                color = NexaraColors.StatusWarning,
+
+                    androidx.compose.foundation.layout.FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CapabilityTags.forEach { capability ->
+                            val selected = capability.key in activeCaps
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    activeCaps = if (selected) {
+                                        activeCaps - capability.key
+                                    } else {
+                                        activeCaps + capability.key
+                                    }
+                                },
+                                label = { Text(stringResource(capability.labelRes)) },
+                                modifier = Modifier.testTag(
+                                    UiTags.providerModelsCapabilityAction(model.id, capability.key),
+                                ).sizeIn(minHeight = 48.dp),
                             )
                         }
+                    }
+
+                    OutlinedTextField(
+                        value = editContext,
+                        onValueChange = { value ->
+                            if (value.all(Char::isDigit)) {
+                                editContext = value
+                            }
+                        },
+                        label = { Text(stringResource(R.string.provider_models_context_label)) },
+                        suffix = { Text(stringResource(R.string.provider_models_tokens_unit)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(UiTags.providerModelsContextField(model.id)),
+                    )
+
+                    if (model.maxOutputTokens > 0) {
+                        Text(
+                            text = stringResource(
+                                R.string.provider_models_output_tokens,
+                                formatTokens(model.maxOutputTokens),
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    model.knowledgeCutoff?.let { cutoff ->
+                        Text(
+                            text = stringResource(R.string.provider_models_knowledge_cutoff, cutoff),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    testStatusMessage?.let { status ->
+                        Text(
+                            text = status,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = resultColor,
+                            modifier = Modifier.semantics {
+                                liveRegion = LiveRegionMode.Polite
+                                stateDescription = status
+                            },
+                        )
+                    }
+
+                    FilledTonalButton(
+                        onClick = onTest,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .sizeIn(minHeight = 48.dp)
+                            .testTag(UiTags.providerModelsTestAction(model.id)),
+                    ) {
+                        if (isTesting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(Icons.Rounded.Bolt, contentDescription = null)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            stringResource(
+                                if (isTesting) R.string.settings_btn_cancel else R.string.provider_models_cd_test,
+                            ),
+                        )
+                    }
+                    TextButton(
+                        onClick = { showDeleteConfirmation = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .sizeIn(minHeight = 48.dp)
+                            .testTag(UiTags.providerModelsDeleteAction(model.id)),
+                    ) {
+                        Icon(
+                            Icons.Rounded.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.shared_btn_delete),
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
                 }
             }
         }
+    }
+
+    if (showDeleteConfirmation) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+        ) {
+            Box(modifier = Modifier.testTag(UiTags.providerModelsDeleteConfirmDialog(model.id))) {
+                NexaraConfirmDialog(
+                    title = stringResource(R.string.shared_btn_delete),
+                    message = model.name,
+                    confirmText = stringResource(R.string.shared_btn_delete),
+                    confirmButtonModifier = Modifier.testTag(
+                        UiTags.providerModelsDeleteConfirmButton(model.id),
+                    ),
+                    isDestructive = true,
+                    onConfirm = {
+                        showDeleteConfirmation = false
+                        onDelete()
+                    },
+                    onCancel = { showDeleteConfirmation = false },
+                )
+            }
+        }
+    }
+}
+
+private fun capabilityLabelResource(capability: String): Int? {
+    val typeIndex = ModelTypes.indexOf(capability)
+    return if (typeIndex >= 0) {
+        ModelTypeLabelResources[typeIndex]
+    } else {
+        CapabilityTags.firstOrNull { it.key == capability }?.labelRes
     }
 }
 

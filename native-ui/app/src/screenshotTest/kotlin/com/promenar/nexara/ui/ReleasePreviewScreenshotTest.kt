@@ -652,6 +652,9 @@ fun providerModelsReleasePreviewChineseLargeFont() {
                 onClearNotice = {},
             ),
             onNavigateBack = {},
+            initiallyExpandedModelIds = setOf(
+                "provider-preview-beta::qwen3-235b-long-name-with-capabilities",
+            ),
         )
     }
 }

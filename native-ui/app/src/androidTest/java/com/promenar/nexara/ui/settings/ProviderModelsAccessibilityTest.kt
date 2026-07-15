@@ -16,6 +16,7 @@ import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasAnyAncestor
@@ -99,16 +100,18 @@ class ProviderModelsAccessibilityTest {
     }
 
     @Test
-    fun modelTypeCapabilityAndContextKeepDenseVisualsInsideAccessibleTargets() {
+    fun modelRowProgressivelyDisclosesResponsiveAdvancedControlsAt360DpWithTwoXFontScale() {
         val modelId = "provider-alpha::model-a"
+        val remoteModelId = "vendor/model-a-with-a-very-long-remote-identifier"
         rule.setContent {
-            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1f)) {
+            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 2f)) {
                 NexaraTheme {
                     Box(Modifier.width(360.dp)) {
                         EnhancedModelCard(
                             model = ModelInfo(
                                 name = "Model A",
                                 id = modelId,
+                                remoteModelId = remoteModelId,
                                 description = "desc",
                                 enabled = true,
                                 type = "chat",
@@ -127,23 +130,43 @@ class ProviderModelsAccessibilityTest {
             }
         }
 
+        rule.onNodeWithTag(modelRemoteIdTag(modelId))
+            .assertIsDisplayed()
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.ContentDescription,
+                    listOf(remoteModelId),
+                ),
+            )
+        rule.onNodeWithTag(UiTags.providerModelsToggleAction(modelId))
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag(modelExpandTag(modelId))
+            .assertIsDisplayed()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag(UiTags.providerModelsTypeAction(modelId, "chat")).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.providerModelsCapabilityAction(modelId, "vision")).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.providerModelsContextField(modelId)).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.providerModelsTestAction(modelId)).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.providerModelsDeleteAction(modelId)).assertDoesNotExist()
+        rule.onNodeWithTag(modelNameFieldTag(modelId)).assertDoesNotExist()
+
+        rule.onNodeWithTag(modelExpandTag(modelId)).performClick()
+        rule.onNodeWithTag(modelDetailsTag(modelId)).assertExists()
         rule.onNodeWithTag(UiTags.providerModelsTypeAction(modelId, "chat"))
             .assertHeightIsAtLeast(48.dp)
-        rule.onNodeWithTag(
-            UiTags.providerModelsTypeVisual(modelId, "chat"),
-            useUnmergedTree = true,
-        )
-            .assertHeightIsEqualTo(36.dp)
         rule.onNodeWithTag(UiTags.providerModelsCapabilityAction(modelId, "vision"))
             .assertHeightIsAtLeast(48.dp)
-        rule.onNodeWithTag(
-            UiTags.providerModelsCapabilityVisual(modelId, "vision"),
-            useUnmergedTree = true,
-        )
-            .assertHeightIsEqualTo(36.dp)
-        rule.onNodeWithTag(UiTags.providerModelsContextField(modelId))
-            .assertWidthIsEqualTo(112.dp)
-            .assertHeightIsEqualTo(48.dp)
+        val contextBounds = rule.onNodeWithTag(UiTags.providerModelsContextField(modelId))
+            .assertHeightIsAtLeast(48.dp)
+            .fetchSemanticsNode().boundsInRoot
+        assertThat(contextBounds.left).isAtLeast(0f)
+        assertThat(contextBounds.right).isAtMost(360f)
+
+        rule.onNodeWithTag(modelExpandTag(modelId)).performClick()
+        rule.onNodeWithTag(modelDetailsTag(modelId)).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.providerModelsContextField(modelId)).assertDoesNotExist()
     }
 
     @Test
@@ -330,11 +353,24 @@ class ProviderModelsAccessibilityTest {
         assertThat(deleteAllConfirmCount.get()).isEqualTo(1)
 
         rule.onNodeWithTag(UiTags.providerModelsModelCard("provider-alpha::model-a")).performScrollTo()
-        rule.onNodeWithTag(UiTags.providerModelsTestAction("provider-alpha::model-a")).performClick()
+        rule.onNodeWithTag(modelExpandTag("provider-alpha::model-a")).performClick()
+        rule.onNodeWithTag(UiTags.providerModelsTestAction("provider-alpha::model-a"))
+            .performScrollTo()
+            .performClick()
         assertThat(testCount.get()).isEqualTo(1)
+        rule.onNodeWithTag(UiTags.providerModelsDeleteAction("provider-alpha::model-a"))
+            .performScrollTo()
+            .performClick()
+        rule.onNodeWithTag(modelDeleteConfirmDialogTag("provider-alpha::model-a")).assertExists()
+        assertThat(deleteCount.get()).isEqualTo(0)
+        rule.onNodeWithText(resources.getString(R.string.common_btn_cancel)).performClick()
+        assertThat(deleteCount.get()).isEqualTo(0)
         rule.onNodeWithTag(UiTags.providerModelsDeleteAction("provider-alpha::model-a")).performClick()
+        rule.onNodeWithTag(modelDeleteConfirmButtonTag("provider-alpha::model-a")).performClick()
         assertThat(deleteCount.get()).isEqualTo(1)
-        rule.onNodeWithTag(UiTags.providerModelsToggleAction("provider-alpha::model-a")).performClick()
+        rule.onNodeWithTag(UiTags.providerModelsToggleAction("provider-alpha::model-a"))
+            .performScrollTo()
+            .performClick()
         assertThat(toggleCount.get()).isEqualTo(1)
     }
 
@@ -531,8 +567,11 @@ class ProviderModelsAccessibilityTest {
         rule.onNodeWithTag(UiTags.providerModelsModelCard(modelId))
             .assertExists()
             .performScrollTo()
+        rule.onNodeWithTag(UiTags.providerModelsTestAction(modelId)).assertDoesNotExist()
+        rule.onNodeWithTag(modelExpandTag(modelId)).performClick()
         rule.onNodeWithTag(UiTags.providerModelsTestAction(modelId))
             .assertExists()
+            .performScrollTo()
             .performClick()
         assertThat(cancelTestCount.get()).isEqualTo(1)
         rule.onNodeWithTag(UiTags.providerModelsDeleteAction(modelId)).assertExists()
@@ -562,11 +601,13 @@ class ProviderModelsAccessibilityTest {
                     onToggle = {},
                     onTest = {},
                     onDelete = {},
+                    initiallyExpanded = true,
                 )
             }
         }
 
-        rule.onNodeWithText("Initial Model").assertExists()
+        rule.onNodeWithTag(modelNameFieldTag("provider-alpha::stable-id"))
+            .assertTextContains("Initial Model")
         rule.runOnIdle {
             modelState.value = modelState.value.copy(
                 name = "Refreshed Model",
@@ -576,8 +617,113 @@ class ProviderModelsAccessibilityTest {
             )
         }
 
-        rule.onNodeWithText("Refreshed Model").assertExists()
-        rule.onNodeWithText("Initial Model").assertDoesNotExist()
+        rule.onNodeWithTag(modelNameFieldTag("provider-alpha::stable-id"))
+            .assertTextContains("Refreshed Model")
+        rule.onNodeWithTag(UiTags.providerModelsTypeAction("provider-alpha::stable-id", "reasoning"))
+            .assertExists()
+    }
+
+    @Test
+    fun expandedModelRowPreservesTypeCapabilityContextAndTestCallbacks() {
+        val modelId = "provider-alpha::editable"
+        val latestUpdate = AtomicReference<ModelInfo?>(null)
+        val updates = mutableListOf<ModelInfo>()
+        val testCount = AtomicInteger()
+        rule.setContent {
+            NexaraTheme {
+                EnhancedModelCard(
+                    model = ModelInfo(
+                        name = "Editable",
+                        id = modelId,
+                        description = "desc",
+                        enabled = true,
+                        type = "chat",
+                        contextLength = 8_192,
+                        capabilities = listOf("chat", "vision"),
+                        providerId = "provider-alpha",
+                        maxOutputTokens = 4_096,
+                        knowledgeCutoff = "202501",
+                    ),
+                    testState = ModelTestState.Idle,
+                    onUpdate = {
+                        latestUpdate.set(it)
+                        updates += it
+                    },
+                    onToggle = {},
+                    onTest = { testCount.incrementAndGet() },
+                    onDelete = {},
+                    initiallyExpanded = true,
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.providerModelsTypeAction(modelId, "reasoning")).performClick()
+        rule.waitForIdle()
+        assertThat(latestUpdate.get()?.type).isEqualTo("reasoning")
+        assertThat(latestUpdate.get()?.capabilities).contains("reasoning")
+        assertThat(latestUpdate.get()?.capabilities).contains("chat")
+        assertThat(latestUpdate.get()?.capabilities).contains("vision")
+        assertThat(latestUpdate.get()?.maxOutputTokens).isEqualTo(4_096)
+        assertThat(latestUpdate.get()?.knowledgeCutoff).isEqualTo("202501")
+        assertThat(updates.filter { it.type == "reasoning" }).isNotEmpty()
+        assertThat(updates.filter { it.type == "reasoning" }.all {
+            "chat" in it.capabilities && "reasoning" in it.capabilities && "vision" in it.capabilities
+        }).isTrue()
+
+        rule.onNodeWithTag(UiTags.providerModelsCapabilityAction(modelId, "internet")).performClick()
+        rule.waitForIdle()
+        assertThat(latestUpdate.get()?.capabilities).contains("internet")
+
+        val contextField = rule.onNode(
+            matcher = hasSetTextAction() and
+                (hasTestTag(UiTags.providerModelsContextField(modelId)) or
+                    hasAnyAncestor(hasTestTag(UiTags.providerModelsContextField(modelId)))),
+            useUnmergedTree = true,
+        )
+        contextField.performTextClearance()
+        contextField.performTextInput("32768")
+        rule.waitForIdle()
+        assertThat(latestUpdate.get()?.contextLength).isEqualTo(32_768)
+
+        rule.onNodeWithTag(UiTags.providerModelsTestAction(modelId)).performClick()
+        assertThat(testCount.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun singleModelDeleteRequiresCancelOrExplicitConfirmation() {
+        val modelId = "provider-alpha::delete-me"
+        val deleteCount = AtomicInteger()
+        rule.setContent {
+            NexaraTheme {
+                EnhancedModelCard(
+                    model = ModelInfo(
+                        name = "Delete Me",
+                        id = modelId,
+                        description = "desc",
+                        enabled = true,
+                        providerId = "provider-alpha",
+                    ),
+                    testState = ModelTestState.Idle,
+                    onUpdate = {},
+                    onToggle = {},
+                    onTest = {},
+                    onDelete = { deleteCount.incrementAndGet() },
+                    initiallyExpanded = true,
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.providerModelsDeleteAction(modelId)).performClick()
+        rule.onNodeWithTag(modelDeleteConfirmDialogTag(modelId)).assertExists()
+        assertThat(deleteCount.get()).isEqualTo(0)
+        rule.onNodeWithText(resources.getString(R.string.common_btn_cancel)).performClick()
+        assertThat(deleteCount.get()).isEqualTo(0)
+        rule.onNodeWithTag(modelDeleteConfirmDialogTag(modelId)).assertDoesNotExist()
+
+        rule.onNodeWithTag(UiTags.providerModelsDeleteAction(modelId)).performClick()
+        rule.onNodeWithTag(modelDeleteConfirmButtonTag(modelId)).performClick()
+        assertThat(deleteCount.get()).isEqualTo(1)
+        rule.onNodeWithTag(modelDeleteConfirmDialogTag(modelId)).assertDoesNotExist()
     }
 
     @Test
@@ -633,4 +779,11 @@ class ProviderModelsAccessibilityTest {
         onDelete = {},
         onClearNotice = {},
     )
+
+    private fun modelExpandTag(modelId: String) = "provider_models_expand:$modelId"
+    private fun modelDetailsTag(modelId: String) = "provider_models_details:$modelId"
+    private fun modelRemoteIdTag(modelId: String) = "provider_models_remote_id:$modelId"
+    private fun modelNameFieldTag(modelId: String) = "provider_models_name:$modelId"
+    private fun modelDeleteConfirmDialogTag(modelId: String) = "provider_models_delete_confirm_dialog:$modelId"
+    private fun modelDeleteConfirmButtonTag(modelId: String) = "provider_models_delete_confirm:$modelId"
 }

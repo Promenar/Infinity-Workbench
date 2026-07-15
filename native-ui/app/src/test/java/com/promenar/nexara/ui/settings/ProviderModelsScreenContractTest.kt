@@ -38,7 +38,7 @@ class ProviderModelsScreenContractTest {
     }
 
     @Test
-    fun `模型卡内部布局契约由后续Task6独立保护`() {
+    fun `模型卡使用单层Surface并按折叠展开渐进披露`() {
         val source = String(
             Files.readAllBytes(
                 Path.of("app/src/main/java/com/promenar/nexara/ui/settings/ProviderModelsScreen.kt"),
@@ -48,13 +48,24 @@ class ProviderModelsScreenContractTest {
         val modelCard = source.substringAfter("internal fun EnhancedModelCard(")
             .substringBefore("private fun formatTokens")
 
-        assertThat(modelCard).contains("CompactSelectableChip(")
-        assertThat(modelCard).contains("visualHeight = 36.dp")
-        assertThat(modelCard).contains(".width(112.dp)")
-        assertThat(modelCard).contains(".height(48.dp)")
-        assertThat(modelCard).contains("contentAlignment = Alignment.CenterStart")
+        assertThat(modelCard).contains("var expanded by remember(model.id) { mutableStateOf(initiallyExpanded) }")
+        assertThat(modelCard).contains("Surface(")
+        assertThat(modelCard).contains("if (expanded) {")
+        assertThat(modelCard).contains("OutlinedTextField(")
+        assertThat(modelCard).contains("FlowRow(")
+        assertThat(modelCard).contains("FilterChip(")
+        assertThat(modelCard).contains("summaryCapabilities.take(2)")
+        assertThat(modelCard).contains("remainingCapabilityCount")
+        assertThat(modelCard).contains("contentDescription = remoteModelId")
+        assertThat(modelCard).contains("maxLines = 1")
         assertThat(modelCard).contains("KeyboardType.Number")
         assertThat(modelCard).contains("model.remoteModelId.ifBlank")
+        assertThat(modelCard).contains("providerModelsDeleteConfirmDialog(model.id)")
+        assertThat(modelCard).contains("providerModelsDeleteConfirmButton(model.id)")
+        assertThat(modelCard).doesNotContain("NexaraGlassCard(")
+        assertThat(modelCard).doesNotContain("BasicTextField(")
+        assertThat(modelCard).doesNotContain("CompactSelectableChip(")
+        assertThat(modelCard).doesNotContain(".width(112.dp)")
     }
 
     @Test
@@ -140,6 +151,12 @@ class ProviderModelsScreenContractTest {
         assertThat(providerTags).contains("providerModelsTestAction")
         assertThat(providerTags).contains("providerModelsDeleteAction")
         assertThat(providerTags).contains("providerModelsToggleAction")
+        assertThat(providerTags).contains("providerModelsExpandAction")
+        assertThat(providerTags).contains("providerModelsDetails")
+        assertThat(providerTags).contains("providerModelsRemoteId")
+        assertThat(providerTags).contains("providerModelsNameField")
+        assertThat(providerTags).contains("providerModelsDeleteConfirmDialog")
+        assertThat(providerTags).contains("providerModelsDeleteConfirmButton")
     }
 
     @Test

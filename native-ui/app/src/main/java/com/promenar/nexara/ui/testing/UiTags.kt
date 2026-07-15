@@ -109,6 +109,12 @@ object UiTags {
     private const val PROVIDER_MODELS_MODEL_TEST_PREFIX = "provider_models_test:"
     private const val PROVIDER_MODELS_MODEL_DELETE_PREFIX = "provider_models_delete:"
     private const val PROVIDER_MODELS_MODEL_TOGGLE_PREFIX = "provider_models_toggle:"
+    private const val PROVIDER_MODELS_MODEL_EXPAND_PREFIX = "provider_models_expand:"
+    private const val PROVIDER_MODELS_MODEL_DETAILS_PREFIX = "provider_models_details:"
+    private const val PROVIDER_MODELS_MODEL_REMOTE_ID_PREFIX = "provider_models_remote_id:"
+    private const val PROVIDER_MODELS_MODEL_NAME_PREFIX = "provider_models_name:"
+    private const val PROVIDER_MODELS_MODEL_DELETE_CONFIRM_DIALOG_PREFIX = "provider_models_delete_confirm_dialog:"
+    private const val PROVIDER_MODELS_MODEL_DELETE_CONFIRM_PREFIX = "provider_models_delete_confirm:"
     private const val PROVIDER_MODELS_TYPE_PREFIX = "provider_models_type:"
     private const val PROVIDER_MODELS_TYPE_VISUAL_PREFIX = "provider_models_type_visual:"
     private const val PROVIDER_MODELS_CAPABILITY_PREFIX = "provider_models_capability:"
@@ -119,6 +125,14 @@ object UiTags {
     fun providerModelsTestAction(modelId: String): String = "$PROVIDER_MODELS_MODEL_TEST_PREFIX$modelId"
     fun providerModelsDeleteAction(modelId: String): String = "$PROVIDER_MODELS_MODEL_DELETE_PREFIX$modelId"
     fun providerModelsToggleAction(modelId: String): String = "$PROVIDER_MODELS_MODEL_TOGGLE_PREFIX$modelId"
+    fun providerModelsExpandAction(modelId: String): String = "$PROVIDER_MODELS_MODEL_EXPAND_PREFIX$modelId"
+    fun providerModelsDetails(modelId: String): String = "$PROVIDER_MODELS_MODEL_DETAILS_PREFIX$modelId"
+    fun providerModelsRemoteId(modelId: String): String = "$PROVIDER_MODELS_MODEL_REMOTE_ID_PREFIX$modelId"
+    fun providerModelsNameField(modelId: String): String = "$PROVIDER_MODELS_MODEL_NAME_PREFIX$modelId"
+    fun providerModelsDeleteConfirmDialog(modelId: String): String =
+        "$PROVIDER_MODELS_MODEL_DELETE_CONFIRM_DIALOG_PREFIX$modelId"
+    fun providerModelsDeleteConfirmButton(modelId: String): String =
+        "$PROVIDER_MODELS_MODEL_DELETE_CONFIRM_PREFIX$modelId"
     fun providerModelsTypeAction(modelId: String, type: String): String =
         "$PROVIDER_MODELS_TYPE_PREFIX$modelId:$type"
     fun providerModelsTypeVisual(modelId: String, type: String): String =
