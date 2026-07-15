@@ -16,6 +16,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.MainActivity
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
+import com.promenar.nexara.data.backup.BackupStartupState
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Session
@@ -44,8 +45,8 @@ class OnboardingAndroidEndToEndTest {
     @Before
     fun resetBeforeEachDeviceFlow() {
         if (phaseArgument() == null) resetPersistentState()
+        val app = waitForStartupReady()
         originalProviderSummary = ProviderManager.getInstance().getProviderSummary("default")
-        val app = rule.activity.application as NexaraApplication
         originalMainSlot = if (app.localInferenceRuntimeGate.isAvailable) {
             app.localInferenceEngine.mainSlot.value
         } else {
@@ -60,12 +61,14 @@ class OnboardingAndroidEndToEndTest {
         rule.activity.intent.removeExtra(MainActivity.EXTRA_ONBOARDING_LOCAL_PROBE_FAILURE_FOR_TESTING)
         val app = rule.activity.application as NexaraApplication
         originalChatState?.let { snapshot -> app.chatStore.update { snapshot } }
-        assertEquals(originalProviderSummary, ProviderManager.getInstance().getProviderSummary("default"))
-        if (app.localInferenceRuntimeGate.isAvailable) {
-            assertEquals(
-                originalMainSlot,
-                app.localInferenceEngine.mainSlot.value,
-            )
+        if (app.startupState.value == BackupStartupState.Ready) {
+            assertEquals(originalProviderSummary, ProviderManager.getInstance().getProviderSummary("default"))
+            if (app.localInferenceRuntimeGate.isAvailable) {
+                assertEquals(
+                    originalMainSlot,
+                    app.localInferenceEngine.mainSlot.value,
+                )
+            }
         }
     }
 
@@ -286,6 +289,18 @@ class OnboardingAndroidEndToEndTest {
 
     private fun assertStep(step: OnboardingStep) {
         rule.runOnIdle { assertEquals(step, rule.activity.onboardingStateForTesting().step) }
+    }
+
+    private fun waitForStartupReady(): NexaraApplication {
+        val app = rule.activity.application as NexaraApplication
+        rule.waitUntil(timeoutMillis = 20_000) {
+            val state = app.startupState.value
+            state == BackupStartupState.Ready || state == BackupStartupState.Blocked
+        }
+        check(app.startupState.value == BackupStartupState.Ready) {
+            "NexaraApplication 启动恢复未就绪 (state=${app.startupState.value})，ProviderManager 暂不可读"
+        }
+        return app
     }
 
     private fun phaseArgument(): String? = InstrumentationRegistry.getArguments()

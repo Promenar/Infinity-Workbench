@@ -4,6 +4,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BLACKBOX_SCRIPT="${REPO_ROOT}/scripts/ci/android-minified-blackbox-smoke.sh"
+PNG_NORMALIZER="${REPO_ROOT}/scripts/ci/normalize-android-screencap-png.py"
+PNG_NORMALIZER_TEST="${REPO_ROOT}/scripts/ci/tests/test-normalize-android-screencap-png.py"
 APP_BUILD="${REPO_ROOT}/native-ui/app/build.gradle.kts"
 SETTINGS="${REPO_ROOT}/native-ui/settings.gradle.kts"
 FIXTURE_ROOT="${REPO_ROOT}/native-ui/blackbox-fixture"
@@ -45,6 +47,8 @@ assert_absent() {
 }
 
 assert_file "${BLACKBOX_SCRIPT}"
+assert_file "${PNG_NORMALIZER}"
+assert_file "${PNG_NORMALIZER_TEST}"
 assert_file "${FIXTURE_BUILD}"
 assert_file "${FIXTURE_MANIFEST}"
 assert_file "${FIXTURE_PROVIDER}"
@@ -65,6 +69,8 @@ for fixture_contract in \
     'application/pdf' \
     'release-parser-canary-empty.docx' \
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document' \
+    'release-index-canary.txt' \
+    'text/plain' \
     'OpenableColumns.DISPLAY_NAME' \
     'OpenableColumns.SIZE' \
     '[Content_Types].xml' \
@@ -135,6 +141,8 @@ for smoke_contract in \
     'NEXARA_MINIFIED_E2E_ABI' \
     'ANDROID_MINIFIED_BLACKBOX_ARTIFACT_DIR' \
     'run-with-timeout.py' \
+    'com.google.android.marvin.talkback' \
+    'android.permission.POST_NOTIFICATIONS' \
     'pm list instrumentation' \
     'run-as' \
     'usesCleartextTraffic' \
@@ -146,13 +154,47 @@ for smoke_contract in \
     'android.intent.action.SEND' \
     'release-parser-canary-empty.pdf' \
     'release-parser-canary-empty.docx' \
+    'release-index-canary.txt' \
     'uiautomator dump' \
     'screencap -p' \
+    'normalize-android-screencap-png.py' \
     'Imported · Indexed' \
     '已导入 · 已完成索引' \
+    'Imported · Indexing failed, tap Retry' \
+    '已导入 · 索引失败，可重试' \
+    'Retry failed' \
+    '重试失败项' \
+    'run_canary_text' \
+    'wait_for_failed_retry()' \
+    'wait_for_refailed_retry()' \
+    'xml_has_any_text' \
+    'click_any_text "${trigger_xml}" "${english_retry}" "${chinese_retry}"' \
+    'click_any_text' \
     'am force-stop' \
     'exit-code.txt'; do
     assert_contains "${BLACKBOX_SCRIPT}" "${smoke_contract}"
+done
+assert_contains "${BLACKBOX_SCRIPT}" 'capture_normalized_screenshot() {'
+assert_contains "${BLACKBOX_SCRIPT}" 'python3 "${PNG_ALPHA_NORMALIZER}" "${raw}" "${output}"'
+assert_contains "${BLACKBOX_SCRIPT}" 'capture_normalized_screenshot "${ARTIFACT_DIR}/screen-final.png"'
+assert_contains "${BLACKBOX_SCRIPT}" 'capture_stable_screenshot "${ARTIFACT_DIR}/screen-launcher.png"'
+assert_contains "${BLACKBOX_SCRIPT}" 'rm -f "${previous}" "${current}" "${raw}"'
+assert_not_contains "${BLACKBOX_SCRIPT}" 'screencap -p > "${ARTIFACT_DIR}/screen-final.png"'
+assert_not_contains "${BLACKBOX_SCRIPT}" 'screencap -p > "${ARTIFACT_DIR}/screen-launcher.png"'
+assert_contains "${BLACKBOX_SCRIPT}" 'node.attrib.get("enabled", "false") == "true"'
+assert_contains "${BLACKBOX_SCRIPT}" 'adb shell pm grant "${TALKBACK_PACKAGE}" "${NOTIFICATION_PERMISSION}"'
+assert_contains "${BLACKBOX_SCRIPT}" 'adb shell pm revoke "${TALKBACK_PACKAGE}" "${NOTIFICATION_PERMISSION}"'
+
+indexed_wait_block="$(sed -n '/^wait_for_indexed_status() {/,/^}/p' "${BLACKBOX_SCRIPT}")"
+grep -Fq 'xml_has_tag_text "${xml}" share_import_status "${english}"' <<<"${indexed_wait_block}" ||
+    fail "wait_for_indexed_status 必须限定 SHARE_IMPORT_STATUS 英文状态节点"
+grep -Fq 'xml_has_tag_text "${xml}" share_import_status "${chinese}"' <<<"${indexed_wait_block}" ||
+    fail "wait_for_indexed_status 必须限定 SHARE_IMPORT_STATUS 中文状态节点"
+
+for tagged_status_function in wait_for_failed_retry wait_for_refailed_retry; do
+    tagged_status_block="$(sed -n "/^${tagged_status_function}() {/,/^}/p" "${BLACKBOX_SCRIPT}")"
+    grep -Fq 'xml_has_tag_text "${xml}" share_import_status' <<<"${tagged_status_block}" ||
+        fail "${tagged_status_function} 必须限定 SHARE_IMPORT_STATUS 状态节点"
 done
 assert_not_contains "${BLACKBOX_SCRIPT}" 'assembleMinifiedTestAndroidTest'
 assert_not_contains "${BLACKBOX_SCRIPT}" 'mainactivity-e2e'
@@ -162,13 +204,15 @@ assert_contains "${BLACKBOX_SCRIPT}" '--eu android.intent.extra.STREAM "${uri}"'
 assert_contains "${BLACKBOX_SCRIPT}" '-d "${uri}"'
 assert_contains "${BLACKBOX_SCRIPT}" '--grant-read-uri-permission'
 assert_not_contains "${BLACKBOX_SCRIPT}" '-f 0x10000001'
-assert_count "${BLACKBOX_SCRIPT}" '-a android.intent.action.MAIN' 3
-assert_count "${BLACKBOX_SCRIPT}" '-c android.intent.category.LAUNCHER' 3
+assert_count "${BLACKBOX_SCRIPT}" '-a android.intent.action.MAIN' 4
+assert_count "${BLACKBOX_SCRIPT}" '-c android.intent.category.LAUNCHER' 4
 assert_contains "${BLACKBOX_SCRIPT}" 'com.promenar.nexara.native.test'
 assert_not_contains "${BLACKBOX_SCRIPT}" '--projection _display_name:size'
 assert_contains "${BLACKBOX_SCRIPT}" '--projection _display_name:_size'
 assert_not_contains "${BLACKBOX_SCRIPT}" 'cp "${LAST_WINDOW_XML}" "${durable_xml}"'
 assert_contains "${BLACKBOX_SCRIPT}" 'require_file "${durable_xml}"'
+assert_not_contains "${BLACKBOX_SCRIPT}" 'am-start-${key}-persistent.txt'
+assert_not_contains "${BLACKBOX_SCRIPT}" 'screen-${key}-persistent.png'
 assert_contains "${BLACKBOX_SCRIPT}" 'WAIT_SECONDS="${ANDROID_MINIFIED_BLACKBOX_TIMEOUT_SECONDS:-120}"'
 assert_contains "${BLACKBOX_SCRIPT}" 'WAIT_SECONDS < 10 || WAIT_SECONDS > 900'
 assert_contains "${BLACKBOX_SCRIPT}" 'date +%s'
@@ -180,7 +224,9 @@ for wait_function in \
     wait_for_launcher_stable \
     wait_for_share_surface \
     wait_for_indexed_status \
-    wait_for_initial_launcher_ui; do
+    wait_for_initial_launcher_ui \
+    wait_for_failed_retry \
+    wait_for_refailed_retry; do
     wait_block="$(sed -n "/^${wait_function}() {/,/^}/p" "${BLACKBOX_SCRIPT}")"
     [[ -n "${wait_block}" ]] || fail "缺少 ${wait_function} deadline 等待函数"
     grep -Fq 'local deadline=$(( $(date +%s) + WAIT_SECONDS ))' <<<"${wait_block}" ||

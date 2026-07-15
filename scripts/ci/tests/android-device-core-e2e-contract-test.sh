@@ -6,6 +6,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DEVICE_SCRIPT="${REPO_ROOT}/scripts/ci/android-device-core-e2e.sh"
 APP_BUILD="${REPO_ROOT}/native-ui/app/build.gradle.kts"
 MAIN_ACTIVITY_E2E_BUILD="${REPO_ROOT}/native-ui/mainactivity-e2e/build.gradle.kts"
+ONBOARDING_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/nexara/onboarding/OnboardingAndroidEndToEndTest.kt"
+NOTIFICATION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/nexara/MainActivityNotificationE2eTest.kt"
 TIMEOUT_HELPER="${REPO_ROOT}/scripts/ci/run-with-timeout.py"
 
 fail() {
@@ -109,6 +111,15 @@ assert_contains "${DEVICE_SCRIPT}" 'python3 "${TIMEOUT_HELPER}"'
 assert_not_contains "${DEVICE_SCRIPT}" "\"${TIMEOUT_HELPER}\" adb"
 assert_not_contains "${DEVICE_SCRIPT}" "'${TIMEOUT_HELPER}' adb"
 assert_not_contains "${DEVICE_SCRIPT}" 'timeout "${INSTRUMENT_TIMEOUT_SECONDS}s"'
+
+# 设备夹具必须服从异步启动闸门，且系统权限按钮不能只依赖当前活动窗口。
+assert_contains "${ONBOARDING_E2E_TEST}" 'waitForStartupReady()'
+startup_wait_line="$(grep -n 'waitForStartupReady()' "${ONBOARDING_E2E_TEST}" | head -n 1 | cut -d: -f1)"
+provider_snapshot_line="$(grep -n 'originalProviderSummary = ProviderManager.getInstance()' "${ONBOARDING_E2E_TEST}" | head -n 1 | cut -d: -f1)"
+[[ -n "${startup_wait_line}" && -n "${provider_snapshot_line}" && "${startup_wait_line}" -lt "${provider_snapshot_line}" ]] ||
+    fail "onboarding 设备夹具必须先等待启动 Ready，再读取 ProviderManager"
+assert_contains "${NOTIFICATION_E2E_TEST}" 'uiAutomation.windows'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'FLAG_RETRIEVE_INTERACTIVE_WINDOWS'
 
 python3 "${REPO_ROOT}/scripts/ci/run-with-timeout.py" 1 /usr/bin/true
 

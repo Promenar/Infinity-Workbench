@@ -1,6 +1,7 @@
 package com.promenar.nexara.share.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +43,7 @@ import com.promenar.nexara.share.core.ShareIndexStatus
 import com.promenar.nexara.share.core.ShareRejectReason
 import com.promenar.nexara.share.core.ShareTargetKind
 import com.promenar.nexara.ui.testing.UiTags
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,9 +130,10 @@ fun ShareImportSheet(
                 )
             }
             Spacer(Modifier.height(12.dp))
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 TextButton(
                     onClick = onClose,
@@ -203,13 +206,23 @@ private fun ShareImportItemRow(item: ShareImportItem) {
         Text(item.displayName)
         Text(
             listOfNotNull(
-                item.mimeType,
+                compactMimeType(item.mimeType),
                 item.sizeBytes?.let(::formatShareBytes),
                 statusLabel(item),
             ).joinToString(" · "),
             modifier = Modifier.testTag(UiTags.SHARE_IMPORT_STATUS),
         )
         item.reason?.let { Text(rejectReasonLabel(it)) }
+    }
+}
+
+internal fun compactMimeType(mimeType: String?): String? {
+    if (mimeType == null) return null
+    return when (mimeType.lowercase(Locale.ROOT)) {
+        "application/pdf" -> "PDF"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> "DOCX"
+        "text/plain" -> "TXT"
+        else -> mimeType
     }
 }
 

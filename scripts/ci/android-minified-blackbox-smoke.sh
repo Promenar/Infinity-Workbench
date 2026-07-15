@@ -5,15 +5,20 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NATIVE_ROOT="${REPO_ROOT}/native-ui"
 TIMEOUT_HELPER="${REPO_ROOT}/scripts/ci/run-with-timeout.py"
+PNG_ALPHA_NORMALIZER="${REPO_ROOT}/scripts/ci/normalize-android-screencap-png.py"
 TARGET_APK_OVERRIDE="${NEXARA_MINIFIED_TARGET_APK:-}"
 TARGET_PACKAGE="${NEXARA_MINIFIED_TARGET_PACKAGE:-com.promenar.nexara.native.minifiedTest}"
 SKIP_BUILD="${NEXARA_MINIFIED_SKIP_BUILD:-false}"
 TARGET_ABI="${NEXARA_MINIFIED_E2E_ABI:-x86_64}"
 FIXTURE_PACKAGE="com.promenar.nexara.blackboxfixture"
 FIXTURE_AUTHORITY="com.promenar.nexara.blackboxfixture.documents"
+TALKBACK_PACKAGE="com.google.android.marvin.talkback"
+NOTIFICATION_PERMISSION="android.permission.POST_NOTIFICATIONS"
 FIXTURE_APK="${NATIVE_ROOT}/blackbox-fixture/build/outputs/apk/debug/blackbox-fixture-debug.apk"
 DEFAULT_TARGET_APK="${NATIVE_ROOT}/app/build/outputs/apk/minifiedTest/app-minifiedTest.apk"
 DEFAULT_MAPPING="${NATIVE_ROOT}/app/build/outputs/mapping/minifiedTest/mapping.txt"
+TEXT_CANARY_NAME="release-index-canary.txt"
+TEXT_CANARY_MIME="text/plain"
 API_LEVEL="$(adb shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
 ARTIFACT_DIR_INPUT="${ANDROID_MINIFIED_BLACKBOX_ARTIFACT_DIR:-artifacts/android-minified-blackbox-api-${API_LEVEL:-unknown}-${TARGET_ABI}}"
 if [[ "${ARTIFACT_DIR_INPUT}" == /* ]]; then
@@ -30,6 +35,8 @@ LAST_WINDOW_XML="${ARTIFACT_DIR}/window-final.xml"
 DISPLAY_STATE_CAPTURED=false
 ORIGINAL_ACCELEROMETER_ROTATION=""
 ORIGINAL_USER_ROTATION=""
+TALKBACK_PRESENT=false
+TALKBACK_NOTIFICATION_WAS_GRANTED=false
 
 case "${TARGET_ABI}" in
     x86_64|arm64-v8a) ;;
@@ -87,6 +94,28 @@ restore_device_display_state() {
     DISPLAY_STATE_CAPTURED=false
 }
 
+prepare_uiautomator_environment() {
+    if ! adb shell pm path "${TALKBACK_PACKAGE}" 2>/dev/null | grep -Fq 'package:'; then
+        return 0
+    fi
+    TALKBACK_PRESENT=true
+    if adb shell dumpsys package "${TALKBACK_PACKAGE}" 2>/dev/null \
+        | grep -Fq "${NOTIFICATION_PERMISSION}: granted=true"; then
+        TALKBACK_NOTIFICATION_WAS_GRANTED=true
+    fi
+    adb shell pm grant "${TALKBACK_PACKAGE}" "${NOTIFICATION_PERMISSION}"
+    adb shell am force-stop "${TALKBACK_PACKAGE}" >/dev/null 2>&1 || true
+}
+
+restore_uiautomator_environment() {
+    if [[ "${TALKBACK_PRESENT}" == "true" ]] && \
+        [[ "${TALKBACK_NOTIFICATION_WAS_GRANTED}" != "true" ]]; then
+        adb shell pm revoke "${TALKBACK_PACKAGE}" "${NOTIFICATION_PERMISSION}" \
+            >/dev/null 2>&1 || true
+    fi
+    TALKBACK_PRESENT=false
+}
+
 remaining_seconds() {
     local deadline="$1"
     local now
@@ -120,6 +149,53 @@ dump_ui() {
         /sdcard/nexara-blackbox-window.xml "${destination}" >/dev/null 2>&1
 }
 
+capture_stable_screenshot() {
+    local output="$1"
+    local previous="${output}.previous"
+    local current="${output}.current"
+    local raw="${output}.raw"
+    local attempt=0
+
+    rm -f "${previous}" "${current}" "${raw}"
+    sleep 1
+    adb exec-out screencap -p > "${previous}"
+    while (( attempt < 8 )); do
+        sleep 0.25
+        adb exec-out screencap -p > "${current}"
+        if cmp -s "${previous}" "${current}"; then
+            mv "${current}" "${raw}"
+            rm -f "${previous}"
+            break
+        fi
+        mv "${current}" "${previous}"
+        attempt=$(( attempt + 1 ))
+    done
+    if [[ ! -f "${raw}" ]]; then
+        mv "${previous}" "${raw}"
+    fi
+    if ! python3 "${PNG_ALPHA_NORMALIZER}" "${raw}" "${output}"; then
+        rm -f "${previous}" "${current}" "${raw}"
+        return 1
+    fi
+    rm -f "${previous}" "${current}" "${raw}"
+}
+
+capture_normalized_screenshot() {
+    local output="$1"
+    local raw="${output}.raw"
+
+    rm -f "${raw}"
+    if ! adb exec-out screencap -p > "${raw}"; then
+        rm -f "${raw}"
+        return 1
+    fi
+    if ! python3 "${PNG_ALPHA_NORMALIZER}" "${raw}" "${output}"; then
+        rm -f "${raw}"
+        return 1
+    fi
+    rm -f "${raw}"
+}
+
 capture_artifacts() {
     local exit_code="$1"
     set +e
@@ -131,8 +207,9 @@ capture_artifacts() {
     adb shell dumpsys package "${FIXTURE_PACKAGE}" > "${ARTIFACT_DIR}/fixture-package.txt" 2>&1
     adb shell pm list instrumentation > "${ARTIFACT_DIR}/instrumentation.txt" 2>&1
     dump_ui "${LAST_WINDOW_XML}" "$(( $(date +%s) + UI_DUMP_MAX_SECONDS ))"
-    adb exec-out screencap -p > "${ARTIFACT_DIR}/screen-final.png" 2>/dev/null
+    capture_normalized_screenshot "${ARTIFACT_DIR}/screen-final.png" 2>/dev/null || true
     printf '%s\n' "${exit_code}" > "${ARTIFACT_DIR}/exit-code.txt"
+    restore_uiautomator_environment
     restore_device_display_state
     set -e
 }
@@ -166,6 +243,7 @@ fi
 
 require_file "${TARGET_APK}"
 require_file "${FIXTURE_APK}"
+require_file "${PNG_ALPHA_NORMALIZER}"
 if [[ "${DEFAULT_MINIFIED_MODE}" == "true" ]]; then
     require_nonempty_file "${DEFAULT_MAPPING}"
     cp "${DEFAULT_MAPPING}" "${ARTIFACT_DIR}/mapping.txt"
@@ -198,6 +276,7 @@ done
 
 adb wait-for-device
 capture_device_display_state
+prepare_uiautomator_environment
 for stale_package in \
     com.promenar.nexara.native.test \
     com.promenar.nexara.native.minifiedTest.test \
@@ -237,7 +316,8 @@ fi
 
 for name_and_mime in \
     'release-parser-canary-empty.pdf|application/pdf' \
-    'release-parser-canary-empty.docx|application/vnd.openxmlformats-officedocument.wordprocessingml.document'; do
+    'release-parser-canary-empty.docx|application/vnd.openxmlformats-officedocument.wordprocessingml.document' \
+    'release-index-canary.txt|text/plain'; do
     name="${name_and_mime%%|*}"
     mime="${name_and_mime#*|}"
     uri="content://${FIXTURE_AUTHORITY}/${name}"
@@ -339,6 +419,36 @@ raise SystemExit(1)
 PY
 }
 
+xml_has_any_text() {
+    local xml="$1"
+    local expected="$2"
+    python3 - "${xml}" "${expected}" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+expected = sys.argv[2]
+for node in root.iter("node"):
+    for key in ("text", "content-desc"):
+        value = node.attrib.get(key, "")
+        if expected in value:
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+xml_has_any_text_in_list() {
+    local xml="$1"
+    local expected_list="$2"
+    local expected
+    IFS="|" read -r -a expected_items <<< "${expected_list}"
+    for expected in "${expected_items[@]}"; do
+        if xml_has_any_text "${xml}" "${expected}"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 click_tag() {
     local xml="$1"
     local tag="$2"
@@ -360,6 +470,39 @@ for node in root.iter("node"):
 raise SystemExit(1)
 PY
 )"
+    adb shell input tap ${coordinates}
+}
+
+click_any_text() {
+    local xml="$1"
+    shift
+    local candidates=("$@")
+    local candidate_count="${#candidates[@]}"
+    if (( candidate_count == 0 )); then
+        return 1
+    fi
+    local coordinates
+    coordinates="$(python3 - "${xml}" "${candidates[@]}" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+expected = sys.argv[2:]
+for node in root.iter("node"):
+    text = node.attrib.get("text", "")
+    content_desc = node.attrib.get("content-desc", "")
+    enabled = node.attrib.get("enabled", "false") == "true"
+    for candidate in expected:
+        if enabled and candidate and (candidate in text or candidate in content_desc):
+            match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+            if match:
+                left, top, right, bottom = map(int, match.groups())
+                print(f"{(left + right) // 2} {(top + bottom) // 2}")
+                raise SystemExit(0)
+raise SystemExit(1)
+PY
+)"
+    [[ -n "${coordinates}" ]] || return 1
     adb shell input tap ${coordinates}
 }
 
@@ -395,21 +538,75 @@ reject_failure_surface() {
 wait_for_indexed_status() {
     local phase="$1"
     local xml="${ARTIFACT_DIR}/window-${phase}-indexed.xml"
+    local english="Imported · Indexed"
+    local chinese="已导入 · 已完成索引"
     local deadline=$(( $(date +%s) + WAIT_SECONDS ))
     while (( $(date +%s) < deadline )); do
         if dump_ui "${xml}" "${deadline}"; then
             reject_failure_surface "${xml}"
             assert_target_healthy "${phase}"
-            if xml_has_tag_text "${xml}" share_import_status 'Imported · Indexed' || \
-                xml_has_tag_text "${xml}" share_import_status '已导入 · 已完成索引'; then
+            if xml_has_tag_text "${xml}" share_import_status "${english}" || \
+                xml_has_tag_text "${xml}" share_import_status "${chinese}"; then
                 LAST_WINDOW_XML="${xml}"
-                adb exec-out screencap -p > "${ARTIFACT_DIR}/screen-${phase}-indexed.png"
+                capture_stable_screenshot "${ARTIFACT_DIR}/screen-${phase}-indexed.png"
                 return 0
             fi
         fi
         sleep 0.5
     done
     echo "${phase}：未观察到导入并完成索引状态" >&2
+    return 1
+}
+
+wait_for_failed_retry() {
+    local phase="$1"
+    local filename="$2"
+    local xml="${ARTIFACT_DIR}/window-${phase}-failed-retry.xml"
+    local english_failure="Imported · Indexing failed, tap Retry"
+    local chinese_failure="已导入 · 索引失败，可重试"
+    local english_retry="Retry failed"
+    local chinese_retry="重试失败项"
+    local deadline=$(( $(date +%s) + WAIT_SECONDS ))
+    while (( $(date +%s) < deadline )); do
+        if dump_ui "${xml}" "${deadline}"; then
+            assert_target_healthy "${phase}"
+            if xml_has_any_text "${xml}" "${filename}" && \
+                { xml_has_tag_text "${xml}" share_import_status "${english_failure}" || \
+                    xml_has_tag_text "${xml}" share_import_status "${chinese_failure}"; } && \
+                xml_has_any_text_in_list "${xml}" "${english_retry}|${chinese_retry}"; then
+                LAST_WINDOW_XML="${xml}"
+                return 0
+            fi
+        fi
+        sleep 0.5
+    done
+    echo "${phase}：未观察到 ${filename} 的失败 + Retry 状态" >&2
+    return 1
+}
+
+wait_for_refailed_retry() {
+    local phase="$1"
+    local filename="$2"
+    local xml="${ARTIFACT_DIR}/window-${phase}-refailed-retry.xml"
+    local english_failure="Imported · Indexing failed, tap Retry"
+    local chinese_failure="已导入 · 索引失败，可重试"
+    local english_retry="Retry failed"
+    local chinese_retry="重试失败项"
+    local deadline=$(( $(date +%s) + WAIT_SECONDS ))
+    while (( $(date +%s) < deadline )); do
+        if dump_ui "${xml}" "${deadline}"; then
+            assert_target_healthy "${phase}"
+            if xml_has_any_text "${xml}" "${filename}" && \
+                { xml_has_tag_text "${xml}" share_import_status "${english_failure}" || \
+                    xml_has_tag_text "${xml}" share_import_status "${chinese_failure}"; } && \
+                xml_has_any_text_in_list "${xml}" "${english_retry}|${chinese_retry}"; then
+                LAST_WINDOW_XML="${xml}"
+                return 0
+            fi
+        fi
+        sleep 0.5
+    done
+    echo "${phase}：未观察到 ${filename} 的再次失败 + Retry 状态" >&2
     return 1
 }
 
@@ -439,7 +636,7 @@ adb shell am start -W -n "${TARGET_COMPONENT}" \
 wait_for_launcher_stable launcher
 wait_for_initial_launcher_ui
 assert_target_healthy launcher
-adb exec-out screencap -p > "${ARTIFACT_DIR}/screen-launcher.png"
+capture_stable_screenshot "${ARTIFACT_DIR}/screen-launcher.png"
 
 run_canary() {
     local name="$1"
@@ -458,7 +655,7 @@ run_canary() {
     wait_for_share_surface "${key}-share" "${name}"
     reject_failure_surface "${LAST_WINDOW_XML}"
     assert_target_healthy "${key}-share"
-    adb exec-out screencap -p > "${ARTIFACT_DIR}/screen-${key}-share.png"
+    capture_stable_screenshot "${ARTIFACT_DIR}/screen-${key}-share.png"
 
     adb shell am force-stop "${TARGET_PACKAGE}"
     adb shell am start -W -n "${TARGET_COMPONENT}" \
@@ -474,12 +671,64 @@ run_canary() {
     wait_for_indexed_status "${key}"
 }
 
+run_canary_text() {
+    local name="$1"
+    local mime="$2"
+    local key="$3"
+    local uri="content://${FIXTURE_AUTHORITY}/${name}"
+    local durable_xml="${ARTIFACT_DIR}/window-${key}-durable.xml"
+    local trigger_xml="${ARTIFACT_DIR}/window-${key}-retry-trigger.xml"
+    local english_retry="Retry failed"
+    local chinese_retry="重试失败项"
+
+    adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
+    adb logcat -c
+    adb shell am start -S -W -n "${TARGET_COMPONENT}" \
+        -a android.intent.action.SEND -t "${mime}" -d "${uri}" \
+        --eu android.intent.extra.STREAM "${uri}" --grant-read-uri-permission \
+        > "${ARTIFACT_DIR}/am-start-${key}-share.txt"
+    wait_for_launcher_stable "${key}-share"
+    wait_for_share_surface "${key}-share" "${name}"
+    assert_target_healthy "${key}-share"
+    capture_stable_screenshot "${ARTIFACT_DIR}/screen-${key}-share.png"
+
+    adb shell am force-stop "${TARGET_PACKAGE}"
+    adb shell am start -W -n "${TARGET_COMPONENT}" \
+        -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
+        > "${ARTIFACT_DIR}/am-start-${key}-durable.txt"
+    wait_for_launcher_stable "${key}-durable"
+    wait_for_share_surface "${key}-durable" "${name}"
+    require_file "${durable_xml}"
+    click_tag "${durable_xml}" share_import_knowledge_base_target
+    sleep 0.25
+    dump_ui "${durable_xml}" "$(( $(date +%s) + WAIT_SECONDS ))"
+    click_tag "${durable_xml}" share_import_action
+    if ! wait_for_failed_retry "${key}-failed" "${name}"; then
+        echo "${key}：未观察到文本索引失败与可重试序列" >&2
+        return 1
+    fi
+    if ! dump_ui "${trigger_xml}" "$(( $(date +%s) + WAIT_SECONDS ))"; then
+        echo "${key}：读取文本重试触发页失败" >&2
+        return 1
+    fi
+    click_any_text "${trigger_xml}" "${english_retry}" "${chinese_retry}"
+    sleep 0.25
+    if ! wait_for_refailed_retry "${key}-refailed" "${name}"; then
+        echo "${key}：未再次观察到文本失败 + Retry 状态" >&2
+        return 1
+    fi
+
+    capture_stable_screenshot "${ARTIFACT_DIR}/screen-${key}-refailed.png"
+    assert_target_healthy "${key}-refailed"
+}
+
 run_canary release-parser-canary-empty.pdf application/pdf pdf
 run_canary release-parser-canary-empty.docx \
     application/vnd.openxmlformats-officedocument.wordprocessingml.document docx
+run_canary_text "${TEXT_CANARY_NAME}" "${TEXT_CANARY_MIME}" text
 
 printf 'api_level=%s\nabi=%s\ntarget_package=%s\ndefault_minified_mode=%s\n' \
     "${API_LEVEL}" "${TARGET_ABI}" "${TARGET_PACKAGE}" "${DEFAULT_MINIFIED_MODE}" \
     > "${ARTIFACT_DIR}/matrix.txt"
 
-echo "API ${API_LEVEL} release-equivalent minified 黑盒冷启动与 PDF/DOCX 分享导入通过。"
+echo "API ${API_LEVEL} release-equivalent minified 黑盒冷启动、PDF/DOCX 分享导入及文本索引失败重试通过。"

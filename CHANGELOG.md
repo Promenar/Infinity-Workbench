@@ -14,7 +14,10 @@ All notable changes to this project will be documented in this file.
 - **提示词编辑器**：统一保存/关闭和脏内容退出保护，移除伪 Sheet 模式，采用单一纵向滚动源，补齐长文本、2x 字体、空预览和 CJK/拉丁统计测试入口。
 - **Release 日志安全**：业务日志统一进入 `NexaraLogger` 的 Debug 编译门禁，R8 对日志入口和平台输出执行精确剥离；源码契约禁止业务代码直接调用 `Log.*`、`printStackTrace` 或标准错误输出。
 - **APK 验证器**：增加 ZIP 完整性/解压边界、唯一包身份、唯一签名者与证书指纹、敏感内容跨块扫描、50 MiB 上限和标准 SHA-256 输出的 fail-closed 校验；确定性 Python 测试 20/20 通过。
-- **发行工作流可靠性**：CI 覆盖真实默认分支与 API 31/35/36 设备作业；tag workflow 检查发行文档、tag 来源/签名策略、R8 mapping、checksum、zipalign、API 35/36 冷安装，并以稳定 artifact 名和幂等 prerelease 发布流程支持重跑。远端 workflow 尚待首次真实运行。
+- **发行工作流可靠性**：CI 覆盖真实默认分支与 API 31/35/36 设备作业；tag workflow 检查发行文档、tag 来源/签名策略、R8 mapping、checksum、zipalign、API 35/36 冷安装，并以稳定 artifact 名和幂等 prerelease 发布流程支持重跑。push CI 已完成首次真实运行并暴露两项设备环境问题，tag release workflow 尚待首次发行运行。
+- **分享导入与 RAG 发行验真**：分享表单把 PDF、DOCX、TXT 等已知 MIME 收敛为紧凑格式标签，避免窄屏长 MIME 串多行破坏布局；底部四动作改用保持 8dp 双向间距的可换行布局，并通过 API 36 的 2.0x 字体可达性测试。release-equivalent 混淆包黑盒新增 TXT 导入、索引失败与再次重试，文件型 Room 测试覆盖数据库关闭重开后的失败任务恢复与确定性 task id 复用。
+- **Android 截图证据可靠性**：新增纯 Python 标准库的 RGBA8 PNG alpha 归一化工具，校验 PNG chunk/CRC、逆转 filter 0–4、保持 RGB 并把 alpha 原子改为 255；minified 黑盒的 8 张最终截图全部接入并清理 raw 临时文件，离线测试、真实异常 PNG 像素比对与 API 36 黑盒均通过。
+- **Android CI 首轮修复**：首次远端 Android CI 的 JVM/Lint/构建和 API 31 通过；API 35 暴露系统权限窗跨窗口查找问题，API 36 暴露 onboarding 在应用启动门禁前访问 Provider 的竞态。测试现已按真实窗口和启动状态修复，第二轮远端结果待最终回填。
 - **Metro 开发者 TUI**：调试终端补齐 `--help`、`--version`、`--stdin`、`--serial`、`--tag`、非 TTY 无色输出、明确退出码和缺字段容错；49 项 Node.js 测试通过。该工具只服务 Debug 日志分析，不是最终用户 CLI，也不与 Android UI 做功能对等承诺。
 - **发行边界**：最低系统改为 Android 12/API 31；GGUF/llama.cpp 不进入稳定发行能力，Release 关闭本地推理并拒绝打包相关制品；正式分发目标为 GitHub Release 可侧载签名 APK。
 

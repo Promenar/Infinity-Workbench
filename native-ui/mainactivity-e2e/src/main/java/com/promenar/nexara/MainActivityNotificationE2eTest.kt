@@ -1,8 +1,10 @@
 package com.promenar.nexara
 
 import android.Manifest
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.ActivityManager
 import android.app.NotificationManager
+import android.app.UiAutomation
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -201,11 +203,11 @@ class MainActivityNotificationE2eTest {
         resourceId: String,
         screenshotName: String,
     ): Boolean {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        enableInteractiveWindowRetrieval(uiAutomation)
         val deadline = SystemClock.elapsedRealtime() + 10_000
         do {
-            val root = instrumentation.uiAutomation.rootInActiveWindow
-            val button = root?.findAccessibilityNodeInfosByViewId(resourceId)?.firstOrNull()
+            val button = findPermissionControllerButton(uiAutomation, resourceId)
             if (button != null && button.isEnabled) {
                 SystemClock.sleep(500)
                 captureDeviceScreenshot(screenshotName)
@@ -213,8 +215,37 @@ class MainActivityNotificationE2eTest {
             }
             SystemClock.sleep(50)
         } while (SystemClock.elapsedRealtime() < deadline)
+        captureDeviceScreenshot(notFoundScreenshotName(screenshotName))
         return false
     }
+
+    private fun findPermissionControllerButton(
+        uiAutomation: UiAutomation,
+        resourceId: String,
+    ): AccessibilityNodeInfo? =
+        permissionControllerRoots(uiAutomation).firstNotNullOfOrNull { root ->
+            root.findAccessibilityNodeInfosByViewId(resourceId)?.firstOrNull { it.isEnabled }
+        }
+
+    private fun permissionControllerRoots(uiAutomation: UiAutomation): List<AccessibilityNodeInfo> {
+        val roots = uiAutomation.windows.orEmpty().mapNotNull { it.root }.toMutableList()
+        uiAutomation.rootInActiveWindow?.let(roots::add)
+        return roots
+            .distinctBy { it.windowId }
+            .sortedByDescending { isPermissionControllerPackage(it.packageName) }
+    }
+
+    private fun enableInteractiveWindowRetrieval(uiAutomation: UiAutomation) {
+        val serviceInfo = uiAutomation.serviceInfo
+        if (serviceInfo.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS == 0) {
+            serviceInfo.flags =
+                serviceInfo.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            uiAutomation.serviceInfo = serviceInfo
+        }
+    }
+
+    private fun notFoundScreenshotName(screenshotName: String): String =
+        screenshotName.substringBeforeLast('.') + "-not-found.png"
 
     private fun waitForPermissionExplanationToClose() {
         compose.waitUntil(10_000) {
@@ -338,5 +369,8 @@ class MainActivityNotificationE2eTest {
             "$PERMISSION_CONTROLLER_PACKAGE:id/permission_allow_button"
         private const val PERMISSION_DENY_BUTTON =
             "$PERMISSION_CONTROLLER_PACKAGE:id/permission_deny_button"
+
+        internal fun isPermissionControllerPackage(packageName: CharSequence?): Boolean =
+            packageName?.endsWith("permissioncontroller") == true
     }
 }

@@ -19,19 +19,22 @@ import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-/** 为发行黑盒测试提供两个只读、结构有效且无可分块文本的文档。 */
+/** 为发行黑盒测试提供两个无可分块文本的文档，以及一个触发索引失败的只读文本。 */
 public final class BlackBoxFixtureProvider extends ContentProvider {
     private static final String PDF_NAME = "release-parser-canary-empty.pdf";
     private static final String DOCX_NAME = "release-parser-canary-empty.docx";
+    private static final String TEXT_CANARY_NAME = "release-index-canary.txt";
     private static final String PDF_MIME = "application/pdf";
     private static final String DOCX_MIME =
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    private static final String TEXT_CANARY_MIME = "text/plain";
 
     @Override
     public boolean onCreate() {
         try {
             writeFixture(PDF_NAME, createEmptyPdf());
             writeFixture(DOCX_NAME, createEmptyDocx());
+            writeFixture(TEXT_CANARY_NAME, createReleaseIndexTextCanary());
             return true;
         } catch (IOException failure) {
             throw new IllegalStateException("无法创建黑盒文档 fixture", failure);
@@ -68,7 +71,16 @@ public final class BlackBoxFixtureProvider extends ContentProvider {
     @Override
     public String getType(Uri uri) {
         String name = requireKnownPath(uri);
-        return PDF_NAME.equals(name) ? PDF_MIME : DOCX_MIME;
+        if (PDF_NAME.equals(name)) {
+            return PDF_MIME;
+        }
+        if (DOCX_NAME.equals(name)) {
+            return DOCX_MIME;
+        }
+        if (TEXT_CANARY_NAME.equals(name)) {
+            return TEXT_CANARY_MIME;
+        }
+        throw new IllegalArgumentException("未知 fixture：" + name);
     }
 
     @Override
@@ -103,7 +115,7 @@ public final class BlackBoxFixtureProvider extends ContentProvider {
             throw new IllegalArgumentException("拒绝目录穿越或未知路径");
         }
         String name = segments.get(0);
-        if (!PDF_NAME.equals(name) && !DOCX_NAME.equals(name)) {
+        if (!PDF_NAME.equals(name) && !DOCX_NAME.equals(name) && !TEXT_CANARY_NAME.equals(name)) {
             throw new IllegalArgumentException("未知 fixture：" + name);
         }
         return name;
@@ -197,5 +209,15 @@ public final class BlackBoxFixtureProvider extends ContentProvider {
         zip.putNextEntry(new ZipEntry(name));
         zip.write(content.getBytes(StandardCharsets.UTF_8));
         zip.closeEntry();
+    }
+
+    private static byte[] createReleaseIndexTextCanary() {
+        String content = String.join(
+                "\n",
+                "Rag index canary text.",
+                "This line keeps MIME text/plain as stable ASCII.",
+                "Used by minified blackbox smoke to cover indexing failure and retry behavior."
+        );
+        return content.getBytes(StandardCharsets.US_ASCII);
     }
 }
