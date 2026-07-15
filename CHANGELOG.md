@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 重设计第二阶段：设置与 Provider 管理母版（2026-07-16）
+
+- **管理面统一**：设置首页改为标准 Tab、分组标题与单层 `ListItem`；Provider 列表收敛为单层对象行与明确主次操作，移除卡片墙和重复焦点，并明确显示启用/停用及 API Key、Vertex 或本地无需凭证状态。
+- **Provider 表单与密钥安全**：添加、编辑、本地 Provider 三条路径统一使用 Material 3 字段、下拉菜单、按钮和可滚动布局；API Key 默认安全遮罩、显式查看、超时/失焦/离页回遮与可选完整备份契约保持不变。
+- **模型管理渐进披露**：搜索支持显示名、真实远端模型 ID 与稳定 ID；同步/添加保留首层，批量禁用/删除进入 overflow；模型行默认只展示名称、真实 ID、启用状态和主要能力，高级编辑、类型、能力、Context、只读元数据、测试与危险操作按需展开。
+- **响应式与无障碍**：移除固定 112dp Context、五类型硬塞一行和彩色能力标签墙；使用 `FlowRow`、自适应 `OutlinedTextField`、48dp 操作目标、完整 ID 语义、双语展开状态、assertive/polite live region 及单模型删除确认。
+- **视觉与设备验收**：41/41 截图通过，所有变化基线均完成旧/新同尺寸人工对照；API 31、35、36 的设置/Provider 四类关键 UI 测试更新后各累计 51/51，通过 2× 字体、横屏、IME 与系统动画倍率为 0 的减少动效路径。
+- **完整回归**：全量 JVM、Lint、Debug APK 与 deviceTest 构建成功；API 36 常规设备套件 0 失败（3 个多阶段 checkpoint 按设计跳过），两个后台冷启动恢复方法逐次 force-stop 后各 1/1 通过；阶段独立复核无 P0/P1。
+- **阶段边界**：本阶段不修改业务数据结构或外部 API；知识库、RAG 详情、资源管理器、回收站与文档编辑器仍按全站设计契约进入后续迁移，不把当前结果表述为全站完成。
+
 ### Material 3 重设计第一阶段：主题基线与主会话母版（2026-07-16）
 
 - **稳定技术基线**：Compose BOM 升级到 `2026.06.00`，Material 3 使用稳定版 `1.4.0`；统一深色 edge-to-edge 色阶、形状、间距与 elevation 令牌，不引入 Alpha Expressive API。
