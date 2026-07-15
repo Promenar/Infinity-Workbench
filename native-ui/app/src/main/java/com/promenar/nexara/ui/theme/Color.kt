@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.darkColorScheme
 
 object NexaraColors {
     val CanvasBackground = Color(0xFF131315)
@@ -60,3 +61,42 @@ object NexaraColors {
     val RagError = Color(0xFFF87171)
     val RagPending = Color(0xFF9CA3AF)
 }
+
+internal val NexaraDarkColorScheme = darkColorScheme(
+    primary = NexaraColors.Primary,
+    onPrimary = NexaraColors.OnPrimary,
+    primaryContainer = NexaraColors.PrimaryContainer,
+    onPrimaryContainer = NexaraColors.OnPrimaryContainer,
+    inversePrimary = NexaraColors.InversePrimary,
+    secondary = NexaraColors.Secondary,
+    onSecondary = NexaraColors.OnSecondary,
+    secondaryContainer = NexaraColors.SecondaryContainer,
+    onSecondaryContainer = NexaraColors.OnSecondaryContainer,
+    tertiary = NexaraColors.Tertiary,
+    onTertiary = NexaraColors.OnTertiary,
+    tertiaryContainer = NexaraColors.TertiaryContainer,
+    onTertiaryContainer = NexaraColors.OnTertiaryContainer,
+    background = NexaraColors.CanvasBackground,
+    onBackground = NexaraColors.OnBackground,
+    surface = NexaraColors.SurfaceDim,
+    onSurface = NexaraColors.OnSurface,
+    surfaceDim = NexaraColors.SurfaceDim,
+    surfaceBright = NexaraColors.SurfaceBright,
+    surfaceContainerLowest = NexaraColors.SurfaceLowest,
+    surfaceContainerLow = NexaraColors.SurfaceLow,
+    surfaceContainer = NexaraColors.SurfaceContainer,
+    surfaceContainerHigh = NexaraColors.SurfaceHigh,
+    surfaceContainerHighest = NexaraColors.SurfaceHighest,
+    surfaceVariant = NexaraColors.SurfaceVariant,
+    onSurfaceVariant = NexaraColors.OnSurfaceVariant,
+    outline = NexaraColors.Outline,
+    outlineVariant = NexaraColors.OutlineVariant,
+    error = NexaraColors.Error,
+    onError = NexaraColors.OnError,
+    errorContainer = NexaraColors.ErrorContainer,
+    onErrorContainer = NexaraColors.OnErrorContainer,
+    surfaceTint = NexaraColors.SurfaceTint,
+    inverseSurface = NexaraColors.InverseSurface,
+    inverseOnSurface = NexaraColors.InverseOnSurface,
+)
+

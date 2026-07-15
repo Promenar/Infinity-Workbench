@@ -8,45 +8,53 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
-val Manrope = FontFamily.SansSerif
-val Inter = FontFamily.SansSerif
-val SpaceGrotesk = FontFamily.Monospace
+val NexaraSans = FontFamily.SansSerif
+val NexaraMonospace = FontFamily.Monospace
+
+@Deprecated("使用 NexaraSans")
+val Manrope = NexaraSans
+
+@Deprecated("使用 NexaraSans")
+val Inter = NexaraSans
+
+@Deprecated("使用 NexaraMonospace")
+val SpaceGrotesk = NexaraMonospace
 
 val NexaraTypography = Typography(
     headlineLarge = TextStyle(
-        fontFamily = Manrope,
+        fontFamily = NexaraSans,
         fontSize = 24.sp,
         lineHeight = 36.sp,
         fontWeight = FontWeight.Bold
     ),
     headlineMedium = TextStyle(
-        fontFamily = Manrope,
+        fontFamily = NexaraSans,
         fontSize = 20.sp,
         lineHeight = 32.sp,
         fontWeight = FontWeight.SemiBold
     ),
     bodyLarge = TextStyle(
-        fontFamily = Inter,
+        fontFamily = NexaraSans,
         fontSize = 17.sp,
         lineHeight = 28.sp,
         fontWeight = FontWeight.Normal
     ),
     bodyMedium = TextStyle(
-        fontFamily = Inter,
+        fontFamily = NexaraSans,
         fontSize = 15.sp,
         lineHeight = 26.sp,
         letterSpacing = 0.01.em,
         fontWeight = FontWeight.Normal
     ),
     labelMedium = TextStyle(
-        fontFamily = Inter,
+        fontFamily = NexaraSans,
         fontSize = 13.sp,
         lineHeight = 18.sp,
         letterSpacing = 0.02.sp,
         fontWeight = FontWeight.Medium
     ),
     bodySmall = TextStyle(
-        fontFamily = SpaceGrotesk,
+        fontFamily = NexaraMonospace,
         fontSize = 14.sp,
         lineHeight = 24.sp,
         fontWeight = FontWeight.Normal

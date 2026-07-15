@@ -4,11 +4,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
 
+object NexaraShapeTokens {
+    val XSmall = RoundedCornerShape(4.dp)
+    val Small = RoundedCornerShape(8.dp)
+    val Medium = RoundedCornerShape(12.dp)
+    val Large = RoundedCornerShape(16.dp)
+    val XLarge = RoundedCornerShape(24.dp)
+}
+
 val NexaraShapes = Shapes(
-    small = RoundedCornerShape(4.dp),
-    medium = RoundedCornerShape(8.dp),
-    large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(24.dp)
+    extraSmall = NexaraShapeTokens.XSmall,
+    small = NexaraShapeTokens.Small,
+    medium = NexaraShapeTokens.Medium,
+    large = NexaraShapeTokens.Large,
+    extraLarge = NexaraShapeTokens.XLarge,
 )
 
 object NexaraCustomShapes {

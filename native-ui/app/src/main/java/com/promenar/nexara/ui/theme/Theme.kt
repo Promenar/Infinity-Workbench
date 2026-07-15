@@ -13,37 +13,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-private val DarkColorScheme = darkColorScheme(
-    primary = NexaraColors.Primary,
-    onPrimary = NexaraColors.OnPrimary,
-    primaryContainer = NexaraColors.PrimaryContainer,
-    onPrimaryContainer = NexaraColors.OnPrimaryContainer,
-    inversePrimary = NexaraColors.InversePrimary,
-    secondary = NexaraColors.Secondary,
-    onSecondary = NexaraColors.OnSecondary,
-    secondaryContainer = NexaraColors.SecondaryContainer,
-    onSecondaryContainer = NexaraColors.OnSecondaryContainer,
-    tertiary = NexaraColors.Tertiary,
-    onTertiary = NexaraColors.OnTertiary,
-    tertiaryContainer = NexaraColors.TertiaryContainer,
-    onTertiaryContainer = NexaraColors.OnTertiaryContainer,
-    background = NexaraColors.CanvasBackground,
-    onBackground = NexaraColors.OnBackground,
-    surface = NexaraColors.SurfaceDim,
-    onSurface = NexaraColors.OnSurface,
-    surfaceVariant = NexaraColors.SurfaceVariant,
-    onSurfaceVariant = NexaraColors.OnSurfaceVariant,
-    surfaceTint = NexaraColors.SurfaceTint,
-    inverseSurface = NexaraColors.InverseSurface,
-    inverseOnSurface = NexaraColors.InverseOnSurface,
-    error = NexaraColors.Error,
-    onError = NexaraColors.OnError,
-    errorContainer = NexaraColors.ErrorContainer,
-    onErrorContainer = NexaraColors.OnErrorContainer,
-    outline = NexaraColors.Outline,
-    outlineVariant = NexaraColors.OutlineVariant,
-)
-
 @Composable
 fun NexaraTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -55,7 +24,7 @@ fun NexaraTheme(
             val context = LocalContext.current
             dynamicDarkColorScheme(context)
         }
-        else -> DarkColorScheme
+        else -> NexaraDarkColorScheme
     }
 
     val view = LocalView.current
