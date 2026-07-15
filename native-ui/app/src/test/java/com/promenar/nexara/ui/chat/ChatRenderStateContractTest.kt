@@ -11,7 +11,7 @@ import org.junit.Test
 
 class ChatRenderStateContractTest {
     @Test
-    fun `输入浮岛胶囊应分离48dp触控热区与紧凑视觉面`() {
+    fun `会话输入区使用语义化 M3 控件和实测高度`() {
         val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
             if (root.resolve("src/main").isDirectory) root else root.resolve("app")
         }
@@ -21,16 +21,15 @@ class ChatRenderStateContractTest {
         val tags = moduleRoot.resolve(
             "src/main/java/com/promenar/nexara/ui/testing/UiTags.kt",
         ).readText()
-        val topBar = source.substringAfter("private fun ChatInputTopBar(")
-            .substringBefore("private fun TokenDetailRow")
-
-        assertThat(topBar).contains("CompactInputChip(")
-        assertThat(topBar).contains("visualHeight = 34.dp")
-        assertThat(topBar).contains("maxLines = 1")
-        assertThat(topBar).contains("overflow = TextOverflow.Ellipsis")
-        assertThat(tags).contains("chat_model_selector_visual")
-        assertThat(tags).contains("chat_token_indicator")
-        assertThat(tags).contains("chat_token_indicator_visual")
+        assertThat(source).doesNotContain("CompactInputChip(")
+        assertThat(source).doesNotContain("visualHeight = 34.dp")
+        assertThat(source).doesNotContain("NexaraGlassCard(")
+        assertThat(source).doesNotContain("NexaraColors.GlassSurface")
+        assertThat(source).doesNotContain("NexaraColors.GlassBorder")
+        assertThat(source).contains("onSizeChanged")
+        assertThat(source).contains("chatComposerInsets(")
+        assertThat(tags).contains("chat_composer")
+        assertThat(tags).contains("chat_thinking_trace")
     }
 
     @Test
