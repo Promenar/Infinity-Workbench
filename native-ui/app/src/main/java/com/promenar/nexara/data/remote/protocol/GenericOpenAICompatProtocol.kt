@@ -321,7 +321,9 @@ class GenericOpenAICompatProtocol(
         val delta = choice["delta"]?.jsonObject ?: return
 
         var content = delta.stringField("content")
+        // 部分 OpenAI 兼容服务使用 `delta.reasoning`；标准字段仍保持优先。
         var reasoning = delta.stringField("reasoning_content")
+            .ifEmpty { delta.stringField("reasoning") }
 
         val thinkingResult = thinkingDetector.process(content)
         content = thinkingResult.content

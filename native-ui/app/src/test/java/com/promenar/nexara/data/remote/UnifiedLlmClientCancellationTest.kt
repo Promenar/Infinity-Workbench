@@ -10,14 +10,43 @@ import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.Test
 
 class UnifiedLlmClientCancellationTest {
+    @Test
+    fun `取消统一客户端收集必须终止仍在途的协议生产者`() = runTest {
+        val upstreamEntered = CompletableDeferred<Unit>()
+        val upstreamExited = CompletableDeferred<Unit>()
+        val client = clientWith(FakeProtocol(flow {
+            emit(StreamChunk.TextDelta("first"))
+            upstreamEntered.complete(Unit)
+            try {
+                awaitCancellation()
+            } finally {
+                upstreamExited.complete(Unit)
+            }
+        }))
+        val job = launch {
+            client.sendStream(params(), StreamConfig()).collect()
+        }
+
+        withTimeout(5_000) { upstreamEntered.await() }
+        withTimeout(5_000) { job.cancelAndJoin() }
+
+        assertThat(job.isCancelled).isTrue()
+        withTimeout(5_000) { upstreamExited.await() }
+    }
+
     @Test
     fun `慢收集超过channel容量时普通分片保持完整顺序`() = runTest {
         val expected = (0 until 160).map { "chunk-$it" }

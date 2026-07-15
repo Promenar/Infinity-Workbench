@@ -338,6 +338,9 @@ afterEvaluate {
         failOnNoDiscoveredTests.set(true)
         systemProperty("nexara.realLlmIntegration", "true")
         failFast = true
+        // 显式真实网络门禁每次调用都必须重跑，禁止复用旧模型、旧凭据或旧服务状态的结果。
+        outputs.upToDateWhen { false }
+        outputs.cacheIf { false }
         reports.html.required.set(false)
         reports.junitXml.required.set(false)
         testLogging {

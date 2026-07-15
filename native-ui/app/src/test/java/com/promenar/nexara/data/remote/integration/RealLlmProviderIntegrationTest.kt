@@ -14,14 +14,9 @@ import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.ui.settings.ModelInfo
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
@@ -55,10 +50,10 @@ class RealLlmProviderIntegrationTest {
     fun `同一router依次验证四类真实模型且每类仅请求一次`() = runBlocking {
         val config = loadedConfig ?: failSafely("integration configuration unavailable")
         val roles = listOf(
-            ModelRole(config.fastTextModel, multimodal = false, cancellation = false),
-            ModelRole(config.reasoningModel, multimodal = false, cancellation = true),
-            ModelRole(config.multimodalModel, multimodal = true, cancellation = false),
-            ModelRole(config.balancedMultimodalModel, multimodal = true, cancellation = false),
+            ModelRole(config.fastTextModel, multimodal = false),
+            ModelRole(config.reasoningModel, multimodal = false),
+            ModelRole(config.multimodalModel, multimodal = true),
+            ModelRole(config.balancedMultimodalModel, multimodal = true),
         )
         if (roles.map { it.remoteModelId }.distinct().size != roles.size) {
             failSafely("integration model roles must be distinct")
@@ -120,11 +115,7 @@ class RealLlmProviderIntegrationTest {
                 resolved.value.remoteModelId != role.remoteModelId
             ) failSafely("provider router resolution failed")
             val client = router.createClient((resolved as ProviderResolution.Success).value)
-            if (role.cancellation) {
-                verifyCancellableStream(client, role.remoteModelId)
-            } else {
-                verifyCompletedStream(client, role.remoteModelId, role.multimodal)
-            }
+            verifyCompletedStream(client, role.remoteModelId, role.multimodal)
         }
 
         if (requestCounts.size != roles.size || requestCounts.values.any { it != 1 }) {
@@ -154,33 +145,15 @@ class RealLlmProviderIntegrationTest {
                     }
                 }
             }
-        } catch (_: Throwable) {
-            failSafely("real LLM stream execution failed")
+        } catch (error: Throwable) {
+            failSafely("real LLM stream execution failed for $model (${error::class.simpleName})")
         }
-        if (!payloadSeen || !doneSeen || errorSeen) failSafely("real LLM stream contract failed")
-    }
-
-    private suspend fun verifyCancellableStream(client: UnifiedLlmClient, model: String) = coroutineScope {
-        val payloadSeen = CompletableDeferred<Boolean>()
-        val job = launch {
-            try {
-                client.sendStream(request(model, multimodal = false), StreamConfig()).collect { chunk ->
-                    when (chunk) {
-                        is StreamChunk.TextDelta -> if (
-                            chunk.content.isNotBlank() || chunk.reasoning?.isNotBlank() == true
-                        ) payloadSeen.complete(true)
-                        is StreamChunk.Thinking -> if (chunk.content.isNotBlank()) payloadSeen.complete(true)
-                        is StreamChunk.Error -> payloadSeen.complete(false)
-                        else -> Unit
-                    }
-                }
-            } catch (_: Throwable) {
-                payloadSeen.complete(false)
-            }
+        if (!payloadSeen || !doneSeen || errorSeen) {
+            failSafely(
+                "real LLM stream contract failed for $model " +
+                    "(payload=$payloadSeen, done=$doneSeen, error=$errorSeen)",
+            )
         }
-        val started = withTimeoutOrNull(150_000) { payloadSeen.await() } == true
-        job.cancelAndJoin()
-        if (!started || !job.isCancelled) failSafely("real LLM cancellation contract failed")
     }
 
     private fun request(model: String, multimodal: Boolean): StreamTextParams = StreamTextParams(
@@ -206,7 +179,6 @@ class RealLlmProviderIntegrationTest {
     private data class ModelRole(
         val remoteModelId: String,
         val multimodal: Boolean,
-        val cancellation: Boolean,
     )
 
     private companion object {

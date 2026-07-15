@@ -15,7 +15,22 @@ ROOT = Path(__file__).resolve().parents[3]
 ANDROID_CI = (ROOT / ".github/workflows/android-ci.yml").read_text(encoding="utf-8")
 RELEASE = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 SMOKE = (ROOT / "scripts/ci/android-release-apk-smoke.sh").read_text(encoding="utf-8")
+APP_BUILD = (ROOT / "native-ui/app/build.gradle.kts").read_text(encoding="utf-8")
 VALIDATOR = str((ROOT / "scripts/ci/validate-release-readiness.py"))
+
+
+def braced_block_after(source: str, marker: str) -> str:
+    marker_index = source.index(marker)
+    start = source.index("{", marker_index)
+    depth = 0
+    for index in range(start, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:index + 1]
+    raise AssertionError(f"unclosed block after {marker}")
 
 
 class ReleaseWorkflowReliabilityTest(unittest.TestCase):
@@ -71,6 +86,27 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn('ZIPALIGN="${BUILD_TOOLS_DIR}/zipalign"', SMOKE)
         self.assertIn("zipalign", SMOKE)
         self.assertIn("-c -P 16 4 \"${APK_PATH}\"", SMOKE)
+
+    def test_smoke_reuses_fail_closed_apk_identity_and_signer_verifier(self) -> None:
+        verifier_call = 'python3 "${REPO_ROOT}/scripts/verify-release-apk.py"'
+        self.assertIn(verifier_call, SMOKE)
+        for option in (
+            "--expected-package",
+            "--expected-version-code",
+            "--expected-version-name",
+            "--expected-cert-sha256",
+        ):
+            self.assertIn(option, SMOKE)
+        self.assertLess(SMOKE.find(verifier_call), SMOKE.find('adb install --no-streaming'))
+        self.assertNotIn("Signer #1 certificate SHA-256 digest", SMOKE)
+
+    def test_real_llm_task_never_reuses_stale_test_outputs(self) -> None:
+        task = braced_block_after(
+            APP_BUILD,
+            'tasks.register<Test>("realLlmIntegrationTest")',
+        )
+        self.assertIn("outputs.upToDateWhen { false }", task)
+        self.assertIn("outputs.cacheIf { false }", task)
 
     def test_publish_is_idempotent_and_checks_existing_asset_hashes(self) -> None:
         publish_job = RELEASE.split("\n  publish:", 1)[1]

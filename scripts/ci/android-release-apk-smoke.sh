@@ -42,12 +42,7 @@ if [[ -z "${EXPECTED_CERT_SHA256}" ]]; then
 fi
 
 BUILD_TOOLS_DIR="$(find "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-APKSIGNER="${BUILD_TOOLS_DIR}/apksigner"
 ZIPALIGN="${BUILD_TOOLS_DIR}/zipalign"
-if [[ ! -x "${APKSIGNER}" ]]; then
-    echo "未找到 apksigner" >&2
-    exit 1
-fi
 if [[ ! -x "${ZIPALIGN}" ]]; then
     echo "未找到 zipalign" >&2
     exit 1
@@ -57,16 +52,11 @@ if ! "${ZIPALIGN}" -c -P 16 4 "${APK_PATH}"; then
     exit 1
 fi
 
-ACTUAL_CERT_SHA256="$(${APKSIGNER} verify --print-certs "${APK_PATH}" \
-    | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
-    | head -n 1 \
-    | tr -d '[:space:]:' \
-    | tr '[:lower:]' '[:upper:]')"
-EXPECTED_CERT_SHA256="$(printf '%s' "${EXPECTED_CERT_SHA256}" | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')"
-if [[ "${ACTUAL_CERT_SHA256}" != "${EXPECTED_CERT_SHA256}" ]]; then
-    echo "APK 签名证书指纹不匹配" >&2
-    exit 1
-fi
+python3 "${REPO_ROOT}/scripts/verify-release-apk.py" "${APK_PATH}" \
+    --expected-package "${PACKAGE_NAME}" \
+    --expected-version-code "${EXPECTED_VERSION_CODE}" \
+    --expected-version-name "${EXPECTED_VERSION_NAME}" \
+    --expected-cert-sha256 "${EXPECTED_CERT_SHA256}"
 
 adb wait-for-device
 adb shell pm uninstall "${PACKAGE_NAME}" >/dev/null 2>&1 || true

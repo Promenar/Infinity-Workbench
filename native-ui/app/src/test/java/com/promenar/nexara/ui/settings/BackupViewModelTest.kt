@@ -1090,12 +1090,12 @@ class BackupViewModelTest {
             settings = settings,
             secrets = secrets,
             synchronousIo = false,
-            ioDispatcher = Dispatchers.IO,
+            ioDispatcher = dispatcher,
         )
-        runCurrent(); drainRealIoUntil { vm.uiState.value.operation !is BackupOperation.Initializing }
+        advanceUntilIdle()
 
         assertThat(vm.saveAndTestWebDavConfig("https://saved.invalid/", "saved", "pw".toCharArray())).isTrue()
-        drainRealIoUntil { vm.uiState.value.operation is BackupOperation.Error }
+        advanceUntilIdle()
 
         assertThat(vm.uiState.value.webdavUrl).isEqualTo("https://saved.invalid/")
         assertThat(operations.lastConfig).isEqualTo(WebDavConfig("https://saved.invalid/", "saved", "pw"))

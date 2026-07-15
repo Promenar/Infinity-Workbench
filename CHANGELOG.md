@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### v0.2-beta 发行候选收口（2026-07-13）
 
-> 当前状态：代码与发行文档正在集成；签名 R8 APK、冷安装、真实 API、完整设备/截图矩阵和远端 GitHub Actions 仍待最终验证。以下条目描述已经落地并有源码或专项测试证据的变更，不代表版本已经发布。
+> 当前状态：代码与发行文档正在集成；完整设备/截图矩阵、真实 API 四模型 smoke、分支 Android CI 及稳定证书签名 R8 APK 的 API 35/36 冷安装已通过。GitHub 可验证 tag、签名候选真机 TalkBack/人工业务验收和 GitHub Release 仍待关闭。以下条目描述已经落地并有源码或专项测试证据的变更，不代表版本已经发布。
 
 - **后台持续生成**：引入应用级 `GenerationCoordinator`、单一活动任务控制、Foreground Service 与通知返回/停止动作；前台发起的生成可跨切后台、锁屏、旋转和 Activity 重建继续。设备重启续传、多会话并行和无人值守队列不在本版范围。
 - **结构化生成失败与取消契约**：统一鉴权、限流、配额、无效请求、服务端、协议、持久化等错误类型；取消异常贯穿生成、协议、工具和清理边界，不再被误写为普通失败或完成状态；流式通道改为背压投递并保留错误 cause 链。
@@ -14,10 +14,12 @@ All notable changes to this project will be documented in this file.
 - **提示词编辑器**：统一保存/关闭和脏内容退出保护，移除伪 Sheet 模式，采用单一纵向滚动源，补齐长文本、2x 字体、空预览和 CJK/拉丁统计测试入口。
 - **Release 日志安全**：业务日志统一进入 `NexaraLogger` 的 Debug 编译门禁，R8 对日志入口和平台输出执行精确剥离；源码契约禁止业务代码直接调用 `Log.*`、`printStackTrace` 或标准错误输出。
 - **APK 验证器**：增加 ZIP 完整性/解压边界、唯一包身份、唯一签名者与证书指纹、敏感内容跨块扫描、50 MiB 上限和标准 SHA-256 输出的 fail-closed 校验；确定性 Python 测试 20/20 通过。
-- **发行工作流可靠性**：CI 覆盖真实默认分支与 API 31/35/36 设备作业；tag workflow 检查发行文档、tag 来源/签名策略、R8 mapping、checksum、zipalign、API 35/36 冷安装，并以稳定 artifact 名和幂等 prerelease 发布流程支持重跑。push CI 已完成首次真实运行并暴露两项设备环境问题，tag release workflow 尚待首次发行运行。
-- **分享导入与 RAG 发行验真**：分享表单把 PDF、DOCX、TXT 等已知 MIME 收敛为紧凑格式标签，避免窄屏长 MIME 串多行破坏布局；底部四动作改用保持 8dp 双向间距的可换行布局，并通过 API 36 的 2.0x 字体可达性测试。release-equivalent 混淆包黑盒新增 TXT 导入、索引失败与再次重试，文件型 Room 测试覆盖数据库关闭重开后的失败任务恢复与确定性 task id 复用。
+- **发行工作流可靠性**：CI 覆盖真实默认分支与 API 31/35/36 设备作业；tag workflow 检查发行文档、tag 来源/签名策略、R8 mapping、checksum、zipalign、API 35/36 冷安装，并以稳定 artifact 名和幂等 prerelease 发布流程支持重跑。push CI 经两轮失败定位与修复后已在最终候选上全绿，tag release workflow 尚待首次发行运行。
+- **分享导入与 RAG 发行验真**：分享表单把 PDF、DOCX、TXT 等已知 MIME 收敛为紧凑格式标签，避免窄屏长 MIME 串多行破坏布局；底部四动作改用保持 8dp 双向间距的可换行布局，并通过 API 36 的 2.0x 字体可达性测试。API 35/36 release-equivalent 混淆包黑盒均已覆盖 TXT 导入、索引失败与再次重试；文件型 Room 测试覆盖数据库关闭重开后的失败任务恢复与确定性 task id 复用。
 - **Android 截图证据可靠性**：新增纯 Python 标准库的 RGBA8 PNG alpha 归一化工具，校验 PNG chunk/CRC、逆转 filter 0–4、保持 RGB 并把 alpha 原子改为 255；minified 黑盒的 8 张最终截图全部接入并清理 raw 临时文件，离线测试、真实异常 PNG 像素比对与 API 36 黑盒均通过。
-- **Android CI 首轮修复**：首次远端 Android CI 的 JVM/Lint/构建和 API 31 通过；API 35 暴露系统权限窗跨窗口查找问题，API 36 暴露 onboarding 在应用启动门禁前访问 Provider 的竞态。测试现已按真实窗口和启动状态修复，第二轮远端结果待最终回填。
+- **Android CI 稳定性收口**：首轮远端 CI 暴露系统权限窗跨窗口查找和 onboarding 启动竞态，第二轮进一步暴露真实旋转测试宿主导致 Compose root 销毁及恢复中继把“旧进程死亡后新进程已启动”误判为失败。欢迎页压力测试现改用 Compose 窗口/字体配置覆盖；恢复门禁由测试内持久化 stage PID 验证跨进程重启，并保留阶段结束 PID 证据。最终候选 [run 29401903929](https://github.com/Promenar/Nexara/actions/runs/29401903929) 已全绿：quality、API 31、API 35、API 36 四项均成功。
+- **真实 LLM 四角色门禁与确定性取消契约**：在同一 `ProviderRouter` 中分别以 `MiniMax-M3`、`MiniMax-M2.7-highspeed`、`deepseek-v4-flash` 与 `sensenova-6.7-flash-lite` 各完成一次真实请求，覆盖文本流式 payload/终态与图片输入，并修复 Generic OpenAI-compatible 对 `delta.reasoning` 的兼容解析。取消传播不再用可能已自然结束的高速真实响应作证明：统一客户端改由受控在途协议 Flow 断言生产者退出，协议层用保持打开的 MockEngine SSE 响应直接断言取消 cause 与响应体关闭。真实集成 Gradle 任务禁用 up-to-date 与构建缓存，确保每次显式调用都实际外呼；真实凭据仅以进程环境变量注入，未写入仓库或报告。
+- **最终签名 R8 候选**：使用项目外 `secure_env` 中的稳定 keystore 构建 17,971,235-byte Release APK，生成完整 mapping/seeds/usage/configuration；APK 验证器完成包身份、唯一签名者、登记证书、敏感内容、GGUF/llama/ggml、体积与 SHA-256 扫描，API 35/36 均完成卸载旧包、安装后字节回读一致、冷启动与 crash/ANR 观察。冷安装脚本改为复用统一 fail-closed APK 验证器，补齐 Build Tools 37 `V2 Signer` 输出兼容，避免脚本与主验证器的签名解析漂移。
 - **Metro 开发者 TUI**：调试终端补齐 `--help`、`--version`、`--stdin`、`--serial`、`--tag`、非 TTY 无色输出、明确退出码和缺字段容错；49 项 Node.js 测试通过。该工具只服务 Debug 日志分析，不是最终用户 CLI，也不与 Android UI 做功能对等承诺。
 - **发行边界**：最低系统改为 Android 12/API 31；GGUF/llama.cpp 不进入稳定发行能力，Release 关闭本地推理并拒绝打包相关制品；正式分发目标为 GitHub Release 可侧载签名 APK。
 
