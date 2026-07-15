@@ -10,18 +10,17 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
-import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
-import com.promenar.nexara.R
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.chat.components.FilesPanel
 import com.promenar.nexara.ui.rag.components.RagDocItem
 import com.promenar.nexara.ui.rag.components.RagStatus
+import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import java.lang.reflect.Proxy
 import java.util.concurrent.CopyOnWriteArrayList
@@ -77,18 +76,13 @@ class RagFilesPanelNavigationTest {
         }
 
         rule.onNodeWithText("根文件.md").performTouchInput { longClick() }
-        rule.onNodeWithText(
-            ApplicationProvider.getApplicationContext<android.content.Context>()
-                .getString(R.string.files_reindex),
-        ).performClick()
+        rule.onNodeWithTag(UiTags.fileNodeReindex("root-file")).performClick()
         rule.runOnIdle {
             assertThat(reindexClicks).containsExactly("root-file")
         }
 
         rule.onNodeWithText("根目录").performTouchInput { longClick() }
-        val multiSelect = ApplicationProvider.getApplicationContext<android.content.Context>()
-            .getString(R.string.files_multi_select)
-        rule.onNodeWithText(multiSelect).performClick()
+        rule.onNodeWithTag(UiTags.fileNodeMultiSelect("root-folder")).performClick()
         rule.onNodeWithText("子目录").performClick()
         rule.onNodeWithText("根文件.md").performClick()
         rule.runOnIdle {
@@ -114,12 +108,8 @@ class RagFilesPanelNavigationTest {
         }
 
         rule.onNodeWithText("只读文档.md").assert(!hasClickAction())
-        val options = ApplicationProvider.getApplicationContext<android.content.Context>()
-            .getString(R.string.chat_cd_options)
-        rule.onNodeWithContentDescription(options).assertDoesNotExist()
-        val multiSelect = ApplicationProvider.getApplicationContext<android.content.Context>()
-            .getString(R.string.files_multi_select)
-        rule.onNodeWithText(multiSelect).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.fileNodeOptions("read-only")).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.fileNodeMultiSelect("read-only")).assertDoesNotExist()
     }
 
     @Test

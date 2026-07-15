@@ -86,6 +86,7 @@ import com.promenar.nexara.ui.common.IndexStatusBadge
 import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.KgStatusIcon
 import com.promenar.nexara.ui.common.NexaraGlassCard
+import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import java.text.SimpleDateFormat
@@ -515,7 +516,8 @@ private fun FileTreeNode(
                 if (onReindex != null) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.files_reindex), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
-                        onClick = { showMenu = false; onReindex(file.uuid) }
+                        onClick = { showMenu = false; onReindex(file.uuid) },
+                        modifier = Modifier.testTag(UiTags.fileNodeReindex(file.uuid)),
                     )
                 }
                 if (onExtractKG != null) {
@@ -560,7 +562,8 @@ private fun FileTreeNode(
             if (!isMultiSelectMode && supportsMultiSelect) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.files_multi_select), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
-                    onClick = { showMenu = false; selectedIds.add(file.uuid) }
+                    onClick = { showMenu = false; selectedIds.add(file.uuid) },
+                    modifier = Modifier.testTag(UiTags.fileNodeMultiSelect(file.uuid)),
                 )
             }
             if (onDelete != null) {
@@ -696,7 +699,9 @@ private fun FileRow(
         if (onOpenMenu != null) {
             IconButton(
                 onClick = onOpenMenu,
-                modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                modifier = Modifier
+                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                    .testTag(UiTags.fileNodeOptions(file.uuid)),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.MoreVert,

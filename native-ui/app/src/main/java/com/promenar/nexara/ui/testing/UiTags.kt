@@ -189,4 +189,12 @@ object UiTags {
     const val RESOURCE_EXPLORER_PAGER = "resource_explorer_pager"
     const val RESOURCE_EXPLORER_SESSION_STATUS = "resource_explorer_session_status"
     const val RESOURCE_EXPLORER_RETRY_LOAD = "resource_explorer_retry_load"
+
+    private const val FILE_NODE_OPTIONS_PREFIX = "file_node_options:"
+    private const val FILE_NODE_REINDEX_PREFIX = "file_node_reindex:"
+    private const val FILE_NODE_MULTI_SELECT_PREFIX = "file_node_multi_select:"
+
+    fun fileNodeOptions(fileId: String): String = "$FILE_NODE_OPTIONS_PREFIX$fileId"
+    fun fileNodeReindex(fileId: String): String = "$FILE_NODE_REINDEX_PREFIX$fileId"
+    fun fileNodeMultiSelect(fileId: String): String = "$FILE_NODE_MULTI_SELECT_PREFIX$fileId"
 }
