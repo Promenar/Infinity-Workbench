@@ -1,5 +1,9 @@
 package com.promenar.nexara.ui.hub
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -8,6 +12,8 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -21,6 +27,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.ui.common.NexaraSearchBar
+import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.testing.UiTags
 import org.junit.Rule
@@ -69,6 +77,72 @@ class UserSettingsAccessibilityTest {
             .assertHeightIsAtLeast(48.dp)
             .performClick()
         com.google.common.truth.Truth.assertThat(opened.get()).isTrue()
+    }
+
+    @Test
+    fun sharedSettingsItemExposesButtonRole48DpTargetAndRealClick() {
+        val clicked = AtomicBoolean(false)
+        rule.setContent {
+            NexaraTheme {
+                NexaraSettingsItem(
+                    icon = Icons.Rounded.Settings,
+                    title = "Shared settings item",
+                    onClick = { clicked.set(true) },
+                )
+            }
+        }
+
+        rule.onNodeWithText("Shared settings item")
+            .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        com.google.common.truth.Truth.assertThat(clicked.get()).isTrue()
+    }
+
+    @Test
+    fun sharedSettingsItemLongTitleReflowsInsteadOfClipping() {
+        val longTitle = "Very long settings title that must wrap naturally on a narrow phone layout"
+        rule.setContent {
+            NexaraTheme {
+                Box(modifier = androidx.compose.ui.Modifier.width(220.dp)) {
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Settings,
+                        title = longTitle,
+                        onClick = {},
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithText(longTitle)
+            .assertHeightIsAtLeast(72.dp)
+    }
+
+    @Test
+    fun sharedSearchClearActionIs48DpAndDispatchesValueChange() {
+        var query by mutableStateOf("DeepSeek")
+        rule.setContent {
+            NexaraTheme {
+                NexaraSearchBar(
+                    value = query,
+                    onValueChange = { query = it },
+                )
+            }
+        }
+
+        rule.onNodeWithContentDescription(resources.getString(R.string.common_cd_clear))
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
+            .performClick()
+
+        rule.onNodeWithContentDescription(resources.getString(R.string.common_search_placeholder))
+            .assert(hasSetTextAction())
+
+        rule.waitForIdle()
+        com.google.common.truth.Truth.assertThat(query).isEmpty()
     }
 
     @Test

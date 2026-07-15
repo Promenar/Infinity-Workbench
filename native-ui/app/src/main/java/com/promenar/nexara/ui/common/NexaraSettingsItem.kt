@@ -1,28 +1,32 @@
 package com.promenar.nexara.ui.common
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.promenar.nexara.R
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
-import com.promenar.nexara.ui.theme.NexaraTypography
+import androidx.compose.ui.semantics.Role
+import com.promenar.nexara.ui.theme.NexaraSpacing
 
 /**
- * A reusable glassmorphic item for lists, adhering to the Stitch Design Spec.
- * Used primarily in Hub, Settings, and List views.
+ * 可复用的 Material 3 设置行。
+ *
+ * 文本区域保持可伸缩，允许长标题和副标题自然换行；整行维持统一的按钮语义与
+ * 最小触控尺寸，供 Hub、Settings 与列表页面复用。
  */
 @Composable
 fun NexaraSettingsItem(
@@ -31,61 +35,56 @@ fun NexaraSettingsItem(
     subtitle: String? = null,
     onClick: () -> Unit
 ) {
-    // Uses the standard large (16dp) radius for glass panels
-    NexaraGlassCard(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(NexaraShapes.large)
-            .clickable(onClick = onClick),
-        shape = NexaraShapes.large as androidx.compose.foundation.shape.RoundedCornerShape
+            .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
+            .clickable(
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp), // p-md
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(
+                    horizontal = NexaraSpacing.Large,
+                    vertical = NexaraSpacing.Medium,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp), // gap-md
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Circular icon container: w-10 h-10 bg-surface-container-high text-primary
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(NexaraColors.SurfaceHigh, androidx.compose.foundation.shape.CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = NexaraColors.Primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(NexaraSpacing.XLarge),
+            )
 
-                Column {
+            Spacer(Modifier.width(NexaraSpacing.Large))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (subtitle != null) {
                     Text(
-                        text = title,
-                        style = NexaraTypography.labelMedium,
-                        color = NexaraColors.OnSurface
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (subtitle != null) {
-                        Text(
-                            text = subtitle,
-                            style = NexaraTypography.bodyMedium.copy(fontSize = 14.sp), // text-sm
-                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.7f) // opacity-70
-                        )
-                    }
                 }
             }
 
+            Spacer(Modifier.width(NexaraSpacing.Medium))
+
             Icon(
                 imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = stringResource(R.string.common_cd_navigate),
-                tint = NexaraColors.Outline,
-                modifier = Modifier.size(24.dp)
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(NexaraSpacing.XLarge),
             )
         }
     }
