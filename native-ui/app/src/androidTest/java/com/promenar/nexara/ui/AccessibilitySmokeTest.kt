@@ -367,7 +367,7 @@ class AccessibilitySmokeTest {
         composeRule.onNodeWithText("1/2 步骤 · 50%", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("提取大纲", substring = true).assertIsDisplayed()
 
-        val headerRow = composeRule.onNodeWithTag("task_floating_panel_header")
+        val headerRow = composeRule.onNodeWithTag(UiTags.CHAT_TASK_PANEL_HEADER)
         headerRow.assertExists()
         headerRow.assertHasClickAction()
         headerRow.assertHeightIsAtLeast(48.dp)

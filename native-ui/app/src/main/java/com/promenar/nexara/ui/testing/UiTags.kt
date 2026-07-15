@@ -17,6 +17,7 @@ object UiTags {
     const val CHAT_LOADING_SKELETON = "chat_loading_skeleton"
     const val CHAT_GENERATION_ACTION = "chat_generation_action"
     const val CHAT_COMPOSER = "chat_composer"
+    const val CHAT_TASK_PANEL_HEADER = "task_floating_panel_header"
     const val CHAT_THINKING_TRACE = "chat_thinking_trace"
     const val CHAT_THINKING_TOGGLE = "chat_thinking_toggle"
     const val CHAT_THINKING_CONTENT = "chat_thinking_content"

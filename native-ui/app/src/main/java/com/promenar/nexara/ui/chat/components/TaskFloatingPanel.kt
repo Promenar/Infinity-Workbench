@@ -54,6 +54,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.data.model.TaskStep
 import com.promenar.nexara.domain.repository.ITaskRepository
+import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -101,7 +102,7 @@ fun TaskFloatingPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 48.dp)
-                        .testTag("task_floating_panel_header")
+                        .testTag(UiTags.CHAT_TASK_PANEL_HEADER)
                         .clickable { isCollapsed = !isCollapsed },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
