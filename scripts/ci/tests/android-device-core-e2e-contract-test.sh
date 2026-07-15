@@ -7,6 +7,7 @@ DEVICE_SCRIPT="${REPO_ROOT}/scripts/ci/android-device-core-e2e.sh"
 APP_BUILD="${REPO_ROOT}/native-ui/app/build.gradle.kts"
 MAIN_ACTIVITY_E2E_BUILD="${REPO_ROOT}/native-ui/mainactivity-e2e/build.gradle.kts"
 ONBOARDING_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/nexara/onboarding/OnboardingAndroidEndToEndTest.kt"
+WELCOME_LAYOUT_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/nexara/onboarding/WelcomeScreenLayoutTest.kt"
 NOTIFICATION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/nexara/MainActivityNotificationE2eTest.kt"
 TIMEOUT_HELPER="${REPO_ROOT}/scripts/ci/run-with-timeout.py"
 
@@ -120,6 +121,12 @@ provider_snapshot_line="$(grep -n 'originalProviderSummary = ProviderManager.get
     fail "onboarding 设备夹具必须先等待启动 Ready，再读取 ProviderManager"
 assert_contains "${NOTIFICATION_E2E_TEST}" 'uiAutomation.windows'
 assert_contains "${NOTIFICATION_E2E_TEST}" 'FLAG_RETRIEVE_INTERACTIVE_WINDOWS'
+
+# 欢迎页压力测试必须在 Compose 内覆盖窗口/字体配置，不能旋转真实宿主 Activity。
+assert_contains "${WELCOME_LAYOUT_TEST}" 'createComposeRule()'
+assert_contains "${WELCOME_LAYOUT_TEST}" 'DeviceConfigurationOverride.WindowSize'
+assert_contains "${WELCOME_LAYOUT_TEST}" 'DeviceConfigurationOverride.FontScale(2f)'
+assert_not_contains "${WELCOME_LAYOUT_TEST}" 'requestedOrientation'
 
 python3 "${REPO_ROOT}/scripts/ci/run-with-timeout.py" 1 /usr/bin/true
 

@@ -1,16 +1,18 @@
 package com.promenar.nexara.onboarding
 
-import android.content.pm.ActivityInfo
-import androidx.activity.ComponentActivity
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.FontScale
+import androidx.compose.ui.test.WindowSize
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
-import androidx.compose.ui.unit.Density
+import androidx.compose.ui.test.then
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.welcome.WelcomeScreen
@@ -20,17 +22,19 @@ import org.junit.Test
 
 class WelcomeScreenLayoutTest {
     @get:Rule
-    val rule = createAndroidComposeRule<ComponentActivity>()
+    val rule = createComposeRule()
 
     @Test
     fun languageScreen_landscapeAtDoubleFontScale_keepsBothChoicesReachable() {
-        rule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        val english = rule.activity.getString(R.string.welcome_lang_english)
-        val chinese = rule.activity.getString(R.string.welcome_lang_chinese)
+        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
+        val english = resources.getString(R.string.welcome_lang_english)
+        val chinese = resources.getString(R.string.welcome_lang_chinese)
 
         rule.setContent {
-            val density = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 2f)) {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(800.dp, 360.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
                 NexaraTheme {
                     WelcomeScreen(onLanguageSelected = {})
                 }
