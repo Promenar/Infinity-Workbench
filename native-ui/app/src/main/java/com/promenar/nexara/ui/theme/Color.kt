@@ -99,4 +99,3 @@ internal val NexaraDarkColorScheme = darkColorScheme(
     inverseSurface = NexaraColors.InverseSurface,
     inverseOnSurface = NexaraColors.InverseOnSurface,
 )
-

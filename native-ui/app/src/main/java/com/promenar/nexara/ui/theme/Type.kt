@@ -11,13 +11,8 @@ import androidx.compose.ui.unit.sp
 val NexaraSans = FontFamily.SansSerif
 val NexaraMonospace = FontFamily.Monospace
 
-@Deprecated("使用 NexaraSans")
 val Manrope = NexaraSans
-
-@Deprecated("使用 NexaraSans")
 val Inter = NexaraSans
-
-@Deprecated("使用 NexaraMonospace")
 val SpaceGrotesk = NexaraMonospace
 
 val NexaraTypography = Typography(
@@ -54,7 +49,7 @@ val NexaraTypography = Typography(
         fontWeight = FontWeight.Medium
     ),
     bodySmall = TextStyle(
-        fontFamily = NexaraMonospace,
+        fontFamily = NexaraSans,
         fontSize = 14.sp,
         lineHeight = 24.sp,
         fontWeight = FontWeight.Normal
