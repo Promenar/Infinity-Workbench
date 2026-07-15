@@ -1,0 +1,279 @@
+package com.promenar.nexara.ui.settings
+
+import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.test.platform.app.InstrumentationRegistry
+import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.R
+import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.ui.theme.NexaraTheme
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.CopyOnWriteArrayList
+import org.junit.Rule
+import org.junit.Test
+
+class ProviderFormInteractionTest {
+    @get:Rule
+    val rule = createAndroidComposeRule<ComponentActivity>()
+
+    private val resources
+        get() = InstrumentationRegistry.getInstrumentation().targetContext.resources
+
+    @Test
+    fun cloudFormRoutesEditsTestAndSaveThroughExplicitActions() {
+        val changedNames = CopyOnWriteArrayList<String>()
+        val changedUrls = CopyOnWriteArrayList<String>()
+        val tests = AtomicInteger()
+        val saves = AtomicInteger()
+        rule.setContent {
+            NexaraTheme {
+                ProviderFormContent(
+                    state = validCloudState(),
+                    actions = ProviderFormActions(
+                        onNameChange = changedNames::add,
+                        onBaseUrlChange = changedUrls::add,
+                        onTestConnection = { tests.incrementAndGet() },
+                        onSave = { saves.incrementAndGet() },
+                    ),
+                )
+            }
+        }
+
+        rule.onNodeWithText(resources.getString(R.string.provider_form_label_name))
+            .performTextReplacement("Renamed")
+        rule.onNodeWithText(resources.getString(R.string.provider_form_label_url))
+            .performTextReplacement("https://gateway.example/v1")
+        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(3)
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
+            .performScrollTo()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
+            .performScrollTo()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        assertThat(changedNames).contains("Renamed")
+        assertThat(changedUrls).contains("https://gateway.example/v1")
+        assertThat(tests.get()).isEqualTo(1)
+        assertThat(saves.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun connectionAndSaveActionsStayMutuallyExclusive() {
+        val state = mutableStateOf(
+            validCloudState(connectionTestState = ProviderConnectionTestState.Testing),
+        )
+        rule.setContent {
+            NexaraTheme {
+                ProviderFormContent(
+                    state = state.value,
+                    actions = ProviderFormActions(),
+                )
+            }
+        }
+
+        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(3)
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
+            .performScrollTo()
+            .assertIsNotEnabled()
+
+        rule.runOnIdle { state.value = validCloudState(isSaving = true) }
+        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(3)
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
+            .performScrollTo()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun invalidHttpsAndCredentialMismatchExposeErrorsAndDisableBothActions() {
+        rule.setContent {
+            NexaraTheme {
+                ProviderFormContent(
+                    state = validCloudState(
+                        baseUrl = "http://plain.example",
+                        endpointValid = false,
+                        credentialKindMismatch = true,
+                    ),
+                    actions = ProviderFormActions(),
+                )
+            }
+        }
+
+        rule.onNodeWithText(resources.getString(R.string.provider_form_https_required))
+            .performScrollTo()
+            .assertIsDisplayed()
+        rule.onNodeWithText(resources.getString(R.string.provider_form_credential_kind_changed))
+            .performScrollTo()
+            .assertIsDisplayed()
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
+            .performScrollTo()
+            .assertIsNotEnabled()
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
+            .performScrollTo()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun presetAndCustomProtocolDropdownsUseExplicitSelectionCallbacks() {
+        val selectedPreset = AtomicReference<ProviderPreset?>(null)
+        val selectedProtocol = AtomicReference<ProtocolType?>(null)
+        val state = mutableStateOf(
+            validCloudState(
+                presetMenuExpanded = true,
+            ),
+        )
+        rule.setContent {
+            NexaraTheme {
+                ProviderFormContent(
+                    state = state.value,
+                    actions = ProviderFormActions(
+                        onPresetSelected = {
+                            selectedPreset.set(it)
+                            state.value = state.value.copy(selectedPreset = it, presetMenuExpanded = false)
+                        },
+                        onProtocolSelected = {
+                            selectedProtocol.set(it)
+                            state.value = state.value.copy(localProtocol = it, protocolMenuExpanded = false)
+                        },
+                    ),
+                )
+            }
+        }
+
+        rule.onNodeWithText("DeepSeek").performClick()
+        assertThat(selectedPreset.get()?.name).isEqualTo("DeepSeek")
+
+        rule.runOnIdle {
+            state.value = state.value.copy(
+                selectedPreset = PROVIDER_PRESETS.first { it.name == "Custom" },
+                protocolMenuExpanded = true,
+            )
+        }
+        rule.onNodeWithText(ProtocolType.OpenAI_Responses.displayName).performClick()
+        assertThat(selectedProtocol.get()).isEqualTo(ProtocolType.OpenAI_Responses)
+    }
+
+    @Test
+    fun localOnboardingFailureKeepsRecoveryActionReachable() {
+        val primary = AtomicInteger()
+        val recovery = AtomicInteger()
+        rule.setContent {
+            NexaraTheme {
+                ProviderFormContent(
+                    state = ProviderFormUiState(
+                        isEditing = true,
+                        isExistingProvider = true,
+                        name = "Local",
+                        selectedPreset = PROVIDER_PRESETS.first { it.name == "Local" },
+                        isLocal = true,
+                        onboardingMode = true,
+                        localConnectionFailed = true,
+                    ),
+                    actions = ProviderFormActions(
+                        onLocalPrimaryAction = { primary.incrementAndGet() },
+                        onOpenLocalModels = { recovery.incrementAndGet() },
+                    ),
+                )
+            }
+        }
+
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+        rule.onNodeWithText(resources.getString(R.string.local_models_title))
+            .performScrollTo()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        assertThat(primary.get()).isEqualTo(1)
+        assertThat(recovery.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun allCloudFieldsAndActionsRemainReachableAt360By800WithTwoXFontScale() {
+        rule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 2f)) {
+                NexaraTheme {
+                    Box(Modifier.requiredSize(width = 360.dp, height = 800.dp)) {
+                        ProviderFormContent(
+                            state = validCloudState(hasStoredCredential = true),
+                            actions = ProviderFormActions(),
+                        )
+                    }
+                }
+            }
+        }
+
+        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(1)
+        listOf(
+            R.string.provider_form_preset_title,
+        ).forEach { id ->
+            rule.onNodeWithText(resources.getString(id)).assertIsDisplayed()
+        }
+        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(2)
+        listOf(
+            R.string.provider_form_label_name,
+            R.string.provider_form_label_url,
+            R.string.provider_form_label_api_key,
+        ).forEach { id ->
+            rule.onNodeWithText(resources.getString(id))
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
+        rule.onNodeWithText("****").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(3)
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+    }
+
+    private fun validCloudState(
+        baseUrl: String = "https://api.example.com/v1",
+        endpointValid: Boolean = true,
+        credentialKindMismatch: Boolean = false,
+        connectionTestState: ProviderConnectionTestState = ProviderConnectionTestState.Idle,
+        isSaving: Boolean = false,
+        selectedPreset: ProviderPreset = PROVIDER_PRESETS.first(),
+        presetMenuExpanded: Boolean = false,
+        protocolMenuExpanded: Boolean = false,
+        localProtocol: ProtocolType = ProtocolType.Generic_OpenAI_Compat,
+        hasStoredCredential: Boolean = false,
+    ) = ProviderFormUiState(
+        name = "Example Provider",
+        selectedPreset = selectedPreset,
+        presetMenuExpanded = presetMenuExpanded,
+        protocolMenuExpanded = protocolMenuExpanded,
+        localProtocol = localProtocol,
+        baseUrl = baseUrl,
+        endpointValid = endpointValid,
+        credentialKindMismatch = credentialKindMismatch,
+        connectionTestState = connectionTestState,
+        isSaving = isSaving,
+        hasStoredCredential = hasStoredCredential,
+    )
+}

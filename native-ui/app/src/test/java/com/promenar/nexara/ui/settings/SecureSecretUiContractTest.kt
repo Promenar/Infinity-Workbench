@@ -33,11 +33,73 @@ class SecureSecretUiContractTest {
     }
 
     @Test
+    fun `provider form exposes a pure Material 3 content seam without glass or fixed IME spacers`() {
+        val form = source("ui/settings/ProviderFormScreen.kt")
+
+        assertThat(form).contains("data class ProviderFormUiState")
+        assertThat(form).contains("data class ProviderFormActions")
+        assertThat(form).contains("fun ProviderFormContent(")
+        assertThat(form).contains("imePadding = true")
+        assertThat(form).contains("scrollable = false")
+        assertThat(form).contains("LazyColumn(")
+        assertThat(form).contains("ExposedDropdownMenuBox(")
+        assertThat(form).contains("OutlinedTextField(")
+        assertThat(form).contains("OutlinedButton(")
+        assertThat(form).contains("Button(")
+        assertThat(form).contains("liveRegion = LiveRegionMode.Assertive")
+        assertThat(form).doesNotContain("NexaraGlassCard")
+        assertThat(form).doesNotContain("GlassInputField")
+        assertThat(form).doesNotContain("GlassBorder")
+        assertThat(form).doesNotContain("PresetItem")
+        assertThat(form).doesNotContain("import com.promenar.nexara.ui.common.ProtocolSelector")
+        assertThat(form).doesNotContain("BasicTextField")
+        assertThat(form).doesNotContain("Spacer(modifier = Modifier.height(200.dp))")
+        assertThat(form).doesNotContain("navigationBarsPadding()")
+        assertThat(form).doesNotContain("imePadding()")
+    }
+
+    @Test
+    fun `provider connection and save are mutually exclusive and cancellation is never swallowed`() {
+        val form = source("ui/settings/ProviderFormScreen.kt")
+
+        assertThat(form).contains("connectionTestState != ProviderConnectionTestState.Testing")
+        assertThat(form).contains("!state.isSaving")
+        assertThat(form).contains("catch (cancelled: CancellationException)")
+        assertThat(form).contains("throw cancelled")
+        assertThat(form.substringBefore("fun ProviderFormContent(")).doesNotContain("runCatching {")
+    }
+
+    @Test
+    fun `provider route owns effects while pure content owns only render state and callbacks`() {
+        val form = source("ui/settings/ProviderFormScreen.kt")
+        val content = form.substringAfter("fun ProviderFormContent(")
+
+        assertThat(form.substringBefore("fun ProviderFormContent(")).contains("NexaraApplication")
+        assertThat(form.substringBefore("fun ProviderFormContent(")).contains("SettingsViewModel")
+        assertThat(content).doesNotContain("NexaraApplication")
+        assertThat(content).doesNotContain("SettingsViewModel")
+        assertThat(content).doesNotContain("LocalContext")
+        assertThat(content).doesNotContain("rememberCoroutineScope")
+        assertThat(content).doesNotContain("LaunchedEffect")
+        assertThat(content).doesNotContain("ProtocolFactory")
+    }
+
+    @Test
     fun `provider cloud endpoint accepts only absolute HTTPS`() {
         assertThat(isSecureProviderEndpoint("https://api.example.com/v1")).isTrue()
         assertThat(isSecureProviderEndpoint("HTTP://api.example.com/v1")).isFalse()
         assertThat(isSecureProviderEndpoint("https:///missing-host")).isFalse()
         assertThat(isSecureProviderEndpoint("not-a-url")).isFalse()
+    }
+
+    @Test
+    fun `credential mutation preserves stored values but keeps explicit clear unambiguous`() {
+        assertThat(credentialUpdateForSecretInput("", hasStoredCredential = true))
+            .isEqualTo(com.promenar.nexara.data.model.CredentialUpdate.Preserve)
+        assertThat(credentialUpdateForSecretInput("", hasStoredCredential = false))
+            .isEqualTo(com.promenar.nexara.data.model.CredentialUpdate.Clear)
+        assertThat(credentialUpdateForSecretInput("fake-new", hasStoredCredential = true))
+            .isEqualTo(com.promenar.nexara.data.model.CredentialUpdate.Replace("fake-new"))
     }
 
     @Test
@@ -64,10 +126,22 @@ class SecureSecretUiContractTest {
         assertThat(field).contains("Modifier.size(48.dp)")
         assertThat(field).contains("revealGeneration")
         assertThat(field).contains("revealJob?.cancel()")
-        assertThat(field).contains("DisposableEffect(hasStoredSecret)")
+        assertThat(field).contains("DisposableEffect(hasStoredSecret, lifecycleOwner)")
         assertThat(field).doesNotContain("remember(hasStoredSecret)")
         assertThat(field).doesNotContain("everFocused")
         assertThat(field).contains("focusGeneration")
+        assertThat(field).contains("OutlinedTextField(")
+        assertThat(field).contains("SECRET_REVEAL_TIMEOUT_MILLIS")
+        assertThat(field).contains("revealTimeoutJob")
+        assertThat(field).contains("delay(revealTimeoutMillis)")
+        assertThat(field).contains("Lifecycle.Event.ON_STOP")
+        assertThat(field).contains("KeyboardType.Password")
+        assertThat(field).contains("autoCorrectEnabled = false")
+        assertThat(field).contains("readOnly = hasStoredSecret && value.isEmpty()")
+        assertThat(field).doesNotContain(".focusable()")
+        assertThat(field).doesNotContain("BasicTextField")
+        assertThat(field).doesNotContain("GlassBorder")
+        assertThat(field).doesNotContain("SolidColor")
     }
 
     @Test

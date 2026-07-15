@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Folder
@@ -98,6 +99,10 @@ import com.promenar.nexara.ui.settings.BackupViewModel
 import com.promenar.nexara.ui.settings.ProviderModelsScreenActions
 import com.promenar.nexara.ui.settings.ProviderModelsScreenContent
 import com.promenar.nexara.ui.settings.ProviderModelsScreenState
+import com.promenar.nexara.ui.settings.PROVIDER_PRESETS
+import com.promenar.nexara.ui.settings.ProviderFormActions
+import com.promenar.nexara.ui.settings.ProviderFormContent
+import com.promenar.nexara.ui.settings.ProviderFormUiState
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -235,6 +240,84 @@ fun providerMaskedKeyReleasePreview() {
                 color = NexaraColors.OnSurfaceVariant,
             )
         }
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Provider form add phone",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun providerFormAddReleasePreview() {
+    ReleasePreviewSurface {
+        ProviderFormContent(
+            state = ProviderFormUiState(
+                name = "Preview Gateway",
+                selectedPreset = PROVIDER_PRESETS.first(),
+                baseUrl = "https://api.example.com/v1",
+                endpointValid = true,
+            ),
+            actions = ProviderFormActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Provider form edit actions 2x",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun providerFormEditActionsLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        ProviderFormContent(
+            state = ProviderFormUiState(
+                isEditing = true,
+                isExistingProvider = true,
+                name = "Gemini Preview",
+                selectedPreset = PROVIDER_PRESETS.first { it.name == "Gemini" },
+                baseUrl = "https://generativelanguage.googleapis.com",
+                hasStoredCredential = true,
+                usesVertexCredential = true,
+                endpointValid = true,
+            ),
+            actions = ProviderFormActions(),
+            listState = rememberLazyListState(initialFirstVisibleItemIndex = 3),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Provider form local onboarding failure",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun providerFormLocalFailureReleasePreview() {
+    ReleasePreviewSurface {
+        ProviderFormContent(
+            state = ProviderFormUiState(
+                isEditing = true,
+                isExistingProvider = true,
+                name = "Local",
+                selectedPreset = PROVIDER_PRESETS.first { it.name == "Local" },
+                isLocal = true,
+                onboardingMode = true,
+                localConnectionFailed = true,
+            ),
+            actions = ProviderFormActions(),
+        )
     }
 }
 

@@ -3,11 +3,20 @@ package com.promenar.nexara.ui.settings
 import android.os.SystemClock
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import com.promenar.nexara.R
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.Before
@@ -35,6 +44,50 @@ class SecureSecretFieldTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("****").assertIsDisplayed()
         composeRule.onAllNodesWithText(secret).assertCountEquals(0)
+    }
+
+    @Test
+    fun revealAndClearExposeOneAccessibleTouchTargetEach() {
+        val show = composeRule.activity.getString(R.string.secret_field_show)
+        val clear = composeRule.activity.getString(R.string.secret_field_clear)
+
+        composeRule.onAllNodesWithContentDescription(show).assertCountEquals(1)
+        composeRule.onNodeWithContentDescription(show)
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onAllNodesWithContentDescription(clear).assertCountEquals(1)
+        composeRule.onNodeWithContentDescription(clear)
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+    }
+
+    @Test
+    fun stableLabelOverridesExamplePlaceholderAsAccessibleName() {
+        val label = "Stable credential label"
+        val placeholder = composeRule.activity.getString(R.string.secret_field_placeholder)
+        composeRule.runOnIdle { composeRule.activity.label.value = label }
+
+        composeRule.onNodeWithContentDescription(label).assertIsDisplayed()
+        composeRule.onAllNodesWithContentDescription(placeholder).assertCountEquals(0)
+    }
+
+    @Test
+    fun storedMaskIsReadOnlyUntilExplicitClearStartsANewBuffer() {
+        val placeholder = composeRule.activity.getString(R.string.secret_field_placeholder)
+        val clear = composeRule.activity.getString(R.string.secret_field_clear)
+
+        composeRule.onNodeWithContentDescription(placeholder).assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.IsEditable, false),
+        )
+        composeRule.runOnIdle { check(composeRule.activity.edit.value.isEmpty()) }
+        composeRule.onNodeWithText("****").assertIsDisplayed()
+
+        composeRule.runOnIdle {
+            composeRule.activity.clearAction = { composeRule.activity.hasStored.value = false }
+        }
+        composeRule.onNodeWithContentDescription(clear).performClick()
+        composeRule.onNodeWithContentDescription(placeholder).performTextReplacement("new*fake")
+        composeRule.runOnIdle { check(composeRule.activity.edit.value == "new*fake") }
     }
 
     @Test
@@ -102,6 +155,43 @@ class SecureSecretFieldTest {
 
         composeRule.onNodeWithText("****").assertIsDisplayed()
         composeRule.onAllNodesWithText(secret).assertCountEquals(0)
+    }
+
+    @Test
+    fun visibleReveal_expiresAndLeavesOnlyFixedMaskInSemantics() {
+        val secret = "short-lived-fake-secret"
+        composeRule.runOnIdle {
+            composeRule.activity.revealTimeoutMillis.value = 1_000L
+            composeRule.activity.revealProvider = { secret.toCharArray() }
+        }
+        val show = composeRule.activity.getString(R.string.secret_field_show)
+
+        composeRule.onNodeWithContentDescription(show).performClick()
+        composeRule.onNodeWithText(secret).assertIsDisplayed()
+        composeRule.waitUntil(timeoutMillis = 3_000L) {
+            composeRule.onAllNodesWithText(secret).fetchSemanticsNodes().isEmpty()
+        }
+
+        composeRule.onNodeWithText("****").assertIsDisplayed()
+        composeRule.onAllNodesWithText(secret).assertCountEquals(0)
+    }
+
+    @Test
+    fun backgroundingActivityHidesRevealAndWipesTransientArray() {
+        val returned = "background-fake-secret".toCharArray()
+        composeRule.activity.revealProvider = { returned }
+        val show = composeRule.activity.getString(R.string.secret_field_show)
+
+        composeRule.onNodeWithContentDescription(show).performClick()
+        composeRule.onNodeWithText("background-fake-secret").assertIsDisplayed()
+
+        composeRule.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        composeRule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("****").assertIsDisplayed()
+        composeRule.onAllNodesWithText("background-fake-secret").assertCountEquals(0)
+        composeRule.runOnIdle { check(returned.contentEquals(CharArray(returned.size))) }
     }
 
     @Test

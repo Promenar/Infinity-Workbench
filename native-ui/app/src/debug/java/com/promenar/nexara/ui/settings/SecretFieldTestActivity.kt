@@ -20,6 +20,8 @@ class SecretFieldTestActivity : ComponentActivity() {
     val hasStored = mutableStateOf(true)
     val showField = mutableStateOf(true)
     val edit = mutableStateOf("")
+    val label = mutableStateOf<String?>(null)
+    val revealTimeoutMillis = mutableStateOf(15_000L)
     var revealProvider: suspend () -> CharArray? = { "default-secret".toCharArray() }
     var clearAction: () -> Unit = {}
 
@@ -27,6 +29,8 @@ class SecretFieldTestActivity : ComponentActivity() {
         hasStored.value = true
         showField.value = true
         edit.value = ""
+        label.value = null
+        revealTimeoutMillis.value = 15_000L
         revealProvider = { "default-secret".toCharArray() }
         clearAction = {}
     }
@@ -47,6 +51,8 @@ class SecretFieldTestActivity : ComponentActivity() {
                             hasStoredSecret = hasStored.value,
                             onRevealRequest = { revealProvider() },
                             onClear = { clearAction() },
+                            label = label.value,
+                            revealTimeoutMillis = revealTimeoutMillis.value,
                         )
                     }
                     Button(onClick = { focus.clearFocus() }) { Text("outside") }
