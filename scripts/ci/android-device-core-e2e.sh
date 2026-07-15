@@ -197,6 +197,7 @@ reset_target_with_notification_permission_granted() {
 
 run_expected_relay_death() {
     local output_file="${ARTIFACT_DIR}/restore-relay-stage-expected-death.txt"
+    local after_pids_file="${ARTIFACT_DIR}/restore-relay-stage-after-pids.txt"
     local status
     echo "运行预期杀进程阶段：restore-relay-stage"
     set +e
@@ -212,16 +213,9 @@ run_expected_relay_death() {
         echo "relay 阶段后 ADB 设备不可用，不能判定为预期进程死亡" >&2
         return 1
     fi
-
-    local attempt
-    for attempt in $(seq 1 50); do
-        if [[ -z "$(adb shell pidof "${TARGET_PACKAGE}" 2>/dev/null | tr -d '\r')" ]]; then
-            return 0
-        fi
-        sleep 0.1
-    done
-    echo "relay 阶段返回后目标进程仍存活" >&2
-    return 1
+    # relay 可能已拉起新进程；下一 verify 阶段会用持久化的 KEY_STAGE_PID
+    # 断言新 PID 与被杀死的 stage PID 不同，这里只保留阶段结束时的进程证据。
+    adb shell pidof "${TARGET_PACKAGE}" 2>/dev/null | tr -d '\r' > "${after_pids_file}" || true
 }
 
 cd "${NATIVE_ROOT}"

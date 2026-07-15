@@ -8,6 +8,7 @@ APP_BUILD="${REPO_ROOT}/native-ui/app/build.gradle.kts"
 MAIN_ACTIVITY_E2E_BUILD="${REPO_ROOT}/native-ui/mainactivity-e2e/build.gradle.kts"
 ONBOARDING_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/nexara/onboarding/OnboardingAndroidEndToEndTest.kt"
 WELCOME_LAYOUT_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/nexara/onboarding/WelcomeScreenLayoutTest.kt"
+RESTORE_RELAY_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/nexara/data/backup/AndroidRestoreRelayEndToEndTest.kt"
 NOTIFICATION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/nexara/MainActivityNotificationE2eTest.kt"
 TIMEOUT_HELPER="${REPO_ROOT}/scripts/ci/run-with-timeout.py"
 
@@ -96,6 +97,8 @@ assert_contains "${DEVICE_SCRIPT}" 'run_test document-parser-fixtures "${APP_RUN
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.rag.DocumentParserDeviceE2eTest'
 assert_contains "${DEVICE_SCRIPT}" 'restore_device_display_state'
 assert_contains "${DEVICE_SCRIPT}" 'if [[ "${DEVICE_E2E_SCOPE}" == "minimum" ]]'
+assert_contains "${DEVICE_SCRIPT}" 'restore-relay-stage-after-pids.txt'
+assert_contains "${RESTORE_RELAY_E2E_TEST}" 'Process.myPid()).isNotEqualTo(proof(app).getInt(KEY_STAGE_PID, -1))'
 assert_contains "${APP_BUILD}" 'val allowedE2eBuildTypes = setOf("debug", "deviceTest")'
 assert_contains "${APP_BUILD}" '.orElse(if (deviceE2eEnabled) "deviceTest" else "debug")'
 assert_contains "${APP_BUILD}" 'require(!deviceE2eEnabled || selectedDeviceE2eBuildType == "deviceTest")'
