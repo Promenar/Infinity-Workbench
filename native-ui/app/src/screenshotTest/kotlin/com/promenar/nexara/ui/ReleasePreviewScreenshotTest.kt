@@ -29,6 +29,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ApprovalRequest
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.backup.BackupExportOptions
 import com.promenar.nexara.data.backup.PendingRestoreMetadata
 import com.promenar.nexara.data.local.db.entity.FileEntry
@@ -114,6 +115,7 @@ private const val PHONE_WIDTH_DP = 412
 private const val PHONE_HEIGHT_DP = 892
 private const val LANDSCAPE_WIDTH_DP = 892
 private const val LANDSCAPE_HEIGHT_DP = 412
+private const val PREVIEW_CHAT_MODEL_ID = "default::deepseek-v4-flash"
 
 @PreviewTest
 @Preview(
@@ -249,7 +251,10 @@ fun emptyChatReleasePreview() {
     ReleasePreviewSurface {
         ChatScreenContent(
             state = ChatScreenState(
-                uiState = ChatUiState(agentName = "Nexara Assistant"),
+                uiState = ChatUiState(
+                    session = previewChatSession(),
+                    agentName = "Nexara Assistant",
+                ),
             ),
             actions = ChatScreenActions(),
         )
@@ -270,6 +275,7 @@ fun streamingChatReleasePreview() {
         ChatScreenContent(
             state = ChatScreenState(
                 uiState = ChatUiState(
+                    session = previewChatSession(),
                     agentName = "Nexara 助手",
                     messages = listOf(
                         previewMessage("user-1", MessageRole.USER, "请总结这份发行检查清单。"),
@@ -277,6 +283,8 @@ fun streamingChatReleasePreview() {
                             "assistant-1",
                             MessageRole.ASSISTANT,
                             "正在核对安全、备份、后台生成与视觉回归门禁……",
+                            reasoning = "先核对安全与备份门禁，再验证后台生成和视觉回归。",
+                            modelId = PREVIEW_CHAT_MODEL_ID,
                         ),
                     ),
                     isGenerating = true,
@@ -304,6 +312,7 @@ fun chatErrorLargeFontReleasePreview() {
         ChatScreenContent(
             state = ChatScreenState(
                 uiState = ChatUiState(
+                    session = previewChatSession(),
                     agentName = "Nexara Assistant",
                     messages = listOf(
                         previewMessage("user-error", MessageRole.USER, "Continue the release audit."),
@@ -339,6 +348,7 @@ fun chatApprovalTabletReleasePreview() {
         ChatScreenContent(
             state = ChatScreenState(
                 uiState = ChatUiState(
+                    session = previewChatSession(),
                     agentName = "Nexara Assistant",
                     messages = listOf(
                         previewMessage("user-approval", MessageRole.USER, "Prepare the release notes."),
@@ -1120,7 +1130,10 @@ fun emptyChatEnglishLandscapeReleasePreview() {
     ReleasePreviewSurface {
         ChatScreenContent(
             state = ChatScreenState(
-                uiState = ChatUiState(agentName = "Nexara Assistant"),
+                uiState = ChatUiState(
+                    session = previewChatSession(),
+                    agentName = "Nexara Assistant",
+                ),
             ),
             actions = ChatScreenActions(),
         )
@@ -1141,6 +1154,7 @@ fun streamingChatChineseLandscapeReleasePreview() {
         ChatScreenContent(
             state = ChatScreenState(
                 uiState = ChatUiState(
+                    session = previewChatSession(),
                     agentName = "Nexara 助手",
                     messages = listOf(
                         previewMessage("user-1", MessageRole.USER, "请总结这份发行检查清单。"),
@@ -1148,6 +1162,8 @@ fun streamingChatChineseLandscapeReleasePreview() {
                             "assistant-1",
                             MessageRole.ASSISTANT,
                             "正在核对安全、备份、后台生成与视觉回归门禁……",
+                            reasoning = "先核对安全与备份门禁，再验证后台生成和视觉回归。",
+                            modelId = PREVIEW_CHAT_MODEL_ID,
                         ),
                     ),
                     isGenerating = true,
@@ -1244,15 +1260,26 @@ private fun previewMessage(
     id: String,
     role: MessageRole,
     content: String,
+    reasoning: String? = null,
+    modelId: String? = null,
     isError: Boolean = false,
     errorMessage: String? = null,
 ) = Message(
     id = id,
     role = role,
     content = content,
+    reasoning = reasoning,
+    modelId = modelId,
     isError = isError,
     errorMessage = errorMessage,
     createdAt = PREVIEW_LOCAL_TIME.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+)
+
+private fun previewChatSession() = Session(
+    id = "preview-chat",
+    agentId = "preview-agent",
+    title = "New Chat",
+    modelId = PREVIEW_CHAT_MODEL_ID,
 )
 
 private fun previewDocEditorState(
