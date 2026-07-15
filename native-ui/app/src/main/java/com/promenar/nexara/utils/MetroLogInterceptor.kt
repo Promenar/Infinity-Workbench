@@ -6,7 +6,6 @@ import okio.Buffer
 import okio.ForwardingSource
 import okio.buffer
 import org.json.JSONObject
-import android.util.Log
 
 class MetroLogInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -88,7 +87,7 @@ class MetroLogInterceptor : Interceptor {
 
     private fun emit(event: String, payload: JSONObject) {
         runCatching {
-            Log.d("NEXARA_METRO", "EVENT_START|$event|$payload|EVENT_END")
+            NexaraLogger.metro(event, payload.toString())
         }
     }
 }

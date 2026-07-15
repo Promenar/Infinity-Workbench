@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.remote.parser
 
+import com.promenar.nexara.domain.generation.GenerationFailureCode
 import com.google.common.truth.Truth.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -8,6 +9,18 @@ import org.junit.jupiter.api.Test
 class ErrorNormalizerTest {
 
     private fun normalize(error: Throwable?) = ErrorNormalizer.normalize(error)
+
+    private fun assertFailure(
+        normalized: NormalizedError,
+        code: GenerationFailureCode,
+        retryAfter: Int? = null,
+    ) {
+        val failure = normalized.toFailure()
+        assertThat(failure.code).isEqualTo(code)
+        assertThat(failure.retryAfterSeconds).isEqualTo(retryAfter)
+        assertThat(failure.technical).isNotEmpty()
+        assertThat(failure.technical).isEqualTo(normalized.technicalMessage)
+    }
 
     @Nested
     @DisplayName("null error")
@@ -30,6 +43,7 @@ class ErrorNormalizerTest {
             val result = normalize(Exception("Network error"))
             assertThat(result).isInstanceOf(NormalizedError.Network::class.java)
             assertThat(result.retryable).isTrue()
+            assertFailure(result, GenerationFailureCode.NETWORK)
             assertThat(result.category).isEqualTo(ErrorCategory.NETWORK)
         }
 
@@ -67,6 +81,8 @@ class ErrorNormalizerTest {
             val result = normalize(HttpStatusException(401, "Unauthorized"))
             assertThat(result).isInstanceOf(NormalizedError.Auth::class.java)
             assertThat(result.retryable).isFalse()
+            assertFailure(result, GenerationFailureCode.AUTH)
+            assertThat(result.technicalMessage).contains("401")
         }
 
         @Test
@@ -111,6 +127,7 @@ class ErrorNormalizerTest {
             assertThat(result).isInstanceOf(NormalizedError.RateLimit::class.java)
             assertThat(result.retryable).isTrue()
             assertThat(result.retryAfter).isEqualTo(60)
+            assertFailure(result, GenerationFailureCode.RATE_LIMIT, 60)
         }
 
         @Test
@@ -120,6 +137,7 @@ class ErrorNormalizerTest {
             )
             assertThat(result).isInstanceOf(NormalizedError.RateLimit::class.java)
             assertThat(result.retryAfter).isEqualTo(30)
+            assertFailure(result, GenerationFailureCode.RATE_LIMIT, 30)
         }
 
         @Test
@@ -129,6 +147,7 @@ class ErrorNormalizerTest {
             )
             assertThat(result).isInstanceOf(NormalizedError.RateLimit::class.java)
             assertThat(result.retryAfter).isEqualTo(120)
+            assertFailure(result, GenerationFailureCode.RATE_LIMIT, 120)
         }
 
         @Test
@@ -158,7 +177,8 @@ class ErrorNormalizerTest {
             val result = ErrorNormalizer.normalize(
                 HttpStatusException(429, "Retry after 30 seconds")
             ) as NormalizedError.RateLimit
-            assertThat(result.message).contains("30 秒")
+            assertThat(result.retryAfter).isEqualTo(30)
+            assertThat(result.technicalMessage).contains("30 seconds")
         }
 
         @Test
@@ -166,7 +186,8 @@ class ErrorNormalizerTest {
             val result = ErrorNormalizer.normalize(
                 HttpStatusException(429, "Retry after 120 seconds")
             ) as NormalizedError.RateLimit
-            assertThat(result.message).contains("分钟")
+            assertThat(result.technicalMessage).contains("120 seconds")
+            assertThat(result.retryAfter).isEqualTo(120)
         }
 
         @Test
@@ -174,7 +195,8 @@ class ErrorNormalizerTest {
             val result = ErrorNormalizer.normalize(
                 HttpStatusException(429, "Retry after 7200 seconds")
             ) as NormalizedError.RateLimit
-            assertThat(result.message).contains("小时")
+            assertThat(result.technicalMessage).contains("7200 seconds")
+            assertThat(result.retryAfter).isEqualTo(7200)
         }
 
         @Test
@@ -182,7 +204,8 @@ class ErrorNormalizerTest {
             val result = ErrorNormalizer.normalize(
                 HttpStatusException(429, "Retry after 172800 seconds")
             ) as NormalizedError.RateLimit
-            assertThat(result.message).contains("天")
+            assertThat(result.technicalMessage).contains("172800 seconds")
+            assertThat(result.retryAfter).isEqualTo(172800)
         }
     }
 
@@ -385,14 +408,14 @@ class ErrorNormalizerTest {
         @Test
         fun `all subtypes have correct category`() {
             val errors: List<NormalizedError> = listOf(
-                NormalizedError.Network("net", "tech"),
-                NormalizedError.Auth("auth", "tech"),
-                NormalizedError.RateLimit("rate", "tech", 30),
-                NormalizedError.InvalidRequest("inv", "tech"),
-                NormalizedError.ServerError("srv", "tech"),
-                NormalizedError.QuotaExceeded("quota", "tech"),
-                NormalizedError.Timeout("tim", "tech"),
-                NormalizedError.Unknown("unk", "tech")
+                NormalizedError.Network("net"),
+                NormalizedError.Auth("auth"),
+                NormalizedError.RateLimit("rate", 30),
+                NormalizedError.InvalidRequest("inv"),
+                NormalizedError.ServerError("srv"),
+                NormalizedError.QuotaExceeded("quota"),
+                NormalizedError.Timeout("tim"),
+                NormalizedError.Unknown("unk")
             )
             val expected = listOf(
                 ErrorCategory.NETWORK,
@@ -408,26 +431,52 @@ class ErrorNormalizerTest {
         }
 
         @Test
+        fun `全部 subtype 映射为稳定 GenerationFailureCode`() {
+            val errors: List<NormalizedError> = listOf(
+                NormalizedError.Network("net"),
+                NormalizedError.Auth("auth"),
+                NormalizedError.RateLimit("rate", 30),
+                NormalizedError.InvalidRequest("inv"),
+                NormalizedError.ServerError("srv"),
+                NormalizedError.QuotaExceeded("quota"),
+                NormalizedError.Timeout("tim"),
+                NormalizedError.Unknown("unk"),
+            )
+
+            assertThat(errors.map { it.toFailure().code }).containsExactly(
+                GenerationFailureCode.NETWORK,
+                GenerationFailureCode.AUTH,
+                GenerationFailureCode.RATE_LIMIT,
+                GenerationFailureCode.INVALID_REQUEST,
+                GenerationFailureCode.SERVER,
+                GenerationFailureCode.QUOTA,
+                GenerationFailureCode.TIMEOUT,
+                GenerationFailureCode.UNKNOWN,
+            ).inOrder()
+            assertThat(errors[2].toFailure().retryAfterSeconds).isEqualTo(30)
+        }
+
+        @Test
         fun `retryable flags are correct`() {
-            assertThat(NormalizedError.Network("", "").retryable).isTrue()
-            assertThat(NormalizedError.Auth("", "").retryable).isFalse()
-            assertThat(NormalizedError.RateLimit("", "", null).retryable).isTrue()
-            assertThat(NormalizedError.InvalidRequest("", "").retryable).isFalse()
-            assertThat(NormalizedError.ServerError("", "").retryable).isTrue()
-            assertThat(NormalizedError.QuotaExceeded("", "").retryable).isFalse()
-            assertThat(NormalizedError.Timeout("", "").retryable).isTrue()
-            assertThat(NormalizedError.Unknown("", "").retryable).isTrue()
+            assertThat(NormalizedError.Network("").retryable).isTrue()
+            assertThat(NormalizedError.Auth("").retryable).isFalse()
+            assertThat(NormalizedError.RateLimit("", null).retryable).isTrue()
+            assertThat(NormalizedError.InvalidRequest("").retryable).isFalse()
+            assertThat(NormalizedError.ServerError("").retryable).isTrue()
+            assertThat(NormalizedError.QuotaExceeded("").retryable).isFalse()
+            assertThat(NormalizedError.Timeout("").retryable).isTrue()
+            assertThat(NormalizedError.Unknown("").retryable).isTrue()
         }
 
         @Test
         fun `RateLimit preserves retryAfter`() {
-            val err = NormalizedError.RateLimit("msg", "tech", 120)
+            val err = NormalizedError.RateLimit("msg", 120)
             assertThat(err.retryAfter).isEqualTo(120)
         }
 
         @Test
         fun `RateLimit null retryAfter`() {
-            val err = NormalizedError.RateLimit("msg", "tech", null)
+            val err = NormalizedError.RateLimit("msg", null)
             assertThat(err.retryAfter).isNull()
         }
     }

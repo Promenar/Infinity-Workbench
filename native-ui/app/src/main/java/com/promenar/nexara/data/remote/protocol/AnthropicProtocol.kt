@@ -65,17 +65,20 @@ class AnthropicProtocol(
             }.execute { response ->
                 if (!response.status.isSuccess()) {
                     val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
-                    val normalized = ErrorNormalizer.normalize(
-                        HttpStatusException(response.status.value, errorBody)
-                    )
-                    send(StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name))
+                    send(classifyProtocolError(
+                        statusCode = response.status.value,
+                        responseBody = errorBody,
+                        retryAfterHeader = response.headers[HttpHeaders.RetryAfter],
+                    ))
                     return@execute
                 }
 
                 response.contentType()?.let { ct ->
                     if (ct.match(ContentType.Text.Html)) {
                         send(StreamChunk.Error(
-                            "Received HTML response instead of JSON stream. Check your Base URL settings."
+                            code = com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER,
+                            retryable = true,
+                            technical = "Received HTML response instead of JSON stream.",
                         ))
                         return@execute
                     }
@@ -95,7 +98,11 @@ class AnthropicProtocol(
                     }
 
                     if (readSuccess == null) {
-                        send(StreamChunk.Error("Streaming timeout after ${timeoutMs / 1000}s of inactivity."))
+                        send(StreamChunk.Error(
+                            code = com.promenar.nexara.domain.generation.GenerationFailureCode.TIMEOUT,
+                            retryable = true,
+                            technical = "Streaming timeout after ${timeoutMs / 1000}s of inactivity.",
+                        ))
                         break
                     }
                     if (!readSuccess) break
@@ -111,7 +118,11 @@ class AnthropicProtocol(
                     }
 
                     if (line.trimStart().startsWith('<')) {
-                        send(StreamChunk.Error("Received HTML response instead of JSON stream."))
+                        send(StreamChunk.Error(
+                            code = com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER,
+                            retryable = true,
+                            technical = "Received HTML response instead of JSON stream.",
+                        ))
                         break
                     }
 
@@ -322,10 +333,12 @@ class AnthropicProtocol(
             "message_stop" -> { }
             "ping" -> { }
             "error" -> {
-                val errorMsg = eventData["error"]?.jsonObject?.let { errObj ->
-                    errObj["message"]?.jsonPrimitive?.contentOrNull ?: data
-                } ?: data
-                send(StreamChunk.Error(errorMsg))
+                val errorObject = eventData["error"] as? JsonObject
+                send(ProtocolErrorClassifier.classify(
+                    type = errorObject?.stringField("type"),
+                    code = errorObject?.stringField("code"),
+                    technical = errorObject?.stringField("message")?.ifBlank { data } ?: data,
+                ))
             }
         }
     }
@@ -483,7 +496,24 @@ class AnthropicProtocol(
 
     private fun normalizeError(e: Exception): StreamChunk.Error {
         val normalized = ErrorNormalizer.normalize(e)
-        return StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name)
+        return normalized.toStreamChunkError()
+    }
+
+    private fun classifyProtocolError(
+        statusCode: Int,
+        responseBody: String,
+        retryAfterHeader: String?,
+    ): StreamChunk.Error {
+        val errorObject = runCatching {
+            json.parseToJsonElement(responseBody).jsonObject["error"] as? JsonObject
+        }.getOrNull()
+        return ProtocolErrorClassifier.classify(
+            statusCode = statusCode,
+            type = errorObject?.stringField("type"),
+            code = errorObject?.stringField("code"),
+            retryAfterHeader = retryAfterHeader,
+            technical = errorObject?.stringField("message")?.ifBlank { responseBody } ?: responseBody,
+        )
     }
 
     private fun JsonObject.stringField(key: String): String {

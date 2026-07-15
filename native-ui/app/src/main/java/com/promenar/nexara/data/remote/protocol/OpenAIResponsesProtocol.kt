@@ -73,8 +73,11 @@ class OpenAIResponsesProtocol(
             }.execute { response ->
                 if (!response.status.isSuccess()) {
                     val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
-                    val normalized = ErrorNormalizer.normalize(HttpStatusException(response.status.value, errorBody))
-                    send(StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name))
+                    send(classifyProtocolError(
+                        statusCode = response.status.value,
+                        responseBody = errorBody,
+                        retryAfterHeader = response.headers[HttpHeaders.RetryAfter],
+                    ))
                     return@execute
                 }
 
@@ -88,7 +91,11 @@ class OpenAIResponsesProtocol(
                         channel.readUTF8LineTo(sb, 1_048_576)
                     }
                     if (readSuccess == null) {
-                        send(StreamChunk.Error("Streaming timeout after ${timeoutMs / 1000}s of inactivity."))
+                        send(StreamChunk.Error(
+                            code = com.promenar.nexara.domain.generation.GenerationFailureCode.TIMEOUT,
+                            retryable = true,
+                            technical = "Streaming timeout after ${timeoutMs / 1000}s of inactivity.",
+                        ))
                         break
                     }
                     if (!readSuccess) break
@@ -104,8 +111,7 @@ class OpenAIResponsesProtocol(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            val normalized = ErrorNormalizer.normalize(e)
-            send(StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name))
+            send(ErrorNormalizer.normalize(e).toStreamChunkError())
         } finally {
             activeChannel = null
         }
@@ -219,9 +225,19 @@ class OpenAIResponsesProtocol(
                 return true
             }
             "response.failed", "error" -> {
-                val message = chunk["error"]?.jsonObject?.stringField("message")
-                    ?: chunk.stringField("message").ifBlank { "OpenAI Responses request failed." }
-                send(StreamChunk.Error(message))
+                val errorObject = when (type) {
+                    "response.failed" -> (chunk["response"] as? JsonObject)?.get("error") as? JsonObject
+                        ?: chunk["error"] as? JsonObject
+                    else -> chunk["error"] as? JsonObject
+                }
+                send(ProtocolErrorClassifier.classify(
+                    type = errorObject?.stringField("type"),
+                    code = errorObject?.stringField("code"),
+                    technical = errorObject?.stringField("message")
+                        ?.ifBlank { chunk.stringField("message") }
+                        ?.ifBlank { null }
+                        ?: "OpenAI Responses request failed.",
+                ))
                 return true
             }
             else -> {
@@ -262,6 +278,23 @@ class OpenAIResponsesProtocol(
         if (line.startsWith("data: ")) return line.substring(6)
         if (line.startsWith("data:")) return line.substring(5)
         return null
+    }
+
+    private fun classifyProtocolError(
+        statusCode: Int,
+        responseBody: String,
+        retryAfterHeader: String?,
+    ): StreamChunk.Error {
+        val errorObject = runCatching {
+            json.parseToJsonElement(responseBody).jsonObject["error"] as? JsonObject
+        }.getOrNull()
+        return ProtocolErrorClassifier.classify(
+            statusCode = statusCode,
+            type = errorObject?.stringField("type"),
+            code = errorObject?.stringField("code"),
+            retryAfterHeader = retryAfterHeader,
+            technical = errorObject?.stringField("message")?.ifBlank { responseBody } ?: responseBody,
+        )
     }
 
     private fun JsonObject.stringField(key: String): String {

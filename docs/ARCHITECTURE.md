@@ -21,7 +21,9 @@ graph TD
     App --> Utils[utils: NexaraLogger/LocaleHelper]
     App --> Skills[Skill系统: 8个预设+用户自定义+MCP]
     Skills --> ImageSkill[ImageGenerationSkill]
-    App --> Service[service: GenerationService 计划中]
+    App --> Coordinator[GenerationCoordinator: 单一生成任务源]
+    Coordinator --> Service[GenerationForegroundService: 后台持续生成]
+    App --> Secrets[SecretStore: Android Keystore + AES-GCM]
 ```
 
 ### 关键组件
@@ -34,18 +36,22 @@ graph TD
 - **VectorizationQueue / DocumentIndexService**: 文档/记忆持久队列与候选索引事务服务。文件内容先构建隔离向量/KG 候选，事务内复核哈希后原子切换；配置切换和进程死亡均可恢复中断任务。
 - **WorkspaceRepository / WorkspaceDeletionTransaction**: Session root 作用域文件仓储。永久删除把派生索引与文件记录纳入同一 Room 事务，并用稳定 tombstone 恢复物理删除的进程死亡窗口。
 - **SharedFileImporter / DurableShareInbox**: SAF 与系统分享共用的逐项导入管线；支持去重、容量重试、部分失败、崩溃恢复及索引回执。
+- **GenerationCoordinator / ChatGenerationRunner**: 应用级唯一生成任务源。初版全局只允许一个活动任务；统一处理 Provider 路由、RAG/工具循环、流式增量持久化、取消与结构化错误终态。
+- **GenerationForegroundService**: 观察 Coordinator 的同一任务状态，通过 `dataSync` 前台服务在切后台、锁屏、旋转或 Activity 重建后继续当前生成；通知可返回准确会话或停止任务。设备重启续传、多会话并行和定时任务不在 `v0.2-beta` 范围。
+- **SecretStore / SecretCatalog**: Android Keystore 生成不可导出的 AES-GCM 主密钥；普通偏好只保存密文、IV 与格式版本。Provider、Vertex、搜索、Embedding 和 WebDAV 凭据由稳定 SecretId 管理，UI 只持有存在性和短生命周期 reveal 内容。
+- **BackupRepository / BackupPackageCodec**: 核心数据采用清单、逐项 SHA-256 和事务恢复；密钥默认排除，显式包含时使用备份密码派生的 AES-256-GCM 密钥加密。恢复先验证再写入，错误密码、损坏包和越界内容不得产生部分写入。
 - **MicroGraphExtractor/GraphExtractor**: 知识图谱提取引擎（JIT 缓存 + 全量提取双模式），全链路接入日志。
 - **ImageGenClient**: OpenAI-compatible 图像生成 API 客户端，支持 url/b64_json 响应格式。
 - **ImageGenerationSkill**: `generate_image` 工具实现，LLM 可调用生成图片并内联展示在对话气泡中。
 - **RagOmniIndicator**: 基于磨砂玻璃设计的全能检索指示器，集成在对话流中展示检索深度与进度。
-- **NexaraLogger**: 拦截未捕获异常并持久化崩溃日志；现已被 RAG/KG 全管线接入（5 条管线，覆盖 25+ 个 catch 块）。
+- **NexaraLogger**: Debug 构建的统一脱敏日志和 Metro 事件边界；Release 入口受 `BuildConfig.DEBUG` 门禁并由 R8 精确剥离，业务源码禁止直接写平台日志或完整堆栈。
 - **AgentHubScreen**: Agent 列表中枢（Super Assistant 已于 2026-05-13 清理）。
 
 ### 架构决策记录 (ADR)
 - **ADR-001 (2026-05-13)**: **取消 Super Assistant 概念** — 统一 Agent 模型，移除 `isSuperAssistant` 特殊逻辑。✅ 已实施（Phase 3, 2026-05-13）。
 - **ADR-002 (2026-05-14)**: **Embedding/Rerank 配置回退策略** — 当专用键为空时回退到主 LLM Provider 配置。✅ 已实施。
 - **ADR-003 (2026-05-14)**: **图像生成工具设计** — 以 Skill 模式实现 `generate_image` 工具。✅ 已实施，详见 [ADR/image-generation-tool.md](./ADR/image-generation-tool.md)。
-- **ADR-004 (2026-05-14)**: **后台生成架构** — GenerationService (Foreground Service) 替代 viewModelScope 承载 SSE 流式生成。📋 方案已规划，待实施。
+- **ADR-004 (2026-05-14；2026-07-13 落地)**: **后台生成架构** — 由应用级 `GenerationCoordinator` 承载唯一任务状态，`GenerationForegroundService` 观察同一状态并维持前台发起的 SSE 生成；UI 不复制任务。✅ 已实施，发行级设备矩阵仍待最终门禁。
 - **ADR-005 (2026-05-16)**: **NexaraPageLayout 架构重构** — 迁移至 Scaffold 架构，通过局部按需应用 `imePadding` 与 `weight(1f)` 彻底解决键盘避让与测量崩溃问题。✅ 已实施。
 - **ADR-006 (2026-05-16)**: **数据库架构一致性校验修复** — 修复了因 Entity 变更与 Migration 缺失导致的 Room 完整性校验崩溃。通过强制升级至 v11 并补充 `defaultValue` 确保架构闭环。✅ 已实施。
 - **ADR-007 (2026-05-16)**: **RAG 知识库现代化改造** — 引入多选批处理架构与双模式 Markdown 编辑器。通过状态提升（State Hoisting）同步 FilesPanel 与屏幕级 UI，并集成 `MarkdownText` 引擎替代旧的文本高亮逻辑。✅ 已实施。
@@ -72,6 +78,6 @@ graph TD
 - **MetroLogInterceptor**: 自定义 OkHttp 引擎拦截器，使用 Okio ForwardingSource 对流式 SSE (Server-Sent Events) API 响应进行非阻塞抓包，解析 chunk 并计算 Token CPS 速率。
 - **MetroLoggingMiddleware**: 大模型中间件管线，拦截 `onRequestStart` / `onRequestEnd` 两个节点，高密度捕获大模型参数、滑窗历史消息和系统提示词。
 - **Room QueryCallback Auditor**: 零侵入数据库 SQL 拦截。在 NexaraApplication 中直接挂载，捕获 Message / Session / TaskNode 表的所有底盘 SQL 操作。
-- **scripts/nexara-metro-tui.js**: 桌面零依赖 Node.js TUI 解析终端，监听 adb logcat 管道并对结构化 JSON 日志流进行解析与极高美学彩色渲染，动态显示流式大模型的字数速率以及全链路生成动作。
+- **scripts/nexara-metro-tui.js**: 零运行时依赖的 Node.js Debug 日志 TUI，支持 adb/标准输入、设备与 Tag 选择、TTY/非 TTY 输出、中文错误与稳定退出码。它是开发者观测工具，不是最终用户 CLI；Release 不包含可用的 Metro 调试链路。
 - **Developer Panel**: 二级设置页面，用于导出日志 (`nexara_logs.txt`)。
 - **Log Persistence**: 路径为应用私有 files 目录。

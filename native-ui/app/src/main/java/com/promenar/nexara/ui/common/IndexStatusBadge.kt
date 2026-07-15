@@ -27,7 +27,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.annotation.StringRes
 import androidx.compose.ui.unit.dp
+import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -48,13 +53,13 @@ private val FileIndexStatus.color: Color
         FileIndexStatus.FAILED -> NexaraColors.RagError
     }
 
-private val FileIndexStatus.label: String
-    get() = when (this) {
-        FileIndexStatus.INDEXED -> "已索引"
-        FileIndexStatus.INDEXING -> "索引中"
-        FileIndexStatus.STALE -> "过时"
-        FileIndexStatus.NOT_INDEXED -> "未索引"
-        FileIndexStatus.FAILED -> "失败"
+@StringRes
+internal fun FileIndexStatus.labelResource(): Int = when (this) {
+        FileIndexStatus.INDEXED -> R.string.rag_status_ready
+        FileIndexStatus.INDEXING -> R.string.rag_status_indexing
+        FileIndexStatus.STALE -> R.string.rag_status_pending
+        FileIndexStatus.NOT_INDEXED -> R.string.rag_status_pending
+        FileIndexStatus.FAILED -> R.string.rag_status_error
     }
 
 @Composable
@@ -62,8 +67,12 @@ fun IndexStatusBadge(
     status: FileIndexStatus,
     modifier: Modifier = Modifier
 ) {
+    val statusLabel = stringResource(status.labelResource())
     Row(
         modifier = modifier
+            .semantics(mergeDescendants = true) {
+                stateDescription = statusLabel
+            }
             .clip(RoundedCornerShape(50))
             .background(status.color.copy(alpha = 0.15f))
             .padding(horizontal = 6.dp, vertical = 3.dp),
@@ -81,7 +90,7 @@ fun IndexStatusBadge(
             )
         }
         Text(
-            text = status.label,
+            text = statusLabel,
             style = NexaraTypography.labelSmall,
             color = status.color
         )
@@ -119,18 +128,34 @@ enum class KgStatus {
     NOT_STARTED
 }
 
+@StringRes
+internal fun KgStatus.descriptionResource(): Int = when (this) {
+    KgStatus.COMPLETED -> R.string.common_cd_success
+    KgStatus.IN_PROGRESS -> R.string.rag_status_indexing
+    KgStatus.FAILED -> R.string.common_cd_failed
+    KgStatus.NOT_STARTED -> R.string.rag_status_pending
+}
+
 @Composable
 fun KgStatusIcon(
     status: KgStatus,
     modifier: Modifier = Modifier
 ) {
+    val statusDescription = buildString {
+        append(stringResource(R.string.kg_title))
+        append(": ")
+        append(stringResource(status.descriptionResource()))
+    }
+    val accessibleModifier = modifier.semantics {
+        stateDescription = statusDescription
+    }
     when (status) {
         KgStatus.COMPLETED -> {
             Icon(
                 imageVector = Icons.Rounded.CheckCircle,
                 contentDescription = null,
                 tint = NexaraColors.StatusSuccess,
-                modifier = modifier.size(14.dp)
+                modifier = accessibleModifier.size(14.dp)
             )
         }
         KgStatus.IN_PROGRESS -> {
@@ -148,7 +173,7 @@ fun KgStatusIcon(
                 imageVector = Icons.Rounded.AccountTree,
                 contentDescription = null,
                 tint = NexaraColors.Primary.copy(alpha = alpha),
-                modifier = modifier.size(14.dp)
+                modifier = accessibleModifier.size(14.dp)
             )
         }
         KgStatus.FAILED -> {
@@ -156,7 +181,7 @@ fun KgStatusIcon(
                 imageVector = Icons.Rounded.Error,
                 contentDescription = null,
                 tint = NexaraColors.StatusError,
-                modifier = modifier.size(14.dp)
+                modifier = accessibleModifier.size(14.dp)
             )
         }
         KgStatus.NOT_STARTED -> {
@@ -164,7 +189,7 @@ fun KgStatusIcon(
                 imageVector = Icons.Rounded.RadioButtonUnchecked,
                 contentDescription = null,
                 tint = NexaraColors.Outline.copy(alpha = 0.3f),
-                modifier = modifier.size(14.dp)
+                modifier = accessibleModifier.size(14.dp)
             )
         }
     }

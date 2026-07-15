@@ -1,6 +1,6 @@
 package com.promenar.nexara.data.remote.middleware
 
-import android.util.Log
+import com.promenar.nexara.utils.NexaraLogger
 import org.json.JSONObject
 
 class MetroLoggingMiddleware : LlmMiddleware {
@@ -20,7 +20,7 @@ class MetroLoggingMiddleware : LlmMiddleware {
                 put("messageCount", params.messages.size)
                 put("inputChars", params.messages.sumOf { it.content.length } + (params.system?.length ?: 0))
             }
-            Log.d("NEXARA_METRO", "EVENT_START|CONTEXT_ASSEMBLY|${json}|EVENT_END")
+            NexaraLogger.metro("CONTEXT_ASSEMBLY", json.toString())
         } catch (e: Exception) {
             // Ignored
         }
@@ -33,7 +33,7 @@ class MetroLoggingMiddleware : LlmMiddleware {
                 put("model", params.model)
                 put("status", "completed")
             }
-            Log.d("NEXARA_METRO", "EVENT_START|LLM_COMPLETE|${json}|EVENT_END")
+            NexaraLogger.metro("LLM_COMPLETE", json.toString())
         } catch (e: Exception) {
             // Ignored
         }

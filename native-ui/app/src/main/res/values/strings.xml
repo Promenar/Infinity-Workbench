@@ -10,6 +10,12 @@
 
     <!-- FloatingTextEditor -->
     <string name="common_text_editor_placeholder">Enter text…</string>
+    <string name="prompt_editor_default_title">Edit Prompt</string>
+    <string name="prompt_editor_default_placeholder">Enter your system prompt…</string>
+    <string name="prompt_editor_tab_edit">Edit</string>
+    <string name="prompt_editor_tab_preview">Preview</string>
+    <string name="prompt_editor_cd_close">Close</string>
+    <string name="prompt_editor_cd_save">Save</string>
 
     <!-- InferencePresets -->
     <string name="common_preset_precise">Precise</string>
@@ -51,6 +57,7 @@
     <string name="common_cd_config">Configure</string>
     <string name="common_cd_sync">Sync</string>
     <string name="common_cd_delete">Delete</string>
+    <string name="common_cd_edit">Edit</string>
     <string name="secret_field_placeholder">Enter a new secret</string>
     <string name="secret_field_show">Temporarily show full secret</string>
     <string name="secret_field_hide">Hide secret</string>
@@ -137,7 +144,7 @@
     <string name="resource_explorer_recycle_bin">Recycle Bin</string>
     <string name="resource_explorer_recycle_bin_count">Recycle Bin (%1$d)</string>
     <string name="resource_explorer_import_status">Import Status</string>
-    <string name="resource_explorer_collapse">Collapse</string>
+    <string name="resource_explorer_clear_results">Clear results</string>
     <string name="resource_explorer_status_pending">Waiting</string>
     <string name="resource_explorer_status_importing">Importing</string>
     <string name="resource_explorer_status_created">Imported</string>
@@ -180,6 +187,7 @@
     <string name="hub_dialog_label_model">Model ID</string>
     <string name="hub_dialog_label_prompt">System Prompt</string>
     <string name="hub_action_unpin">Unpin</string>
+    <string name="hub_cd_agent_actions">Agent actions</string>
 
     <!-- Preset agents (localized display; DB stores seed text, overlay resolves to these) -->
     <string name="preset_agent_default_name">Nexara Assistant</string>
@@ -325,6 +333,8 @@
     <string name="settings_about_nexara">About Nexara</string>
     <string name="settings_version">Version %1$s</string>
     <string name="settings_provider_empty">No providers configured yet.\nTap the button above to add one.</string>
+    <string name="settings_provider_type_generic_openai">OpenAI Compatible (Generic)</string>
+    <string name="settings_provider_type_local">Local inference</string>
     <string name="settings_add_provider">Add Provider</string>
     <string name="settings_delete_provider_title">Delete Provider</string>
     <string name="settings_delete_provider_message">Are you sure you want to delete this provider? This action cannot be undone.</string>
@@ -872,17 +882,52 @@
     <string name="rag_folder_delete_confirm_title">Delete %1$d documents?</string>
 
     <!-- DocEditorScreen -->
-    <string name="doc_editor_title_placeholder">Document Title…</string>
+    <string name="doc_editor_screen_title">Document</string>
+    <string name="doc_editor_document_type">DOCUMENT</string>
+    <string name="doc_editor_title_placeholder">Document title…</string>
+    <string name="doc_editor_title_input_description">Document title</string>
+    <string name="doc_editor_content_input_description">Document content</string>
+    <string name="doc_editor_metadata">%1$s · %2$s</string>
     <string name="doc_editor_preview">Preview</string>
     <string name="doc_editor_edit">Edit</string>
-    <string name="doc_editor_large_file_desc">Large file detected (%1$s). Editing may affect performance. Consider splitting the document.</string>
-    <string name="doc_editor_dismiss">Dismiss</string>
+    <string name="doc_editor_split">Split</string>
+    <string name="doc_editor_loading">Loading document</string>
+    <string name="doc_editor_loading_description">The editor will appear after the document is loaded safely.</string>
+    <string name="doc_editor_load_failed_title">Unable to load document</string>
+    <string name="doc_editor_load_failed_description">The document could not be read. No empty document was created.</string>
+    <string name="doc_editor_retry_load">Retry</string>
+    <string name="doc_editor_not_found_title">Document not found</string>
+    <string name="doc_editor_not_found_description">This document no longer exists in the workspace.</string>
+    <string name="doc_editor_saving">Saving…</string>
+    <string name="doc_editor_save_failed_title">Save failed</string>
+    <string name="doc_editor_save_failed_description">Your local changes are still available. Retry when ready.</string>
+    <string name="doc_editor_title_rename_failed">The title could not be saved safely. Your local changes are still available.</string>
+    <string name="doc_editor_retry_save">Retry save</string>
+    <string name="doc_editor_conflict_title">A newer version exists</string>
+    <string name="doc_editor_conflict_description">Your local content is preserved. Copy it or reload the latest version; the remote document will not be overwritten.</string>
+    <string name="doc_editor_copy_local">Copy local content</string>
+    <string name="doc_editor_clipboard_label">Local document content</string>
+    <string name="doc_editor_reload_latest">Reload latest</string>
+    <string name="doc_editor_missing_after_save_title">Document disappeared while saving</string>
+    <string name="doc_editor_missing_after_save_description">Your local content is preserved, but the workspace document no longer exists.</string>
+    <string name="doc_editor_large_file_warning">Full content was not loaded to protect memory and editing safety.</string>
+    <string name="doc_editor_large_file_read_only_title">Large file safety mode</string>
+    <string name="doc_editor_large_file_read_only_description">This %1$s document is larger than 1 MiB. Only metadata is shown; editing, split view, and saving are disabled.</string>
+    <string name="doc_editor_large_file_status">Large file · Metadata only</string>
+    <string name="doc_editor_dismiss">Dismiss warning</string>
     <string name="doc_editor_typing_placeholder">Start typing…</string>
     <string name="doc_editor_utf8">UTF-8</string>
     <string name="doc_editor_words">%1$d words</string>
     <string name="doc_editor_chars">%1$d chars</string>
-    <string name="doc_editor_editing">Edit Mode</string>
-    <string name="doc_editor_readonly">Preview Mode (Read-Only)</string>
+    <string name="doc_editor_statistics">%1$s · %2$d words · %3$d chars</string>
+    <string name="doc_editor_editing">Editing</string>
+    <string name="doc_editor_readonly">Preview · Read-only</string>
+    <string name="doc_editor_discard_title">Discard local changes?</string>
+    <string name="doc_editor_discard_description">Unsaved title and content changes will be lost.</string>
+    <string name="doc_editor_discard_confirm">Discard and leave</string>
+    <string name="doc_editor_reload_title">Reload the latest version?</string>
+    <string name="doc_editor_reload_description">Reloading will discard the local content currently shown in the editor.</string>
+    <string name="doc_editor_reload_confirm">Discard and reload</string>
 
     <!-- KnowledgeGraphScreen -->
     <string name="kg_title">Knowledge Graph</string>
@@ -1129,6 +1174,19 @@
     <string name="recycle_bin_original_path">Original path: %1$s</string>
     <string name="recycle_bin_restore">Restore</string>
     <string name="recycle_bin_empty_state">Recycle bin is empty</string>
+    <string name="recycle_bin_status_restoring">Restoring selected items…</string>
+    <string name="recycle_bin_status_deleting">Permanently deleting selected items…</string>
+    <string name="recycle_bin_status_emptying">Emptying the recycle bin…</string>
+    <string name="recycle_bin_status_restore_success">Items restored: %1$d</string>
+    <string name="recycle_bin_status_delete_success">Items permanently deleted: %1$d</string>
+    <string name="recycle_bin_status_empty_success">Recycle bin emptied</string>
+    <string name="recycle_bin_status_restore_partial">Items restored: %1$d; not restored: %2$d</string>
+    <string name="recycle_bin_status_delete_partial">Items deleted: %1$d; not deleted: %2$d</string>
+    <string name="recycle_bin_status_restore_failed">Items could not be restored: %1$d</string>
+    <string name="recycle_bin_status_delete_failed">Items could not be permanently deleted: %1$d</string>
+    <string name="recycle_bin_status_empty_failed">Could not empty the recycle bin</string>
+    <string name="recycle_bin_operation_retry">Retry failed items</string>
+    <string name="recycle_bin_operation_dismiss">Dismiss status</string>
 
     <!-- Release-reachable chat presentation -->
     <string name="chat_tool_default_name">Tool</string>
@@ -1170,4 +1228,58 @@
     <string name="retrieval_rerank_model_unconfigured">Model not configured</string>
     <string name="retrieval_rerank_model_unavailable_message">No rerank model is configured. Reranking improves relevance across multiple retrieval sources. Add a Rerank service in Provider Management and set it as the default rerank model.</string>
     <string name="agent_retrieval_rerank_model_unavailable_message">No rerank model is configured, so this option is disabled. Add a Rerank model in Provider Management and set it as the default rerank model.</string>
+
+    <!-- Generation failure messages: stable UI mapping only -->
+    <string name="generation_failure_network">Could not connect. Check your network and retry.</string>
+    <string name="generation_failure_auth">Authentication failed. Check the provider credentials.</string>
+    <string name="generation_failure_rate_limit">Too many requests. Please retry shortly.</string>
+    <string name="generation_failure_rate_limit_retry">Too many requests. Retry in %1$d seconds.</string>
+    <string name="generation_failure_quota">The provider quota is exhausted. Check the account limits.</string>
+    <string name="generation_failure_timeout">The request timed out. Please retry.</string>
+    <string name="generation_failure_invalid_request">This request could not be processed. Adjust it and retry.</string>
+    <string name="generation_failure_server">The provider is temporarily unavailable. Please retry.</string>
+    <string name="generation_failure_busy">Another conversation is generating. Retry after it finishes.</string>
+    <string name="generation_failure_persistence">The response could not be saved. Please retry.</string>
+    <string name="generation_failure_unknown">Generation failed. Please retry.</string>
+
+    <!-- Structured release-reachable status messages -->
+    <string name="provider_models_sync_provider_not_found">Provider not found</string>
+    <string name="provider_models_synced">Sync complete: %1$d new, %2$d updated</string>
+    <string name="provider_models_sync_up_to_date">Models are up to date</string>
+    <string name="provider_models_sync_no_models">No models were returned by this provider</string>
+    <string name="provider_models_sync_failed">Could not sync models. Please retry.</string>
+    <string name="resource_explorer_error_workspace_load_failed">Could not load the session workspace</string>
+    <string name="resource_explorer_error_workspace_not_ready">Session workspace is not ready. Please retry.</string>
+    <string name="rag_index_phase_pending">Waiting in the indexing queue…</string>
+    <string name="rag_index_phase_extracting_source">Reading the workspace document…</string>
+    <string name="rag_index_phase_chunking">Splitting the document into semantic chunks…</string>
+    <string name="rag_index_phase_vectorizing">Processing %1$s chunks…</string>
+    <string name="rag_index_phase_saving">Saving vector data…</string>
+    <string name="rag_index_phase_extracting_kg">Building the knowledge graph…</string>
+    <string name="rag_index_phase_completed">Indexing complete</string>
+    <string name="rag_index_phase_partial">Only a safe prefix was indexed because the file is too large</string>
+    <string name="rag_index_phase_warning">Indexing completed with warnings</string>
+    <string name="rag_index_phase_failed">Indexing failed. Check the embedding model and retry.</string>
+    <string name="rag_index_phase_unknown">Indexing status is temporarily unavailable</string>
+    <string name="rag_import_failed">Some documents could not be imported</string>
+    <string name="rag_index_retry_hint">Tap to retry indexing</string>
+    <string name="rag_folder_cd_move">Move selected documents</string>
+    <string name="rag_folder_cd_reindex">Re-index selected documents</string>
+    <string name="rag_folder_cd_move_to">Move to %1$s</string>
+
+    <plurals name="prompt_editor_word_count">
+        <item quantity="zero">%1$d words</item>
+        <item quantity="one">%1$d word</item>
+        <item quantity="other">%1$d words</item>
+    </plurals>
+    <plurals name="prompt_editor_line_count">
+        <item quantity="zero">%1$d lines</item>
+        <item quantity="one">%1$d line</item>
+        <item quantity="other">%1$d lines</item>
+    </plurals>
+    <plurals name="prompt_editor_char_count">
+        <item quantity="zero">%1$d chars</item>
+        <item quantity="one">%1$d char</item>
+        <item quantity="other">%1$d chars</item>
+    </plurals>
 </resources>

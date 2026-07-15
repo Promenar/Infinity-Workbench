@@ -72,8 +72,8 @@ fun MainTabScaffold(
                     onNavigateToAgentEdit = onNavigateToAgentEdit
                 )
                 AppTab.LIBRARY -> com.promenar.nexara.ui.rag.RagHomeScreen(
-                    onNavigateToFolder = { folderId, folderName ->
-                        onNavigateToSecondary(com.promenar.nexara.navigation.NavDestinations.ragFolder(folderId, folderName))
+                    onNavigateToFolder = { folderId, _ ->
+                        onNavigateToSecondary(com.promenar.nexara.navigation.NavDestinations.ragFolder(folderId))
                     },
                     onNavigateToConfig = { onNavigateToSecondary("rag_global_config") },
                     onNavigateToGraph = { onNavigateToSecondary("knowledge_graph") },

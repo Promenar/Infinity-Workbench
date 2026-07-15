@@ -199,7 +199,7 @@ class ReleaseReachableUiLocalizationContractTest {
     fun `回收站图标操作提供至少48dp触控目标和可本地化语义`() {
         val recycleBin = source("ui/chat/components/RecycleBinPanel.kt")
         val accessibleIconButtons = Regex(
-            "IconButton\\s*\\([\\s\\S]{0,220}?Modifier\\.size\\(48\\.dp\\)",
+            "IconButton\\s*\\([\\s\\S]{0,220}?Modifier\\s*\\.size\\(48\\.dp\\)",
         ).findAll(recycleBin).count()
 
         assertThat(accessibleIconButtons).isAtLeast(2)

@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.offset
@@ -83,6 +84,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -99,6 +102,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -122,6 +126,7 @@ import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 internal fun Message.hasRagArtifacts(): Boolean =
@@ -132,7 +137,8 @@ internal fun selectRagActiveMessage(messages: List<Message>): Message? =
     messages.find { it.hasRagArtifacts() } ?: messages.lastOrNull()
 
 internal fun chatRenderStateTag(uiState: ChatUiState): String = when {
-    uiState.error != null -> UiTags.CHAT_STATE_ERROR
+    uiState.error != null || uiState.generationNotice != null ||
+        uiState.status == GenerationStatus.ERROR -> UiTags.CHAT_STATE_ERROR
     uiState.approvalRequest != null -> UiTags.CHAT_STATE_APPROVAL
     uiState.isGenerating -> UiTags.CHAT_STATE_GENERATING
     uiState.isLoading -> UiTags.CHAT_STATE_LOADING
@@ -256,21 +262,31 @@ fun ChatScreenContent(
         val activeIndex = pipelineGroups.lastIndex
         if (activeIndex < 0) return
 
-        val layoutInfo = listState.layoutInfo
-        val activeItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
         val inputOverlapPx = with(density) { 180.dp.roundToPx() }
-        val targetBottom = layoutInfo.viewportEndOffset - inputOverlapPx
 
-        if (activeItem == null) {
+        // 基于最新一次布局读取目标 item，做像素级遮挡校正。
+        // 目标 item 不在组成窗口内时直接返回，由调用方先粗滚再重新校正。
+        suspend fun correctActiveOverlap() {
+            val layoutInfo = listState.layoutInfo
+            val activeItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
+                ?: return
+            val targetBottom = layoutInfo.viewportEndOffset - inputOverlapPx
+            val overflow = (activeItem.offset + activeItem.size) - targetBottom
+            if (overflow > 0) {
+                listState.scrollBy(overflow.toFloat())
+            }
+        }
+
+        val activeItemVisible = listState.layoutInfo.visibleItemsInfo.any { it.index == activeIndex }
+        if (!activeItemVisible) {
+            // 目标 item 在屏幕外：先把它拉进组成窗口。scrollToItem 会挂起直到该 item
+            // 完成一次布局，返回后 layoutInfo 已反映新位置；随后重新读取并精确校正遮挡，
+            // 避免仅做粗滚而把尾部消息留在输入浮岛覆盖区内。
             listState.scrollToItem(activeIndex, 100_000)
-            return
+            withFrameNanos { }
         }
 
-        val activeBottom = activeItem.offset + activeItem.size
-        val overflow = activeBottom - targetBottom
-        if (overflow > 0) {
-            listState.scrollBy(overflow.toFloat())
-        }
+        correctActiveOverlap()
     }
 
     // 新用户消息 → 恢复追踪 + 滚到底部
@@ -303,16 +319,18 @@ fun ChatScreenContent(
         }
     }
 
-    // IME 键盘避让
+    // IME 键盘避让：IME 弹出会通过 imePadding() 收缩列表视口。若在动画过程中校正，
+    // 滚动会基于尚未稳定的视口，动画结束后尾消息被推出可见区且不再重滚。
     val isImeVisible = WindowInsets.isImeVisible
-    LaunchedEffect(isImeVisible) {
-        if (isImeVisible && uiState.messages.isNotEmpty()) {
-            val groups = buildPipelineGroups(uiState.messages)
-            val lastIdx = groups.size - 1
-            if (lastIdx >= 0) {
-                delay(32)
-                scrollToStreamingTail()
-            }
+    val imeInsets = WindowInsets.ime
+    LaunchedEffect(isImeVisible, autoFollowEnabled, pipelineGroups.size) {
+        if (!isImeVisible || !autoFollowEnabled || pipelineGroups.isEmpty()) return@LaunchedEffect
+
+        snapshotFlow { imeInsets.getBottom(density) }.collectLatest { insetBottom ->
+            if (insetBottom <= 0) return@collectLatest
+            // collectLatest 会取消上一帧尚未完成的等待；只有 inset 稳定后才执行校正。
+            delay(64)
+            scrollToStreamingTail()
         }
     }
 
@@ -362,7 +380,8 @@ fun ChatScreenContent(
                     .fillMaxWidth()
                     .nestedScroll(userScrollConnection)
                     .testTag(renderStateTag),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 150.dp),
+                // 底部留白必须大于 180dp 输入浮岛避让目标，确保滚动校正始终可达。
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 200.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                     // pipelineGroups 已在外部通过 remember 计算，此处直接引用
@@ -1001,6 +1020,13 @@ fun ChatInputBar(
                 modifier = Modifier
                     .weight(1f)
                     .padding(vertical = 8.dp)
+                    .then(
+                        if (placeholder.isNotBlank()) {
+                            Modifier.semantics { contentDescription = placeholder }
+                        } else {
+                            Modifier
+                        }
+                    )
                     .testTag(UiTags.CHAT_INPUT),
                 textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnBackground),
                 cursorBrush = SolidColor(NexaraColors.Primary),

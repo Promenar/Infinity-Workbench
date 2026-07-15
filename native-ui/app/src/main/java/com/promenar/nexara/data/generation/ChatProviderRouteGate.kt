@@ -17,7 +17,9 @@ internal data class ChatProviderRoute(
 
 internal sealed interface ChatRoutePreparation<out T> {
     data class Success<T>(val route: ChatProviderRoute, val context: T) : ChatRoutePreparation<T>
-    data class Failure(val failure: ProviderResolution.Failure) : ChatRoutePreparation<Nothing>
+    data class Failure(val failure: ProviderResolution.Failure) : ChatRoutePreparation<Nothing> {
+        override fun toString(): String = "ChatRoutePreparation.Failure(reason=${failure.reason})"
+    }
 }
 
 internal class ChatProviderRouteGate(

@@ -77,10 +77,11 @@ object NexaraLogger {
     }
 
     fun logError(tag: String, throwable: Throwable) {
+        if (!com.promenar.nexara.BuildConfig.DEBUG) return
         val safeTag = SensitiveDataRedactor.redactMessage(tag).take(80)
         val safeError = SensitiveDataRedactor.safeThrowable(
             throwable,
-            debug = com.promenar.nexara.BuildConfig.DEBUG
+            debug = true
         )
         if (!isAndroid) {
             System.err.println("[$TAG] ERROR [$safeTag]: $safeError")
@@ -88,15 +89,22 @@ object NexaraLogger {
         }
         Log.e(TAG, "$safeTag: $safeError")
 
-        if (com.promenar.nexara.BuildConfig.DEBUG) {
-            writeToDisk("ERROR [$safeTag]: $safeError")
-            try {
-                val json = org.json.JSONObject().apply {
-                    put("tag", safeTag)
-                    put("error", safeError)
-                }
-                Log.d("NEXARA_METRO", "EVENT_START|ERROR|${json}|EVENT_END")
-            } catch (_: Exception) {}
+        writeToDisk("ERROR [$safeTag]: $safeError")
+        try {
+            val json = org.json.JSONObject().apply {
+                put("tag", safeTag)
+                put("error", safeError)
+            }
+            metro("ERROR", json.toString())
+        } catch (_: Exception) {}
+    }
+
+    fun metro(event: String, payload: String) {
+        if (!com.promenar.nexara.BuildConfig.DEBUG) return
+        val safeEvent = event.replace(Regex("[^A-Za-z0-9_.-]"), "_").take(64)
+        val safePayload = SensitiveDataRedactor.redactMessage(payload)
+        runCatching {
+            Log.d("NEXARA_METRO", "EVENT_START|$safeEvent|$safePayload|EVENT_END")
         }
     }
 

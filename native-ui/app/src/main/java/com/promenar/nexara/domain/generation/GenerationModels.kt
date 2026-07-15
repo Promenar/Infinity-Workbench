@@ -40,7 +40,7 @@ data class GenerationSnapshot(
     val outputTokens: Int = 0,
     val totalTokens: Int = 0,
     val citations: List<GenerationCitation> = emptyList(),
-    val errorMessage: String? = null,
+    val failure: GenerationFailure? = null,
 )
 
 data class GenerationCitation(val title: String, val url: String, val source: String? = null)
@@ -51,14 +51,14 @@ sealed interface GenerationChunk {
     data class ToolCall(val id: String, val name: String, val arguments: String) : GenerationChunk
     data class Usage(val input: Int, val output: Int, val total: Int) : GenerationChunk
     data class Citations(val citations: List<GenerationCitation>) : GenerationChunk
-    data class Failure(val message: String) : GenerationChunk
+    data class Failure(val failure: GenerationFailure) : GenerationChunk
     data object Done : GenerationChunk
 }
 
 enum class GenerationToolDecision { CONTINUE, WAIT_FOR_APPROVAL, COMPLETE }
 sealed interface GenerationPreparationOutcome {
     data object Ready : GenerationPreparationOutcome
-    data class Handled(val message: String, val cause: Throwable? = null) : GenerationPreparationOutcome
+    data class Handled(val failure: GenerationFailure) : GenerationPreparationOutcome
 }
 enum class GenerationTerminalStatus { SUCCESS, ERROR, CANCELLED }
 
@@ -66,12 +66,17 @@ sealed interface GenerationEvent {
     data class PhaseChanged(val phase: GenerationPhase) : GenerationEvent
     data class SnapshotChanged(val snapshot: GenerationSnapshot) : GenerationEvent
     data class TargetChanged(val assistantMessageId: String) : GenerationEvent
-    data class Rejected(val message: String, val cause: Throwable? = null) : GenerationEvent
+    data class Rejected(val failure: GenerationFailure) : GenerationEvent
     data class PersistenceFailed(
         val persistenceCause: Throwable,
         val originalCause: Throwable? = null,
-    ) : GenerationEvent
-    data class Failed(val cause: Throwable) : GenerationEvent
+        val failure: GenerationFailure,
+    ) : GenerationEvent {
+        override fun toString(): String =
+            "PersistenceFailed(code=${failure.code}, " +
+                "hasPersistenceCause=true, hasOriginalCause=${originalCause != null})"
+    }
+    data class Failed(val failure: GenerationFailure) : GenerationEvent
 }
 
 fun interface GenerationRunner {

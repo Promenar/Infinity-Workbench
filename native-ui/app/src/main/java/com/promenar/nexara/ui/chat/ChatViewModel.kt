@@ -59,6 +59,7 @@ import com.promenar.nexara.ui.chat.manager.PostProcessor
 import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
+import com.promenar.nexara.ui.common.status.UiStatusNotice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -139,6 +140,7 @@ data class ChatUiState(
     val status: GenerationStatus = GenerationStatus.IDLE,
     val streamingContent: String = "",
     val error: String? = null,
+    val generationNotice: UiStatusNotice? = null,
     val backgroundWarning: BackgroundGenerationWarning? = null,
     val approvalRequest: ApprovalRequest? = null
 )
@@ -249,6 +251,7 @@ class ChatViewModel(
 
     private val _streamingContent = MutableStateFlow("")
     private val _error = MutableStateFlow<String?>(null)
+    private val _generationNotice = MutableStateFlow<UiStatusNotice?>(null)
     private val _backgroundServiceStoppedError =
         MutableStateFlow<BackgroundServiceStoppedError?>(null)
     private val _backgroundWarning = MutableStateFlow<BackgroundGenerationWarning?>(null)
@@ -328,6 +331,7 @@ class ChatViewModel(
         _generationStatus,
         _streamingContent,
         _error,
+        _generationNotice,
         _backgroundServiceStoppedError,
         _backgroundWarning,
     ) { args: Array<Any?> ->
@@ -339,8 +343,9 @@ class ChatViewModel(
         val status = args[5] as GenerationStatus
         val streamingContent = args[6] as String
         val error = args[7] as String?
-        val backgroundServiceStoppedError = args[8] as BackgroundServiceStoppedError?
-        val backgroundWarning = args[9] as BackgroundGenerationWarning?
+        val generationNotice = args[8] as UiStatusNotice?
+        val backgroundServiceStoppedError = args[9] as BackgroundServiceStoppedError?
+        val backgroundWarning = args[10] as BackgroundGenerationWarning?
 
         val session = state.sessions.find { it.id == sessionId }
         if (session != null) {
@@ -355,6 +360,7 @@ class ChatViewModel(
             status = status,
             streamingContent = streamingContent,
             error = backgroundServiceStoppedError?.message ?: error,
+            generationNotice = generationNotice,
             backgroundWarning = backgroundWarning,
             approvalRequest = session?.approvalRequest
         )
@@ -374,6 +380,7 @@ class ChatViewModel(
                             _ragPhases.value = emptyList()
                             if (_generationStatus.value != GenerationStatus.ERROR) {
                                 _error.value = null
+                                _generationNotice.value = null
                                 _providerResolutionFailure.value = null
                                 _generationStatus.value = GenerationStatus.IDLE
                             }
@@ -381,7 +388,7 @@ class ChatViewModel(
                         }
                         _ragPhases.value = presentation.ragPhases
                         _streamingContent.value = presentation.streamingContent
-                        _error.value = presentation.error
+                        _generationNotice.value = presentation.error?.let(GenerationFailureNotice::from)
                         _providerResolutionFailure.value = presentation.providerFailure
                         _isGenerating.value = presentation.generating
                         _postProcessTasks.value = presentation.postProcessTasks
@@ -437,7 +444,7 @@ class ChatViewModel(
                             com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
                             com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL,
                         )
-                        task.error?.let { _error.value = it.message }
+                        task.error?.let { _generationNotice.value = GenerationFailureNotice.from(it.failure) }
                         _generationStatus.value = when (task.phase) {
                             com.promenar.nexara.domain.generation.GenerationPhase.PREPARING,
                             com.promenar.nexara.domain.generation.GenerationPhase.BUILDING_CONTEXT,
@@ -461,7 +468,9 @@ class ChatViewModel(
                                         it.phase?.let { phase -> phase in TERMINAL_GENERATION_PHASES } == true
                                 }
                                 ?: return@collect
-                            _error.value = terminalPresentation.error ?: _error.value
+                            terminalPresentation.error?.let {
+                                _generationNotice.value = GenerationFailureNotice.from(it)
+                            }
                             _providerResolutionFailure.value =
                                 terminalPresentation.providerFailure ?: _providerResolutionFailure.value
                             _ragPhases.value = terminalPresentation.ragPhases
@@ -528,6 +537,7 @@ class ChatViewModel(
                 _generationStatus.update { GenerationStatus.UPLOADING }
                 _isGenerating.update { true }
                 _error.update { null }
+                _generationNotice.value = null
                 _backgroundServiceStoppedError.value = null
                 _backgroundWarning.value = null
                 _providerResolutionFailure.value = null
@@ -619,6 +629,7 @@ class ChatViewModel(
                 _generationStatus.update { GenerationStatus.UPLOADING }
                 _isGenerating.update { true }
                 _error.update { null }
+                _generationNotice.value = null
                 _backgroundServiceStoppedError.value = null
                 _backgroundWarning.value = null
                 _providerResolutionFailure.value = null
@@ -713,11 +724,18 @@ class ChatViewModel(
                     sessionManager.updateSessionDraft(sessionId, text)
                     _isGenerating.value = false
                     _generationStatus.value = GenerationStatus.ERROR
-                    _error.value = when (start) {
+                    _generationNotice.value = when (start) {
                         is com.promenar.nexara.domain.generation.StartGenerationResult.Busy ->
-                            "已有会话正在生成：${start.activeSessionId}"
-                        is com.promenar.nexara.domain.generation.StartGenerationResult.Rejected -> start.error.message
-                        else -> "生成请求未能启动"
+                            GenerationFailureNotice.from(
+                                com.promenar.nexara.domain.generation.GenerationFailure.busy(),
+                            )
+                        is com.promenar.nexara.domain.generation.StartGenerationResult.Rejected ->
+                            GenerationFailureNotice.from(start.error.failure)
+                        else -> GenerationFailureNotice.from(
+                            com.promenar.nexara.domain.generation.GenerationFailure.unknown(
+                                technical = "generation request did not start",
+                            ),
+                        )
                     }
                 }
             }
@@ -786,10 +804,12 @@ class ChatViewModel(
                 }
             }
             is com.promenar.nexara.domain.generation.StartGenerationResult.Busy -> {
-                _error.value = "已有会话正在生成：${result.activeSessionId}"
+                _generationNotice.value = GenerationFailureNotice.from(
+                    com.promenar.nexara.domain.generation.GenerationFailure.busy(),
+                )
             }
             is com.promenar.nexara.domain.generation.StartGenerationResult.Rejected -> {
-                _error.value = result.error.message
+                _generationNotice.value = GenerationFailureNotice.from(result.error.failure)
                 _generationStatus.value = GenerationStatus.ERROR
             }
         }
@@ -943,6 +963,7 @@ class ChatViewModel(
         _postProcessTasks.value = emptyList()
         _ragPhases.value = emptyList()
         _error.value = null
+        _generationNotice.value = null
         _backgroundServiceStoppedError.value = null
         _backgroundWarning.value = null
         foregroundTrackedTaskId = null
@@ -1106,6 +1127,7 @@ class ChatViewModel(
     }
 
     fun clearError() {
+        _generationNotice.value = null
         if (_backgroundServiceStoppedError.value != null) {
             _backgroundServiceStoppedError.value = null
             return
@@ -1145,6 +1167,7 @@ class ChatViewModel(
 
             _inputText.update { "" }
             _error.update { null }
+            _generationNotice.value = null
 
             val assistantMsgId = IdGenerator.message("ai")
             val updatedSession = store.getSession(sessionId) ?: return@launch
@@ -1337,9 +1360,23 @@ class ChatViewModel(
     }
 
     fun updateCustomPrompt(prompt: String) {
-        val sessionId = _currentSessionId.value ?: return
         viewModelScope.launch {
-            sessionManager.updateSessionPrompt(sessionId, prompt)
+            saveCustomPrompt(prompt)
+        }
+    }
+
+    /** 仅在仓库确认成功后更新内存 Store，供 Prompt 编辑器决定是否关闭。 */
+    suspend fun saveCustomPrompt(prompt: String): Result<Unit> {
+        val sessionId = _currentSessionId.value
+            ?: return Result.failure(IllegalStateException("会话尚未加载"))
+        return try {
+            sessionRepository.updatePartial(sessionId, mapOf("customPrompt" to prompt))
+            store.updateSession(sessionId) { session -> session.copy(customPrompt = prompt) }
+            Result.success(Unit)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
         }
     }
 

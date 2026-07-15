@@ -43,6 +43,7 @@ import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.ui.common.MarkdownText
+import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.delay
@@ -94,6 +95,9 @@ internal fun messageCopyOverride(
 ): (() -> Unit)? = onCopy?.let { copyHandler ->
     { copyHandler(content) }
 }
+
+internal fun historicalGenerationFailureNotice(errorMessage: String?): UiStatusNotice =
+    GenerationFailureNotice.fromPersisted(errorMessage)
 
 internal fun streamingReasoningPreview(
     reasoning: String,
@@ -264,9 +268,14 @@ fun PipelineBubble(
 
     // ── 错误信息 ──
     group.messages.lastOrNull()?.let { lastMsg ->
-        if (lastMsg.isError && lastMsg.errorMessage != null) {
+        if (lastMsg.isError || lastMsg.errorMessage != null) {
+            val resolved = remember(lastMsg.errorMessage) {
+                GenerationFailureNotice.template(
+                    historicalGenerationFailureNotice(lastMsg.errorMessage),
+                )
+            }
             Text(
-                text = lastMsg.errorMessage!!,
+                text = stringResource(resolved.resourceId, *resolved.args.toTypedArray()),
                 style = NexaraTypography.bodyMedium.copy(fontSize = (fontSize - 2).coerceAtLeast(10).sp),
                 color = NexaraColors.Error,
                 modifier = Modifier.padding(top = 6.dp, start = 4.dp)

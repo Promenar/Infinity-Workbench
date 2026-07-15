@@ -6,9 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Process
-import android.util.Log
 import com.promenar.nexara.MainActivity
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.utils.NexaraLogger
 
 /**
  * 独立进程重启中继。Intent 只携带主进程 PID；恢复包、密码、事务 ID 均只存在加密 pending store。
@@ -25,7 +25,7 @@ class RestoreRelayActivity : Activity() {
             ?.any { it.pid == mainPid && it.processName == packageName } == true
         if (!belongsToMainProcess) return finishAndRemoveTask()
 
-        Log.i("NexaraRestoreRelay", "relay_pid=${Process.myPid()} main_pid=$mainPid payload=none")
+        NexaraLogger.log("[NexaraRestoreRelay] relay_pid=${Process.myPid()} main_pid=$mainPid payload=none")
         Process.killProcess(mainPid)
         startActivity(
             Intent(this, MainActivity::class.java)

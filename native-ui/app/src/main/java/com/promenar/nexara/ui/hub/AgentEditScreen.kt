@@ -102,10 +102,7 @@ fun AgentEditScreen(
     UnifiedPromptEditor(
         show = showSystemPromptEditor,
         onDismiss = { showSystemPromptEditor = false },
-        onSave = {
-            viewModel.setSystemPrompt(it)
-            showSystemPromptEditor = false
-        },
+        onSave = viewModel::saveSystemPrompt,
         title = stringResource(R.string.agent_edit_prompt_label),
         initialText = systemPrompt,
         placeholder = stringResource(R.string.agent_edit_prompt_placeholder),

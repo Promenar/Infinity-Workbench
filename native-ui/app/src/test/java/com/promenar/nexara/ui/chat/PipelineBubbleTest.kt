@@ -4,9 +4,31 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.domain.generation.GenerationFailure
+import com.promenar.nexara.domain.generation.GenerationFailureCodec
 import org.junit.jupiter.api.Test
 
 class PipelineBubbleTest {
+
+    @Test
+    fun `历史错误只按持久化信封映射且旧自然语言安全回落`() {
+        val timeoutEnvelope = GenerationFailureCodec.encode(
+            GenerationFailure(
+                com.promenar.nexara.domain.generation.GenerationFailureCode.TIMEOUT,
+                technical = "must-not-display",
+            ),
+        )
+
+        val decoded = historicalGenerationFailureNotice(timeoutEnvelope)
+        val legacy = historicalGenerationFailureNotice("provider 原始错误：secret")
+
+        assertThat(GenerationFailureNotice.template(decoded).resourceId)
+            .isEqualTo(com.promenar.nexara.R.string.generation_failure_timeout)
+        assertThat(GenerationFailureNotice.template(decoded).args).isEmpty()
+        assertThat(GenerationFailureNotice.template(legacy).resourceId)
+            .isEqualTo(com.promenar.nexara.R.string.generation_failure_unknown)
+        assertThat(GenerationFailureNotice.template(legacy).args).isEmpty()
+    }
 
     @Test
     fun `streaming reasoning preview keeps short reasoning unchanged`() {

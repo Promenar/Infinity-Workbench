@@ -10,6 +10,8 @@ import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -219,47 +221,89 @@ class AgentEditViewModel(
     }
 
     fun saveAgent(agentId: String) {
-        viewModelScope.launch {
-            val initial = _initialAgent.value
-            val nameChanged = _name.value != _initialDisplayName.value
-            val descriptionChanged = _description.value != _initialDisplayDescription.value
-            val agent = Agent(
-                id = agentId,
-                name = if (nameChanged) _name.value else initial?.name.orEmpty(),
-                description = if (descriptionChanged) {
-                    _description.value
-                } else {
-                    initial?.description.orEmpty()
-                },
-                nameCustomized = initial?.nameCustomized == true || nameChanged,
-                descriptionCustomized = initial?.descriptionCustomized == true || descriptionChanged,
-                systemPrompt = _systemPrompt.value,
-                modelId = _selectedModel.value,
-                icon = _selectedIcon.value,
-                color = _selectedColor.value,
-                avatarPath = _avatarPath.value,
-                isPinned = _isPinned.value,
-                temperature = _temperature.value.toDouble(),
-                topP = _topP.value.toDouble(),
-                maxTokens = 4096,
-                ragConfig = if (_useInheritedConfig.value) null else _ragConfig.value,
-                retrievalConfig = if (_useInheritedConfig.value) null else _retrievalConfig.value,
-                useInheritedConfig = _useInheritedConfig.value,
-                executionMode = initial?.executionMode ?: com.promenar.nexara.domain.model.ExecutionMode.SEMI,
-                skills = initial?.skills ?: emptyList(),
-                createdAt = initial?.createdAt ?: System.currentTimeMillis()
-            )
-            try {
-                agentRepository.update(agent)
-            } catch (error: Exception) {
-                _saveError.value = error.message ?: "Agent 保存失败"
-                return@launch
-            }
-            _saveError.value = null
-            _initialAgent.value = agent
-            _initialDisplayName.value = _name.value
-            _initialDisplayDescription.value = _description.value
+        viewModelScope.launch { persistCurrentAgent(agentId) }
+    }
+
+    /** Prompt 编辑器必须等待 Room 持久化成功，不能把延迟自动保存视为成功。 */
+    suspend fun saveSystemPrompt(value: String): Result<Unit> {
+        saveJob?.cancelAndJoin()
+        val initial = _initialAgent.value
+            ?: return Result.failure(IllegalStateException("Agent 尚未加载"))
+        val candidate = buildAgent(initial.id).copy(systemPrompt = value)
+        return persistCandidate(candidate) {
+            _systemPrompt.value = value
         }
+    }
+
+    /** Agent RAG Prompt 与系统 Prompt 使用相同的严格持久化契约。 */
+    suspend fun saveRagConfig(
+        transform: (com.promenar.nexara.data.agent.AgentRagConfig) ->
+            com.promenar.nexara.data.agent.AgentRagConfig,
+    ): Result<Unit> {
+        saveJob?.cancelAndJoin()
+        val initial = _initialAgent.value
+            ?: return Result.failure(IllegalStateException("Agent 尚未加载"))
+        val value = transform(_ragConfig.value)
+        val candidate = buildAgent(initial.id).copy(
+            ragConfig = value,
+            retrievalConfig = _retrievalConfig.value,
+            useInheritedConfig = false,
+        )
+        return persistCandidate(candidate) {
+            _ragConfig.value = value
+            _useInheritedConfig.value = false
+        }
+    }
+
+    private suspend fun persistCurrentAgent(agentId: String): Result<Unit> =
+        persistCandidate(buildAgent(agentId))
+
+    private fun buildAgent(agentId: String): Agent {
+        val initial = _initialAgent.value
+        val nameChanged = _name.value != _initialDisplayName.value
+        val descriptionChanged = _description.value != _initialDisplayDescription.value
+        return Agent(
+            id = agentId,
+            name = if (nameChanged) _name.value else initial?.name.orEmpty(),
+            description = if (descriptionChanged) _description.value else initial?.description.orEmpty(),
+            nameCustomized = initial?.nameCustomized == true || nameChanged,
+            descriptionCustomized = initial?.descriptionCustomized == true || descriptionChanged,
+            systemPrompt = _systemPrompt.value,
+            modelId = _selectedModel.value,
+            icon = _selectedIcon.value,
+            color = _selectedColor.value,
+            avatarPath = _avatarPath.value,
+            isPinned = _isPinned.value,
+            temperature = _temperature.value.toDouble(),
+            topP = _topP.value.toDouble(),
+            maxTokens = 4096,
+            ragConfig = if (_useInheritedConfig.value) null else _ragConfig.value,
+            retrievalConfig = if (_useInheritedConfig.value) null else _retrievalConfig.value,
+            useInheritedConfig = _useInheritedConfig.value,
+            executionMode = initial?.executionMode ?: com.promenar.nexara.domain.model.ExecutionMode.SEMI,
+            skills = initial?.skills ?: emptyList(),
+            createdAt = initial?.createdAt ?: System.currentTimeMillis(),
+        )
+    }
+
+    private suspend fun persistCandidate(
+        agent: Agent,
+        commitLocalState: () -> Unit = {},
+    ): Result<Unit> {
+        try {
+            agentRepository.update(agent)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            _saveError.value = error.message ?: "Agent 保存失败"
+            return Result.failure(error)
+        }
+        commitLocalState()
+        _saveError.value = null
+        _initialAgent.value = agent
+        _initialDisplayName.value = _name.value
+        _initialDisplayDescription.value = _description.value
+        return Result.success(Unit)
     }
 
     private fun scheduleSave() {
@@ -268,7 +312,7 @@ class AgentEditViewModel(
             delay(1000)
             _initialAgent.value?.let { agent ->
                 if (hasChanges.value) {
-                    saveAgent(agent.id)
+                    persistCurrentAgent(agent.id)
                 }
             }
         }

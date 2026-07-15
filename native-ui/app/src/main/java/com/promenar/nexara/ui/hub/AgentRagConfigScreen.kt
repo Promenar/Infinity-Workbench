@@ -44,8 +44,7 @@ fun AgentRagConfigScreen(
         show = showTemplateEditor,
         onDismiss = { showTemplateEditor = false },
         onSave = { newTemplate ->
-            viewModel.updateRagConfig { it.copy(summaryTemplate = newTemplate) }
-            showTemplateEditor = false
+            viewModel.saveRagConfig { it.copy(summaryTemplate = newTemplate) }
         },
         title = stringResource(R.string.agent_rag_section_summary),
         initialText = ragConfig.summaryTemplate,

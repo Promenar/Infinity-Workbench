@@ -79,7 +79,7 @@ fun SwipeableItem(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Delete,
-                        contentDescription = "Delete",
+                        contentDescription = stringResource(R.string.common_cd_delete),
                         tint = Color.White,
                         modifier = Modifier.size(20.dp)
                     )
@@ -109,7 +109,7 @@ fun SwipeableItem(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.PushPin,
-                            contentDescription = if (isPinned) "Unpin" else stringResource(R.string.common_cd_pin),
+                            contentDescription = stringResource(if (isPinned) R.string.common_cd_unpin else R.string.common_cd_pin),
                             tint = Color.White,
                             modifier = Modifier.size(20.dp)
                         )
@@ -127,7 +127,7 @@ fun SwipeableItem(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Edit,
-                            contentDescription = "Edit",
+                            contentDescription = stringResource(R.string.common_cd_edit),
                             tint = Color.White,
                             modifier = Modifier.size(20.dp)
                         )

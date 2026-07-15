@@ -1,7 +1,6 @@
 package com.promenar.nexara
 
 import android.app.Application
-import android.util.Log
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.SharedPreferences
@@ -111,6 +110,7 @@ import com.promenar.nexara.startup.StartupWriterTransaction
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.video.VideoFrameDecoder
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 
 open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     companion object {
@@ -155,7 +155,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                                     put("operation", sqlQuery.trimStart().substringBefore(' ').uppercase())
                                     put("argumentCount", bindArgs.size)
                                 }
-                                android.util.Log.d("NEXARA_METRO", "EVENT_START|DB_QUERY|${json}|EVENT_END")
+                                NexaraLogger.metro("DB_QUERY", json.toString())
                             }
                         } catch (e: Exception) {
                             // Ignored
@@ -418,10 +418,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         // 独立 relay 进程不得打开 Room、pending payload 或注册任何业务 writer。
         if (currentProcessName().endsWith(RestoreRelayActivity.PROCESS_SUFFIX)) {
             restoreRelayEarlyExit = true
-            Log.i("NexaraRestoreRelay", "application_early_exit_before_runtime_and_writers")
+            NexaraLogger.log("[NexaraRestoreRelay] application_early_exit_before_runtime_and_writers")
             return
         }
 
+        PDFBoxResourceLoader.init(applicationContext)
         startBackupRecovery()
     }
 
@@ -1109,9 +1110,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         when (level) {
             ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL,
             ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
-                CoroutineScope(Dispatchers.IO).launch {
-                    localInferenceEngine.unloadModel(SlotType.RERANK)
-                    localInferenceEngine.unloadModel(SlotType.EMBEDDING)
+                // 能力不可用的发行变体不能在此触发引擎工厂：lazy requireAvailable 会抛出导致进程崩溃。
+                localInferenceRuntimeGate.createIfAvailable { localInferenceEngine }?.let { engine ->
+                    CoroutineScope(Dispatchers.IO).launch {
+                        engine.unloadModel(SlotType.RERANK)
+                        engine.unloadModel(SlotType.EMBEDDING)
+                    }
                 }
             }
         }

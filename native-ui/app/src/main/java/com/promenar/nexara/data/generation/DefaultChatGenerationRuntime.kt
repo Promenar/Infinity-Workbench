@@ -17,6 +17,7 @@ import com.promenar.nexara.data.model.UpdateMessageOptions
 import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.data.rag.MemoryManager
 import com.promenar.nexara.data.remote.ProviderResolution
+import com.promenar.nexara.data.remote.ProviderResolutionError
 import com.promenar.nexara.data.remote.StreamConfig
 import com.promenar.nexara.data.remote.middleware.StreamTextParams
 import com.promenar.nexara.data.remote.protocol.PromptRequest
@@ -26,6 +27,9 @@ import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.ToolApprovalCreation
 import com.promenar.nexara.data.repository.ToolExecutionLedger
 import com.promenar.nexara.domain.generation.GenerationChunk
+import com.promenar.nexara.domain.generation.GenerationFailure
+import com.promenar.nexara.domain.generation.GenerationFailureCode
+import com.promenar.nexara.domain.generation.GenerationFailureCodec
 import com.promenar.nexara.domain.generation.GenerationPreparationOutcome
 import com.promenar.nexara.domain.generation.GenerationRequest
 import com.promenar.nexara.domain.generation.GenerationSnapshot
@@ -46,6 +50,7 @@ import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -57,7 +62,7 @@ interface GenerationUiPort {
     fun updateRagPhases(transform: (List<RagPhase>) -> List<RagPhase>)
     fun setGenerating(value: Boolean)
     fun setStreamingContent(value: String)
-    fun setError(message: String?)
+    fun setError(failure: GenerationFailure?)
     fun setProviderFailure(failure: ProviderResolution.Failure?)
     fun onHandledFailure()
     fun addPostProcessTask(type: PostProcessType, detail: String): String
@@ -158,20 +163,19 @@ internal class DefaultChatGenerationRuntime(
         )
         val preparation = try {
             routeGate.prepare(model) { contextBuilder.buildContext(params) }
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            val message = "Context build failed: ${error.message}"
-            handlePreparationFailure(request, message, null)
-            return GenerationPreparationOutcome.Handled(message, error)
+            val failure = error.failureOrUnknown()
+            handlePreparationFailure(request, failure, null)
+            return GenerationPreparationOutcome.Handled(failure)
         }
         val (route, context) = when (preparation) {
             is ChatRoutePreparation.Failure -> {
-                val failure = preparation.failure
-                val message = "Provider 路由失败：${failure.reason.name}；请打开对应 Provider 设置" +
-                    (failure.providerId?.let { "（$it）" } ?: "")
-                handlePreparationFailure(request, message, failure)
-                return GenerationPreparationOutcome.Handled(message)
+                val providerFailure = preparation.failure
+                val failure = providerFailure.toGenerationFailure()
+                handlePreparationFailure(request, failure, providerFailure)
+                return GenerationPreparationOutcome.Handled(failure)
             }
             is ChatRoutePreparation.Success -> preparation.route to preparation.context
         }
@@ -282,7 +286,8 @@ internal class DefaultChatGenerationRuntime(
 
     override suspend fun persist(request: GenerationRequest, snapshot: GenerationSnapshot) {
         val calls = snapshot.toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
-        ui.setError(snapshot.errorMessage)
+        val failureEnvelope = snapshot.failure?.let(GenerationFailureCodec::encode)
+        ui.setError(snapshot.failure)
         ui.setStreamingContent(snapshot.content)
         messageManager.updateMessageContent(
             request.sessionId,
@@ -296,9 +301,9 @@ internal class DefaultChatGenerationRuntime(
                 citations = snapshot.citations.map {
                     com.promenar.nexara.data.model.Citation(it.title, it.url, it.source)
                 }.takeIf { it.isNotEmpty() },
-                isError = snapshot.errorMessage?.let { true },
-                errorMessage = snapshot.errorMessage,
-                clearError = snapshot.errorMessage == null,
+                isError = snapshot.failure?.let { true },
+                errorMessage = failureEnvelope,
+                clearError = snapshot.failure == null,
             ),
         )
     }
@@ -328,7 +333,11 @@ internal class DefaultChatGenerationRuntime(
                 approval,
             )
             if (creation == ToolApprovalCreation.CONFLICT) {
-                ui.setError("当前会话已有不一致的工具审批，请先处理现有审批。")
+                ui.setError(
+                    GenerationFailure.busy(
+                        technical = "tool approval conflict: sessionId=${request.sessionId}",
+                    ),
+                )
                 ui.setGenerating(false)
                 return GenerationToolDecision.WAIT_FOR_APPROVAL
             }
@@ -402,7 +411,7 @@ internal class DefaultChatGenerationRuntime(
             if (rag?.enableMemory == true && request.userContent.isNotBlank() &&
                 snapshot.content.isNotBlank() && memory != null
             ) {
-                runCatching {
+                try {
                     memory.addTurnToMemory(
                         request.sessionId,
                         request.userContent,
@@ -410,7 +419,11 @@ internal class DefaultChatGenerationRuntime(
                         userMessageId,
                         assistantMessageId(request),
                     )
-                }.onFailure { NexaraLogger.logError("[GenerationRuntime] addTurnToMemory failed", it) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    NexaraLogger.logError("[GenerationRuntime] addTurnToMemory failed", error)
+                }
             }
             val windowSize = session.inferenceParams?.activeContextWindow ?: 10
             if (session.messages.size <= windowSize) return
@@ -424,6 +437,8 @@ internal class DefaultChatGenerationRuntime(
             val threshold = session.inferenceParams?.autoSummaryThreshold ?: 0.8
             val maxTokens = findModelSpec(session.modelId.orEmpty())?.contextLength ?: 128000
             if (snapshot.totalTokens > maxTokens * threshold) summarize(request, session, overflow)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             NexaraLogger.logError("[GenerationRuntime] postProcess failed", error)
         }
@@ -445,7 +460,11 @@ internal class DefaultChatGenerationRuntime(
                 GenerationTerminalStatus.CANCELLED -> "cancelled"
             },
             if (status == GenerationTerminalStatus.ERROR) {
-                snapshot.errorMessage ?: cause?.message ?: "Generation failed"
+                GenerationFailureCodec.encode(
+                    snapshot.failure
+                        ?: cause?.failureOrUnknown()
+                        ?: GenerationFailure.unknown("terminal error without failure"),
+                )
             } else null,
         )
     }
@@ -460,10 +479,10 @@ internal class DefaultChatGenerationRuntime(
 
     private suspend fun handlePreparationFailure(
         request: GenerationRequest,
-        message: String,
+        generationFailure: GenerationFailure,
         failure: ProviderResolution.Failure?,
     ) {
-        ui.setError(message)
+        ui.setError(generationFailure)
         ui.setProviderFailure(failure)
         ui.setGenerating(false)
         ui.onHandledFailure()
@@ -472,7 +491,7 @@ internal class DefaultChatGenerationRuntime(
             assistantMessageId(request),
             "",
             "error",
-            message,
+            GenerationFailureCodec.encode(generationFailure),
         )
     }
 
@@ -491,8 +510,10 @@ internal class DefaultChatGenerationRuntime(
                 kotlinx.coroutines.delay(3000)
                 ui.removePostProcessTask(taskId)
             }
-        } catch (error: Exception) {
-            ui.updatePostProcessTask(taskId, PostProcessStatus.ERROR, detail = error.message ?: "Archive failed")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            ui.updatePostProcessTask(taskId, PostProcessStatus.ERROR, detail = null)
         }
     }
 
@@ -515,8 +536,10 @@ internal class DefaultChatGenerationRuntime(
                 kotlinx.coroutines.delay(3000)
                 ui.removePostProcessTask(taskId)
             }
-        } catch (error: Exception) {
-            ui.updatePostProcessTask(taskId, PostProcessStatus.ERROR, detail = error.message ?: "Summary failed")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            ui.updatePostProcessTask(taskId, PostProcessStatus.ERROR, detail = null)
         }
     }
 
@@ -528,7 +551,17 @@ internal class DefaultChatGenerationRuntime(
         is StreamChunk.Citations -> GenerationChunk.Citations(
             chunk.citations.map { com.promenar.nexara.domain.generation.GenerationCitation(it.title, it.url, it.source) },
         )
-        is StreamChunk.Error -> GenerationChunk.Failure(chunk.message)
+        is StreamChunk.Error -> GenerationChunk.Failure(
+            GenerationFailure(
+                code = chunk.code,
+                formatArgs = chunk.retryAfterSeconds
+                    ?.takeIf { it > 0 }
+                    ?.let { mapOf(GenerationFailure.KEY_RETRY_AFTER_SECONDS to it.toString()) }
+                    .orEmpty(),
+                technical = chunk.technical,
+                cause = chunk.cause,
+            ),
+        )
         is StreamChunk.ToolCallLifecycle, StreamChunk.Done -> GenerationChunk.Done
     }
 
@@ -573,5 +606,37 @@ internal class DefaultChatGenerationRuntime(
                 else -> phase
             }
         }
+    }
+
+    private fun ProviderResolution.Failure.toGenerationFailure(): GenerationFailure {
+        val code = when (reason) {
+            ProviderResolutionError.API_KEY_MISSING,
+            ProviderResolutionError.VERTEX_CREDENTIAL_INVALID,
+            -> GenerationFailureCode.AUTH
+
+            ProviderResolutionError.MODEL_NOT_FOUND,
+            ProviderResolutionError.MODEL_DISABLED,
+            ProviderResolutionError.PROVIDER_ID_MISSING,
+            ProviderResolutionError.PROVIDER_NOT_FOUND,
+            ProviderResolutionError.PROVIDER_DISABLED,
+            ProviderResolutionError.BASE_URL_INVALID,
+            ProviderResolutionError.MODEL_PROVIDER_MISMATCH,
+            ProviderResolutionError.PROTOCOL_MISMATCH,
+            ProviderResolutionError.LOCAL_INFERENCE_UNAVAILABLE,
+            -> GenerationFailureCode.INVALID_REQUEST
+        }
+        return GenerationFailure(
+            code = code,
+            technical = buildString {
+                append("provider route failure: reason=")
+                append(reason.name)
+                append(", modelId=")
+                append(modelId)
+                providerId?.let {
+                    append(", providerId=")
+                    append(it)
+                }
+            },
+        )
     }
 }

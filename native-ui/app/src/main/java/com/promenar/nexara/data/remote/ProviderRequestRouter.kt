@@ -43,7 +43,9 @@ sealed interface ProviderResolution {
         val reason: ProviderResolutionError,
         val modelId: String,
         val providerId: String? = null,
-    ) : ProviderResolution
+    ) : ProviderResolution {
+        override fun toString(): String = "ProviderResolution.Failure(reason=$reason)"
+    }
 }
 
 interface ProviderRequestRouter {

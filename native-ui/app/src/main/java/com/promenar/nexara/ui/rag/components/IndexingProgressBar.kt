@@ -24,26 +24,44 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
+
+internal data class IndexingProgressAccessibility(
+    val progress: Float,
+    val assertive: Boolean,
+)
+
+internal fun resolveIndexingProgressAccessibility(
+    progress: Float,
+    isError: Boolean,
+): IndexingProgressAccessibility = IndexingProgressAccessibility(
+    progress = progress.coerceIn(0f, 1f),
+    assertive = isError,
+)
 
 @Composable
 fun IndexingProgressBar(
     progress: Float,
-    statusText: String? = null,
+    statusText: String,
     subStatusText: String? = null,
     isError: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val accessibility = resolveIndexingProgressAccessibility(progress, isError)
     // 进度平滑动画（500ms 缓动过渡）
     val animatedProgress by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f),
+        targetValue = accessibility.progress,
         animationSpec = tween(durationMillis = 500),
         label = "progressAnim"
     )
@@ -51,6 +69,18 @@ fun IndexingProgressBar(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                liveRegion = if (accessibility.assertive) {
+                    LiveRegionMode.Assertive
+                } else {
+                    LiveRegionMode.Polite
+                }
+                stateDescription = statusText
+                progressBarRangeInfo = ProgressBarRangeInfo(
+                    current = accessibility.progress,
+                    range = 0f..1f,
+                )
+            }
             .clip(RoundedCornerShape(12.dp))
             .background(
                 if (isError) NexaraColors.Error.copy(alpha = 0.08f)
@@ -75,7 +105,7 @@ fun IndexingProgressBar(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = statusText ?: stringResource(R.string.rag_indexing_progress),
+                    text = statusText,
                     style = NexaraTypography.labelMedium,
                     color = if (isError) NexaraColors.Error else NexaraColors.OnSurface
                 )

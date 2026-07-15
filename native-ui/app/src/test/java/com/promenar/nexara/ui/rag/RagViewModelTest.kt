@@ -13,18 +13,22 @@ import com.promenar.nexara.data.rag.KeywordSearcher
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
+import com.promenar.nexara.domain.repository.ReadResult
 import com.promenar.nexara.share.core.ShareImportBatchResult
 import com.promenar.nexara.share.core.ShareImportItem
 import com.promenar.nexara.share.core.ShareImportStatus
 import com.promenar.nexara.share.core.ShareRejectReason
 import com.promenar.nexara.share.core.SharedFileImporter
+import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -141,8 +145,11 @@ class RagViewModelTest {
         coVerify(exactly = 1) {
             importer.import(request, "rag-root", null, "folder-docs")
         }
-        assertThat(vm.lastQueueError.value).contains("unsafe.bin")
-        assertThat(vm.lastQueueError.value).contains("UnsupportedMime")
+        assertThat(vm.indexingNotice.value).isNotNull()
+        assertThat(vm.indexingNotice.value!!.code).isEqualTo(IndexingNotice.CODE_IMPORT_FAILED)
+        assertThat(vm.indexingNotice.value!!.severity).isEqualTo(NoticeSeverity.Error)
+        assertThat(vm.indexingNotice.value!!.technical).contains("unsafe.bin")
+        assertThat(vm.indexingNotice.value!!.technical).contains("UnsupportedMime")
     }
 
     @Test
@@ -180,8 +187,222 @@ class RagViewModelTest {
         vm.importDocuments(listOf(good, failed))
         advanceUntilIdle()
 
-        assertThat(vm.lastQueueError.value).contains("failed.txt")
-        assertThat(vm.lastQueueError.value).contains("provider died")
+        assertThat(vm.indexingNotice.value).isNotNull()
+        assertThat(vm.indexingNotice.value!!.code).isEqualTo(IndexingNotice.CODE_IMPORT_FAILED)
+        assertThat(vm.indexingNotice.value!!.technical).contains("failed.txt")
+        assertThat(vm.indexingNotice.value!!.technical).contains("provider died")
+    }
+
+    @Test
+    fun `批量重新索引会委托到仓库读取并入队`() = runTest {
+        val root = "rag-root"
+        val doc = FileEntry(
+            uuid = "doc-1",
+            parentUuid = root,
+            name = "doc.txt",
+            hash = "",
+            physicalRootPath = "/tmp/doc.txt",
+            materializedPath = "/doc.txt",
+            isDirectory = false,
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        coEvery { workspaceRepository.getByUuid(root, "doc-1") } returns doc
+        coEvery { fileOperationRepository.readFileRange(root, "doc-1") } returns ReadResult(
+            uuid = "doc-1",
+            name = "doc.txt",
+            totalLines = 1,
+            startLine = 0,
+            endLine = 0,
+            content = "sample",
+            hash = "h",
+            lastModified = 0L,
+        )
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.reindexDocuments(listOf("doc-1"))
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { workspaceRepository.getByUuid(root, "doc-1") }
+        coVerify(exactly = 1) { fileOperationRepository.readFileRange(root, "doc-1") }
+        coVerify(exactly = 1) {
+            vectorizationQueue.enqueueDocument(
+                workspaceRootUuid = root,
+                docId = "doc-1",
+                docTitle = "doc.txt",
+                content = "sample",
+                kgStrategy = any(),
+            )
+        }
+        assertThat(vm.indexingNotice.value).isNull()
+    }
+
+    @Test
+    fun `批量重新索引空输入给用户级反馈并不执行操作`() = runTest {
+        val vm = createViewModel()
+        vm.reindexDocuments(emptyList())
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { fileOperationRepository.readFileRange(any(), any()) }
+        assertThat(vm.indexingNotice.value).isNotNull()
+        assertThat(vm.indexingNotice.value!!.code).isEqualTo(IndexingNotice.CODE_WARNING)
+    }
+
+    @Test
+    fun `移动多个文档成功时会触发回调并清空失败列表`() = runTest {
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        coEvery { workspaceRepository.updateParent("rag-root", "doc-1", "folder-a") } returns Unit
+        coEvery { workspaceRepository.updateParent("rag-root", "doc-2", "folder-a") } returns Unit
+
+        var result = false
+        var failed = listOf<String>()
+        vm.moveDocuments(listOf("doc-1", "doc-2"), "folder-a") { ok, failedIds ->
+            result = ok
+            failed = failedIds
+        }
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { workspaceRepository.updateParent("rag-root", "doc-1", "folder-a") }
+        coVerify(exactly = 1) { workspaceRepository.updateParent("rag-root", "doc-2", "folder-a") }
+        assertThat(result).isTrue()
+        assertThat(failed).isEmpty()
+    }
+
+    @Test
+    fun `移动失败时回调 false 并记录失败列表`() = runTest {
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        coEvery { workspaceRepository.updateParent("rag-root", "doc-1", "folder-a") } returns Unit
+        coEvery {
+            workspaceRepository.updateParent("rag-root", "doc-2", "folder-a")
+        } throws RuntimeException("move failed")
+
+        var result = true
+        var failed = listOf<String>()
+        vm.moveDocuments(listOf("doc-1", "doc-2"), "folder-a") { ok, failedIds ->
+            result = ok
+            failed = failedIds
+        }
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { workspaceRepository.updateParent("rag-root", "doc-1", "folder-a") }
+        coVerify(exactly = 1) { workspaceRepository.updateParent("rag-root", "doc-2", "folder-a") }
+        assertThat(result).isFalse()
+        assertThat(failed).containsExactly("doc-2")
+        assertThat(vm.indexingNotice.value).isNotNull()
+        assertThat(vm.indexingNotice.value!!.code).isEqualTo(IndexingNotice.CODE_MOVE_FAILED)
+        assertThat(vm.indexingNotice.value!!.technical).doesNotContain("move failed")
+    }
+
+    @Test
+    fun `移动错误会替换旧索引失败且不误暴露索引重试`() = runTest {
+        var callback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { vectorizationQueue.setOnStateChange(any()) } answers { callback = firstArg() }
+        val vm = createViewModel()
+        callback?.invoke(
+            emptyList(),
+            com.promenar.nexara.data.rag.VectorizationTask(
+                id = "failed-reference",
+                type = com.promenar.nexara.data.rag.VectorizationQueue.TYPE_DOCUMENT_REFERENCE,
+                workspaceRootUuid = "rag-root",
+                docId = "doc-1",
+                status = "failed",
+            ),
+        )
+        assertThat(vm.canRetryLastFailedIndex.value).isTrue()
+        coEvery { workspaceRepository.updateParent("rag-root", "doc-1", "folder-a") } throws
+            IllegalStateException("private move detail")
+
+        vm.moveDocuments(listOf("doc-1"), "folder-a")
+        advanceUntilIdle()
+
+        assertThat(vm.indexingNotice.value?.code).isEqualTo(IndexingNotice.CODE_MOVE_FAILED)
+        assertThat(vm.canRetryLastFailedIndex.value).isFalse()
+    }
+
+    @Test
+    fun `移动失败提示不会被空队列状态回调意外清除`() = runTest {
+        var callback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { vectorizationQueue.setOnStateChange(any()) } answers { callback = firstArg() }
+        val vm = createViewModel()
+        coEvery { workspaceRepository.updateParent("rag-root", "doc-1", "folder-a") } throws
+            IllegalStateException("private move detail")
+
+        vm.moveDocuments(listOf("doc-1"), "folder-a")
+        advanceUntilIdle()
+        callback?.invoke(emptyList(), null)
+
+        assertThat(vm.indexingNotice.value?.code).isEqualTo(IndexingNotice.CODE_MOVE_FAILED)
+        assertThat(vm.isIndexing.value).isTrue()
+    }
+
+    @Test
+    fun `移动进行中重复提交被门禁且不会二次写入`() = runTest {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        coEvery { workspaceRepository.updateParent("rag-root", "doc-1", "folder-a") } coAnswers {
+            gate.await()
+        }
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        var secondFailedIds = emptyList<String>()
+        vm.moveDocuments(listOf("doc-1"), "folder-a")
+        testDispatcher.scheduler.runCurrent()
+        assertThat(vm.isMovingDocuments.value).isTrue()
+        vm.moveDocuments(listOf("doc-1"), "folder-a") { _, failedIds ->
+            secondFailedIds = failedIds
+        }
+        testDispatcher.scheduler.runCurrent()
+
+        coVerify(exactly = 1) { workspaceRepository.updateParent("rag-root", "doc-1", "folder-a") }
+        assertThat(secondFailedIds).containsExactly("doc-1")
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertThat(vm.isMovingDocuments.value).isFalse()
+    }
+
+    @Test
+    fun `批量删除部分失败会继续处理并逐项返回失败标识`() = runTest {
+        coEvery { workspaceRepository.permanentDelete("rag-root", "doc-1") } returns Unit
+        coEvery { workspaceRepository.permanentDelete("rag-root", "doc-2") } throws
+            IllegalStateException("private delete detail")
+        coEvery { workspaceRepository.permanentDelete("rag-root", "doc-3") } returns Unit
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        var failedIds = emptyList<String>()
+        vm.deleteDocuments(listOf("doc-1", "doc-2", "doc-3")) { _, failed ->
+            failedIds = failed
+        }
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { workspaceRepository.permanentDelete("rag-root", "doc-1") }
+        coVerify(exactly = 1) { workspaceRepository.permanentDelete("rag-root", "doc-2") }
+        coVerify(exactly = 1) { workspaceRepository.permanentDelete("rag-root", "doc-3") }
+        assertThat(failedIds).containsExactly("doc-2")
+        assertThat(vm.indexingNotice.value?.code).isEqualTo(IndexingNotice.CODE_DELETE_FAILED)
+        assertThat(vm.indexingNotice.value?.technical).doesNotContain("private delete detail")
+    }
+
+    @Test
+    fun `批量删除收到取消信号时立即传播且不继续处理后续项`() = runTest {
+        coEvery { workspaceRepository.permanentDelete("rag-root", "doc-1") } throws
+            kotlinx.coroutines.CancellationException("cancel delete")
+        val vm = createViewModel()
+        advanceUntilIdle()
+        var callbackInvoked = false
+
+        vm.deleteDocuments(listOf("doc-1", "doc-2")) { _, _ -> callbackInvoked = true }
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { workspaceRepository.permanentDelete("rag-root", "doc-1") }
+        coVerify(exactly = 0) { workspaceRepository.permanentDelete("rag-root", "doc-2") }
+        assertThat(callbackInvoked).isFalse()
+        assertThat(vm.isDeletingDocuments.value).isFalse()
     }
 
     private fun requestFor(uri: android.net.Uri) = ShareRequest(
@@ -277,14 +498,14 @@ class RagViewModelTest {
     )
 
     @Test
-    fun `lastQueueError is initially null`() = runTest {
+    fun `indexingNotice is initially null`() = runTest {
         val vm = createViewModel()
 
-        assertThat(vm.lastQueueError.value).isNull()
+        assertThat(vm.indexingNotice.value).isNull()
     }
 
     @Test
-    fun `lastQueueError captures error when task fails`() = runTest {
+    fun `indexingNotice captures task failed state`() = runTest {
         var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
         every { vectorizationQueue.setOnStateChange(any()) } answers {
             capturedCallback = firstArg()
@@ -304,12 +525,14 @@ class RagViewModelTest {
 
         capturedCallback?.invoke(listOf(failedTask), failedTask)
 
-        assertThat(vm2.lastQueueError.value).isNotNull()
-        assertThat(vm2.lastQueueError.value).contains("API key")
+        assertThat(vm2.indexingNotice.value).isNotNull()
+        assertThat(vm2.indexingNotice.value?.code).isEqualTo(IndexingNotice.CODE_FAILED)
+        assertThat(vm2.indexingNotice.value?.severity).isEqualTo(NoticeSeverity.Error)
+        assertThat(vm2.indexingNotice.value?.technical).contains("API key")
     }
 
     @Test
-    fun `lastQueueError is cleared when new non-failed task starts`() = runTest {
+    fun `indexingNotice updates when non-failed task starts`() = runTest {
         var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
         every { vectorizationQueue.setOnStateChange(any()) } answers {
             capturedCallback = firstArg()
@@ -327,7 +550,8 @@ class RagViewModelTest {
             error = "API key invalid"
         )
         capturedCallback?.invoke(listOf(failedTask), failedTask)
-        assertThat(vm2.lastQueueError.value).isNotNull()
+        assertThat(vm2.indexingNotice.value).isNotNull()
+        assertThat(vm2.indexingNotice.value?.code).isEqualTo(IndexingNotice.CODE_FAILED)
 
         val newTask = com.promenar.nexara.data.rag.VectorizationTask(
             id = "task-new",
@@ -339,7 +563,8 @@ class RagViewModelTest {
         )
         capturedCallback?.invoke(listOf(newTask), newTask)
 
-        assertThat(vm2.lastQueueError.value).isNull()
+        assertThat(vm2.indexingNotice.value).isNotNull()
+        assertThat(vm2.indexingNotice.value?.code).isEqualTo(IndexingNotice.CODE_CHUNKING)
     }
 
     @Test
@@ -366,7 +591,7 @@ class RagViewModelTest {
     }
 
     @Test
-    fun `indexingStatus reflects current task chunking state`() = runTest {
+    fun `indexingNotice reflects current task chunking state`() = runTest {
         var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
         every { vectorizationQueue.setOnStateChange(any()) } answers {
             capturedCallback = firstArg()
@@ -383,11 +608,12 @@ class RagViewModelTest {
         )
         capturedCallback?.invoke(listOf(chunkingTask), chunkingTask)
 
-        assertThat(vm.indexingStatus.value).contains("切块")
+        assertThat(vm.indexingNotice.value?.code).isEqualTo(IndexingNotice.CODE_CHUNKING)
+        assertThat(vm.indexingNotice.value?.severity).isEqualTo(NoticeSeverity.Info)
     }
 
     @Test
-    fun `indexingSubStatus mirrors task subStatus`() = runTest {
+    fun `indexingNotice retains format args for vectorizing task`() = runTest {
         var capturedCallback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
         every { vectorizationQueue.setOnStateChange(any()) } answers {
             capturedCallback = firstArg()
@@ -401,10 +627,154 @@ class RagViewModelTest {
             docTitle = "Test",
             status = "vectorizing",
             progress = 30.0,
+            totalChunks = 20,
             subStatus = "Vectorizing 5/20 chunks"
         )
         capturedCallback?.invoke(listOf(task), task)
 
-        assertThat(vm.indexingSubStatus.value).isEqualTo("Vectorizing 5/20 chunks")
+        assertThat(vm.indexingNotice.value?.code).isEqualTo(IndexingNotice.CODE_VECTORIZING)
+        assertThat(vm.indexingNotice.value?.formatArgs).containsExactly("20")
+    }
+
+    @Test
+    fun `普通文档失败会建立真实重试目标并重新读取后入队`() = runTest {
+        var callback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { vectorizationQueue.setOnStateChange(any()) } answers { callback = firstArg() }
+        val entry = FileEntry(
+            uuid = "doc-1",
+            workspaceRootUuid = "rag-root",
+            parentUuid = "rag-root",
+            name = "doc.txt",
+            hash = "hash",
+            physicalRootPath = "/tmp/doc.txt",
+            materializedPath = "/doc.txt",
+            isDirectory = false,
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        coEvery { workspaceRepository.getByUuid("rag-root", "doc-1") } returns entry
+        coEvery { fileOperationRepository.readFileRange("rag-root", "doc-1") } returns ReadResult(
+            uuid = "doc-1",
+            name = "doc.txt",
+            totalLines = 1,
+            startLine = 0,
+            endLine = 0,
+            content = "fresh content",
+            hash = "hash",
+            lastModified = 1L,
+        )
+        val vm = createViewModel()
+        callback?.invoke(
+            emptyList(),
+            com.promenar.nexara.data.rag.VectorizationTask(
+                id = "failed-document",
+                type = "document",
+                workspaceRootUuid = "rag-root",
+                docId = "doc-1",
+                docTitle = "doc.txt",
+                status = "failed",
+                error = "provider secret detail",
+            ),
+        )
+
+        assertThat(vm.canRetryLastFailedIndex.value).isTrue()
+        vm.retryLastFailedIndex()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            vectorizationQueue.enqueueDocument(
+                workspaceRootUuid = "rag-root",
+                docId = "doc-1",
+                docTitle = "doc.txt",
+                content = "fresh content",
+                kgStrategy = any(),
+            )
+        }
+        verify(exactly = 1) { vectorizationQueue.cancel("doc-1") }
+        assertThat(vm.canRetryLastFailedIndex.value).isFalse()
+        assertThat(vm.isRetryingLastFailedIndex.value).isFalse()
+        assertThat(vm.indexingNotice.value).isNull()
+    }
+
+    @Test
+    fun `文件引用失败会调用持久化引用重试且重试中拒绝重复触发`() = runTest {
+        var callback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { vectorizationQueue.setOnStateChange(any()) } answers { callback = firstArg() }
+        val retryGate = CompletableDeferred<Unit>()
+        coEvery { vectorizationQueue.retryDocumentReference("rag-root", "doc-ref") } coAnswers {
+            retryGate.await()
+            true
+        }
+        val vm = createViewModel()
+        callback?.invoke(
+            emptyList(),
+            com.promenar.nexara.data.rag.VectorizationTask(
+                id = "failed-reference",
+                type = com.promenar.nexara.data.rag.VectorizationQueue.TYPE_DOCUMENT_REFERENCE,
+                workspaceRootUuid = "rag-root",
+                docId = "doc-ref",
+                docTitle = "ref.pdf",
+                status = "partial",
+            ),
+        )
+
+        vm.retryLastFailedIndex()
+        vm.retryLastFailedIndex()
+
+        assertThat(vm.isRetryingLastFailedIndex.value).isTrue()
+        coVerify(exactly = 1) { vectorizationQueue.retryDocumentReference("rag-root", "doc-ref") }
+
+        retryGate.complete(Unit)
+        advanceUntilIdle()
+        assertThat(vm.isRetryingLastFailedIndex.value).isFalse()
+        assertThat(vm.canRetryLastFailedIndex.value).isFalse()
+    }
+
+    @Test
+    fun `缺少稳定文档身份的失败状态不会暴露重试入口`() = runTest {
+        var callback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { vectorizationQueue.setOnStateChange(any()) } answers { callback = firstArg() }
+        val vm = createViewModel()
+
+        callback?.invoke(
+            emptyList(),
+            com.promenar.nexara.data.rag.VectorizationTask(
+                id = "failed-without-target",
+                type = "document",
+                status = "failed",
+            ),
+        )
+
+        assertThat(vm.indexingNotice.value?.code).isEqualTo(IndexingNotice.CODE_FAILED)
+        assertThat(vm.canRetryLastFailedIndex.value).isFalse()
+        vm.retryLastFailedIndex()
+        advanceUntilIdle()
+        coVerify(exactly = 0) { vectorizationQueue.enqueueDocument(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { vectorizationQueue.retryDocumentReference(any(), any()) }
+    }
+
+    @Test
+    fun `关闭失败提示会同步清除重试目标`() = runTest {
+        var callback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { vectorizationQueue.setOnStateChange(any()) } answers { callback = firstArg() }
+        val vm = createViewModel()
+        callback?.invoke(
+            emptyList(),
+            com.promenar.nexara.data.rag.VectorizationTask(
+                id = "failed-reference",
+                type = com.promenar.nexara.data.rag.VectorizationQueue.TYPE_DOCUMENT_REFERENCE,
+                workspaceRootUuid = "rag-root",
+                docId = "doc-ref",
+                status = "failed",
+            ),
+        )
+        assertThat(vm.canRetryLastFailedIndex.value).isTrue()
+
+        vm.dismissQueueError()
+
+        assertThat(vm.indexingNotice.value).isNull()
+        assertThat(vm.isIndexing.value).isFalse()
+        assertThat(vm.canRetryLastFailedIndex.value).isFalse()
+        verify(exactly = 1) { vectorizationQueue.cancel("doc-ref") }
     }
 }

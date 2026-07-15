@@ -1,7 +1,6 @@
 package com.promenar.nexara.ui.settings
 
 import android.app.Application
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -12,6 +11,8 @@ import com.promenar.nexara.domain.repository.DailyTokenStats
 import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.domain.repository.SessionTokenUsage
 import com.promenar.nexara.domain.repository.TokenUsageAggregate
+import com.promenar.nexara.utils.NexaraLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -89,8 +90,10 @@ class TokenUsageViewModel(
                     dailyTrend = dailyTrend,
                     isLoading = false
                 )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                Log.e(TAG, "loadStats failed", e)
+                NexaraLogger.logError("$TAG.loadStats", e)
                 _state.value = _state.value.copy(isLoading = false, error = e.message)
             }
         }
@@ -109,8 +112,10 @@ class TokenUsageViewModel(
             try {
                 tokenStatsRepository.resetStats()
                 _state.value = TokenStatsState(isLoading = false)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                Log.e(TAG, "clearStats failed", e)
+                NexaraLogger.logError("$TAG.clearStats", e)
             } finally {
                 _state.value = _state.value.copy(showClearConfirm = false)
             }

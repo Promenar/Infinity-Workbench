@@ -15,6 +15,13 @@ import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.domain.usecase.IdGenerator
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.ProviderRequestRouter
+import com.promenar.nexara.data.remote.ProviderResolution
+import com.promenar.nexara.data.remote.StreamConfig
+import com.promenar.nexara.data.remote.middleware.StreamTextParams
+import com.promenar.nexara.data.remote.parser.ErrorNormalizer
+import com.promenar.nexara.data.remote.protocol.ProtocolMessage
+import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.repository.ISkillRepository
@@ -26,11 +33,23 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.io.FileOutputStream
 import com.promenar.nexara.data.remote.stableModelId
+import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.welcome.verifyOnboardingModelCandidate
+import com.promenar.nexara.domain.generation.GenerationFailureCode
 
 data class ModelInfo(
     val name: String,
@@ -107,6 +126,164 @@ data class SkillInfo(
     val enabled: Boolean
 )
 
+internal fun normalizeSettingsTabIndex(index: Int): Int = index.coerceIn(0, 1)
+
+internal fun UiStatusNotice.withFallbackWarning(usedFallback: Boolean): UiStatusNotice =
+    if (usedFallback) {
+        copy(
+            severity = com.promenar.nexara.ui.common.status.NoticeSeverity.Warning,
+            technical = "built_in_model_fallback_used",
+        )
+    } else {
+        this
+    }
+
+sealed interface ModelTestState {
+    data object Idle : ModelTestState
+    data object Testing : ModelTestState
+    data class Success(val latencyMs: Long) : ModelTestState {
+        init {
+            require(latencyMs >= 0)
+        }
+    }
+    data class Error(
+        val code: GenerationFailureCode,
+        val retryAfterSeconds: Int? = null,
+    ) : ModelTestState {
+        override fun toString(): String = buildString {
+            append("ModelTestState.Error(code=")
+            append(code)
+            retryAfterSeconds?.takeIf { it > 0 }?.let {
+                append(", retryAfterSeconds=")
+                append(it)
+            }
+            append(')')
+        }
+    }
+}
+
+/**
+ * 模型连通性探测的进程内协调器。实际请求始终通过 [ProviderRequestRouter]
+ * 与 [com.promenar.nexara.data.remote.UnifiedLlmClient]，不另建旁路协议客户端。
+ */
+internal class ProviderModelTestCoordinator(
+    private val router: ProviderRequestRouter,
+    private val scope: CoroutineScope,
+    private val timeoutMillis: Long = 15_000,
+    private val nowNanos: () -> Long = System::nanoTime,
+    private val beforeJobStartForTest: (String) -> Unit = {},
+) {
+    private val _states = MutableStateFlow<Map<String, ModelTestState>>(emptyMap())
+    val states: StateFlow<Map<String, ModelTestState>> = _states.asStateFlow()
+    private val jobs = mutableMapOf<String, Job>()
+    private val generations = mutableMapOf<String, Long>()
+    private val jobsLock = Any()
+
+    fun test(modelId: String) {
+        val job: Job
+        val generation: Long
+        synchronized(jobsLock) {
+            if (jobs[modelId] != null) return
+            generation = (generations[modelId] ?: 0L) + 1
+            generations[modelId] = generation
+            _states.value = _states.value + (modelId to ModelTestState.Testing)
+            job = scope.launch(start = CoroutineStart.LAZY) {
+                try {
+                    val startedAt = nowNanos()
+                    val outcome = withTimeout(timeoutMillis) { probe(modelId) }
+                    val terminal = when (outcome) {
+                        ProbeOutcome.Success -> ModelTestState.Success(
+                            latencyMs = ((nowNanos() - startedAt) / 1_000_000L).coerceAtLeast(0),
+                        )
+                        is ProbeOutcome.Failed -> outcome.error
+                    }
+                    setState(modelId, terminal, generation)
+                } catch (_: TimeoutCancellationException) {
+                    setState(modelId, ModelTestState.Error(GenerationFailureCode.TIMEOUT), generation)
+                } catch (cancelled: CancellationException) {
+                    setState(modelId, ModelTestState.Idle, generation)
+                    throw cancelled
+                } catch (error: Exception) {
+                    val normalized = ErrorNormalizer.normalize(error)
+                    setState(modelId, ModelTestState.Error(normalized.toFailure().code), generation)
+                }
+            }.also { jobs[modelId] = it }
+        }
+        job.invokeOnCompletion {
+            synchronized(jobsLock) {
+                if (jobs[modelId] === job) jobs.remove(modelId)
+            }
+        }
+        beforeJobStartForTest(modelId)
+        job.start()
+    }
+
+    fun cancel(modelId: String) {
+        val job: Job?
+        synchronized(jobsLock) {
+            job = jobs.remove(modelId)
+            generations[modelId] = (generations[modelId] ?: 0L) + 1
+            _states.value = _states.value + (modelId to ModelTestState.Idle)
+        }
+        job?.cancel()
+    }
+
+    private fun setState(modelId: String, state: ModelTestState, generation: Long) {
+        synchronized(jobsLock) {
+            if (generations[modelId] != generation) return
+            _states.value = _states.value + (modelId to state)
+        }
+    }
+
+    private suspend fun probe(modelId: String): ProbeOutcome {
+        val resolved = when (val resolution = router.resolve(modelId)) {
+            is ProviderResolution.Success -> resolution.value
+            is ProviderResolution.Failure -> return ProbeOutcome.Failed(
+                ModelTestState.Error(
+                    code = when (resolution.reason) {
+                        com.promenar.nexara.data.remote.ProviderResolutionError.API_KEY_MISSING,
+                        com.promenar.nexara.data.remote.ProviderResolutionError.VERTEX_CREDENTIAL_INVALID,
+                        -> GenerationFailureCode.AUTH
+                        else -> GenerationFailureCode.INVALID_REQUEST
+                    },
+                ),
+            )
+        }
+        var error: ModelTestState.Error? = null
+        var sawPayload = false
+        var sawDone = false
+        router.createClient(resolved).sendStream(
+            params = StreamTextParams(
+                messages = listOf(ProtocolMessage(role = "user", content = "Reply OK.")),
+                model = resolved.remoteModelId,
+                maxOutputTokens = 1,
+                streamTimeout = timeoutMillis,
+            ),
+            config = StreamConfig(),
+        ).collect { chunk ->
+            when (chunk) {
+                is StreamChunk.Error -> {
+                    if (error == null) {
+                        error = ModelTestState.Error(chunk.code, chunk.retryAfterSeconds)
+                    }
+                }
+                is StreamChunk.TextDelta -> if (chunk.content.isNotEmpty()) sawPayload = true
+                is StreamChunk.Thinking -> if (chunk.content.isNotEmpty()) sawPayload = true
+                is StreamChunk.Done -> sawDone = true
+                else -> Unit
+            }
+        }
+        error?.let { return ProbeOutcome.Failed(it) }
+        return if (sawPayload && sawDone) ProbeOutcome.Success
+        else ProbeOutcome.Failed(ModelTestState.Error(GenerationFailureCode.UNKNOWN))
+    }
+
+    private sealed interface ProbeOutcome {
+        data object Success : ProbeOutcome
+        data class Failed(val error: ModelTestState.Error) : ProbeOutcome
+    }
+}
+
 // ProviderListItem 已迁移至 data/model/ProviderModels.kt，此处通过 import 引入。
 // 保留此注释以防止 git diff 混乱。
 
@@ -159,7 +336,7 @@ class SettingsViewModel(
     val selectedSettingsTab: StateFlow<Int> = _selectedSettingsTab.asStateFlow()
 
     fun setSelectedSettingsTab(index: Int) {
-        _selectedSettingsTab.value = index
+        _selectedSettingsTab.value = normalizeSettingsTabIndex(index)
     }
 
     val currentModelSummary: StateFlow<String> = pm.currentModelSummary
@@ -173,11 +350,26 @@ class SettingsViewModel(
     private val _isFetchingModels = MutableStateFlow(false)
     val isFetchingModels: StateFlow<Boolean> = _isFetchingModels.asStateFlow()
 
-    /** 同步模型后的反馈消息，null 表示无消息 */
-    private val _modelSyncMessage = MutableStateFlow<String?>(null)
-    val modelSyncMessage: StateFlow<String?> = _modelSyncMessage.asStateFlow()
+    /**
+     * 同步模型后的结构化反馈：稳定 code + severity + 类型化 args。
+     * UI 据 severity 着色、据 code+args 经 stringResource 双语格式化，**禁止**用展示串 startsWith 判定颜色。
+     * [UiStatusNotice.technical] 仅用于日志/诊断，不直接展示给用户。
+     */
+    private val _modelSyncNotice = MutableStateFlow<UiStatusNotice?>(null)
+    val modelSyncNotice: StateFlow<UiStatusNotice?> = _modelSyncNotice.asStateFlow()
+    private val modelSyncGate = ModelSyncGate()
 
-    fun clearSyncMessage() { _modelSyncMessage.value = null }
+    private val modelTestCoordinator by lazy {
+        ProviderModelTestCoordinator(app.providerRequestRouter, viewModelScope)
+    }
+    val modelTestStates: StateFlow<Map<String, ModelTestState>>
+        get() = modelTestCoordinator.states
+
+    fun clearSyncNotice() { _modelSyncNotice.value = null }
+
+    fun testModel(modelId: String) = modelTestCoordinator.test(modelId)
+
+    fun cancelModelTest(modelId: String) = modelTestCoordinator.cancel(modelId)
 
     val summaryModelId: StateFlow<String> = pm.summaryModelId
     val imageModelId: StateFlow<String> = pm.imageModelId
@@ -254,19 +446,21 @@ class SettingsViewModel(
 
     /** 刷新模型列表（远程获取 + ModelSpecs 数据库回退 + 元数据更新） */
     fun refreshProviderModels(providerId: String) {
+        if (!modelSyncGate.tryAcquire()) return
+        _isFetchingModels.value = true
+        _modelSyncNotice.value = ModelSyncNotice.loading()
         viewModelScope.launch {
-            _isFetchingModels.value = true
-            _modelSyncMessage.value = null
             try {
                 val config = pm.getProviderConfig(providerId)
                 if (config == null) {
-                    _modelSyncMessage.value = "未找到提供商配置"
+                    _modelSyncNotice.value = ModelSyncNotice.providerNotFound()
                     return@launch
                 }
                 val providerName = pm.providers.value.find { it.id == providerId }?.name ?: "Provider"
 
                 // 步骤 1: 尝试远程拉取模型列表
                 var fetchedIds: List<String> = emptyList()
+                var usedBuiltInFallback = false
                 try {
                     val tmpProvider = if (config.protocolType is com.promenar.nexara.data.remote.protocol.ProtocolType.Local) {
                         com.promenar.nexara.data.remote.provider.LlmProvider.local(app.localInferenceEngine, config.model)
@@ -279,10 +473,14 @@ class SettingsViewModel(
                             .build()
                     }
                     fetchedIds = tmpProvider.listModels()
+                    currentCoroutineContext().ensureActive()
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
                 } catch (_: Exception) { /* 远程拉取失败，回退到数据库 */ }
 
                 // 步骤 2: 回退 — 从 ModelSpecs 数据库匹配该协议类型的已知模型
                 if (fetchedIds.isEmpty()) {
+                    usedBuiltInFallback = true
                     fetchedIds = getFallbackModelIds(config.protocolType)
                 }
 
@@ -338,19 +536,24 @@ class SettingsViewModel(
                         }
                     }
 
-                    // 构造反馈消息
-                    val parts = mutableListOf<String>()
-                    if (newCount > 0) parts.add("新增 $newCount 个")
-                    if (updatedCount > 0) parts.add("更新 $updatedCount 个")
-                    if (parts.isEmpty()) parts.add("模型已是最新")
-                    _modelSyncMessage.value = parts.joinToString("，")
+                    // 构造结构化反馈：新增/更新计数进入 typed args，展示层负责本地化
+                    if (newCount > 0 || updatedCount > 0) {
+                        val synced = ModelSyncNotice.synced(newCount, updatedCount)
+                        _modelSyncNotice.value = synced.withFallbackWarning(usedBuiltInFallback)
+                    } else {
+                        _modelSyncNotice.value = ModelSyncNotice.upToDate()
+                            .withFallbackWarning(usedBuiltInFallback)
+                    }
                 } else {
-                    _modelSyncMessage.value = "未找到可用模型"
+                    _modelSyncNotice.value = ModelSyncNotice.noModelsFound()
                 }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (e: Exception) {
-                _modelSyncMessage.value = "同步失败：${e.message?.take(50) ?: "未知错误"}"
+                _modelSyncNotice.value = ModelSyncNotice.syncFailed(e.message)
             } finally {
                 _isFetchingModels.value = false
+                modelSyncGate.release()
             }
         }
     }
@@ -602,27 +805,12 @@ class SettingsViewModel(
 
 
 
-    fun disableAllModels() = pm.disableAllModels()
+    fun disableAllModels(providerId: String) = pm.disableAllModels(providerId)
 
-    fun deleteAllModels() = pm.deleteAllModels()
+    fun deleteAllModels(providerId: String) = pm.deleteAllModels(providerId)
 
-    fun addCustomModel(id: String, name: String) {
-        val spec = com.promenar.nexara.data.model.findModelSpec(id)
-        val type = spec?.type?.name?.lowercase() ?: "chat"
-        val defaultProvider = pm.providers.value.firstOrNull { it.id == "default" }
-        val newModel = ModelInfo(
-            name = name.ifEmpty { spec?.note ?: id }, id = id,
-            description = spec?.note ?: "Custom model",
-            enabled = true, type = type,
-            contextLength = spec?.contextLength ?: 8192,
-            providerName = defaultProvider?.name ?: "Cloud",
-            providerId = defaultProvider?.id ?: "default",
-            capabilities = pm.buildModelCapabilities(type, spec),
-            maxOutputTokens = spec?.maxOutputTokens ?: 0,
-            knowledgeCutoff = spec?.knowledgeCutoff
-        )
-        pm.addModel(newModel)
-    }
+    fun addCustomModel(providerId: String, id: String, name: String): Boolean =
+        pm.addCustomModel(providerId, id, name)
 
     fun toggleSkill(id: String) {
         if (id.startsWith("user_")) {

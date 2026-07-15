@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.remote.protocol
 
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.domain.generation.GenerationFailureCode
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import kotlinx.coroutines.flow.toList
@@ -21,9 +22,14 @@ class VertexCredentialTest {
         val chunks = protocol.sendPrompt(PromptRequest(messages = emptyList(), model = "fake-model")).toList()
         val error = chunks.filterIsInstance<StreamChunk.Error>().single()
 
+        assertThat(error.code).isEqualTo(GenerationFailureCode.AUTH)
+        assertThat(error.message).isEmpty()
         assertThat(error.message).doesNotContain(credentialJson)
         assertThat(error.message).doesNotContain(privateKeyMarker)
-        assertThat(error.message).contains("Vertex AI Authentication Failed")
+        assertThat(error.technical).isEqualTo("Vertex AI Authentication Failed: Service account private key is invalid")
+        assertThat(error.technical).doesNotContain(credentialJson)
+        assertThat(error.technical).doesNotContain(privateKeyMarker)
+        assertThat(error.toString()).doesNotContain(error.technical)
     }
 
     @Test
@@ -37,8 +43,11 @@ class VertexCredentialTest {
         val error = protocol.sendPrompt(PromptRequest(messages = emptyList(), model = "fake-model"))
             .toList().filterIsInstance<StreamChunk.Error>().single()
 
-        assertThat(error.message).isEqualTo("Vertex AI Authentication Failed: Service account credentials are missing")
-        assertThat(error.message).doesNotContain("private_key")
+        assertThat(error.code).isEqualTo(GenerationFailureCode.AUTH)
+        assertThat(error.message).isEmpty()
+        assertThat(error.technical).isEqualTo("Vertex AI Authentication Failed: Service account credentials are missing")
+        assertThat(error.technical).doesNotContain("private_key")
+        assertThat(error.toString()).doesNotContain(error.technical)
     }
 
     @Test
@@ -53,9 +62,12 @@ class VertexCredentialTest {
         val error = protocol.sendPrompt(PromptRequest(messages = emptyList(), model = "fake-model"))
             .toList().filterIsInstance<StreamChunk.Error>().single()
 
-        assertThat(error.message).isEqualTo("Vertex AI Authentication Failed: Service account credentials are incomplete")
-        assertThat(error.message).doesNotContain("private_key")
-        assertThat(error.message).doesNotContain("/fake/secret.json")
-        assertThat(error.message).doesNotContain(credentialJson)
+        assertThat(error.code).isEqualTo(GenerationFailureCode.AUTH)
+        assertThat(error.message).isEmpty()
+        assertThat(error.technical).isEqualTo("Vertex AI Authentication Failed: Service account credentials are incomplete")
+        assertThat(error.technical).doesNotContain("private_key")
+        assertThat(error.technical).doesNotContain("/fake/secret.json")
+        assertThat(error.technical).doesNotContain(credentialJson)
+        assertThat(error.toString()).doesNotContain(error.technical)
     }
 }

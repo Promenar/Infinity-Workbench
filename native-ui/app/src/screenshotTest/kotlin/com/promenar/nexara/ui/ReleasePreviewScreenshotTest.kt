@@ -1,0 +1,1498 @@
+package com.promenar.nexara.ui
+
+import android.content.res.Configuration
+import android.net.Uri
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import com.android.tools.screenshot.PreviewTest
+import com.promenar.nexara.R
+import com.promenar.nexara.data.model.ApprovalRequest
+import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.backup.BackupExportOptions
+import com.promenar.nexara.data.backup.PendingRestoreMetadata
+import com.promenar.nexara.data.local.db.entity.FileEntry
+import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.webdav.RemoteBackup
+import com.promenar.nexara.data.remote.webdav.WebDavConfig
+import com.promenar.nexara.data.repository.BackupUploadReceipt
+import com.promenar.nexara.data.security.SecretId
+import com.promenar.nexara.data.security.SecretStore
+import com.promenar.nexara.domain.generation.GenerationFailure
+import com.promenar.nexara.domain.generation.GenerationFailureCode
+import com.promenar.nexara.domain.generation.GenerationFailureCodec
+import com.promenar.nexara.domain.model.Agent
+import com.promenar.nexara.domain.repository.IWorkspaceRepository
+import com.promenar.nexara.onboarding.OnboardingState
+import com.promenar.nexara.onboarding.OnboardingStep
+import com.promenar.nexara.ui.chat.ChatScreenActions
+import com.promenar.nexara.ui.chat.ChatScreenContent
+import com.promenar.nexara.ui.chat.ChatScreenState
+import com.promenar.nexara.ui.chat.ChatUiState
+import com.promenar.nexara.ui.chat.GenerationStatus
+import com.promenar.nexara.ui.chat.ResourceExplorerSheetActions
+import com.promenar.nexara.ui.chat.ResourceExplorerSheetContent
+import com.promenar.nexara.ui.chat.ResourceExplorerSheetState
+import com.promenar.nexara.ui.chat.ResourceExplorerTab
+import com.promenar.nexara.ui.chat.components.FilesPanel
+import com.promenar.nexara.ui.chat.components.RecycleBinPanel
+import com.promenar.nexara.ui.chat.components.RecycleBinPermanentDeleteDialog
+import com.promenar.nexara.ui.chat.components.RecycleOperation
+import com.promenar.nexara.ui.chat.components.RecycleOperationState
+import com.promenar.nexara.ui.common.NexaraGlassCard
+import com.promenar.nexara.ui.common.SecretField
+import com.promenar.nexara.ui.common.status.NoticeSeverity
+import com.promenar.nexara.ui.common.status.UiStatusNotice
+import com.promenar.nexara.ui.hub.AgentDisplayItem
+import com.promenar.nexara.ui.hub.AgentHubScreenActions
+import com.promenar.nexara.ui.hub.AgentHubScreenContent
+import com.promenar.nexara.ui.hub.AgentHubScreenState
+import com.promenar.nexara.ui.hub.SettingsTab
+import com.promenar.nexara.ui.hub.UserSettingsHomeScreenActions
+import com.promenar.nexara.ui.hub.UserSettingsHomeScreenContent
+import com.promenar.nexara.ui.hub.UserSettingsHomeScreenState
+import com.promenar.nexara.ui.rag.DocEditorConfirmation
+import com.promenar.nexara.ui.rag.DocEditorFailureCode
+import com.promenar.nexara.ui.rag.DocEditorPhase
+import com.promenar.nexara.ui.rag.DocEditorScreenActions
+import com.promenar.nexara.ui.rag.DocEditorScreenContent
+import com.promenar.nexara.ui.rag.DocEditorScreenState
+import com.promenar.nexara.ui.rag.DocEditorUiState
+import com.promenar.nexara.ui.rag.DocEditorViewMode
+import com.promenar.nexara.ui.rag.IndexingNotice
+import com.promenar.nexara.ui.rag.PortalTab
+import com.promenar.nexara.ui.rag.RagHomeScreenActions
+import com.promenar.nexara.ui.rag.RagHomeScreenContent
+import com.promenar.nexara.ui.rag.RagHomeScreenState
+import com.promenar.nexara.ui.rag.RagStats
+import com.promenar.nexara.ui.settings.ModelSyncNotice
+import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.ui.settings.ModelTestState
+import com.promenar.nexara.ui.settings.BackupOperations
+import com.promenar.nexara.ui.settings.BackupRestartRequester
+import com.promenar.nexara.ui.settings.BackupSettingsScreen
+import com.promenar.nexara.ui.settings.BackupSettingsStore
+import com.promenar.nexara.ui.settings.BackupViewModel
+import com.promenar.nexara.ui.settings.ProviderModelsScreenActions
+import com.promenar.nexara.ui.settings.ProviderModelsScreenContent
+import com.promenar.nexara.ui.settings.ProviderModelsScreenState
+import com.promenar.nexara.ui.theme.NexaraColors
+import com.promenar.nexara.ui.theme.NexaraTheme
+import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.welcome.WelcomeScreen
+import com.promenar.nexara.share.core.ShareImportItem
+import com.promenar.nexara.share.core.ShareImportStatus
+import com.promenar.nexara.share.core.ShareRejectReason
+import java.io.InputStream
+import java.lang.reflect.Proxy
+import java.time.LocalDateTime
+import java.time.ZoneId
+import kotlinx.coroutines.flow.flowOf
+
+private const val PHONE_WIDTH_DP = 412
+private const val PHONE_HEIGHT_DP = 892
+private const val LANDSCAPE_WIDTH_DP = 892
+private const val LANDSCAPE_HEIGHT_DP = 412
+
+@PreviewTest
+@Preview(
+    name = "Onboarding language English",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun onboardingLanguageReleasePreview() {
+    ReleasePreviewSurface {
+        WelcomeScreen(onLanguageSelected = {})
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Onboarding language Chinese tablet",
+    widthDp = 840,
+    heightDp = 900,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun onboardingLanguageTabletReleasePreview() {
+    ReleasePreviewSurface {
+        WelcomeScreen(onLanguageSelected = {})
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Onboarding language font scale 2",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun onboardingLanguageLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        WelcomeScreen(onLanguageSelected = {})
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Onboarding model list Chinese",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun onboardingModelListReleasePreview() {
+    ReleasePreviewSurface {
+        WelcomeScreen(
+            onLanguageSelected = {},
+            state = OnboardingState(
+                step = OnboardingStep.MODEL,
+                languageCode = "zh",
+                providerId = "preview-provider",
+            ),
+            models = listOf(
+                ModelInfo(
+                    name = "MiniMax-M3",
+                    id = "preview-provider::minimax-m3",
+                    description = "Multimodal",
+                    enabled = true,
+                    type = "chat",
+                ),
+                ModelInfo(
+                    name = "DeepSeek Reasoning",
+                    id = "preview-provider::deepseek-reasoning",
+                    description = "Reasoning",
+                    enabled = true,
+                    type = "reasoning",
+                ),
+            ),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Provider masked API key",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = 220,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun providerMaskedKeyReleasePreview() {
+    ReleasePreviewSurface {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.provider_form_label_api_key),
+                style = NexaraTypography.labelMedium,
+                color = NexaraColors.OnSurfaceVariant,
+            )
+            SecretField(
+                value = "",
+                onValueChange = {},
+                hasStoredSecret = true,
+                onRevealRequest = { null },
+                onClear = {},
+                placeholder = stringResource(R.string.provider_form_placeholder_api_key),
+            )
+            Text(
+                text = stringResource(R.string.provider_form_secure_storage),
+                style = NexaraTypography.labelMedium,
+                color = NexaraColors.OnSurfaceVariant,
+            )
+        }
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Empty chat English",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun emptyChatReleasePreview() {
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(agentName = "Nexara Assistant"),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Streaming chat Chinese",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun streamingChatReleasePreview() {
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    agentName = "Nexara 助手",
+                    messages = listOf(
+                        previewMessage("user-1", MessageRole.USER, "请总结这份发行检查清单。"),
+                        previewMessage(
+                            "assistant-1",
+                            MessageRole.ASSISTANT,
+                            "正在核对安全、备份、后台生成与视觉回归门禁……",
+                        ),
+                    ),
+                    isGenerating = true,
+                    status = GenerationStatus.RECEIVING,
+                    streamingContent = "正在核对安全、备份、后台生成与视觉回归门禁……",
+                ),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Chat error font scale 2",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatErrorLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    agentName = "Nexara Assistant",
+                    messages = listOf(
+                        previewMessage("user-error", MessageRole.USER, "Continue the release audit."),
+                        previewMessage(
+                            id = "assistant-error",
+                            role = MessageRole.ASSISTANT,
+                            content = "",
+                            isError = true,
+                            errorMessage = GenerationFailureCodec.encode(
+                                GenerationFailure.of(GenerationFailureCode.SERVER),
+                            ),
+                        ),
+                    ),
+                    status = GenerationStatus.ERROR,
+                ),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Chat approval tablet English",
+    widthDp = 840,
+    heightDp = 900,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatApprovalTabletReleasePreview() {
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    agentName = "Nexara Assistant",
+                    messages = listOf(
+                        previewMessage("user-approval", MessageRole.USER, "Prepare the release notes."),
+                    ),
+                    approvalRequest = ApprovalRequest(
+                        toolName = "write_file",
+                        args = "{\"path\":\"RELEASE_NOTES.md\"}",
+                        reason = "Writing a release artifact requires approval.",
+                    ),
+                ),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Backup settings English",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun backupSettingsReleasePreview() {
+    val viewModel = remember {
+        BackupViewModel(
+            operations = PreviewBackupOperations,
+            settings = PreviewBackupSettings,
+            secrets = PreviewSecretStore(),
+            restartRequester = BackupRestartRequester {},
+            clock = { 0L },
+            synchronousIoForTests = true,
+        )
+    }
+    ReleasePreviewSurface {
+        BackupSettingsScreen(onNavigateBack = {}, viewModel = viewModel)
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Agent hub English",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun agentHubReleasePreview() {
+    ReleasePreviewSurface {
+        AgentHubScreenContent(
+            state = AgentHubScreenState(
+                displayAgents = listOf(
+                    AgentDisplayItem(
+                        agent = Agent(
+                            id = "agent-coder",
+                            name = "Coding Expert",
+                            description = "Full-stack development and architecture design",
+                            icon = "A",
+                            color = "#5B8DEF",
+                            isPinned = true,
+                        ),
+                        title = "Coding Expert",
+                        subtitle = "Full-stack development and architecture design",
+                    ),
+                    AgentDisplayItem(
+                        agent = Agent(
+                            id = "agent-writer",
+                            name = "Creative Writing",
+                            description = "Literary creation, translation and polishing",
+                            icon = "A",
+                            color = "#C0C1FF",
+                        ),
+                        title = "Creative Writing",
+                        subtitle = "Literary creation, translation and polishing",
+                    ),
+                    AgentDisplayItem(
+                        agent = Agent(
+                            id = "agent-default",
+                            name = "Nexara Assistant",
+                            description = "General AI assistant with streaming chat and knowledge retrieval",
+                            icon = "A",
+                            color = "#7AE582",
+                        ),
+                        title = "Nexara Assistant",
+                        subtitle = "General AI assistant with streaming chat and knowledge retrieval",
+                    ),
+                ),
+            ),
+            actions = AgentHubScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Agent hub empty Chinese large font",
+    widthDp = 360,
+    heightDp = 640,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun agentHubEmptyLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        AgentHubScreenContent(
+            state = AgentHubScreenState(displayAgents = emptyList()),
+            actions = AgentHubScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Provider models populated English",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun providerModelsReleasePreviewEnglish() {
+    ReleasePreviewSurface {
+        ProviderModelsScreenContent(
+            state = ProviderModelsScreenState(
+                providerName = "Cloud Provider with Long Enterprise Name",
+                providerId = "provider-preview-alpha",
+                isFetching = false,
+                syncNotice = ModelSyncNotice.synced(newCount = 1, updatedCount = 0),
+                modelTestStates = mapOf(
+                    "provider-preview-alpha::qwen3-72b-thinking-multimodal" to ModelTestState.Success(132),
+                ),
+                models = listOf(
+                    ModelInfo(
+                        name = "Longform Multimodal Reasoning Model Very Long Name with Stable Prefix",
+                        id = "provider-preview-alpha::qwen3-72b-thinking-multimodal",
+                        description = "preview",
+                        enabled = true,
+                        type = "reasoning",
+                        contextLength = 65536,
+                        capabilities = listOf("chat", "reasoning", "vision", "internet"),
+                        providerId = "provider-preview-alpha",
+                        providerName = "Cloud Alpha",
+                        remoteModelId = "qwen3-72b-thinking-multimodal",
+                        maxOutputTokens = 8192,
+                        knowledgeCutoff = "20250201",
+                    ),
+                ),
+            ),
+            actions = ProviderModelsScreenActions(
+                onRefresh = {},
+                onAdd = { _, _ -> true },
+                onDisableAll = {},
+                onDeleteAll = {},
+                onUpdate = {},
+                onToggle = {},
+                onTest = {},
+                onCancelTest = {},
+                onDelete = {},
+                onClearNotice = {},
+            ),
+            onNavigateBack = {},
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Provider models chinese large font",
+    widthDp = 840,
+    heightDp = 900,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun providerModelsReleasePreviewChineseLargeFont() {
+    ReleasePreviewSurface {
+        ProviderModelsScreenContent(
+            state = ProviderModelsScreenState(
+                providerName = "腾讯云-企业模型服务入口（稳定版本）",
+                providerId = "provider-preview-beta",
+                isFetching = false,
+                syncNotice = null,
+                modelTestStates = mapOf(
+                    "provider-preview-beta::qwen3-235b-long-name-with-capabilities" to ModelTestState.Success(298),
+                ),
+                models = listOf(
+                    ModelInfo(
+                        name = "超长模型名称示例：多模态推理与结构化输出协同增强版",
+                        id = "provider-preview-beta::qwen3-235b-long-name-with-capabilities",
+                        description = "preview",
+                        enabled = true,
+                        type = "chat",
+                        contextLength = 131072,
+                        capabilities = listOf("chat", "structuredoutput", "computeruse", "audioinput", "audiooutput"),
+                        providerId = "provider-preview-beta",
+                        providerName = "Cloud Beta",
+                        remoteModelId = "qwen3-235b-long-name-with-capabilities",
+                        maxOutputTokens = 12000,
+                        knowledgeCutoff = "20240201",
+                    ),
+                ),
+            ),
+            actions = ProviderModelsScreenActions(
+                onRefresh = {},
+                onAdd = { _, _ -> true },
+                onDisableAll = {},
+                onDeleteAll = {},
+                onUpdate = {},
+                onToggle = {},
+                onTest = {},
+                onCancelTest = {},
+                onDelete = {},
+                onClearNotice = {},
+            ),
+            onNavigateBack = {},
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG home documents English",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragHomeDocumentsReleasePreviewEnglish() {
+    ReleasePreviewSurface {
+        RagHomeScreenContent(
+            state = RagHomeScreenState(
+                currentTab = PortalTab.DOCUMENTS,
+                searchQuery = "",
+                selectedIds = mutableListOf(),
+                workspaceRootUuid = "preview-root",
+                folders = emptyList(),
+                folderStats = emptyMap(),
+                stats = RagStats(documentCount = 2, memoryCount = 1, graphEntityCount = 8),
+                memoryVectors = emptyList(),
+                isIndexing = false,
+                indexingProgress = 1f,
+                indexingNotice = UiStatusNotice(NoticeSeverity.Success, IndexingNotice.CODE_COMPLETED),
+                canRetryLastFailedIndex = false,
+                isRetryingLastFailedIndex = false,
+                indexingFileIds = emptySet(),
+                kgExtractionStates = emptyMap(),
+            ),
+            actions = RagHomeScreenActions(),
+            documentsContent = { modifier, _, _ ->
+                PreviewRagDocuments(modifier)
+            },
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG home selected documents phone",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragHomeSelectedDocumentsPhoneReleasePreview() {
+    ReleasePreviewSurface {
+        RagHomeScreenContent(
+            state = RagHomeScreenState(
+                currentTab = PortalTab.DOCUMENTS,
+                searchQuery = "",
+                selectedIds = mutableListOf("preview-doc-1", "preview-doc-2"),
+                workspaceRootUuid = "preview-root",
+                folders = emptyList(),
+                folderStats = emptyMap(),
+                stats = RagStats(documentCount = 2, memoryCount = 1, graphEntityCount = 8),
+                memoryVectors = emptyList(),
+                isIndexing = false,
+                indexingProgress = 0f,
+                canRetryLastFailedIndex = false,
+                isRetryingLastFailedIndex = false,
+                indexingFileIds = emptySet(),
+                kgExtractionStates = emptyMap(),
+            ),
+            actions = RagHomeScreenActions(),
+            documentsContent = { modifier, _, _ -> PreviewRagDocuments(modifier) },
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG home memory Chinese large font",
+    widthDp = 840,
+    heightDp = 900,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragHomeMemoryChineseLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        RagHomeScreenContent(
+            state = RagHomeScreenState(
+                currentTab = PortalTab.MEMORY,
+                searchQuery = "",
+                selectedIds = mutableListOf(),
+                workspaceRootUuid = "preview-root",
+                folders = emptyList(),
+                folderStats = emptyMap(),
+                stats = RagStats(documentCount = 2, memoryCount = 0, graphEntityCount = 8),
+                memoryVectors = emptyList(),
+                isIndexing = false,
+                indexingProgress = 0f,
+                canRetryLastFailedIndex = false,
+                isRetryingLastFailedIndex = false,
+                indexingFileIds = emptySet(),
+                kgExtractionStates = emptyMap(),
+            ),
+            actions = RagHomeScreenActions(),
+            documentsContent = { modifier, _, _ -> Box(modifier) },
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "DocEditor loading English phone",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun docEditorLoadingEnglishPhoneReleasePreview() {
+    ReleasePreviewSurface {
+        DocEditorScreenContent(
+            state = DocEditorScreenState(
+                editorState = DocEditorUiState(
+                    phase = DocEditorPhase.Loading,
+                    workspaceRootUuid = PREVIEW_DOC_EDITOR_ROOT_ID,
+                    documentId = PREVIEW_DOC_EDITOR_DOCUMENT_ID,
+                    documentEpoch = PREVIEW_DOC_EDITOR_EPOCH,
+                ),
+            ),
+            actions = DocEditorScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "DocEditor load error Chinese large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun docEditorLoadErrorChineseLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        DocEditorScreenContent(
+            state = DocEditorScreenState(
+                editorState = DocEditorUiState(
+                    phase = DocEditorPhase.LoadError,
+                    workspaceRootUuid = PREVIEW_DOC_EDITOR_ROOT_ID,
+                    documentId = PREVIEW_DOC_EDITOR_DOCUMENT_ID,
+                    documentEpoch = PREVIEW_DOC_EDITOR_EPOCH,
+                    failureCode = DocEditorFailureCode.LoadFailed,
+                ),
+            ),
+            actions = DocEditorScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "DocEditor ready edit dirty English phone",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun docEditorReadyEditDirtyEnglishPhoneReleasePreview() {
+    ReleasePreviewSurface {
+        DocEditorScreenContent(
+            state = DocEditorScreenState(
+                editorState = previewDocEditorState(
+                    title = "Nexara release checklist — edited",
+                    content = PREVIEW_DOC_EDITOR_EDIT_CONTENT,
+                    titleDirty = true,
+                    contentDirty = true,
+                ),
+                viewMode = DocEditorViewMode.EDIT,
+            ),
+            actions = DocEditorScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "DocEditor save conflict Chinese large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun docEditorSaveConflictChineseLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        DocEditorScreenContent(
+            state = DocEditorScreenState(
+                editorState = previewDocEditorState(
+                    phase = DocEditorPhase.SaveConflict,
+                    title = "发行检查清单（本地修改）",
+                    content = PREVIEW_DOC_EDITOR_CONFLICT_CONTENT,
+                    titleDirty = true,
+                    contentDirty = true,
+                    failureCode = DocEditorFailureCode.ContentConflict,
+                    conflictCurrentHash = PREVIEW_DOC_EDITOR_CONFLICT_HASH,
+                ),
+                viewMode = DocEditorViewMode.EDIT,
+            ),
+            actions = DocEditorScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "DocEditor rich markdown preview English",
+    widthDp = 412,
+    heightDp = 892,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun docEditorRichMarkdownPreviewEnglishReleasePreview() {
+    ReleasePreviewSurface {
+        DocEditorScreenContent(
+            state = DocEditorScreenState(
+                editorState = previewDocEditorState(
+                    title = "Release readiness notes",
+                    content = PREVIEW_DOC_EDITOR_RICH_MARKDOWN,
+                    sizeBytes = 768L,
+                ),
+                viewMode = DocEditorViewMode.PREVIEW,
+            ),
+            actions = DocEditorScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "DocEditor split English tablet",
+    widthDp = 840,
+    heightDp = 900,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun docEditorSplitEnglishTabletReleasePreview() {
+    ReleasePreviewSurface {
+        DocEditorScreenContent(
+            state = DocEditorScreenState(
+                editorState = previewDocEditorState(
+                    title = "Architecture decision record",
+                    content = PREVIEW_DOC_EDITOR_RICH_MARKDOWN,
+                    sizeBytes = 768L,
+                ),
+                viewMode = DocEditorViewMode.SPLIT,
+            ),
+            actions = DocEditorScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "DocEditor large file Chinese tablet",
+    widthDp = 840,
+    heightDp = 900,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun docEditorLargeFileChineseTabletReleasePreview() {
+    ReleasePreviewSurface {
+        DocEditorScreenContent(
+            state = DocEditorScreenState(
+                editorState = previewDocEditorState(
+                    title = "大型知识库归档.md",
+                    content = "",
+                    sizeBytes = 1_048_577L,
+                    isLargeFile = true,
+                ),
+            ),
+            actions = DocEditorScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "DocEditor unsaved discard English phone",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun docEditorUnsavedDiscardEnglishPhoneReleasePreview() {
+    ReleasePreviewSurface {
+        DocEditorScreenContent(
+            state = DocEditorScreenState(
+                editorState = previewDocEditorState(
+                    title = "Unsaved release notes",
+                    content = PREVIEW_DOC_EDITOR_EDIT_CONTENT,
+                    titleDirty = true,
+                    contentDirty = true,
+                ),
+                viewMode = DocEditorViewMode.EDIT,
+                confirmation = DocEditorConfirmation.DiscardChanges,
+            ),
+            actions = DocEditorScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Resource Explorer files import English",
+    widthDp = 412,
+    heightDp = 892,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun resourceExplorerFilesImportEnglishReleasePreview() {
+    val files = listOf(PREVIEW_RESOURCE_FILE_LONG, PREVIEW_RESOURCE_FILE_SECONDARY)
+    ResourceExplorerReleasePreviewContainer {
+        ResourceExplorerSheetContent(
+            state = ResourceExplorerSheetState(
+                selectedTab = ResourceExplorerTab.Files,
+                recycleBinCount = 1,
+                workspaceReady = true,
+                importItems = PREVIEW_RESOURCE_IMPORT_RESULTS,
+            ),
+            actions = ResourceExplorerSheetActions(),
+            filesContent = {
+                FilesPanel(
+                    workspaceRootUuid = PREVIEW_RESOURCE_ROOT_ID,
+                    workspaceRepo = PREVIEW_RESOURCE_REPOSITORY,
+                    rootFiles = files,
+                    nowMillis = PREVIEW_RESOURCE_NOW_MILLIS,
+                )
+            },
+            recycleBinContent = {},
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Resource Explorer recycle running Chinese large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun resourceExplorerRecycleRunningChineseLargeFontReleasePreview() {
+    ResourceExplorerReleasePreviewContainer {
+        ResourceExplorerSheetContent(
+            state = ResourceExplorerSheetState(
+                selectedTab = ResourceExplorerTab.RecycleBin,
+                recycleBinCount = 1,
+                workspaceReady = true,
+            ),
+            actions = ResourceExplorerSheetActions(),
+            filesContent = {},
+            recycleBinContent = {
+                RecycleBinPanel(
+                    files = listOf(PREVIEW_RECYCLED_RESOURCE_FILE),
+                    operationState = RecycleOperationState.Running(
+                        operation = RecycleOperation.PermanentDelete,
+                        itemUuids = listOf(PREVIEW_RECYCLED_RESOURCE_FILE.uuid),
+                    ),
+                    onRestoreFiles = {},
+                    onPermanentlyDeleteFiles = {},
+                    onEmptyRecycleBin = {},
+                    onRetryOperation = {},
+                    onClearOperationState = {},
+                    nowMillis = PREVIEW_RESOURCE_NOW_MILLIS,
+                )
+            },
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Resource Explorer recycle delete confirm Chinese large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun resourceExplorerRecycleDeleteConfirmChineseLargeFontReleasePreview() {
+    ResourceExplorerReleasePreviewContainer {
+        ResourceExplorerSheetContent(
+            state = ResourceExplorerSheetState(
+                selectedTab = ResourceExplorerTab.RecycleBin,
+                recycleBinCount = 1,
+                workspaceReady = true,
+            ),
+            actions = ResourceExplorerSheetActions(),
+            filesContent = {},
+            recycleBinContent = {
+                RecycleBinPanel(
+                    files = listOf(PREVIEW_RECYCLED_RESOURCE_FILE),
+                    operationState = RecycleOperationState.Idle,
+                    onRestoreFiles = {},
+                    onPermanentlyDeleteFiles = {},
+                    onEmptyRecycleBin = {},
+                    onRetryOperation = {},
+                    onClearOperationState = {},
+                    nowMillis = PREVIEW_RESOURCE_NOW_MILLIS,
+                )
+            },
+        )
+        RecycleBinPermanentDeleteDialog(
+            target = PREVIEW_RECYCLED_RESOURCE_FILE,
+            onConfirm = {},
+            onDismiss = {},
+        )
+    }
+}
+
+@Composable
+private fun PreviewRagDocuments(modifier: Modifier) {
+    Column(
+        modifier = modifier.padding(top = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        PreviewRagEntry(
+            isFolder = true,
+            title = "Product research",
+            subtitle = "1 document",
+        )
+        PreviewRagEntry(
+            isFolder = false,
+            title = "Nexara release checklist.pdf",
+            subtitle = "Indexed · PDF · 248 KB",
+        )
+        PreviewRagEntry(
+            isFolder = false,
+            title = "Architecture decisions.md",
+            subtitle = "Indexed · Markdown · 18 KB",
+        )
+    }
+}
+
+@Composable
+private fun PreviewRagEntry(
+    isFolder: Boolean,
+    title: String,
+    subtitle: String,
+) {
+    NexaraGlassCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = if (isFolder) Icons.Rounded.Folder else Icons.Rounded.Description,
+                contentDescription = null,
+                tint = NexaraColors.Primary,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.size(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                Text(subtitle, style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
+            }
+        }
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "User settings app Chinese tablet",
+    widthDp = 840,
+    heightDp = 900,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun userSettingsAppChineseTabletReleasePreview() {
+    ReleasePreviewSurface {
+        UserSettingsHomeScreenContent(
+            state = UserSettingsHomeScreenState(
+                selectedTab = SettingsTab.APP,
+                userName = "黎明",
+                tokenCost = "¥12.46",
+                language = "zh",
+                summaryModelName = "MiniMax-M3",
+                imageModelName = "FLUX.1 Schnell",
+                embeddingModelName = "bge-m3",
+                rerankModelName = "Cohere Rerank v3",
+                versionName = "0.2-beta",
+                localInferenceAvailable = false,
+            ),
+            actions = UserSettingsHomeScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "User settings provider English large font",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun userSettingsProviderLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        UserSettingsHomeScreenContent(
+            state = UserSettingsHomeScreenState(
+                selectedTab = SettingsTab.PROVIDER,
+                providers = listOf(
+                    ProviderListItem(
+                        id = "provider-openai-internal",
+                        name = "OpenAI Compatible Internal Aggregator with very long enterprise label",
+                        typeName = ProtocolType.Generic_OpenAI_Compat.displayName,
+                        baseUrl = "https://internal-aggregator.openai-proxy.example.com/api/v1/openai/compatible",
+                    ),
+                    ProviderListItem(
+                        id = "provider-vertex-production",
+                        name = "Google Vertex AI Production Workspace for regional deployments",
+                        typeName = ProtocolType.Google_VertexAI.displayName,
+                        baseUrl = "https://generativelanguage.googleapis.com/v1beta/projects/nexara-production",
+                    ),
+                ),
+                localInferenceAvailable = false,
+            ),
+            actions = UserSettingsHomeScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Empty chat English landscape",
+    widthDp = LANDSCAPE_WIDTH_DP,
+    heightDp = LANDSCAPE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun emptyChatEnglishLandscapeReleasePreview() {
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(agentName = "Nexara Assistant"),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Streaming chat Chinese landscape",
+    widthDp = LANDSCAPE_WIDTH_DP,
+    heightDp = LANDSCAPE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun streamingChatChineseLandscapeReleasePreview() {
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    agentName = "Nexara 助手",
+                    messages = listOf(
+                        previewMessage("user-1", MessageRole.USER, "请总结这份发行检查清单。"),
+                        previewMessage(
+                            "assistant-1",
+                            MessageRole.ASSISTANT,
+                            "正在核对安全、备份、后台生成与视觉回归门禁……",
+                        ),
+                    ),
+                    isGenerating = true,
+                    status = GenerationStatus.RECEIVING,
+                    streamingContent = "正在核对安全、备份、后台生成与视觉回归门禁……",
+                ),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "DocEditor ready edit dirty English landscape",
+    widthDp = LANDSCAPE_WIDTH_DP,
+    heightDp = LANDSCAPE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun docEditorReadyEditDirtyEnglishLandscapeReleasePreview() {
+    ReleasePreviewSurface {
+        DocEditorScreenContent(
+            state = DocEditorScreenState(
+                editorState = previewDocEditorState(
+                    title = "Nexara release checklist — edited",
+                    content = PREVIEW_DOC_EDITOR_EDIT_CONTENT,
+                    titleDirty = true,
+                    contentDirty = true,
+                ),
+                viewMode = DocEditorViewMode.EDIT,
+            ),
+            actions = DocEditorScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Provider models Chinese landscape",
+    widthDp = LANDSCAPE_WIDTH_DP,
+    heightDp = LANDSCAPE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun providerModelsChineseLandscapeReleasePreview() {
+    ReleasePreviewSurface {
+        ProviderModelsScreenContent(
+            state = ProviderModelsScreenState(
+                providerName = "腾讯云-企业模型服务入口（稳定版本）",
+                providerId = "provider-preview-beta",
+                isFetching = false,
+                syncNotice = null,
+                modelTestStates = mapOf(
+                    "provider-preview-beta::qwen3-235b-long-name-with-capabilities" to ModelTestState.Success(298),
+                ),
+                models = listOf(
+                    ModelInfo(
+                        name = "超长模型名称示例：多模态推理与结构化输出协同增强版",
+                        id = "provider-preview-beta::qwen3-235b-long-name-with-capabilities",
+                        description = "preview",
+                        enabled = true,
+                        type = "chat",
+                        contextLength = 131072,
+                        capabilities = listOf("chat", "structuredoutput", "computeruse", "audioinput", "audiooutput"),
+                        providerId = "provider-preview-beta",
+                        providerName = "Cloud Beta",
+                        remoteModelId = "qwen3-235b-long-name-with-capabilities",
+                        maxOutputTokens = 12000,
+                        knowledgeCutoff = "20240201",
+                    ),
+                ),
+            ),
+            actions = ProviderModelsScreenActions(
+                onRefresh = {},
+                onAdd = { _, _ -> true },
+                onDisableAll = {},
+                onDeleteAll = {},
+                onUpdate = {},
+                onToggle = {},
+                onTest = {},
+                onCancelTest = {},
+                onDelete = {},
+                onClearNotice = {},
+            ),
+            onNavigateBack = {},
+        )
+    }
+}
+
+private fun previewMessage(
+    id: String,
+    role: MessageRole,
+    content: String,
+    isError: Boolean = false,
+    errorMessage: String? = null,
+) = Message(
+    id = id,
+    role = role,
+    content = content,
+    isError = isError,
+    errorMessage = errorMessage,
+    createdAt = PREVIEW_LOCAL_TIME.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+)
+
+private fun previewDocEditorState(
+    phase: DocEditorPhase = DocEditorPhase.Ready,
+    title: String = "Nexara release checklist",
+    content: String = PREVIEW_DOC_EDITOR_EDIT_CONTENT,
+    titleDirty: Boolean = false,
+    contentDirty: Boolean = false,
+    sizeBytes: Long = 2_048L,
+    isLargeFile: Boolean = false,
+    failureCode: DocEditorFailureCode? = null,
+    conflictCurrentHash: String? = null,
+) = DocEditorUiState(
+    phase = phase,
+    workspaceRootUuid = PREVIEW_DOC_EDITOR_ROOT_ID,
+    documentId = PREVIEW_DOC_EDITOR_DOCUMENT_ID,
+    documentEpoch = PREVIEW_DOC_EDITOR_EPOCH,
+    title = title,
+    content = content,
+    persistedTitle = "Nexara release checklist",
+    persistedContent = PREVIEW_DOC_EDITOR_PERSISTED_CONTENT,
+    currentHash = PREVIEW_DOC_EDITOR_HASH,
+    totalLines = content.lineSequence().count(),
+    lastModified = PREVIEW_DOC_EDITOR_LAST_MODIFIED,
+    sizeBytes = sizeBytes,
+    titleDirty = titleDirty,
+    contentDirty = contentDirty,
+    isLargeFile = isLargeFile,
+    hasLoadedDocument = true,
+    failureCode = failureCode,
+    conflictCurrentHash = conflictCurrentHash,
+)
+
+private const val PREVIEW_DOC_EDITOR_ROOT_ID = "preview-root-0001"
+private const val PREVIEW_DOC_EDITOR_DOCUMENT_ID = "preview-document-0001"
+private const val PREVIEW_DOC_EDITOR_EPOCH = 7L
+private const val PREVIEW_DOC_EDITOR_LAST_MODIFIED = 1_784_006_400_000L
+private const val PREVIEW_DOC_EDITOR_HASH = "sha256:preview-doc-editor-0001"
+private const val PREVIEW_DOC_EDITOR_CONFLICT_HASH = "sha256:preview-doc-editor-remote-0002"
+private const val PREVIEW_DOC_EDITOR_PERSISTED_CONTENT = "# Release checklist\n\n- Verify safety gates"
+private const val PREVIEW_DOC_EDITOR_EDIT_CONTENT = """# Release checklist
+
+- Verify signed build
+- Run accessibility checks
+- Review screenshot baselines
+
+Status: ready for final review.
+"""
+private const val PREVIEW_DOC_EDITOR_CONFLICT_CONTENT = """# 发行检查清单
+
+- 保留本地安全修订
+- 对比远端最新版本
+- 确认后再重新加载
+"""
+private const val PREVIEW_DOC_EDITOR_RICH_MARKDOWN = """# Release readiness
+
+This **deterministic preview** verifies production Markdown rendering.
+
+- Security gates are complete
+- Accessibility checks are repeatable
+
+`./gradlew :app:validateDebugScreenshotTest`
+
+| Gate | Result |
+| --- | --- |
+| Unit tests | Pass |
+| Visual review | Pending |
+"""
+
+private const val PREVIEW_RESOURCE_ROOT_ID = "resource-root-0001"
+private const val PREVIEW_RESOURCE_NOW_MILLIS = 1_784_006_400_000L
+
+private val PREVIEW_RESOURCE_FILE_LONG = previewResourceFile(
+    uuid = "resource-file-0001",
+    name = "Quarterly-release-readiness-and-commercial-delivery-evidence-archive.md",
+    hash = "sha256:resource-file-0001",
+    mimeType = "text/markdown",
+    sizeBytes = 24_576L,
+    materializedPath = "/Quarterly-release-readiness-and-commercial-delivery-evidence-archive.md",
+)
+
+private val PREVIEW_RESOURCE_FILE_SECONDARY = previewResourceFile(
+    uuid = "resource-file-0002",
+    name = "signed-apk-verification-report.pdf",
+    hash = "sha256:resource-file-0002",
+    mimeType = "application/pdf",
+    sizeBytes = 262_144L,
+    materializedPath = "/signed-apk-verification-report.pdf",
+    vectorizedAt = PREVIEW_RESOURCE_NOW_MILLIS - 3_600_000L,
+)
+
+private val PREVIEW_RECYCLED_RESOURCE_FILE = previewResourceFile(
+    uuid = "resource-recycled-file-0001",
+    name = "这是一个用于验证永久删除确认框与大字体布局不会溢出的超长中文知识库归档文件.md",
+    hash = "sha256:resource-recycled-file-0001",
+    mimeType = "text/markdown",
+    sizeBytes = 65_536L,
+    materializedPath = "/.recycle/resource-recycled-file-0001.md",
+    recycledAt = PREVIEW_RESOURCE_NOW_MILLIS - 259_200_000L,
+    originalMaterializedPath = "/产品研究/发行审计/需要复核的历史文档/超长路径归档文件.md",
+)
+
+private val PREVIEW_RESOURCE_IMPORT_RESULTS = listOf(
+    ShareImportItem(
+        uri = Uri.parse("content://preview/resource-import-created-0001"),
+        displayName = "commercial-release-readiness-evidence-with-a-very-long-name.md",
+        mimeType = "text/markdown",
+        sizeBytes = 12_288L,
+        status = ShareImportStatus.Created,
+        created = PREVIEW_RESOURCE_FILE_LONG,
+        fileUuid = PREVIEW_RESOURCE_FILE_LONG.uuid,
+        indexTaskId = "resource-index-task-0001",
+    ),
+    ShareImportItem(
+        uri = Uri.parse("content://preview/resource-import-rejected-0002"),
+        displayName = "index-scheduling-failure-retry-contract-with-a-very-long-name.pdf",
+        mimeType = "application/pdf",
+        sizeBytes = 524_288L,
+        status = ShareImportStatus.Rejected,
+        reason = ShareRejectReason.IndexScheduleFailed,
+        fileUuid = "resource-import-file-0002",
+    ),
+)
+
+private val PREVIEW_RESOURCE_REPOSITORY = Proxy.newProxyInstance(
+    IWorkspaceRepository::class.java.classLoader,
+    arrayOf(IWorkspaceRepository::class.java),
+) { proxy, method, args ->
+    when (method.name) {
+        "observeChildren", "searchByName" -> flowOf(emptyList<FileEntry>())
+        "toString" -> "ReleasePreviewResourceRepository"
+        "hashCode" -> System.identityHashCode(proxy)
+        "equals" -> proxy === args?.firstOrNull()
+        else -> throw UnsupportedOperationException("预览只读仓库不支持 ${method.name}")
+    }
+} as IWorkspaceRepository
+
+private fun previewResourceFile(
+    uuid: String,
+    name: String,
+    hash: String,
+    mimeType: String,
+    sizeBytes: Long,
+    materializedPath: String,
+    vectorizedAt: Long? = null,
+    recycledAt: Long? = null,
+    originalMaterializedPath: String? = null,
+) = FileEntry(
+    uuid = uuid,
+    workspaceRootUuid = PREVIEW_RESOURCE_ROOT_ID,
+    parentUuid = PREVIEW_RESOURCE_ROOT_ID,
+    name = name,
+    hash = hash,
+    mimeType = mimeType,
+    sizeBytes = sizeBytes,
+    physicalRootPath = "/preview/nexara/resource-explorer",
+    materializedPath = materializedPath,
+    vectorizedAt = vectorizedAt,
+    inRecycleBin = recycledAt != null,
+    recycledAt = recycledAt,
+    originalParentUuid = PREVIEW_RESOURCE_ROOT_ID,
+    originalMaterializedPath = originalMaterializedPath,
+    createdAt = PREVIEW_RESOURCE_NOW_MILLIS - 86_400_000L,
+    updatedAt = PREVIEW_RESOURCE_NOW_MILLIS - 3_600_000L,
+)
+
+private val PREVIEW_LOCAL_TIME: LocalDateTime = LocalDateTime.of(2026, 7, 14, 8, 0)
+
+@Composable
+private fun ResourceExplorerReleasePreviewContainer(content: @Composable () -> Unit) {
+    ReleasePreviewSurface {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(NexaraColors.SurfaceContainer)
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.resource_explorer_title),
+                style = NexaraTypography.headlineMedium,
+                color = NexaraColors.OnSurface,
+            )
+            Spacer(modifier = Modifier.size(16.dp))
+            Box(modifier = Modifier.fillMaxSize()) {
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReleasePreviewSurface(content: @Composable () -> Unit) {
+    NexaraTheme(dynamicColor = false) {
+        Box(modifier = Modifier.fillMaxSize().background(NexaraColors.CanvasBackground)) {
+            content()
+        }
+    }
+}
+
+private object PreviewBackupOperations : BackupOperations {
+    override suspend fun export(options: BackupExportOptions): ByteArray = error("preview only")
+    override suspend fun upload(config: WebDavConfig, options: BackupExportOptions): BackupUploadReceipt =
+        error("preview only")
+    override suspend fun testRemote(config: WebDavConfig): Result<Unit> = error("preview only")
+    override suspend fun listRemote(config: WebDavConfig): List<RemoteBackup> = error("preview only")
+    override suspend fun stageLocalRestore(
+        operationId: String,
+        input: InputStream,
+        password: CharArray?,
+    ): PendingRestoreMetadata = error("preview only")
+    override suspend fun stageRemoteRestore(
+        operationId: String,
+        config: WebDavConfig,
+        selected: RemoteBackup,
+        password: CharArray?,
+    ): PendingRestoreMetadata = error("preview only")
+    override suspend fun discardPendingRestore(operationId: String) = Unit
+    override suspend fun authorizePendingRestore(operationId: String) = Unit
+}
+
+private object PreviewBackupSettings : BackupSettingsStore {
+    override var webDavEnabled = false
+    override var autoBackup = false
+    override var webDavUrl = ""
+    override var webDavUser = ""
+    override var lastBackupTime = 0L
+    override var webDavPasswordPlaintext: String? = null
+}
+
+private class PreviewSecretStore : SecretStore {
+    private val values = mutableMapOf<SecretId, ByteArray>()
+
+    override fun put(id: SecretId, value: ByteArray) {
+        values.remove(id)?.fill(0)
+        values[id] = value.copyOf()
+    }
+
+    override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
+    override fun contains(id: SecretId): Boolean = id in values
+    override fun remove(id: SecretId) {
+        values.remove(id)?.fill(0)
+    }
+}

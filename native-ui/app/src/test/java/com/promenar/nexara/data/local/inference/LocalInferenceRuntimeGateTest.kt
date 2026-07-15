@@ -57,4 +57,47 @@ class LocalInferenceRuntimeGateTest {
         assertThat(available.startupModelPath(true, false, "/models/a.gguf")).isNull()
         assertThat(available.startupModelPath(true, true, " ")).isNull()
     }
+
+    @Test
+    fun `内存压力清理在能力不可用时绝不求值引擎工厂也不执行清理`() {
+        var factoryEvaluations = 0
+        var cleanupExecutions = 0
+        val engineFactory: () -> String = {
+            factoryEvaluations += 1
+            "engine"
+        }
+
+        // 与 NexaraApplication.onTrimMemory 相同的门禁形态：createIfAvailable { ... }?.let { 清理 }
+        val engine = LocalInferenceRuntimeGate(isAvailable = false)
+            .createIfAvailable(engineFactory)
+
+        assertThat(engine).isNull()
+        engine?.let {
+            cleanupExecutions += 1
+        }
+
+        assertThat(factoryEvaluations).isEqualTo(0)
+        assertThat(cleanupExecutions).isEqualTo(0)
+    }
+
+    @Test
+    fun `内存压力清理在能力可用时求值引擎工厂并执行清理`() {
+        var factoryEvaluations = 0
+        var cleanupExecutions = 0
+        val engineFactory: () -> String = {
+            factoryEvaluations += 1
+            "engine"
+        }
+
+        val engine = LocalInferenceRuntimeGate(isAvailable = true)
+            .createIfAvailable(engineFactory)
+
+        assertThat(engine).isEqualTo("engine")
+        engine?.let {
+            cleanupExecutions += 1
+        }
+
+        assertThat(factoryEvaluations).isEqualTo(1)
+        assertThat(cleanupExecutions).isEqualTo(1)
+    }
 }

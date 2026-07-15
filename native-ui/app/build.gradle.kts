@@ -16,6 +16,26 @@ val missingReleaseSigningEnvironment = releaseSigningEnvironment
     .filterValues { it.isNullOrBlank() }
     .keys
     .sorted()
+val deviceE2eEnabled = providers.gradleProperty("nexara.deviceE2e")
+    .map(String::toBoolean)
+    .getOrElse(false)
+val deviceE2eAbi = providers.gradleProperty("nexara.deviceE2eAbi")
+    .getOrElse("x86_64")
+    .trim()
+val allowedE2eBuildTypes = setOf("debug", "deviceTest")
+val selectedDeviceE2eBuildType = providers.gradleProperty("nexara.deviceE2eTestBuildType")
+    .map(String::trim)
+    .orElse(if (deviceE2eEnabled) "deviceTest" else "debug")
+    .get()
+require(deviceE2eAbi in setOf("x86_64", "arm64-v8a")) {
+    "nexara.deviceE2eAbi 仅支持 x86_64 或 arm64-v8a，当前值：$deviceE2eAbi"
+}
+require(selectedDeviceE2eBuildType in allowedE2eBuildTypes) {
+    "nexara.deviceE2eTestBuildType 仅支持 debug 或 deviceTest，当前值：$selectedDeviceE2eBuildType"
+}
+require(!deviceE2eEnabled || selectedDeviceE2eBuildType == "deviceTest") {
+    "启用 nexara.deviceE2e 时，nexara.deviceE2eTestBuildType 必须为 deviceTest，当前值：$selectedDeviceE2eBuildType"
+}
 val finalReleaseArtifactTasks = setOf(
     "assemblerelease",
     "bundlerelease",
@@ -33,6 +53,7 @@ fun releaseArtifactTask(taskName: String): Boolean {
 
 plugins {
     id("com.android.application")
+    id("com.android.compose.screenshot")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
@@ -41,6 +62,7 @@ plugins {
 android {
     namespace = "com.promenar.nexara"
     compileSdk = 36
+    experimentalProperties["android.experimental.enableScreenshotTest"] = true
 
     defaultConfig {
         applicationId = "com.promenar.nexara.native"
@@ -49,7 +71,7 @@ android {
         versionCode = 2
         versionName = "0.2-beta"
 
-        testInstrumentationRunner = "com.promenar.nexara.MainActivityE2eRunner"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         androidResources {
             localeFilters += listOf("en", "zh-rCN")
@@ -82,9 +104,47 @@ android {
                 }
             }
         }
+        create("deviceTest") {
+            applicationIdSuffix = ".deviceTest"
+            isDebuggable = true
+            signingConfig = signingConfigs.getByName("debug")
+            resValue("string", "app_name", "Nexara Native (Device Test)")
+            buildConfigField("boolean", "LOCAL_INFERENCE_AVAILABLE", "false")
+            ndk {
+                abiFilters += listOf(deviceE2eAbi)
+            }
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DNEXARA_ENABLE_LOCAL_INFERENCE=OFF"
+                }
+            }
+        }
+        create("minifiedTest") {
+            applicationIdSuffix = ".minifiedTest"
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
+            resValue("string", "app_name", "Nexara Native (Minified Test)")
+            buildConfigField("boolean", "LOCAL_INFERENCE_AVAILABLE", "false")
+            ndk {
+                abiFilters += listOf(deviceE2eAbi)
+            }
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DNEXARA_ENABLE_LOCAL_INFERENCE=OFF"
+                }
+            }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = false
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             resValue("string", "app_name", "Nexara Native")
             buildConfigField("boolean", "LOCAL_INFERENCE_AVAILABLE", "false")
             externalNativeBuild {
@@ -96,6 +156,17 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+    }
+
+    testBuildType = selectedDeviceE2eBuildType
+
+    sourceSets {
+        getByName("deviceTest") {
+            manifest.srcFile("src/debug/AndroidManifest.xml")
+            java.directories.add("src/debug/java")
+            kotlin.directories.add("src/debug/java")
+            res.directories.add("src/debug/res")
         }
     }
 
@@ -122,6 +193,12 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
+    testOptions {
+        screenshotTests {
+            imageDifferenceThreshold = 0.0001f
         }
     }
 
@@ -152,6 +229,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    screenshotTestImplementation("com.android.tools.screenshot:screenshot-validation-api:0.0.1-alpha15")
+    screenshotTestImplementation("androidx.compose.ui:ui-tooling")
 
     // ─── AndroidX ───
     implementation("androidx.activity:activity-compose:1.9.0")
@@ -232,6 +311,8 @@ dependencies {
     androidTestImplementation("com.google.truth:truth:1.2.0")
     debugImplementation(composeBom)
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    "deviceTestImplementation"(composeBom)
+    "deviceTestImplementation"("androidx.compose.ui:ui-test-manifest")
 }
 
 tasks.withType<Test> {
@@ -240,6 +321,7 @@ tasks.withType<Test> {
 }
 
 afterEvaluate {
+    if (deviceE2eEnabled) return@afterEvaluate
     val debugUnitTest = tasks.named<Test>("testDebugUnitTest")
     tasks.register<Test>("realLlmIntegrationTest") {
         group = "verification"

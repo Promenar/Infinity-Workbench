@@ -7,6 +7,10 @@ import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.SessionOptions
+import com.promenar.nexara.data.model.InferenceParams
+import com.promenar.nexara.data.model.RagOptions
+import com.promenar.nexara.data.model.PostProcessStatus
+import com.promenar.nexara.data.model.UpdateMessageOptions
 import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderResolution
@@ -19,11 +23,18 @@ import com.promenar.nexara.data.remote.protocol.PromptResponse
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.provider.LlmProvider
+import com.promenar.nexara.data.rag.MemoryManager
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.data.repository.ToolExecutionLedger
 import com.promenar.nexara.domain.generation.GenerationRequest
+import com.promenar.nexara.domain.generation.GenerationChunk
+import com.promenar.nexara.domain.generation.GenerationFailure
+import com.promenar.nexara.domain.generation.GenerationFailureCode
+import com.promenar.nexara.domain.generation.GenerationFailureCodec
 import com.promenar.nexara.domain.generation.GenerationRuntimePolicy
+import com.promenar.nexara.domain.generation.GenerationSnapshot
+import com.promenar.nexara.domain.generation.GenerationTerminalStatus
 import com.promenar.nexara.domain.generation.GenerationToolCall
 import com.promenar.nexara.domain.generation.GenerationToolDecision
 import com.promenar.nexara.domain.repository.IAgentRepository
@@ -41,14 +52,407 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.CancellationException
 import org.junit.Test
 
 class DefaultChatGenerationRuntimeTest {
+    @Test
+    fun `postProcess updateStats取消必须传播`() = runTest {
+        val fixture = postProcessFixture()
+        val cancellation = CancellationException("stats-cancel")
+        coEvery { fixture.postProcessor.updateStats(any()) } throws cancellation
+
+        val result = runCatching {
+            fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+        }.exceptionOrNull()
+
+        assertThat(result).isSameInstanceAs(cancellation)
+    }
+
+    @Test
+    fun `postProcess addTurnToMemory取消必须传播`() = runTest {
+        val memory = mockk<MemoryManager>()
+        val fixture = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = true, enableDocs = false),
+            memoryManager = memory,
+        )
+        val cancellation = CancellationException("memory-cancel")
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        coEvery { memory.addTurnToMemory(any(), any(), any(), any(), any()) } throws cancellation
+
+        val result = runCatching {
+            fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+        }.exceptionOrNull()
+
+        assertThat(result).isSameInstanceAs(cancellation)
+    }
+
+    @Test
+    fun `postProcess archiveMessagesToRag取消必须传播`() = runTest {
+        val fixture = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = true, enableDocs = false),
+            inferenceParams = InferenceParams(activeContextWindow = 1),
+            messageCount = 3,
+        )
+        val cancellation = CancellationException("archive-cancel")
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        coEvery {
+            fixture.postProcessor.archiveMessagesToRag(any(), any(), any(), any())
+        } throws cancellation
+
+        val result = runCatching {
+            fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+        }.exceptionOrNull()
+
+        assertThat(result).isSameInstanceAs(cancellation)
+        verify(exactly = 0) {
+            fixture.ui.updatePostProcessTask(any(), PostProcessStatus.ERROR, any(), any())
+        }
+    }
+
+    @Test
+    fun `postProcess summarize取消必须传播`() = runTest {
+        val fixture = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = false, enableDocs = false),
+            inferenceParams = InferenceParams(activeContextWindow = 1, autoSummaryThreshold = 0.0),
+            messageCount = 3,
+        )
+        val cancellation = CancellationException("summary-cancel")
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        coEvery { fixture.summaryManager.summarize(any(), any(), any(), any(), any()) } throws cancellation
+
+        val result = runCatching {
+            fixture.runtime.postProcess(
+                fixture.request,
+                GenerationSnapshot(content = "answer", totalTokens = 1),
+            )
+        }.exceptionOrNull()
+
+        assertThat(result).isSameInstanceAs(cancellation)
+        verify(exactly = 0) {
+            fixture.ui.updatePostProcessTask(any(), PostProcessStatus.ERROR, any(), any())
+        }
+    }
+
+    @Test
+    fun `postProcess普通归档失败不得把异常原文写入任务detail`() = runTest {
+        val fixture = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = true, enableDocs = false),
+            inferenceParams = InferenceParams(activeContextWindow = 1),
+            messageCount = 3,
+        )
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        coEvery {
+            fixture.postProcessor.archiveMessagesToRag(any(), any(), any(), any())
+        } throws IllegalStateException("private-provider-marker")
+
+        fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+
+        val detail = slot<String?>()
+        verify {
+            fixture.ui.updatePostProcessTask(
+                any(),
+                PostProcessStatus.ERROR,
+                any(),
+                captureNullable(detail),
+            )
+        }
+        assertThat(detail.captured).isNull()
+    }
+
+    private data class PostProcessFixture(
+        val runtime: DefaultChatGenerationRuntime,
+        val request: GenerationRequest,
+        val postProcessor: PostProcessor,
+        val summaryManager: SummaryManager,
+        val ui: GenerationUiPort,
+    )
+
+    private fun postProcessFixture(
+        ragOptions: RagOptions? = null,
+        inferenceParams: InferenceParams? = null,
+        messageCount: Int = 1,
+        memoryManager: MemoryManager? = null,
+    ): PostProcessFixture {
+        val messages = (0 until messageCount).map { index ->
+            Message(
+                id = if (index == messageCount - 1) "assistant" else "message-$index",
+                role = if (index == messageCount - 1) MessageRole.ASSISTANT else MessageRole.USER,
+                content = "content-$index",
+            )
+        }
+        val store = ChatStore().apply {
+            update {
+                ChatState(
+                    sessions = listOf(
+                        Session(
+                            id = "session",
+                            agentId = "agent",
+                            modelId = "model",
+                            messages = messages,
+                            ragOptions = ragOptions,
+                            inferenceParams = inferenceParams,
+                        ),
+                    ),
+                )
+            }
+        }
+        val postProcessor = mockk<PostProcessor>()
+        val summaryManager = mockk<SummaryManager>()
+        val ui = mockk<GenerationUiPort>(relaxed = true)
+        every { ui.addPostProcessTask(any(), any()) } returns "task"
+        val contentStrategy = mockk<ChatGenerationContentStrategy>()
+        every { contentStrategy.safeActiveWindow(any(), any()) } answers {
+            firstArg<List<Message>>().takeLast(secondArg())
+        }
+        val runtime = DefaultChatGenerationRuntime(
+            settings = mockk(relaxed = true),
+            applicationScope = kotlinx.coroutines.CoroutineScope(UnconfinedTestDispatcher()),
+            store = store,
+            agentRepository = mockk(),
+            configResolver = mockk(),
+            routeGate = mockk(),
+            contextBuilder = mockk(),
+            messageManager = mockk(relaxed = true),
+            localProviderFactory = { mockk() },
+            provider = mockk(relaxed = true),
+            toolLedger = mockk(),
+            toolExecutor = mockk(),
+            postProcessor = postProcessor,
+            memoryManager = memoryManager,
+            summaryManager = summaryManager,
+            sessionManager = mockk(relaxed = true),
+            contentStrategy = contentStrategy,
+            ui = ui,
+        )
+        DefaultChatGenerationRuntime::class.java.getDeclaredField("preparedContext").apply {
+            isAccessible = true
+            set(
+                runtime,
+                ContextBuilderResult(
+                    searchContext = "",
+                    ragContext = "",
+                    citations = emptyList(),
+                    ragReferences = emptyList(),
+                    ragUsage = null,
+                    finalSystemPrompt = "system",
+                ),
+            )
+        }
+        return PostProcessFixture(
+            runtime,
+            GenerationRequest(
+                "session", "assistant", "user", "question", emptyList(),
+                GenerationRuntimePolicy.BACKGROUND_ALLOWED,
+            ),
+            postProcessor,
+            summaryManager,
+            ui,
+        )
+    }
+    @Test
+    fun `快照与终态持久化只写失败codec安全信封`() = runTest {
+        val messageManager = mockk<MessageManager>(relaxed = true)
+        val ui = mockk<GenerationUiPort>(relaxed = true)
+        val runtime = DefaultChatGenerationRuntime(
+            settings = mockk(relaxed = true),
+            applicationScope = this,
+            store = ChatStore(),
+            agentRepository = mockk(),
+            configResolver = mockk(),
+            routeGate = mockk(),
+            contextBuilder = mockk(),
+            messageManager = messageManager,
+            localProviderFactory = { mockk() },
+            provider = mockk(relaxed = true),
+            toolLedger = mockk(),
+            toolExecutor = mockk(),
+            postProcessor = mockk(),
+            memoryManager = null,
+            summaryManager = mockk(),
+            sessionManager = mockk(),
+            contentStrategy = mockk(),
+            ui = ui,
+        )
+        val request = GenerationRequest(
+            "s-safe", "a-safe", "u-safe", "question", emptyList(),
+            GenerationRuntimePolicy.BACKGROUND_ALLOWED,
+        )
+        val cause = IllegalStateException("provider 原始失败正文")
+        val failure = GenerationFailure(
+            code = GenerationFailureCode.RATE_LIMIT,
+            formatArgs = mapOf(GenerationFailure.KEY_RETRY_AFTER_SECONDS to "37"),
+            technical = "HTTP 429 provider 原始失败正文",
+            cause = cause,
+        )
+        val snapshot = GenerationSnapshot(content = "partial", failure = failure)
+        val options = slot<UpdateMessageOptions>()
+        val terminalError = slot<String?>()
+
+        runtime.persist(request, snapshot)
+        runtime.markTerminal(request, GenerationTerminalStatus.ERROR, snapshot, cause)
+
+        val envelope = GenerationFailureCodec.encode(failure)
+        verify(exactly = 1) {
+            messageManager.updateMessageContent("s-safe", "a-safe", "partial", capture(options))
+        }
+        assertThat(options.captured.errorMessage).isEqualTo(envelope)
+        assertThat(options.captured.errorMessage).doesNotContain("provider")
+        assertThat(options.captured.isError).isTrue()
+        verify(exactly = 1) { ui.setError(failure) }
+        coVerify(exactly = 1) {
+            messageManager.markGenerationTerminal(
+                "s-safe",
+                "a-safe",
+                "partial",
+                "error",
+                captureNullable(terminalError),
+            )
+        }
+        assertThat(terminalError.captured).isEqualTo(envelope)
+        assertThat(terminalError.captured).doesNotContain("provider")
+    }
+
+    @Test
+    fun `StreamChunk错误转GenerationFailure保留稳定码参数与诊断`() = runTest {
+        val settings = mockk<SharedPreferences>()
+        every { settings.getStringSet(any(), any()) } returns emptySet()
+        every { settings.getString(any(), any()) } returns ""
+        every { settings.getFloat(any(), any()) } answers { secondArg() }
+        every { settings.getInt(any(), any()) } answers { secondArg() }
+        val store = ChatStore().apply {
+            update {
+                ChatState(
+                    sessions = listOf(
+                        Session(
+                            id = "s-stream-error",
+                            agentId = "agent",
+                            modelId = "local::model",
+                            messages = listOf(Message("a-stream-error", MessageRole.ASSISTANT, "")),
+                        ),
+                    ),
+                )
+            }
+        }
+        val contextBuilder = mockk<ContextBuilder>()
+        coEvery { contextBuilder.buildContext(any()) } returns ContextBuilderResult(
+            searchContext = "",
+            ragContext = "",
+            citations = emptyList(),
+            ragReferences = emptyList(),
+            ragUsage = null,
+            finalSystemPrompt = "system",
+        )
+        val protocol = object : LlmProtocol {
+            override val protocolType = ProtocolType.Local
+            override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = flow {
+                emit(
+                    StreamChunk.Error(
+                        code = GenerationFailureCode.RATE_LIMIT,
+                        retryable = true,
+                        retryAfterSeconds = 37,
+                        technical = "HTTP 429 provider raw",
+                    ),
+                )
+            }
+
+            override suspend fun sendPromptSync(request: PromptRequest) = PromptResponse("")
+            override fun cancel() = Unit
+        }
+        val provider = LlmProvider(protocol)
+        val router = object : ProviderRequestRouter {
+            override fun resolve(modelId: String): ProviderResolution = ProviderResolution.Success(
+                ResolvedProviderModel(
+                    modelId,
+                    "model",
+                    "local",
+                    "Local",
+                    UnifiedProviderConfig(ProtocolType.Local, "", "", "model"),
+                ),
+            )
+
+            override fun createClient(resolved: ResolvedProviderModel): UnifiedLlmClient = error("local")
+        }
+        val runtime = DefaultChatGenerationRuntime(
+            settings = settings,
+            applicationScope = this,
+            store = store,
+            agentRepository = mockk<IAgentRepository> { coEvery { getById(any()) } returns null },
+            configResolver = AgentConfigResolver(settings),
+            routeGate = ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)),
+            contextBuilder = contextBuilder,
+            messageManager = mockk(relaxed = true),
+            localProviderFactory = { provider },
+            provider = provider,
+            toolLedger = mockk(relaxed = true),
+            toolExecutor = mockk(relaxed = true),
+            postProcessor = mockk(relaxed = true),
+            memoryManager = null,
+            summaryManager = mockk(relaxed = true),
+            sessionManager = mockk(relaxed = true),
+            contentStrategy = mockk(relaxed = true),
+            ui = mockk(relaxed = true),
+        )
+        val request = GenerationRequest(
+            "s-stream-error", "a-stream-error", "u", "question", emptyList(),
+            GenerationRuntimePolicy.BACKGROUND_ALLOWED,
+        )
+
+        runtime.prepare(request)
+        assertThat(runtime.buildContext(request)).isNotNull()
+        val chunk = runtime.stream(request, attempt = 0).toList().single() as GenerationChunk.Failure
+
+        assertThat(chunk.failure.code).isEqualTo(GenerationFailureCode.RATE_LIMIT)
+        assertThat(chunk.failure.retryAfterSeconds).isEqualTo(37)
+        assertThat(chunk.failure.technical).isEqualTo("HTTP 429 provider raw")
+    }
+
+    @Test
+    fun `StreamChunk错误转GenerationFailure保留同一cause实例`() = runTest {
+        val cause = IllegalStateException("provider-private")
+        val chunk = StreamChunk.Error(
+            code = GenerationFailureCode.SERVER,
+            technical = "diagnostic",
+            cause = cause,
+        )
+
+        val mapper = DefaultChatGenerationRuntime::class.java.getDeclaredMethod(
+            "toGenerationChunk",
+            StreamChunk::class.java,
+        ).apply { isAccessible = true }
+        val failure = mapper.invoke(runtimeForPrivateMapping(), chunk) as GenerationChunk.Failure
+
+        assertThat(failure.failure.cause).isSameInstanceAs(cause)
+    }
+
+    private fun runtimeForPrivateMapping() = DefaultChatGenerationRuntime(
+        settings = mockk(relaxed = true),
+        applicationScope = kotlinx.coroutines.CoroutineScope(UnconfinedTestDispatcher()),
+        store = ChatStore(),
+        agentRepository = mockk(),
+        configResolver = mockk(),
+        routeGate = mockk(),
+        contextBuilder = mockk(),
+        messageManager = mockk(relaxed = true),
+        localProviderFactory = { mockk() },
+        provider = mockk(relaxed = true),
+        toolLedger = mockk(),
+        toolExecutor = mockk(),
+        postProcessor = mockk(),
+        memoryManager = null,
+        summaryManager = mockk(),
+        sessionManager = mockk(),
+        contentStrategy = mockk(),
+        ui = mockk(relaxed = true),
+    )
+
     @Test
     fun `RAG引用必须在网络建连前同步持久化且可从Repository重载`() = runTest {
         val settings = mockk<SharedPreferences>()

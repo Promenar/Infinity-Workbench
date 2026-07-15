@@ -63,7 +63,7 @@ class ShareImportViewModelTest {
         val pending = ShareImportItem(uri, "shared.txt", "text/plain", 4)
         val result = CompletableDeferred<ShareImportBatchResult>()
         coEvery { importer.inspect(any()) } returns listOf(pending)
-        coEvery { importer.import(any(), ROOT, null) } coAnswers { result.await() }
+        coEvery { importer.import(any(), ROOT, null, ROOT) } coAnswers { result.await() }
         val viewModel = ShareImportViewModel(
             queue,
             importer,
@@ -180,9 +180,9 @@ class ShareImportViewModelTest {
         )
         coEvery { importer.inspect(any()) } returns listOf(created)
         if (failurePoint == FailurePoint.Import) {
-            coEvery { importer.import(any(), any(), null) } throws IOException("import")
+            coEvery { importer.import(any(), any(), null, any()) } throws IOException("import")
         } else {
-            coEvery { importer.import(any(), any(), null) } returns ShareImportBatchResult(listOf(created))
+            coEvery { importer.import(any(), any(), null, any()) } returns ShareImportBatchResult(listOf(created))
         }
         val indexState = MutableStateFlow(VectorizationQueue.QueueState(emptyList(), null, false, false))
         val viewModel = ShareImportViewModel(

@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
@@ -49,6 +50,7 @@ import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.SnackbarType
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
+import com.promenar.nexara.ui.testing.UiTags
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.launch
 
@@ -316,12 +318,20 @@ fun ChatRoute(
 
     val dismissLabel = stringResource(R.string.common_dismiss)
     val copiedLabel = stringResource(R.string.chat_copy_success)
-    LaunchedEffect(uiState.error, permissionDialogVisible) {
+    val generationErrorMessage = uiState.generationNotice
+        ?.let(GenerationFailureNotice::template)
+        ?.let { resolved -> stringResource(resolved.resourceId, *resolved.args.toTypedArray()) }
+    LaunchedEffect(
+        uiState.generationNotice,
+        generationErrorMessage,
+        uiState.error,
+        permissionDialogVisible,
+    ) {
         if (permissionDialogVisible) {
             snackbarHostState.currentSnackbarData?.dismiss()
             return@LaunchedEffect
         }
-        val message = uiState.error ?: return@LaunchedEffect
+        val message = generationErrorMessage ?: uiState.error ?: return@LaunchedEffect
         snackbarAction = chatViewModel::clearError
         snackbarData = NexaraSnackbarData(message, SnackbarType.ERROR, dismissLabel)
         snackbarHostState.currentSnackbarData?.dismiss()
@@ -332,8 +342,17 @@ fun ChatRoute(
         )
         chatViewModel.clearError()
     }
-    LaunchedEffect(uiState.backgroundWarning, uiState.error, permissionDialogVisible) {
-        if (permissionDialogVisible || uiState.error != null) return@LaunchedEffect
+    LaunchedEffect(
+        uiState.backgroundWarning,
+        uiState.generationNotice,
+        uiState.error,
+        permissionDialogVisible,
+    ) {
+        if (
+            permissionDialogVisible ||
+            uiState.generationNotice != null ||
+            uiState.error != null
+        ) return@LaunchedEffect
         val warning = uiState.backgroundWarning ?: return@LaunchedEffect
         snackbarAction = { chatViewModel.clearBackgroundWarning(warning.taskId) }
         snackbarData = NexaraSnackbarData(warning.message, SnackbarType.INFO, dismissLabel)
@@ -410,6 +429,7 @@ fun ChatRoute(
 
     pendingNotificationPermission?.takeIf { permissionDialogVisible }?.let { request ->
         androidx.compose.material3.AlertDialog(
+            modifier = Modifier.testTag(UiTags.NOTIFICATION_PERMISSION_DIALOG),
             onDismissRequest = {
                 permissionPrefs.edit().putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true).apply()
                 chatViewModel.onNotificationPermissionResult(request.taskId, false)
@@ -418,19 +438,25 @@ fun ChatRoute(
             title = { Text(stringResource(R.string.generation_notification_permission_title)) },
             text = { Text(stringResource(R.string.generation_notification_permission_explanation)) },
             confirmButton = {
-                TextButton(onClick = {
-                    permissionPrefs.edit().putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true).apply()
-                    permissionInFlightTaskId = request.taskId
-                    permissionExplanationTaskId = null
-                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                }) { Text(stringResource(R.string.generation_notification_permission_continue)) }
+                TextButton(
+                    modifier = Modifier.testTag(UiTags.NOTIFICATION_PERMISSION_CONTINUE),
+                    onClick = {
+                        permissionPrefs.edit().putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true).apply()
+                        permissionInFlightTaskId = request.taskId
+                        permissionExplanationTaskId = null
+                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    },
+                ) { Text(stringResource(R.string.generation_notification_permission_continue)) }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    permissionPrefs.edit().putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true).apply()
-                    chatViewModel.onNotificationPermissionResult(request.taskId, false)
-                    permissionExplanationTaskId = null
-                }) { Text(stringResource(R.string.common_btn_cancel)) }
+                TextButton(
+                    modifier = Modifier.testTag(UiTags.NOTIFICATION_PERMISSION_FOREGROUND_ONLY),
+                    onClick = {
+                        permissionPrefs.edit().putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true).apply()
+                        chatViewModel.onNotificationPermissionResult(request.taskId, false)
+                        permissionExplanationTaskId = null
+                    },
+                ) { Text(stringResource(R.string.common_btn_cancel)) }
             },
         )
     }
@@ -491,7 +517,7 @@ fun ChatRoute(
     UnifiedPromptEditor(
         show = activeOverlay == ChatOverlay.PromptEditor,
         onDismiss = { activeOverlayToken = null },
-        onSave = { chatViewModel.updateCustomPrompt(it); activeOverlayToken = null },
+        onSave = chatViewModel::saveCustomPrompt,
         initialText = uiState.session?.customPrompt.orEmpty(),
         title = stringResource(R.string.chat_session_prompt_title),
         placeholder = stringResource(R.string.chat_session_prompt_placeholder),

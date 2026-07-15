@@ -76,7 +76,7 @@ class DefaultGenerationCoordinator(
         } catch (failure: Throwable) {
             presentationStore.finish(request.sessionId, taskId)
             return@withLock StartGenerationResult.Rejected(
-                GenerationError(failure.message ?: "Generation rejected", failure),
+                GenerationError(failure.failureOrUnknown()),
             )
         }
         lateinit var task: RunningTask
@@ -89,7 +89,12 @@ class DefaultGenerationCoordinator(
                     request,
                     startedAt,
                     GenerationPhase.CANCELLED,
-                    GenerationError(cancelled.message ?: "Generation cancelled", cancelled),
+                    GenerationError(
+                        com.promenar.nexara.domain.generation.GenerationFailure.unknown(
+                            technical = cancelled.message,
+                            cause = cancelled,
+                        ),
+                    ),
                 )
                 throw cancelled
             } catch (failure: Throwable) {
@@ -98,7 +103,7 @@ class DefaultGenerationCoordinator(
                     request,
                     startedAt,
                     GenerationPhase.FAILED,
-                    GenerationError(failure.message ?: "Generation failed", failure),
+                    GenerationError(failure.failureOrUnknown()),
                 )
             } finally {
                 mutex.withLock {
@@ -189,18 +194,15 @@ class DefaultGenerationCoordinator(
             is GenerationEvent.TargetChanged -> previous.copy(assistantMessageId = event.assistantMessageId)
             is GenerationEvent.Rejected -> previous.copy(
                 phase = GenerationPhase.FAILED,
-                error = GenerationError(event.message, event.cause),
+                error = GenerationError(event.failure),
             )
             is GenerationEvent.PersistenceFailed -> previous.copy(
                 phase = GenerationPhase.PERSISTENCE_FAILED,
-                error = GenerationError(
-                    "生成结果未能持久化：${event.persistenceCause.message ?: "unknown"}",
-                    event.persistenceCause,
-                ),
+                error = GenerationError(event.failure),
             )
             is GenerationEvent.Failed -> previous.copy(
                 phase = GenerationPhase.FAILED,
-                error = GenerationError(event.cause.message ?: "Generation failed", event.cause),
+                error = GenerationError(event.failure),
             )
         }
         sessionState(request.sessionId).value = next

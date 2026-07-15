@@ -69,9 +69,9 @@ class VertexAIProtocol(
             throw e
         } catch (e: Exception) {
             send(StreamChunk.Error(
-                message = "Vertex AI Authentication Failed: ${safeCredentialError(e)}",
+                code = com.promenar.nexara.domain.generation.GenerationFailureCode.AUTH,
                 retryable = false,
-                category = "AUTH"
+                technical = "Vertex AI Authentication Failed: ${safeCredentialError(e)}",
             ))
             return@channelFlow
         }
@@ -95,14 +95,16 @@ class VertexAIProtocol(
             val normalized = ErrorNormalizer.normalize(
                 HttpStatusException(response.status.value, errorBody)
             )
-            send(StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name))
+            send(normalized.toStreamChunkError())
             return@channelFlow
         }
 
         response.contentType()?.let { ct ->
             if (ct.match(ContentType.Text.Html)) {
                 send(StreamChunk.Error(
-                    "Received HTML response instead of JSON stream. Check your Vertex AI settings."
+                    code = com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER,
+                    retryable = false,
+                    technical = "Received HTML response instead of JSON stream.",
                 ))
                 return@channelFlow
             }
@@ -122,7 +124,11 @@ class VertexAIProtocol(
                 }
 
                 if (readSuccess == null) {
-                    send(StreamChunk.Error("Streaming timeout after ${timeoutMs / 1000}s of inactivity."))
+                    send(StreamChunk.Error(
+                        code = com.promenar.nexara.domain.generation.GenerationFailureCode.TIMEOUT,
+                        retryable = true,
+                        technical = "Streaming timeout after ${timeoutMs / 1000}s of inactivity.",
+                    ))
                     return@channelFlow
                 }
                 if (!readSuccess) break
@@ -132,7 +138,9 @@ class VertexAIProtocol(
 
                 if (line.trimStart().startsWith('<')) {
                     send(StreamChunk.Error(
-                        "Received HTML response instead of JSON stream. Check your Vertex AI settings."
+                        code = com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER,
+                        retryable = false,
+                        technical = "Received HTML response instead of JSON stream.",
                     ))
                     return@channelFlow
                 }
@@ -767,7 +775,7 @@ class VertexAIProtocol(
 
     private fun normalizeError(e: Exception): StreamChunk.Error {
         val normalized = ErrorNormalizer.normalize(e)
-        return StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name)
+        return normalized.toStreamChunkError()
     }
 
     private fun JsonObject.stringField(key: String): String {

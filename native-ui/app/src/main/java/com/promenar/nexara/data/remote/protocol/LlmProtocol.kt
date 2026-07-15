@@ -2,6 +2,8 @@ package com.promenar.nexara.data.remote.protocol
 
 import kotlinx.coroutines.flow.Flow
 import com.promenar.nexara.R
+import com.promenar.nexara.data.remote.parser.NormalizedError
+import com.promenar.nexara.domain.generation.GenerationFailureCode
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
@@ -138,11 +140,26 @@ sealed class StreamChunk {
         val citations: List<ProtocolCitation>
     ) : StreamChunk()
 
+    /**
+     * 协议层错误分片。
+     *
+     * 结构化失败契约：
+     * - [code] 是稳定内部码，协议实现**只应**填 code + 类型化参数（[retryAfterSeconds]）+ 诊断 [technical]；
+     * - 协议实现禁止再把自然语言展示文案、provider 原文写入 [message]；该字段仅为向后兼容保留，
+     *   默认空串，调用方（runtime）一律以 [code] 为准。
+     */
     data class Error(
-        val message: String,
+        val code: GenerationFailureCode = GenerationFailureCode.UNKNOWN,
         val retryable: Boolean = false,
-        val category: String? = null
-    ) : StreamChunk()
+        val retryAfterSeconds: Int? = null,
+        val technical: String? = null,
+        val cause: Throwable? = null,
+        val message: String = "",
+        val category: String? = null,
+    ) : StreamChunk() {
+        override fun toString(): String =
+            "Error(code=$code, retryable=$retryable, retryAfterSeconds=$retryAfterSeconds)"
+    }
 
     data class ToolCallLifecycle(
         val type: ToolChunkType,
@@ -296,4 +313,20 @@ sealed interface ToolCallLifecycleEvent {
         val status: String = "done",
         val imageBase64List: List<String> = emptyList()
     ) : ToolCallLifecycleEvent
+}
+
+/**
+ * 把协议层分类结果转为结构化 [StreamChunk.Error]：
+ * 只携带稳定 [GenerationFailureCode] + 类型化重试参数 + 诊断 technical，
+ * 不再产出任何自然语言展示文案。
+ */
+fun NormalizedError.toStreamChunkError(cause: Throwable? = null): StreamChunk.Error {
+    val failure = toFailure(cause)
+    return StreamChunk.Error(
+        code = failure.code,
+        retryable = retryable,
+        retryAfterSeconds = failure.retryAfterSeconds,
+        technical = failure.technical,
+        cause = failure.cause,
+    )
 }

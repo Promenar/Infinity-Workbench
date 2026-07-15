@@ -1,6 +1,8 @@
 package com.promenar.nexara
 
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -13,6 +15,8 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.background.generation.GENERATION_NOTIFICATION_PERMISSION_ASKED
+import com.promenar.nexara.background.generation.GENERATION_NOTIFICATION_PERMISSION_PREFS
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.ApprovalRequest
 import com.promenar.nexara.data.model.LoopStatus
@@ -20,6 +24,7 @@ import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.remote.stableModelId
+import com.promenar.nexara.domain.generation.GenerationRuntimePolicy
 import com.promenar.nexara.ui.chat.ChatState
 import com.promenar.nexara.ui.settings.ModelInfo
 import com.promenar.nexara.ui.testing.UiTags
@@ -51,9 +56,15 @@ class MainActivityChatFlowE2eTest {
         assertThat(app.chatStore.getSession(sessionId)?.messages).hasSize(1)
         app.getSharedPreferences("nexara_onboarding", 0)
             .edit().putString("step", "LANGUAGE").commit()
+        assertThat(
+            app.getSharedPreferences(
+                GENERATION_NOTIFICATION_PERMISSION_PREFS,
+                Context.MODE_PRIVATE,
+            ).edit().putBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, true).commit(),
+        ).isTrue()
 
         val intent = Intent(app, MainActivity::class.java).apply {
-            putExtra(MainActivity.EXTRA_CHAT_SESSION_ID_FOR_TESTING, sessionId)
+            putExtra("com.promenar.nexara.extra.CHAT_SESSION_ID_FOR_TESTING", sessionId)
         }
         scenario = ActivityScenario.launch(intent)
         scenario.onActivity { activity ->
@@ -108,6 +119,9 @@ class MainActivityChatFlowE2eTest {
         compose.waitForIdle()
         compose.onNodeWithTag(UiTags.CHAT_GENERATION_ACTION).performClick()
         compose.waitUntil(10_000) { app.recordingCoordinator.requests.size == 1 }
+        compose.onNodeWithTag(UiTags.NOTIFICATION_PERMISSION_DIALOG).assertDoesNotExist()
+        assertThat(app.recordingCoordinator.requests.single().runtimePolicy)
+            .isEqualTo(expectedRuntimePolicyForDevice())
         assertThat(app.recordingCoordinator.selectedModelsAtStart.single())
             .isEqualTo(secondModelId)
 
@@ -191,6 +205,13 @@ class MainActivityChatFlowE2eTest {
         type = "continuation",
         reason = "MainActivity E2E approval callback",
     )
+
+    private fun expectedRuntimePolicyForDevice(): GenerationRuntimePolicy =
+        if (Build.VERSION.SDK_INT >= 33) {
+            GenerationRuntimePolicy.FOREGROUND_ONLY
+        } else {
+            GenerationRuntimePolicy.BACKGROUND_ALLOWED
+        }
 
     private fun androidx.compose.ui.test.junit4.ComposeTestRule.onAllNodes(tag: String) =
         onAllNodes(androidx.compose.ui.test.hasTestTag(tag))

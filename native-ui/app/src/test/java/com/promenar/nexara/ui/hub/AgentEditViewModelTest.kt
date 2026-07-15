@@ -14,10 +14,14 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
@@ -352,5 +356,77 @@ class AgentEditViewModelTest {
         }
         assertThat(agent.name).isEqualTo("Coding Expert")
         assertThat(agent.nameCustomized).isFalse()
+    }
+
+    @Test
+    fun `saveSystemPrompt waits for repository before reporting success`() = runTest {
+        val agent = Agent(id = "a1", name = "Agent", systemPrompt = "before")
+        every { repo.observeById("a1") } returns flowOf(agent)
+        val release = CompletableDeferred<Unit>()
+        coEvery { repo.update(any()) } coAnswers { release.await() }
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        vm.loadAgent("a1")
+
+        val saving = async { vm.saveSystemPrompt("after") }
+        runCurrent()
+
+        assertThat(saving.isCompleted).isFalse()
+        release.complete(Unit)
+        assertThat(saving.await().isSuccess).isTrue()
+        assertThat(vm.systemPrompt.value).isEqualTo("after")
+        coVerify(exactly = 1) { repo.update(match { it.systemPrompt == "after" }) }
+    }
+
+    @Test
+    fun `saveSystemPrompt repository failure keeps previous persisted state`() = runTest {
+        val agent = Agent(id = "a1", name = "Agent", systemPrompt = "before")
+        every { repo.observeById("a1") } returns flowOf(agent)
+        coEvery { repo.update(any()) } throws IllegalStateException("room failed")
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        vm.loadAgent("a1")
+
+        val result = vm.saveSystemPrompt("after")
+
+        assertThat(result.isFailure).isTrue()
+        assertThat(vm.systemPrompt.value).isEqualTo("before")
+    }
+
+    @Test
+    fun `saveSystemPrompt cancellation propagates`() = runTest {
+        val agent = Agent(id = "a1", name = "Agent", systemPrompt = "before")
+        every { repo.observeById("a1") } returns flowOf(agent)
+        coEvery { repo.update(any()) } throws CancellationException("cancelled")
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        vm.loadAgent("a1")
+
+        var thrown: CancellationException? = null
+        try {
+            vm.saveSystemPrompt("after")
+        } catch (cancelled: CancellationException) {
+            thrown = cancelled
+        }
+        assertThat(thrown?.message).isEqualTo("cancelled")
+        assertThat(vm.systemPrompt.value).isEqualTo("before")
+    }
+
+    @Test
+    fun `saveRagConfig persists complete non inherited configuration before success`() = runTest {
+        val agent = Agent(id = "a1", name = "Agent", useInheritedConfig = true)
+        every { repo.observeById("a1") } returns flowOf(agent)
+        every { prefs.getInt("doc_chunk_size", 800) } returns 800
+        every { prefs.getInt("memory_limit", 5) } returns 5
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        vm.loadAgent("a1")
+
+        val result = vm.saveRagConfig { it.copy(summaryTemplate = "new template") }
+
+        assertThat(result.isSuccess).isTrue()
+        coVerify {
+            repo.update(match {
+                !it.useInheritedConfig &&
+                    it.ragConfig?.summaryTemplate == "new template" &&
+                    it.retrievalConfig != null
+            })
+        }
     }
 }

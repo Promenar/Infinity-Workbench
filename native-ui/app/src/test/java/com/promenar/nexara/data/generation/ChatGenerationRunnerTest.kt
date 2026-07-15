@@ -2,6 +2,10 @@ package com.promenar.nexara.data.generation
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.domain.generation.GenerationChunk
+import com.promenar.nexara.domain.generation.GenerationFailure
+import com.promenar.nexara.domain.generation.GenerationFailureCode
+import com.promenar.nexara.domain.generation.GenerationFailureCodec
+import com.promenar.nexara.domain.generation.GenerationFailedException
 import com.promenar.nexara.domain.generation.GenerationEvent
 import com.promenar.nexara.domain.generation.GenerationPhase
 import com.promenar.nexara.domain.generation.GenerationPreparationOutcome
@@ -51,10 +55,15 @@ class ChatGenerationRunnerTest {
 
     @Test
     fun `工具等待完成后继续下一轮流`() = runTest {
+        val failure = GenerationFailure(
+            code = GenerationFailureCode.NETWORK,
+            technical = "recoverable",
+            cause = IllegalStateException("recoverable cause"),
+        )
         val runtime = FakeRuntime(listOf(
             flowOf(
                 GenerationChunk.ToolCall("tool-1", "search", "{}"),
-                GenerationChunk.Failure("recoverable"),
+                GenerationChunk.Failure(failure),
                 GenerationChunk.Done,
             ),
             flowOf(GenerationChunk.Text("continued"), GenerationChunk.Done),
@@ -72,10 +81,13 @@ class ChatGenerationRunnerTest {
             GenerationPhase.POST_PROCESSING, GenerationPhase.COMPLETED,
         ).inOrder()
         assertThat(runtime.streamAttempts).isEqualTo(2)
-        val errorIndex = runtime.persisted.indexOfFirst { it.errorMessage == "recoverable" }
+        val errorIndex = runtime.persisted.indexOfFirst { it.failure == failure }
         assertThat(errorIndex).isAtLeast(0)
+        assertThat(runtime.persisted[errorIndex].failure?.code).isEqualTo(GenerationFailureCode.NETWORK)
+        assertThat(runtime.persisted[errorIndex].failure?.technical).isEqualTo("recoverable")
+        assertThat(runtime.persisted[errorIndex].failure?.retryAfterSeconds).isNull()
         assertThat(runtime.persisted[errorIndex + 1].toolCalls).isEmpty()
-        assertThat(runtime.persisted[errorIndex + 1].errorMessage).isNull()
+        assertThat(runtime.persisted[errorIndex + 1].failure).isNull()
         assertThat(runtime.flushCount).isEqualTo(2)
         assertThat(events.filterIsInstance<GenerationEvent.TargetChanged>().map { it.assistantMessageId })
             .containsExactly("assistant-next")
@@ -97,21 +109,29 @@ class ChatGenerationRunnerTest {
 
     @Test
     fun `已有部分文本后收到Failure仍落ERROR且不进入完成态`() = runTest {
+        val streamFailure = GenerationFailure(
+            code = GenerationFailureCode.TIMEOUT,
+            formatArgs = emptyMap(),
+            technical = "stream broken",
+        )
         val runtime = FakeRuntime(listOf(flowOf(
             GenerationChunk.Text("partial"),
-            GenerationChunk.Failure("stream broken"),
+            GenerationChunk.Failure(streamFailure),
             GenerationChunk.Done,
         )))
         val events = mutableListOf<GenerationEvent>()
 
-        val failure = runCatching { ChatGenerationRunner(runtime).run(request(), events::add) }.exceptionOrNull()
+        val executionFailure = runCatching { ChatGenerationRunner(runtime).run(request(), events::add) }.exceptionOrNull()
 
-        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(executionFailure).isInstanceOf(GenerationFailedException::class.java)
+        assertThat((executionFailure as GenerationFailedException).failure).isSameInstanceAs(streamFailure)
         assertThat(events.phases().last()).isEqualTo(GenerationPhase.FAILED)
         assertThat(events.phases()).doesNotContain(GenerationPhase.COMPLETED)
         assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.ERROR)
         assertThat(runtime.persisted.last().content).isEqualTo("partial")
-        assertThat(runtime.persisted.last().errorMessage).isEqualTo("stream broken")
+        assertThat(runtime.persisted.last().failure).isEqualTo(streamFailure)
+        assertThat(runtime.persisted.last().failure?.code).isEqualTo(GenerationFailureCode.TIMEOUT)
+        assertThat(runtime.persisted.last().failure?.technical).isEqualTo("stream broken")
     }
 
     @Test
@@ -138,10 +158,14 @@ class ChatGenerationRunnerTest {
 
         assertThat(failure).isSameInstanceAs(original)
         val persistence = events.filterIsInstance<GenerationEvent.PersistenceFailed>().single()
-        assertThat(persistence.persistenceCause.message).isEqualTo("terminal db")
+        assertThat(persistence.failure.code).isEqualTo(GenerationFailureCode.PERSISTENCE)
+        assertThat(persistence.failure.technical).isEqualTo("terminal db")
         assertThat(persistence.originalCause).isSameInstanceAs(original)
+        assertThat(persistence.persistenceCause.message).isEqualTo("terminal db")
         assertThat(persistence.persistenceCause.suppressed.asList()).contains(original)
         assertThat(events.phases().last()).isEqualTo(GenerationPhase.PERSISTENCE_FAILED)
+        assertThat(GenerationFailureCodec.encode(persistence.failure))
+            .doesNotContain("terminal db")
         assertThat(events.phases()).doesNotContain(GenerationPhase.FAILED)
         assertThat(runtime.flushCount).isEqualTo(1)
     }
@@ -157,8 +181,10 @@ class ChatGenerationRunnerTest {
 
         assertThat(events.phases().last()).isEqualTo(GenerationPhase.PERSISTENCE_FAILED)
         assertThat(events.phases()).doesNotContain(GenerationPhase.COMPLETED)
-        assertThat(events.filterIsInstance<GenerationEvent.PersistenceFailed>().single()
-            .persistenceCause.message).isEqualTo("missing row")
+        assertThat(events.filterIsInstance<GenerationEvent.PersistenceFailed>().single().failure.code)
+            .isEqualTo(GenerationFailureCode.PERSISTENCE)
+        assertThat(events.filterIsInstance<GenerationEvent.PersistenceFailed>().single().failure.technical)
+            .isEqualTo("missing row")
     }
 
     @Test
@@ -208,6 +234,24 @@ class ChatGenerationRunnerTest {
     }
 
     @Test
+    fun `observer 自身抛出 CancellationException 时必须原样传播`() = runTest {
+        val observerCancellation = CancellationException("observer cancelled")
+        val runtime = FakeRuntime(listOf(flowOf(GenerationChunk.Text("done"), GenerationChunk.Done)))
+
+        val failure = runCatching {
+            ChatGenerationRunner(runtime).run(request()) { event ->
+                if (event == GenerationEvent.PhaseChanged(GenerationPhase.PREPARING)) {
+                    throw observerCancellation
+                }
+            }
+        }.exceptionOrNull()
+
+        assertThat(failure).isSameInstanceAs(observerCancellation)
+        assertThat(runtime.providerCancelCount).isEqualTo(1)
+        assertThat(runtime.flushCount).isEqualTo(1)
+    }
+
+    @Test
     fun `SUCCESS后COMPLETED observer异常不得重标ERROR`() = runTest {
         val runtime = FakeRuntime(listOf(flowOf(GenerationChunk.Text("done"), GenerationChunk.Done)))
 
@@ -242,8 +286,9 @@ class ChatGenerationRunnerTest {
 
     @Test
     fun `上下文或路由错误已由adapter处理时停止连接并flush`() = runTest {
+        val handledFailure = GenerationFailure.unknown(technical = "handled failure")
         val runtime = FakeRuntime(listOf(flowOf(GenerationChunk.Done))).apply {
-            preparationOutcome = GenerationPreparationOutcome.Handled("handled failure")
+            preparationOutcome = GenerationPreparationOutcome.Handled(handledFailure)
         }
         val events = mutableListOf<GenerationEvent>()
 
@@ -252,8 +297,11 @@ class ChatGenerationRunnerTest {
         assertThat(events.phases()).containsExactly(
             GenerationPhase.PREPARING, GenerationPhase.BUILDING_CONTEXT, GenerationPhase.FAILED,
         ).inOrder()
-        assertThat(events.filterIsInstance<GenerationEvent.Rejected>().single().message)
-            .isEqualTo("handled failure")
+        val rejected = events.filterIsInstance<GenerationEvent.Rejected>().single()
+        assertThat(rejected.failure.code).isEqualTo(GenerationFailureCode.UNKNOWN)
+        assertThat(rejected.failure.technical).isEqualTo("handled failure")
+        assertThat(GenerationFailureCodec.encode(rejected.failure))
+            .doesNotContain("handled failure")
         assertThat(runtime.streamAttempts).isEqualTo(0)
         assertThat(runtime.flushCount).isEqualTo(1)
         assertThat(runtime.terminals).isEmpty()

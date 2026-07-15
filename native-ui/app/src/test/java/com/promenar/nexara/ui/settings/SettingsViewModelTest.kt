@@ -177,6 +177,14 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `settings tab index is clamped to available tabs`() {
+        assertThat(normalizeSettingsTabIndex(-1)).isEqualTo(0)
+        assertThat(normalizeSettingsTabIndex(0)).isEqualTo(0)
+        assertThat(normalizeSettingsTabIndex(1)).isEqualTo(1)
+        assertThat(normalizeSettingsTabIndex(2)).isEqualTo(1)
+    }
+
+    @Test
     fun `preset_skills_migrated_v3 updates SharedPreferences and enables all preset skills`() = runTest {
         val mockEditor = mockk<SharedPreferences.Editor>(relaxed = true)
         every { prefs.getBoolean("preset_skills_migrated_v3", false) } returns false

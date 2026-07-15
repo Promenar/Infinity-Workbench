@@ -68,7 +68,7 @@ class GenericOpenAICompatProtocol(
                     val normalized = ErrorNormalizer.normalize(
                         HttpStatusException(response.status.value, errorBody)
                     )
-                    send(StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name))
+                    send(normalized.toStreamChunkError())
                     return@execute
                 }
 
@@ -76,7 +76,9 @@ class GenericOpenAICompatProtocol(
                 response.contentType()?.let { ct ->
                     if (ct.match(ContentType.Text.Html)) {
                         send(StreamChunk.Error(
-                            "Received HTML response instead of JSON stream. Check your Base URL settings."
+                            code = com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER,
+                            retryable = false,
+                            technical = "Received HTML response instead of JSON stream.",
                         ))
                         return@execute
                     }
@@ -94,7 +96,11 @@ class GenericOpenAICompatProtocol(
                     }
 
                     if (readSuccess == null) {
-                        send(StreamChunk.Error("Streaming timeout after ${timeoutMs / 1000}s of inactivity."))
+                        send(StreamChunk.Error(
+                            code = com.promenar.nexara.domain.generation.GenerationFailureCode.TIMEOUT,
+                            retryable = true,
+                            technical = "Streaming timeout after ${timeoutMs / 1000}s of inactivity.",
+                        ))
                         break
                     }
                     if (!readSuccess) break
@@ -104,7 +110,11 @@ class GenericOpenAICompatProtocol(
 
                     // HTML 行级检测（部分服务端在 SSE 流内返回 HTML 错误页）
                     if (line.trimStart().startsWith('<')) {
-                        send(StreamChunk.Error("Received HTML response instead of JSON stream."))
+                        send(StreamChunk.Error(
+                            code = com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER,
+                            retryable = false,
+                            technical = "Received HTML response instead of JSON stream.",
+                        ))
                         break
                     }
 
@@ -456,7 +466,7 @@ class GenericOpenAICompatProtocol(
 
     private fun normalizeError(e: Exception): StreamChunk.Error {
         val normalized = ErrorNormalizer.normalize(e)
-        return StreamChunk.Error(normalized.message, normalized.retryable, normalized.category.name)
+        return normalized.toStreamChunkError()
     }
 
     private fun JsonObject.stringField(key: String): String {

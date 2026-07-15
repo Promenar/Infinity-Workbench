@@ -4,6 +4,8 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.domain.generation.GenerationFailure
+import com.promenar.nexara.domain.generation.GenerationFailureCode
 import java.io.File
 import org.junit.Test
 
@@ -50,5 +52,34 @@ class ChatRenderStateContractTest {
 
         assertThat(chatRenderStateTag(state)).isEqualTo(UiTags.CHAT_STATE_READY)
         assertThat(chatRenderStateTag(ChatUiState())).isEqualTo(UiTags.CHAT_STATE_EMPTY)
+    }
+
+    @Test
+    fun `结构化服务错误映射应输出错误锚点`() {
+        val state = ChatUiState(
+            generationNotice = GenerationFailureNotice.from(
+                GenerationFailure.of(GenerationFailureCode.SERVER),
+            ),
+        )
+
+        assertThat(chatRenderStateTag(state)).isEqualTo(UiTags.CHAT_STATE_ERROR)
+    }
+
+    @Test
+    fun `旧版错误字段应独立输出错误锚点`() {
+        val state = ChatUiState(
+            error = "legacy provider error",
+        )
+
+        assertThat(chatRenderStateTag(state)).isEqualTo(UiTags.CHAT_STATE_ERROR)
+    }
+
+    @Test
+    fun `状态错误不应被短暂无状态覆盖`() {
+        val state = ChatUiState(
+            status = GenerationStatus.ERROR,
+        )
+
+        assertThat(chatRenderStateTag(state)).isEqualTo(UiTags.CHAT_STATE_ERROR)
     }
 }

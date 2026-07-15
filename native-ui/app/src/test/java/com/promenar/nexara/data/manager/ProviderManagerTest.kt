@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.CredentialUpdate
+import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderResolution
@@ -110,6 +111,71 @@ class ProviderManagerTest {
             .containsAtLeast("legacy-model", "default::remote-model")
         val failure = DefaultProviderRequestRouter(isolated).resolve("legacy-model") as ProviderResolution.Failure
         assertThat(failure.reason).isEqualTo(ProviderResolutionError.MODEL_PROVIDER_MISMATCH)
+    }
+
+    @Test
+    fun `provider scoped disable only changes the requested provider`() {
+        addExtraProviderWithModel()
+        val defaultId = "default::remote-model"
+        val extraId = "extra-a::extra-model"
+
+        manager.disableAllModels("default")
+
+        assertThat(manager.providerModels.value.single { it.id == defaultId }.enabled).isFalse()
+        assertThat(manager.providerModels.value.single { it.id == extraId }.enabled).isTrue()
+    }
+
+    @Test
+    fun `provider scoped delete preserves hidden provider models and persistence`() {
+        addExtraProviderWithModel()
+
+        manager.deleteAllModels("default")
+
+        assertThat(manager.providerModels.value.map { it.id }).containsExactly("extra-a::extra-model")
+        val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+        assertThat(reloaded.providerModels.value.map { it.id }).containsExactly("extra-a::extra-model")
+    }
+
+    @Test
+    fun `custom model uses requested provider stable id display name and persists`() {
+        addExtraProviderWithModel()
+
+        assertThat(manager.addCustomModel("extra-a", "  custom-model  ", "  Custom Name  ")).isTrue()
+        assertThat(manager.addCustomModel("extra-a", "custom-model", "duplicate")).isFalse()
+
+        val stored = manager.providerModels.value.single { it.id == "extra-a::custom-model" }
+        assertThat(stored.remoteModelId).isEqualTo("custom-model")
+        assertThat(stored.providerId).isEqualTo("extra-a")
+        assertThat(stored.providerName).isEqualTo("隐藏提供商")
+        assertThat(stored.name).isEqualTo("Custom Name")
+        val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+        assertThat(reloaded.providerModels.value.single { it.id == "extra-a::custom-model" }.name)
+            .isEqualTo("Custom Name")
+    }
+
+    @Test
+    fun `deleting and readding provider clears prior model suppression`() {
+        addExtraProviderWithModel()
+        manager.deleteAllModels("extra-a")
+        manager.deleteProvider("extra-a")
+
+        addExtraProviderWithModel()
+
+        assertThat(manager.providerModels.value.map { it.id }).contains("extra-a::extra-model")
+    }
+
+    private fun addExtraProviderWithModel() {
+        manager.addProvider(
+            ProviderListItem(
+                id = "extra-a",
+                name = "隐藏提供商",
+                baseUrl = "https://extra.invalid",
+                model = "extra-model",
+                protocolType = ProtocolType.OpenAI_ChatCompletions,
+                enabled = true,
+            ),
+            CredentialUpdate.Replace("extra-test-key"),
+        )
     }
 
     private fun model(providerId: String?, id: String) = ModelInfo(

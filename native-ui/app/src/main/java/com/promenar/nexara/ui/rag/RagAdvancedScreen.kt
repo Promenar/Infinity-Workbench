@@ -327,7 +327,11 @@ fun RagAdvancedScreen(
         onDismiss = { showPromptEditor = false },
         initialText = config.kgExtractionPrompt ?: "",
         title = stringResource(R.string.rag_advanced_edit_prompt),
-        onSave = { text -> viewModel.updateConfig { it.copy(kgExtractionPrompt = text.ifBlank { null }) } },
+        onSave = { text ->
+            runCatching {
+                viewModel.updateConfig { it.copy(kgExtractionPrompt = text.ifBlank { null }) }
+            }
+        },
         placeholder = stringResource(R.string.rag_advanced_extract_prompt_placeholder)
     )
 }

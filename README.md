@@ -4,144 +4,102 @@
 ![Platform](https://img.shields.io/badge/platform-Android-green.svg)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg)
 ![Compose](https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4.svg)
-![Version](https://img.shields.io/badge/version-0.1-6366F1.svg)
-![Stage](https://img.shields.io/badge/stage-early--preview-orange.svg)
+![Version](https://img.shields.io/badge/version-0.2--beta-6366F1.svg)
+![Stage](https://img.shields.io/badge/stage-release%20candidate-orange.svg)
 
-> Android 端 BYOK 开源 AI 客户端 — 原生 Kotlin + Jetpack Compose 构建，融合 RAG 知识引擎与知识图谱的智能记忆外脑。
->
-> ⚠️ **当前为初期预览版本，部分功能可能存在不稳定，持续迭代中。**
+> Android 端 BYOK 开源 AI 客户端，以 Kotlin 与 Jetpack Compose 原生构建，集成多服务商对话、RAG、知识图谱、Agent 工具、会话工作区和加密备份。
 
-> `v0.2-beta` 开发状态（2026-07-13）：安全/数据与核心业务门禁已完成；后台生成、完整 UI 视觉回归和正式 GitHub Release 尚在实施。当前公开下载仍为 `v0.1-beta`，开发分支产物不作为正式发行包。
+`v0.2-beta` 当前处于发行候选收口阶段。后台持续生成等功能已经实现；签名 R8 APK、冷安装、完整设备/视觉矩阵、真实 API 与远端 GitHub Actions 仍须通过最终发行门禁。在这些证据全部关闭前，本仓库不会把开发分支产物描述为正式发行包。
 
----
+## 主要能力
 
-## English
+- **多服务商 BYOK 对话**：支持 OpenAI、Anthropic、Google Vertex AI、DeepSeek、GLM、Kimi 及 OpenAI-compatible 接口，包含 SSE 流式响应、多模态输入、Markdown/LaTeX/Mermaid/ECharts 渲染和会话内模型切换。
+- **RAG 与知识图谱**：导入 TXT、Markdown、PDF、Word、HTML 文档，提供向量检索、FTS5、Rerank、查询重写、引用追踪和知识图谱可视化。
+- **Agent 与工具调用**：内置联网搜索、计算、受限脚本、文件操作、图像生成和任务规划等工具，支持审批、幂等执行账本和工具结果回传。
+- **会话工作区**：按 Session 隔离文件根目录，覆盖导入、原子写入、版本、回收站、恢复和路径逃逸防护。
+- **安全备份与恢复**：核心数据可本地或通过 HTTPS WebDAV 备份；密钥默认不进入备份，用户可显式选择把可备份的完整密钥加密写入备份包。
+- **后台持续生成**：前台发起的当前生成任务在切后台、锁屏、旋转或 Activity 重建后继续，通过前台服务通知返回会话或停止任务。
+- **本地优先**：会话、文档和配置保存在设备本地；云端模型调用直接连接用户配置的服务商。
 
-Nexara is a BYOK (Bring Your Own Key) AI client for Android, built natively with Kotlin and Jetpack Compose Material Design 3. Similar in category to desktop AI clients, but tailored for mobile — focusing on local-first data privacy, native touch interactions, and deep integration of RAG + Knowledge Graph for long-form writing and knowledge management.
+## 密钥与隐私
 
-> ⚠️ **Early preview release. Some features may be unstable. Actively iterating.**
+- API Key、Vertex 凭据、搜索 Key 和 WebDAV 凭据由 Android Keystore 支撑的 `SecretStore` 管理，不以明文写入普通配置。
+- 密钥字段默认显示 `****`；用户可在当前页面临时显示完整值，离开页面或失去焦点后重新隐藏。
+- 备份默认排除所有 Key。启用“包含完整密钥”时必须设置备份密码；备份包使用 PBKDF2-HMAC-SHA256 派生密钥和 AES-256-GCM 加密。
+- Release 云端 Provider 与 WebDAV 仅允许 HTTPS。局域网 HTTP 只允许进入显式 Debug/Integration 测试，不属于发行能力。
+- Release 日志不得写入 Prompt、模型输出、Authorization、API Key、SQL 参数或完整异常堆栈。
 
-### What Makes Nexara Different
+## 后台生成边界
 
-- **Truly Native Android**: Built with Jetpack Compose + Material Design 3, delivering 60fps fluid interactions and system-level visual harmony — not a WebView wrapper.
-- **RAG + Knowledge Graph Fusion**: Combines vector semantic search, full-text search, and knowledge graph extraction in a unified memory engine. Your AI remembers context across conversations.
-- **Full BYOK Freedom**: Bring your own API keys from OpenAI, Anthropic, Google Vertex AI, DeepSeek, GLM, KIMI, and any OpenAI-compatible endpoint.
-- **Privacy by Design**: All data stays on your device. No telemetry, no intermediaries.
+后台生成覆盖用户在前台主动发起的单个当前任务：
 
-### Core Features
+- 支持切后台、锁屏、旋转和 Activity 重建；
+- 通知可返回准确会话或停止生成；
+- 通知权限被拒绝时可退化为仅前台生成；
+- 不支持设备重启后续传、多会话并行、无人值守队列或定时任务。
 
-**Multi-Provider BYOK Chat**
-Connect to any LLM provider. Full SSE streaming with real-time Markdown rendering (GFM Alert, LaTeX, Mermaid, ECharts). Image upload with Vision (VLM) support. Streaming speed control. Switch models mid-conversation. Regenerate responses. ✅
+## GGUF 本地推理
 
-**RAG Knowledge Engine**
-Built-in vector store with semantic search. Import TXT/MD/PDF/Word/HTML documents, auto-chunk and vectorize via remote embedding APIs. Hybrid search (RRF fusion) with Rerank and Query Rewrite. Session memory vectorization with Memory browser view. Citation panel with search source tracking. ✅
+GGUF/llama.cpp 不属于 `v0.2-beta` 稳定发行范围，本轮不继续推进端到端实现。Release 构建会关闭本地推理并拒绝打包 GGUF、llama 或 ggml 制品；相关代码只能视为实验性研发资产，不能据此承诺可用能力。
 
-**Knowledge Graph**
-Automatic entity extraction from documents and conversations via LLM. Structured knowledge network in SQLite. Interactive ECharts force-directed graph visualization with Global/Document/Concept multi-view. JIT micro-graph extraction during conversations. ✅
+## 运行要求
 
-**Agent System**
-18 built-in tools: web search (3 engines), calculator, JS sandbox, file system operations, image generation, task planning, and more. MCP protocol support for external tool integration. Function Calling with Semi-Automatic approval loop. Tool execution timeline in chat. ✅
-
-**Token Dashboard**
-Per-session and global token tracking with Canvas trend charts, model breakdown, and cost estimation. ✅
-
-**HTML Artifacts**
-Live WebView preview for HTML/CSS/JS/SVG code blocks, full-screen split mode, and PNG export. ✅
-
-**Local Inference** 🚧 *In Development*
-llama.cpp JNI engine for on-device inference. GGUF model import, 3-slot management (Main/Embed/Rerank), Vulkan GPU detection. Engine code complete — end-to-end verification in progress.
-
-**Background Generation** 🚧 *Planned*
-Foreground Service for uninterrupted AI generation when switching apps. Architecture designed, implementation pending.
-
-### Runtime Requirements
-
-| Requirement | Minimum |
+| 项目 | 要求 |
 |---|---|
-| Android Version | Android 8.0 (API 26) |
-| Recommended | Android 13+ (API 33+) for full Material You theming |
-| Storage | ~200 MB free space (model files additional) |
-| Network | Active internet connection for cloud API providers |
-| Permissions | Internet, Notification (for background generation, optional) |
+| Android | Android 12 及以上（API 31+） |
+| 目标 SDK | API 36 |
+| 存储 | 建议至少保留 200 MiB；导入文档另计 |
+| 网络 | 云端模型、Embedding、Rerank、联网搜索和 WebDAV 需要网络 |
+| 权限 | 网络；通知权限用于后台生成，可拒绝但会退化为仅前台生成 |
 
-### Download
+本版本采用全新 `v0.2-beta` 数据基线，不兼容 `v0.1-beta` 用户数据。安装前请先自行导出需要保留的旧数据，再卸载旧版。
 
-[![Download APK](https://img.shields.io/badge/Download-v0.1--beta-6366F1?style=for-the-badge&logo=android)](https://github.com/NarcisWL/Nexara/releases/tag/v0.1-beta)
+## 安装
 
----
+正式制品只从 [Promenar/Nexara Releases](https://github.com/Promenar/Nexara/releases) 发布。`v0.2-beta` Release 完成后：
 
-## 中文
+1. 下载 `nexara-v0.2-beta.apk` 与同名 `.sha256` 文件。
+2. 校验 APK 的 SHA-256 与发布文件一致。
+3. 在 Android 系统中允许当前文件管理器或浏览器“安装未知应用”。
+4. 侧载 APK；首次启动按引导配置语言、Provider、默认模型、Agent 和首条对话。
 
-Nexara 是一款 Android 端 BYOK（自带密钥）开源 AI 客户端，采用 Kotlin + Jetpack Compose Material Design 3 原生构建。产品类型与桌面端 AI 客户端近似，但受限于移动端形态，聚焦本地优先的数据隐私、原生触屏交互体验，以及 RAG 知识引擎与知识图谱的深度融合，为长篇写作与知识管理提供智能记忆外脑。
+不要安装 Actions 临时制品、Debug APK 或来源不明的重打包版本。
 
-> ⚠️ **当前为初期预览版本，部分功能可能存在不稳定，持续迭代中。**
+## 开发构建
 
-### Nexara 的独特之处
+```bash
+cd native-ui
+./gradlew :app:assembleDebug
+```
 
-- **真正原生的 Android 体验**：基于 Jetpack Compose + Material Design 3 纯原生构建，带来 60fps 流畅交互与系统级视觉融合，非 WebView 套壳。
-- **RAG + 知识图谱融合**：向量语义检索、全文搜索、知识图谱抽取三位一体的统一记忆引擎，让 AI 真正记住你的上下文。
-- **完全 BYOK 自由**：自带 OpenAI、Anthropic、Google Vertex AI、DeepSeek、GLM、KIMI 及任意 OpenAI 兼容接口的 API Key。
-- **隐私优先设计**：所有数据存储于设备本地，零遥测，零中间服务器。
+Debug 构建不需要发行签名变量。Release 构建必须通过进程环境提供 `NEXARA_KEYSTORE_PATH`、`NEXARA_STORE_PASSWORD`、`NEXARA_KEY_ALIAS` 和 `NEXARA_KEY_PASSWORD`；仓库不保存 keystore 或密码。
 
-### 核心功能
+### Metro CLI/TUI
 
-**多服务商 BYOK 自由接入** ✅
-支持 OpenAI、Anthropic、Vertex AI、DeepSeek、GLM、KIMI 及任意 OpenAI 兼容接口。完整 SSE 流式响应，实时 Markdown 渲染（GFM Alert、LaTeX、Mermaid、ECharts）。图片上传与 VLM 视觉理解。流式平滑调速。会话内模型自由切换。支持重发/重新生成。
+Nexara 没有面向最终用户、与 Android UI 等价的 CLI。仓库中的 `scripts/nexara-metro-tui.js` 是 **Debug 构建专用的开发者日志终端**，用于解析 `adb logcat` 中的脱敏 Metro 事件，不替代应用功能：
 
-**RAG 知识引擎** ✅
-内置向量库，支持语义检索。导入 TXT/MD/PDF/Word/HTML 文档，自动分块并通过远程 Embedding API 向量化。混合检索（RRF 融合）+ Rerank 重排序 + 查询重写。会话记忆向量化与 Memory 浏览视图。引用内容面板，追踪搜索来源。
+```bash
+node scripts/nexara-metro-tui.js --help
+node scripts/nexara-metro-tui.js --serial emulator-5554
+adb logcat -s NEXARA_METRO | node scripts/nexara-metro-tui.js --stdin --no-color
+```
 
-**知识图谱** ✅
-通过 LLM 从文档和对话中自动抽取实体关系。结构化知识网络存储于 SQLite。ECharts 力导向图交互式可视化，支持全局/文档/概念三维视图。对话中 JIT 微图抽取。
+该 TUI 支持中文帮助、设备/Tag 选择、标准输入、TTY/非 TTY 输出、明确退出码和缺失字段容错。Release 会关闭并剥离 Metro/调试日志入口。
 
-**Agent 系统** ✅
-18 个内置工具：联网搜索（3 引擎）、数学计算、JS 沙箱、文件系统操作、AI 生图、任务规划等。MCP 协议接入外部工具。Function Calling + Semi-Automatic 审批循环。对话中工具执行时间轴可视化。
-
-**Token 仪表盘** ✅
-会话级与全局级 Token 统计，Canvas 趋势图，模型用量明细，费用估算。
-
-**HTML Artifacts** ✅
-HTML/CSS/JS/SVG 代码块 WebView 实时预览，全屏分屏模式，PNG 导出。
-
-**本地模型推理** 🚧 *开发中*
-基于 llama.cpp JNI 的端侧推理引擎。支持 GGUF 模型导入、三槽位管理（主模型/Embedding/Rerank）、Vulkan GPU 检测。引擎代码已完成，端到端验证进行中。
-
-**后台生成** 🚧 *计划中*
-通过 Foreground Service 实现切换 App 后 AI 生成不中断。架构设计已完成，待实施。
-
-### 运行环境要求
-
-| 项目 | 最低要求 |
-|---|---|
-| Android 版本 | Android 8.0 (API 26) |
-| 推荐版本 | Android 13+ (API 33+)，以获得完整 Material You 主题体验 |
-| 存储空间 | ~200 MB 可用空间（模型文件另需） |
-| 网络 | 使用云端 API 需保持网络连接 |
-| 权限 | 网络、通知（后台生成功能可选） |
-
-### 下载
-
-[![下载 APK](https://img.shields.io/badge/下载-v0.1--beta-6366F1?style=for-the-badge&logo=android)](https://github.com/NarcisWL/Nexara/releases/tag/v0.1-beta)
-
-### 技术栈
+## 技术栈
 
 | 层级 | 选型 |
 |---|---|
-| 语言 | Kotlin |
-| UI 框架 | Jetpack Compose + Material Design 3 |
-| 架构模式 | MVVM + Repository |
-| 数据库 | Room（SQLite + FTS5） |
-| 网络 | OkHttp + Kotlin Coroutines |
-| 序列化 | kotlinx.serialization |
+| 语言/UI | Kotlin、Jetpack Compose、Material 3 |
+| 架构 | MVVM、Repository、Flow/Coroutines |
+| 数据 | Room、SQLite/FTS5、设备文件系统 |
+| 网络 | OkHttp、Ktor、SSE |
+| 安全 | Android Keystore、AES-256-GCM、PBKDF2-HMAC-SHA256 |
 | 导航 | Compose Navigation |
-| 本地推理 | llama.cpp（JNI） |
+| 构建/发行 | Gradle、R8、GitHub Actions、GitHub Release |
 
----
+架构快速参考见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，发行说明见 [docs/release/v0.2-beta.md](docs/release/v0.2-beta.md)，发行验证状态见 [docs/release/v0.2-beta-validation.md](docs/release/v0.2-beta-validation.md)。
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0 (GPLv3)**.
-
-本项目基于 **GNU General Public License v3.0 (GPLv3)** 开源协议发布。
-
-详见 [LICENSE](./LICENSE)。
+Nexara 基于 [GNU General Public License v3.0](LICENSE) 发布。对应 Release 的完整源码由同名 Git tag 固定。

@@ -16,13 +16,47 @@ import com.promenar.nexara.share.core.ShareImportItem
 import com.promenar.nexara.share.core.ShareImportStatus
 import com.promenar.nexara.share.core.ShareRejectReason
 import com.promenar.nexara.share.core.SharedFileImporter
+import com.promenar.nexara.ui.common.status.NoticeSeverity
+import com.promenar.nexara.ui.common.status.UiStatusNotice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+enum class RecycleOperation {
+    Restore,
+    PermanentDelete,
+    Empty,
+}
+
+sealed interface RecycleOperationState {
+    data object Idle : RecycleOperationState
+
+    data class Running(
+        val operation: RecycleOperation,
+        val itemUuids: List<String>,
+    ) : RecycleOperationState
+
+    data class Success(
+        val operation: RecycleOperation,
+        val processedItemUuids: List<String>,
+    ) : RecycleOperationState
+
+    data class PartialFailure(
+        val operation: RecycleOperation,
+        val succeededItemUuids: List<String>,
+        val failedItemUuids: List<String>,
+    ) : RecycleOperationState
+
+    data class Failure(
+        val operation: RecycleOperation,
+        val failedItemUuids: List<String>,
+    ) : RecycleOperationState
+}
 
 class ResourceExplorerViewModel(
     application: Application,
@@ -58,11 +92,18 @@ class ResourceExplorerViewModel(
     private val _recycleBinCount = MutableStateFlow(0)
     val recycleBinCount: StateFlow<Int> = _recycleBinCount.asStateFlow()
 
+    private val _recycleOperationState = MutableStateFlow<RecycleOperationState>(RecycleOperationState.Idle)
+    val recycleOperationState: StateFlow<RecycleOperationState> = _recycleOperationState.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _loadError = MutableStateFlow<String?>(null)
-    val loadError: StateFlow<String?> = _loadError.asStateFlow()
+    /**
+     * 结构化加载错误：稳定 code + severity，[UiStatusNotice.technical] 仅日志/诊断用。
+     * UI 据 code 经 stringResource 显示双语安全文案，**不**直出底层 exception.message。
+     */
+    private val _loadError = MutableStateFlow<UiStatusNotice?>(null)
+    val loadError: StateFlow<UiStatusNotice?> = _loadError.asStateFlow()
 
     private val _importItems = MutableStateFlow<List<ShareImportItem>>(emptyList())
     val importItems: StateFlow<List<ShareImportItem>> = _importItems.asStateFlow()
@@ -74,6 +115,8 @@ class ResourceExplorerViewModel(
     private var loadGeneration = 0L
     private var sessionJob: Job? = null
     private var importJob: Job? = null
+    private var recycleOperationJob: Job? = null
+    private var recycleRetryPlan: RecycleRetryPlan? = null
     private val importRequests = linkedMapOf<Uri, ShareRequest>()
 
     fun updateSearchQuery(query: String) {
@@ -85,6 +128,7 @@ class ResourceExplorerViewModel(
         val generation = ++loadGeneration
         sessionJob?.cancel()
         importJob?.cancel()
+        recycleOperationJob?.cancel()
         clearSessionState()
         _isLoading.value = true
         sessionJob = viewModelScope.launch {
@@ -113,7 +157,7 @@ class ResourceExplorerViewModel(
             } catch (failure: Exception) {
                 if (generation == loadGeneration) {
                     clearSessionState()
-                    _loadError.value = "无法加载会话工作区：${failure.message ?: "未知错误"}"
+                    _loadError.value = ResourceExplorerNotice.workspaceLoadFailed(failure.message)
                     _isLoading.value = false
                 }
             }
@@ -127,7 +171,7 @@ class ResourceExplorerViewModel(
     fun importDocuments(uris: List<Uri>) {
         val rootUuid = _workspaceRootUuid.value
         if (rootUuid == null) {
-            _loadError.value = "会话工作区尚未就绪，请重试"
+            _loadError.value = ResourceExplorerNotice.workspaceNotReady()
             return
         }
         importJob?.cancel()
@@ -221,6 +265,109 @@ class ResourceExplorerViewModel(
         }
     }
 
+    fun restoreRecycledFiles(files: List<FileEntry>) {
+        startRecycleOperation(RecycleOperation.Restore, files.map(FileEntry::uuid))
+    }
+
+    fun permanentlyDeleteRecycledFiles(files: List<FileEntry>) {
+        startRecycleOperation(RecycleOperation.PermanentDelete, files.map(FileEntry::uuid))
+    }
+
+    fun emptyRecycleBin() {
+        if (_recycledFiles.value.isEmpty()) return
+        startRecycleOperation(RecycleOperation.Empty, emptyList())
+    }
+
+    fun retryFailedRecycleOperation() {
+        val retryPlan = recycleRetryPlan ?: return
+        startRecycleOperation(retryPlan.operation, retryPlan.itemUuids)
+    }
+
+    fun clearRecycleOperationState() {
+        if (recycleOperationJob?.isActive == true) return
+        recycleRetryPlan = null
+        _recycleOperationState.value = RecycleOperationState.Idle
+    }
+
+    private fun startRecycleOperation(
+        operation: RecycleOperation,
+        requestedItemUuids: List<String>,
+    ) {
+        if (recycleOperationJob?.isActive == true) return
+        val itemUuids = requestedItemUuids.distinct()
+        if (operation != RecycleOperation.Empty && itemUuids.isEmpty()) return
+        val rootUuid = _workspaceRootUuid.value
+        if (rootUuid == null) {
+            recycleRetryPlan = RecycleRetryPlan(operation, itemUuids)
+            _recycleOperationState.value = RecycleOperationState.Failure(operation, itemUuids)
+            return
+        }
+        val generation = loadGeneration
+        _recycleOperationState.value = RecycleOperationState.Running(operation, itemUuids)
+        recycleOperationJob = viewModelScope.launch {
+            val succeededItemUuids = mutableListOf<String>()
+            val failedItemUuids = mutableListOf<String>()
+            var operationFailedWithoutItem = false
+            when (operation) {
+                RecycleOperation.Empty -> {
+                    try {
+                        workspaceRepo.emptyRecycleBin(rootUuid)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        operationFailedWithoutItem = true
+                    }
+                }
+
+                RecycleOperation.Restore,
+                RecycleOperation.PermanentDelete,
+                -> itemUuids.forEach { itemUuid ->
+                    try {
+                        when (operation) {
+                            RecycleOperation.Restore -> workspaceRepo.restoreFromRecycleBin(rootUuid, itemUuid)
+                            RecycleOperation.PermanentDelete -> workspaceRepo.permanentDelete(rootUuid, itemUuid)
+                            RecycleOperation.Empty -> error("已由清空分支处理")
+                        }
+                        succeededItemUuids += itemUuid
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        failedItemUuids += itemUuid
+                    }
+                }
+            }
+            val hasFailures = operationFailedWithoutItem || failedItemUuids.isNotEmpty()
+            if (!hasFailures || succeededItemUuids.isNotEmpty()) {
+                refreshRecycleBin(rootUuid, generation)
+            }
+            if (generation != loadGeneration || _workspaceRootUuid.value != rootUuid) return@launch
+            recycleRetryPlan = if (hasFailures) RecycleRetryPlan(operation, failedItemUuids) else null
+            _recycleOperationState.value = when {
+                !hasFailures -> RecycleOperationState.Success(operation, succeededItemUuids)
+                succeededItemUuids.isEmpty() -> RecycleOperationState.Failure(operation, failedItemUuids)
+                else -> RecycleOperationState.PartialFailure(
+                    operation = operation,
+                    succeededItemUuids = succeededItemUuids,
+                    failedItemUuids = failedItemUuids,
+                )
+            }
+        }
+    }
+
+    private suspend fun refreshRecycleBin(rootUuid: String, generation: Long) {
+        try {
+            val refreshedFiles = workspaceRepo.observeRecycleBin(rootUuid).first()
+            if (generation == loadGeneration && _workspaceRootUuid.value == rootUuid) {
+                _recycledFiles.value = refreshedFiles
+                _recycleBinCount.value = refreshedFiles.size
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // 长期观察者仍会继续接收数据库更新；刷新失败不应重放已成功的破坏性操作。
+        }
+    }
+
     private fun createRequest(uri: Uri, rootUuid: String): ShareRequest {
         return requestFactory.create(uri, rootUuid)
     }
@@ -254,8 +401,15 @@ class ResourceExplorerViewModel(
         _loadError.value = null
         _isImporting.value = false
         _importItems.value = emptyList()
+        _recycleOperationState.value = RecycleOperationState.Idle
+        recycleRetryPlan = null
         importRequests.clear()
     }
+
+    private data class RecycleRetryPlan(
+        val operation: RecycleOperation,
+        val itemUuids: List<String>,
+    )
 
     companion object {
         fun factory(application: Application): ViewModelProvider.Factory =

@@ -12,6 +12,12 @@ class ReleaseLocalInferenceSurfaceContractTest {
         val providerForm = source("ui/settings/ProviderFormScreen.kt")
         val application = source("NexaraApplication.kt")
         val mainActivity = source("MainActivity.kt")
+        val buildScript = Files.readAllBytes(Path.of("app/build.gradle.kts"))
+            .toString(Charsets.UTF_8)
+        val minifiedTestBuildType = buildScript
+            .substringAfter("create(\"minifiedTest\") {")
+            .substringBefore("        release {")
+        val releaseBuildType = buildScript.substringAfter("        release {")
         val navGraph = source("navigation/NavGraph.kt")
         val chatViewModel = source("ui/chat/ChatViewModel.kt")
         val sessionSettings = source("ui/chat/SessionSettingsSheet.kt")
@@ -20,8 +26,17 @@ class ReleaseLocalInferenceSurfaceContractTest {
         assertThat(providerForm).contains("availableProviderPresets")
         assertThat(providerForm).contains("localInferenceRuntimeGate.isAvailable")
         assertThat(application).contains("buildUnavailableLocalPlaceholderProvider")
-        assertThat(mainActivity).contains(
-            "isDebugBuild = BuildConfig.DEBUG && BuildConfig.LOCAL_INFERENCE_AVAILABLE",
+        assertThat(mainActivity).contains("isDebugBuild = BuildConfig.DEBUG")
+        assertThat(mainActivity).doesNotContain(
+            "BuildConfig.DEBUG && BuildConfig.LOCAL_INFERENCE_AVAILABLE",
+        )
+        assertThat(minifiedTestBuildType).contains("isDebuggable = false")
+        assertThat(minifiedTestBuildType).contains(
+            "buildConfigField(\"boolean\", \"LOCAL_INFERENCE_AVAILABLE\", \"false\")",
+        )
+        assertThat(releaseBuildType).contains("isDebuggable = false")
+        assertThat(releaseBuildType).contains(
+            "buildConfigField(\"boolean\", \"LOCAL_INFERENCE_AVAILABLE\", \"false\")",
         )
         assertThat(navGraph).contains("if (BuildConfig.LOCAL_INFERENCE_AVAILABLE)")
         assertThat(chatViewModel).contains("ProviderResolutionError.LOCAL_INFERENCE_UNAVAILABLE")

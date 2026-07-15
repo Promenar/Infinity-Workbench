@@ -14,6 +14,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -135,7 +137,11 @@ open class MainActivity : ComponentActivity() {
                     state = startupState,
                     onRetry = app::retryStartupRecovery,
                 ) {
-                    Box(Modifier.fillMaxSize()) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .semantics { testTagsAsResourceId = true }
+                    ) {
                         val navController = rememberNavController()
                         val backStackEntry by navController.currentBackStackEntryAsState()
                         val importState by shareImportViewModel.state.collectAsStateWithLifecycle()
@@ -169,7 +175,7 @@ open class MainActivity : ComponentActivity() {
                                 null
                             },
                             forceLocalProbeFailureForTesting = allowOnboardingEmptyModelsOverride(
-                                isDebugBuild = BuildConfig.DEBUG && BuildConfig.LOCAL_INFERENCE_AVAILABLE,
+                                isDebugBuild = BuildConfig.DEBUG,
                                 requestedByIntent = intent.getBooleanExtra(
                                     EXTRA_ONBOARDING_LOCAL_PROBE_FAILURE_FOR_TESTING,
                                     false,

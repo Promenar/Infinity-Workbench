@@ -7,9 +7,11 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.MainActivity
 import com.promenar.nexara.NexaraApplication
@@ -43,8 +45,13 @@ class OnboardingAndroidEndToEndTest {
     fun resetBeforeEachDeviceFlow() {
         if (phaseArgument() == null) resetPersistentState()
         originalProviderSummary = ProviderManager.getInstance().getProviderSummary("default")
-        originalMainSlot = (rule.activity.application as NexaraApplication).localInferenceEngine.mainSlot.value
-        originalChatState = (rule.activity.application as NexaraApplication).chatStore.current
+        val app = rule.activity.application as NexaraApplication
+        originalMainSlot = if (app.localInferenceRuntimeGate.isAvailable) {
+            app.localInferenceEngine.mainSlot.value
+        } else {
+            null
+        }
+        originalChatState = app.chatStore.current
     }
 
     @After
@@ -54,10 +61,12 @@ class OnboardingAndroidEndToEndTest {
         val app = rule.activity.application as NexaraApplication
         originalChatState?.let { snapshot -> app.chatStore.update { snapshot } }
         assertEquals(originalProviderSummary, ProviderManager.getInstance().getProviderSummary("default"))
-        assertEquals(
-            originalMainSlot,
-            app.localInferenceEngine.mainSlot.value,
-        )
+        if (app.localInferenceRuntimeGate.isAvailable) {
+            assertEquals(
+                originalMainSlot,
+                app.localInferenceEngine.mainSlot.value,
+            )
+        }
     }
 
     private fun resetPersistentState() {
@@ -80,14 +89,11 @@ class OnboardingAndroidEndToEndTest {
         rule.activity.intent.putExtra(MainActivity.EXTRA_ONBOARDING_EMPTY_MODELS_FOR_TESTING, true)
         rule.onNodeWithText("English").performClick()
         waitForStep(OnboardingStep.PROVIDER)
-
-        rule.runOnIdle {
-            assertEquals("en", rule.activity.resources.configuration.locales[0].language)
-            assertEquals(
-                "Connect an AI provider",
-                rule.activity.getString(R.string.onboarding_provider_title),
-            )
+        rule.activityRule.scenario.recreate()
+        rule.waitUntil(timeoutMillis = 10_000) {
+            rule.onAllNodesWithText("Connect an AI provider").fetchSemanticsNodes().isNotEmpty()
         }
+        rule.onNodeWithText("Connect an AI provider").assertIsDisplayed()
         rule.onNodeWithTag("onboarding_step_provider").assertIsDisplayed()
 
         rule.runOnIdle {
@@ -203,7 +209,9 @@ class OnboardingAndroidEndToEndTest {
     }
 
     @Test
-    fun localProviderWithoutLoadedMainModelFailsRealProbeAndStaysOnConnection() {
+    fun localProviderRespectsBuildCapabilityAndStaysOnConnection() {
+        assumeTrue("常规E2E不在force-stop分阶段模式运行", phaseArgument() == null)
+        val app = rule.activity.application as NexaraApplication
         rule.activity.intent.putExtra(MainActivity.EXTRA_ONBOARDING_LOCAL_PROBE_FAILURE_FOR_TESTING, true)
         rule.activityRule.scenario.recreate()
         waitForStep(OnboardingStep.LANGUAGE)
@@ -215,9 +223,21 @@ class OnboardingAndroidEndToEndTest {
         waitForStep(OnboardingStep.CONNECTION)
         rule.onNodeWithTag("onboarding_step_connection").assertIsDisplayed()
         rule.onNodeWithText(rule.activity.getString(R.string.onboarding_connection_action)).performClick()
-        rule.onNodeWithText(rule.activity.getString(R.string.provider_form_btn_test)).performClick()
-        rule.onNodeWithText(rule.activity.getString(R.string.onboarding_local_model_unavailable))
-            .assertIsDisplayed()
+        if (app.localInferenceRuntimeGate.isAvailable) {
+            rule.onNodeWithText(rule.activity.getString(R.string.provider_form_btn_test)).performClick()
+            rule.onNodeWithText(rule.activity.getString(R.string.onboarding_local_model_unavailable))
+                .assertIsDisplayed()
+        } else {
+            val unavailableMessage = rule.activity.getString(R.string.local_inference_release_unavailable)
+            rule.waitUntil(timeoutMillis = 10_000) {
+                rule.onAllNodesWithText(unavailableMessage).fetchSemanticsNodes().isNotEmpty()
+            }
+            rule.onNodeWithText(unavailableMessage)
+                .performScrollTo()
+                .assertIsDisplayed()
+            rule.onAllNodesWithText(rule.activity.getString(R.string.onboarding_local_model_unavailable))
+                .assertCountEquals(0)
+        }
         assertStep(OnboardingStep.CONNECTION)
     }
 

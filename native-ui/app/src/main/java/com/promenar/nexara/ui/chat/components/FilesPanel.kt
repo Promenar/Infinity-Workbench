@@ -1,7 +1,6 @@
 package com.promenar.nexara.ui.chat.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -9,16 +8,20 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,6 +40,7 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -44,27 +48,34 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLocale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
@@ -79,7 +90,45 @@ import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import java.text.SimpleDateFormat
 import java.util.Date
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flowOf
+
+internal enum class FileNodeActivation {
+    ToggleSelection,
+    ToggleExpansion,
+    NavigateFolder,
+    OpenFile,
+}
+
+internal fun resolveFileNodeActivation(
+    isMultiSelectMode: Boolean,
+    isDirectory: Boolean,
+    hasFolderClick: Boolean,
+    hasFileClick: Boolean,
+): FileNodeActivation? = when {
+    isMultiSelectMode -> FileNodeActivation.ToggleSelection
+    isDirectory && hasFolderClick -> FileNodeActivation.NavigateFolder
+    isDirectory -> FileNodeActivation.ToggleExpansion
+    hasFileClick -> FileNodeActivation.OpenFile
+    else -> null
+}
+
+internal fun supportsFileMultiSelect(
+    hasReindex: Boolean,
+    hasDelete: Boolean,
+): Boolean = hasReindex || hasDelete
+
+internal fun hasFileNodeMenuActions(
+    isDirectory: Boolean,
+    hasReindex: Boolean,
+    hasDelete: Boolean,
+    hasRename: Boolean,
+    hasMove: Boolean,
+    hasExtractKG: Boolean,
+    hasViewKG: Boolean,
+    hasCopy: Boolean,
+): Boolean = hasDelete || hasRename || hasViewKG ||
+    (!isDirectory && (hasReindex || hasMove || hasExtractKG || hasCopy))
 
 @Composable
 fun FilesPanel(
@@ -88,7 +137,7 @@ fun FilesPanel(
     searchQuery: String = "",
     useScroll: Boolean = true,
     onReindex: ((String) -> Unit)? = null,
-    onDelete: ((String) -> Unit)? = null,
+    onDelete: ((Collection<String>, (FileBatchOperationResult) -> Unit) -> Unit)? = null,
     onRename: ((String, String) -> Unit)? = null,
     onMove: ((String, String) -> Unit)? = null,
     onExtractKG: ((String) -> Unit)? = null,
@@ -98,76 +147,190 @@ fun FilesPanel(
     kgExtractionStates: Map<String, KgStatus> = emptyMap(),
     folders: List<FileEntry> = emptyList(),
     rootFiles: List<FileEntry>? = null,
+    isLoading: Boolean = false,
+    hasLoadError: Boolean = false,
+    onRetryLoad: (() -> Unit)? = null,
     externalSelectedIds: MutableList<String>? = null,
-    onFileClick: (String) -> Unit = {}
+    showSelectionOverlay: Boolean = true,
+    onFolderClick: ((String, String) -> Unit)? = null,
+    onFileClick: ((String) -> Unit)? = null,
+    nowMillis: Long = System.currentTimeMillis(),
 ) {
     val rootsFlow = if (rootFiles == null) workspaceRootUuid?.let { workspaceRepo.observeChildren(it, it) }
         ?: flowOf(emptyList())
     else flowOf(rootFiles)
     val roots by rootsFlow.collectAsState(initial = rootFiles.orEmpty())
 
-    val filteredRoots = if (searchQuery.isBlank()) roots else {
-        roots.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    val searchVisibleIds by produceState<Set<String>?>(
+        initialValue = null,
+        workspaceRootUuid,
+        workspaceRepo,
+        searchQuery,
+    ) {
+        val rootUuid = workspaceRootUuid
+        if (rootUuid == null || searchQuery.isBlank()) {
+            value = null
+        } else {
+            workspaceRepo.searchByName(rootUuid, searchQuery).collectLatest { matches ->
+                value = resolveSearchVisibleIds(matches, rootUuid) { uuid ->
+                    workspaceRepo.getByUuid(rootUuid, uuid)
+                }
+            }
+        }
     }
+    val filteredRoots = if (searchQuery.isBlank()) roots else {
+        val visibleIds = searchVisibleIds.orEmpty()
+        roots.filter { it.uuid in visibleIds }
+    }
+    val panelState = resolveFilesPanelUiState(
+        workspaceReady = workspaceRootUuid != null,
+        isLoading = isLoading,
+        hasLoadError = hasLoadError,
+        itemCount = roots.size,
+        filteredItemCount = filteredRoots.size,
+        searchQuery = searchQuery,
+    )
 
     // 多选状态
     val localSelectedIds = remember { mutableStateListOf<String>() }
     val selectedIds = externalSelectedIds ?: localSelectedIds
-    val isMultiSelectMode = selectedIds.isNotEmpty()
+    val supportsMultiSelect = supportsFileMultiSelect(
+        hasReindex = onReindex != null,
+        hasDelete = onDelete != null,
+    )
+    val isMultiSelectMode = selectedIds.isNotEmpty() && supportsMultiSelect
+    var deleteFailure by remember { mutableStateOf<FileBatchOperationResult?>(null) }
+    var isDeleting by remember { mutableStateOf(false) }
+    val requestDelete: (Collection<String>) -> Unit = request@{ ids ->
+        val deleteAction = onDelete ?: return@request
+        val attemptedIds = ids.distinct()
+        if (attemptedIds.isEmpty() || isDeleting) return@request
+        isDeleting = true
+        deleteAction(attemptedIds) { result ->
+            reduceSelectionAfterFileOperation(selectedIds, result)
+            deleteFailure = result.takeIf { it.failedIds.isNotEmpty() }
+            isDeleting = false
+        }
+    }
 
     val content = @Composable { root: FileEntry ->
         FileTreeNode(
             file = root, depth = 0, workspaceRootUuid = workspaceRootUuid!!, workspaceRepo = workspaceRepo,
             searchQuery = searchQuery,
-            onReindex = onReindex, onDelete = { id ->
-                onDelete?.invoke(id); selectedIds.remove(id)
-            },
+            onReindex = onReindex,
+            onDelete = onDelete?.let { { id -> requestDelete(listOf(id)) } },
             onRename = onRename, onMove = onMove, onExtractKG = onExtractKG, onViewKG = onViewKG, onCopy = onCopy,
             indexingFileIds = indexingFileIds,
             kgExtractionStates = kgExtractionStates,
             selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode,
-            onFileClick = onFileClick
+            visibleSearchIds = searchVisibleIds,
+            onFolderClick = onFolderClick,
+            onFileClick = onFileClick,
+            nowMillis = nowMillis,
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        if (useScroll) {
-            LazyColumn(
-                modifier = Modifier.weight(1f).padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+    Box(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = if (showSelectionOverlay && isMultiSelectMode) 88.dp else 0.dp),
+    ) {
+        deleteFailure?.let { failure ->
+            val failedLabel = stringResource(R.string.common_cd_failed)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        liveRegion = LiveRegionMode.Polite
+                        stateDescription = failedLabel
+                    }
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
             ) {
-                items(filteredRoots, key = { it.uuid }) { root -> content(root) }
+                Text(failedLabel, style = NexaraTypography.labelMedium, color = NexaraColors.Error)
+                TextButton(
+                    onClick = { requestDelete(failure.failedIds) },
+                    enabled = !isDeleting,
+                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                ) { Text(stringResource(R.string.shared_btn_retry)) }
+                TextButton(
+                    onClick = { deleteFailure = null },
+                    enabled = !isDeleting,
+                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                ) { Text(stringResource(R.string.common_dismiss)) }
             }
-        } else {
-            Column(
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (filteredRoots.isEmpty() && searchQuery.isBlank()) {
-                    EmptyFilesState()
-                } else {
+        }
+        when (panelState) {
+            FilesPanelUiState.Loading -> FilesPanelLoadingState(Modifier.weight(1f))
+            FilesPanelUiState.Error -> FilesPanelErrorState(
+                modifier = Modifier.weight(1f),
+                onRetry = onRetryLoad,
+            )
+            FilesPanelUiState.Empty -> EmptyFilesState(Modifier.weight(1f))
+            FilesPanelUiState.SearchEmpty -> SearchEmptyFilesState(Modifier.weight(1f))
+            FilesPanelUiState.Content -> if (useScroll) {
+                LazyColumn(
+                    modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(filteredRoots, key = { it.uuid }) { root -> content(root) }
+                }
+            } else {
+                Column(
+                    modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     filteredRoots.forEach { root -> content(root) }
                 }
             }
         }
 
-        // 底部批量操作栏（MD3 过渡动画）
-        AnimatedVisibility(
-            visible = isMultiSelectMode,
-            enter = expandVertically(animationSpec = androidx.compose.animation.core.tween(300)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
-            exit = shrinkVertically(animationSpec = androidx.compose.animation.core.tween(200)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(200))
-        ) {
-            BatchActionBar(
-                selectedCount = selectedIds.size,
-                onClear = { selectedIds.clear() },
-                onReindexAll = onReindex?.let { reindexFn ->
-                    { selectedIds.forEach { id -> reindexFn(id) }; selectedIds.clear() }
-                },
-                onDeleteAll = onDelete?.let { deleteFn ->
-                    { selectedIds.forEach { id -> deleteFn(id) }; selectedIds.clear() }
-                }
-            )
-        }
+    }
+
+        // 底部批量操作栏：统一在真实屏幕底部居中，正文已预留空间。
+        FilesPanelSelectionOverlay(
+            visible = showSelectionOverlay && isMultiSelectMode,
+            selectedCount = selectedIds.size,
+            onClear = { selectedIds.clear() },
+            onReindexAll = onReindex?.let { reindexFn ->
+                { selectedIds.forEach { id -> reindexFn(id) }; selectedIds.clear() }
+            },
+            onDeleteAll = if (onDelete != null) {
+                { requestDelete(selectedIds.toList()) }
+            } else {
+                null
+            },
+        )
+    }
+}
+
+@Composable
+internal fun BoxScope.FilesPanelSelectionOverlay(
+    selectedCount: Int,
+    onClear: () -> Unit,
+    onReindexAll: (() -> Unit)?,
+    onDeleteAll: (() -> Unit)?,
+    visible: Boolean = true,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .navigationBarsPadding()
+            .testTag("files_panel_selection_bar"),
+        enter = expandVertically(animationSpec = androidx.compose.animation.core.tween(300)) +
+            fadeIn(animationSpec = androidx.compose.animation.core.tween(300)),
+        exit = shrinkVertically(animationSpec = androidx.compose.animation.core.tween(200)) +
+            fadeOut(animationSpec = androidx.compose.animation.core.tween(200)),
+    ) {
+        BatchActionBar(
+            selectedCount = selectedCount,
+            onClear = onClear,
+            onReindexAll = onReindexAll,
+            onDeleteAll = onDeleteAll,
+        )
     }
 }
 
@@ -197,7 +360,10 @@ private fun BatchActionBar(
                     style = NexaraTypography.labelMedium,
                     color = NexaraColors.OnSurface,
                 )
-                TextButton(onClick = onClear) {
+                TextButton(
+                    onClick = onClear,
+                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                ) {
                     Text(
                         stringResource(R.string.files_cancel),
                         style = NexaraTypography.labelSmall,
@@ -207,7 +373,10 @@ private fun BatchActionBar(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onReindexAll != null) {
-                    TextButton(onClick = onReindexAll) {
+                    TextButton(
+                        onClick = onReindexAll,
+                        modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                    ) {
                         Text(
                             stringResource(R.string.files_reindex),
                             style = NexaraTypography.labelSmall,
@@ -216,7 +385,10 @@ private fun BatchActionBar(
                     }
                 }
                 if (onDeleteAll != null) {
-                    TextButton(onClick = onDeleteAll) {
+                    TextButton(
+                        onClick = onDeleteAll,
+                        modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                    ) {
                         Text(
                             stringResource(R.string.shared_btn_delete),
                             style = NexaraTypography.labelSmall,
@@ -229,6 +401,7 @@ private fun BatchActionBar(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FileTreeNode(
     file: FileEntry,
@@ -247,13 +420,51 @@ private fun FileTreeNode(
     kgExtractionStates: Map<String, KgStatus> = emptyMap(),
     selectedIds: MutableList<String> = mutableStateListOf(),
     isMultiSelectMode: Boolean = false,
-    onFileClick: (String) -> Unit = {}
+    visibleSearchIds: Set<String>? = null,
+    onFolderClick: ((String, String) -> Unit)? = null,
+    onFileClick: ((String) -> Unit)? = null,
+    nowMillis: Long,
 ) {
     var expanded by rememberSaveable { mutableStateOf(depth < 2) }
     var showMenu by rememberSaveable { mutableStateOf(false) }
     var showRenameDialog by rememberSaveable { mutableStateOf(false) }
     var showMoveSheet by rememberSaveable { mutableStateOf(false) }
     val isSelected = file.uuid in selectedIds
+    val optionsLabel = stringResource(R.string.chat_cd_options)
+    val supportsMultiSelect = supportsFileMultiSelect(
+        hasReindex = onReindex != null,
+        hasDelete = onDelete != null,
+    )
+    val hasMenuActions = supportsMultiSelect || hasFileNodeMenuActions(
+        isDirectory = file.isDirectory,
+        hasReindex = onReindex != null,
+        hasDelete = onDelete != null,
+        hasRename = onRename != null,
+        hasMove = onMove != null,
+        hasExtractKG = onExtractKG != null,
+        hasViewKG = onViewKG != null,
+        hasCopy = onCopy != null,
+    )
+    val activation = resolveFileNodeActivation(
+        isMultiSelectMode = isMultiSelectMode,
+        isDirectory = file.isDirectory,
+        hasFolderClick = onFolderClick != null,
+        hasFileClick = onFileClick != null,
+    )
+    val handleActivate: (() -> Unit)? = activation?.let { resolvedActivation ->
+        {
+            when (resolvedActivation) {
+                FileNodeActivation.ToggleSelection -> {
+                    if (isSelected) selectedIds.remove(file.uuid) else selectedIds.add(file.uuid)
+                }
+                FileNodeActivation.ToggleExpansion -> expanded = !expanded
+                FileNodeActivation.NavigateFolder -> {
+                    onFolderClick?.invoke(file.uuid, file.name)
+                }
+                FileNodeActivation.OpenFile -> onFileClick?.invoke(file.uuid)
+            }
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(
@@ -261,34 +472,23 @@ private fun FileTreeNode(
                 .fillMaxWidth()
                 .padding(start = (depth * 16).dp)
         ) {
-        // 多选高亮动画
-        val bgColor by animateColorAsState(
-            targetValue = if (isSelected) NexaraColors.Primary.copy(alpha = 0.08f) else NexaraColors.GlassSurface,
-            animationSpec = androidx.compose.animation.core.tween(200),
-            label = "selectBg"
-        )
-
         NexaraGlassCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .animateContentSize(animationSpec = androidx.compose.animation.core.tween(200))
-                .pointerInput(file.uuid, isMultiSelectMode, isSelected) {
-                    detectTapGestures(
-                        onLongPress = {
-                            // 长按仅弹出菜单，不自动进入多选
-                            showMenu = true
-                        },
-                        onTap = {
-                            if (isMultiSelectMode) {
-                                if (isSelected) selectedIds.remove(file.uuid) else selectedIds.add(file.uuid)
-                            } else if (file.isDirectory) {
-                                expanded = !expanded
-                            } else {
-                                onFileClick(file.uuid)
-                            }
-                        }
-                    )
-                },
+                .then(
+                    if (handleActivate != null) {
+                        Modifier.combinedClickable(
+                            role = Role.Button,
+                            onClickLabel = file.name,
+                            onLongClickLabel = optionsLabel.takeIf { hasMenuActions },
+                            onLongClick = if (hasMenuActions) ({ showMenu = true }) else null,
+                            onClick = handleActivate,
+                        )
+                    } else {
+                        Modifier
+                    },
+                ),
             shape = RoundedCornerShape(12.dp)
         ) {
             FileRow(
@@ -296,12 +496,21 @@ private fun FileTreeNode(
                 indexingFileIds = indexingFileIds,
                 kgExtractionStates = kgExtractionStates,
                 isMultiSelectMode = isMultiSelectMode,
-                isSelected = isSelected
+                isSelected = isSelected,
+                onSelectionChange = { checked ->
+                    if (checked) {
+                        if (file.uuid !in selectedIds) selectedIds.add(file.uuid)
+                    } else {
+                        selectedIds.remove(file.uuid)
+                    }
+                },
+                onOpenMenu = if (hasMenuActions) ({ showMenu = true }) else null,
+                nowMillis = nowMillis,
             )
         }
 
         // 长按上下文菜单
-        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+        DropdownMenu(expanded = showMenu && hasMenuActions, onDismissRequest = { showMenu = false }) {
             if (!file.isDirectory) {
                 if (onReindex != null) {
                     DropdownMenuItem(
@@ -348,7 +557,7 @@ private fun FileTreeNode(
                     onClick = { showMenu = false; onCopy(file.uuid) }
                 )
             }
-            if (!isMultiSelectMode) {
+            if (!isMultiSelectMode && supportsMultiSelect) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.files_multi_select), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
                     onClick = { showMenu = false; selectedIds.add(file.uuid) }
@@ -391,7 +600,7 @@ private fun FileTreeNode(
 
     if (file.isDirectory) {
         AnimatedVisibility(
-            visible = expanded,
+            visible = expanded || searchQuery.isNotBlank(),
             enter = expandVertically(animationSpec = androidx.compose.animation.core.tween(200)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
             exit = shrinkVertically(animationSpec = androidx.compose.animation.core.tween(150)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(150))
         ) {
@@ -399,7 +608,7 @@ private fun FileTreeNode(
                 .collectAsState(initial = emptyList())
 
             val filteredChildren = if (searchQuery.isBlank()) children else {
-                children.filter { it.name.contains(searchQuery, ignoreCase = true) }
+                children.filter { it.uuid in visibleSearchIds.orEmpty() }
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -411,7 +620,10 @@ private fun FileTreeNode(
                         indexingFileIds = indexingFileIds,
                         kgExtractionStates = kgExtractionStates,
                         selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode,
-                        onFileClick = onFileClick
+                        visibleSearchIds = visibleSearchIds,
+                        onFolderClick = onFolderClick,
+                        onFileClick = onFileClick,
+                        nowMillis = nowMillis,
                     )
                 }
             }
@@ -426,8 +638,12 @@ private fun FileRow(
     indexingFileIds: Set<String> = emptySet(),
     kgExtractionStates: Map<String, KgStatus> = emptyMap(),
     isMultiSelectMode: Boolean = false,
-    isSelected: Boolean = false
+    isSelected: Boolean = false,
+    onSelectionChange: (Boolean) -> Unit,
+    onOpenMenu: (() -> Unit)?,
+    nowMillis: Long,
 ) {
+    val optionsLabel = stringResource(R.string.chat_cd_options)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -441,10 +657,9 @@ private fun FileRow(
         if (isMultiSelectMode) {
             Checkbox(
                 checked = isSelected,
-                onCheckedChange = {},
-                modifier = Modifier.size(24.dp)
+                onCheckedChange = onSelectionChange,
+                modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
             )
-            Spacer(modifier = Modifier.width(8.dp))
         }
         Icon(
             imageVector = fileIcon(file),
@@ -465,18 +680,30 @@ private fun FileRow(
             )
             if (!file.isDirectory) {
                 Text(
-                    text = formatFileMetadata(file),
+                    text = formatFileMetadata(file, nowMillis),
                     style = NexaraTypography.labelSmall,
                     color = NexaraColors.OnSurfaceVariant
                 )
             }
         }
 
-        IndexStatusBadge(status = resolveIndexStatus(file, indexingFileIds))
-
         if (!file.isDirectory) {
+            IndexStatusBadge(status = resolveIndexStatus(file, indexingFileIds))
             Spacer(modifier = Modifier.width(6.dp))
             KgStatusIcon(status = resolveKgStatus(file, kgExtractionStates))
+        }
+
+        if (onOpenMenu != null) {
+            IconButton(
+                onClick = onOpenMenu,
+                modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MoreVert,
+                    contentDescription = optionsLabel,
+                    tint = NexaraColors.OnSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -562,9 +789,80 @@ private fun MoveToSheet(
 }
 
 @Composable
-private fun EmptyFilesState() {
+private fun FilesPanelLoadingState(modifier: Modifier = Modifier) {
+    val loadingLabel = stringResource(R.string.shared_loading)
     Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = loadingLabel
+            }
+            .padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            loadingLabel,
+            style = NexaraTypography.bodyMedium,
+            color = NexaraColors.OnSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun FilesPanelErrorState(
+    modifier: Modifier = Modifier,
+    onRetry: (() -> Unit)? = null,
+) {
+    val errorLabel = stringResource(R.string.resource_explorer_error_workspace_load_failed)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics {
+                liveRegion = LiveRegionMode.Assertive
+                stateDescription = errorLabel
+            }
+            .padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            errorLabel,
+            style = NexaraTypography.labelMedium,
+            color = NexaraColors.Error,
+        )
+        onRetry?.let { retry ->
+            TextButton(
+                onClick = retry,
+                modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+            ) {
+                Text(stringResource(R.string.shared_btn_retry))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchEmptyFilesState(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.fillMaxWidth().padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(Icons.Rounded.FolderOpen, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(48.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(stringResource(R.string.rag_home_search_results), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+        Text(stringResource(R.string.files_empty_title), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
+    }
+}
+
+@Composable
+private fun EmptyFilesState(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.fillMaxWidth().padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -606,9 +904,9 @@ private fun resolveKgStatus(file: FileEntry, kgExtractionStates: Map<String, KgS
 }
 
 @Composable
-private fun formatFileMetadata(file: FileEntry): String {
+private fun formatFileMetadata(file: FileEntry, nowMillis: Long): String {
     val size = formatFileSize(file.sizeBytes)
-    val time = formatRelativeTime(file.updatedAt)
+    val time = formatRelativeTime(file.updatedAt, nowMillis)
     return "$size · $time"
 }
 
@@ -621,9 +919,8 @@ private fun formatFileSize(bytes: Long): String {
 }
 
 @Composable
-private fun formatRelativeTime(timestamp: Long): String {
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
+private fun formatRelativeTime(timestamp: Long, nowMillis: Long): String {
+    val diff = nowMillis - timestamp
     val locale = LocalLocale.current.platformLocale
     return when {
         diff < 60_000L -> stringResource(R.string.files_time_just_now)

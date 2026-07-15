@@ -9,7 +9,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
 class ToolCallLifecycleHandler(
-    private val onChunk: (StreamChunk) -> Unit,
+    private val onChunk: suspend (StreamChunk) -> Unit,
     private val knownTools: Map<String, ProtocolTool> = emptyMap()
 ) {
     private data class PendingCall(
@@ -28,7 +28,7 @@ class ToolCallLifecycleHandler(
         } else ToolType.PROVIDER
     }
 
-    fun handleToolInputDelta(id: String, argumentsDelta: String) {
+    suspend fun handleToolInputDelta(id: String, argumentsDelta: String) {
         val call = pending.getOrPut(id) {
             PendingCall(id = id, name = "")
         }
@@ -56,7 +56,7 @@ class ToolCallLifecycleHandler(
         }
     }
 
-    fun handleToolComplete(id: String, name: String, arguments: String) {
+    suspend fun handleToolComplete(id: String, name: String, arguments: String) {
         pending.remove(id)
 
         val parsedArgs = try {
@@ -79,7 +79,7 @@ class ToolCallLifecycleHandler(
         ))
     }
 
-    fun handleToolPending(id: String, name: String, arguments: String) {
+    suspend fun handleToolPending(id: String, name: String, arguments: String) {
         val parsedArgs = try {
             Json.decodeFromString<JsonObject>(arguments)
         } catch (_: Exception) {

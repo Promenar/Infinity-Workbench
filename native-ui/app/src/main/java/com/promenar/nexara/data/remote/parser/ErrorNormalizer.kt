@@ -1,5 +1,8 @@
 package com.promenar.nexara.data.remote.parser
 
+import com.promenar.nexara.domain.generation.GenerationFailure
+import com.promenar.nexara.domain.generation.GenerationFailureCode
+
 enum class ErrorCategory {
     NETWORK,
     AUTH,
@@ -11,15 +14,23 @@ enum class ErrorCategory {
     UNKNOWN
 }
 
+/**
+ * 协议/网络层错误的分类结果。
+ *
+ * 自结构化失败契约起，本类**不再产出任何自然语言展示文案**：
+ * - [technicalMessage] 仅供诊断（日志/调试），禁止作为 UI 展示 message 传播；
+ * - 调用方应使用 [toFailure] 得到稳定的 [GenerationFailure]（code + 类型化参数）。
+ */
 sealed class NormalizedError {
     abstract val category: ErrorCategory
-    abstract val message: String
     abstract val technicalMessage: String
     abstract val retryable: Boolean
     abstract val retryAfter: Int?
 
+    final override fun toString(): String =
+        "NormalizedError(category=$category, retryable=$retryable, retryAfter=$retryAfter)"
+
     data class Network(
-        override val message: String,
         override val technicalMessage: String
     ) : NormalizedError() {
         override val category = ErrorCategory.NETWORK
@@ -28,7 +39,6 @@ sealed class NormalizedError {
     }
 
     data class Auth(
-        override val message: String,
         override val technicalMessage: String
     ) : NormalizedError() {
         override val category = ErrorCategory.AUTH
@@ -37,7 +47,6 @@ sealed class NormalizedError {
     }
 
     data class RateLimit(
-        override val message: String,
         override val technicalMessage: String,
         override val retryAfter: Int?
     ) : NormalizedError() {
@@ -46,7 +55,6 @@ sealed class NormalizedError {
     }
 
     data class InvalidRequest(
-        override val message: String,
         override val technicalMessage: String
     ) : NormalizedError() {
         override val category = ErrorCategory.INVALID_REQUEST
@@ -55,7 +63,6 @@ sealed class NormalizedError {
     }
 
     data class ServerError(
-        override val message: String,
         override val technicalMessage: String
     ) : NormalizedError() {
         override val category = ErrorCategory.SERVER_ERROR
@@ -64,7 +71,6 @@ sealed class NormalizedError {
     }
 
     data class QuotaExceeded(
-        override val message: String,
         override val technicalMessage: String
     ) : NormalizedError() {
         override val category = ErrorCategory.QUOTA_EXCEEDED
@@ -73,7 +79,6 @@ sealed class NormalizedError {
     }
 
     data class Timeout(
-        override val message: String,
         override val technicalMessage: String
     ) : NormalizedError() {
         override val category = ErrorCategory.TIMEOUT
@@ -82,12 +87,29 @@ sealed class NormalizedError {
     }
 
     data class Unknown(
-        override val message: String,
         override val technicalMessage: String
     ) : NormalizedError() {
         override val category = ErrorCategory.UNKNOWN
         override val retryable = true
         override val retryAfter: Int? = null
+    }
+
+    /**
+     * 转为结构化失败。technical 仅诊断，code + 类型化 retryAfter 参数供上层映射。
+     */
+    fun toFailure(cause: Throwable? = null): GenerationFailure = when (this) {
+        is Network -> GenerationFailure(GenerationFailureCode.NETWORK, emptyMap(), technicalMessage, cause)
+        is Auth -> GenerationFailure(GenerationFailureCode.AUTH, emptyMap(), technicalMessage, cause)
+        is RateLimit -> GenerationFailure.rateLimited(
+            retryAfterSeconds = retryAfter,
+            technical = technicalMessage,
+            cause = cause,
+        )
+        is InvalidRequest -> GenerationFailure(GenerationFailureCode.INVALID_REQUEST, emptyMap(), technicalMessage, cause)
+        is ServerError -> GenerationFailure(GenerationFailureCode.SERVER, emptyMap(), technicalMessage, cause)
+        is QuotaExceeded -> GenerationFailure(GenerationFailureCode.QUOTA, emptyMap(), technicalMessage, cause)
+        is Timeout -> GenerationFailure(GenerationFailureCode.TIMEOUT, emptyMap(), technicalMessage, cause)
+        is Unknown -> GenerationFailure.unknown(technical = technicalMessage, cause = cause)
     }
 }
 
@@ -95,10 +117,7 @@ object ErrorNormalizer {
 
     fun normalize(error: Throwable?, providerType: ProviderType? = null): NormalizedError {
         if (error == null) {
-            return NormalizedError.Unknown(
-                message = "发生未知错误，请重试",
-                technicalMessage = "null error"
-            )
+            return NormalizedError.Unknown(technicalMessage = "null error")
         }
 
         val errorMsg = error.message ?: error.toString()
@@ -106,61 +125,38 @@ object ErrorNormalizer {
         val statusCode = extractStatusCode(error)
 
         if (isNetworkError(error, errorMsgLower)) {
-            return NormalizedError.Network(
-                message = "网络连接失败，请检查您的网络设置",
-                technicalMessage = errorMsg
-            )
+            return NormalizedError.Network(technicalMessage = errorMsg)
         }
 
         if (isAuthError(error, statusCode, errorMsgLower)) {
-            return NormalizedError.Auth(
-                message = "API 密钥无效或已过期，请检查设置",
-                technicalMessage = "$statusCode: $errorMsg"
-            )
+            return NormalizedError.Auth(technicalMessage = "$statusCode: $errorMsg")
         }
 
         if (isRateLimitError(error, statusCode, errorMsgLower)) {
             val retryAfter = extractRetryAfter(error) ?: 60
-            val waitTime = formatWaitTime(retryAfter)
             return NormalizedError.RateLimit(
-                message = "请求过于频繁，请等待 $waitTime 后重试",
                 technicalMessage = errorMsg,
-                retryAfter = retryAfter
+                retryAfter = retryAfter,
             )
         }
 
         if (isQuotaError(errorMsgLower)) {
-            return NormalizedError.QuotaExceeded(
-                message = "API 配额已用尽，请升级套餐或明日再试",
-                technicalMessage = errorMsg
-            )
+            return NormalizedError.QuotaExceeded(technicalMessage = errorMsg)
         }
 
         if (isTimeoutError(error, errorMsgLower)) {
-            return NormalizedError.Timeout(
-                message = "请求超时，请重试",
-                technicalMessage = errorMsg
-            )
+            return NormalizedError.Timeout(technicalMessage = errorMsg)
         }
 
         if (statusCode in 400..499) {
-            return NormalizedError.InvalidRequest(
-                message = "请求格式错误，请检查输入内容",
-                technicalMessage = errorMsg
-            )
+            return NormalizedError.InvalidRequest(technicalMessage = errorMsg)
         }
 
         if (statusCode >= 500) {
-            return NormalizedError.ServerError(
-                message = "API 服务暂时不可用，请稍后重试",
-                technicalMessage = errorMsg
-            )
+            return NormalizedError.ServerError(technicalMessage = errorMsg)
         }
 
-        return NormalizedError.Unknown(
-            message = "发生未知错误，请重试",
-            technicalMessage = errorMsg
-        )
+        return NormalizedError.Unknown(technicalMessage = errorMsg)
     }
 
     private fun extractStatusCode(error: Throwable): Int {
@@ -237,15 +233,6 @@ object ErrorNormalizer {
         }
 
         return null
-    }
-
-    private fun formatWaitTime(seconds: Int): String {
-        return when {
-            seconds < 60 -> "$seconds 秒"
-            seconds < 3600 -> "${(seconds + 59) / 60} 分钟"
-            seconds < 86400 -> "${(seconds + 3599) / 3600} 小时"
-            else -> "${(seconds + 86399) / 86400} 天"
-        }
     }
 }
 

@@ -1,6 +1,5 @@
 package com.promenar.nexara.ui.chat.manager
 
-import android.util.Log
 import com.promenar.nexara.data.model.BillingUsage
 import com.promenar.nexara.data.model.RagUsage
 import com.promenar.nexara.data.model.Session
@@ -11,6 +10,8 @@ import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
 import com.promenar.nexara.data.rag.VectorStore
 import com.promenar.nexara.ui.chat.ChatStore
+import com.promenar.nexara.utils.NexaraLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -80,6 +81,8 @@ class PostProcessor(
                     if (title != null) {
                         sessionManager.updateSessionTitle(params.sessionId, title)
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
                     val titleLimit = 15
                     val title = params.userContent.take(titleLimit) +
@@ -117,13 +120,13 @@ class PostProcessor(
                 if (store == null) "VectorStore" else null,
                 if (splitter == null) "TextSplitter" else null
             ).joinToString(", ")
-            Log.w(TAG, "archiveMessagesToRag skipped: $missing not configured — session=$sessionId msgs=${messages.size}")
+            NexaraLogger.log("[$TAG] archiveMessagesToRag skipped: $missing not configured — session=$sessionId msgs=${messages.size}")
             messageManager.setVectorizationStatus(sessionId, msgIds, "skipped")
             return
         }
 
         val archiveStart = System.currentTimeMillis()
-        Log.i(TAG, "archiveMessagesToRag start: session=$sessionId msgs=${messages.size} msgIds=${msgIds.first().take(8)}...~${msgIds.last().take(8)}")
+        NexaraLogger.log("[$TAG] archiveMessagesToRag start: session=$sessionId msgs=${messages.size} msgIds=${msgIds.first().take(8)}...~${msgIds.last().take(8)}")
 
         try {
             val combinedText = messages.joinToString("\n\n") { msg ->
@@ -132,7 +135,7 @@ class PostProcessor(
 
             val chunks = splitter.splitText(combinedText)
             if (chunks.isEmpty()) {
-                Log.i(TAG, "archiveMessagesToRag: 0 chunks after split, marking success — session=$sessionId")
+                NexaraLogger.log("[$TAG] archiveMessagesToRag: 0 chunks after split, marking success — session=$sessionId")
                 messageManager.setVectorizationStatus(sessionId, msgIds, "success")
                 return
             }
@@ -144,7 +147,7 @@ class PostProcessor(
                 client.embedDocuments(chunks)
             }
             val embedMs = System.currentTimeMillis() - embedStart
-            Log.i(TAG, "archiveMessagesToRag embedding: ${chunks.size} chunks, dim=${embeddingResult.embeddings.firstOrNull()?.size}, time=${embedMs}ms")
+            NexaraLogger.log("[$TAG] archiveMessagesToRag embedding: ${chunks.size} chunks, dim=${embeddingResult.embeddings.firstOrNull()?.size}, time=${embedMs}ms")
 
             onProgress?.invoke(0.7f, "Embeddings generated")
 
@@ -164,12 +167,14 @@ class PostProcessor(
             }
 
             val totalMs = System.currentTimeMillis() - archiveStart
-            Log.i(TAG, "archiveMessagesToRag done: ${vectorRecords.size} vectors stored, session=$sessionId total=${totalMs}ms")
+            NexaraLogger.log("[$TAG] archiveMessagesToRag done: ${vectorRecords.size} vectors stored, session=$sessionId total=${totalMs}ms")
             onProgress?.invoke(0.95f, "Stored ${vectorRecords.size} vectors")
             messageManager.setVectorizationStatus(sessionId, msgIds, "success")
+        } catch (cancelled: CancellationException) {
+            messageManager.setVectorizationStatus(sessionId, msgIds, "error")
+            throw cancelled
         } catch (e: Exception) {
-            val totalMs = System.currentTimeMillis() - archiveStart
-            Log.e(TAG, "archiveMessagesToRag FAILED after ${totalMs}ms: session=$sessionId error=${e.message?.take(120)}", e)
+            NexaraLogger.logError("$TAG.archiveMessagesToRag", e)
             messageManager.setVectorizationStatus(sessionId, msgIds, "error")
             throw e
         }

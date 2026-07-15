@@ -2,11 +2,82 @@ package com.promenar.nexara.data.generation
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.domain.generation.GenerationEvent
+import com.promenar.nexara.domain.generation.GenerationFailure
+import com.promenar.nexara.domain.generation.GenerationFailureCode
 import com.promenar.nexara.domain.generation.GenerationSnapshot
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class GenerationPresentationStoreTest {
+    @Test
+    fun `失败事件只保存结构化failure且保留诊断引用`() = runTest {
+        val store = GenerationPresentationStore()
+        store.begin("A", "task-A")
+        val cause = IllegalStateException("provider raw")
+        val failSnapshot = GenerationFailure(
+            code = GenerationFailureCode.RATE_LIMIT,
+            formatArgs = mapOf(GenerationFailure.KEY_RETRY_AFTER_SECONDS to "37"),
+            technical = "HTTP 429",
+            cause = cause,
+        )
+
+        store.accept("A", "task-A", GenerationEvent.Failed(failSnapshot))
+
+        assertThat(store.observe("A").value?.error).isSameInstanceAs(failSnapshot)
+        assertThat(store.observe("A").value?.error?.code).isEqualTo(GenerationFailureCode.RATE_LIMIT)
+        assertThat(store.observe("A").value?.error?.retryAfterSeconds).isEqualTo(37)
+        assertThat(store.observe("A").value?.error?.cause).isSameInstanceAs(cause)
+        assertThat(store.observe("A").value?.error?.technical).isEqualTo("HTTP 429")
+    }
+
+    @Test
+    fun `结构化失败事件逐类落地并按任务隔离`() = runTest {
+        val store = GenerationPresentationStore()
+        store.begin("A", "task-A")
+        val snapshotFailure = GenerationFailure.unknown(technical = "snapshot")
+        val rejectedFailure = GenerationFailure(GenerationFailureCode.AUTH, technical = "rejected")
+        val persistenceFailure = GenerationFailure.persistence(technical = "persistence")
+        val failedFailure = GenerationFailure(GenerationFailureCode.NETWORK, technical = "failed")
+
+        store.accept(
+            "A",
+            "task-A",
+            GenerationEvent.SnapshotChanged(GenerationSnapshot(content = "content", failure = snapshotFailure)),
+        )
+        assertThat(store.observe("A").value?.error).isSameInstanceAs(snapshotFailure)
+        store.accept(
+            "A",
+            "task-A",
+            GenerationEvent.Rejected(rejectedFailure),
+        )
+        assertThat(store.observe("A").value?.error).isSameInstanceAs(rejectedFailure)
+        assertThat(store.observe("A").value?.phase).isEqualTo(com.promenar.nexara.domain.generation.GenerationPhase.FAILED)
+        store.accept(
+            "A",
+            "task-A",
+            GenerationEvent.PersistenceFailed(
+                persistenceCause = RuntimeException("io"),
+                originalCause = null,
+                failure = persistenceFailure,
+            ),
+        )
+        assertThat(store.observe("A").value?.error).isSameInstanceAs(persistenceFailure)
+        assertThat(store.observe("A").value?.phase)
+            .isEqualTo(com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED)
+        store.accept("A", "task-A", GenerationEvent.Failed(failedFailure))
+        assertThat(store.observe("A").value?.error).isSameInstanceAs(failedFailure)
+
+        store.begin("B", "task-B")
+        val uiFailure = GenerationFailure(
+            code = GenerationFailureCode.TIMEOUT,
+            technical = "ui",
+        )
+        store.port("B", "task-B").setError(uiFailure)
+        assertThat(store.observe("B").value?.error?.technical).isEqualTo("ui")
+        assertThat(store.observe("B").value?.error?.code).isEqualTo(GenerationFailureCode.TIMEOUT)
+        assertThat(store.observe("A").value?.error?.code).isEqualTo(GenerationFailureCode.NETWORK)
+    }
+
     @Test
     fun `A生成时导航B后A更新不污染B且返回A可恢复`() = runTest {
         val store = GenerationPresentationStore()

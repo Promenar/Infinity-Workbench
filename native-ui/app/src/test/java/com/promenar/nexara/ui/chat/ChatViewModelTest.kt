@@ -26,6 +26,7 @@ import com.promenar.nexara.domain.repository.IAgentRepository
 import com.promenar.nexara.domain.usecase.AgentConfigResolver
 import com.promenar.nexara.ui.chat.manager.ContextBuilderResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -174,6 +175,7 @@ class ChatViewModelTest {
     private val savedMessages = mutableListOf<Pair<Message, String>>()
     private val deletedMessages = mutableListOf<String>()
     private var failScopedDelete = false
+    private var failSessionUpdate: Throwable? = null
     private var afterInsert: suspend (Message, String) -> Unit = { _, _ -> }
 
     private val stubSessionRepo = object : ISessionRepository {
@@ -182,6 +184,7 @@ class ChatViewModelTest {
         }
 
         override suspend fun updatePartial(id: String, updates: Map<String, Any?>) {
+            failSessionUpdate?.let { throw it }
             val index = savedSessions.indexOfFirst { it.id == id }
             if (index != -1) {
                 var session = savedSessions[index]
@@ -196,6 +199,9 @@ class ChatViewModelTest {
                 }
                 if (updates.containsKey("modelId")) {
                     session = session.copy(modelId = updates["modelId"] as String?)
+                }
+                if (updates.containsKey("customPrompt")) {
+                    session = session.copy(customPrompt = updates["customPrompt"] as String?)
                 }
                 savedSessions[index] = session
             }
@@ -378,6 +384,7 @@ class ChatViewModelTest {
         deletedMessages.clear()
         fakeStreamChunks = emptyList()
         failScopedDelete = false
+        failSessionUpdate = null
         afterInsert = { _, _ -> }
         protocolRequestCount = 0
         holdStreamOpen = false
@@ -518,6 +525,47 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun saveCustomPrompt等待仓库成功后才更新Store() = runTest {
+        seedSession()
+        advanceUntilIdle()
+
+        val result = viewModel.saveCustomPrompt("persisted")
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(savedSessions.single { it.id == "s1" }.customPrompt).isEqualTo("persisted")
+        assertThat((ApplicationProvider.getApplicationContext() as TestNexaraApplication)
+            .chatStore.getSession("s1")?.customPrompt).isEqualTo("persisted")
+    }
+
+    @Test
+    fun saveCustomPrompt仓库失败时不更新Store() = runTest {
+        seedSession()
+        advanceUntilIdle()
+        failSessionUpdate = IllegalStateException("room failed")
+
+        val result = viewModel.saveCustomPrompt("not-persisted")
+
+        assertThat(result.isFailure).isTrue()
+        assertThat((ApplicationProvider.getApplicationContext() as TestNexaraApplication)
+            .chatStore.getSession("s1")?.customPrompt).isNull()
+    }
+
+    @Test
+    fun saveCustomPrompt取消必须传播() = runTest {
+        seedSession()
+        advanceUntilIdle()
+        failSessionUpdate = CancellationException("cancelled")
+
+        var thrown: CancellationException? = null
+        try {
+            viewModel.saveCustomPrompt("cancelled")
+        } catch (cancelled: CancellationException) {
+            thrown = cancelled
+        }
+        assertThat(thrown?.message).isEqualTo("cancelled")
+    }
+
+    @Test
     fun sendMessage_createsUserAndAssistantMessages() = runTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession(); advanceUntilIdle()
@@ -634,7 +682,12 @@ class ChatViewModelTest {
 
         assertThat(viewModel.providerResolutionFailure.value?.providerId)
             .isEqualTo("provider-missing-key")
-        assertThat(viewModel.uiState.value.error).contains("Provider 路由失败")
+        assertThat(viewModel.uiState.value.error).isNull()
+        assertThat(viewModel.uiState.value.generationNotice?.code)
+            .isEqualTo("generation.failure.auth")
+        assertThat(viewModel.uiState.value.generationNotice?.formatArgs).isEmpty()
+        assertThat(viewModel.uiState.value.generationNotice?.formatArgs?.joinToString())
+            .doesNotContain("provider-missing-key")
         assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.ERROR)
         assertThat(viewModel.uiState.value.isGenerating).isFalse()
 
@@ -642,6 +695,7 @@ class ChatViewModelTest {
         advanceUntilIdle()
         assertThat(viewModel.providerResolutionFailure.value).isNull()
         assertThat(viewModel.uiState.value.error).isNull()
+        assertThat(viewModel.uiState.value.generationNotice).isNull()
         assertThat(viewModel.ragPhases.value).isEmpty()
         assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.IDLE)
     }
@@ -938,6 +992,10 @@ class ChatViewModelTest {
         assertThat(viewModel.inputText.value).isEqualTo("from B")
         assertThat(viewModel.uiState.value.isGenerating).isFalse()
         assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.ERROR)
+        assertThat(viewModel.uiState.value.error).isNull()
+        assertThat(viewModel.uiState.value.generationNotice?.code)
+            .isEqualTo("generation.failure.busy")
+        assertThat(viewModel.uiState.value.generationNotice?.formatArgs).isEmpty()
         assertThat(protocolRequestCount).isEqualTo(1)
         assertThat(foregroundTrackedTasks.map { it.sessionId }).containsExactly("A")
         assertThat(providerCancelled).isFalse()
@@ -1101,13 +1159,18 @@ class ChatViewModelTest {
         seedSession(); advanceUntilIdle()
         
         fakeStreamChunks = listOf(
-            StreamChunk.Error("Something went wrong")
+            StreamChunk.Error(technical = "Something went wrong")
         )
 
         viewModel.sendMessage("hello")
         advanceUntilIdle()
 
-        assertThat(viewModel.uiState.value.error).isEqualTo("Something went wrong")
+        assertThat(viewModel.uiState.value.error).isNull()
+        assertThat(viewModel.uiState.value.generationNotice?.code)
+            .isEqualTo("generation.failure.unknown")
+        assertThat(viewModel.uiState.value.generationNotice?.formatArgs).isEmpty()
+        assertThat(viewModel.uiState.value.generationNotice?.formatArgs?.joinToString())
+            .doesNotContain("Something went wrong")
         
     }
 

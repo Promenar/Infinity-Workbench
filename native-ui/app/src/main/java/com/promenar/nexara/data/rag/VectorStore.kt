@@ -4,7 +4,7 @@ import com.promenar.nexara.data.local.db.dao.KgEdgeDao
 import com.promenar.nexara.data.local.db.dao.KgNodeDao
 import com.promenar.nexara.data.local.db.dao.VectorDao
 import com.promenar.nexara.data.local.db.entity.VectorEntity
-import android.util.Log
+import com.promenar.nexara.utils.NexaraLogger
 import java.nio.ByteBuffer
 import java.util.UUID
 
@@ -167,7 +167,7 @@ class VectorStore(
                 sb.append(" ⚠️ EMPTY_TABLE — DB has 0 matching rows for this filter")
             }
             val msg = sb.toString()
-            Log.w("VectorStore", msg)
+            NexaraLogger.log(msg)
             onWarning?.invoke(msg)
         }
 

@@ -10,6 +10,18 @@ import java.security.KeyPairGenerator
 import java.util.Base64
 
 class ProviderRequestRouterTest {
+    @Test
+    fun `ProviderResolution失败字符串化不得泄漏模型与provider标识`() {
+        val failure = ProviderResolution.Failure(
+            ProviderResolutionError.MODEL_NOT_FOUND,
+            "private-model-marker",
+            "private-provider-marker",
+        )
+
+        assertThat(failure.toString()).doesNotContain("private-model-marker")
+        assertThat(failure.toString()).doesNotContain("private-provider-marker")
+        assertThat(failure.toString()).contains("MODEL_NOT_FOUND")
+    }
     private val models = linkedMapOf<String, ModelInfo>()
     private val providers = linkedMapOf<String, ProviderListItem>()
     private val configs = linkedMapOf<String, ProviderConfig>()

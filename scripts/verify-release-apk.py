@@ -17,14 +17,53 @@ import zipfile
 MAX_APK_BYTES = 50 * 1024 * 1024
 READ_CHUNK_BYTES = 1024 * 1024
 SCAN_OVERLAP_BYTES = 512
+MAX_ZIP_ENTRIES = 100_000
+MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
+MAX_SUSPICIOUS_COMPRESSION_RATIO = 1_000
+MIN_RATIO_CHECK_BYTES = 1024 * 1024
 
 SENSITIVE_PATTERNS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
     ("macOS 用户绝对路径", re.compile(rb"/Users/[A-Za-z0-9._-]+/")),
     ("Linux 用户绝对路径", re.compile(rb"/home/[A-Za-z0-9._-]+/")),
     ("Windows 本机绝对路径", re.compile(rb"(?i)[A-Z]:[\\/](?:Users|Nexara)[\\/]")),
     ("本机 secure_env 路径", re.compile(rb"(?i)(?:secure_env|promenar\.keystore|secure\.properties)")),
-    ("Tailscale 内网测试地址", re.compile(rb"100\.72\.176\.103")),
+    (
+        "Authorization Bearer 凭证",
+        re.compile(rb"(?i)Authorization\s*[:=]\s*Bearer\s+[A-Za-z0-9._~+/=-]{8,}"),
+    ),
+    (
+        "完整私钥 PEM 材料",
+        re.compile(
+            rb"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"
+            rb"[\r\n ]+[A-Za-z0-9+/=\r\n ]{64,}"
+            rb"-----END (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"
+        ),
+    ),
     ("疑似 OpenAI 兼容密钥", re.compile(rb"sk-[A-Za-z0-9_-]{20,}")),
+    ("疑似 Google API 密钥", re.compile(rb"AIza[A-Za-z0-9_-]{35}")),
+    ("疑似 Groq API 密钥", re.compile(rb"gsk_[A-Za-z0-9_-]{20,}")),
+    ("疑似 xAI API 密钥", re.compile(rb"xai-[A-Za-z0-9_-]{20,}")),
+    ("Prompt 测试 fixture", re.compile(rb"(?i)NEXARA_PROMPT_FIXTURE\s*[:=]")),
+    ("响应测试 fixture", re.compile(rb"(?i)NEXARA_RESPONSE_FIXTURE\s*[:=]")),
+    ("WebDAV 明文口令 fixture", re.compile(rb"(?i)WEBDAV_PASSWORD_FIXTURE\s*[:=]")),
+    (
+        "WebDAV 明文口令",
+        re.compile(rb'''(?i)webdav[_-]?password["']?\s*[:=]\s*["'][^"'\s]{8,}["']'''),
+    ),
+    ("WebDAV 测试 URL fixture", re.compile(rb"(?i)NEXARA_WEBDAV_TEST_URL\s*[:=]")),
+    (
+        "URL 内嵌明文口令",
+        re.compile(rb"(?i)https?://[^\s/:@]{1,64}:[^\s/@]{4,128}@"),
+    ),
+    (
+        "私网或 CGNAT 测试地址",
+        re.compile(
+            rb"(?<!\d)(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|"
+            rb"172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|"
+            rb"100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])(?:\.\d{1,3}){2})(?!\d)"
+        ),
+    ),
 )
 
 LOCAL_INFERENCE_LIBRARY_PATTERN = re.compile(
@@ -94,9 +133,40 @@ def run_tool(command: list[str]) -> str:
     return completed.stdout
 
 
+def verify_file_size(apk: Path, max_size_bytes: int) -> int:
+    size = apk.stat().st_size
+    if size <= 0 or size > max_size_bytes:
+        raise VerificationError(f"APK 大小不合规：{size} bytes，上限 {max_size_bytes} bytes")
+    return size
+
+
+def verify_zip_entries(entries) -> None:
+    entries = list(entries)
+    if len(entries) > MAX_ZIP_ENTRIES:
+        raise VerificationError(f"APK ZIP 条目过多：{len(entries)}")
+
+    total_uncompressed = 0
+    for info in entries:
+        if info.is_dir():
+            continue
+        if info.file_size < 0 or info.compress_size < 0:
+            raise VerificationError(f"APK ZIP 条目大小无效：{info.filename}")
+        total_uncompressed += info.file_size
+        if info.file_size > MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES:
+            raise VerificationError(f"APK ZIP 条目解压规模异常：{info.filename}")
+        if (
+            info.file_size >= MIN_RATIO_CHECK_BYTES
+            and info.file_size > max(info.compress_size, 1) * MAX_SUSPICIOUS_COMPRESSION_RATIO
+        ):
+            raise VerificationError(f"APK ZIP 条目压缩率异常：{info.filename}")
+    if total_uncompressed > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES:
+        raise VerificationError(f"APK ZIP 总解压规模异常：{total_uncompressed} bytes")
+
+
 def verify_zip(apk: Path) -> None:
     try:
         with zipfile.ZipFile(apk) as archive:
+            verify_zip_entries(archive.infolist())
             corrupt = archive.testzip()
     except (OSError, zipfile.BadZipFile) as error:
         raise VerificationError("APK 不是有效 ZIP 文件") from error
@@ -119,10 +189,24 @@ def verify_no_local_inference_artifacts(apk: Path) -> None:
         raise VerificationError(f"APK 包含禁用的本地推理制品：{', '.join(sorted(findings))}")
 
 
+def parse_badging(output: str) -> dict[str, str]:
+    package_lines = [line for line in output.splitlines() if line.startswith("package: ")]
+    if len(package_lines) != 1:
+        raise VerificationError("aapt badging 缺少唯一且完整的包身份字段")
+    package_line = package_lines[0]
+    matches = re.findall(
+        r"(?:^|\s)(name|versionCode|versionName)='([^']*)'",
+        package_line,
+    )
+    fields = dict(matches)
+    if len(matches) != 3 or len(fields) != 3 or any(not value for value in fields.values()):
+        raise VerificationError("aapt badging 缺少唯一且完整的包身份字段")
+    return fields
+
+
 def verify_badging(apk: Path, expected_package: str, version_code: str, version_name: str) -> None:
     output = run_tool([str(find_android_tool("aapt")), "dump", "badging", str(apk)])
-    package_line = next((line for line in output.splitlines() if line.startswith("package: ")), "")
-    fields = dict(re.findall(r"(name|versionCode|versionName)='([^']*)'", package_line))
+    fields = parse_badging(output)
     expected = {
         "name": expected_package,
         "versionCode": version_code,
@@ -133,25 +217,55 @@ def verify_badging(apk: Path, expected_package: str, version_code: str, version_
 
 
 def verify_signature(apk: Path, expected_digest: str) -> None:
+    expected = normalize_digest(expected_digest)
+    if len(expected) != 64 or not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise VerificationError("预期签名证书 SHA-256 格式无效")
     output = run_tool(
         [str(find_android_tool("apksigner")), "verify", "--verbose", "--print-certs", str(apk)]
     )
-    match = re.search(r"Signer #1 certificate SHA-256 digest:\s*([0-9A-Fa-f:]+)", output)
-    if match is None:
+    legacy_matches = re.findall(
+        r"Signer #(\d+) certificate SHA-256 digest:\s*([0-9A-Fa-f:]+)",
+        output,
+    )
+    scheme_matches = re.findall(
+        r"^V\d+(?:\.\d+)? Signer(?: #(\d+))?: certificate SHA-256 digest:\s*"
+        r"([0-9A-Fa-f:]+)$",
+        output,
+        flags=re.MULTILINE,
+    )
+    declared_signers = re.findall(r"^Number of signers:\s*(\d+)\s*$", output, flags=re.MULTILINE)
+    if len(declared_signers) > 1 or (declared_signers and declared_signers[0] != "1"):
+        raise VerificationError("发行 APK 必须且只能包含单一 signer")
+    if scheme_matches and not legacy_matches and len(declared_signers) != 1:
+        raise VerificationError("发行 APK 必须提供明确的单一 signer 计数")
+    if not legacy_matches and not scheme_matches:
         raise VerificationError("apksigner 未返回签名证书 SHA-256")
-    actual = normalize_digest(match.group(1))
-    expected = normalize_digest(expected_digest)
-    if len(expected) != 64:
-        raise VerificationError("预期签名证书 SHA-256 格式无效")
+    legacy_signer_numbers = [number for number, _ in legacy_matches]
+    if legacy_signer_numbers and legacy_signer_numbers != ["1"]:
+        raise VerificationError("发行 APK 必须且只能包含单一 signer")
+    digests = {
+        normalize_digest(digest)
+        for _, digest in [*legacy_matches, *scheme_matches]
+    }
+    if len(digests) != 1:
+        raise VerificationError("发行 APK 必须且只能包含单一 signer")
+    actual = next(iter(digests))
+    if len(actual) != 64:
+        raise VerificationError("apksigner 返回的证书 SHA-256 格式无效")
     if actual != expected:
         raise VerificationError("APK 签名证书与登记的发行证书不一致")
 
 
-def scan_stream(stream, entry_name: str) -> list[tuple[str, str]]:
+def scan_stream(
+    stream,
+    entry_name: str,
+    *,
+    chunk_bytes: int = READ_CHUNK_BYTES,
+) -> list[tuple[str, str]]:
     findings: list[tuple[str, str]] = []
     tail = b""
     while True:
-        chunk = stream.read(READ_CHUNK_BYTES)
+        chunk = stream.read(chunk_bytes)
         if not chunk:
             break
         candidate = tail + chunk
@@ -188,14 +302,19 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def write_checksum(apk: Path, checksum_output: Path) -> str:
+    digest = sha256_file(apk)
+    checksum_output.parent.mkdir(parents=True, exist_ok=True)
+    checksum_output.write_text(f"{digest}  {apk.name}\n", encoding="utf-8")
+    return digest
+
+
 def main() -> int:
     args = parse_args()
     apk = args.apk.resolve()
     if not apk.is_file():
         raise VerificationError(f"APK 不存在：{apk}")
-    size = apk.stat().st_size
-    if size <= 0 or size > args.max_size_bytes:
-        raise VerificationError(f"APK 大小不合规：{size} bytes，上限 {args.max_size_bytes} bytes")
+    size = verify_file_size(apk, args.max_size_bytes)
 
     verify_zip(apk)
     verify_no_local_inference_artifacts(apk)
@@ -203,10 +322,8 @@ def main() -> int:
     verify_signature(apk, args.expected_cert_sha256)
     scan_sensitive_content(apk)
 
-    digest = sha256_file(apk)
     checksum_output = args.checksum_output or apk.with_suffix(apk.suffix + ".sha256")
-    checksum_output.parent.mkdir(parents=True, exist_ok=True)
-    checksum_output.write_text(f"{digest}  {apk.name}\n", encoding="utf-8")
+    digest = write_checksum(apk, checksum_output)
     print(f"APK 验证通过：{apk.name}，{size} bytes，SHA-256 {digest}")
     return 0
 

@@ -21,3 +21,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "NexaraNative"
 include(":app")
+include(":mainactivity-e2e")
+include(":blackbox-fixture")

@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
@@ -24,6 +25,14 @@ import com.promenar.nexara.ui.chat.ChatApprovalLiveRegion
 import com.promenar.nexara.ui.chat.ChatInputBar
 import com.promenar.nexara.ui.chat.GenerationStatus
 import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.UnifiedPromptEditor
+import com.promenar.nexara.ui.rag.DocEditorFailureCode
+import com.promenar.nexara.ui.rag.DocEditorPhase
+import com.promenar.nexara.ui.rag.DocEditorScreenActions
+import com.promenar.nexara.ui.rag.DocEditorScreenContent
+import com.promenar.nexara.ui.rag.DocEditorScreenState
+import com.promenar.nexara.ui.rag.DocEditorUiState
+import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -92,6 +101,127 @@ class AccessibilitySmokeTest {
             SemanticsMatcher.expectValue(
                 SemanticsProperties.ContentDescription,
                 listOf(resources.getString(R.string.chat_status_completed)),
+            )
+        )
+    }
+
+    @Test
+    fun chatInputBarExposesStablePlaceholderNameAfterTextEntered() {
+        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
+        val placeholder = resources.getString(R.string.chat_input_placeholder_default)
+        composeRule.setContent {
+            NexaraTheme {
+                ChatInputBar(
+                    text = "hello",
+                    placeholder = placeholder,
+                    onTextChange = {},
+                    onSend = {},
+                    status = GenerationStatus.IDLE,
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(UiTags.CHAT_INPUT).assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.ContentDescription,
+                listOf(placeholder),
+            )
+        )
+    }
+
+    @Test
+    fun promptEditorInputExposesStableTagAndPlaceholderName() {
+        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
+        val placeholder = resources.getString(R.string.prompt_editor_default_placeholder)
+        composeRule.setContent {
+            NexaraTheme {
+                UnifiedPromptEditor(
+                    show = true,
+                    onDismiss = {},
+                    onSave = { Result.success(Unit) },
+                    initialText = "draft prompt",
+                    placeholder = placeholder,
+                    title = "Session Prompt",
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag(UiTags.PROMPT_EDITOR_INPUT).assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.ContentDescription,
+                listOf(placeholder),
+            )
+        )
+    }
+
+    @Test
+    fun docEditorSavingStateAnnouncesSavingLabelOnPoliteLiveRegion() {
+        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
+        val savingLabel = resources.getString(R.string.doc_editor_saving)
+        composeRule.setContent {
+            NexaraTheme {
+                DocEditorScreenContent(
+                    state = DocEditorScreenState(
+                        editorState = DocEditorUiState(
+                            phase = DocEditorPhase.Saving,
+                            workspaceRootUuid = "root",
+                            documentId = "doc",
+                            title = "release-notes.md",
+                            content = "# Release",
+                            hasLoadedDocument = true,
+                        ),
+                    ),
+                    actions = DocEditorScreenActions(),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(UiTags.DOC_EDITOR_STATE_SAVING)
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.ContentDescription,
+                    listOf(savingLabel),
+                )
+            )
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.LiveRegion,
+                    LiveRegionMode.Polite,
+                )
+            )
+    }
+
+    @Test
+    fun docEditorSaveErrorNoticeUsesAssertiveLiveRegion() {
+        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
+        val saveErrorTitle = resources.getString(R.string.doc_editor_save_failed_title)
+        composeRule.setContent {
+            NexaraTheme {
+                DocEditorScreenContent(
+                    state = DocEditorScreenState(
+                        editorState = DocEditorUiState(
+                            phase = DocEditorPhase.SaveError,
+                            workspaceRootUuid = "root",
+                            documentId = "doc",
+                            title = "release-notes.md",
+                            content = "# Release",
+                            persistedContent = "# Release draft",
+                            hasLoadedDocument = true,
+                            contentDirty = true,
+                            failureCode = DocEditorFailureCode.ContentSaveFailed,
+                        ),
+                    ),
+                    actions = DocEditorScreenActions(),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(UiTags.DOC_EDITOR_STATE_SAVE_ERROR).assertExists()
+        composeRule.onNodeWithText(saveErrorTitle).assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.LiveRegion,
+                LiveRegionMode.Assertive,
             )
         )
     }

@@ -33,6 +33,8 @@ import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import com.promenar.nexara.ui.common.ModelItem
 import com.promenar.nexara.ui.common.ModelCapability
 import com.promenar.nexara.ui.common.KgStatus
+import com.promenar.nexara.ui.common.status.NoticeSeverity
+import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.share.core.AndroidSafContentSource
 import com.promenar.nexara.share.core.AndroidSafImportRequestFactory
 import com.promenar.nexara.share.core.AndroidShareIndexScheduler
@@ -111,14 +113,20 @@ class RagViewModel(
     private val _indexingProgress = MutableStateFlow(0f)
     val indexingProgress: StateFlow<Float> = _indexingProgress.asStateFlow()
 
-    private val _indexingStatus = MutableStateFlow<String?>(null)
-    val indexingStatus: StateFlow<String?> = _indexingStatus.asStateFlow()
+    private val _indexingNotice = MutableStateFlow<UiStatusNotice?>(null)
+    val indexingNotice: StateFlow<UiStatusNotice?> = _indexingNotice.asStateFlow()
 
-    private val _indexingSubStatus = MutableStateFlow<String?>(null)
-    val indexingSubStatus: StateFlow<String?> = _indexingSubStatus.asStateFlow()
+    private val _canRetryLastFailedIndex = MutableStateFlow(false)
+    val canRetryLastFailedIndex: StateFlow<Boolean> = _canRetryLastFailedIndex.asStateFlow()
 
-    private val _lastQueueError = MutableStateFlow<String?>(null)
-    val lastQueueError: StateFlow<String?> = _lastQueueError.asStateFlow()
+    private val _isRetryingLastFailedIndex = MutableStateFlow(false)
+    val isRetryingLastFailedIndex: StateFlow<Boolean> = _isRetryingLastFailedIndex.asStateFlow()
+
+    private val _isMovingDocuments = MutableStateFlow(false)
+    val isMovingDocuments: StateFlow<Boolean> = _isMovingDocuments.asStateFlow()
+
+    private val _isDeletingDocuments = MutableStateFlow(false)
+    val isDeletingDocuments: StateFlow<Boolean> = _isDeletingDocuments.asStateFlow()
 
     /** 当前正在索引中的文件 UUID 集合 */
     private val _indexingDocIds = MutableStateFlow<Set<String>>(emptySet())
@@ -188,50 +196,33 @@ class RagViewModel(
             }
                 .mapNotNull { it.docId }.toSet()
 
-            val statusText = currentTask?.let { task ->
-                when (task.status) {
-                    "pending" -> "等待队列中..."
-                    "extracting_source" -> "正在安全读取工作区文件..."
-                    "chunking" -> "正在对文档进行语义切块..."
-                    "vectorizing" -> "正在发送 ${task.totalChunks ?: "?"} 个切块至模型处理..."
-                    "saving" -> "正在接受并持久化向量数据..."
-                    "extracting" -> "正在构建知识图谱节点..."
-                    "failed" -> "向量化失败: ${task.error?.take(80) ?: "未知错误"}"
-                    "completed" -> "任务已完成"
-                    "partial" -> "已完成安全前缀索引（内容超过 16 MiB）"
-                    "warning" -> "完成 (存在部分提取警告)"
-                    else -> task.status
-                }
+            val queueNotice = currentTask?.let(IndexingNotice::fromTask)
+            if (queueNotice != null) {
+                _indexingNotice.value = queueNotice
+            } else if (!shouldKeepNotice(_indexingNotice.value)) {
+                _indexingNotice.value = null
             }
-            _indexingStatus.value = statusText
-            _indexingSubStatus.value = currentTask?.subStatus
 
-            // 错误状态处理：记录并保持可见
             val task = currentTask
             if (task != null && task.status in setOf("failed", "partial")) {
-                if (task.type == com.promenar.nexara.data.rag.VectorizationQueue.TYPE_DOCUMENT_REFERENCE &&
-                    task.workspaceRootUuid != null && task.docId != null
-                ) {
-                    lastFailedReference = task.workspaceRootUuid to task.docId
-                }
-                _lastQueueError.value = if (task.status == "partial") {
-                    "文件超过 16 MiB，仅完成安全前缀索引；可点按重试"
-                } else task.error ?: "向量化失败，请检查 Embedding 模型配置"
+                lastFailedIndexTarget = task.toRetryTarget()
+                _canRetryLastFailedIndex.value = lastFailedIndexTarget != null
                 _isIndexing.value = true  // 保持错误卡片可见
                 _indexingProgress.value = (task.progress / 100.0).toFloat()
-            }
-            // 非失败/非警告状态且无历史错误时清空错误
-            if (currentTask != null && currentTask.status !in setOf("failed", "partial", "warning")) {
-                _lastQueueError.value = null
+            } else if (task != null) {
+                clearRetryTarget()
             }
 
             // 队列空 & 无当前任务 & 无错误留存 → 停止展示
             if (queue.isEmpty() && currentTask == null) {
                 refreshStats()
-                if (_lastQueueError.value == null) {
+                if (!shouldKeepNotice(_indexingNotice.value)) {
                     _isIndexing.value = false
+                    _indexingNotice.value = null
                 }
-                // 有错误留存时保持 isIndexing=true，直到用户手动关闭
+                if (shouldKeepNotice(_indexingNotice.value)) {
+                    _isIndexing.value = true
+                }
             }
 
             // KG extraction state tracking
@@ -251,23 +242,108 @@ class RagViewModel(
         }
     }
 
-    private var lastFailedReference: Pair<String, String>? = null
+    private sealed interface FailedIndexTarget {
+        val workspaceRootUuid: String
+        val docId: String
+
+        data class Document(
+            override val workspaceRootUuid: String,
+            override val docId: String,
+        ) : FailedIndexTarget
+
+        data class DocumentReference(
+            override val workspaceRootUuid: String,
+            override val docId: String,
+        ) : FailedIndexTarget
+    }
+
+    private var lastFailedIndexTarget: FailedIndexTarget? = null
+
+    private fun com.promenar.nexara.data.rag.VectorizationTask.toRetryTarget(): FailedIndexTarget? {
+        val root = workspaceRootUuid ?: return null
+        val documentId = docId ?: return null
+        return when (type) {
+            "document" -> FailedIndexTarget.Document(root, documentId)
+            com.promenar.nexara.data.rag.VectorizationQueue.TYPE_DOCUMENT_REFERENCE ->
+                FailedIndexTarget.DocumentReference(root, documentId)
+            else -> null
+        }
+    }
 
     fun retryLastFailedIndex() {
-        val (root, docId) = lastFailedReference ?: return
+        if (_isRetryingLastFailedIndex.value) return
+        val target = lastFailedIndexTarget ?: return
+        _isRetryingLastFailedIndex.value = true
         viewModelScope.launch {
-            if (app.vectorizationQueue.retryDocumentReference(root, docId)) {
-                lastFailedReference = null
-                _lastQueueError.value = null
-                _isIndexing.value = true
+            try {
+                val submitted = when (target) {
+                    is FailedIndexTarget.Document -> retryDocument(target)
+                    is FailedIndexTarget.DocumentReference -> app.vectorizationQueue.retryDocumentReference(
+                        target.workspaceRootUuid,
+                        target.docId,
+                    )
+                }
+                if (submitted) {
+                    clearRetryTarget()
+                    _indexingNotice.value = null
+                    _isIndexing.value = true
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                _indexingNotice.value = UiStatusNotice(
+                    severity = NoticeSeverity.Error,
+                    code = IndexingNotice.CODE_FAILED,
+                    technical = failure.message?.take(160),
+                )
+            } finally {
+                _isRetryingLastFailedIndex.value = false
             }
         }
     }
 
+    private suspend fun retryDocument(target: FailedIndexTarget.Document): Boolean {
+        val entry = workspaceRepository.getByUuid(target.workspaceRootUuid, target.docId) ?: return false
+        val content = fileOperationRepository.readFileRange(target.workspaceRootUuid, target.docId).content
+        if (content.isBlank()) return false
+        app.vectorizationQueue.cancel(target.docId)
+        app.vectorizationQueue.enqueueDocument(
+            workspaceRootUuid = target.workspaceRootUuid,
+            docId = target.docId,
+            docTitle = entry.name,
+            content = content,
+            kgStrategy = if (_config.value.enableKnowledgeGraph) "full" else null,
+        )
+        return true
+    }
+
+    private fun clearRetryTarget() {
+        lastFailedIndexTarget = null
+        _canRetryLastFailedIndex.value = false
+    }
+
+    private fun discardFailedIndexTarget() {
+        val discardedTarget = lastFailedIndexTarget
+        clearRetryTarget()
+        discardedTarget?.let { app.vectorizationQueue.cancel(it.docId) }
+    }
+
     /** 手动关闭错误提示（用户点击关闭后清除） */
     fun dismissQueueError() {
-        _lastQueueError.value = null
+        if (_isRetryingLastFailedIndex.value) return
+        discardFailedIndexTarget()
+        _indexingNotice.value = null
         _isIndexing.value = false
+    }
+
+    private fun shouldKeepNotice(notice: UiStatusNotice?): Boolean = when (notice?.code) {
+        IndexingNotice.CODE_FAILED,
+        IndexingNotice.CODE_PARTIAL,
+        IndexingNotice.CODE_WARNING,
+        IndexingNotice.CODE_IMPORT_FAILED,
+        IndexingNotice.CODE_MOVE_FAILED,
+        IndexingNotice.CODE_DELETE_FAILED -> true
+        else -> false
     }
 
     private fun startDataObservation() {
@@ -506,24 +582,8 @@ class RagViewModel(
         }
     }
 
-    fun deleteCollection(id: String) {
-        viewModelScope.launch {
-            try {
-                val rootUuid = _workspaceRootUuid.value ?: return@launch
-                val entry = workspaceRepository.getByUuid(rootUuid, id)
-                val entriesToClean = if (entry != null && entry.isDirectory) {
-                    workspaceRepository.getSubtree(rootUuid, entry.materializedPath)
-                } else {
-                    listOfNotNull(entry)
-                }
-                workspaceRepository.permanentDelete(rootUuid, id)
-                entriesToClean.filterNot { it.isDirectory }.forEach { clearDocumentRuntimeState(it.uuid) }
-                loadStats()
-            } catch (e: Exception) {
-                NexaraLogger.logError("RagViewModel.deleteCollection", e)
-            }
-        }
-    }
+    fun deleteCollection(id: String, onResult: ((Boolean) -> Unit)? = null) =
+        deleteDocuments(listOf(id)) { succeeded, _ -> onResult?.invoke(succeeded) }
 
     fun renameFolder(id: String, newName: String) {
         viewModelScope.launch {
@@ -537,29 +597,78 @@ class RagViewModel(
 
     fun deleteFolder(id: String) = deleteCollection(id)
 
-    fun deleteDocuments(ids: List<String>) {
+    fun deleteDocuments(
+        ids: Collection<String>,
+        onComplete: ((Boolean, List<String>) -> Unit)? = null,
+    ) {
+        val attemptedIds = ids.distinct()
+        if (attemptedIds.isEmpty()) {
+            onComplete?.invoke(false, emptyList())
+            return
+        }
+        if (_isDeletingDocuments.value) {
+            onComplete?.invoke(false, attemptedIds)
+            return
+        }
+        _isDeletingDocuments.value = true
+        discardFailedIndexTarget()
         viewModelScope.launch {
+            val failed = mutableListOf<String>()
+            val technicalFailures = mutableListOf<String>()
             try {
-                val rootUuid = _workspaceRootUuid.value ?: return@launch
-                for (id in ids) {
-                    workspaceRepository.permanentDelete(rootUuid, id)
-                    clearDocumentRuntimeState(id)
+                val rootUuid = _workspaceRootUuid.value
+                if (rootUuid == null) {
+                    failed += attemptedIds
+                } else {
+                    attemptedIds.forEach { id ->
+                        try {
+                            val entry = workspaceRepository.getByUuid(rootUuid, id)
+                            val entriesToClean = if (entry?.isDirectory == true) {
+                                workspaceRepository.getSubtree(rootUuid, entry.materializedPath)
+                            } else {
+                                listOfNotNull(entry)
+                            }
+                            workspaceRepository.permanentDelete(rootUuid, id)
+                            val runtimeIds = entriesToClean.filterNot { it.isDirectory }.map { it.uuid }
+                                .ifEmpty { if (entry?.isDirectory == true) emptyList() else listOf(id) }
+                            runtimeIds.forEach(::clearDocumentRuntimeState)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            failed += id
+                            technicalFailures += "$id:${failure::class.simpleName}"
+                        }
+                    }
                 }
-                loadStats()
-            } catch (e: Exception) {
-                NexaraLogger.logError("RagViewModel.deleteDocuments", e)
+
+                _indexingNotice.value = when {
+                    failed.isEmpty() -> null
+                    else -> UiStatusNotice(
+                        severity = if (failed.size == attemptedIds.size) NoticeSeverity.Error else NoticeSeverity.Warning,
+                        code = IndexingNotice.CODE_DELETE_FAILED,
+                        technical = technicalFailures.joinToString(",").take(160).takeIf { it.isNotBlank() },
+                    )
+                }
+                if (failed.size < attemptedIds.size) loadStats()
+                onComplete?.invoke(failed.isEmpty(), failed.toList())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } finally {
+                _isDeletingDocuments.value = false
             }
         }
     }
 
     fun importDocuments(uris: List<Uri>, folderId: String? = null) {
         if (uris.isEmpty()) return
+        discardFailedIndexTarget()
         viewModelScope.launch {
             val rootUuid = _workspaceRootUuid.value ?: return@launch
             val parentUuid = folderId ?: rootUuid
             val imported = mutableListOf<ShareImportItem>()
             val failures = mutableListOf<String>()
-            _lastQueueError.value = null
+            _indexingNotice.value = null
+            _isIndexing.value = app.vectorizationQueue.state.value.isProcessing
 
             for (uri in uris.distinct()) {
                 try {
@@ -581,10 +690,12 @@ class RagViewModel(
             }
 
             if (failures.isNotEmpty()) {
-                _lastQueueError.value = "导入失败: ${failures.joinToString("；").take(240)}"
-                _indexingStatus.value = null
-                _indexingSubStatus.value = null
+                _indexingNotice.value = IndexingNotice.importFailed(
+                    technical = failures.joinToString("；").take(240)
+                )
                 _isIndexing.value = true
+            } else {
+                _isIndexing.value = app.vectorizationQueue.state.value.isProcessing
             }
             if (imported.isNotEmpty()) {
                 loadStats()
@@ -615,13 +726,24 @@ class RagViewModel(
 
     /** 批量重新索引 */
     fun reindexDocuments(uuids: Collection<String>) {
+        if (uuids.isEmpty()) {
+            _indexingNotice.value = UiStatusNotice(
+                severity = NoticeSeverity.Warning,
+                code = IndexingNotice.CODE_WARNING,
+            )
+            return
+        }
+        discardFailedIndexTarget()
         viewModelScope.launch {
             val rootUuid = _workspaceRootUuid.value ?: return@launch
+            var submitted = 0
+            var failed = 0
             uuids.forEach { uuid ->
                 try {
                     val entry = workspaceRepository.getByUuid(rootUuid, uuid) ?: return@forEach
                     val result = fileOperationRepository.readFileRange(rootUuid, uuid)
                     if (result.content.isNotBlank()) {
+                        submitted += 1
                         app.vectorizationQueue.enqueueDocument(
                             workspaceRootUuid = rootUuid,
                             docId = uuid,
@@ -629,23 +751,116 @@ class RagViewModel(
                             content = result.content,
                             kgStrategy = if (_config.value.enableKnowledgeGraph) "full" else null
                         )
+                    } else {
+                        failed += 1
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (e: Exception) {
                     NexaraLogger.logError("[RagViewModel] reindexDocuments failed: uuid=$uuid", e)
+                    failed += 1
                 }
+            }
+            _indexingNotice.value = when {
+                failed == 0 -> null
+                submitted == 0 -> UiStatusNotice(NoticeSeverity.Error, IndexingNotice.CODE_FAILED)
+                else -> UiStatusNotice(NoticeSeverity.Warning, IndexingNotice.CODE_WARNING)
             }
         }
     }
 
     /** 移动文件到指定目录 */
-    fun moveFile(uuid: String, targetParentUuid: String) {
+    fun moveFile(uuid: String, targetParentUuid: String, onResult: ((Boolean) -> Unit)? = null) {
         viewModelScope.launch {
             try {
                 val rootUuid = _workspaceRootUuid.value ?: return@launch
-                val newParent = targetParentUuid.ifEmpty { rootUuid }
-                workspaceRepository.updateParent(rootUuid, uuid, newParent)
-            } catch (_: Exception) { }
+                moveFileInternal(rootUuid, uuid, targetParentUuid)
+                onResult?.invoke(true)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                onResult?.invoke(false)
+            }
         }
+    }
+
+    fun moveDocuments(
+        uuids: Collection<String>,
+        targetParentUuid: String,
+        onComplete: ((Boolean, List<String>) -> Unit)? = null,
+    ) {
+        if (uuids.isEmpty()) {
+            onComplete?.invoke(false, emptyList())
+            _indexingNotice.value = UiStatusNotice(
+                severity = NoticeSeverity.Warning,
+                code = IndexingNotice.CODE_WARNING,
+            )
+            return
+        }
+        if (_isMovingDocuments.value) {
+            onComplete?.invoke(false, uuids.distinct())
+            return
+        }
+        _isMovingDocuments.value = true
+        discardFailedIndexTarget()
+        viewModelScope.launch {
+            try {
+                val rootUuid = _workspaceRootUuid.value
+                if (rootUuid == null) {
+                    _indexingNotice.value = UiStatusNotice(
+                        severity = NoticeSeverity.Error,
+                        code = IndexingNotice.CODE_MOVE_FAILED,
+                    )
+                    onComplete?.invoke(false, uuids.toList())
+                    return@launch
+                }
+                val failed = mutableListOf<String>()
+                val technicalFailures = mutableListOf<String>()
+                var moved = 0
+                uuids.distinct().forEach { uuid ->
+                    try {
+                        moveFileInternal(rootUuid, uuid, targetParentUuid)
+                        moved += 1
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        failed += uuid
+                        technicalFailures += "$uuid:${failure::class.simpleName}"
+                    }
+                }
+
+                val success = moved > 0 && failed.isEmpty()
+                _indexingNotice.value = when {
+                    failed.isEmpty() -> null
+                    moved == 0 -> UiStatusNotice(
+                        severity = NoticeSeverity.Error,
+                        code = IndexingNotice.CODE_MOVE_FAILED,
+                        technical = technicalFailures.joinToString(",").take(160),
+                    )
+                    else -> UiStatusNotice(
+                        severity = NoticeSeverity.Warning,
+                        code = IndexingNotice.CODE_MOVE_FAILED,
+                        technical = technicalFailures.joinToString(",").take(160),
+                    )
+                }
+                if (failed.isEmpty()) {
+                    _isIndexing.value = app.vectorizationQueue.state.value.isProcessing
+                }
+                if (moved > 0) {
+                    loadStats()
+                }
+                onComplete?.invoke(success, failed.toList())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } finally {
+                _isMovingDocuments.value = false
+            }
+        }
+    }
+
+    private suspend fun moveFileInternal(rootUuid: String, uuid: String, targetParentUuid: String) {
+        val newParent = targetParentUuid.ifEmpty { rootUuid }
+        workspaceRepository.updateParent(rootUuid, uuid, newParent)
     }
 
     /** 触发单个文件的知识图谱抽取 — 直接调用 GraphExtractor，独立于向量化管线 */
@@ -708,7 +923,11 @@ class RagViewModel(
                 val content = result.content
                 kgRepository.extractFromContent(content, docId)
             } catch (e: Exception) {
-                _indexingSubStatus.value = "KG extraction failed: ${e.message?.take(60)}"
+                _indexingNotice.value = UiStatusNotice(
+                    severity = NoticeSeverity.Warning,
+                    code = IndexingNotice.CODE_WARNING,
+                    technical = e.message?.take(80),
+                )
             }
         }
     }

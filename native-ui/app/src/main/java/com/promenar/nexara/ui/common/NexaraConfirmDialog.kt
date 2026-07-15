@@ -38,7 +38,8 @@ fun NexaraConfirmDialog(
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
     isDestructive: Boolean = false,
-    content: @Composable (() -> Unit)? = null
+    confirmButtonModifier: Modifier = Modifier,
+    content: @Composable (() -> Unit)? = null,
 ) {
     Surface(
         modifier = Modifier
@@ -100,6 +101,7 @@ fun NexaraConfirmDialog(
 
                 Button(
                     onClick = onConfirm,
+                    modifier = confirmButtonModifier,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isDestructive) {
                             Color(0xFFBA1A1A) // 优雅醒目的深红色

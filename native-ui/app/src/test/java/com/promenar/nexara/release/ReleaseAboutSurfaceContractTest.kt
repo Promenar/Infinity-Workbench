@@ -11,7 +11,8 @@ class ReleaseAboutSurfaceContractTest {
         val settings = source("ui/hub/UserSettingsHomeScreen.kt")
         val navGraph = source("navigation/NavGraph.kt")
 
-        assertThat(settings).contains("R.string.settings_version, BuildConfig.VERSION_NAME")
+        assertThat(settings).contains("versionName = BuildConfig.VERSION_NAME")
+        assertThat(settings).contains("R.string.settings_version, state.versionName")
         assertThat(settings).doesNotContain("onNavigateToSecondary(\"developer_panel\")")
         assertThat(navGraph).contains("if (BuildConfig.DEBUG) {\n            composable(NavDestinations.DEVELOPER_PANEL)")
     }

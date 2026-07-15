@@ -10,6 +10,12 @@
 
     <!-- FloatingTextEditor -->
     <string name="common_text_editor_placeholder">请输入文本…</string>
+    <string name="prompt_editor_default_title">编辑提示词</string>
+    <string name="prompt_editor_default_placeholder">输入系统提示词…</string>
+    <string name="prompt_editor_tab_edit">编辑</string>
+    <string name="prompt_editor_tab_preview">预览</string>
+    <string name="prompt_editor_cd_close">关闭</string>
+    <string name="prompt_editor_cd_save">保存</string>
 
     <!-- InferencePresets -->
     <string name="common_preset_precise">精确</string>
@@ -51,6 +57,7 @@
     <string name="common_cd_config">配置</string>
     <string name="common_cd_sync">同步</string>
     <string name="common_cd_delete">删除</string>
+    <string name="common_cd_edit">编辑</string>
     <string name="secret_field_placeholder">输入新密钥</string>
     <string name="secret_field_show">临时显示完整密钥</string>
     <string name="secret_field_hide">隐藏密钥</string>
@@ -137,7 +144,7 @@
     <string name="resource_explorer_recycle_bin">回收站</string>
     <string name="resource_explorer_recycle_bin_count">回收站 (%1$d)</string>
     <string name="resource_explorer_import_status">导入状态</string>
-    <string name="resource_explorer_collapse">收起</string>
+    <string name="resource_explorer_clear_results">清除结果</string>
     <string name="resource_explorer_status_pending">等待中</string>
     <string name="resource_explorer_status_importing">导入中</string>
     <string name="resource_explorer_status_created">已导入</string>
@@ -180,6 +187,7 @@
     <string name="hub_dialog_label_model">模型 ID</string>
     <string name="hub_dialog_label_prompt">系统提示词</string>
     <string name="hub_action_unpin">取消置顶</string>
+    <string name="hub_cd_agent_actions">助手操作</string>
 
     <!-- 预置助手（本地化展示；DB 保存种子文本，叠加层解析为资源） -->
     <string name="preset_agent_default_name">Nexara 助手</string>
@@ -331,6 +339,8 @@
     <string name="settings_about_nexara">关于 Nexara</string>
     <string name="settings_version">版本 %1$s</string>
     <string name="settings_provider_empty">暂无提供商配置\n点击上方按钮添加</string>
+    <string name="settings_provider_type_generic_openai">OpenAI 兼容（通用）</string>
+    <string name="settings_provider_type_local">本地推理</string>
     <string name="settings_add_provider">添加提供商</string>
     <string name="settings_delete_provider_title">删除提供商</string>
     <string name="settings_delete_provider_message">确定要删除此提供商吗？此操作无法撤销。</string>
@@ -879,17 +889,52 @@
     <string name="rag_folder_delete_confirm_title">删除 %1$d 个文档？</string>
 
     <!-- DocEditorScreen -->
+    <string name="doc_editor_screen_title">文档</string>
+    <string name="doc_editor_document_type">文档</string>
     <string name="doc_editor_title_placeholder">文档标题…</string>
+    <string name="doc_editor_title_input_description">文档标题</string>
+    <string name="doc_editor_content_input_description">文档正文</string>
+    <string name="doc_editor_metadata">%1$s · %2$s</string>
     <string name="doc_editor_preview">预览</string>
     <string name="doc_editor_edit">编辑</string>
-    <string name="doc_editor_large_file_desc">检测到大文件（%1$s）。编辑可能影响性能。建议拆分文档。</string>
-    <string name="doc_editor_dismiss">关闭</string>
+    <string name="doc_editor_split">分屏</string>
+    <string name="doc_editor_loading">正在加载文档</string>
+    <string name="doc_editor_loading_description">安全读取完成后才会显示编辑器。</string>
+    <string name="doc_editor_load_failed_title">无法加载文档</string>
+    <string name="doc_editor_load_failed_description">文档读取失败，系统未创建伪空文档。</string>
+    <string name="doc_editor_retry_load">重试</string>
+    <string name="doc_editor_not_found_title">未找到文档</string>
+    <string name="doc_editor_not_found_description">该文档已不在当前工作区中。</string>
+    <string name="doc_editor_saving">正在保存…</string>
+    <string name="doc_editor_save_failed_title">保存失败</string>
+    <string name="doc_editor_save_failed_description">本地修改仍被保留，可以稍后重试。</string>
+    <string name="doc_editor_title_rename_failed">标题未能安全保存，本地修改仍被保留。</string>
+    <string name="doc_editor_retry_save">重试保存</string>
+    <string name="doc_editor_conflict_title">存在更新的版本</string>
+    <string name="doc_editor_conflict_description">本地内容已保留。你可以先复制，或重新加载最新版；系统不会覆盖远端文档。</string>
+    <string name="doc_editor_copy_local">复制本地内容</string>
+    <string name="doc_editor_clipboard_label">本地文档内容</string>
+    <string name="doc_editor_reload_latest">重新加载最新版</string>
+    <string name="doc_editor_missing_after_save_title">保存期间文档已消失</string>
+    <string name="doc_editor_missing_after_save_description">本地内容已保留，但工作区中的原文档已不存在。</string>
+    <string name="doc_editor_large_file_warning">为保护内存与编辑安全，系统没有读取完整正文。</string>
+    <string name="doc_editor_large_file_read_only_title">大文件安全模式</string>
+    <string name="doc_editor_large_file_read_only_description">该文档大小为 %1$s，超过 1 MiB。当前仅显示元数据，编辑、分屏和保存均已禁用。</string>
+    <string name="doc_editor_large_file_status">大文件 · 仅元数据</string>
+    <string name="doc_editor_dismiss">关闭警告</string>
     <string name="doc_editor_typing_placeholder">开始输入…</string>
     <string name="doc_editor_utf8">UTF-8</string>
     <string name="doc_editor_words">%1$d 词</string>
     <string name="doc_editor_chars">%1$d 字符</string>
-    <string name="doc_editor_editing">编辑模式</string>
-    <string name="doc_editor_readonly">预览模式（只读）</string>
+    <string name="doc_editor_statistics">%1$s · %2$d 词 · %3$d 字符</string>
+    <string name="doc_editor_editing">编辑中</string>
+    <string name="doc_editor_readonly">预览 · 只读</string>
+    <string name="doc_editor_discard_title">放弃本地修改？</string>
+    <string name="doc_editor_discard_description">尚未保存的标题和正文修改将丢失。</string>
+    <string name="doc_editor_discard_confirm">放弃并返回</string>
+    <string name="doc_editor_reload_title">重新加载最新版？</string>
+    <string name="doc_editor_reload_description">重新加载会放弃编辑器中当前显示的本地内容。</string>
+    <string name="doc_editor_reload_confirm">放弃并重新加载</string>
 
     <!-- KnowledgeGraphScreen -->
     <string name="kg_title">知识图谱</string>
@@ -1130,6 +1175,19 @@
     <string name="recycle_bin_original_path">原始路径：%1$s</string>
     <string name="recycle_bin_restore">恢复</string>
     <string name="recycle_bin_empty_state">回收站为空</string>
+    <string name="recycle_bin_status_restoring">正在恢复所选项目…</string>
+    <string name="recycle_bin_status_deleting">正在永久删除所选项目…</string>
+    <string name="recycle_bin_status_emptying">正在清空回收站…</string>
+    <string name="recycle_bin_status_restore_success">已恢复 %1$d 个项目</string>
+    <string name="recycle_bin_status_delete_success">已永久删除 %1$d 个项目</string>
+    <string name="recycle_bin_status_empty_success">已清空回收站</string>
+    <string name="recycle_bin_status_restore_partial">已恢复 %1$d 个项目，%2$d 个项目未能恢复</string>
+    <string name="recycle_bin_status_delete_partial">已删除 %1$d 个项目，%2$d 个项目未能删除</string>
+    <string name="recycle_bin_status_restore_failed">未能恢复 %1$d 个项目</string>
+    <string name="recycle_bin_status_delete_failed">未能永久删除 %1$d 个项目</string>
+    <string name="recycle_bin_status_empty_failed">未能清空回收站</string>
+    <string name="recycle_bin_operation_retry">重试失败项目</string>
+    <string name="recycle_bin_operation_dismiss">关闭状态提示</string>
 
     <!-- 发布可达的聊天展示层 -->
     <string name="chat_tool_default_name">工具</string>
@@ -1171,4 +1229,58 @@
     <string name="retrieval_rerank_model_unconfigured">未配置模型</string>
     <string name="retrieval_rerank_model_unavailable_message">未检测到已配置的重排模型。重排序可提升多数据源融合后的相关性，请先前往“提供商管理”添加 Rerank 服务并设为默认重排模型。</string>
     <string name="agent_retrieval_rerank_model_unavailable_message">未检测到已配置的重排模型，此开关已禁用。请先前往“提供商管理”添加 Rerank 模型并设为默认重排模型。</string>
+
+    <!-- 生成失败文案：仅由稳定 UI 映射使用 -->
+    <string name="generation_failure_network">无法连接，请检查网络后重试。</string>
+    <string name="generation_failure_auth">身份验证失败，请检查提供商凭据。</string>
+    <string name="generation_failure_rate_limit">请求过于频繁，请稍后重试。</string>
+    <string name="generation_failure_rate_limit_retry">请求过于频繁，请在 %1$d 秒后重试。</string>
+    <string name="generation_failure_quota">提供商额度已用尽，请检查账户限额。</string>
+    <string name="generation_failure_timeout">请求超时，请重试。</string>
+    <string name="generation_failure_invalid_request">当前请求无法处理，请调整后重试。</string>
+    <string name="generation_failure_server">提供商暂时不可用，请稍后重试。</string>
+    <string name="generation_failure_busy">其他会话正在生成，请在完成后重试。</string>
+    <string name="generation_failure_persistence">回复保存失败，请重试。</string>
+    <string name="generation_failure_unknown">生成失败，请重试。</string>
+
+    <!-- 发行可达的结构化状态文案 -->
+    <string name="provider_models_sync_provider_not_found">未找到提供商</string>
+    <string name="provider_models_synced">同步完成：新增 %1$d 个，更新 %2$d 个</string>
+    <string name="provider_models_sync_up_to_date">模型已是最新</string>
+    <string name="provider_models_sync_no_models">该提供商未返回任何模型</string>
+    <string name="provider_models_sync_failed">模型同步失败，请重试</string>
+    <string name="resource_explorer_error_workspace_load_failed">无法加载会话工作区</string>
+    <string name="resource_explorer_error_workspace_not_ready">会话工作区尚未就绪，请重试</string>
+    <string name="rag_index_phase_pending">正在等待索引队列…</string>
+    <string name="rag_index_phase_extracting_source">正在读取工作区文档…</string>
+    <string name="rag_index_phase_chunking">正在进行语义切块…</string>
+    <string name="rag_index_phase_vectorizing">正在处理 %1$s 个切块…</string>
+    <string name="rag_index_phase_saving">正在保存向量数据…</string>
+    <string name="rag_index_phase_extracting_kg">正在构建知识图谱…</string>
+    <string name="rag_index_phase_completed">索引已完成</string>
+    <string name="rag_index_phase_partial">文件过大，仅完成安全前缀索引</string>
+    <string name="rag_index_phase_warning">索引已完成，但存在警告</string>
+    <string name="rag_index_phase_failed">索引失败，请检查嵌入模型后重试</string>
+    <string name="rag_index_phase_unknown">暂时无法获取索引状态</string>
+    <string name="rag_import_failed">部分文档导入失败</string>
+    <string name="rag_index_retry_hint">点按重试索引</string>
+    <string name="rag_folder_cd_move">移动所选文档</string>
+    <string name="rag_folder_cd_reindex">重新索引所选文档</string>
+    <string name="rag_folder_cd_move_to">移动到 %1$s</string>
+
+    <plurals name="prompt_editor_word_count">
+        <item quantity="zero">共 %1$d 词</item>
+        <item quantity="one">共 %1$d 词</item>
+        <item quantity="other">共 %1$d 词</item>
+    </plurals>
+    <plurals name="prompt_editor_line_count">
+        <item quantity="zero">共 %1$d 行</item>
+        <item quantity="one">共 %1$d 行</item>
+        <item quantity="other">共 %1$d 行</item>
+    </plurals>
+    <plurals name="prompt_editor_char_count">
+        <item quantity="zero">共 %1$d 字</item>
+        <item quantity="one">共 %1$d 字</item>
+        <item quantity="other">共 %1$d 字</item>
+    </plurals>
 </resources>

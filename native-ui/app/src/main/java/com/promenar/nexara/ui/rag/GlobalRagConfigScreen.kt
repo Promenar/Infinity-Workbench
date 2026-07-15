@@ -392,7 +392,13 @@ fun GlobalRagConfigScreen(
         onDismiss = { showSummaryTemplateEditor = false },
         initialText = config.summaryTemplate,
         title = stringResource(R.string.rag_advanced_summary_template_title),
-        onSave = { text -> viewModel.updateConfig { it.copy(summaryTemplate = text.ifBlank { RagConfiguration().summaryTemplate }) } },
+        onSave = { text ->
+            runCatching {
+                viewModel.updateConfig {
+                    it.copy(summaryTemplate = text.ifBlank { RagConfiguration().summaryTemplate })
+                }
+            }
+        },
         placeholder = stringResource(R.string.rag_config_summary_template_placeholder)
     )
 }

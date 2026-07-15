@@ -75,7 +75,7 @@ object NavDestinations {
     const val RAG_ADVANCED = "rag_advanced"
     const val RAG_ADVANCED_KG = "rag_advanced_kg"
     const val RAG_GLOBAL_CONFIG = "rag_global_config"
-    const val RAG_FOLDER = "rag_folder/{folderId}/{folderName}"
+    const val RAG_FOLDER = "rag_folder/{folderId}"
     const val RAG_DEBUG = "rag_debug"
     const val TOKEN_USAGE = "token_usage"
     const val SEARCH_CONFIG = "search_config"
@@ -95,8 +95,8 @@ object NavDestinations {
         if (providerId != null) "provider_form?providerId=$providerId" else "provider_form"
     fun providerModels(providerId: String) = "provider_models/$providerId"
     fun docEditor(workspaceRootUuid: String, docId: String) = "doc_editor/$workspaceRootUuid/$docId"
-    fun ragFolder(folderId: String, folderName: String) =
-        "rag_folder/$folderId/$folderName"
+    @Suppress("UNUSED_PARAMETER")
+    fun ragFolder(folderId: String) = "rag_folder/$folderId"
 }
 
 typealias ChatDestination = @Composable (sessionId: String, onNavigateBack: () -> Unit) -> Unit
@@ -436,15 +436,15 @@ fun NexaraNavGraph(
         composable(
             route = NavDestinations.RAG_FOLDER,
             arguments = listOf(
-                navArgument("folderId") { type = NavType.StringType },
-                navArgument("folderName") { type = NavType.StringType }
+                navArgument("folderId") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val folderId = backStackEntry.arguments?.getString("folderId") ?: ""
-            val folderName = backStackEntry.arguments?.getString("folderName") ?: ""
             RagFolderScreen(
                 folderId = folderId,
-                folderName = folderName,
+                onNavigateToDocEditor = { rootUuid, docId ->
+                    navController.navigate(NavDestinations.docEditor(rootUuid, docId))
+                },
                 onNavigateBack = { navController.popBackStack() }
             )
         }

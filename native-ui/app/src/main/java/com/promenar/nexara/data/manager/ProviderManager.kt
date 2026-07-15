@@ -13,6 +13,7 @@ import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -30,6 +31,7 @@ class ProviderManager private constructor(
     private val app: Application,
     private val secretStore: SecretStore,
 ) {
+    private val suppressedProviderModelsKey = "suppressed_provider_models"
 
     // ── SharedPreferences ────────────────────────────────────────────
     private val providerPrefs: SharedPreferences =
@@ -104,6 +106,7 @@ class ProviderManager private constructor(
         }
         // 重建提供商列表
         loadProviders()
+        clearProviderModelSuppression("default")
         ensureConfiguredModel("default", name ?: protocolType.displayName, model)
     }
 
@@ -146,19 +149,19 @@ class ProviderManager private constructor(
     fun getProviderConfigByModelId(modelId: String): ProviderConfig? {
         val model = _providerModels.value.find { it.id == modelId }
         if (model == null) {
-            android.util.Log.w("ProviderManager", "[getProviderConfigByModelId] 模型未找到: modelId=$modelId, 已加载模型IDs=${_providerModels.value.map { it.id }}")
+            NexaraLogger.log("[ProviderManager] 模型未找到: modelId=$modelId, 已加载模型IDs=${_providerModels.value.map { it.id }}")
             return null
         }
         val pid = model.providerId
         if (pid == null) {
-            android.util.Log.w("ProviderManager", "[getProviderConfigByModelId] providerId 无法解析: modelId=$modelId providerId=null providerName=${model.providerName}, 已加载提供商=${_providers.value.map { "${it.id}->${it.name}" }}")
+            NexaraLogger.log("[ProviderManager] providerId 无法解析: modelId=$modelId providerName=${model.providerName}, 已加载提供商=${_providers.value.map { "${it.id}->${it.name}" }}")
             return null
         }
         val config = getProviderConfig(pid)
         if (config == null) {
-            android.util.Log.w("ProviderManager", "[getProviderConfigByModelId] 提供商配置未找到: modelId=$modelId pid=$pid")
+            NexaraLogger.log("[ProviderManager] 提供商配置未找到: modelId=$modelId pid=$pid")
         } else if (config.baseUrl.isBlank()) {
-            android.util.Log.w("ProviderManager", "[getProviderConfigByModelId] baseUrl 为空: modelId=$modelId pid=$pid protocolType=${config.protocolType::class.simpleName}")
+            NexaraLogger.log("[ProviderManager] baseUrl 为空: modelId=$modelId pid=$pid protocolType=${config.protocolType::class.simpleName}")
         }
         return config
     }
@@ -266,6 +269,7 @@ class ProviderManager private constructor(
         _providers.update { it + item }
         persistExtraProviders()
         loadProviders()
+        clearProviderModelSuppression(item.id)
         ensureConfiguredModel(item.id, item.name, item.model)
         _configurationChanges.tryEmit(Unit)
     }
@@ -288,6 +292,7 @@ class ProviderManager private constructor(
         }
         persistExtraProviders()
         loadProviders()
+        clearProviderModelSuppression(item.id)
         ensureConfiguredModel(item.id, item.name, item.model)
         _configurationChanges.tryEmit(Unit)
     }
@@ -298,7 +303,17 @@ class ProviderManager private constructor(
         secretStore.remove(SecretCatalog.vertexServiceAccount(providerId))
         _providers.update { it.filter { p -> p.id != providerId } }
         persistExtraProviders()
+        clearProviderModelSuppression(providerId)
         _configurationChanges.tryEmit(Unit)
+    }
+
+    private fun clearProviderModelSuppression(providerId: String) {
+        val suppressed = settingsPrefs.getStringSet(suppressedProviderModelsKey, emptySet()).orEmpty()
+        if (providerId in suppressed) {
+            settingsPrefs.edit()
+                .putStringSet(suppressedProviderModelsKey, suppressed - providerId)
+                .apply()
+        }
     }
 
     private fun persistExtraProviders() {
@@ -644,11 +659,42 @@ class ProviderManager private constructor(
             require(models.none { it.id == normalized.id }) { "模型 ID 已存在: ${normalized.id}" }
             models + normalized
         }
+        normalized.providerId?.let(::clearProviderModelSuppression)
         persistModels()
+    }
+
+    /** 向指定提供商添加自定义远端模型；失败时不改变现有列表。 */
+    fun addCustomModel(providerId: String, remoteModelId: String, displayName: String): Boolean {
+        val provider = _providers.value.firstOrNull { it.id == providerId } ?: return false
+        val remoteId = remoteModelId.trim()
+        if (remoteId.isEmpty()) return false
+        val stableId = stableModelId(providerId, remoteId)
+        if (_providerModels.value.any { it.id == stableId }) return false
+        val spec = com.promenar.nexara.data.model.findModelSpec(remoteId)
+        val type = spec?.type?.name?.lowercase() ?: "chat"
+        return runCatching {
+            addModel(
+                ModelInfo(
+                    name = displayName.trim().ifEmpty { spec?.note ?: remoteId },
+                    id = stableId,
+                    remoteModelId = remoteId,
+                    description = spec?.note ?: "Custom model",
+                    enabled = true,
+                    type = type,
+                    contextLength = spec?.contextLength ?: 8192,
+                    capabilities = buildModelCapabilities(type, spec),
+                    providerName = provider.name,
+                    providerId = providerId,
+                    maxOutputTokens = spec?.maxOutputTokens ?: 0,
+                    knowledgeCutoff = spec?.knowledgeCutoff,
+                ),
+            )
+        }.isSuccess
     }
 
     private fun ensureConfiguredModel(providerId: String, providerName: String, remoteModelId: String) {
         if (remoteModelId.isBlank()) return
+        if (providerId in settingsPrefs.getStringSet(suppressedProviderModelsKey, emptySet()).orEmpty()) return
         val id = stableModelId(providerId, remoteModelId)
         if (_providerModels.value.any { it.id == id }) return
         val spec = com.promenar.nexara.data.model.findModelSpec(remoteModelId)
@@ -683,16 +729,21 @@ class ProviderManager private constructor(
         persistModels()
     }
 
-    fun disableAllModels() {
-        _providerModels.update { it.map { m -> m.copy(enabled = false) } }
+    fun disableAllModels(providerId: String) {
+        _providerModels.update { models ->
+            models.map { model ->
+                if (model.providerId == providerId) model.copy(enabled = false) else model
+            }
+        }
         persistModels()
     }
 
-    fun deleteAllModels() {
-        _providerModels.value = emptyList()
+    fun deleteAllModels(providerId: String) {
+        _providerModels.update { models -> models.filterNot { it.providerId == providerId } }
+        persistModels()
+        val suppressed = settingsPrefs.getStringSet(suppressedProviderModelsKey, emptySet()).orEmpty()
         settingsPrefs.edit()
-            .remove("enabled_models")
-            .remove("all_models")
+            .putStringSet(suppressedProviderModelsKey, suppressed + providerId)
             .apply()
     }
 

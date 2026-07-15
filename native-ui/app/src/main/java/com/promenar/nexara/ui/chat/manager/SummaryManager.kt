@@ -4,6 +4,8 @@ import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.provider.LlmProvider
+import com.promenar.nexara.utils.NexaraLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -51,8 +53,10 @@ class SummaryManager(private val llmProvider: LlmProvider) {
             val response = llmProvider.sendPromptSync(request)
             onProgress?.invoke("Summary generated")
             response.content
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
-            e.printStackTrace()
+            NexaraLogger.logError("SummaryManager.summarize", e)
             oldSummary ?: ""
         }
     }

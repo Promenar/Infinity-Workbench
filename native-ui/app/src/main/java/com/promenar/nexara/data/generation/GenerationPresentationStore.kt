@@ -6,6 +6,7 @@ import com.promenar.nexara.data.model.PostProcessType
 import com.promenar.nexara.data.model.RagPhase
 import com.promenar.nexara.data.remote.ProviderResolution
 import com.promenar.nexara.domain.generation.GenerationEvent
+import com.promenar.nexara.domain.generation.GenerationFailure
 import com.promenar.nexara.domain.generation.GenerationPhase
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -18,13 +19,20 @@ data class GenerationPresentationState(
     val sessionId: String,
     val ragPhases: List<RagPhase> = emptyList(),
     val streamingContent: String = "",
-    val error: String? = null,
+    val error: GenerationFailure? = null,
     val providerFailure: ProviderResolution.Failure? = null,
     val generating: Boolean = false,
     val handledFailure: Boolean = false,
     val phase: GenerationPhase? = null,
     val postProcessTasks: List<PostProcessTask> = emptyList(),
-)
+) {
+    override fun toString(): String =
+        "GenerationPresentationState(taskId=$taskId, sessionId=$sessionId, " +
+            "ragPhaseCount=${ragPhases.size}, streamingContentLength=${streamingContent.length}, " +
+            "errorCode=${error?.code}, providerFailureReason=${providerFailure?.reason}, " +
+            "generating=$generating, handledFailure=$handledFailure, phase=$phase, " +
+            "postProcessTaskCount=${postProcessTasks.size})"
+}
 
 /** 应用级、按会话隔离的生成展示状态；导航不会改变正在生成任务的写入目标。 */
 class GenerationPresentationStore {
@@ -65,23 +73,23 @@ class GenerationPresentationStore {
                 )
                 is GenerationEvent.SnapshotChanged -> current.copy(
                     streamingContent = event.snapshot.content,
-                    error = event.snapshot.errorMessage,
+                    error = event.snapshot.failure,
                 )
                 is GenerationEvent.TargetChanged -> current
                 is GenerationEvent.Rejected -> current.copy(
-                    error = event.message,
+                    error = event.failure,
                     generating = false,
                     handledFailure = true,
                     phase = GenerationPhase.FAILED,
                 )
                 is GenerationEvent.PersistenceFailed -> current.copy(
-                    error = "生成结果未能持久化：${event.persistenceCause.message ?: "unknown"}",
+                    error = event.failure,
                     generating = false,
                     handledFailure = true,
                     phase = GenerationPhase.PERSISTENCE_FAILED,
                 )
                 is GenerationEvent.Failed -> current.copy(
-                    error = event.cause.message ?: "Generation failed",
+                    error = event.failure,
                 )
             }
         }
@@ -117,7 +125,8 @@ class GenerationPresentationStore {
         override fun setStreamingContent(value: String) =
             update(sessionId, taskId) { it.copy(streamingContent = value) }
 
-        override fun setError(message: String?) = update(sessionId, taskId) { it.copy(error = message) }
+        override fun setError(failure: GenerationFailure?) =
+            update(sessionId, taskId) { it.copy(error = failure) }
 
         override fun setProviderFailure(failure: ProviderResolution.Failure?) =
             update(sessionId, taskId) { it.copy(providerFailure = failure) }

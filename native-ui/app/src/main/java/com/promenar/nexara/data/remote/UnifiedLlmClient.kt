@@ -4,12 +4,16 @@ import com.promenar.nexara.data.remote.lifecycle.ToolCallLifecycleHandler
 import com.promenar.nexara.data.remote.middleware.LlmMiddleware
 import com.promenar.nexara.data.remote.middleware.LlmMiddlewareChain
 import com.promenar.nexara.data.remote.middleware.StreamTextParams
+import com.promenar.nexara.data.remote.parser.ErrorNormalizer
 import com.promenar.nexara.data.remote.protocol.PromptRequest
+import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.protocol.ProtocolFactory
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.protocol.toStreamChunkError
 import com.promenar.nexara.utils.NexaraLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 
@@ -21,7 +25,12 @@ data class UnifiedProviderConfig(
     val serviceAccountJson: String = "",
     val projectId: String = "",
     val location: String = "us-central1"
-)
+) {
+    override fun toString(): String =
+        "UnifiedProviderConfig(protocolType=$protocolType, " +
+            "hasApiKey=${apiKey.isNotEmpty()}, hasServiceAccount=${serviceAccountJson.isNotEmpty()}, " +
+            "hasProjectId=${projectId.isNotEmpty()})"
+}
 
 data class StreamConfig(
     val tools: Map<String, ProtocolTool> = emptyMap(),
@@ -38,6 +47,17 @@ data class StreamConfig(
 class UnifiedLlmClient(
     private val providerConfigResolver: () -> UnifiedProviderConfig?,
     private val middlewares: List<LlmMiddleware> = emptyList(),
+    private val protocolFactory: (UnifiedProviderConfig) -> LlmProtocol = { config ->
+        ProtocolFactory.create(
+            type = config.protocolType,
+            baseUrl = config.baseUrl,
+            apiKey = config.apiKey,
+            model = config.defaultModel,
+            serviceAccountJson = config.serviceAccountJson,
+            projectId = config.projectId,
+            location = config.location,
+        )
+    },
 ) {
     suspend fun sendStream(
         params: StreamTextParams,
@@ -45,15 +65,7 @@ class UnifiedLlmClient(
     ): Flow<StreamChunk> = channelFlow {
         val providerConfig = providerConfigResolver()
             ?: throw IllegalStateException("Provider configuration is unavailable")
-        val protocol = ProtocolFactory.create(
-            type = providerConfig.protocolType,
-            baseUrl = providerConfig.baseUrl,
-            apiKey = providerConfig.apiKey,
-            model = providerConfig.defaultModel,
-            serviceAccountJson = providerConfig.serviceAccountJson,
-            projectId = providerConfig.projectId,
-            location = providerConfig.location
-        )
+        val protocol = protocolFactory(providerConfig)
 
         val chain = LlmMiddlewareChain(middlewares)
 
@@ -80,7 +92,7 @@ class UnifiedLlmClient(
         )
 
         val lifecycleHandler = ToolCallLifecycleHandler(
-            onChunk = { trySend(it) },
+            onChunk = { send(it) },
             knownTools = config.tools
         )
 
@@ -96,16 +108,15 @@ class UnifiedLlmClient(
                             )
                             send(transformed)
                         }
-                        else -> trySend(transformed)
+                        else -> send(transformed)
                     }
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             NexaraLogger.logError("[UnifiedLlmClient] Stream error", e)
-            trySend(StreamChunk.Error(
-                message = e.message ?: "Unknown stream error",
-                retryable = true
-            ))
+            send(ErrorNormalizer.normalize(e).toStreamChunkError(e))
         }
 
         chain.onRequestEnd(finalParams)

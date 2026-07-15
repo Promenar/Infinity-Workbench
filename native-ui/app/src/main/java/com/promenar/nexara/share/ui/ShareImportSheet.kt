@@ -30,13 +30,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.share.core.ShareImportItem
 import com.promenar.nexara.share.core.ShareImportStatus
 import com.promenar.nexara.share.core.ShareIndexStatus
 import com.promenar.nexara.share.core.ShareRejectReason
+import com.promenar.nexara.share.core.ShareTargetKind
+import com.promenar.nexara.ui.testing.UiTags
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,7 +72,12 @@ fun ShareImportSheet(
             },
         )
     }
-    ModalBottomSheet(onDismissRequest = onClose) {
+    ModalBottomSheet(
+        onDismissRequest = onClose,
+        modifier = Modifier
+            .testTag(UiTags.SHARE_IMPORT_SHEET)
+            .semantics { testTagsAsResourceId = true },
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -78,8 +88,13 @@ fun ShareImportSheet(
             Spacer(Modifier.height(12.dp))
             Text(stringResource(R.string.share_import_target_label))
             state.targets.forEach { target ->
+                val targetModifier = if (target.kind == ShareTargetKind.KnowledgeBase) {
+                    Modifier.testTag(UiTags.SHARE_IMPORT_KNOWLEDGE_BASE_TARGET)
+                } else {
+                    Modifier
+                }
                 Row(
-                    modifier = Modifier
+                    modifier = targetModifier
                         .fillMaxWidth()
                         .height(48.dp)
                         .clickable(enabled = !state.importing) {
@@ -120,14 +135,14 @@ fun ShareImportSheet(
                 TextButton(
                     onClick = onClose,
                     enabled = !state.importing,
-                    modifier = Modifier.height(48.dp),
+                    modifier = Modifier.testTag(UiTags.SHARE_IMPORT_LATER).height(48.dp),
                 ) {
                     Text(stringResource(R.string.share_import_later))
                 }
                 TextButton(
                     onClick = { confirmCancel = true },
                     enabled = !state.importing,
-                    modifier = Modifier.height(48.dp),
+                    modifier = Modifier.testTag(UiTags.SHARE_IMPORT_CANCEL).height(48.dp),
                 ) {
                     Text(stringResource(R.string.share_import_cancel))
                 }
@@ -145,7 +160,7 @@ fun ShareImportSheet(
                     onClick = onImport,
                     enabled = !state.importing && state.selectedWorkspaceRootUuid != null &&
                         state.items.any { it.status == ShareImportStatus.Pending },
-                    modifier = Modifier.height(48.dp),
+                    modifier = Modifier.testTag(UiTags.SHARE_IMPORT_ACTION).height(48.dp),
                 ) {
                     Text(
                         if (state.importing) stringResource(R.string.share_import_importing)
@@ -184,14 +199,15 @@ fun SharePendingBanner(
 
 @Composable
 private fun ShareImportItemRow(item: ShareImportItem) {
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.testTag(UiTags.SHARE_IMPORT_ITEM).fillMaxWidth()) {
         Text(item.displayName)
         Text(
             listOfNotNull(
                 item.mimeType,
                 item.sizeBytes?.let(::formatShareBytes),
                 statusLabel(item),
-            ).joinToString(" · ")
+            ).joinToString(" · "),
+            modifier = Modifier.testTag(UiTags.SHARE_IMPORT_STATUS),
         )
         item.reason?.let { Text(rejectReasonLabel(it)) }
     }

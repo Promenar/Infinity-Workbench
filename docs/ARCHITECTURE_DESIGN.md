@@ -1,8 +1,8 @@
 # Nexara — 全局架构设计文档
 
-> **版本**: 2.1.0
-> **更新时间**: 2026-05-19
-> **状态**: 理想架构 — 对照实现差距分析见 [IMPLEMENTATION_ANALYSIS.md](./IMPLEMENTATION_ANALYSIS.md)
+> **版本**: 2.2.0
+> **更新时间**: 2026-07-13
+> **状态**: 理想架构与 `v0.2-beta` 已实现发行剖面；历史差距分析见 [IMPLEMENTATION_ANALYSIS.md](./IMPLEMENTATION_ANALYSIS.md)
 > **关联**: [PRD.md](./PRD.md) — 产品需求文档
 
 ---
@@ -601,15 +601,19 @@ Step 4: 数据层迁移
 ### 6.1 API Key 管理
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────┐
-│  User Input │────▶│ EncryptedShared  │────▶│ LLM Client  │
-│  (明文 Key) │     │ Preferences      │     │ (运行时解密) │
-│              │     │ (AES-256-GCM)    │     │             │
-│              │     │ Android Keystore │     │ Key 仅在    │
-│              │     │ 硬件级密钥保护   │     │ 内存中短暂  │
-│              │     │                  │     │ 存在        │
-└─────────────┘     └──────────────────┘     └─────────────┘
+┌─────────────┐     ┌─────────────────────┐     ┌─────────────┐
+│  User Input │────▶│ SecretStore          │────▶│ LLM Client  │
+│  (明文 Key) │     │ AES-256-GCM ciphertext│     │ (按请求读取) │
+│             │     │ + random IV/version │     │             │
+│             │     │ Android Keystore     │     │ Key 只在    │
+│             │     │ non-exportable key   │     │ 内存短暂停留 │
+└─────────────┘     └─────────────────────┘     └─────────────┘
 ```
+
+- 普通 SharedPreferences 只保存格式版本、随机 IV 和密文，不保存明文凭据。
+- UI 持久状态只保存“是否已配置”。输入框默认显示 `****`；完整值仅在当前页面经用户显式操作短暂进入可清零缓冲区，失焦或离开页面后重新隐藏。
+- `SecretCatalog` 为 Provider API Key、Vertex service account、Tavily、Embedding、WebDAV 等凭据分配稳定标识；路由层只在请求开始时解析当前 Provider 的凭据。
+- 备份默认不包含凭据。用户显式启用完整密钥备份时必须设置密码，使用 PBKDF2-HMAC-SHA256 与 AES-256-GCM 加密；自动备份密码本身不进入导出包。
 
 ### 6.2 数据所有权
 
@@ -618,6 +622,12 @@ Step 4: 数据层迁移
 - 用户可随时删除任意数据（含向量、图谱）并验证清理
 - 网络传输仅发送必要上下文（用户消息 + RAG 片段 + System Prompt）
 - 不上报任何遥测数据（除非用户主动启用崩溃报告）
+
+### 6.3 Release 网络与日志边界
+
+- `v0.2-beta` Release 的云端 Provider 与 WebDAV 只允许 HTTPS；私网 HTTP 只允许显式 Debug/Integration 测试，不得通过 Release Manifest 放宽。
+- Debug 日志统一经 `NexaraLogger` 与 `SensitiveDataRedactor`；Release 输出入口受编译期门禁并由 R8 剥离。
+- Release APK 验证器对包身份、单一签名者、证书指纹、ZIP 边界、GGUF/llama/ggml 制品、常见密钥/Authorization/私钥/本机路径和 SHA-256 执行 fail-closed 检查。
 
 ---
 
@@ -633,6 +643,45 @@ Step 4: 数据层迁移
 
 ---
 
+## 8. v0.2-beta 生成与发行剖面
+
+### 8.1 单一生成任务源
+
+```mermaid
+flowchart LR
+    UI[ChatRoute / ChatViewModel] -->|submit/observe/cancel| GC[GenerationCoordinator]
+    GC --> RUNNER[ChatGenerationRunner]
+    RUNNER --> ROUTER[ProviderRequestRouter]
+    ROUTER --> LLM[UnifiedLlmClient / Protocol]
+    RUNNER --> DATA[(Room / Message / Tool Ledger)]
+    FGS[GenerationForegroundService] -->|observe same snapshot| GC
+    FGS --> NOTIFY[Notification: return / stop]
+```
+
+- `GenerationCoordinator` 以 `sessionId` 管理任务、快照、取消和终态；重复提交同一任务不会创建第二条网络请求。
+- `v0.2-beta` 全局只允许一个活动生成任务，避免 Provider 重复计费、通知竞争和持久化竞态。
+- `ChatViewModel` 负责提交与呈现，不再以自身生命周期独占网络协程；Foreground Service 与 UI 观察同一快照，不复制请求。
+- 取消在协议、背压发送、工具审批、持久化和清理边界显式传播；普通失败映射为稳定错误码，用户界面不消费原始异常消息。
+
+### 8.2 后台能力边界
+
+Foreground Service 只承接用户在可见界面发起的当前任务，支持切后台、锁屏、旋转与 Activity 重建。通知可返回准确会话或停止生成；权限不可用时退化为仅前台生成。设备重启续传、多会话并行、无人值守队列和定时任务均为非目标。
+
+### 8.3 事务索引与恢复
+
+- 文档索引先在事务外构建隔离的向量/KG 候选，事务内复核源哈希后原子切换；失败保留旧索引。
+- 永久删除统一清理向量、FTS、KG、标签和任务记录；稳定 tombstone 覆盖数据库提交后、物理删除前的进程死亡窗口。
+- SAF 与系统分享通过共享 importer 和持久 inbox 逐项处理，支持去重、部分失败、容量重试及进程恢复。
+
+### 8.4 发行构建与辅助工具
+
+- `minSdk=31`、`targetSdk=36`、`versionName=0.2-beta`；Release 使用环境变量签名并开启 R8/资源收缩。
+- GGUF/llama.cpp 不进入本版稳定能力，Release 关闭本地推理并由 APK 扫描器拒绝相关制品。
+- `scripts/nexara-metro-tui.js` 是 Debug Metro 事件的开发者 TUI，不是最终用户 CLI，也不承担 Android UI 的业务功能对等。
+- 最终放行证据以 [v0.2-beta validation](release/v0.2-beta-validation.md) 为准；未执行项必须保持 `PENDING`，编译或专项单测不能代替签名 APK 冷安装、minified 业务验真和视觉矩阵。
+
+---
+
 **文档维护者**: AI Assistant
-**最后更新**: 2026-05-19
-**下次审查**: 后台生成服务落地后
+**最后更新**: 2026-07-13
+**下次审查**: `v0.2-beta` GitHub Release 发布后

@@ -133,8 +133,9 @@ fun SessionSettingsScreen(
         show = showPromptEditor,
         onDismiss = { showPromptEditor = false },
         onSave = {
-            customPrompt = it
-            chatViewModel.updateCustomPrompt(it)
+            val result = chatViewModel.saveCustomPrompt(it)
+            if (result.isSuccess) customPrompt = it
+            result
         },
         title = stringResource(R.string.session_settings_prompt_editor_title),
         initialText = customPrompt,

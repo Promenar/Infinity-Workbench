@@ -3,6 +3,8 @@ package com.promenar.nexara.data.generation
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.domain.generation.CancellationReason
 import com.promenar.nexara.domain.generation.GenerationEvent
+import com.promenar.nexara.domain.generation.GenerationFailure
+import com.promenar.nexara.domain.generation.GenerationFailureCode
 import com.promenar.nexara.domain.generation.GenerationPhase
 import com.promenar.nexara.domain.generation.GenerationRequest
 import com.promenar.nexara.domain.generation.GenerationRunner
@@ -131,7 +133,9 @@ class DefaultGenerationCoordinatorTest {
         assertThat(failed.active.value).isNull()
         val terminal = failed.observe("bad").value!!
         assertThat(terminal.phase).isEqualTo(GenerationPhase.FAILED)
-        assertThat(terminal.error?.message).isEqualTo("boom")
+        assertThat(terminal.error?.code).isEqualTo(GenerationFailureCode.UNKNOWN)
+        assertThat(terminal.error?.technical).isEqualTo("boom")
+        assertThat(terminal.error?.cause).isInstanceOf(IllegalStateException::class.java)
         assertThat(failed.acknowledgeTerminal(terminal.taskId)).isTrue()
         assertThat(failed.observe("bad").value).isNull()
     }
@@ -155,6 +159,7 @@ class DefaultGenerationCoordinatorTest {
     @Test
     fun `路由handled失败携带设置入口状态直至显式确认且不重复终态写入`() = runTest {
         val presentationStore = GenerationPresentationStore()
+        val handledFailure = GenerationFailure.unknown(technical = "请配置 API Key")
         val failure = ProviderResolution.Failure(
             reason = ProviderResolutionError.API_KEY_MISSING,
             modelId = "provider::model",
@@ -166,8 +171,8 @@ class DefaultGenerationCoordinatorTest {
             runnerFactory = GenerationRunnerFactory { request, taskId ->
                 GenerationRunner { _, emit ->
                     presentationStore.port(request.sessionId, taskId).setProviderFailure(failure)
-                    presentationStore.port(request.sessionId, taskId).setError("请配置 API Key")
-                    emit(GenerationEvent.Rejected("请配置 API Key"))
+                    presentationStore.port(request.sessionId, taskId).setError(handledFailure)
+                    emit(GenerationEvent.Rejected(handledFailure))
                     emit(GenerationEvent.PhaseChanged(GenerationPhase.FAILED))
                 }
             },
@@ -179,7 +184,8 @@ class DefaultGenerationCoordinatorTest {
 
         val terminal = coordinator.observe("route-session").value!!
         assertThat(terminal.phase).isEqualTo(GenerationPhase.FAILED)
-        assertThat(terminal.error?.message).isEqualTo("请配置 API Key")
+        assertThat(terminal.error?.code).isEqualTo(GenerationFailureCode.UNKNOWN)
+        assertThat(terminal.error?.technical).isEqualTo("请配置 API Key")
         assertThat(presentationStore.observe("route-session").value?.providerFailure).isEqualTo(failure)
         assertThat(coordinator.acknowledgeTerminal(terminal.taskId)).isTrue()
         assertThat(coordinator.observe("route-session").value).isNull()
@@ -190,8 +196,12 @@ class DefaultGenerationCoordinatorTest {
     fun `持久化失败不得被runner后续原业务异常覆盖成普通FAILED`() = runTest {
         val original = IllegalStateException("network")
         val persistence = IllegalStateException("missing row")
+        val persistenceFailure = GenerationFailure.persistence(
+            technical = "missing row",
+            cause = persistence,
+        )
         val coordinator = coordinator { _, emit ->
-            emit(GenerationEvent.PersistenceFailed(persistence, original))
+            emit(GenerationEvent.PersistenceFailed(persistence, original, persistenceFailure))
             throw original
         }
 
@@ -200,6 +210,7 @@ class DefaultGenerationCoordinatorTest {
 
         val terminal = coordinator.observe("durability").value!!
         assertThat(terminal.phase).isEqualTo(GenerationPhase.PERSISTENCE_FAILED)
+        assertThat(terminal.error?.code).isEqualTo(GenerationFailureCode.PERSISTENCE)
         assertThat(terminal.error?.cause).isSameInstanceAs(persistence)
     }
 
