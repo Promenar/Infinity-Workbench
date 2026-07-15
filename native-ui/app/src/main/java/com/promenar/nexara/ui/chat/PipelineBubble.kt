@@ -8,44 +8,46 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraGlassCard
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.theme.NexaraColors
+import com.promenar.nexara.ui.theme.NexaraCustomShapes
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
@@ -189,7 +191,7 @@ fun PipelineBubble(
                         // 推理活跃判定：整体生成中 + 最后一步思考 + 正文尚未开始（streamingContent 只累积 content，不含 reasoning）
                         val isThinkingStreaming = isGenerating && isLastThinking && streamingContent.isEmpty()
                         
-                        InlineThinkingRow(
+                        ThinkingTrace(
                             reasoning = step.reasoning,
                             isGenerating = isThinkingStreaming,
                             fontSize = fontSize
@@ -449,135 +451,134 @@ private fun buildPipelineSteps(messages: List<Message>): List<PipelineStep> {
 // ─────────────────────────────────────────────────────────────────
 
 @Composable
-private fun InlineThinkingRow(
+internal fun ThinkingTrace(
     reasoning: String,
     isGenerating: Boolean,
-    fontSize: Int
+    fontSize: Int,
+    modifier: Modifier = Modifier
 ) {
     var internalExpanded by remember { mutableStateOf(isGenerating) }
     var collapsePending by remember { mutableStateOf(false) }
 
-    // 联动 isGenerating 状态：生成时立即展开，生成完毕 300ms 延迟折叠
     LaunchedEffect(isGenerating) {
-        when {
-            isGenerating -> {
-                collapsePending = false
-                internalExpanded = true
-            }
-            else -> {
-                collapsePending = true
-                delay(300L)
-                if (collapsePending) {
-                    internalExpanded = false
-                }
-            }
+        if (isGenerating) {
+            collapsePending = false
+            internalExpanded = true
+        } else {
+            collapsePending = true
+            delay(300L)
+            if (collapsePending) internalExpanded = false
         }
     }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // ── 折叠行 ──
-        Row(
+    val visibleReasoning = remember(reasoning, isGenerating) {
+        if (isGenerating) streamingReasoningPreview(reasoning) else reasoning
+    }
+    val targetFontSize = (fontSize - 2).coerceAtLeast(10)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag(UiTags.CHAT_THINKING_TRACE)
+    ) {
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                .clickable {
+                    collapsePending = false
+                    internalExpanded = !internalExpanded
+                }
+                .testTag(UiTags.CHAT_THINKING_TOGGLE),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = MaterialTheme.shapes.medium
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth(0.7f) // 进一步缩减指示器宽度
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(NexaraColors.Primary.copy(alpha = 0.08f))
-                    .border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                    .clickable {
-                        collapsePending = false
-                        internalExpanded = !internalExpanded
-                    } // 移到此处修复涟漪超出容器 Bug
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                modifier = Modifier.padding(
+                    horizontal = NexaraSpacing.Large,
+                    vertical = NexaraSpacing.Small
+                ),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)
             ) {
                 if (isGenerating) {
-                    // 脉冲圆点
-                    val infiniteTransition = rememberInfiniteTransition(label = "think_dot")
-                    val dotAlpha by infiniteTransition.animateFloat(
-                        initialValue = 0.3f, targetValue = 1f,
+                    val transition = rememberInfiniteTransition(label = "thinking_trace")
+                    val alpha by transition.animateFloat(
+                        initialValue = 0.3f,
+                        targetValue = 1f,
                         animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
-                        label = "alpha"
+                        label = "thinking_trace_alpha"
                     )
                     Box(
-                        modifier = Modifier
+                        Modifier
                             .size(8.dp)
                             .clip(CircleShape)
-                            .alpha(dotAlpha)
-                            .background(NexaraColors.Primary)
+                            .alpha(alpha)
+                            .background(MaterialTheme.colorScheme.primary)
                     )
                 } else {
                     Icon(
-                        Icons.Rounded.CheckCircle, null,
-                        tint = NexaraColors.Primary,
-                        modifier = Modifier.size(14.dp)
+                        Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
                 Text(
-                    text = if (isGenerating) {
-                        stringResource(R.string.chat_status_thinking)
-                    } else {
-                        stringResource(R.string.chat_status_thought)
-                    },
-                    style = NexaraTypography.labelSmall.copy(fontSize = (fontSize - 1).coerceAtLeast(10).sp, fontWeight = FontWeight.Medium),
-                    color = NexaraColors.Primary
+                    text = stringResource(
+                        if (isGenerating) R.string.chat_status_thinking
+                        else R.string.chat_status_thought
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.weight(1f))
+                Spacer(Modifier.weight(1f))
                 Icon(
-                    if (internalExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                    null,
-                    tint = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(14.dp)
+                    imageVector = if (internalExpanded) {
+                        Icons.Rounded.ExpandLess
+                    } else {
+                        Icons.Rounded.ExpandMore
+                    },
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
-
-        AnimatedVisibility(
-            visible = internalExpanded && reasoning.isNotBlank(),
-            enter = expandVertically(animationSpec = tween(250)) + fadeIn(animationSpec = tween(200)),
-            exit = shrinkVertically(animationSpec = tween(300)) + fadeOut(animationSpec = tween(200))
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Surface(
-                    color = NexaraColors.SurfaceLow.copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.15f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 4.dp)
-                ) {
-                    val dimmedColor = NexaraColors.OnSurfaceVariant.copy(alpha = 0.8f) // 弱化颜色
-                    val targetFontSize = (fontSize - 2).coerceAtLeast(10)
-                    CompositionLocalProvider(
-                        androidx.compose.material3.LocalContentColor provides dimmedColor,
-                        androidx.compose.material3.LocalTextStyle provides NexaraTypography.bodySmall.copy(
-                            fontSize = targetFontSize.sp,
-                            lineHeight = (targetFontSize + 5).sp,
-                            color = dimmedColor,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+        AnimatedVisibility(visible = internalExpanded && reasoning.isNotBlank()) {
+            val lineColor = MaterialTheme.colorScheme.primary
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(UiTags.CHAT_THINKING_CONTENT)
+                    .drawBehind {
+                        val lineX = NexaraSpacing.XLarge.toPx()
+                        drawLine(
+                            color = lineColor,
+                            start = Offset(lineX, 0f),
+                            end = Offset(lineX, size.height),
+                            strokeWidth = 2.dp.toPx()
                         )
-                    ) {
-                        val visibleReasoning = remember(reasoning, isGenerating) {
-                            if (isGenerating) streamingReasoningPreview(reasoning) else reasoning
-                        }
-                        MarkdownText(
-                            markdown = visibleReasoning,
-                            isStreaming = isGenerating,
-                            fontSize = targetFontSize,
-                            showCursor = false,
-                            overrideColor = dimmedColor,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                            compactSpacing = true,
-                            modifier = Modifier.padding(10.dp)
+                        drawCircle(
+                            color = lineColor,
+                            radius = NexaraSpacing.XSmall.toPx(),
+                            center = Offset(lineX, NexaraSpacing.Large.toPx())
                         )
                     }
-                }
+                    .padding(
+                        start = NexaraSpacing.XLarge + NexaraSpacing.Medium,
+                        top = NexaraSpacing.Small,
+                        bottom = NexaraSpacing.Small,
+                        end = NexaraSpacing.Large
+                    )
+            ) {
+                MarkdownText(
+                    markdown = visibleReasoning,
+                    isStreaming = isGenerating,
+                    fontSize = targetFontSize,
+                    showCursor = false,
+                    overrideColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    compactSpacing = true
+                )
             }
         }
     }
@@ -903,11 +904,10 @@ fun UserMessageBubble(
     ) {
         Box {
             Surface(
-                shape = com.promenar.nexara.ui.theme.NexaraCustomShapes.ChatBubbleUser,
-                color = NexaraColors.SurfaceHigh,
-                border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant),
+                shape = NexaraCustomShapes.ChatBubbleUser,
+                color = MaterialTheme.colorScheme.secondaryContainer,
                 modifier = Modifier
-                    .widthIn(max = 280.dp)
+                    .widthIn(max = 320.dp)
                     .combinedClickable(
                         onClick = {},
                         onLongClick = {
@@ -919,8 +919,12 @@ fun UserMessageBubble(
                 Column {
                     if (!message.userImages.isNullOrEmpty()) {
                         Column(
-                            modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            modifier = Modifier.padding(
+                                start = NexaraSpacing.Small,
+                                end = NexaraSpacing.Small,
+                                top = NexaraSpacing.Small
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)
                         ) {
                             message.userImages!!.forEach { dataUrl ->
                                 coil3.compose.AsyncImage(
@@ -929,7 +933,7 @@ fun UserMessageBubble(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .heightIn(max = 200.dp)
-                                        .clip(RoundedCornerShape(8.dp)),
+                                        .clip(MaterialTheme.shapes.small),
                                     contentScale = ContentScale.FillWidth
                                 )
                             }
@@ -942,8 +946,8 @@ fun UserMessageBubble(
                                 fontSize = fontSize.sp,
                                 lineHeight = (fontSize * 1.5).sp
                             ),
-                            color = NexaraColors.OnBackground,
-                            modifier = Modifier.padding(16.dp)
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(NexaraSpacing.Large)
                         )
                     }
                 }

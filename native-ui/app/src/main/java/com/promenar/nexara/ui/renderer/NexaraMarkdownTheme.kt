@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.renderer
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -11,18 +12,17 @@ import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.MarkdownColors
 import com.mikepenz.markdown.model.MarkdownTypography
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 @Composable
 fun nexaraMarkdownColors(
-    textColor: Color = NexaraColors.OnBackground
+    textColor: Color = MaterialTheme.colorScheme.onSurface
 ): MarkdownColors = markdownColor(
     text = textColor,
-    codeBackground = Color.Transparent,
-    inlineCodeBackground = NexaraColors.SurfaceHigh,
-    dividerColor = NexaraColors.OutlineVariant,
-    tableBackground = NexaraColors.SurfaceContainer,
+    codeBackground = MaterialTheme.colorScheme.surfaceContainerLow,
+    inlineCodeBackground = MaterialTheme.colorScheme.surfaceContainerHigh,
+    dividerColor = MaterialTheme.colorScheme.outlineVariant,
+    tableBackground = MaterialTheme.colorScheme.surfaceContainer,
 )
 
 @Composable

@@ -99,4 +99,26 @@ class PipelineBubbleTest {
         assertThat(plan.showStandaloneCursor).isTrue()
         assertThat(plan.showContentCursor).isFalse()
     }
+
+    @Test
+    fun `会话表面使用 M3 语义角色并保留思考轨迹`() {
+        val moduleRoot = java.io.File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/PipelineBubble.kt",
+        ).readText()
+
+        assertThat(source).contains("internal fun ThinkingTrace(")
+        assertThat(source).contains("MaterialTheme.colorScheme.surfaceContainerLow")
+        assertThat(source).contains("MaterialTheme.colorScheme.secondaryContainer")
+        assertThat(source).contains("MaterialTheme.colorScheme.onSecondaryContainer")
+        val thinkingTraceSource = source
+            .substringAfter("internal fun ThinkingTrace(")
+            .substringBefore("//  InlineToolRow")
+        assertThat(thinkingTraceSource).contains(".drawBehind")
+        assertThat(thinkingTraceSource).doesNotContain(".fillMaxHeight()")
+        assertThat(source).doesNotContain("private fun InlineThinkingRow(")
+        assertThat(source).doesNotContain("import com.promenar.nexara.ui.common.NexaraGlassCard")
+    }
 }
