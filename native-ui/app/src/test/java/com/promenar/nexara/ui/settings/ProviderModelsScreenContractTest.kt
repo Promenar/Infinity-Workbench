@@ -7,21 +7,47 @@ import org.junit.jupiter.api.Test
 
 class ProviderModelsScreenContractTest {
     @Test
-    fun `模型管理密度契约应避免重复48dp尺寸与漂浮小标签`() {
+    fun `顶部操作使用M3主次层级且批量动作进入overflow`() {
         val source = String(
             Files.readAllBytes(
                 Path.of("app/src/main/java/com/promenar/nexara/ui/settings/ProviderModelsScreen.kt"),
             ),
             Charsets.UTF_8,
         )
-        val actionChip = source.substringAfter("internal fun ActionChip(")
+        val topActions = source.substringAfter("internal fun ProviderModelsTopActions(")
             .substringBefore("internal fun EnhancedModelCard(")
+
+        assertThat(source).contains("internal fun ProviderModelsTopActions(")
+        assertThat(topActions).contains("FilledTonalButton(")
+        assertThat(topActions).contains("Button(")
+        assertThat(topActions).contains("DropdownMenu(")
+        assertThat(topActions).contains("UiTags.PROVIDER_MODELS_ACTION_OVERFLOW")
+        assertThat(topActions).contains("UiTags.PROVIDER_MODELS_ACTION_DISABLE_ALL")
+        assertThat(topActions).contains("UiTags.PROVIDER_MODELS_ACTION_DELETE_ALL")
+        assertThat(source).doesNotContain("ProviderModelsActionsGrid(")
+        assertThat(source).doesNotContain("internal fun ActionChip(")
+        assertThat(source).doesNotContain("NexaraBottomSheet")
+        assertThat(source).doesNotContain("fillMaxHeight(0.7f)")
+        assertThat(source).contains("ModalBottomSheet(")
+        assertThat(source).contains("rememberModalBottomSheetState(skipPartiallyExpanded = true)")
+        val addForm = source.substringAfter("internal fun AddCustomModelForm(")
+            .substringBefore("internal fun ProviderModelsTopActions(")
+        assertThat(addForm).contains("LazyColumn(")
+        assertThat(addForm).contains("OutlinedTextField(")
+        assertThat(addForm).contains("imePadding()")
+    }
+
+    @Test
+    fun `模型卡内部布局契约由后续Task6独立保护`() {
+        val source = String(
+            Files.readAllBytes(
+                Path.of("app/src/main/java/com/promenar/nexara/ui/settings/ProviderModelsScreen.kt"),
+            ),
+            Charsets.UTF_8,
+        )
         val modelCard = source.substringAfter("internal fun EnhancedModelCard(")
             .substringBefore("private fun formatTokens")
 
-        assertThat(actionChip).contains(".height(48.dp)")
-        assertThat(actionChip).doesNotContain(".padding(vertical = 6.dp)")
-        assertThat(actionChip).doesNotContain(".heightIn(min = 48.dp)")
         assertThat(modelCard).contains("CompactSelectableChip(")
         assertThat(modelCard).contains("visualHeight = 36.dp")
         assertThat(modelCard).contains(".width(112.dp)")
@@ -52,6 +78,10 @@ class ProviderModelsScreenContractTest {
         assertThat(contentBody).doesNotContain("SettingsViewModel")
         assertThat(contentBody).doesNotContain("LocalContext")
         assertThat(source).contains("remember { mutableStateOf(\"\") }")
+        assertThat(source).contains("it.name.contains(searchQuery, ignoreCase = true)")
+        assertThat(source).contains("it.remoteModelId.contains(searchQuery, ignoreCase = true)")
+        assertThat(source).contains("it.id.contains(searchQuery, ignoreCase = true)")
+        assertThat(source).contains("NexaraSearchBar(")
     }
 
     @Test
@@ -90,6 +120,7 @@ class ProviderModelsScreenContractTest {
         assertThat(providerTags).contains("PROVIDER_MODELS_SEARCH_FIELD")
         assertThat(providerTags).contains("PROVIDER_MODELS_ACTION_SYNC")
         assertThat(providerTags).contains("PROVIDER_MODELS_ACTION_ADD")
+        assertThat(providerTags).contains("PROVIDER_MODELS_ACTION_OVERFLOW")
         assertThat(providerTags).contains("PROVIDER_MODELS_ACTION_DISABLE_ALL")
         assertThat(providerTags).contains("PROVIDER_MODELS_ACTION_DELETE_ALL")
         assertThat(providerTags).contains("PROVIDER_MODELS_NOTICE")
@@ -97,7 +128,9 @@ class ProviderModelsScreenContractTest {
         assertThat(providerTags).contains("PROVIDER_MODELS_STATE_EMPTY")
         assertThat(providerTags).contains("PROVIDER_MODELS_STATE_ERROR")
         assertThat(providerTags).contains("PROVIDER_MODELS_STATE_LOADING")
+        assertThat(providerTags).contains("PROVIDER_MODELS_STATE_SEARCH_EMPTY")
         assertThat(providerTags).contains("PROVIDER_MODELS_ADD_SHEET")
+        assertThat(providerTags).contains("PROVIDER_MODELS_ADD_FORM_LIST")
         assertThat(providerTags).contains("PROVIDER_MODELS_ADD_ID_FIELD")
         assertThat(providerTags).contains("PROVIDER_MODELS_ADD_NAME_FIELD")
         assertThat(providerTags).contains("PROVIDER_MODELS_ADD_SUBMIT_BUTTON")

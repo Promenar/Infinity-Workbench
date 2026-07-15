@@ -34,13 +34,25 @@ import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -71,7 +83,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraPageLayout
@@ -215,6 +226,7 @@ internal fun ProviderModelsScreenContent(
         if (searchQuery.isBlank()) state.models
         else state.models.filter {
             it.name.contains(searchQuery, ignoreCase = true) ||
+            it.remoteModelId.contains(searchQuery, ignoreCase = true) ||
             it.id.contains(searchQuery, ignoreCase = true)
         }
     }
@@ -234,19 +246,8 @@ internal fun ProviderModelsScreenContent(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        val rotation by animateFloatAsState(
-            targetValue = if (state.isFetching) 360f else 0f,
-            animationSpec = if (state.isFetching) {
-                tween(1000, easing = androidx.compose.animation.core.LinearEasing)
-            } else {
-                tween(0)
-            },
-            label = "syncRotation",
-        )
-
-        ProviderModelsActionsGrid(
+        ProviderModelsTopActions(
             isFetching = state.isFetching,
-            rotation = rotation,
             onRefresh = actions.onRefresh,
             onAdd = { showAddDialog = true },
             onDisableAll = actions.onDisableAll,
@@ -299,6 +300,7 @@ internal fun ProviderModelsScreenContent(
                     ProviderModelsListMessage(
                         message = stringResource(R.string.provider_models_sync_failed),
                         tag = UiTags.PROVIDER_MODELS_STATE_ERROR,
+                        assertive = true,
                     )
                 }
 
@@ -311,8 +313,9 @@ internal fun ProviderModelsScreenContent(
 
                 ProviderModelsListState.SearchEmpty -> item("search-empty") {
                     ProviderModelsListMessage(
-                        message = stringResource(R.string.common_model_picker_empty),
-                        tag = UiTags.PROVIDER_MODELS_STATE_EMPTY,
+                        message = stringResource(R.string.provider_models_search) +
+                            " · " + stringResource(R.string.common_model_picker_empty),
+                        tag = UiTags.PROVIDER_MODELS_STATE_SEARCH_EMPTY,
                     )
                 }
 
@@ -360,26 +363,39 @@ internal fun ProviderModelsScreenContent(
     }
 
     if (showAddDialog) {
-        NexaraBottomSheet(
-            show = showAddDialog,
+        ProviderModelsAddSheet(
             onDismiss = { showAddDialog = false },
-            title = stringResource(R.string.provider_models_add),
-        ) {
-            Box(modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ADD_SHEET)) {
-                AddCustomModelForm(
-                    onSubmit = { id, name ->
-                        val added = actions.onAdd(id, name)
-                        if (added) {
-                            showAddDialog = false
-                        }
-                        added
-                    },
-                    onAdded = {
-                        showAddDialog = false
-                    },
-                )
-            }
-        }
+            onSubmit = { id, name ->
+                val added = actions.onAdd(id, name)
+                if (added) {
+                    showAddDialog = false
+                }
+                added
+            },
+            onAdded = { showAddDialog = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProviderModelsAddSheet(
+    onDismiss: () -> Unit,
+    onSubmit: (id: String, name: String) -> Boolean,
+    onAdded: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ADD_SHEET),
+    ) {
+        Text(
+            text = stringResource(R.string.provider_models_add_custom),
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        )
+        AddCustomModelForm(onSubmit = onSubmit, onAdded = onAdded)
     }
 }
 
@@ -391,201 +407,175 @@ internal fun AddCustomModelForm(
     var modelId by remember { mutableStateOf("") }
     var modelName by remember { mutableStateOf("") }
     var submissionFailed by remember { mutableStateOf(false) }
-    Column(
+
+    LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp)
-            .imePadding(),
+            .imePadding()
+            .testTag(UiTags.PROVIDER_MODELS_ADD_FORM_LIST),
+        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column {
-            Text(
-                text = stringResource(R.string.provider_models_field_model_id),
-                style = NexaraTypography.labelMedium,
-                color = NexaraColors.OnSurfaceVariant,
-            )
-            Spacer(Modifier.height(8.dp))
-            NexaraSearchBar(
+        item("model-id") {
+            OutlinedTextField(
                 value = modelId,
                 onValueChange = {
                     modelId = it
                     submissionFailed = false
                 },
-                placeholder = stringResource(R.string.provider_models_placeholder_model_id),
-                modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ADD_ID_FIELD),
+                label = { Text(stringResource(R.string.provider_models_field_model_id)) },
+                placeholder = { Text(stringResource(R.string.provider_models_placeholder_model_id)) },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(UiTags.PROVIDER_MODELS_ADD_ID_FIELD),
             )
         }
-        Column {
-            Text(
-                text = stringResource(R.string.provider_models_field_display_name),
-                style = NexaraTypography.labelMedium,
-                color = NexaraColors.OnSurfaceVariant,
-            )
-            Spacer(Modifier.height(8.dp))
-            NexaraSearchBar(
+        item("model-name") {
+            OutlinedTextField(
                 value = modelName,
                 onValueChange = {
                     modelName = it
                     submissionFailed = false
                 },
-                placeholder = stringResource(R.string.provider_models_placeholder_optional),
-                modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ADD_NAME_FIELD),
+                label = { Text(stringResource(R.string.provider_models_field_display_name)) },
+                placeholder = { Text(stringResource(R.string.provider_models_placeholder_optional)) },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(UiTags.PROVIDER_MODELS_ADD_NAME_FIELD),
             )
         }
         if (submissionFailed) {
-            val failureMessage = stringResource(R.string.generation_failure_invalid_request)
-            Text(
-                text = failureMessage,
-                style = NexaraTypography.bodyMedium,
-                color = NexaraColors.StatusError,
-                modifier = Modifier.semantics {
-                    liveRegion = LiveRegionMode.Assertive
-                    stateDescription = failureMessage
-                },
-            )
+            item("submission-error") {
+                val failureMessage = stringResource(R.string.generation_failure_invalid_request)
+                Text(
+                    text = failureMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.semantics {
+                        liveRegion = LiveRegionMode.Assertive
+                        stateDescription = failureMessage
+                    },
+                )
+            }
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        androidx.compose.material3.Button(
-            onClick = {
-                if (modelId.isNotBlank()) {
-                    if (onSubmit(modelId, modelName)) {
-                        onAdded()
-                    } else {
-                        submissionFailed = true
+        item("submit") {
+            Button(
+                onClick = {
+                    if (modelId.isNotBlank()) {
+                        if (onSubmit(modelId, modelName)) {
+                            onAdded()
+                        } else {
+                            submissionFailed = true
+                        }
                     }
-                }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .sizeIn(minHeight = 48.dp)
-                .testTag(UiTags.PROVIDER_MODELS_ADD_SUBMIT_BUTTON),
-            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                containerColor = NexaraColors.Primary,
-                contentColor = NexaraColors.OnPrimary,
-            ),
-            shape = NexaraShapes.medium,
-        ) {
-            Text(stringResource(R.string.shared_btn_add))
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .sizeIn(minHeight = 48.dp)
+                    .testTag(UiTags.PROVIDER_MODELS_ADD_SUBMIT_BUTTON),
+            ) {
+                Text(stringResource(R.string.shared_btn_add))
+            }
         }
-        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
 @Composable
-internal fun ProviderModelsActionsGrid(
+internal fun ProviderModelsTopActions(
     isFetching: Boolean,
-    rotation: Float,
     onRefresh: () -> Unit,
     onAdd: () -> Unit,
     onDisableAll: () -> Unit,
     onDeleteAll: () -> Unit,
 ) {
-    Column(
+    var overflowExpanded by remember { mutableStateOf(false) }
+
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        FilledTonalButton(
+            onClick = onRefresh,
+            enabled = !isFetching,
+            modifier = Modifier
+                .weight(1f)
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .testTag(UiTags.PROVIDER_MODELS_ACTION_SYNC),
         ) {
-            ActionChip(
-                icon = Icons.Rounded.Sync,
-                label = stringResource(R.string.provider_models_auto_fetch),
-                onClick = onRefresh,
-                enabled = !isFetching,
-                iconModifier = Modifier.rotate(rotation),
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag(UiTags.PROVIDER_MODELS_ACTION_SYNC),
-            )
-            ActionChip(
-                icon = Icons.Rounded.Add,
-                label = stringResource(R.string.provider_models_add),
-                isPrimary = true,
-                onClick = onAdd,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag(UiTags.PROVIDER_MODELS_ACTION_ADD),
-            )
+            if (isFetching) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Rounded.Sync,
+                    contentDescription = null,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.provider_models_auto_fetch), maxLines = 2)
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        Button(
+            onClick = onAdd,
+            modifier = Modifier
+                .weight(1f)
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .testTag(UiTags.PROVIDER_MODELS_ACTION_ADD),
         ) {
-            ActionChip(
-                icon = Icons.Rounded.Block,
-                label = stringResource(R.string.provider_models_disable_all),
-                onClick = onDisableAll,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag(UiTags.PROVIDER_MODELS_ACTION_DISABLE_ALL),
-            )
-            ActionChip(
-                icon = Icons.Rounded.Delete,
-                label = stringResource(R.string.provider_models_delete_all),
-                isDanger = true,
-                onClick = onDeleteAll,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag(UiTags.PROVIDER_MODELS_ACTION_DELETE_ALL),
-            )
+            Icon(imageVector = Icons.Rounded.Add, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.provider_models_add), maxLines = 2)
         }
-    }
-}
-
-@Composable
-internal fun ActionChip(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    isPrimary: Boolean = false,
-    isDanger: Boolean = false,
-    iconModifier: Modifier = Modifier,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    val bgColor = when {
-        isDanger -> NexaraColors.ErrorContainer.copy(alpha = 0.3f)
-        isPrimary -> NexaraColors.InversePrimary
-        else -> NexaraColors.SurfaceHigh
-    }
-    val contentColor = when {
-        isDanger -> NexaraColors.Error
-        isPrimary -> NexaraColors.OnSurface
-        else -> NexaraColors.OnSurface
-    }
-
-    Box(
-        modifier = modifier
-            .sizeIn(minWidth = 48.dp)
-            .height(48.dp)
-            .semantics(mergeDescendants = true) {}
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .clip(NexaraShapes.medium)
-            .background(bgColor)
-            .border(0.5.dp, NexaraColors.GlassBorder, NexaraShapes.medium)
-            .padding(horizontal = 8.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = contentColor,
+        Box {
+            IconButton(
+                onClick = { overflowExpanded = true },
                 modifier = Modifier
-                    .size(16.dp)
-                    .then(iconModifier),
-            )
-            Text(
-                text = label,
-                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                color = contentColor,
-                maxLines = 2,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
+                    .size(48.dp)
+                    .testTag(UiTags.PROVIDER_MODELS_ACTION_OVERFLOW),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MoreVert,
+                    contentDescription = stringResource(R.string.chat_cd_options),
+                )
+            }
+            DropdownMenu(
+                expanded = overflowExpanded,
+                onDismissRequest = { overflowExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.provider_models_disable_all)) },
+                    leadingIcon = { Icon(Icons.Rounded.Block, contentDescription = null) },
+                    onClick = {
+                        overflowExpanded = false
+                        onDisableAll()
+                    },
+                    modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ACTION_DISABLE_ALL),
+                )
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = stringResource(R.string.provider_models_delete_all),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Rounded.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    },
+                    onClick = {
+                        overflowExpanded = false
+                        onDeleteAll()
+                    },
+                    modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ACTION_DELETE_ALL),
+                )
+            }
         }
     }
 }
@@ -1055,13 +1045,10 @@ internal fun ModelSyncNoticeBanner(
     val message = notice.formatSyncMessage(
         unknownFallback = stringResource(R.string.provider_models_sync_failed),
     )
-    Box(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 8.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(color.container)
-            .border(0.5.dp, color.border, RoundedCornerShape(8.dp))
             .semantics {
                 liveRegion = if (notice.severity == NoticeSeverity.Error) {
                     LiveRegionMode.Assertive
@@ -1069,13 +1056,16 @@ internal fun ModelSyncNoticeBanner(
                     LiveRegionMode.Polite
                 }
                 stateDescription = message
-            }
-            .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            },
+        color = color.container,
+        shape = MaterialTheme.shapes.medium,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         ) {
             Text(
                 text = message,
@@ -1105,20 +1095,31 @@ internal fun ModelSyncNoticeBanner(
 private fun ProviderModelsListMessage(
     message: String,
     tag: String,
+    assertive: Boolean = false,
 ) {
-    Box(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 48.dp)
             .testTag(tag)
-            .semantics(mergeDescendants = true) { stateDescription = message },
-        contentAlignment = Alignment.Center,
+            .semantics(mergeDescendants = true) {
+                liveRegion = if (assertive) LiveRegionMode.Assertive else LiveRegionMode.Polite
+                stateDescription = message
+            },
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.shapes.large,
     ) {
-        Text(
-            text = message,
-            style = NexaraTypography.bodyMedium,
-            color = NexaraColors.OnSurfaceVariant,
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
