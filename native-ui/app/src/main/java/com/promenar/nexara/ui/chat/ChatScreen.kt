@@ -13,11 +13,8 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,13 +22,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
@@ -62,16 +59,18 @@ import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -83,9 +82,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -98,6 +99,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -105,29 +107,26 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.data.model.PostProcessTask
-import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.NexaraSnackbarHost
 import com.promenar.nexara.ui.theme.NexaraColors
+import com.promenar.nexara.ui.theme.NexaraElevation
 import com.promenar.nexara.ui.theme.NexaraShapes
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.delay
@@ -217,6 +216,10 @@ fun ChatScreenContent(
     val pipelineGroups = remember(uiState.messages) { buildPipelineGroups(uiState.messages) }
 
     val density = LocalDensity.current
+    var composerHeightPx by remember { mutableIntStateOf(0) }
+    val currentComposerHeightPx by rememberUpdatedState(composerHeightPx)
+    val composerHeight = with(density) { composerHeightPx.toDp() }
+    val composerInsets = chatComposerInsets(composerHeight)
     val isUserScrolledAway by remember(pipelineGroups.size, uiState.isGenerating) {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
@@ -267,7 +270,10 @@ fun ChatScreenContent(
         val activeIndex = pipelineGroups.lastIndex
         if (activeIndex < 0) return
 
-        val inputOverlapPx = with(density) { 180.dp.roundToPx() }
+        val liveComposerInsets = chatComposerInsets(
+            with(density) { currentComposerHeightPx.toDp() },
+        )
+        val inputOverlapPx = with(density) { liveComposerInsets.streamingOverlap.roundToPx() }
 
         // 基于最新一次布局读取目标 item，做像素级遮挡校正。
         // 目标 item 不在组成窗口内时直接返回，由调用方先粗滚再重新校正。
@@ -324,17 +330,17 @@ fun ChatScreenContent(
         }
     }
 
-    // IME 键盘避让：IME 弹出会通过 imePadding() 收缩列表视口。若在动画过程中校正，
-    // 滚动会基于尚未稳定的视口，动画结束后尾消息被推出可见区且不再重滚。
+    // IME 键盘避让：IME 弹出会通过 imePadding() 持续收缩列表视口。同步观察 inset
+    // 与视口末端，确保动画每次推进都以最新布局即时校正尾消息。
     val isImeVisible = WindowInsets.isImeVisible
     val imeInsets = WindowInsets.ime
     LaunchedEffect(isImeVisible, autoFollowEnabled, pipelineGroups.size) {
         if (!isImeVisible || !autoFollowEnabled || pipelineGroups.isEmpty()) return@LaunchedEffect
 
-        snapshotFlow { imeInsets.getBottom(density) }.collectLatest { insetBottom ->
-            if (insetBottom <= 0) return@collectLatest
-            // collectLatest 会取消上一帧尚未完成的等待；只有 inset 稳定后才执行校正。
-            delay(64)
+        snapshotFlow {
+            imeInsets.getBottom(density) to listState.layoutInfo.viewportEndOffset
+        }.collectLatest { (insetBottom, viewportEnd) ->
+            if (insetBottom <= 0 || viewportEnd <= 0) return@collectLatest
             scrollToStreamingTail()
         }
     }
@@ -385,8 +391,12 @@ fun ChatScreenContent(
                     .fillMaxWidth()
                     .nestedScroll(userScrollConnection)
                     .testTag(renderStateTag),
-                // 底部留白必须大于 180dp 输入浮岛避让目标，确保滚动校正始终可达。
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 200.dp),
+                contentPadding = PaddingValues(
+                    start = NexaraSpacing.Large,
+                    end = NexaraSpacing.Large,
+                    top = NexaraSpacing.Large,
+                    bottom = composerInsets.contentBottom,
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                     // pipelineGroups 已在外部通过 remember 计算，此处直接引用
@@ -482,24 +492,24 @@ fun ChatScreenContent(
                 ChatSkeleton(modifier = Modifier.fillMaxSize())
             }
 
-                // ── 宽幅低矮版 MD3 风格浮岛 (Optimized Solid MD3 Island) ──
+                // ── 单层稳定 Material 3 composer ──
                 Surface(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(horizontal = 4.dp) // 极窄外边距，显著加宽
-                        .padding(bottom = 8.dp)
                         .widthIn(max = 960.dp)
                         .fillMaxWidth()
-                        .testTag(UiTags.CHAT_INPUT_ISLAND),
-                    color = NexaraColors.SurfaceLow, // 调整颜色为更深的 SurfaceLow，契合 Header
-                    shape = RoundedCornerShape(24.dp), // 略微减小圆角，配合加宽效果
-                    border = BorderStroke(1.dp, NexaraColors.OutlineVariant.copy(alpha = 0.3f)),
-                    shadowElevation = 6.dp
+                        .onSizeChanged { composerHeightPx = it.height }
+                        .testTag(UiTags.CHAT_COMPOSER),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = NexaraElevation.Level0,
+                    shadowElevation = NexaraElevation.Level0,
                 ) {
                     Column(
-                        modifier = Modifier
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        modifier = Modifier.padding(
+                            horizontal = NexaraSpacing.Large,
+                            vertical = NexaraSpacing.Small,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                     ) {
                         val modelDisplayName = remember(uiState.session?.modelId) {
                             uiState.session?.modelId?.let { id ->
@@ -560,15 +570,15 @@ fun ChatScreenContent(
                                         val textToSend = inputText.ifBlank { describeImagePrompt }
                                         actions.onSend(textToSend, selectedImageUris)
                                     }
-                                },
-                                status = uiState.status,
-                                onStop = actions.onStop,
-                                isModelSelected = uiState.session?.modelId?.isNotBlank() == true,
-                                onModelHint = { showModelHint = true },
-                                onPickImage = actions.onPickImages,
-                                hasImages = selectedImageUris.isNotEmpty()
+                            },
+                            status = uiState.status,
+                            onStop = actions.onStop,
+                            isModelSelected = uiState.session?.modelId?.isNotBlank() == true,
+                            onModelHint = { showModelHint = true },
+                            onPickImage = actions.onPickImages,
+                            hasImages = selectedImageUris.isNotEmpty()
                             )
-    
+
                             // ── 模型未选择提示气泡 ──
                             androidx.compose.animation.AnimatedVisibility(
                                 visible = showModelHint,
@@ -599,7 +609,7 @@ fun ChatScreenContent(
                     visible = isUserScrolledAway && (!uiState.isGenerating || !autoFollowEnabled),
                     enter = fadeIn(),
                     exit = fadeOut(),
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp)
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = composerInsets.fabBottom)
                 ) {
                     FloatingActionButton(
                         onClick = {
@@ -684,39 +694,6 @@ fun ContextCircularIndicator(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CompactInputChip(
-    onClick: () -> Unit,
-    interactionTag: String,
-    visualTag: String,
-    modifier: Modifier = Modifier,
-    visualHeight: Dp = 34.dp,
-    content: @Composable RowScope.() -> Unit,
-) {
-    Box(
-        modifier = modifier
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .semantics(mergeDescendants = true) {}
-            .clickable(role = Role.Button, onClick = onClick)
-            .testTag(interactionTag),
-        contentAlignment = Alignment.Center,
-    ) {
-        Row(
-            modifier = Modifier
-                .height(visualHeight)
-                .testTag(visualTag)
-                .clip(RoundedCornerShape(50))
-                .background(NexaraColors.GlassSurface)
-                .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(50))
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            content = content,
-        )
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
 private fun ChatInputTopBar(
     modelName: String,
     tokenState: ChatViewModel.TokenIndicatorState,
@@ -731,22 +708,25 @@ private fun ChatInputTopBar(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // Model Indicator
-        CompactInputChip(
+        FilterChip(
+            selected = true,
             onClick = onModelClick,
-            interactionTag = UiTags.CHAT_MODEL_SELECTOR,
-            visualTag = UiTags.CHAT_MODEL_SELECTOR_VISUAL,
-            visualHeight = 34.dp,
-        ) {
-            Icon(Icons.Rounded.Memory, null, tint = NexaraColors.Primary, modifier = Modifier.size(14.dp))
-            Text(
-                text = modelName.ifBlank { stringResource(R.string.chat_model_placeholder) },
-                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                color = if (modelName.isBlank()) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 176.dp),
-            )
-        }
+            modifier = Modifier
+                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                .testTag(UiTags.CHAT_MODEL_SELECTOR),
+            label = {
+                Text(
+                    text = modelName.ifBlank { stringResource(R.string.chat_model_placeholder) },
+                    style = NexaraTypography.labelMedium,
+                    color = if (modelName.isBlank()) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            leadingIcon = {
+                Icon(Icons.Rounded.Memory, contentDescription = null)
+            },
+        )
 
         // Token Indicator
         TokenIndicator(state = tokenState, onManualSummary = onManualSummary)
@@ -770,24 +750,28 @@ private fun TokenIndicator(
     var showTooltip by remember { mutableStateOf(false) }
 
     Box {
-        CompactInputChip(
+        FilterChip(
+            selected = false,
             onClick = { showTooltip = !showTooltip },
-            interactionTag = UiTags.CHAT_TOKEN_INDICATOR,
-            visualTag = UiTags.CHAT_TOKEN_INDICATOR_VISUAL,
-            visualHeight = 34.dp,
-        ) {
-            ContextCircularIndicator(
-                progress = (state.used.toFloat() / state.max.toFloat()).coerceIn(0f, 1f),
-                color = if (state.used > state.max * 0.8) NexaraColors.StatusWarning else NexaraColors.StatusSuccess,
-                modifier = Modifier.size(12.dp)
-            )
-            Text(
-                text = "${state.used / 1000}K / ${state.max / 1000}K",
-                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                color = NexaraColors.OnSurface,
-                maxLines = 1,
-            )
-        }
+            modifier = Modifier
+                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                .testTag(UiTags.CHAT_TOKEN_INDICATOR),
+            label = {
+                Text(
+                    text = "${state.used / 1000}K / ${state.max / 1000}K",
+                    style = NexaraTypography.labelMedium,
+                    color = NexaraColors.OnSurface,
+                    maxLines = 1,
+                )
+            },
+            leadingIcon = {
+                ContextCircularIndicator(
+                    progress = (state.used.toFloat() / state.max.toFloat()).coerceIn(0f, 1f),
+                    color = if (state.used > state.max * 0.8) NexaraColors.StatusWarning else NexaraColors.StatusSuccess,
+                    modifier = Modifier.size(12.dp)
+                )
+            },
+        )
 
         if (showTooltip) {
             MaterialTheme(
@@ -799,30 +783,33 @@ private fun TokenIndicator(
                     offset = DpOffset(x = (-60).dp, y = (-8).dp),
                     modifier = Modifier.background(Color.Transparent).width(220.dp)
                 ) {
-                    NexaraGlassCard(
-                        shape = RoundedCornerShape(24.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = MaterialTheme.shapes.large,
+                        tonalElevation = NexaraElevation.Level2,
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(stringResource(R.string.chat_context_usage_title), style = NexaraTypography.titleSmall, color = NexaraColors.Primary)
-                            Spacer(modifier = Modifier.height(10.dp))
+                        Column(modifier = Modifier.padding(NexaraSpacing.Large)) {
+                            Text(
+                                stringResource(R.string.chat_context_usage_title),
+                                style = NexaraTypography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(modifier = Modifier.height(NexaraSpacing.Medium))
                             TokenDetailRow(stringResource(R.string.chat_context_label_system), state.systemTokens)
                             TokenDetailRow(stringResource(R.string.chat_context_label_summary), state.summaryTokens)
                             TokenDetailRow(stringResource(R.string.chat_context_label_active), state.activeTokens)
                             TokenDetailRow(stringResource(R.string.chat_context_label_rag), state.ragTokens)
-                            
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = NexaraColors.OutlineVariant.copy(alpha = 0.3f))
-                            
+                            HorizontalDivider(modifier = Modifier.padding(vertical = NexaraSpacing.Medium))
+
                             Button(
                                 onClick = {
                                     onManualSummary()
                                     showTooltip = false
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = NexaraColors.Primary),
-                                shape = RoundedCornerShape(16.dp)
                             ) {
-                                Text(stringResource(R.string.chat_context_btn_compress), style = NexaraTypography.labelMedium)
+                                Text(stringResource(R.string.chat_context_btn_compress))
                             }
                         }
                     }
@@ -950,59 +937,38 @@ fun ChatTopBar(
 fun RenameDialog(
     currentName: String,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+    onConfirm: (String) -> Unit,
 ) {
     var text by remember { mutableStateOf(currentName) }
-    
-    Dialog(onDismissRequest = onDismiss) {
-        NexaraGlassCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 32.dp),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.chat_dialog_rename_title)) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text(stringResource(R.string.chat_dialog_rename_placeholder))
+                },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(text) },
+                enabled = text.isNotBlank(),
             ) {
-                Text(stringResource(R.string.chat_dialog_rename_title), style = NexaraTypography.titleMedium, color = NexaraColors.OnSurface)
-                
-                BasicTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(NexaraColors.SurfaceLowest, RoundedCornerShape(8.dp))
-                        .padding(12.dp),
-                    textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
-                    cursorBrush = SolidColor(NexaraColors.Primary),
-                    decorationBox = { innerTextField ->
-                        if (text.isEmpty()) {
-                            Text(stringResource(R.string.chat_dialog_rename_placeholder), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f))
-                        }
-                        innerTextField()
-                    }
-                )
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text(stringResource(R.string.common_btn_cancel), color = NexaraColors.OnSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = { onConfirm(text) },
-                        colors = ButtonDefaults.buttonColors(containerColor = NexaraColors.Primary)
-                    ) {
-                        Text(stringResource(R.string.common_btn_confirm))
-                    }
-                }
+                Text(stringResource(R.string.common_btn_confirm))
             }
-        }
-    }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_btn_cancel))
+            }
+        },
+    )
 }
 
 

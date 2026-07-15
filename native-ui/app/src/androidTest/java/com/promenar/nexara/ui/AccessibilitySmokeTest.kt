@@ -2,7 +2,6 @@ package com.promenar.nexara.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.test.assertHeightIsAtLeast
-import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,7 +47,7 @@ class AccessibilitySmokeTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun chatInputTopChipsKeep48DpTargetsWith34DpVisualSurfaces() {
+    fun chatInputControlsUseComplete48DpMaterialTargets() {
         composeRule.setContent {
             NexaraTheme {
                 ChatScreenContent(
@@ -59,13 +58,13 @@ class AccessibilitySmokeTest {
         }
 
         composeRule.onNodeWithTag(UiTags.CHAT_MODEL_SELECTOR)
+            .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)
-        composeRule.onNodeWithTag(UiTags.CHAT_MODEL_SELECTOR_VISUAL, useUnmergedTree = true)
-            .assertHeightIsEqualTo(34.dp)
         composeRule.onNodeWithTag(UiTags.CHAT_TOKEN_INDICATOR)
+            .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)
-        composeRule.onNodeWithTag(UiTags.CHAT_TOKEN_INDICATOR_VISUAL, useUnmergedTree = true)
-            .assertHeightIsEqualTo(34.dp)
+        composeRule.onNodeWithTag(UiTags.CHAT_COMPOSER)
+            .assertIsDisplayed()
     }
 
     @Test

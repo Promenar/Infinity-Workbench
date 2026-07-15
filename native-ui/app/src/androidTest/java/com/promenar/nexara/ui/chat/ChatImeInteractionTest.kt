@@ -87,10 +87,13 @@ class ChatImeInteractionTest {
             .fetchSemanticsNode().boundsInRoot.bottom
         val actionBottom = rule.onNodeWithTag(UiTags.CHAT_GENERATION_ACTION)
             .fetchSemanticsNode().boundsInRoot.bottom
+        val composerBottom = rule.onNodeWithTag(UiTags.CHAT_COMPOSER)
+            .fetchSemanticsNode().boundsInRoot.bottom
 
         // 输入框与发送/状态按钮必须完全位于 IME 顶部之上（允许 2dp 舍入容差）
         assertThat(inputBottom).isAtMost(visibleBottomPx + tolerancePx)
         assertThat(actionBottom).isAtMost(visibleBottomPx + tolerancePx)
+        assertThat(composerBottom).isAtMost(visibleBottomPx + tolerancePx)
     }
 
     @Test
