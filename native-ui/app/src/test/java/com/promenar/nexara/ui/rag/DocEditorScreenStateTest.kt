@@ -13,6 +13,22 @@ class DocEditorScreenStateTest {
     }
 
     @Test
+    fun `Saving 返回始终留在编辑器`() {
+        assertThat(
+            docEditorBackDecision(
+                isDirty = true,
+                phase = DocEditorPhase.Saving,
+            ),
+        ).isEqualTo(DocEditorBackDecision.StaySaving)
+        assertThat(
+            docEditorBackDecision(
+                isDirty = false,
+                phase = DocEditorPhase.Saving,
+            ),
+        ).isEqualTo(DocEditorBackDecision.StaySaving)
+    }
+
+    @Test
     fun `Split 只在可用宽度达到 720dp 时出现`() {
         assertThat(isDocEditorSplitAvailable(719.99f)).isFalse()
         assertThat(isDocEditorSplitAvailable(720f)).isTrue()

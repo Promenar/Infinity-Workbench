@@ -918,6 +918,8 @@
     <string name="doc_editor_not_found_title">未找到文档</string>
     <string name="doc_editor_not_found_description">该文档已不在当前工作区中。</string>
     <string name="doc_editor_saving">正在保存…</string>
+    <string name="doc_editor_saving_back_feedback">正在保存，请稍候。</string>
+    <string name="doc_editor_save_cancelled_description">保存已中断，本地修改仍保留，可以重试。</string>
     <string name="doc_editor_save_failed_title">保存失败</string>
     <string name="doc_editor_save_failed_description">本地修改仍被保留，可以稍后重试。</string>
     <string name="doc_editor_title_rename_failed">标题未能安全保存，本地修改仍被保留。</string>

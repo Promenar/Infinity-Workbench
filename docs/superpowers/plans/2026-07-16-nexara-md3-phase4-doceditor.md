@@ -61,19 +61,19 @@
 - Modify: `native-ui/app/src/test/java/com/promenar/nexara/ui/rag/DocEditorScreenStateTest.kt`
 - Modify: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/rag/DocEditorInteractionTest.kt`
 
-- [ ] **Step 1：写保存取消 RED**
+- [x] **Step 1：写保存取消 RED**
 
   正文写入在提交前抛出 `CancellationException` 后，仍存活的 ViewModel 不得永久停留在 `Saving`；明确进入 `SaveError + SaveCancelled`，保留当前 dirty，并显示本地化“保存已中断，本地修改仍保留”的可重试反馈。ViewModel 销毁取消不回写；旧文档的迟到 finally 不得污染新文档。重命名提交点后的精确局部事实依赖 Task 3 的新结果契约，在 Task 2 不伪造判断。
 
-- [ ] **Step 2：写 Saving 返回 RED**
+- [x] **Step 2：写 Saving 返回 RED**
 
   `docEditorBackDecision` 增加保存中决策；顶部返回和系统返回均不导航、不弹“放弃修改”对话框，并出现本地化、可访问的等待反馈。保存结束后再次返回恢复既有 clean/dirty 语义。
 
-- [ ] **Step 3：实现最小状态恢复与同源返回策略**
+- [x] **Step 3：实现最小状态恢复与同源返回策略**
 
   finally 只在同一文档/epoch、ViewModel 仍存活且 phase 仍为 Saving 时恢复为上述 `SaveError`；不得吞掉取消，也不得把 ViewModel 销毁后的无意义状态当作成功。Route 层统一处理两个返回入口。
 
-- [ ] **Step 4：运行聚焦 JVM 与设备测试**
+- [x] **Step 4：运行聚焦 JVM 与设备测试**
 
   ```bash
   cd native-ui
@@ -81,7 +81,7 @@
   ANDROID_SERIAL=<api36> ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.promenar.nexara.ui.rag.DocEditorInteractionTest
   ```
 
-- [ ] **Step 5：提交**
+- [x] **Step 5：提交**
 
   `git commit -m "fix: harden DocEditor save cancellation"`
 
@@ -94,10 +94,23 @@
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/domain/repository/IFileOperationRepository.kt`
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/data/repository/WorkspaceRepository.kt`
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/data/repository/FileOperationRepository.kt`
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/data/rag/FileIndexEvent.kt`
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/data/rag/VectorizationQueue.kt`
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/data/local/db/entity/VectorizationTaskEntity.kt`
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/data/local/db/dao/VectorizationTaskDao.kt`
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/data/local/db/NexaraDatabase.kt`
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/NexaraApplication.kt`
+- Create: `native-ui/app/src/main/java/com/promenar/nexara/data/local/db/migration/Migration1To2.kt`（若项目已有统一 migration 入口则复用其固定位置）
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/rag/DocEditorViewModel.kt`
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/rag/RagViewModel.kt`
 - Modify: `native-ui/app/src/test/java/com/promenar/nexara/data/repository/WorkspaceRepositoryTest.kt`
 - Modify: `native-ui/app/src/test/java/com/promenar/nexara/data/repository/FileOperationRepositoryTest.kt`
+- Modify: `native-ui/app/src/test/java/com/promenar/nexara/data/rag/VectorizationQueueTest.kt`
+- Create: `native-ui/app/src/androidTest/java/com/promenar/nexara/data/local/db/NexaraDatabaseMigration1To2Test.kt`
+- Modify: `native-ui/app/src/test/java/com/promenar/nexara/data/local/db/NexaraDatabaseBaselineTest.kt`
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/data/backup/RoomBackupDataSource.kt`
+- Modify: relevant backup schema/version tests discovered by `rg 'identityHash|schemaVersion|NexaraDatabase'`
+- Create: `native-ui/app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/2.json`
 - Modify: `native-ui/app/src/test/java/com/promenar/nexara/ui/rag/DocEditorViewModelTest.kt`
 - Modify: relevant constructor/call-site tests discovered by `rg 'rename\\('`
 
@@ -107,7 +120,7 @@
 
 - [ ] **Step 2：实现根级事务内 CAS**
 
-  在 `withRootMutation` 锁内重新读取目标并比较 `expectedName`，再执行物理路径与数据库提交；提交点后的最小结果返回段必须不可取消，使调用方能确定 Success/Conflict/NotFound。Success 返回新名称/更新时间。DocEditor 使用 `persistedTitle`，普通文件管理调用保持明确的无条件语义。
+  在 `withRootMutation` 锁内重新读取目标并比较 `expectedName`，再执行物理路径与数据库提交；验证完成后先 `ensureActive()`，物理移动、FileEntry 更新和 rollback commit 使用窄范围 `NonCancellable` 提交点，使调用方能确定 Success/Conflict/NotFound。Success 返回新名称、hash 和单调 targetEpoch；epoch 使用 `max(clock(), previous.updatedAt + 1)`，不能依赖同毫秒 wall clock 自然递增。DocEditor 使用 `persistedTitle`，普通文件管理调用保持明确的无条件语义。
 
 - [ ] **Step 3：写索引入队 RED**
 
@@ -115,20 +128,25 @@
 
 - [ ] **Step 4：实现显式 reindex 端口和 UI 状态**
 
-  复用现有 `FileIndexEventSink`/持久化 `VectorizationQueue`，在文件操作端口提供可测试的重试入口。队列按 workspaceRootUuid + docId 幂等 upsert 最新目标 hash/代际：标题提交可先入队，正文成功再覆盖，不依赖后续写入必然成功。旧重试迟到不得清除新 pending，重复点击不得产生重复持久任务。成功回写同步刷新 `sizeBytes`、`lastModified` 和 hash。
+  复用现有 `FileIndexEventSink`/持久化 `VectorizationQueue`，在文件操作端口提供可测试的重试入口。队列按 workspaceRootUuid + docId 幂等 upsert 最新目标 hash/代际：标题提交必须先持久入队，正文成功再覆盖，不依赖后续写入必然成功。旧 processor 的完成/失败/删除和旧重试都必须用 targetHash + targetEpoch CAS，不能覆盖或删除新目标；重复点击不得产生重复持久任务。成功回写同步刷新 `sizeBytes`、`lastModified` 和 hash。
 
-- [ ] **Step 5：补齐重命名取消提交点 RED**
+- [ ] **Step 5：执行 Room v1→v2 正式迁移**
+
+  `vectorization_tasks` 增加 `target_content_hash TEXT NULL` 与 `target_epoch INTEGER NOT NULL DEFAULT 0`，保留 `(workspace_root_uuid, doc_id, type)` 唯一键，以单行版本化 upsert 表达最新目标。迁移对 document_reference 从 FileEntry hash/updatedAt 回填，注册 `MIGRATION_1_2` 并生成 schema 2.json；同步更新备份 schema/version/identity-hash 兼容逻辑。禁止改写冻结的 1.json、使用 destructive fallback，或把目标版本塞进 task ID/subStatus/userContent。
+
+- [ ] **Step 6：补齐重命名取消提交点 RED**
 
   覆盖提交前取消、物理/数据库提交点后取消、标题已成功而正文 Conflict/NotFound/异常；ViewModel 必须据 `RenameResult` 保留真实局部成功，且标题索引事件不会因正文失败而丢失。
 
-- [ ] **Step 6：运行仓库与 ViewModel 回归**
+- [ ] **Step 7：运行仓库、迁移、备份与 ViewModel 回归**
 
   ```bash
   cd native-ui
-  ./gradlew :app:testDebugUnitTest --tests 'com.promenar.nexara.data.repository.WorkspaceRepositoryTest' --tests 'com.promenar.nexara.data.repository.FileOperationRepositoryTest' --tests 'com.promenar.nexara.ui.rag.DocEditorViewModelTest'
+  ./gradlew :app:testDebugUnitTest --tests 'com.promenar.nexara.data.repository.WorkspaceRepositoryTest' --tests 'com.promenar.nexara.data.repository.FileOperationRepositoryTest' --tests 'com.promenar.nexara.data.rag.VectorizationQueueTest' --tests 'com.promenar.nexara.ui.rag.DocEditorViewModelTest'
+  ANDROID_SERIAL=<api36> ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.promenar.nexara.data.local.db.NexaraDatabaseMigration1To2Test
   ```
 
-- [ ] **Step 7：提交**
+- [ ] **Step 8：提交**
 
   `git commit -m "fix: make document rename and indexing explicit"`
 

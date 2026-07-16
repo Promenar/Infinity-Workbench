@@ -911,6 +911,8 @@
     <string name="doc_editor_not_found_title">Document not found</string>
     <string name="doc_editor_not_found_description">This document no longer exists in the workspace.</string>
     <string name="doc_editor_saving">Saving…</string>
+    <string name="doc_editor_saving_back_feedback">Saving in progress. Please wait.</string>
+    <string name="doc_editor_save_cancelled_description">Saving was interrupted. Your local changes are still available to retry.</string>
     <string name="doc_editor_save_failed_title">Save failed</string>
     <string name="doc_editor_save_failed_description">Your local changes are still available. Retry when ready.</string>
     <string name="doc_editor_title_rename_failed">The title could not be saved safely. Your local changes are still available.</string>

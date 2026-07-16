@@ -12,16 +12,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -122,6 +127,41 @@ class DocEditorInteractionTest {
     }
 
     @Test
+    fun saveCancelledShowsRetainedLocalChangesFeedback() {
+        val retries = AtomicInteger(0)
+        rule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(density.density, fontScale = 2f),
+            ) {
+                Box(Modifier.requiredSize(width = 360.dp, height = 800.dp)) {
+                    TestContent(
+                        screenState = DocEditorScreenState(
+                            editorState = readyEditorState(
+                                phase = DocEditorPhase.SaveError,
+                                dirty = true,
+                            ).copy(failureCode = DocEditorFailureCode.SaveCancelled),
+                        ),
+                        actions = DocEditorScreenActions(
+                            onRetrySave = { retries.incrementAndGet() },
+                        ),
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithText(
+            rule.activity.getString(com.promenar.nexara.R.string.doc_editor_save_cancelled_description),
+        ).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_RETRY_SAVE)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        assertThat(retries.get()).isEqualTo(1)
+    }
+
+    @Test
     fun conflictAtDoubleFontScaleCopiesThenConfirmsReload() {
         val copies = AtomicInteger(0)
         val reloads = AtomicInteger(0)
@@ -187,6 +227,150 @@ class DocEditorInteractionTest {
         }
         rule.onNodeWithTag(UiTags.DOC_EDITOR_STATE_SAVING).assertExists()
         rule.onNodeWithTag(UiTags.DOC_EDITOR_SAVE).assertDoesNotExist()
+    }
+
+    @Test
+    fun savingTopBackStaysOnEditorWithoutDiscardAndShowsVisibleFeedback() {
+        val navigations = AtomicInteger(0)
+        rule.setContent {
+            TestRoute(
+                navigations = navigations,
+                editorState = readyEditorState(
+                    phase = DocEditorPhase.Saving,
+                    dirty = true,
+                ),
+            )
+        }
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_BACK).performClick()
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_DISCARD_DIALOG).assertDoesNotExist()
+        rule.onNodeWithText(
+            rule.activity.getString(com.promenar.nexara.R.string.doc_editor_saving_back_feedback),
+        )
+            .assertIsDisplayed()
+        assertThat(navigations.get()).isEqualTo(0)
+    }
+
+    @Test
+    fun savingSystemBackStaysOnEditorWithoutDiscard() {
+        val navigations = AtomicInteger(0)
+        rule.setContent {
+            TestRoute(
+                navigations = navigations,
+                editorState = readyEditorState(
+                    phase = DocEditorPhase.Saving,
+                    dirty = true,
+                ),
+            )
+        }
+
+        rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_DISCARD_DIALOG).assertDoesNotExist()
+        rule.onNodeWithText(
+            rule.activity.getString(com.promenar.nexara.R.string.doc_editor_saving_back_feedback),
+        )
+            .assertIsDisplayed()
+        assertThat(navigations.get()).isEqualTo(0)
+    }
+
+    @Test
+    fun rapidSavingBackUsesOnePoliteFeedbackCycleAndPhaseChangeDismissesIt() {
+        val navigations = AtomicInteger(0)
+        var editorState by mutableStateOf(
+            readyEditorState(
+                phase = DocEditorPhase.Saving,
+                dirty = true,
+            ),
+        )
+        rule.setContent {
+            TestRoute(
+                navigations = navigations,
+                editorState = editorState,
+            )
+        }
+        val feedback = rule.activity.getString(
+            com.promenar.nexara.R.string.doc_editor_saving_back_feedback,
+        )
+
+        rule.runOnIdle {
+            repeat(6) {
+                rule.activity.onBackPressedDispatcher.onBackPressed()
+            }
+        }
+
+        rule.onAllNodesWithText(feedback).assertCountEquals(1)
+        rule.onAllNodes(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.LiveRegion,
+                LiveRegionMode.Assertive,
+            ),
+        ).assertCountEquals(0)
+        rule.onAllNodes(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.LiveRegion,
+                LiveRegionMode.Polite,
+            ) and SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss),
+        ).assertCountEquals(1)
+        assertThat(navigations.get()).isEqualTo(0)
+
+        listOf(
+            readyEditorState(dirty = false),
+            readyEditorState(phase = DocEditorPhase.SaveError, dirty = true)
+                .copy(failureCode = DocEditorFailureCode.SaveCancelled),
+            readyEditorState(phase = DocEditorPhase.SaveError, dirty = true),
+            readyEditorState(phase = DocEditorPhase.SaveConflict, dirty = true),
+        ).forEach { nextState ->
+            rule.runOnIdle { editorState = nextState }
+            rule.onAllNodesWithText(feedback).assertCountEquals(0)
+
+            rule.runOnIdle {
+                editorState = readyEditorState(
+                    phase = DocEditorPhase.Saving,
+                    dirty = true,
+                )
+            }
+            rule.runOnIdle {
+                repeat(3) {
+                    rule.activity.onBackPressedDispatcher.onBackPressed()
+                }
+            }
+            rule.onAllNodesWithText(feedback).assertCountEquals(1)
+        }
+
+        rule.runOnIdle { editorState = readyEditorState(dirty = false) }
+        rule.onAllNodesWithText(feedback).assertCountEquals(0)
+    }
+
+    @Test
+    fun documentKeyChangeCancelsPreviousSavingFeedbackCycle() {
+        val navigations = AtomicInteger(0)
+        var stateKey by mutableStateOf("doc-a")
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                DocEditorRouteContent(
+                    editorState = readyEditorState(
+                        phase = DocEditorPhase.Saving,
+                        dirty = true,
+                    ),
+                    onNavigateBack = { navigations.incrementAndGet() },
+                    actions = DocEditorScreenActions(),
+                    stateKey = stateKey,
+                )
+            }
+        }
+        val feedback = rule.activity.getString(
+            com.promenar.nexara.R.string.doc_editor_saving_back_feedback,
+        )
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_BACK).performClick()
+        rule.onAllNodesWithText(feedback).assertCountEquals(1)
+
+        rule.runOnIdle { stateKey = "doc-b" }
+
+        rule.onAllNodesWithText(feedback).assertCountEquals(0)
+        assertThat(navigations.get()).isEqualTo(0)
     }
 
     @Test
@@ -268,10 +452,13 @@ class DocEditorInteractionTest {
     }
 
     @Composable
-    private fun TestRoute(navigations: AtomicInteger) {
+    private fun TestRoute(
+        navigations: AtomicInteger,
+        editorState: DocEditorUiState = readyEditorState(dirty = true),
+    ) {
         NexaraTheme(dynamicColor = false) {
             DocEditorRouteContent(
-                editorState = readyEditorState(dirty = true),
+                editorState = editorState,
                 onNavigateBack = { navigations.incrementAndGet() },
                 actions = DocEditorScreenActions(),
             )

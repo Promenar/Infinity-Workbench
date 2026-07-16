@@ -47,16 +47,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -91,12 +95,15 @@ import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import java.util.Locale
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 enum class DocEditorViewMode { EDIT, PREVIEW, SPLIT }
 
 private val DOC_EDITOR_BACK_ICON: ImageVector = Icons.AutoMirrored.Rounded.ArrowBack
 
-enum class DocEditorBackDecision { NavigateBack, ConfirmDiscard }
+enum class DocEditorBackDecision { NavigateBack, ConfirmDiscard, StaySaving }
 
 enum class DocEditorConfirmation { DiscardChanges, ReloadLatest }
 
@@ -134,8 +141,14 @@ data class DocEditorScreenActions(
     val onConfirmReload: () -> Unit = {},
 )
 
-fun docEditorBackDecision(isDirty: Boolean): DocEditorBackDecision =
-    if (isDirty) DocEditorBackDecision.ConfirmDiscard else DocEditorBackDecision.NavigateBack
+fun docEditorBackDecision(
+    isDirty: Boolean,
+    phase: DocEditorPhase = DocEditorPhase.Ready,
+): DocEditorBackDecision = when {
+    phase == DocEditorPhase.Saving -> DocEditorBackDecision.StaySaving
+    isDirty -> DocEditorBackDecision.ConfirmDiscard
+    else -> DocEditorBackDecision.NavigateBack
+}
 
 fun isDocEditorSplitAvailable(availableWidthDp: Float): Boolean =
     availableWidthDp >= SPLIT_MIN_WIDTH_DP
@@ -184,7 +197,7 @@ fun DocEditorScreen(
     DocEditorRouteContent(
         editorState = editorState,
         onNavigateBack = onNavigateBack,
-        stateKey = docId,
+        stateKey = workspaceRootUuid to docId,
         actions = DocEditorScreenActions(
             onTitleChange = viewModel::updateTitle,
             onContentChange = viewModel::onContentChanged,
@@ -214,17 +227,49 @@ fun DocEditorRouteContent(
     onNavigateBack: () -> Unit,
     actions: DocEditorScreenActions,
     modifier: Modifier = Modifier,
-    stateKey: Any? = editorState.documentId,
+    stateKey: Any? = editorState.workspaceRootUuid to editorState.documentId,
 ) {
     var viewMode by rememberSaveable(stateKey) { mutableStateOf(DocEditorViewMode.EDIT) }
     var confirmation by rememberSaveable(stateKey) {
         mutableStateOf<DocEditorConfirmation?>(null)
     }
+    val snackbarHostState = remember(stateKey) { SnackbarHostState() }
+    val savingFeedbackJobState = remember(stateKey) { mutableStateOf<Job?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    val savingBackFeedback = stringResource(R.string.doc_editor_saving_back_feedback)
+    LaunchedEffect(stateKey, editorState.phase) {
+        if (editorState.phase != DocEditorPhase.Saving) {
+            savingFeedbackJobState.value?.cancel()
+            savingFeedbackJobState.value = null
+            snackbarHostState.currentSnackbarData?.dismiss()
+        }
+    }
+    DisposableEffect(stateKey, snackbarHostState) {
+        onDispose {
+            savingFeedbackJobState.value?.cancel()
+            snackbarHostState.currentSnackbarData?.dismiss()
+        }
+    }
     val requestBack: () -> Unit = {
-        when (docEditorBackDecision(editorState.isDirty)) {
+        when (docEditorBackDecision(editorState.isDirty, editorState.phase)) {
             DocEditorBackDecision.NavigateBack -> onNavigateBack()
             DocEditorBackDecision.ConfirmDiscard -> {
                 confirmation = DocEditorConfirmation.DiscardChanges
+            }
+            DocEditorBackDecision.StaySaving -> {
+                if (savingFeedbackJobState.value?.isActive != true) {
+                    val feedbackJob = coroutineScope.launch(start = CoroutineStart.LAZY) {
+                        try {
+                            snackbarHostState.showSnackbar(savingBackFeedback)
+                        } finally {
+                            if (savingFeedbackJobState.value === coroutineContext[Job]) {
+                                savingFeedbackJobState.value = null
+                            }
+                        }
+                    }
+                    savingFeedbackJobState.value = feedbackJob
+                    feedbackJob.start()
+                }
             }
         }
     }
@@ -236,6 +281,7 @@ fun DocEditorRouteContent(
             viewMode = viewMode,
             confirmation = confirmation,
         ),
+        snackbarHostState = snackbarHostState,
         actions = actions.copy(
             onRequestBack = requestBack,
             onViewModeChange = { viewMode = it },
@@ -262,6 +308,7 @@ fun DocEditorScreenContent(
     state: DocEditorScreenState,
     actions: DocEditorScreenActions,
     modifier: Modifier = Modifier,
+    snackbarHostState: SnackbarHostState? = null,
 ) {
     val editor = state.editorState
     val visibleState = editor.toVisibleState()
@@ -278,6 +325,11 @@ fun DocEditorScreenContent(
     Scaffold(
         modifier = modifier.testTagCompat(UiTags.DOC_EDITOR_ROOT),
         containerColor = NexaraColors.CanvasBackground,
+        snackbarHost = {
+            snackbarHostState?.let { hostState ->
+                SnackbarHost(hostState = hostState)
+            }
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -1136,6 +1188,7 @@ private fun DocEditorConfirmationDialog(
 private fun failureDescription(code: DocEditorFailureCode?): String = when (code) {
     DocEditorFailureCode.TitleRenameFailed -> stringResource(R.string.doc_editor_title_rename_failed)
     DocEditorFailureCode.SaveNotFound -> stringResource(R.string.doc_editor_missing_after_save_description)
+    DocEditorFailureCode.SaveCancelled -> stringResource(R.string.doc_editor_save_cancelled_description)
     else -> stringResource(R.string.doc_editor_save_failed_description)
 }
 

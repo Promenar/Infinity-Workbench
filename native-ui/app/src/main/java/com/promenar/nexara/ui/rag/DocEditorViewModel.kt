@@ -36,6 +36,7 @@ enum class DocEditorFailureCode {
     ContentSaveFailed,
     ContentConflict,
     SaveNotFound,
+    SaveCancelled,
 }
 
 data class DocEditorUiState(
@@ -94,9 +95,13 @@ class DocEditorViewModel(
 
     fun loadFile(workspaceRootUuid: String, uuid: String) {
         val activeSave = activeSaveIdentity.get()
+        val current = _uiState.value
         if (activeSave != null &&
             activeSave.workspaceRootUuid == workspaceRootUuid &&
-            activeSave.documentId == uuid
+            activeSave.documentId == uuid &&
+            current.workspaceRootUuid == activeSave.workspaceRootUuid &&
+            current.documentId == activeSave.documentId &&
+            current.documentEpoch == activeSave.documentEpoch
         ) {
             return
         }
@@ -218,6 +223,9 @@ class DocEditorViewModel(
                 } else {
                     markReadyFor(snapshot)
                 }
+            } catch (cancelled: CancellationException) {
+                recoverCancelledSave(snapshot)
+                throw cancelled
             } finally {
                 activeSaveIdentity.compareAndSet(saveIdentity, null)
                 saveMutex.unlock()
@@ -315,6 +323,22 @@ class DocEditorViewModel(
                 failureDetail = null,
                 conflictCurrentHash = null,
             )
+        }
+    }
+
+    private fun recoverCancelledSave(snapshot: DocEditorUiState) {
+        if (viewModelScope.coroutineContext[Job]?.isActive != true) return
+        updateSameDocument(snapshot) { current ->
+            if (current.phase != DocEditorPhase.Saving) {
+                current
+            } else {
+                current.copy(
+                    phase = DocEditorPhase.SaveError,
+                    failureCode = DocEditorFailureCode.SaveCancelled,
+                    failureDetail = null,
+                    conflictCurrentHash = null,
+                )
+            }
         }
     }
 

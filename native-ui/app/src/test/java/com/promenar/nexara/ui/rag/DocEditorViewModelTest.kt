@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.rag
 
+import androidx.lifecycle.ViewModelStore
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.DiffResult
@@ -19,6 +20,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -336,6 +338,83 @@ class DocEditorViewModelTest {
     }
 
     @Test
+    fun `正文提交前取消会恢复为可重试错误并保留 dirty`() = runTest(dispatcher) {
+        val vm = loadedViewModel()
+        vm.onContentChanged("updated")
+        coEvery {
+            fileRepository.writeFileAtomic(ROOT, DOC, "updated", "editor", "hash-1")
+        } throws CancellationException("cancelled before commit")
+
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.SaveError)
+        assertThat(vm.uiState.value.failureCode).isEqualTo(DocEditorFailureCode.SaveCancelled)
+        assertThat(vm.uiState.value.content).isEqualTo("updated")
+        assertThat(vm.uiState.value.contentDirty).isTrue()
+        assertThat(vm.uiState.value.persistedContent).isEqualTo("hello\nworld")
+    }
+
+    @Test
+    fun `ViewModel 销毁取消保存时不回写错误状态`() = runTest(dispatcher) {
+        val vm = loadedViewModel()
+        val writeStarted = CompletableDeferred<Unit>()
+        coEvery {
+            fileRepository.writeFileAtomic(ROOT, DOC, "updated", "editor", "hash-1")
+        } coAnswers {
+            writeStarted.complete(Unit)
+            awaitCancellation()
+        }
+        vm.onContentChanged("updated")
+        val store = ViewModelStore().also { it.put("doc-editor", vm) }
+
+        vm.saveDocument()
+        runCurrent()
+        writeStarted.await()
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Saving)
+
+        store.clear()
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Saving)
+        assertThat(vm.uiState.value.failureCode).isNull()
+    }
+
+    @Test
+    fun `旧文档取消迟到不会污染新文档`() = runTest(dispatcher) {
+        val writeStarted = CompletableDeferred<Unit>()
+        val releaseWrite = CompletableDeferred<Unit>()
+        coEvery { fileRepository.readFileRange(ROOT, DOC_A) } returns
+            readResult(uuid = DOC_A, name = "a.md", content = "A")
+        coEvery { fileRepository.readFileRange(ROOT, DOC_B) } returns
+            readResult(uuid = DOC_B, name = "b.md", content = "B", hash = "hash-b")
+        coEvery {
+            fileRepository.writeFileAtomic(ROOT, DOC_A, "A updated", "editor", "hash-1")
+        } coAnswers {
+            writeStarted.complete(Unit)
+            withContext(NonCancellable) { releaseWrite.await() }
+            throw CancellationException("late cancellation")
+        }
+        val vm = viewModel()
+        vm.loadDocument(ROOT, DOC_A)
+        advanceUntilIdle()
+        vm.onContentChanged("A updated")
+        vm.saveDocument()
+        runCurrent()
+        writeStarted.await()
+
+        vm.loadDocument(ROOT, DOC_B)
+        runCurrent()
+        releaseWrite.complete(Unit)
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Ready)
+        assertThat(vm.uiState.value.documentId).isEqualTo(DOC_B)
+        assertThat(vm.uiState.value.content).isEqualTo("B")
+        assertThat(vm.uiState.value.failureCode).isNull()
+    }
+
+    @Test
     fun `连续保存调用在首个写入完成前只执行一次`() = runTest(dispatcher) {
         val vm = loadedViewModel()
         vm.onContentChanged("updated")
@@ -566,7 +645,7 @@ class DocEditorViewModelTest {
     }
 
     @Test
-    fun `第一代文档保存中经其他文档返回时同文件重载被拒绝且完成后读取真实 CAS 结果`() = runTest(dispatcher) {
+    fun `第一代文档保存中经其他文档再导航回来不被加载门禁吞掉`() = runTest(dispatcher) {
         val casRepository = ControlledCasFileRepository(
             workspaceRootUuid = ROOT,
             gatedDocumentId = DOC_A,
@@ -586,19 +665,23 @@ class DocEditorViewModelTest {
 
         vm.loadDocument(ROOT, DOC_B)
         runCurrent()
-        try {
-            vm.loadDocument(ROOT, DOC_A)
-            runCurrent()
-
-            assertThat(casRepository.readCount(DOC_A)).isEqualTo(1)
-            assertThat(vm.uiState.value.documentId).isEqualTo(DOC_B)
-            assertThat(vm.uiState.value.content).isEqualTo("B")
-        } finally {
-            casRepository.releaseWrite.complete(Unit)
-            advanceUntilIdle()
-        }
-
         vm.loadDocument(ROOT, DOC_A)
+        runCurrent()
+
+        assertThat(casRepository.readCount(DOC_A)).isEqualTo(2)
+        assertThat(vm.uiState.value.documentId).isEqualTo(DOC_A)
+        assertThat(vm.uiState.value.content).isEqualTo("A first")
+        val navigationEpoch = vm.uiState.value.documentEpoch
+
+        casRepository.releaseWrite.complete(Unit)
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.documentId).isEqualTo(DOC_A)
+        assertThat(vm.uiState.value.documentEpoch).isEqualTo(navigationEpoch)
+        assertThat(vm.uiState.value.content).isEqualTo("A first")
+        assertThat(vm.uiState.value.currentHash).isEqualTo("hash-a1")
+
+        vm.reload()
         runCurrent()
 
         assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Ready)
@@ -607,7 +690,7 @@ class DocEditorViewModelTest {
         assertThat(vm.uiState.value.persistedContent).isEqualTo("A saved late")
         assertThat(vm.uiState.value.currentHash).isEqualTo("hash-a-save")
         assertThat(vm.uiState.value.contentDirty).isFalse()
-        assertThat(casRepository.readCount(DOC_A)).isEqualTo(2)
+        assertThat(casRepository.readCount(DOC_A)).isEqualTo(3)
     }
 
     private fun viewModel() = DocEditorViewModel(
