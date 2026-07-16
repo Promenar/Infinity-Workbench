@@ -8,11 +8,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.entity.FileEntry
@@ -134,6 +136,70 @@ class RagFilesPanelNavigationTest {
         rule.onNodeWithText("根目录").performClick()
         rule.waitForIdle()
         rule.onNodeWithText("子文件.md").assertExists()
+    }
+
+    @Test
+    fun 根节点重排后展开状态仍绑定UUID() {
+        val folderA = entry("folder-a", "目录 A", isDirectory = true, parentUuid = ROOT)
+        val folderB = entry("folder-b", "目录 B", isDirectory = true, parentUuid = ROOT)
+        val childA = entry("child-a", "A 子文件.md", parentUuid = folderA.uuid)
+        var reorder: (() -> Unit)? = null
+
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                var roots by remember { mutableStateOf(listOf(folderA, folderB)) }
+                reorder = { roots = listOf(folderB, folderA) }
+                FilesPanel(
+                    workspaceRootUuid = ROOT,
+                    workspaceRepo = repository(mapOf(folderA.uuid to listOf(childA))),
+                    rootFiles = roots,
+                )
+            }
+        }
+
+        rule.onNodeWithText("A 子文件.md").assertExists()
+        rule.onNodeWithText("目录 A").performClick()
+        rule.onNodeWithText("A 子文件.md").assertDoesNotExist()
+        rule.runOnIdle { reorder?.invoke() }
+        rule.onNodeWithText("A 子文件.md").assertDoesNotExist()
+        rule.onNodeWithText("目录 A").performClick()
+        rule.onNodeWithText("A 子文件.md").assertExists()
+    }
+
+    @Test
+    fun 移动目录选择器可滚动并选择最后一项() {
+        val file = entry("move-source", "待移动.md", parentUuid = ROOT)
+        val folders = (1..20).map { index ->
+            entry(
+                uuid = "destination-$index",
+                name = "目录 $index",
+                isDirectory = true,
+                parentUuid = ROOT,
+            )
+        }
+        val moveTargets = CopyOnWriteArrayList<Pair<String, String>>()
+
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                FilesPanel(
+                    workspaceRootUuid = ROOT,
+                    workspaceRepo = repository(emptyMap()),
+                    rootFiles = listOf(file),
+                    folders = folders,
+                    onMove = { source, target -> moveTargets += source to target },
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.fileNodeOptions(file.uuid)).performClick()
+        rule.onNodeWithTag("files_panel_move_action_${file.uuid}").performClick()
+        rule.onNodeWithTag("files_panel_move_list")
+            .performScrollToNode(hasTestTag("files_panel_move_destination_destination-20"))
+        rule.onNodeWithTag("files_panel_move_destination_destination-20").performClick()
+
+        rule.runOnIdle {
+            assertThat(moveTargets).containsExactly("move-source" to "destination-20")
+        }
     }
 
     @Test

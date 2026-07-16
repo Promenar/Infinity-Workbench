@@ -10,6 +10,58 @@ internal enum class FilesPanelUiState {
     Content,
 }
 
+/** 单层文件树中的可见节点；稳定身份始终来自 [file] 的 UUID。 */
+internal data class VisibleFileNode(
+    val file: FileEntry,
+    val depth: Int,
+)
+
+/**
+ * 把树投影为单层、稳定顺序的可见节点列表。
+ *
+ * 默认展开前两层目录；用户覆盖和搜索强制展开都按 UUID 绑定，不受重排影响。
+ * visited 同时防止异常仓库数据中的环或重复 UUID 让 UI 无限递归。
+ */
+internal fun projectVisibleFileNodes(
+    roots: List<FileEntry>,
+    childrenByParent: Map<String, List<FileEntry>>,
+    expansionOverrides: Map<String, Boolean> = emptyMap(),
+    forceExpandedIds: Set<String> = emptySet(),
+): List<VisibleFileNode> = buildList {
+    val visited = mutableSetOf<String>()
+
+    fun append(entries: List<FileEntry>, depth: Int) {
+        entries.forEach { file ->
+            if (!visited.add(file.uuid)) return@forEach
+            add(VisibleFileNode(file = file, depth = depth))
+            if (!file.isDirectory) return@forEach
+
+            val expanded = isFileNodeExpanded(
+                uuid = file.uuid,
+                depth = depth,
+                expansionOverrides = expansionOverrides,
+                forceExpandedIds = forceExpandedIds,
+            )
+            if (expanded) append(childrenByParent[file.uuid].orEmpty(), depth + 1)
+        }
+    }
+
+    append(roots, depth = 0)
+}
+
+internal fun isFileNodeExpanded(
+    uuid: String,
+    depth: Int,
+    expansionOverrides: Map<String, Boolean>,
+    forceExpandedIds: Set<String> = emptySet(),
+): Boolean = uuid in forceExpandedIds || (expansionOverrides[uuid] ?: (depth < DEFAULT_EXPANDED_DEPTH))
+
+internal fun boundedFileTreeIndentLevel(depth: Int): Int =
+    depth.coerceIn(0, MAX_FILE_TREE_INDENT_LEVEL)
+
+private const val DEFAULT_EXPANDED_DEPTH = 2
+private const val MAX_FILE_TREE_INDENT_LEVEL = 4
+
 internal fun resolveFilesPanelUiState(
     workspaceReady: Boolean,
     isLoading: Boolean,

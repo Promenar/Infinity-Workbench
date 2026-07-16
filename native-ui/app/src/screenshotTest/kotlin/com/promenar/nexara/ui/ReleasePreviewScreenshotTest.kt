@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Description
-import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -62,7 +60,6 @@ import com.promenar.nexara.ui.chat.components.RecycleBinPanel
 import com.promenar.nexara.ui.chat.components.RecycleBinPermanentDeleteDialog
 import com.promenar.nexara.ui.chat.components.RecycleOperation
 import com.promenar.nexara.ui.chat.components.RecycleOperationState
-import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.SecretField
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
@@ -689,8 +686,8 @@ fun ragHomeDocumentsReleasePreviewEnglish() {
                 kgExtractionStates = emptyMap(),
             ),
             actions = RagHomeScreenActions(),
-            documentsContent = { modifier, _, _ ->
-                PreviewRagDocuments(modifier)
+            documentsContent = { modifier, selectedIds, requestDelete ->
+                PreviewRagDocuments(modifier, selectedIds, requestDelete)
             },
         )
     }
@@ -725,8 +722,46 @@ fun ragHomeSelectedDocumentsPhoneReleasePreview() {
                 kgExtractionStates = emptyMap(),
             ),
             actions = RagHomeScreenActions(),
-            documentsContent = { modifier, _, _ -> PreviewRagDocuments(modifier) },
+            documentsContent = { modifier, selectedIds, requestDelete ->
+                PreviewRagDocuments(modifier, selectedIds, requestDelete)
+            },
         )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG FilesPanel deep tree Chinese large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragFilesPanelDeepTreeLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            FilesPanel(
+                workspaceRootUuid = PREVIEW_RAG_ROOT_ID,
+                workspaceRepo = PREVIEW_RAG_REPOSITORY,
+                rootFiles = listOf(PREVIEW_RAG_PRODUCT_FOLDER),
+                initiallyExpandedIds = setOf(PREVIEW_RAG_DEEP_FOLDER.uuid),
+                initialChildrenByParent = PREVIEW_RAG_CHILDREN,
+                onReindex = {},
+                onDelete = { _, onComplete ->
+                    onComplete(com.promenar.nexara.ui.chat.components.FileBatchOperationResult(emptyList()))
+                },
+                onRename = { _, _ -> },
+                onMove = { _, _ -> },
+                onExtractKG = {},
+                onViewKG = {},
+                onCopy = {},
+                onFolderClick = { _, _ -> },
+                onFileClick = {},
+                nowMillis = PREVIEW_RAG_NOW_MILLIS,
+            )
+        }
     }
 }
 
@@ -1089,52 +1124,31 @@ fun resourceExplorerRecycleDeleteConfirmChineseLargeFontReleasePreview() {
 }
 
 @Composable
-private fun PreviewRagDocuments(modifier: Modifier) {
-    Column(
-        modifier = modifier.padding(top = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        PreviewRagEntry(
-            isFolder = true,
-            title = "Product research",
-            subtitle = "1 document",
-        )
-        PreviewRagEntry(
-            isFolder = false,
-            title = "Nexara release checklist.pdf",
-            subtitle = "Indexed · PDF · 248 KB",
-        )
-        PreviewRagEntry(
-            isFolder = false,
-            title = "Architecture decisions.md",
-            subtitle = "Indexed · Markdown · 18 KB",
-        )
-    }
-}
-
-@Composable
-private fun PreviewRagEntry(
-    isFolder: Boolean,
-    title: String,
-    subtitle: String,
+private fun PreviewRagDocuments(
+    modifier: Modifier,
+    selectedIds: MutableList<String>,
+    requestDelete: (Collection<String>, (com.promenar.nexara.ui.chat.components.FileBatchOperationResult) -> Unit) -> Unit,
 ) {
-    NexaraGlassCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = if (isFolder) Icons.Rounded.Folder else Icons.Rounded.Description,
-                contentDescription = null,
-                tint = NexaraColors.Primary,
-                modifier = Modifier.size(24.dp),
-            )
-            Spacer(Modifier.size(12.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                Text(subtitle, style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
-            }
-        }
+    Box(modifier = modifier.padding(top = 4.dp)) {
+        FilesPanel(
+            workspaceRootUuid = PREVIEW_RAG_ROOT_ID,
+            workspaceRepo = PREVIEW_RAG_REPOSITORY,
+            rootFiles = PREVIEW_RAG_ROOT_FILES,
+            initiallyExpandedIds = setOf(PREVIEW_RAG_DEEP_FOLDER.uuid),
+            initialChildrenByParent = PREVIEW_RAG_CHILDREN,
+            onReindex = {},
+            onDelete = requestDelete,
+            onRename = { _, _ -> },
+            onMove = { _, _ -> },
+            onExtractKG = {},
+            onViewKG = {},
+            onCopy = {},
+            externalSelectedIds = selectedIds,
+            showSelectionOverlay = false,
+            onFolderClick = { _, _ -> },
+            onFileClick = {},
+            nowMillis = PREVIEW_RAG_NOW_MILLIS,
+        )
     }
 }
 
@@ -1493,6 +1507,100 @@ This **deterministic preview** verifies production Markdown rendering.
 | Unit tests | Pass |
 | Visual review | Pending |
 """
+
+private const val PREVIEW_RAG_ROOT_ID = "preview-root"
+private const val PREVIEW_RAG_NOW_MILLIS = 1_784_006_400_000L
+
+private val PREVIEW_RAG_PRODUCT_FOLDER = previewRagFile(
+    uuid = "preview-folder-product",
+    parentUuid = PREVIEW_RAG_ROOT_ID,
+    name = "Product research",
+    isDirectory = true,
+)
+private val PREVIEW_RAG_NESTED_FOLDER = previewRagFile(
+    uuid = "preview-folder-release",
+    parentUuid = PREVIEW_RAG_PRODUCT_FOLDER.uuid,
+    name = "Release readiness",
+    isDirectory = true,
+)
+private val PREVIEW_RAG_DEEP_FOLDER = previewRagFile(
+    uuid = "preview-folder-evidence",
+    parentUuid = PREVIEW_RAG_NESTED_FOLDER.uuid,
+    name = "Evidence archive",
+    isDirectory = true,
+)
+private val PREVIEW_RAG_DEEP_FILE = previewRagFile(
+    uuid = "preview-doc-deep",
+    parentUuid = PREVIEW_RAG_DEEP_FOLDER.uuid,
+    name = "Commercial delivery evidence.md",
+    mimeType = "text/markdown",
+    sizeBytes = 18_432L,
+    vectorizedAt = PREVIEW_RAG_NOW_MILLIS - 7_200_000L,
+)
+private val PREVIEW_RAG_ROOT_FILES = listOf(
+    PREVIEW_RAG_PRODUCT_FOLDER,
+    previewRagFile(
+        uuid = "preview-doc-1",
+        parentUuid = PREVIEW_RAG_ROOT_ID,
+        name = "Nexara release checklist.pdf",
+        mimeType = "application/pdf",
+        sizeBytes = 253_952L,
+        vectorizedAt = PREVIEW_RAG_NOW_MILLIS - 3_600_000L,
+    ),
+    previewRagFile(
+        uuid = "preview-doc-2",
+        parentUuid = PREVIEW_RAG_ROOT_ID,
+        name = "Architecture decisions.md",
+        mimeType = "text/markdown",
+        sizeBytes = 18_432L,
+        vectorizedAt = PREVIEW_RAG_NOW_MILLIS - 7_200_000L,
+    ),
+)
+private val PREVIEW_RAG_CHILDREN = mapOf(
+    PREVIEW_RAG_PRODUCT_FOLDER.uuid to listOf(PREVIEW_RAG_NESTED_FOLDER),
+    PREVIEW_RAG_NESTED_FOLDER.uuid to listOf(PREVIEW_RAG_DEEP_FOLDER),
+    PREVIEW_RAG_DEEP_FOLDER.uuid to listOf(PREVIEW_RAG_DEEP_FILE),
+)
+private val PREVIEW_RAG_REPOSITORY = Proxy.newProxyInstance(
+    IWorkspaceRepository::class.java.classLoader,
+    arrayOf(IWorkspaceRepository::class.java),
+) { proxy, method, args ->
+    when (method.name) {
+        "observeChildren" -> {
+            val parentUuid = args?.get(1) as String
+            flowOf(PREVIEW_RAG_CHILDREN[parentUuid].orEmpty())
+        }
+        "searchByName" -> flowOf(emptyList<FileEntry>())
+        "toString" -> "ReleasePreviewRagRepository"
+        "hashCode" -> System.identityHashCode(proxy)
+        "equals" -> proxy === args?.firstOrNull()
+        else -> throw UnsupportedOperationException("预览只读仓库不支持 ${method.name}")
+    }
+} as IWorkspaceRepository
+
+private fun previewRagFile(
+    uuid: String,
+    parentUuid: String,
+    name: String,
+    isDirectory: Boolean = false,
+    mimeType: String? = null,
+    sizeBytes: Long = 0L,
+    vectorizedAt: Long? = null,
+) = FileEntry(
+    uuid = uuid,
+    workspaceRootUuid = PREVIEW_RAG_ROOT_ID,
+    parentUuid = parentUuid,
+    name = name,
+    hash = "sha256:$uuid",
+    mimeType = mimeType,
+    sizeBytes = sizeBytes,
+    isDirectory = isDirectory,
+    physicalRootPath = "/preview/nexara/rag",
+    materializedPath = "/$name",
+    vectorizedAt = vectorizedAt,
+    createdAt = PREVIEW_RAG_NOW_MILLIS - 86_400_000L,
+    updatedAt = PREVIEW_RAG_NOW_MILLIS - 10_800_000L,
+)
 
 private const val PREVIEW_RESOURCE_ROOT_ID = "resource-root-0001"
 private const val PREVIEW_RESOURCE_NOW_MILLIS = 1_784_006_400_000L

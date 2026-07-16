@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.chat.components
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.entity.FileEntry
+import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 
@@ -108,6 +109,98 @@ class FilesPanelStateTest {
 
         assertThat(visibleIds).containsExactly("match", "nested", "folder")
         assertThat(visibleIds).doesNotContain("other")
+    }
+
+    @Test
+    fun `可见节点投影按UUID保留同名节点并稳定展开深层目录`() {
+        val alpha = entry("alpha", "root", "/alpha", isDirectory = true)
+        val beta = entry("beta", "root", "/beta", isDirectory = true)
+        val alphaNested = entry("alpha-nested", "alpha", "/alpha/same", isDirectory = true)
+        val betaNested = entry("beta-nested", "beta", "/beta/same", isDirectory = true)
+        val deepFolder = entry("deep-folder", "alpha-nested", "/alpha/same/deep", isDirectory = true)
+        val deepFile = entry("deep-file", "deep-folder", "/alpha/same/deep/target.md", isDirectory = false)
+        val children = mapOf(
+            "alpha" to listOf(alphaNested),
+            "beta" to listOf(betaNested),
+            "alpha-nested" to listOf(deepFolder),
+            "deep-folder" to listOf(deepFile),
+        )
+
+        val original = projectVisibleFileNodes(
+            roots = listOf(alpha, beta),
+            childrenByParent = children,
+            expansionOverrides = mapOf("deep-folder" to true),
+        )
+        val reordered = projectVisibleFileNodes(
+            roots = listOf(beta, alpha),
+            childrenByParent = children,
+            expansionOverrides = mapOf("deep-folder" to true),
+        )
+
+        assertThat(original.map { it.file.uuid }).containsExactly(
+            "alpha",
+            "alpha-nested",
+            "deep-folder",
+            "deep-file",
+            "beta",
+            "beta-nested",
+        ).inOrder()
+        assertThat(reordered.map { it.file.uuid }).containsExactly(
+            "beta",
+            "beta-nested",
+            "alpha",
+            "alpha-nested",
+            "deep-folder",
+            "deep-file",
+        ).inOrder()
+        assertThat(original.filter { it.file.name == "same" }.map { it.file.uuid })
+            .containsExactly("alpha-nested", "beta-nested")
+    }
+
+    @Test
+    fun `折叠覆盖和搜索强制展开都以UUID而非位置为准`() {
+        val folder = entry("folder", "root", "/folder", isDirectory = true)
+        val child = entry("child", "folder", "/folder/child.md", isDirectory = false)
+
+        val collapsed = projectVisibleFileNodes(
+            roots = listOf(folder),
+            childrenByParent = mapOf("folder" to listOf(child)),
+            expansionOverrides = mapOf("folder" to false),
+        )
+        val searchExpanded = projectVisibleFileNodes(
+            roots = listOf(folder),
+            childrenByParent = mapOf("folder" to listOf(child)),
+            expansionOverrides = mapOf("folder" to false),
+            forceExpandedIds = setOf("folder"),
+        )
+
+        assertThat(collapsed.map { it.file.uuid }).containsExactly("folder")
+        assertThat(searchExpanded.map { it.file.uuid }).containsExactly("folder", "child").inOrder()
+    }
+
+    @Test
+    fun `文件树缩进层级在深层目录封顶`() {
+        assertThat(boundedFileTreeIndentLevel(-1)).isEqualTo(0)
+        assertThat(boundedFileTreeIndentLevel(2)).isEqualTo(2)
+        assertThat(boundedFileTreeIndentLevel(12)).isEqualTo(4)
+    }
+
+    @Test
+    fun `生产文件树使用UUID键单层Material列表和有界移动目录`() {
+        val projectRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = projectRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/components/FilesPanel.kt",
+        ).readText()
+
+        assertThat(source).contains("items = visibleNodes")
+        assertThat(source).contains("key = { it.file.uuid }")
+        assertThat(source).contains("ListItem(")
+        assertThat(source).contains(".heightIn(max = 420.dp)")
+        assertThat(source).doesNotContain("NexaraGlassCard")
+        assertThat(source).doesNotContain("filteredChildren.forEach")
+        assertThat(source).doesNotContain("directoryList.forEach")
     }
 
     private fun entry(

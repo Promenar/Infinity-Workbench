@@ -1,7 +1,6 @@
 package com.promenar.nexara.ui.chat.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -20,7 +19,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,21 +50,29 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -85,7 +94,6 @@ import com.promenar.nexara.ui.common.FileIndexStatus
 import com.promenar.nexara.ui.common.IndexStatusBadge
 import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.KgStatusIcon
-import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -148,6 +156,8 @@ fun FilesPanel(
     kgExtractionStates: Map<String, KgStatus> = emptyMap(),
     folders: List<FileEntry> = emptyList(),
     rootFiles: List<FileEntry>? = null,
+    initiallyExpandedIds: Set<String> = emptySet(),
+    initialChildrenByParent: Map<String, List<FileEntry>> = emptyMap(),
     isLoading: Boolean = false,
     hasLoadError: Boolean = false,
     onRetryLoad: (() -> Unit)? = null,
@@ -192,6 +202,56 @@ fun FilesPanel(
         searchQuery = searchQuery,
     )
 
+    val childrenByParent = remember(workspaceRootUuid, workspaceRepo, initialChildrenByParent) {
+        mutableStateMapOf<String, List<FileEntry>>().apply { putAll(initialChildrenByParent) }
+    }
+    var explicitlyExpandedIds by rememberSaveable(workspaceRootUuid, initiallyExpandedIds) {
+        mutableStateOf(ArrayList(initiallyExpandedIds))
+    }
+    var explicitlyCollapsedIds by rememberSaveable(workspaceRootUuid) {
+        mutableStateOf(arrayListOf<String>())
+    }
+    val expansionOverrides = remember(explicitlyExpandedIds, explicitlyCollapsedIds) {
+        buildMap {
+            explicitlyExpandedIds.forEach { put(it, true) }
+            explicitlyCollapsedIds.forEach { put(it, false) }
+        }
+    }
+    val projectedChildren = if (searchQuery.isBlank()) {
+        childrenByParent
+    } else {
+        val visibleIds = searchVisibleIds.orEmpty()
+        childrenByParent.mapValues { (_, children) -> children.filter { it.uuid in visibleIds } }
+    }
+    val forceExpandedIds = if (searchQuery.isBlank()) emptySet() else searchVisibleIds.orEmpty()
+    val visibleNodes = projectVisibleFileNodes(
+        roots = filteredRoots,
+        childrenByParent = projectedChildren,
+        expansionOverrides = expansionOverrides,
+        forceExpandedIds = forceExpandedIds,
+    )
+
+    // 数据订阅与 UI 渲染解耦：每个可见且展开的目录只按 UUID 保留一个 collector。
+    visibleNodes.asSequence()
+        .filter { node ->
+            node.file.isDirectory && isFileNodeExpanded(
+                uuid = node.file.uuid,
+                depth = node.depth,
+                expansionOverrides = expansionOverrides,
+                forceExpandedIds = forceExpandedIds,
+            )
+        }
+        .forEach { node ->
+            key(node.file.uuid) {
+                LaunchedEffect(workspaceRootUuid, workspaceRepo, node.file.uuid) {
+                    val rootUuid = workspaceRootUuid ?: return@LaunchedEffect
+                    workspaceRepo.observeChildren(rootUuid, node.file.uuid).collectLatest { children ->
+                        childrenByParent[node.file.uuid] = children
+                    }
+                }
+            }
+        }
+
     // 多选状态
     val localSelectedIds = remember { mutableStateListOf<String>() }
     val selectedIds = externalSelectedIds ?: localSelectedIds
@@ -214,19 +274,49 @@ fun FilesPanel(
         }
     }
 
-    val content = @Composable { root: FileEntry ->
-        FileTreeNode(
-            file = root, depth = 0, workspaceRootUuid = workspaceRootUuid!!, workspaceRepo = workspaceRepo,
-            searchQuery = searchQuery,
+    val toggleExpanded: (VisibleFileNode) -> Unit = { node ->
+        val currentlyExpanded = isFileNodeExpanded(
+            uuid = node.file.uuid,
+            depth = node.depth,
+            expansionOverrides = expansionOverrides,
+            forceExpandedIds = forceExpandedIds,
+        )
+        val id = node.file.uuid
+        if (currentlyExpanded) {
+            explicitlyExpandedIds = ArrayList(explicitlyExpandedIds).apply { remove(id) }
+            explicitlyCollapsedIds = ArrayList(explicitlyCollapsedIds).apply { if (id !in this) add(id) }
+        } else {
+            explicitlyCollapsedIds = ArrayList(explicitlyCollapsedIds).apply { remove(id) }
+            explicitlyExpandedIds = ArrayList(explicitlyExpandedIds).apply { if (id !in this) add(id) }
+        }
+    }
+
+    val content = @Composable { node: VisibleFileNode ->
+        FileTreeRow(
+            node = node,
+            expanded = isFileNodeExpanded(
+                uuid = node.file.uuid,
+                depth = node.depth,
+                expansionOverrides = expansionOverrides,
+                forceExpandedIds = forceExpandedIds,
+            ),
+            onToggleExpanded = { toggleExpanded(node) },
+            workspaceRootUuid = workspaceRootUuid!!,
+            workspaceRepo = workspaceRepo,
             onReindex = onReindex,
             onDelete = onDelete?.let { { id -> requestDelete(listOf(id)) } },
-            onRename = onRename, onMove = onMove, onExtractKG = onExtractKG, onViewKG = onViewKG, onCopy = onCopy,
+            onRename = onRename,
+            onMove = onMove,
+            onExtractKG = onExtractKG,
+            onViewKG = onViewKG,
+            onCopy = onCopy,
             indexingFileIds = indexingFileIds,
             kgExtractionStates = kgExtractionStates,
-            selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode,
-            visibleSearchIds = searchVisibleIds,
+            selectedIds = selectedIds,
+            isMultiSelectMode = isMultiSelectMode,
             onFolderClick = onFolderClick,
             onFileClick = onFileClick,
+            folders = folders,
             nowMillis = nowMillis,
         )
     }
@@ -271,19 +361,27 @@ fun FilesPanel(
             )
             FilesPanelUiState.Empty -> EmptyFilesState(Modifier.weight(1f))
             FilesPanelUiState.SearchEmpty -> SearchEmptyFilesState(Modifier.weight(1f))
-            FilesPanelUiState.Content -> if (useScroll) {
-                LazyColumn(
-                    modifier = Modifier.weight(1f).padding(vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(filteredRoots, key = { it.uuid }) { root -> content(root) }
-                }
-            } else {
-                Column(
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    filteredRoots.forEach { root -> content(root) }
+            FilesPanelUiState.Content -> Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                if (useScroll) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(
+                            items = visibleNodes,
+                            key = { it.file.uuid },
+                            contentType = { if (it.file.isDirectory) "directory" else "file" },
+                        ) { node -> content(node) }
+                    }
+                } else {
+                    // 外层页面拥有滚动时保持非滚动容器，但仍以 UUID key 渲染单层投影。
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        visibleNodes.forEach { node -> key(node.file.uuid) { content(node) } }
+                    }
                 }
             }
         }
@@ -404,12 +502,12 @@ private fun BatchActionBar(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FileTreeNode(
-    file: FileEntry,
-    depth: Int,
+private fun FileTreeRow(
+    node: VisibleFileNode,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
     workspaceRootUuid: String,
     workspaceRepo: IWorkspaceRepository,
-    searchQuery: String = "",
     onReindex: ((String) -> Unit)? = null,
     onDelete: ((String) -> Unit)? = null,
     onRename: ((String, String) -> Unit)? = null,
@@ -421,15 +519,15 @@ private fun FileTreeNode(
     kgExtractionStates: Map<String, KgStatus> = emptyMap(),
     selectedIds: MutableList<String> = mutableStateListOf(),
     isMultiSelectMode: Boolean = false,
-    visibleSearchIds: Set<String>? = null,
     onFolderClick: ((String, String) -> Unit)? = null,
     onFileClick: ((String) -> Unit)? = null,
+    folders: List<FileEntry> = emptyList(),
     nowMillis: Long,
 ) {
-    var expanded by rememberSaveable { mutableStateOf(depth < 2) }
-    var showMenu by rememberSaveable { mutableStateOf(false) }
-    var showRenameDialog by rememberSaveable { mutableStateOf(false) }
-    var showMoveSheet by rememberSaveable { mutableStateOf(false) }
+    val file = node.file
+    var showMenu by rememberSaveable(file.uuid, "menu") { mutableStateOf(false) }
+    var showRenameDialog by rememberSaveable(file.uuid, "rename") { mutableStateOf(false) }
+    var showMoveSheet by rememberSaveable(file.uuid, "move") { mutableStateOf(false) }
     val isSelected = file.uuid in selectedIds
     val optionsLabel = stringResource(R.string.chat_cd_options)
     val supportsMultiSelect = supportsFileMultiSelect(
@@ -458,124 +556,108 @@ private fun FileTreeNode(
                 FileNodeActivation.ToggleSelection -> {
                     if (isSelected) selectedIds.remove(file.uuid) else selectedIds.add(file.uuid)
                 }
-                FileNodeActivation.ToggleExpansion -> expanded = !expanded
-                FileNodeActivation.NavigateFolder -> {
-                    onFolderClick?.invoke(file.uuid, file.name)
-                }
+                FileNodeActivation.ToggleExpansion -> onToggleExpanded()
+                FileNodeActivation.NavigateFolder -> onFolderClick?.invoke(file.uuid, file.name)
                 FileNodeActivation.OpenFile -> onFileClick?.invoke(file.uuid)
             }
         }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = (depth * 16).dp)
-        ) {
-        NexaraGlassCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .animateContentSize(animationSpec = androidx.compose.animation.core.tween(200))
-                .then(
-                    if (handleActivate != null) {
-                        Modifier.combinedClickable(
-                            role = Role.Button,
-                            onClickLabel = file.name,
-                            onLongClickLabel = optionsLabel.takeIf { hasMenuActions },
-                            onLongClick = if (hasMenuActions) ({ showMenu = true }) else null,
-                            onClick = handleActivate,
-                        )
-                    } else {
-                        Modifier
-                    },
-                ),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            FileRow(
-                file = file,
-                indexingFileIds = indexingFileIds,
-                kgExtractionStates = kgExtractionStates,
-                isMultiSelectMode = isMultiSelectMode,
-                isSelected = isSelected,
-                onSelectionChange = { checked ->
-                    if (checked) {
-                        if (file.uuid !in selectedIds) selectedIds.add(file.uuid)
-                    } else {
-                        selectedIds.remove(file.uuid)
-                    }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        FileRow(
+            file = file,
+            depth = node.depth,
+            expanded = expanded,
+            indexingFileIds = indexingFileIds,
+            kgExtractionStates = kgExtractionStates,
+            isMultiSelectMode = isMultiSelectMode,
+            isSelected = isSelected,
+            onSelectionChange = { checked ->
+                if (checked && file.uuid !in selectedIds) selectedIds.add(file.uuid)
+                if (!checked) selectedIds.remove(file.uuid)
+            },
+            onOpenMenu = if (hasMenuActions) ({ showMenu = true }) else null,
+            modifier = Modifier.then(
+                if (handleActivate != null) {
+                    Modifier.combinedClickable(
+                        role = Role.Button,
+                        onClickLabel = file.name,
+                        onLongClickLabel = optionsLabel.takeIf { hasMenuActions },
+                        onLongClick = if (hasMenuActions) ({ showMenu = true }) else null,
+                        onClick = handleActivate,
+                    )
+                } else {
+                    Modifier
                 },
-                onOpenMenu = if (hasMenuActions) ({ showMenu = true }) else null,
-                nowMillis = nowMillis,
-            )
-        }
+            ),
+            nowMillis = nowMillis,
+        )
 
-        // 长按上下文菜单
         DropdownMenu(expanded = showMenu && hasMenuActions, onDismissRequest = { showMenu = false }) {
             if (!file.isDirectory) {
                 if (onReindex != null) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.files_reindex), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+                        text = { Text(stringResource(R.string.files_reindex)) },
                         onClick = { showMenu = false; onReindex(file.uuid) },
                         modifier = Modifier.testTag(UiTags.fileNodeReindex(file.uuid)),
                     )
                 }
                 if (onExtractKG != null) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.files_extract_knowledge_graph), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
-                        onClick = { showMenu = false; onExtractKG(file.uuid) }
+                        text = { Text(stringResource(R.string.files_extract_knowledge_graph)) },
+                        onClick = { showMenu = false; onExtractKG(file.uuid) },
                     )
                 }
                 if (onViewKG != null) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.files_view_graph), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
-                        onClick = { showMenu = false; onViewKG(file.uuid) }
+                        text = { Text(stringResource(R.string.files_view_graph)) },
+                        onClick = { showMenu = false; onViewKG(file.uuid) },
                     )
                 }
-            } else {
-                // 目录: 查看图谱
-                if (onViewKG != null) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.files_view_folder_graph), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
-                        onClick = { showMenu = false; onViewKG(file.uuid) }
-                    )
-                }
+            } else if (onViewKG != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.files_view_folder_graph)) },
+                    onClick = { showMenu = false; onViewKG(file.uuid) },
+                )
             }
             if (onRename != null) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.files_rename), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
-                    onClick = { showMenu = false; showRenameDialog = true }
+                    text = { Text(stringResource(R.string.files_rename)) },
+                    onClick = { showMenu = false; showRenameDialog = true },
                 )
             }
             if (onMove != null && !file.isDirectory) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.files_move_to), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
-                    onClick = { showMenu = false; showMoveSheet = true }
+                    text = { Text(stringResource(R.string.files_move_to)) },
+                    onClick = { showMenu = false; showMoveSheet = true },
+                    modifier = Modifier.testTag("files_panel_move_action_${file.uuid}"),
                 )
             }
             if (onCopy != null && !file.isDirectory) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.shared_btn_copy), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
-                    onClick = { showMenu = false; onCopy(file.uuid) }
+                    text = { Text(stringResource(R.string.shared_btn_copy)) },
+                    onClick = { showMenu = false; onCopy(file.uuid) },
                 )
             }
             if (!isMultiSelectMode && supportsMultiSelect) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.files_multi_select), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
-                    onClick = { showMenu = false; selectedIds.add(file.uuid) },
+                    text = { Text(stringResource(R.string.files_multi_select)) },
+                    onClick = {
+                        showMenu = false
+                        if (file.uuid !in selectedIds) selectedIds.add(file.uuid)
+                    },
                     modifier = Modifier.testTag(UiTags.fileNodeMultiSelect(file.uuid)),
                 )
             }
             if (onDelete != null) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.shared_btn_delete), style = NexaraTypography.labelMedium, color = NexaraColors.Error) },
-                    onClick = { showMenu = false; onDelete(file.uuid) }
+                    text = { Text(stringResource(R.string.shared_btn_delete), color = MaterialTheme.colorScheme.error) },
+                    onClick = { showMenu = false; onDelete(file.uuid) },
                 )
             }
         }
     }
 
-    // 重命名对话框
     if (showRenameDialog) {
         RenameDialog(
             currentName = file.name,
@@ -583,133 +665,121 @@ private fun FileTreeNode(
             onConfirm = { newName ->
                 showRenameDialog = false
                 onRename?.invoke(file.uuid, newName)
-            }
+            },
         )
     }
 
-    // "移动到"目录选择器
     if (showMoveSheet) {
         MoveToSheet(
-            folders = emptyList(), // 目录选择器仅查询当前工作区根目录的直接子项
+            folders = folders,
             workspaceRepo = workspaceRepo,
             workspaceRootUuid = workspaceRootUuid,
             onDismiss = { showMoveSheet = false },
             onSelect = { targetUuid ->
                 showMoveSheet = false
                 onMove?.invoke(file.uuid, targetUuid)
-            }
+            },
         )
-    }
-
-    if (file.isDirectory) {
-        AnimatedVisibility(
-            visible = expanded || searchQuery.isNotBlank(),
-            enter = expandVertically(animationSpec = androidx.compose.animation.core.tween(200)) + fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
-            exit = shrinkVertically(animationSpec = androidx.compose.animation.core.tween(150)) + fadeOut(animationSpec = androidx.compose.animation.core.tween(150))
-        ) {
-            val children by workspaceRepo.observeChildren(workspaceRootUuid, file.uuid)
-                .collectAsState(initial = emptyList())
-
-            val filteredChildren = if (searchQuery.isBlank()) children else {
-                children.filter { it.uuid in visibleSearchIds.orEmpty() }
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                filteredChildren.forEach { child ->
-                    FileTreeNode(
-                        file = child, depth = depth + 1, workspaceRootUuid = workspaceRootUuid, workspaceRepo = workspaceRepo,
-                        searchQuery = searchQuery, onReindex = onReindex, onDelete = onDelete,
-                        onRename = onRename, onMove = onMove, onExtractKG = onExtractKG, onViewKG = onViewKG, onCopy = onCopy,
-                        indexingFileIds = indexingFileIds,
-                        kgExtractionStates = kgExtractionStates,
-                        selectedIds = selectedIds, isMultiSelectMode = isMultiSelectMode,
-                        visibleSearchIds = visibleSearchIds,
-                        onFolderClick = onFolderClick,
-                        onFileClick = onFileClick,
-                        nowMillis = nowMillis,
-                    )
-                }
-            }
-        }
-    }
     }
 }
 
 @Composable
 private fun FileRow(
     file: FileEntry,
+    depth: Int,
+    expanded: Boolean,
     indexingFileIds: Set<String> = emptySet(),
     kgExtractionStates: Map<String, KgStatus> = emptyMap(),
     isMultiSelectMode: Boolean = false,
     isSelected: Boolean = false,
     onSelectionChange: (Boolean) -> Unit,
     onOpenMenu: (() -> Unit)?,
+    modifier: Modifier = Modifier,
     nowMillis: Long,
 ) {
     val optionsLabel = stringResource(R.string.chat_cd_options)
-    Row(
+    val containerColor = if (isSelected) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .then(
-                if (isSelected) Modifier.background(NexaraColors.Primary.copy(alpha = 0.15f))
-                else Modifier
-            )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(start = (boundedFileTreeIndentLevel(depth) * 12).dp),
     ) {
-        if (isMultiSelectMode) {
-            Checkbox(
-                checked = isSelected,
-                onCheckedChange = onSelectionChange,
-                modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
-            )
-        }
-        Icon(
-            imageVector = fileIcon(file),
-            contentDescription = null,
-            tint = if (file.isDirectory) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
-            modifier = Modifier.size(24.dp)
-        )
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = file.name,
-                style = NexaraTypography.bodyLarge,
-                color = NexaraColors.OnSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (!file.isDirectory) {
+        ListItem(
+            modifier = modifier.fillMaxWidth(),
+            colors = ListItemDefaults.colors(containerColor = containerColor),
+            headlineContent = {
                 Text(
-                    text = formatFileMetadata(file, nowMillis),
-                    style = NexaraTypography.labelSmall,
-                    color = NexaraColors.OnSurfaceVariant
+                    text = file.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
-            }
-        }
-
-        if (!file.isDirectory) {
-            IndexStatusBadge(status = resolveIndexStatus(file, indexingFileIds))
-            Spacer(modifier = Modifier.width(6.dp))
-            KgStatusIcon(status = resolveKgStatus(file, kgExtractionStates))
-        }
-
-        if (onOpenMenu != null) {
-            IconButton(
-                onClick = onOpenMenu,
-                modifier = Modifier
-                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                    .testTag(UiTags.fileNodeOptions(file.uuid)),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.MoreVert,
-                    contentDescription = optionsLabel,
-                    tint = NexaraColors.OnSurfaceVariant,
-                )
-            }
-        }
+            },
+            supportingContent = if (file.isDirectory) {
+                null
+            } else {
+                {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = formatFileMetadata(file, nowMillis),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            IndexStatusBadge(status = resolveIndexStatus(file, indexingFileIds))
+                            KgStatusIcon(status = resolveKgStatus(file, kgExtractionStates))
+                        }
+                    }
+                }
+            },
+            leadingContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isMultiSelectMode) {
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = onSelectionChange,
+                            modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                        )
+                    }
+                    Icon(
+                        imageVector = if (file.isDirectory && expanded) Icons.Rounded.FolderOpen else fileIcon(file),
+                        contentDescription = null,
+                        tint = if (file.isDirectory) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            },
+            trailingContent = onOpenMenu?.let { openMenu ->
+                {
+                    IconButton(
+                        onClick = openMenu,
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .testTag(UiTags.fileNodeOptions(file.uuid)),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.MoreVert,
+                            contentDescription = optionsLabel,
+                        )
+                    }
+                }
+            },
+        )
+        HorizontalDivider(
+            modifier = Modifier.padding(start = 56.dp),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
     }
 }
 
@@ -758,35 +828,59 @@ private fun MoveToSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = NexaraColors.SurfaceLow,
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.shapes.extraLarge,
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(24.dp).padding(bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.files_move_to), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(stringResource(R.string.files_move_to), style = MaterialTheme.typography.headlineSmall)
             if (directoryList.isEmpty()) {
                 Text(
                     stringResource(R.string.files_no_available_folders),
-                    style = NexaraTypography.bodyMedium,
-                    color = NexaraColors.OnSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            // 根目录选项
-            Row(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(NexaraColors.SurfaceContainer).clickable { onSelect(workspaceRootUuid) }.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .testTag("files_panel_move_list"),
             ) {
-                Icon(Icons.Rounded.FolderOpen, null, tint = NexaraColors.Primary, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(10.dp))
-                Text(stringResource(R.string.files_root_directory), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-            }
-            directoryList.forEach { dir ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(NexaraColors.SurfaceContainer).clickable { onSelect(dir.uuid) }.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Rounded.Folder, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text(dir.name, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                item(key = workspaceRootUuid) {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.files_root_directory)) },
+                        leadingContent = {
+                            Icon(Icons.Rounded.FolderOpen, contentDescription = null)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(workspaceRootUuid) }
+                            .testTag("files_panel_move_destination_$workspaceRootUuid"),
+                        colors = ListItemDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        ),
+                    )
+                }
+                items(directoryList, key = { it.uuid }) { dir ->
+                    ListItem(
+                        headlineContent = {
+                            Text(dir.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        },
+                        leadingContent = { Icon(Icons.Rounded.Folder, contentDescription = null) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(dir.uuid) }
+                            .testTag("files_panel_move_destination_${dir.uuid}"),
+                        colors = ListItemDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        ),
+                    )
                 }
             }
         }
