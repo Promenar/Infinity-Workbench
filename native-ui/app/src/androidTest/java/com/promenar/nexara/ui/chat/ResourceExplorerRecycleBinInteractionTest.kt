@@ -6,11 +6,17 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.FontScale
+import androidx.compose.ui.test.WindowSize
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -18,8 +24,12 @@ import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.then
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso.pressBack
 import androidx.test.platform.app.InstrumentationRegistry
@@ -123,6 +133,49 @@ class ResourceExplorerRecycleBinInteractionTest {
 
         assertThat(retries.get()).isEqualTo(1)
         assertThat(clears.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun operationNoticeAnnouncesStateWithoutDuplicatingVisibleMessage() {
+        val failed = entry("announce-once")
+        val message = resources.getString(R.string.recycle_bin_status_restore_failed, 1)
+        setPanel(
+            files = listOf(failed),
+            operationState = RecycleOperationState.Failure(
+                operation = RecycleOperation.Restore,
+                failedItemUuids = listOf(failed.uuid),
+            ),
+        )
+
+        rule.onNodeWithTag(TAG_OPERATION_STATUS, useUnmergedTree = true)
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    message,
+                ),
+            )
+        rule.onAllNodes(hasText(message), useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun singleItemActionsNameTheirDocument() {
+        val file = entry("named-actions")
+        setPanel(files = listOf(file))
+
+        rule.onNodeWithTag(restoreTag(file.uuid))
+            .assert(
+                SemanticsMatcher("restore action names its document") { node ->
+                    runCatching { node.config[SemanticsActions.OnClick].label }.getOrNull() ==
+                        resources.getString(R.string.recycle_bin_restore_document, file.name)
+                },
+            )
+        rule.onNodeWithTag(deleteTag(file.uuid))
+            .assert(
+                SemanticsMatcher("delete action names its document") { node ->
+                    runCatching { node.config[SemanticsActions.OnClick].label }.getOrNull() ==
+                        resources.getString(R.string.recycle_bin_delete_document, file.name)
+                },
+            )
     }
 
     @Test
@@ -253,7 +306,101 @@ class ResourceExplorerRecycleBinInteractionTest {
                 bounds.right <= rootBounds.right &&
                 bounds.bottom <= rootBounds.bottom
         }).isTrue()
-        assertThat(longTextBounds.all { it.right <= restoreBounds.left }).isTrue()
+        assertThat(longTextBounds.all { bounds ->
+            bounds.bottom <= restoreBounds.top ||
+                bounds.right <= restoreBounds.left ||
+                bounds.left >= restoreBounds.right ||
+                bounds.top >= restoreBounds.bottom
+        }).isTrue()
+    }
+
+    @Test
+    fun doubleFontFailureCanReachRetryClearAndCleanupNotice() {
+        val failed = entry("double-font-failure")
+        val retryCount = AtomicInteger()
+        val clearCount = AtomicInteger()
+
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 800.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
+                NexaraTheme(dynamicColor = false) {
+                    RecycleBinPanel(
+                        files = listOf(failed),
+                        operationState = RecycleOperationState.Failure(
+                            operation = RecycleOperation.Restore,
+                            failedItemUuids = listOf(failed.uuid),
+                        ),
+                        onRestoreFiles = {},
+                        onPermanentlyDeleteFiles = {},
+                        onEmptyRecycleBin = {},
+                        onRetryOperation = { retryCount.incrementAndGet() },
+                        onClearOperationState = { clearCount.incrementAndGet() },
+                        nowMillis = FIXED_NOW,
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithTag(TAG_RECYCLE_LIST)
+            .performScrollToNode(hasTestTag(TAG_RETRY))
+        rule.onNodeWithTag(TAG_RETRY)
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        rule.onNodeWithTag(TAG_RECYCLE_LIST)
+            .performScrollToNode(hasTestTag(TAG_CLEAR_STATUS))
+        rule.onNodeWithTag(TAG_CLEAR_STATUS)
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        rule.onNodeWithTag(TAG_RECYCLE_LIST)
+            .performScrollToNode(hasTestTag(TAG_CLEANUP_NOTICE))
+        rule.onNodeWithTag(TAG_CLEANUP_NOTICE).assertIsDisplayed()
+
+        assertThat(retryCount.get()).isEqualTo(1)
+        assertThat(clearCount.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun landscapeLongRecycleListKeepsLastRestoreAndDeleteReachable() {
+        val files = (0 until 24).map { entry("landscape-$it") }
+        val last = files.last()
+        val restored = AtomicReference<List<FileEntry>>(emptyList())
+
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(800.dp, 360.dp)),
+            ) {
+                NexaraTheme(dynamicColor = false) {
+                    RecycleBinPanel(
+                        files = files,
+                        operationState = RecycleOperationState.Idle,
+                        onRestoreFiles = { restored.set(it) },
+                        onPermanentlyDeleteFiles = {},
+                        onEmptyRecycleBin = {},
+                        onRetryOperation = {},
+                        onClearOperationState = {},
+                        nowMillis = FIXED_NOW,
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithTag(TAG_RECYCLE_LIST)
+            .performScrollToNode(hasTestTag(restoreTag(last.uuid)))
+        rule.onNodeWithTag(restoreTag(last.uuid))
+            .assertIsDisplayed()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        rule.onNodeWithTag(deleteTag(last.uuid))
+            .assertIsDisplayed()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+
+        assertThat(restored.get()).containsExactly(last)
     }
 
     private fun setPanel(
@@ -308,6 +455,8 @@ class ResourceExplorerRecycleBinInteractionTest {
         const val TAG_DELETE_CONFIRM = "recycle_bin_delete_confirm"
         const val TAG_EMPTY_CONFIRM = "recycle_bin_empty_confirm"
         const val TAG_TEST_ROOT = "recycle_bin_test_root"
+        const val TAG_RECYCLE_LIST = "recycle_bin_list"
+        const val TAG_CLEANUP_NOTICE = "recycle_bin_cleanup_notice"
 
         fun restoreTag(uuid: String) = "recycle_bin_restore:$uuid"
         fun deleteTag(uuid: String) = "recycle_bin_delete:$uuid"

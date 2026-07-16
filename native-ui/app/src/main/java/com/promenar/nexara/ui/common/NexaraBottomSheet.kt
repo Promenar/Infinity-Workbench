@@ -30,6 +30,7 @@ fun NexaraBottomSheet(
     show: Boolean,
     onDismiss: () -> Unit,
     title: String? = null,
+    modifier: Modifier = Modifier.fillMaxHeight(NEXARA_BOTTOM_SHEET_DEFAULT_HEIGHT_FRACTION),
     content: @Composable () -> Unit
 ) {
     if (!show) return
@@ -52,9 +53,8 @@ fun NexaraBottomSheet(
         }
     ) {
         Column(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.7f)
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp)
         ) {
@@ -71,6 +71,8 @@ fun NexaraBottomSheet(
         }
     }
 }
+
+internal const val NEXARA_BOTTOM_SHEET_DEFAULT_HEIGHT_FRACTION = 0.7f
 
 @Preview(showBackground = true, backgroundColor = 0xFF131315)
 @Composable

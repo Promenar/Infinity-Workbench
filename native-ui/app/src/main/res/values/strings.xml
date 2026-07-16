@@ -145,6 +145,7 @@
     <string name="resource_explorer_tab_files">Files</string>
     <string name="resource_explorer_recycle_bin">Recycle Bin</string>
     <string name="resource_explorer_recycle_bin_count">Recycle Bin (%1$d)</string>
+    <string name="resource_explorer_retry_document">Retry %1$s</string>
     <string name="resource_explorer_import_status">Import Status</string>
     <string name="resource_explorer_clear_results">Clear results</string>
     <string name="resource_explorer_status_pending">Waiting</string>
@@ -1188,6 +1189,8 @@
     <string name="recycle_bin_clear_count">Delete all (%1$d)</string>
     <string name="recycle_bin_original_path">Original path: %1$s</string>
     <string name="recycle_bin_restore">Restore</string>
+    <string name="recycle_bin_restore_document">Restore %1$s</string>
+    <string name="recycle_bin_delete_document">Permanently delete %1$s</string>
     <string name="recycle_bin_empty_state">Recycle bin is empty</string>
     <string name="recycle_bin_status_restoring">Restoring selected items…</string>
     <string name="recycle_bin_status_deleting">Permanently deleting selected items…</string>

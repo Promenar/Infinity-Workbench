@@ -145,6 +145,7 @@
     <string name="resource_explorer_tab_files">文件</string>
     <string name="resource_explorer_recycle_bin">回收站</string>
     <string name="resource_explorer_recycle_bin_count">回收站 (%1$d)</string>
+    <string name="resource_explorer_retry_document">重试 %1$s</string>
     <string name="resource_explorer_import_status">导入状态</string>
     <string name="resource_explorer_clear_results">清除结果</string>
     <string name="resource_explorer_status_pending">等待中</string>
@@ -1189,6 +1190,8 @@
     <string name="recycle_bin_clear_count">清空（%1$d）</string>
     <string name="recycle_bin_original_path">原始路径：%1$s</string>
     <string name="recycle_bin_restore">恢复</string>
+    <string name="recycle_bin_restore_document">恢复 %1$s</string>
+    <string name="recycle_bin_delete_document">永久删除 %1$s</string>
     <string name="recycle_bin_empty_state">回收站为空</string>
     <string name="recycle_bin_status_restoring">正在恢复所选项目…</string>
     <string name="recycle_bin_status_deleting">正在永久删除所选项目…</string>

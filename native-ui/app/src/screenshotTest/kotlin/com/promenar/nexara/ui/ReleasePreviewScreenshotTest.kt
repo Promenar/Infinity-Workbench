@@ -1479,6 +1479,45 @@ fun resourceExplorerRecycleDeleteConfirmChineseLargeFontReleasePreview() {
     }
 }
 
+@PreviewTest
+@Preview(
+    name = "Resource Explorer recycle failure landscape",
+    widthDp = 800,
+    heightDp = 360,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun resourceExplorerRecycleFailureLandscapeReleasePreview() {
+    ResourceExplorerReleasePreviewContainer {
+        ResourceExplorerSheetContent(
+            state = ResourceExplorerSheetState(
+                selectedTab = ResourceExplorerTab.RecycleBin,
+                recycleBinCount = 2,
+                workspaceReady = true,
+            ),
+            actions = ResourceExplorerSheetActions(),
+            filesContent = {},
+            recycleBinContent = {
+                RecycleBinPanel(
+                    files = listOf(PREVIEW_RECYCLED_RESOURCE_FILE, PREVIEW_RESOURCE_FILE_SECONDARY),
+                    operationState = RecycleOperationState.PartialFailure(
+                        operation = RecycleOperation.Restore,
+                        succeededItemUuids = listOf(PREVIEW_RESOURCE_FILE_SECONDARY.uuid),
+                        failedItemUuids = listOf(PREVIEW_RECYCLED_RESOURCE_FILE.uuid),
+                    ),
+                    onRestoreFiles = {},
+                    onPermanentlyDeleteFiles = {},
+                    onEmptyRecycleBin = {},
+                    onRetryOperation = {},
+                    onClearOperationState = {},
+                    nowMillis = PREVIEW_RESOURCE_NOW_MILLIS,
+                )
+            },
+        )
+    }
+}
+
 @Composable
 private fun PreviewRagDocuments(
     modifier: Modifier,

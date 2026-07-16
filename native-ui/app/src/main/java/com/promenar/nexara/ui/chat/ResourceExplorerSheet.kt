@@ -2,35 +2,40 @@ package com.promenar.nexara.ui.chat
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeleteForever
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,11 +49,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -102,7 +108,8 @@ fun ResourceExplorerSheet(
     NexaraBottomSheet(
         show = show,
         onDismiss = onDismiss,
-        title = stringResource(R.string.resource_explorer_title)
+        title = stringResource(R.string.resource_explorer_title),
+        modifier = Modifier.fillMaxHeight(),
     ) {
         ResourceExplorerSheetContent(
             state = ResourceExplorerSheetState(
@@ -215,67 +222,11 @@ internal fun ResourceExplorerSheetContent(
             .fillMaxSize()
             .testTag(UiTags.RESOURCE_EXPLORER_ROOT),
     ) {
-        if (state.selectedTab == ResourceExplorerTab.Files) {
-            NexaraSearchBar(
-                value = state.searchQuery,
-                onValueChange = actions.onSearchQueryChanged,
-                placeholder = stringResource(R.string.resource_explorer_search_placeholder),
-                modifier = Modifier.testTag(UiTags.RESOURCE_EXPLORER_SEARCH),
-            )
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            TextButton(
-                onClick = actions.onImportFiles,
-                enabled = state.workspaceReady && !state.isImporting,
-                modifier = Modifier
-                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                    .testTag(UiTags.RESOURCE_EXPLORER_IMPORT),
-            ) {
-                Icon(Icons.Rounded.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    stringResource(
-                        if (state.isImporting) R.string.resource_explorer_importing
-                        else R.string.resource_explorer_import_files,
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
-        if (state.importItems.isNotEmpty()) {
-            ImportStatusList(
-                items = state.importItems,
-                isImporting = state.isImporting,
-                onRetry = actions.onRetryImport,
-                onClear = actions.onClearImportResults,
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        TabRow(
+        PrimaryTabRow(
             selectedTabIndex = state.selectedTab.page,
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
             contentColor = NexaraColors.Primary,
             divider = { HorizontalDivider(color = NexaraColors.OutlineVariant) },
-            indicator = { tabPositions ->
-                if (state.selectedTab.page < tabPositions.size) {
-                    val pos = tabPositions[state.selectedTab.page]
-                    Box(
-                        Modifier
-                            .tabIndicatorOffset(pos)
-                            .height(3.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(NexaraColors.Primary),
-                    )
-                }
-            },
         ) {
             ResourceExplorerTab.entries.forEach { tab ->
                 val isFiles = tab == ResourceExplorerTab.Files
@@ -328,7 +279,11 @@ internal fun ResourceExplorerSheetContent(
                 .testTag(UiTags.RESOURCE_EXPLORER_PAGER),
         ) { page ->
             when (ResourceExplorerTab.fromPage(page)) {
-                ResourceExplorerTab.Files -> filesContent()
+                ResourceExplorerTab.Files -> ResourceExplorerFilesPage(
+                    state = state,
+                    actions = actions,
+                    filesContent = filesContent,
+                )
                 ResourceExplorerTab.RecycleBin -> when {
                     state.isLoading -> ResourceExplorerSessionState(isLoading = true)
                     state.hasLoadError -> ResourceExplorerSessionState(
@@ -339,6 +294,96 @@ internal fun ResourceExplorerSheetContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ResourceExplorerFilesPage(
+    state: ResourceExplorerSheetState,
+    actions: ResourceExplorerSheetActions,
+    filesContent: @Composable () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val compactLandscape = maxHeight < 480.dp && LocalDensity.current.fontScale < 1.5f
+            if (compactLandscape) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    ResourceExplorerSearch(state, actions, Modifier.weight(1f))
+                    ResourceExplorerImportAction(state, actions)
+                }
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ResourceExplorerSearch(state, actions, Modifier.fillMaxWidth())
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        ResourceExplorerImportAction(state, actions)
+                    }
+                }
+            }
+        }
+
+        if (state.importItems.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            ImportStatusList(
+                items = state.importItems,
+                isImporting = state.isImporting,
+                onRetry = actions.onRetryImport,
+                onClear = actions.onClearImportResults,
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            filesContent()
+        }
+    }
+}
+
+@Composable
+private fun ResourceExplorerSearch(
+    state: ResourceExplorerSheetState,
+    actions: ResourceExplorerSheetActions,
+    modifier: Modifier,
+) {
+    NexaraSearchBar(
+        value = state.searchQuery,
+        onValueChange = actions.onSearchQueryChanged,
+        placeholder = stringResource(R.string.resource_explorer_search_placeholder),
+        modifier = modifier.testTag(UiTags.RESOURCE_EXPLORER_SEARCH),
+    )
+}
+
+@Composable
+private fun ResourceExplorerImportAction(
+    state: ResourceExplorerSheetState,
+    actions: ResourceExplorerSheetActions,
+) {
+    FilledTonalButton(
+        onClick = actions.onImportFiles,
+        enabled = state.workspaceReady && !state.isImporting,
+        modifier = Modifier
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .testTag(UiTags.RESOURCE_EXPLORER_IMPORT),
+    ) {
+        Icon(Icons.Rounded.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.size(8.dp))
+        Text(
+            stringResource(
+                if (state.isImporting) R.string.resource_explorer_importing
+                else R.string.resource_explorer_import_files,
+            ),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -392,80 +437,170 @@ private fun ImportStatusList(
     onRetry: (android.net.Uri) -> Unit,
     onClear: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(NexaraColors.SurfaceLow)
-            .padding(8.dp)
-            .testTag(UiTags.RESOURCE_EXPLORER_IMPORT_RESULTS),
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = NexaraColors.SurfaceLow,
+        shape = MaterialTheme.shapes.medium,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                stringResource(R.string.resource_explorer_import_status),
-                style = NexaraTypography.labelMedium,
-                color = NexaraColors.OnSurface,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(
-                onClick = onClear,
-                enabled = !isImporting,
-                modifier = Modifier
-                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                    .testTag(UiTags.RESOURCE_EXPLORER_CLEAR_RESULTS),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    stringResource(R.string.resource_explorer_clear_results),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    stringResource(R.string.resource_explorer_import_status),
+                    style = NexaraTypography.titleMedium,
+                    color = NexaraColors.OnSurface,
+                    modifier = Modifier.weight(1f),
                 )
+                TextButton(
+                    onClick = onClear,
+                    enabled = !isImporting,
+                    modifier = Modifier
+                        .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                        .testTag(UiTags.RESOURCE_EXPLORER_CLEAR_RESULTS),
+                ) {
+                    Text(
+                        stringResource(R.string.resource_explorer_clear_results),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 224.dp)
+                    .testTag(UiTags.RESOURCE_EXPLORER_IMPORT_RESULTS),
+            ) {
+                items(items, key = { it.uri.toString() }) { item ->
+                    ImportStatusRow(
+                        item = item,
+                        isImporting = isImporting,
+                        onRetry = onRetry,
+                    )
+                    HorizontalDivider(color = NexaraColors.OutlineVariant)
+                }
             }
         }
-        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 168.dp)) {
-            items(items, key = { it.uri.toString() }) { item ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                ) {
+    }
+}
+
+@Composable
+private fun ImportStatusRow(
+    item: ShareImportItem,
+    isImporting: Boolean,
+    onRetry: (android.net.Uri) -> Unit,
+) {
+    val statusText = when (item.status) {
+        ShareImportStatus.Pending -> stringResource(R.string.resource_explorer_status_pending)
+        ShareImportStatus.Importing -> stringResource(R.string.resource_explorer_status_importing)
+        ShareImportStatus.Created -> stringResource(R.string.resource_explorer_status_created)
+        ShareImportStatus.Rejected -> stringResource(
+            R.string.resource_explorer_status_rejected,
+            rejectReasonLabel(item.reason),
+        )
+    }
+    val statusColor = if (item.status == ShareImportStatus.Rejected) {
+        NexaraColors.Error
+    } else {
+        NexaraColors.OnSurfaceVariant
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        val stack = maxWidth < 420.dp || LocalDensity.current.fontScale >= 1.5f
+        val content: @Composable (Modifier) -> Unit = { modifier ->
+            Row(
+                modifier = modifier,
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    imageVector = when (item.status) {
+                        ShareImportStatus.Pending, ShareImportStatus.Importing -> Icons.Rounded.HourglassTop
+                        ShareImportStatus.Created -> Icons.Rounded.CheckCircle
+                        ShareImportStatus.Rejected -> Icons.Rounded.ErrorOutline
+                    },
+                    contentDescription = null,
+                    tint = statusColor,
+                    modifier = Modifier.size(20.dp),
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         text = item.displayName,
                         style = NexaraTypography.bodyMedium,
                         color = NexaraColors.OnSurface,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = when (item.status) {
-                            ShareImportStatus.Pending -> stringResource(R.string.resource_explorer_status_pending)
-                            ShareImportStatus.Importing -> stringResource(R.string.resource_explorer_status_importing)
-                            ShareImportStatus.Created -> stringResource(R.string.resource_explorer_status_created)
-                            ShareImportStatus.Rejected -> stringResource(
-                                R.string.resource_explorer_status_rejected,
-                                rejectReasonLabel(item.reason),
-                            )
-                        },
-                        style = NexaraTypography.labelSmall,
-                        color = if (item.status == ShareImportStatus.Rejected) NexaraColors.Error else NexaraColors.Primary,
-                        modifier = Modifier
-                            .padding(start = 8.dp)
-                            .weight(0.8f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        text = statusText,
+                        style = NexaraTypography.bodySmall,
+                        color = statusColor,
+                        modifier = Modifier.testTag(
+                            UiTags.resourceExplorerImportStatus(item.uri.toString()),
+                        ),
                     )
-                    if (shouldOfferImportRetry(item)) {
-                        TextButton(
-                            onClick = { onRetry(item.uri) },
-                            enabled = !isImporting,
-                            modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
-                        ) { Text(stringResource(R.string.shared_btn_retry)) }
-                    }
                 }
             }
         }
+
+        if (stack) {
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                content(Modifier.fillMaxWidth())
+                if (shouldOfferImportRetry(item)) {
+                    ImportRetryAction(item, isImporting, onRetry, Modifier.fillMaxWidth())
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                content(Modifier.weight(1f))
+                if (shouldOfferImportRetry(item)) {
+                    ImportRetryAction(item, isImporting, onRetry, Modifier)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImportRetryAction(
+    item: ShareImportItem,
+    isImporting: Boolean,
+    onRetry: (android.net.Uri) -> Unit,
+    modifier: Modifier,
+) {
+    val actionLabel = stringResource(R.string.resource_explorer_retry_document, item.displayName)
+    Box(
+        modifier = modifier
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable(
+                enabled = !isImporting,
+                onClickLabel = actionLabel,
+                role = Role.Button,
+                onClick = { onRetry(item.uri) },
+            )
+            .testTag(UiTags.resourceExplorerImportRetry(item.uri.toString()))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.shared_btn_retry),
+            style = NexaraTypography.labelLarge,
+            color = if (isImporting) {
+                NexaraColors.OnSurfaceVariant.copy(alpha = 0.38f)
+            } else {
+                NexaraColors.Primary
+            },
+        )
     }
 }
 

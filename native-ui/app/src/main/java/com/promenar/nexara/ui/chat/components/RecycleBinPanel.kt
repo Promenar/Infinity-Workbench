@@ -1,11 +1,10 @@
 package com.promenar.nexara.ui.chat.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
@@ -18,17 +17,23 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.RestoreFromTrash
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,17 +41,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
@@ -54,7 +59,7 @@ import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.ui.common.FileIndexStatus
 import com.promenar.nexara.ui.common.IndexStatusBadge
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
-import com.promenar.nexara.ui.common.NexaraGlassCard
+import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import java.text.SimpleDateFormat
@@ -75,52 +80,57 @@ fun RecycleBinPanel(
     var showEmptyConfirm by remember { mutableStateOf(false) }
     val operationRunning = operationState is RecycleOperationState.Running
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_LIST),
+        contentPadding = PaddingValues(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         if (operationState !is RecycleOperationState.Idle) {
-            RecycleOperationNotice(
-                state = operationState,
-                onRetry = onRetryOperation,
-                onClear = onClearOperationState,
-            )
+            item(key = "operation-notice") {
+                RecycleOperationNotice(
+                    state = operationState,
+                    onRetry = onRetryOperation,
+                    onClear = onClearOperationState,
+                )
+            }
         }
 
         if (files.isEmpty()) {
-            EmptyRecycleBinState()
+            item(key = "empty-state") { EmptyRecycleBinState() }
         } else {
-            ActionBar(
-                itemCount = files.size,
-                enabled = !operationRunning,
-                onRestore = { onRestoreFiles(files) },
-                onPermanentDelete = { showEmptyConfirm = true },
-            )
+            item(key = "bulk-actions") {
+                ActionBar(
+                    itemCount = files.size,
+                    enabled = !operationRunning,
+                    onRestore = { onRestoreFiles(files) },
+                    onPermanentDelete = { showEmptyConfirm = true },
+                )
+            }
 
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                items(items = files, key = { it.uuid }) { file ->
-                    RecycleBinItem(
-                        file = file,
-                        enabled = !operationRunning,
-                        nowMillis = nowMillis,
-                        onRestore = { onRestoreFiles(listOf(file)) },
-                        onPermanentDelete = { showPermanentDeleteConfirm = file },
-                    )
-                }
+            items(items = files, key = { it.uuid }) { file ->
+                RecycleBinItem(
+                    file = file,
+                    enabled = !operationRunning,
+                    nowMillis = nowMillis,
+                    onRestore = { onRestoreFiles(listOf(file)) },
+                    onPermanentDelete = { showPermanentDeleteConfirm = file },
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    color = NexaraColors.OutlineVariant,
+                )
+            }
 
-                item {
-                    Text(
-                        text = stringResource(R.string.recycle_bin_auto_cleanup),
-                        style = NexaraTypography.labelSmall,
-                        color = NexaraColors.RagPending,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp)
-                            .padding(horizontal = 12.dp),
-                    )
-                }
+            item(key = "cleanup-notice") {
+                Text(
+                    text = stringResource(R.string.recycle_bin_auto_cleanup),
+                    style = NexaraTypography.bodySmall,
+                    color = NexaraColors.OnSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_CLEANUP_NOTICE)
+                        .padding(horizontal = 12.dp, vertical = 16.dp),
+                )
             }
         }
     }
@@ -150,7 +160,7 @@ fun RecycleBinPanel(
                 isDestructive = true,
                 confirmButtonModifier = Modifier
                     .heightIn(min = 48.dp)
-                    .testTag(TAG_EMPTY_CONFIRM),
+                    .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_EMPTY_CONFIRM),
             )
         }
     }
@@ -172,7 +182,7 @@ internal fun RecycleBinPermanentDeleteDialog(
             isDestructive = true,
             confirmButtonModifier = Modifier
                 .heightIn(min = 48.dp)
-                .testTag(TAG_DELETE_CONFIRM),
+                .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_DELETE_CONFIRM),
         )
     }
 }
@@ -185,104 +195,59 @@ private fun ActionBar(
     onPermanentDelete: () -> Unit,
 ) {
     BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
     ) {
         val stackActions = maxWidth < 480.dp || LocalDensity.current.fontScale >= 1.5f
-        val contentModifier = Modifier.fillMaxWidth()
         if (stackActions) {
             Column(
-                modifier = contentModifier,
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                ActionButton(
-                    label = stringResource(R.string.recycle_bin_restore_all),
-                    icon = Icons.Rounded.RestoreFromTrash,
-                    color = NexaraColors.Primary,
-                    enabled = enabled,
-                    onClick = onRestore,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(TAG_RESTORE_ALL),
-                )
-                ActionButton(
-                    label = stringResource(R.string.recycle_bin_clear_count, itemCount),
-                    icon = Icons.Rounded.DeleteForever,
-                    color = NexaraColors.Error,
-                    enabled = enabled,
-                    onClick = onPermanentDelete,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(TAG_DELETE_ALL),
-                )
+                RestoreAllButton(enabled, onRestore, Modifier.fillMaxWidth())
+                DeleteAllButton(itemCount, enabled, onPermanentDelete, Modifier.fillMaxWidth())
             }
         } else {
             Row(
-                modifier = contentModifier,
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                ActionButton(
-                    label = stringResource(R.string.recycle_bin_restore_all),
-                    icon = Icons.Rounded.RestoreFromTrash,
-                    color = NexaraColors.Primary,
-                    enabled = enabled,
-                    onClick = onRestore,
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag(TAG_RESTORE_ALL),
-                )
-                ActionButton(
-                    label = stringResource(R.string.recycle_bin_clear_count, itemCount),
-                    icon = Icons.Rounded.DeleteForever,
-                    color = NexaraColors.Error,
-                    enabled = enabled,
-                    onClick = onPermanentDelete,
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag(TAG_DELETE_ALL),
-                )
+                RestoreAllButton(enabled, onRestore, Modifier.weight(1f))
+                DeleteAllButton(itemCount, enabled, onPermanentDelete, Modifier.weight(1f))
             }
         }
     }
 }
 
 @Composable
-private fun ActionButton(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    color: androidx.compose.ui.graphics.Color,
+private fun RestoreAllButton(enabled: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    FilledTonalButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_RESTORE_ALL),
+    ) {
+        Icon(Icons.Rounded.RestoreFromTrash, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(stringResource(R.string.recycle_bin_restore_all), maxLines = 2)
+    }
+}
+
+@Composable
+private fun DeleteAllButton(
+    itemCount: Int,
     enabled: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+    modifier: Modifier,
 ) {
-    Box(
-        modifier = modifier
-            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(color.copy(alpha = if (enabled) 0.1f else 0.05f))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center,
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_DELETE_ALL),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = color.copy(alpha = if (enabled) 1f else 0.45f),
-                modifier = Modifier.size(18.dp),
-            )
-            Text(
-                text = label,
-                style = NexaraTypography.labelMedium,
-                color = color.copy(alpha = if (enabled) 1f else 0.45f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Icon(Icons.Rounded.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(stringResource(R.string.recycle_bin_clear_count, itemCount), maxLines = 2)
     }
 }
 
@@ -295,88 +260,99 @@ private fun RecycleOperationNotice(
     val message = recycleOperationMessage(state)
     val isRunning = state is RecycleOperationState.Running
     val hasFailure = state is RecycleOperationState.PartialFailure || state is RecycleOperationState.Failure
-    val statusColor = if (hasFailure) NexaraColors.Error else NexaraColors.Primary
+    val containerColor = if (hasFailure) NexaraColors.ErrorContainer else NexaraColors.SecondaryContainer
+    val contentColor = if (hasFailure) NexaraColors.OnErrorContainer else NexaraColors.OnSurface
 
-    NexaraGlassCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(TAG_OPERATION_STATUS)
-            .semantics {
-                liveRegion = if (hasFailure) LiveRegionMode.Assertive else LiveRegionMode.Polite
-                stateDescription = message
-            },
-        shape = RoundedCornerShape(12.dp),
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = containerColor,
+        contentColor = contentColor,
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val stackRunningStatus = isRunning &&
-                    (maxWidth < 300.dp || LocalDensity.current.fontScale >= 1.5f)
-                if (stackRunningStatus) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = statusColor,
-                        )
-                        Text(
-                            text = message,
-                            modifier = Modifier.fillMaxWidth(),
-                            style = NexaraTypography.bodyMedium,
-                            color = statusColor,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        if (isRunning) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = statusColor,
-                            )
-                        }
-                        Text(
-                            text = message,
-                            modifier = Modifier.weight(1f),
-                            style = NexaraTypography.bodyMedium,
-                            color = statusColor,
-                        )
-                    }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                when {
+                    isRunning -> CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp,
+                        color = contentColor,
+                    )
+                    hasFailure -> Icon(
+                        Icons.Rounded.ErrorOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    else -> Icon(
+                        Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                    )
                 }
+                Text(
+                    text = message,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_OPERATION_STATUS)
+                        .clearAndSetSemantics {
+                            liveRegion = if (hasFailure) LiveRegionMode.Assertive else LiveRegionMode.Polite
+                            stateDescription = message
+                        },
+                    style = NexaraTypography.bodyMedium,
+                    color = contentColor,
+                )
             }
 
             if (!isRunning) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    if (hasFailure) {
-                        StatusActionButton(
-                            label = stringResource(R.string.recycle_bin_operation_retry),
-                            tag = TAG_OPERATION_RETRY,
-                            color = NexaraColors.Primary,
-                            onClick = onRetry,
-                        )
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val stack = maxWidth < 360.dp || LocalDensity.current.fontScale >= 1.5f
+                    if (stack) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            if (hasFailure) {
+                                StatusActionButton(
+                                    label = stringResource(R.string.recycle_bin_operation_retry),
+                                    tag = UiTags.RESOURCE_EXPLORER_RECYCLE_OPERATION_RETRY,
+                                    onClick = onRetry,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                            StatusActionButton(
+                                label = stringResource(R.string.recycle_bin_operation_dismiss),
+                                tag = UiTags.RESOURCE_EXPLORER_RECYCLE_OPERATION_CLEAR,
+                                onClick = onClear,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            if (hasFailure) {
+                                StatusActionButton(
+                                    label = stringResource(R.string.recycle_bin_operation_retry),
+                                    tag = UiTags.RESOURCE_EXPLORER_RECYCLE_OPERATION_RETRY,
+                                    onClick = onRetry,
+                                    modifier = Modifier,
+                                )
+                            }
+                            StatusActionButton(
+                                label = stringResource(R.string.recycle_bin_operation_dismiss),
+                                tag = UiTags.RESOURCE_EXPLORER_RECYCLE_OPERATION_CLEAR,
+                                onClick = onClear,
+                                modifier = Modifier,
+                            )
+                        }
                     }
-                    StatusActionButton(
-                        label = stringResource(R.string.recycle_bin_operation_dismiss),
-                        tag = TAG_OPERATION_CLEAR,
-                        color = NexaraColors.OnSurfaceVariant,
-                        onClick = onClear,
-                    )
                 }
             }
         }
@@ -387,26 +363,14 @@ private fun RecycleOperationNotice(
 private fun StatusActionButton(
     label: String,
     tag: String,
-    color: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
+    modifier: Modifier,
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .defaultMinSize(minHeight = 48.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(role = Role.Button, onClick = onClick)
-            .testTag(tag)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center,
+    TextButton(
+        onClick = onClick,
+        modifier = modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp).testTag(tag),
     ) {
-        Text(
-            text = label,
-            style = NexaraTypography.labelMedium,
-            color = color,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Text(text = label, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -465,101 +429,139 @@ private fun RecycleBinItem(
     onRestore: () -> Unit,
     onPermanentDelete: () -> Unit,
 ) {
-    NexaraGlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Description,
-                contentDescription = null,
-                tint = NexaraColors.OnSurfaceVariant,
-                modifier = Modifier.size(24.dp),
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val stack = maxWidth < 520.dp || LocalDensity.current.fontScale >= 1.5f
+        if (stack) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    FileIcon()
+                    FileDetails(file, nowMillis, Modifier.weight(1f))
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    IndexStatusBadge(status = resolveIndexStatus(file))
+                    Spacer(modifier = Modifier.weight(1f))
+                    FileActions(file, enabled, onRestore, onPermanentDelete)
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                FileIcon()
+                FileDetails(file, nowMillis, Modifier.weight(1f))
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IndexStatusBadge(status = resolveIndexStatus(file))
+                    FileActions(file, enabled, onRestore, onPermanentDelete)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FileIcon() {
+    Icon(
+        imageVector = Icons.Rounded.Description,
+        contentDescription = null,
+        tint = NexaraColors.OnSurfaceVariant,
+        modifier = Modifier.size(24.dp),
+    )
+}
+
+@Composable
+private fun FileDetails(file: FileEntry, nowMillis: Long, modifier: Modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = file.name,
+            style = NexaraTypography.bodyLarge,
+            color = NexaraColors.OnSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        file.originalMaterializedPath?.let { path ->
+            Text(
+                text = stringResource(R.string.recycle_bin_original_path, path),
+                style = NexaraTypography.bodySmall,
+                color = NexaraColors.OnSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
+        }
+        file.recycledAt?.let { recycledAt ->
+            Text(
+                text = formatRecycledTime(recycledAt, nowMillis),
+                style = NexaraTypography.bodySmall,
+                color = NexaraColors.OnSurfaceVariant,
+            )
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.width(12.dp))
+@Composable
+private fun FileActions(
+    file: FileEntry,
+    enabled: Boolean,
+    onRestore: () -> Unit,
+    onPermanentDelete: () -> Unit,
+) {
+    val restoreLabel = stringResource(R.string.recycle_bin_restore_document, file.name)
+    val deleteLabel = stringResource(R.string.recycle_bin_delete_document, file.name)
+    val restoreSemantics = if (enabled) {
+        Modifier.clearAndSetSemantics {
+            role = Role.Button
+            onClick(label = restoreLabel) { onRestore(); true }
+        }
+    } else {
+        Modifier
+    }
+    val deleteSemantics = if (enabled) {
+        Modifier.clearAndSetSemantics {
+            role = Role.Button
+            onClick(label = deleteLabel) { onPermanentDelete(); true }
+        }
+    } else {
+        Modifier
+    }
 
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(
-                    text = file.name,
-                    style = NexaraTypography.bodyLarge,
-                    color = NexaraColors.OnSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                file.originalMaterializedPath?.let { path ->
-                    Text(
-                        text = stringResource(R.string.recycle_bin_original_path, path),
-                        style = NexaraTypography.labelSmall,
-                        color = NexaraColors.OnSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                file.recycledAt?.let { recycledAt ->
-                    Text(
-                        text = formatRecycledTime(recycledAt, nowMillis),
-                        style = NexaraTypography.labelSmall,
-                        color = NexaraColors.OnSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                horizontalAlignment = Alignment.End,
-            ) {
-                IndexStatusBadge(status = resolveIndexStatus(file))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag(restoreTag(file.uuid)),
-                        enabled = enabled,
-                        colors = IconButtonDefaults.iconButtonColors(
-                            contentColor = NexaraColors.Primary,
-                            disabledContentColor = NexaraColors.Primary.copy(alpha = 0.38f),
-                        ),
-                        onClick = onRestore,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.RestoreFromTrash,
-                            contentDescription = stringResource(R.string.recycle_bin_restore),
-                            tint = LocalContentColor.current,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    IconButton(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag(deleteTag(file.uuid)),
-                        enabled = enabled,
-                        colors = IconButtonDefaults.iconButtonColors(
-                            contentColor = NexaraColors.Error,
-                            disabledContentColor = NexaraColors.Error.copy(alpha = 0.38f),
-                        ),
-                        onClick = onPermanentDelete,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.DeleteForever,
-                            contentDescription = stringResource(R.string.recycle_bin_permanent_delete_title),
-                            tint = LocalContentColor.current,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
-            }
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        IconButton(
+            modifier = Modifier.size(48.dp)
+                .testTag(UiTags.resourceExplorerRecycleRestore(file.uuid))
+                .then(restoreSemantics),
+            enabled = enabled,
+            colors = IconButtonDefaults.iconButtonColors(
+                contentColor = NexaraColors.Primary,
+                disabledContentColor = NexaraColors.Primary.copy(alpha = 0.38f),
+            ),
+            onClick = onRestore,
+        ) {
+            Icon(Icons.Rounded.RestoreFromTrash, contentDescription = null, modifier = Modifier.size(20.dp))
+        }
+        IconButton(
+            modifier = Modifier.size(48.dp)
+                .testTag(UiTags.resourceExplorerRecycleDelete(file.uuid))
+                .then(deleteSemantics),
+            enabled = enabled,
+            colors = IconButtonDefaults.iconButtonColors(
+                contentColor = NexaraColors.Error,
+                disabledContentColor = NexaraColors.Error.copy(alpha = 0.38f),
+            ),
+            onClick = onPermanentDelete,
+        ) {
+            Icon(Icons.Rounded.DeleteForever, contentDescription = null, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -568,8 +570,8 @@ private fun RecycleBinItem(
 private fun EmptyRecycleBinState() {
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .testTag(TAG_EMPTY_STATE)
+            .fillMaxWidth()
+            .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_EMPTY)
             .padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -583,7 +585,7 @@ private fun EmptyRecycleBinState() {
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = stringResource(R.string.recycle_bin_empty_state),
-            style = NexaraTypography.labelMedium,
+            style = NexaraTypography.bodyMedium,
             color = NexaraColors.OnSurface,
         )
     }
@@ -607,15 +609,3 @@ private fun formatRecycledTime(timestamp: Long, nowMillis: Long): String {
         else -> SimpleDateFormat("MMM d", locale).format(Date(timestamp))
     }
 }
-
-private const val TAG_RESTORE_ALL = "recycle_bin_restore_all"
-private const val TAG_DELETE_ALL = "recycle_bin_delete_all"
-private const val TAG_EMPTY_STATE = "recycle_bin_empty_state"
-private const val TAG_OPERATION_STATUS = "recycle_bin_operation_status"
-private const val TAG_OPERATION_RETRY = "recycle_bin_operation_retry"
-private const val TAG_OPERATION_CLEAR = "recycle_bin_operation_clear"
-private const val TAG_DELETE_CONFIRM = "recycle_bin_delete_confirm"
-private const val TAG_EMPTY_CONFIRM = "recycle_bin_empty_confirm"
-
-private fun restoreTag(uuid: String) = "recycle_bin_restore:$uuid"
-private fun deleteTag(uuid: String) = "recycle_bin_delete:$uuid"
