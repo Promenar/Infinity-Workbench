@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 重设计第三阶段：知识库与资源管理（2026-07-16）
+
+- **知识库与索引状态统一**：RAG 搜索、索引进度、状态提示、首页、Memory 与文件夹页面统一为单层 Material 3 列表/tonal surface；进度卡只向 TalkBack 发布一次进度、状态描述与 LiveRegion，内部可见文字和真实进度条不再重复朗读。
+- **稳定文件树与目录操作**：FilesPanel 使用 UUID 稳定身份和懒加载可见树；目录观察生命周期从单个父行是否在屏幕上解耦，父行离屏但后代可见时仍保持实时更新，折叠或分支离开后释放，80 根目录场景保持 collector 有界。移动目录在大字体和横屏下可滚动并完成第 20 项回调。
+- **RAG 首页、Memory、文件夹与详情**：Documents/Memory 信息层级、批量选择栏、移动/重索引/删除、Web/文档/KG 详情和会话 RAG 入口统一到稳定 MD3；移除固定 70% Sheet、Glass 卡套卡、装饰性渐变和重复状态语义，保留真实导航、失败重试与取消传播。
+- **资源管理器与回收站**：Files/Recycle 上下文动作完全隔离，长导入错误可读可重试，回收条目与运行/失败/确认状态改为单层列表；资源管理器仅在覆盖层打开时组合并使用生命周期感知收集。独立 observer epoch 防止同会话重开、观察失败或旧 observer 迟到异常取消后台导入/回收或清空结果。
+- **响应式与视觉证据**：360dp、2× 字体与 800×360 横屏覆盖移动 Sheet、长内容、回收站末项和对象化 TalkBack 操作；54/54 截图通过。Preview Screenshot 引擎无法捕获真实 `ModalBottomSheet` 弹层窗口，纯白候选基线已拒绝并撤回，弹层压力布局由真实 API 31/35/36 Compose 设备交互证明。
+- **最终门禁**：干净构建下 JVM 1733（0 failure/error、14 skip）、Lint 0 Error/Fatal、Debug APK、deviceTest APK 与 54 张截图全部通过；API 31/35/36 五类定向矩阵各 65/65（合计 195/195），API 36 bulk XML 为 195 项、0 failure/error、3 个分阶段 checkpoint skip。两项后台持续生成冷启动恢复均在已安装包、停止前 PID 非空、force-stop 后 PID 为空的条件下直接 instrumentation 1/1 通过；代码终审 C0/I0、UI 终审 P0/P1/P2 清零。
+- **阶段边界**：本阶段不改变外部 API、Room schema 或检索算法；Memory loading/error/retry 仍是独立产品可靠性 P1，DocEditor 继续进入下一独立视觉阶段。第三阶段完成不等于整体 GitHub Release 已放行。
+
 ### Material 3 重设计第二阶段：设置与 Provider 管理母版（2026-07-16）
 
 - **管理面统一**：设置首页改为标准 Tab、分组标题与单层 `ListItem`；Provider 列表收敛为单层对象行与明确主次操作，移除卡片墙和重复焦点，并明确显示启用/停用及 API Key、Vertex 或本地无需凭证状态。
