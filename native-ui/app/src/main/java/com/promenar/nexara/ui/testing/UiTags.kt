@@ -248,6 +248,7 @@ object UiTags {
     const val RESOURCE_EXPLORER_RECYCLE_DELETE_ALL = "recycle_bin_delete_all"
     const val RESOURCE_EXPLORER_RECYCLE_EMPTY = "recycle_bin_empty_state"
     const val RESOURCE_EXPLORER_RECYCLE_OPERATION_STATUS = "recycle_bin_operation_status"
+    const val RESOURCE_EXPLORER_RECYCLE_OPERATION_NOTICE = "recycle_bin_operation_notice"
     const val RESOURCE_EXPLORER_RECYCLE_OPERATION_RETRY = "recycle_bin_operation_retry"
     const val RESOURCE_EXPLORER_RECYCLE_OPERATION_CLEAR = "recycle_bin_operation_clear"
     const val RESOURCE_EXPLORER_RECYCLE_DELETE_CONFIRM = "recycle_bin_delete_confirm"

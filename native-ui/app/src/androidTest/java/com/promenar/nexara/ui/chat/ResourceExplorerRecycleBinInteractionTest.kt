@@ -9,6 +9,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.DeviceConfigurationOverride
 import androidx.compose.ui.test.FontScale
 import androidx.compose.ui.test.WindowSize
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -64,6 +65,8 @@ class ResourceExplorerRecycleBinInteractionTest {
     @Test
     fun runningOperationDisablesEveryRestoreAndDeleteEntryAndAnnouncesProgress() {
         val file = entry("running")
+        val restoreLabel = resources.getString(R.string.recycle_bin_restore_document, file.name)
+        val deleteLabel = resources.getString(R.string.recycle_bin_delete_document, file.name)
         setPanel(
             files = listOf(file),
             operationState = RecycleOperationState.Running(
@@ -75,13 +78,33 @@ class ResourceExplorerRecycleBinInteractionTest {
         listOf(
             TAG_RESTORE_ALL,
             TAG_DELETE_ALL,
-            restoreTag(file.uuid),
-            deleteTag(file.uuid),
         ).forEach { tag ->
             rule.onNodeWithTag(tag)
                 .assertIsDisplayed()
                 .assertIsNotEnabled()
                 .assertHeightIsAtLeast(48.dp)
+        }
+
+        listOf(
+            restoreTag(file.uuid) to restoreLabel,
+            deleteTag(file.uuid) to deleteLabel,
+        ).forEach { (tag, label) ->
+            rule.onNodeWithTag(tag, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .assertIsNotEnabled()
+                .assertHeightIsAtLeast(48.dp)
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.ContentDescription,
+                        listOf(label),
+                    ),
+                )
+                .assert(
+                    SemanticsMatcher("disabled file action has no executable OnClick") { node ->
+                        SemanticsActions.OnClick !in node.config
+                    },
+                )
         }
         rule.onNodeWithTag(TAG_OPERATION_STATUS)
             .assert(
@@ -96,6 +119,42 @@ class ResourceExplorerRecycleBinInteractionTest {
                     resources.getString(R.string.recycle_bin_status_deleting),
                 ),
             )
+    }
+
+    @Test
+    fun runningNoticeHasOneAnnouncementAndNoIndependentSpinnerSemantics() {
+        val file = entry("running-notice")
+        val message = resources.getString(R.string.recycle_bin_status_deleting)
+        setPanel(
+            files = listOf(file),
+            operationState = RecycleOperationState.Running(
+                operation = RecycleOperation.PermanentDelete,
+                itemUuids = listOf(file.uuid),
+            ),
+        )
+
+        val noticeScope = hasTestTag(TAG_OPERATION_NOTICE) or
+            hasAnyAncestor(hasTestTag(TAG_OPERATION_NOTICE))
+        rule.onAllNodes(
+            noticeScope and SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription,
+                message,
+            ),
+            useUnmergedTree = true,
+        ).assertCountEquals(1)
+        rule.onAllNodes(
+            noticeScope and SemanticsMatcher.expectValue(
+                SemanticsProperties.LiveRegion,
+                LiveRegionMode.Polite,
+            ),
+            useUnmergedTree = true,
+        ).assertCountEquals(1)
+        rule.onAllNodes(
+            noticeScope and SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo),
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        rule.onAllNodes(noticeScope and hasText(message), useUnmergedTree = true)
+            .assertCountEquals(0)
     }
 
     @Test
@@ -450,6 +509,7 @@ class ResourceExplorerRecycleBinInteractionTest {
         const val TAG_DELETE_ALL = "recycle_bin_delete_all"
         const val TAG_EMPTY_STATE = "recycle_bin_empty_state"
         const val TAG_OPERATION_STATUS = "recycle_bin_operation_status"
+        const val TAG_OPERATION_NOTICE = "recycle_bin_operation_notice"
         const val TAG_RETRY = "recycle_bin_operation_retry"
         const val TAG_CLEAR_STATUS = "recycle_bin_operation_clear"
         const val TAG_DELETE_CONFIRM = "recycle_bin_delete_confirm"

@@ -48,6 +48,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
@@ -264,7 +266,9 @@ private fun RecycleOperationNotice(
     val contentColor = if (hasFailure) NexaraColors.OnErrorContainer else NexaraColors.OnSurface
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_OPERATION_NOTICE),
         color = containerColor,
         contentColor = contentColor,
         shape = MaterialTheme.shapes.medium,
@@ -280,7 +284,7 @@ private fun RecycleOperationNotice(
             ) {
                 when {
                     isRunning -> CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(22.dp).clearAndSetSemantics { },
                         strokeWidth = 2.dp,
                         color = contentColor,
                     )
@@ -525,7 +529,11 @@ private fun FileActions(
             onClick(label = restoreLabel) { onRestore(); true }
         }
     } else {
-        Modifier
+        Modifier.clearAndSetSemantics {
+            role = Role.Button
+            contentDescription = restoreLabel
+            disabled()
+        }
     }
     val deleteSemantics = if (enabled) {
         Modifier.clearAndSetSemantics {
@@ -533,7 +541,11 @@ private fun FileActions(
             onClick(label = deleteLabel) { onPermanentDelete(); true }
         }
     } else {
-        Modifier
+        Modifier.clearAndSetSemantics {
+            role = Role.Button
+            contentDescription = deleteLabel
+            disabled()
+        }
     }
 
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
