@@ -12,7 +12,9 @@ All notable changes to this project will be documented in this file.
 - **冷启动完整恢复**：进程死亡发生在文件事务提交后、Queue 接收前时，启动扫描会从 FileEntry 当前 hash/epoch 重建 reference task；`vectorizedAt` 为空或落后的文件均覆盖，KG 开启时恢复显式 `full` 策略，关闭时保持无 KG。
 - **工具与分享一致性**：File Write/Patch 只使用真实 `read_file → write_file` 补偿路径，区分“文件已提交、索引待处理”与写入失败；分享导入使用当前文件版本和 KG 配置，空图谱也写入完成标记，避免持续显示未完成。
 - **DocEditor 索引告警可达性**：索引 pending 从普通统计栏拆为独立单层 MD3 notice，在加载/保存错误与冲突状态仍唯一可见；重试按钮保持 48dp。新增 360×640dp、2× 字体、SaveConflict 双动作 + pending 的仪器契约，当前仅完成编译，设备执行保留到第四阶段视觉/设备门禁。
-- **检查点门禁**：1872 个 JVM 测试，0 failure/error、14 skip；AndroidTest 源码编译、`lintDebug` 与 `git diff --check` 通过；独立终审最终 C0/I0/M0。第四阶段仍未完成长文档性能、9+ 视觉基线与 API 31/35/36 设备矩阵，不代表整体 Release 已放行。
+- **DocEditor 长文档性能保护**：文件大小严格超过 1 MiB 时在读取前进入 `MetadataOnly`；已读取正文严格超过 32K 个 UTF-16 代码单元、2,000 行或单行 16K 个 UTF-16 代码单元时进入 `PerformanceProtected`。保护态不构建全文编辑器或 Markdown，仅预览约前 16K 字符并提供复制完整全文；若一次输入跨过软线，dirty 全文仍完整保留，可以原样参与 CAS 保存与冲突处理，不使用预览截断片段。
+- **DocEditor API 36 性能门禁**：固定 Pixel_7 AVD 以 3 轮预热/5 轮采样两次完成 6/6 保护态与 Editable 边界矩阵；取两次通过结果的最差值，保护态 p95 17–19 ms/最大帧 33 ms/PSS 增量 ≤477 KiB，Editable p95 19‑35 ms/最大帧 40 ms/PSS 增量 ≤1,685 KiB。初始近 1 MiB 约 7 秒与 10,000 行约 1.05 秒的失败证据促成性能保护；门禁仍为 p95 ≤50 ms、单帧 ≤150 ms、PSS 增量 ≤64 MiB，未放宽。
+- **检查点门禁**：1890 个 JVM 测试，0 failure/error、14 skip；AndroidTest 与 screenshot test 源码编译、`lintDebug`、DocEditor API 36 性能矩阵 6/6、性能保护交互测试 1/1 与 `git diff --check` 通过；独立终审最终 C0/I0/M0。第四阶段仍未完成 Task 5-8 的视觉基线、响应式、TalkBack 与 API 31/35/36 全矩阵，不代表整体 Release 已放行。
 
 ### Material 3 重设计第三阶段：知识库与资源管理（2026-07-16）
 

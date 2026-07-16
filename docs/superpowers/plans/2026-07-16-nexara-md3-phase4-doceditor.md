@@ -3,7 +3,7 @@
 > 日期：2026-07-16
 > 分支：`codex/md3-redesign`
 > 依据：`docs/superpowers/specs/2026-07-16-nexara-md3-redesign-design.md`
-> 状态：实施中（Task 1-3 已完成；Task 4-8 待执行）
+> 状态：实施中（Task 1-3 已完成；Task 4 Step 1-3 已完成；Task 5-8 待执行）
 > 范围：DocEditor 保存/重命名/索引可靠性、长文档性能、Material 3 视觉、响应式与无障碍；不改 RAG 检索策略
 
 ## 目标与边界
@@ -170,19 +170,23 @@ Task 3 实际按三个安全提交点完成：`e6ef4f4` 建立重命名 CAS，`1
 - Modify: `native-ui/app/src/test/java/com/promenar/nexara/ui/rag/DocEditorScreenStateTest.kt`
 - Create: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/rag/DocEditorPerformanceTest.kt`
 
-- [ ] **Step 1：建立长文本 RED 与基准**
+- [x] **Step 1：建立长文本 RED 与基准**
 
   覆盖 10,000 行、接近 1 MiB、超长单行和 Split 连续输入。固定 API 36 AVD 配置并记录镜像/CPU/内存；预热 3 轮、采样 5 轮，每轮追加 30 次输入并切换模式 10 次。使用 `FrameMetricsAggregator`/可复现 instrumentation 采样，门禁为帧时长 p95 ≤50ms、单帧 ≤150ms、测试结束稳定 PSS 相对预热后增量 ≤64MiB；不以单次截图或一次 wall-clock 代替性能证据。若宿主噪声导致连续两轮方差 >20%，先修复测量夹具，不放宽阈值。
 
-- [ ] **Step 2：移除重复 O(n) 路径**
+- [x] **Step 2：移除重复 O(n) 路径**
 
   取消完整行号字符串与全量 Regex 分词的每击键同步重建；统计采用单次扫描/缓存，Split Markdown 使用可取消防抖快照，退出 Split 时取消。若保留行号 gutter，必须用 `clearAndSetSemantics {}` 或等价方式彻底移出无障碍树。编辑区使用有界滚动责任，禁止第三方 Markdown 回调叠加滚动。
 
-- [ ] **Step 3：验证数据语义不变**
+- [x] **Step 3：验证数据语义不变**
 
   输入值、dirty、总行数、字数/字符数、保存 snapshot 与冲突行为必须保持正确；若 Compose 编辑控件仍无法在近阈值设备门禁内稳定，才基于实测增加独立“复杂文档只读”阈值，不凭猜测降级。
 
-- [ ] **Step 4：提交**
+  实测收口：固定 API 36 `Pixel_7` AVD（arm64，1080×2400 / 420 dpi，4 核，约 2 GiB，SwiftShader），每项 3 轮预热、5 轮采样。初始近 1 MiB Markdown 预览出现约 7 秒 Davey 帧，10,000 行全文编辑出现约 1.05 秒 Davey 帧，因此引入 `MetadataOnly / PerformanceProtected / Editable` 单一访问事实，并以阶梯设备数据而非猜测收紧软线。`64K UTF-16 代码单元总长 / 5,000 行 / 单行 32K UTF-16 代码单元` 候选未通过，最终阈值为严格超过 `32K UTF-16 代码单元总长 / 2,000 行 / 单行 16K UTF-16 代码单元`。
+
+  最终两次 6/6 矩阵全部通过；取两次通过结果的最差值，三组保护态数据集 p95 17–19 ms、最大帧 33 ms、稳定 PSS 增量 ≤477 KiB；三组 Editable 边界数据集每轮真实追加 30 次并通过可见 ModeSelector 切换 10 次，p95 19‑35 ms、最大帧 40 ms、稳定 PSS 增量 ≤1,685 KiB。全程保持 p95 ≤50 ms、单帧 ≤150 ms、PSS 增量 ≤64 MiB 与方差 ≤20% 门禁，未放宽验收线。
+
+- [x] **Step 4：提交**
 
   `git commit -m "perf: bound DocEditor long document work"`
 

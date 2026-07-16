@@ -901,6 +901,11 @@
     <string name="doc_editor_content_input_description">Document content</string>
     <string name="doc_editor_metadata">%1$s · %2$s</string>
     <string name="doc_editor_preview">Preview</string>
+    <string name="doc_editor_preview_truncated">Large document: preview truncated; editing and saving are unaffected.</string>
+    <string name="doc_editor_performance_protected_title">Performance protection</string>
+    <string name="doc_editor_performance_protected_description">To keep the editor responsive, approximately the first 16K characters are previewed. The full text remains intact; saving and copying always use the complete content.</string>
+    <string name="doc_editor_copy_full_content">Copy full content</string>
+    <string name="doc_editor_performance_protected_status">Performance protection · Approx. 16K-character preview</string>
     <string name="doc_editor_edit">Edit</string>
     <string name="doc_editor_split">Split</string>
     <string name="doc_editor_loading">Loading document</string>

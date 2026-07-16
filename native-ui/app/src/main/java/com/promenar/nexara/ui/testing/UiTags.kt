@@ -219,6 +219,8 @@ object UiTags {
     const val DOC_EDITOR_STATE_SAVE_ERROR = "doc_editor_state_save_error"
     const val DOC_EDITOR_STATE_CONFLICT = "doc_editor_state_conflict"
     const val DOC_EDITOR_STATE_LARGE_FILE = "doc_editor_state_large_file"
+    const val DOC_EDITOR_STATE_PERFORMANCE_PROTECTED = "doc_editor_state_performance_protected"
+    const val DOC_EDITOR_COPY_PROTECTED_FULL = "doc_editor_copy_protected_full"
     const val DOC_EDITOR_RETRY_LOAD = "doc_editor_retry_load"
     const val DOC_EDITOR_RETRY_SAVE = "doc_editor_retry_save"
     const val DOC_EDITOR_COPY_LOCAL = "doc_editor_copy_local"

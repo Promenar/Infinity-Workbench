@@ -145,7 +145,8 @@ class DocEditorViewModelTest {
 
         assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Ready)
         assertThat(vm.uiState.value.hasLoadedDocument).isTrue()
-        assertThat(vm.uiState.value.isLargeFile).isTrue()
+        assertThat(vm.uiState.value.contentAccess)
+            .isEqualTo(DocEditorContentAccess.MetadataOnly)
         assertThat(vm.uiState.value.sizeBytes).isEqualTo(ONE_MIB + 1L)
         assertThat(vm.uiState.value.content).isEmpty()
         coVerify(exactly = 0) { fileRepository.readFileRange(ROOT, DOC) }
@@ -190,7 +191,8 @@ class DocEditorViewModelTest {
 
         assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Ready)
         assertThat(vm.uiState.value.sizeBytes).isEqualTo(4_096L)
-        assertThat(vm.uiState.value.isLargeFile).isFalse()
+        assertThat(vm.uiState.value.contentAccess)
+            .isEqualTo(DocEditorContentAccess.Editable)
     }
 
     @Test
@@ -1046,6 +1048,71 @@ class DocEditorViewModelTest {
         assertThat(vm.uiState.value.currentHash).isEqualTo("hash-a-save")
         assertThat(vm.uiState.value.contentDirty).isFalse()
         assertThat(casRepository.readCount(DOC_A)).isEqualTo(3)
+    }
+
+    @Test
+    fun `大正文编辑只更新统计与dirty且保存仍使用完整快照`() = runTest(dispatcher) {
+        val original = "original"
+        val edited = buildString {
+            repeat(10_000) { index ->
+                if (index > 0) append('\n')
+                append("row ")
+                append(index + 1)
+                append(' ')
+                append("x".repeat(80))
+            }
+        }
+        coEvery { fileRepository.readFileRange(ROOT, DOC) } returns readResult(content = original)
+        coEvery {
+            fileRepository.writeFileAtomic(ROOT, DOC, edited, any(), "hash-1")
+        } returns WriteResult.Success(newHash = "hash-2", targetEpoch = 456L)
+        val vm = viewModel()
+        vm.loadDocument(ROOT, DOC)
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.wordCount).isEqualTo(1)
+
+        vm.onContentChanged(edited)
+
+        assertThat(vm.uiState.value.content).isSameInstanceAs(edited)
+        assertThat(vm.uiState.value.totalLines).isEqualTo(10_000)
+        assertThat(vm.uiState.value.wordCount).isEqualTo(30_000)
+        assertThat(vm.uiState.value.contentDirty).isTrue()
+        assertThat(vm.uiState.value.contentAccess)
+            .isEqualTo(DocEditorContentAccess.PerformanceProtected)
+
+        vm.onContentChanged("protected state must reject later edits")
+
+        assertThat(vm.uiState.value.content).isSameInstanceAs(edited)
+
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            fileRepository.writeFileAtomic(ROOT, DOC, edited, any(), "hash-1")
+        }
+        assertThat(vm.uiState.value.persistedContent).isSameInstanceAs(edited)
+        assertThat(vm.uiState.value.contentDirty).isFalse()
+        assertThat(vm.uiState.value.wordCount).isEqualTo(30_000)
+    }
+
+    @Test
+    fun `正文跨越性能阈值不会丢失已有标题修改`() = runTest(dispatcher) {
+        coEvery { fileRepository.readFileRange(ROOT, DOC) } returns readResult(content = "original")
+        val vm = viewModel()
+        vm.loadDocument(ROOT, DOC)
+        advanceUntilIdle()
+        vm.updateTitle("renamed.md")
+        val protectedContent = "x".repeat(MAX_EDITABLE_CONTENT_LENGTH + 1)
+
+        vm.onContentChanged(protectedContent)
+
+        assertThat(vm.uiState.value.title).isEqualTo("renamed.md")
+        assertThat(vm.uiState.value.titleDirty).isTrue()
+        assertThat(vm.uiState.value.content).isSameInstanceAs(protectedContent)
+        assertThat(vm.uiState.value.contentDirty).isTrue()
+        assertThat(vm.uiState.value.contentAccess)
+            .isEqualTo(DocEditorContentAccess.PerformanceProtected)
     }
 
     private fun viewModel(

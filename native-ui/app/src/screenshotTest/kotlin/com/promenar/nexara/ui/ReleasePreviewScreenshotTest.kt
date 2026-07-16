@@ -80,6 +80,7 @@ import com.promenar.nexara.ui.hub.UserSettingsHomeScreenActions
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenContent
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenState
 import com.promenar.nexara.ui.rag.DocEditorConfirmation
+import com.promenar.nexara.ui.rag.DocEditorContentAccess
 import com.promenar.nexara.ui.rag.DocEditorFailureCode
 import com.promenar.nexara.ui.rag.DocEditorPhase
 import com.promenar.nexara.ui.rag.DocEditorScreenActions
@@ -1331,7 +1332,7 @@ fun docEditorLargeFileChineseTabletReleasePreview() {
                     title = "大型知识库归档.md",
                     content = "",
                     sizeBytes = 1_048_577L,
-                    isLargeFile = true,
+                    contentAccess = DocEditorContentAccess.MetadataOnly,
                 ),
             ),
             actions = DocEditorScreenActions(),
@@ -1843,7 +1844,7 @@ private fun previewDocEditorState(
     titleDirty: Boolean = false,
     contentDirty: Boolean = false,
     sizeBytes: Long = 2_048L,
-    isLargeFile: Boolean = false,
+    contentAccess: DocEditorContentAccess = DocEditorContentAccess.Editable,
     failureCode: DocEditorFailureCode? = null,
     conflictCurrentHash: String? = null,
 ) = DocEditorUiState(
@@ -1861,7 +1862,7 @@ private fun previewDocEditorState(
     sizeBytes = sizeBytes,
     titleDirty = titleDirty,
     contentDirty = contentDirty,
-    isLargeFile = isLargeFile,
+    contentAccess = contentAccess,
     hasLoadedDocument = true,
     failureCode = failureCode,
     conflictCurrentHash = conflictCurrentHash,

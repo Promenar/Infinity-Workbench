@@ -56,11 +56,12 @@ data class DocEditorUiState(
     val persistedContent: String = "",
     val currentHash: String = "",
     val totalLines: Int = 0,
+    val wordCount: Int = 0,
     val lastModified: Long = 0L,
     val sizeBytes: Long = 0L,
     val titleDirty: Boolean = false,
     val contentDirty: Boolean = false,
-    val isLargeFile: Boolean = false,
+    val contentAccess: DocEditorContentAccess = DocEditorContentAccess.Editable,
     val warningDismissed: Boolean = false,
     val hasLoadedDocument: Boolean = false,
     val failureCode: DocEditorFailureCode? = null,
@@ -155,7 +156,7 @@ class DocEditorViewModel(
                             currentHash = fileEntry.hash,
                             lastModified = fileEntry.updatedAt,
                             sizeBytes = fileEntry.sizeBytes,
-                            isLargeFile = true,
+                            contentAccess = DocEditorContentAccess.MetadataOnly,
                             hasLoadedDocument = true,
                             indexPendingTargets = readyPendingTargets,
                             indexQueueFailed = readyPendingTargets.isNotEmpty(),
@@ -164,6 +165,7 @@ class DocEditorViewModel(
                     return@launch
                 }
                 val result = fileOperationRepository.readFileRange(workspaceRootUuid, uuid)
+                val statistics = analyzeDocEditorText(result.content)
                 val readyPendingTargets = sharedPendingTargets(workspaceRootUuid, uuid)
                 updateCurrentLoad(generation, workspaceRootUuid, uuid) {
                     DocEditorUiState(
@@ -176,7 +178,9 @@ class DocEditorViewModel(
                         persistedTitle = result.name,
                         persistedContent = result.content,
                         currentHash = result.hash,
-                        totalLines = result.totalLines,
+                        totalLines = statistics.lineCount,
+                        wordCount = statistics.wordCount,
+                        contentAccess = contentAccessFor(result.content.length, statistics),
                         lastModified = result.lastModified,
                         sizeBytes = fileEntry.sizeBytes,
                         hasLoadedDocument = true,
@@ -220,7 +224,7 @@ class DocEditorViewModel(
             snapshot.workspaceRootUuid.isBlank() ||
             snapshot.documentId.isBlank() ||
             snapshot.phase == DocEditorPhase.SaveConflict ||
-            snapshot.isLargeFile ||
+            snapshot.contentAccess == DocEditorContentAccess.MetadataOnly ||
             !snapshot.isDirty ||
             !saveMutex.tryLock()
         ) {
@@ -490,11 +494,23 @@ class DocEditorViewModel(
     }
 
     fun onContentChanged(newContent: String) {
+        val snapshot = _uiState.value
+        if (!snapshot.hasLoadedDocument ||
+            snapshot.contentAccess != DocEditorContentAccess.Editable
+        ) return
+        val statistics = analyzeDocEditorText(newContent)
         _uiState.update { current ->
-            if (!current.hasLoadedDocument || current.isLargeFile) current else current.copy(
+            if (!current.hasLoadedDocument ||
+                current.contentAccess != DocEditorContentAccess.Editable ||
+                current.workspaceRootUuid != snapshot.workspaceRootUuid ||
+                current.documentId != snapshot.documentId ||
+                current.documentEpoch != snapshot.documentEpoch
+            ) current else current.copy(
                 content = newContent,
                 contentDirty = newContent != current.persistedContent,
-                totalLines = newContent.lines().size,
+                totalLines = statistics.lineCount,
+                wordCount = statistics.wordCount,
+                contentAccess = contentAccessFor(newContent.length, statistics),
                 failureCode = current.failureCode.takeIf {
                     current.phase == DocEditorPhase.SaveConflict
                 },
@@ -511,7 +527,9 @@ class DocEditorViewModel(
 
     fun updateTitle(newTitle: String) {
         _uiState.update { current ->
-            if (!current.hasLoadedDocument || current.isLargeFile) current else current.copy(
+            if (!current.hasLoadedDocument ||
+                current.contentAccess == DocEditorContentAccess.MetadataOnly
+            ) current else current.copy(
                 title = newTitle,
                 titleDirty = newTitle != current.persistedTitle,
                 failureCode = current.failureCode.takeIf {

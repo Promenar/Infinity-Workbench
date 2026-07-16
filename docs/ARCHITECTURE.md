@@ -35,6 +35,7 @@ graph TD
 - **MemoryManager**: 核心 RAG 检索引擎，集成 Embedding/Rerank/Hybrid Search 三阶段检索管线。embedQuery/search/rerank 全路径接入日志。
 - **VectorizationQueue / DocumentIndexService / PendingDocumentIndexCoordinator**: 文档/记忆持久队列、候选索引事务服务与应用级补偿目标协调器。文件内容先构建隔离向量/KG 候选，事务内复核 hash+epoch 后原子切换；旧 worker 使用目标 CAS，删除通过 cancel-and-join/fence 屏障线性化。Queue 尚未接收的已提交目标可跨页面重试，并由冷启动 missing-scan 按当前文件版本与 KG 配置恢复。
 - **WorkspaceRepository / WorkspaceDeletionTransaction**: Session root 作用域文件仓储。永久删除把派生索引与文件记录纳入同一 Room 事务，并用稳定 tombstone 恢复物理删除的进程死亡窗口。
+- **DocEditorContentAccess / DocEditorViewModel**: 文档内容访问使用 `Editable / PerformanceProtected / MetadataOnly` 单一事实。文件大小严格超过 1 MiB 时不读取全文；已读取内容严格超过 32K 个 UTF-16 代码单元、2,000 行或单行 16K 个 UTF-16 代码单元时，仅向 Markdown 提供最多 16K 个 UTF-16 代码单元的快照，不构建全文 `BasicTextField`。完整 `content/persistedContent` 仍是复制、dirty、expected-hash CAS 保存与冲突处理的唯一数据源，预览 snippet 不得进入持久化路径。
 - **SharedFileImporter / DurableShareInbox**: SAF 与系统分享共用的逐项导入管线；支持去重、容量重试、部分失败、崩溃恢复及索引回执。
 - **GenerationCoordinator / ChatGenerationRunner**: 应用级唯一生成任务源。初版全局只允许一个活动任务；统一处理 Provider 路由、RAG/工具循环、流式增量持久化、取消与结构化错误终态。
 - **GenerationForegroundService**: 观察 Coordinator 的同一任务状态，通过 `dataSync` 前台服务在切后台、锁屏、旋转或 Activity 重建后继续当前生成；通知可返回准确会话或停止任务。设备重启续传、多会话并行和定时任务不在 `v0.2-beta` 范围。

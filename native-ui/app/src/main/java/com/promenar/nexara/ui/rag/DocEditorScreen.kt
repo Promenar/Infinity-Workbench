@@ -58,6 +58,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -119,7 +120,8 @@ enum class DocEditorVisibleState {
     SaveError,
     SaveConflict,
     NotFoundAfterSave,
-    LargeFileReadOnly,
+    MetadataOnly,
+    PerformanceProtected,
 }
 
 data class DocEditorScreenState(
@@ -165,11 +167,16 @@ internal fun shouldStackDocEditorNoticeActions(
 ): Boolean = availableWidthDp < NOTICE_ACTIONS_STACK_MIN_WIDTH_DP || fontScale >= 1.5f
 
 fun DocEditorUiState.toVisibleState(): DocEditorVisibleState {
-    if (hasLoadedDocument && isLargeFile) return DocEditorVisibleState.LargeFileReadOnly
     return when (phase) {
         DocEditorPhase.Loading -> DocEditorVisibleState.Loading
         DocEditorPhase.LoadError -> DocEditorVisibleState.LoadError
-        DocEditorPhase.Ready -> DocEditorVisibleState.Ready
+        DocEditorPhase.Ready -> when (contentAccess) {
+            DocEditorContentAccess.Editable -> DocEditorVisibleState.Ready
+            DocEditorContentAccess.PerformanceProtected -> {
+                DocEditorVisibleState.PerformanceProtected
+            }
+            DocEditorContentAccess.MetadataOnly -> DocEditorVisibleState.MetadataOnly
+        }
         DocEditorPhase.Saving -> DocEditorVisibleState.Saving
         DocEditorPhase.SaveError -> DocEditorVisibleState.SaveError
         DocEditorPhase.SaveConflict -> DocEditorVisibleState.SaveConflict
@@ -326,7 +333,7 @@ fun DocEditorScreenContent(
     val visibleState = editor.toVisibleState()
     val savingContentDescription = stringResource(R.string.doc_editor_saving)
     val canSave = editor.hasLoadedDocument &&
-        !editor.isLargeFile &&
+        editor.contentAccess != DocEditorContentAccess.MetadataOnly &&
         editor.isDirty &&
         editor.phase !in setOf(
             DocEditorPhase.Saving,
@@ -376,7 +383,9 @@ fun DocEditorScreenContent(
                     }
                 },
                 actions = {
-                    if (editor.hasLoadedDocument && !editor.isLargeFile) {
+                    if (editor.hasLoadedDocument &&
+                        editor.contentAccess != DocEditorContentAccess.MetadataOnly
+                    ) {
                         if (editor.phase == DocEditorPhase.Saving) {
                             Box(
                                 modifier = Modifier
@@ -447,7 +456,7 @@ fun DocEditorScreenContent(
                         onRetry = actions.onRetryLoad,
                         modifier = Modifier.weight(1f),
                     )
-                    DocEditorVisibleState.LargeFileReadOnly -> LargeFileReadOnlyState(
+                    DocEditorVisibleState.MetadataOnly -> MetadataOnlyState(
                         editor = editor,
                         onDismissWarning = actions.onDismissWarning,
                         modifier = Modifier.weight(1f),
@@ -496,20 +505,46 @@ private fun LoadedDocumentContent(
     actions: DocEditorScreenActions,
     modifier: Modifier = Modifier,
 ) {
+    val previewScope = rememberCoroutineScope()
+    val previewSnapshotController = remember(
+        editor.workspaceRootUuid,
+        editor.documentId,
+        editor.documentEpoch,
+        previewScope,
+    ) {
+        DocEditorPreviewSnapshotController(
+            scope = previewScope,
+            initialContent = editor.content,
+        )
+    }
+    val previewSnapshot by previewSnapshotController.snapshot.collectAsState()
+    val isPerformanceProtected =
+        editor.contentAccess == DocEditorContentAccess.PerformanceProtected
+    SideEffect {
+        previewSnapshotController.update(
+            editor.content,
+            if (isPerformanceProtected) DocEditorViewMode.PREVIEW else viewMode,
+        )
+    }
+    DisposableEffect(previewSnapshotController) {
+        onDispose(previewSnapshotController::close)
+    }
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         DocumentIdentity(
             editor = editor,
-            editable = viewMode != DocEditorViewMode.PREVIEW,
+            editable = isPerformanceProtected || viewMode != DocEditorViewMode.PREVIEW,
             onTitleChange = actions.onTitleChange,
         )
-        ModeSelector(
-            selectedMode = viewMode,
-            splitAvailable = splitAvailable,
-            onModeChange = actions.onViewModeChange,
-        )
+        if (!isPerformanceProtected) {
+            ModeSelector(
+                selectedMode = viewMode,
+                splitAvailable = splitAvailable,
+                onModeChange = actions.onViewModeChange,
+            )
+        }
         when (visibleState) {
             DocEditorVisibleState.SaveError -> SaveNotice(
                 title = stringResource(R.string.doc_editor_save_failed_title),
@@ -571,18 +606,24 @@ private fun LoadedDocumentContent(
                 .fillMaxWidth(),
             shape = NexaraShapes.large as RoundedCornerShape,
         ) {
-            when (viewMode) {
+            if (isPerformanceProtected) {
+                PerformanceProtectedPane(
+                    previewSnapshot = previewSnapshot,
+                    onCopyFullContent = actions.onCopyLocalContent,
+                )
+            } else when (viewMode) {
                 DocEditorViewMode.EDIT -> EditorPane(
                     content = editor.content,
                     onContentChange = actions.onContentChange,
-                    lineCount = editor.totalLines,
                 )
-                DocEditorViewMode.PREVIEW -> PreviewPane(content = editor.content)
+                DocEditorViewMode.PREVIEW -> PreviewPane(
+                    content = previewSnapshot.content,
+                    isTruncated = previewSnapshot.isTruncated,
+                )
                 DocEditorViewMode.SPLIT -> Row(Modifier.fillMaxSize()) {
                     EditorPane(
                         content = editor.content,
                         onContentChange = actions.onContentChange,
-                        lineCount = editor.totalLines,
                         modifier = Modifier.weight(1f),
                     )
                     Box(
@@ -592,7 +633,8 @@ private fun LoadedDocumentContent(
                             .background(NexaraColors.OutlineVariant),
                     )
                     PreviewPane(
-                        content = editor.content,
+                        content = previewSnapshot.content,
+                        isTruncated = previewSnapshot.isTruncated,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -749,86 +791,138 @@ private fun ModeTab(
 private fun EditorPane(
     content: String,
     onContentChange: (String) -> Unit,
-    lineCount: Int,
     modifier: Modifier = Modifier,
 ) {
     val verticalScrollState = rememberScrollState()
     val horizontalScrollState = rememberScrollState()
-    val lineNumbers = remember(lineCount) {
-        (1..lineCount.coerceAtLeast(1)).joinToString(separator = "\n")
-    }
     val inputDescription = stringResource(R.string.doc_editor_content_input_description)
-    Row(
+    BasicTextField(
+        value = content,
+        onValueChange = onContentChange,
+        textStyle = TextStyle(
+            fontFamily = FontFamily.Monospace,
+            fontSize = 14.sp,
+            lineHeight = 22.sp,
+            color = NexaraColors.OnSurface,
+        ),
+        cursorBrush = SolidColor(NexaraColors.Primary),
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(verticalScrollState),
-    ) {
-        Text(
-            text = lineNumbers,
-            modifier = Modifier
-                .width(48.dp)
-                .background(NexaraColors.SurfaceLow)
-                .padding(horizontal = 8.dp, vertical = 12.dp),
-            style = TextStyle(
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                lineHeight = 22.sp,
-                color = NexaraColors.OutlineVariant,
-            ),
-        )
-        BasicTextField(
-            value = content,
-            onValueChange = onContentChange,
-            textStyle = TextStyle(
-                fontFamily = FontFamily.Monospace,
-                fontSize = 14.sp,
-                lineHeight = 22.sp,
-                color = NexaraColors.OnSurface,
-            ),
-            cursorBrush = SolidColor(NexaraColors.Primary),
-            modifier = Modifier
-                .weight(1f)
-                .horizontalScroll(horizontalScrollState)
-                .defaultMinSize(minHeight = 240.dp)
-                .testTagCompat(UiTags.DOC_EDITOR_INPUT)
-                .semantics { contentDescription = inputDescription }
-                .padding(12.dp),
-            decorationBox = { innerTextField ->
-                Box {
-                    if (content.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.doc_editor_typing_placeholder),
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 14.sp,
-                                color = NexaraColors.OnSurfaceVariant,
-                            ),
-                        )
-                    }
-                    innerTextField()
+            .verticalScroll(verticalScrollState)
+            .horizontalScroll(horizontalScrollState)
+            .defaultMinSize(minHeight = 240.dp)
+            .testTagCompat(UiTags.DOC_EDITOR_INPUT)
+            .semantics { contentDescription = inputDescription }
+            .padding(12.dp),
+        decorationBox = { innerTextField ->
+            Box {
+                if (content.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.doc_editor_typing_placeholder),
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 14.sp,
+                            color = NexaraColors.OnSurfaceVariant,
+                        ),
+                    )
                 }
-            },
-        )
-    }
+                innerTextField()
+            }
+        },
+    )
 }
 
 @Composable
 private fun PreviewPane(
     content: String,
+    isTruncated: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Box(
+    Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .testTagCompat(UiTags.DOC_EDITOR_PREVIEW)
             .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
+        if (isTruncated) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = NexaraShapes.medium,
+                color = NexaraColors.SurfaceLow,
+            ) {
+                Text(
+                    text = stringResource(R.string.doc_editor_preview_truncated),
+                    modifier = Modifier.padding(
+                        horizontal = NexaraSpacing.Medium,
+                        vertical = NexaraSpacing.Small,
+                    ),
+                    style = NexaraTypography.bodySmall,
+                    color = NexaraColors.OnSurfaceVariant,
+                )
+            }
+        }
         MarkdownText(
             markdown = content,
             fontSize = 15,
             overrideColor = NexaraColors.OnSurface,
         )
+    }
+}
+
+@Composable
+private fun PerformanceProtectedPane(
+    previewSnapshot: DocEditorPreviewSnapshot,
+    onCopyFullContent: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .testTagCompat(UiTags.DOC_EDITOR_STATE_PERFORMANCE_PROTECTED)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = NexaraShapes.medium,
+            color = NexaraColors.SurfaceLow,
+        ) {
+            Column(
+                modifier = Modifier.padding(NexaraSpacing.Medium),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+            ) {
+                Text(
+                    text = stringResource(R.string.doc_editor_performance_protected_title),
+                    style = NexaraTypography.titleMedium,
+                    color = NexaraColors.OnSurface,
+                )
+                Text(
+                    text = stringResource(R.string.doc_editor_performance_protected_description),
+                    style = NexaraTypography.bodyMedium,
+                    color = NexaraColors.OnSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = onCopyFullContent,
+                    modifier = Modifier
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTagCompat(UiTags.DOC_EDITOR_COPY_PROTECTED_FULL),
+                ) {
+                    Icon(Icons.Rounded.ContentCopy, contentDescription = null)
+                    Spacer(Modifier.width(NexaraSpacing.Small))
+                    Text(stringResource(R.string.doc_editor_copy_full_content))
+                }
+            }
+        }
+        Box(Modifier.testTagCompat(UiTags.DOC_EDITOR_PREVIEW)) {
+            MarkdownText(
+                markdown = previewSnapshot.content,
+                fontSize = 15,
+                overrideColor = NexaraColors.OnSurface,
+            )
+        }
     }
 }
 
@@ -888,7 +982,7 @@ private fun NotFoundState(onRetry: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun LargeFileReadOnlyState(
+private fun MetadataOnlyState(
     editor: DocEditorUiState,
     onDismissWarning: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1108,12 +1202,14 @@ private fun EditorStatusBar(
     editor: DocEditorUiState,
     viewMode: DocEditorViewMode,
 ) {
-    val wordCount = remember(editor.content) {
-        editor.content.split(Regex("\\s+")).count { it.isNotBlank() }
-    }
     val modeLabel = when {
-        editor.isLargeFile -> stringResource(R.string.doc_editor_large_file_status)
         editor.phase == DocEditorPhase.Saving -> stringResource(R.string.doc_editor_saving)
+        editor.contentAccess == DocEditorContentAccess.MetadataOnly -> {
+            stringResource(R.string.doc_editor_large_file_status)
+        }
+        editor.contentAccess == DocEditorContentAccess.PerformanceProtected -> {
+            stringResource(R.string.doc_editor_performance_protected_status)
+        }
         viewMode == DocEditorViewMode.PREVIEW -> stringResource(R.string.doc_editor_readonly)
         else -> stringResource(R.string.doc_editor_editing)
     }
@@ -1131,7 +1227,7 @@ private fun EditorStatusBar(
             text = stringResource(
                 R.string.doc_editor_statistics,
                 stringResource(R.string.doc_editor_utf8),
-                wordCount,
+                editor.wordCount,
                 editor.content.length,
             ),
             style = NexaraTypography.bodySmall,

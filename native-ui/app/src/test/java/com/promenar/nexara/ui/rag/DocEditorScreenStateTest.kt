@@ -105,8 +105,31 @@ class DocEditorScreenStateTest {
             DocEditorUiState(
                 phase = DocEditorPhase.Ready,
                 hasLoadedDocument = true,
-                isLargeFile = true,
+                contentAccess = DocEditorContentAccess.MetadataOnly,
             ).toVisibleState(),
-        ).isEqualTo(DocEditorVisibleState.LargeFileReadOnly)
+        ).isEqualTo(DocEditorVisibleState.MetadataOnly)
+        assertThat(
+            DocEditorUiState(
+                phase = DocEditorPhase.Ready,
+                hasLoadedDocument = true,
+                contentAccess = DocEditorContentAccess.PerformanceProtected,
+            ).toVisibleState(),
+        ).isEqualTo(DocEditorVisibleState.PerformanceProtected)
+
+        mapOf(
+            DocEditorPhase.Saving to DocEditorVisibleState.Saving,
+            DocEditorPhase.SaveError to DocEditorVisibleState.SaveError,
+            DocEditorPhase.SaveConflict to DocEditorVisibleState.SaveConflict,
+            DocEditorPhase.NotFound to DocEditorVisibleState.NotFoundAfterSave,
+        ).forEach { (phase, expected) ->
+            assertThat(
+                DocEditorUiState(
+                    phase = phase,
+                    hasLoadedDocument = true,
+                    contentDirty = true,
+                    contentAccess = DocEditorContentAccess.PerformanceProtected,
+                ).toVisibleState(),
+            ).isEqualTo(expected)
+        }
     }
 }

@@ -556,7 +556,7 @@ class DocEditorInteractionTest {
                         persistedContent = "",
                         totalLines = 0,
                         sizeBytes = 1_048_577L,
-                        isLargeFile = true,
+                        contentAccess = DocEditorContentAccess.MetadataOnly,
                     ),
                 ),
             )
@@ -569,6 +569,36 @@ class DocEditorInteractionTest {
         rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_EDIT).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_SPLIT).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT).assertDoesNotExist()
+    }
+
+    @Test
+    fun performanceProtectedKeepsFullSaveAndCopyActionsWithoutRenderingEditorModes() {
+        val copyRequests = AtomicInteger(0)
+        rule.setContent {
+            TestContent(
+                screenState = DocEditorScreenState(
+                    editorState = readyEditorState(dirty = true).copy(
+                        content = "x".repeat(MAX_EDITABLE_CONTENT_LENGTH + 1),
+                        contentAccess = DocEditorContentAccess.PerformanceProtected,
+                    ),
+                ),
+                actions = DocEditorScreenActions(
+                    onCopyLocalContent = { copyRequests.incrementAndGet() },
+                ),
+            )
+        }
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_STATE_PERFORMANCE_PROTECTED).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_COPY_PROTECTED_FULL)
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        assertThat(copyRequests.get()).isEqualTo(1)
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_SAVE).assertIsEnabled()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_EDIT).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_PREVIEW).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_SPLIT).assertDoesNotExist()
     }
 
     @Test

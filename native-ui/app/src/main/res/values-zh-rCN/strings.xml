@@ -908,6 +908,11 @@
     <string name="doc_editor_content_input_description">文档正文</string>
     <string name="doc_editor_metadata">%1$s · %2$s</string>
     <string name="doc_editor_preview">预览</string>
+    <string name="doc_editor_preview_truncated">文档较大，预览已截断，编辑和保存不受影响。</string>
+    <string name="doc_editor_performance_protected_title">性能保护模式</string>
+    <string name="doc_editor_performance_protected_description">为保持编辑器流畅，当前仅预览约前 16K 字符。全文仍完整保留，保存和复制始终使用未截断的完整内容。</string>
+    <string name="doc_editor_copy_full_content">复制完整全文</string>
+    <string name="doc_editor_performance_protected_status">性能保护 · 约前 16K 字符预览</string>
     <string name="doc_editor_edit">编辑</string>
     <string name="doc_editor_split">分屏</string>
     <string name="doc_editor_loading">正在加载文档</string>
