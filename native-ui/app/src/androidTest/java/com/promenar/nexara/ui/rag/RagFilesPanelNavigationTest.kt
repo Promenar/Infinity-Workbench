@@ -1,12 +1,19 @@
 package com.promenar.nexara.ui.rag
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -14,12 +21,16 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.dp
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.chat.components.FilesPanel
+import com.promenar.nexara.ui.chat.components.FileBatchOperationResult
 import com.promenar.nexara.ui.rag.components.RagDocItem
 import com.promenar.nexara.ui.rag.components.RagStatus
 import com.promenar.nexara.ui.testing.UiTags
@@ -27,6 +38,8 @@ import com.promenar.nexara.ui.theme.NexaraTheme
 import java.lang.reflect.Proxy
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Rule
 import org.junit.Test
@@ -203,6 +216,131 @@ class RagFilesPanelNavigationTest {
     }
 
     @Test
+    fun 大量目录只订阅实际组合行且滚动折叠会取消collector() {
+        val directoryCount = 80
+        val activeCollectorBound = 32
+        val peakCollectorBound = 40
+        val roots = (0 until directoryCount).map { index ->
+            entry(
+                uuid = "bounded-directory-$index",
+                name = "有界目录 $index",
+                isDirectory = true,
+                parentUuid = ROOT,
+            )
+        }
+        val activeCollectors = AtomicInteger(0)
+        val maximumCollectors = AtomicInteger(0)
+
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                FilesPanel(
+                    workspaceRootUuid = ROOT,
+                    workspaceRepo = trackingRepository(activeCollectors, maximumCollectors),
+                    rootFiles = roots,
+                )
+            }
+        }
+
+        rule.waitUntil(timeoutMillis = 5_000) { activeCollectors.get() > 0 }
+        rule.runOnIdle {
+            assertThat(activeCollectors.get()).isLessThan(activeCollectorBound)
+            assertThat(maximumCollectors.get()).isLessThan(peakCollectorBound)
+        }
+
+        rule.onNodeWithTag("files_panel_tree_list")
+            .performScrollToNode(hasTestTag("files_panel_node_bounded-directory-79"))
+        rule.waitUntil(timeoutMillis = 5_000) {
+            activeCollectors.get() in 1 until activeCollectorBound
+        }
+        rule.runOnIdle {
+            assertThat(maximumCollectors.get()).isLessThan(peakCollectorBound)
+        }
+
+        rule.onNodeWithTag("files_panel_tree_list")
+            .performScrollToNode(hasTestTag("files_panel_node_bounded-directory-0"))
+        rule.waitUntil(timeoutMillis = 5_000) { activeCollectors.get() > 0 }
+        val beforeCollapse = activeCollectors.get()
+        rule.onNodeWithTag("files_panel_node_bounded-directory-0").performClick()
+        rule.waitUntil(timeoutMillis = 5_000) { activeCollectors.get() < beforeCollapse }
+        rule.runOnIdle {
+            assertThat(maximumCollectors.get()).isLessThan(peakCollectorBound)
+        }
+    }
+
+    @Test
+    fun 文件菜单重命名图谱复制删除回调按UUID分流() {
+        val file = entry("all-actions", "全部操作.md", parentUuid = ROOT)
+        val renamed = CopyOnWriteArrayList<Pair<String, String>>()
+        val extracted = CopyOnWriteArrayList<String>()
+        val viewed = CopyOnWriteArrayList<String>()
+        val copied = CopyOnWriteArrayList<String>()
+        val deleted = CopyOnWriteArrayList<List<String>>()
+
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                FilesPanel(
+                    workspaceRootUuid = ROOT,
+                    workspaceRepo = repository(emptyMap()),
+                    rootFiles = listOf(file),
+                    onRename = { uuid, name -> renamed += uuid to name },
+                    onExtractKG = { extracted += it },
+                    onViewKG = { viewed += it },
+                    onCopy = { copied += it },
+                    onDelete = { ids, onComplete ->
+                        deleted += ids.toList()
+                        onComplete(FileBatchOperationResult(ids.toList()))
+                    },
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.fileNodeOptions(file.uuid)).performClick()
+        rule.onNodeWithTag("files_panel_extract_kg_action_${file.uuid}").performClick()
+        rule.onNodeWithTag(UiTags.fileNodeOptions(file.uuid)).performClick()
+        rule.onNodeWithTag("files_panel_view_kg_action_${file.uuid}").performClick()
+        rule.onNodeWithTag(UiTags.fileNodeOptions(file.uuid)).performClick()
+        rule.onNodeWithTag("files_panel_copy_action_${file.uuid}").performClick()
+        rule.onNodeWithTag(UiTags.fileNodeOptions(file.uuid)).performClick()
+        rule.onNodeWithTag("files_panel_rename_action_${file.uuid}").performClick()
+        rule.onNodeWithTag("files_panel_rename_input_${file.uuid}").performTextReplacement("改名后.md")
+        rule.onNodeWithTag("files_panel_rename_confirm_${file.uuid}").performClick()
+        rule.onNodeWithTag(UiTags.fileNodeOptions(file.uuid)).performClick()
+        rule.onNodeWithTag("files_panel_delete_action_${file.uuid}").performClick()
+
+        rule.runOnIdle {
+            assertThat(extracted).containsExactly(file.uuid)
+            assertThat(viewed).containsExactly(file.uuid)
+            assertThat(copied).containsExactly(file.uuid)
+            assertThat(renamed).containsExactly(file.uuid to "改名后.md")
+            assertThat(deleted).containsExactly(listOf(file.uuid))
+        }
+    }
+
+    @Test
+    fun 非滚动文件树置于父级纵向滚动时最后一项可达() {
+        val files = (0 until 30).map { index ->
+            entry("parent-scroll-$index", "父滚动文件 $index.md", parentUuid = ROOT)
+        }
+
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                Box(modifier = Modifier.height(360.dp)) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        FilesPanel(
+                            workspaceRootUuid = ROOT,
+                            workspaceRepo = repository(emptyMap()),
+                            rootFiles = files,
+                            useScroll = false,
+                        )
+                    }
+                }
+            }
+        }
+
+        rule.onNodeWithText("父滚动文件 29.md").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun 文档复选框与卡片主体事件相互隔离() {
         val checkboxClicks = AtomicInteger(0)
         val documentClicks = AtomicInteger(0)
@@ -251,6 +389,31 @@ class RagFilesPanelNavigationTest {
                 else -> throw UnsupportedOperationException(method.name)
             }
         } as IWorkspaceRepository
+
+    private fun trackingRepository(
+        activeCollectors: AtomicInteger,
+        maximumCollectors: AtomicInteger,
+    ): IWorkspaceRepository = Proxy.newProxyInstance(
+        IWorkspaceRepository::class.java.classLoader,
+        arrayOf(IWorkspaceRepository::class.java),
+    ) { proxy, method, args ->
+        when (method.name) {
+            "observeChildren" -> flow<List<FileEntry>> {
+                val active = activeCollectors.incrementAndGet()
+                maximumCollectors.updateAndGet { previous -> maxOf(previous, active) }
+                try {
+                    awaitCancellation()
+                } finally {
+                    activeCollectors.decrementAndGet()
+                }
+            }
+            "searchByName" -> flowOf(emptyList<FileEntry>())
+            "toString" -> "RagFilesPanelNavigationTrackingRepository"
+            "hashCode" -> System.identityHashCode(proxy)
+            "equals" -> proxy === args?.firstOrNull()
+            else -> throw UnsupportedOperationException(method.name)
+        }
+    } as IWorkspaceRepository
 
     private fun entry(
         uuid: String,

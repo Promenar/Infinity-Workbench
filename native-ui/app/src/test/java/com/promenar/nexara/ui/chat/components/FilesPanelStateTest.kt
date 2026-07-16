@@ -203,6 +203,24 @@ class FilesPanelStateTest {
         assertThat(source).doesNotContain("directoryList.forEach")
     }
 
+    @Test
+    fun `文件树内部API的目录订阅位于实际组合行生命周期`() {
+        val projectRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = projectRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/components/FilesPanel.kt",
+        ).readText()
+        val beforeContent = source.substringBefore("val content = @Composable")
+        val contentBody = source.substringAfter("val content = @Composable")
+            .substringBefore("Box(modifier =")
+
+        assertThat(source).contains("internal fun FilesPanel(")
+        assertThat(beforeContent).doesNotContain("observeChildren(rootUuid, node.file.uuid)")
+        assertThat(contentBody).contains("observeChildren(rootUuid, node.file.uuid)")
+        assertThat(source).doesNotContain("visibleNodes.asSequence()")
+    }
+
     private fun entry(
         uuid: String,
         parentUuid: String,

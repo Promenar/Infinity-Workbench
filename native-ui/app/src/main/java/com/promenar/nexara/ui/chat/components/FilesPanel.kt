@@ -140,7 +140,7 @@ internal fun hasFileNodeMenuActions(
     (!isDirectory && (hasReindex || hasMove || hasExtractKG || hasCopy))
 
 @Composable
-fun FilesPanel(
+internal fun FilesPanel(
     workspaceRootUuid: String?,
     workspaceRepo: IWorkspaceRepository,
     searchQuery: String = "",
@@ -231,27 +231,6 @@ fun FilesPanel(
         forceExpandedIds = forceExpandedIds,
     )
 
-    // 数据订阅与 UI 渲染解耦：每个可见且展开的目录只按 UUID 保留一个 collector。
-    visibleNodes.asSequence()
-        .filter { node ->
-            node.file.isDirectory && isFileNodeExpanded(
-                uuid = node.file.uuid,
-                depth = node.depth,
-                expansionOverrides = expansionOverrides,
-                forceExpandedIds = forceExpandedIds,
-            )
-        }
-        .forEach { node ->
-            key(node.file.uuid) {
-                LaunchedEffect(workspaceRootUuid, workspaceRepo, node.file.uuid) {
-                    val rootUuid = workspaceRootUuid ?: return@LaunchedEffect
-                    workspaceRepo.observeChildren(rootUuid, node.file.uuid).collectLatest { children ->
-                        childrenByParent[node.file.uuid] = children
-                    }
-                }
-            }
-        }
-
     // 多选状态
     val localSelectedIds = remember { mutableStateListOf<String>() }
     val selectedIds = externalSelectedIds ?: localSelectedIds
@@ -292,14 +271,24 @@ fun FilesPanel(
     }
 
     val content = @Composable { node: VisibleFileNode ->
+        val expanded = isFileNodeExpanded(
+            uuid = node.file.uuid,
+            depth = node.depth,
+            expansionOverrides = expansionOverrides,
+            forceExpandedIds = forceExpandedIds,
+        )
+        if (node.file.isDirectory && expanded) {
+            // 订阅跟随实际组合行；LazyColumn 回收行或目录折叠时自动取消。
+            LaunchedEffect(workspaceRootUuid, workspaceRepo, node.file.uuid) {
+                val rootUuid = workspaceRootUuid ?: return@LaunchedEffect
+                workspaceRepo.observeChildren(rootUuid, node.file.uuid).collectLatest { children ->
+                    childrenByParent[node.file.uuid] = children
+                }
+            }
+        }
         FileTreeRow(
             node = node,
-            expanded = isFileNodeExpanded(
-                uuid = node.file.uuid,
-                depth = node.depth,
-                expansionOverrides = expansionOverrides,
-                forceExpandedIds = forceExpandedIds,
-            ),
+            expanded = expanded,
             onToggleExpanded = { toggleExpanded(node) },
             workspaceRootUuid = workspaceRootUuid!!,
             workspaceRepo = workspaceRepo,
@@ -321,72 +310,78 @@ fun FilesPanel(
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(bottom = if (showSelectionOverlay && isMultiSelectMode) 88.dp else 0.dp),
-    ) {
-        deleteFailure?.let { failure ->
-            val failedLabel = stringResource(R.string.common_cd_failed)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics {
-                        liveRegion = LiveRegionMode.Polite
-                        stateDescription = failedLabel
-                    }
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End,
-            ) {
-                Text(failedLabel, style = NexaraTypography.labelMedium, color = NexaraColors.Error)
-                TextButton(
-                    onClick = { requestDelete(failure.failedIds) },
-                    enabled = !isDeleting,
-                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
-                ) { Text(stringResource(R.string.shared_btn_retry)) }
-                TextButton(
-                    onClick = { deleteFailure = null },
-                    enabled = !isDeleting,
-                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
-                ) { Text(stringResource(R.string.common_dismiss)) }
+    Box(modifier = if (useScroll) Modifier.fillMaxSize() else Modifier.fillMaxWidth()) {
+        Column(
+            modifier = (if (useScroll) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
+                .padding(bottom = if (showSelectionOverlay && isMultiSelectMode) 88.dp else 0.dp),
+        ) {
+            val bodyModifier = if (useScroll) Modifier.weight(1f) else Modifier.fillMaxWidth()
+            deleteFailure?.let { failure ->
+                val failedLabel = stringResource(R.string.common_cd_failed)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics {
+                            liveRegion = LiveRegionMode.Polite
+                            stateDescription = failedLabel
+                        }
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Text(failedLabel, style = NexaraTypography.labelMedium, color = NexaraColors.Error)
+                    TextButton(
+                        onClick = { requestDelete(failure.failedIds) },
+                        enabled = !isDeleting,
+                        modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                    ) { Text(stringResource(R.string.shared_btn_retry)) }
+                    TextButton(
+                        onClick = { deleteFailure = null },
+                        enabled = !isDeleting,
+                        modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                    ) { Text(stringResource(R.string.common_dismiss)) }
+                }
             }
-        }
-        when (panelState) {
-            FilesPanelUiState.Loading -> FilesPanelLoadingState(Modifier.weight(1f))
-            FilesPanelUiState.Error -> FilesPanelErrorState(
-                modifier = Modifier.weight(1f),
-                onRetry = onRetryLoad,
-            )
-            FilesPanelUiState.Empty -> EmptyFilesState(Modifier.weight(1f))
-            FilesPanelUiState.SearchEmpty -> SearchEmptyFilesState(Modifier.weight(1f))
-            FilesPanelUiState.Content -> Surface(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-            ) {
-                if (useScroll) {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(
-                            items = visibleNodes,
-                            key = { it.file.uuid },
-                            contentType = { if (it.file.isDirectory) "directory" else "file" },
-                        ) { node -> content(node) }
-                    }
-                } else {
-                    // 外层页面拥有滚动时保持非滚动容器，但仍以 UUID key 渲染单层投影。
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        visibleNodes.forEach { node -> key(node.file.uuid) { content(node) } }
+            when (panelState) {
+                FilesPanelUiState.Loading -> FilesPanelLoadingState(bodyModifier)
+                FilesPanelUiState.Error -> FilesPanelErrorState(
+                    modifier = bodyModifier,
+                    onRetry = onRetryLoad,
+                )
+                FilesPanelUiState.Empty -> EmptyFilesState(bodyModifier)
+                FilesPanelUiState.SearchEmpty -> SearchEmptyFilesState(bodyModifier)
+                FilesPanelUiState.Content -> Surface(
+                    modifier = bodyModifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                ) {
+                    if (useScroll) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("files_panel_tree_list"),
+                        ) {
+                            items(
+                                items = visibleNodes,
+                                key = { it.file.uuid },
+                                contentType = { if (it.file.isDirectory) "directory" else "file" },
+                            ) { node -> content(node) }
+                        }
+                    } else {
+                        // 外层页面拥有滚动时保持非滚动容器，但仍以 UUID key 渲染单层投影。
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("files_panel_tree_list"),
+                        ) {
+                            visibleNodes.forEach { node -> key(node.file.uuid) { content(node) } }
+                        }
                     }
                 }
             }
         }
-
-    }
 
         // 底部批量操作栏：统一在真实屏幕底部居中，正文已预留空间。
         FilesPanelSelectionOverlay(
@@ -577,19 +572,21 @@ private fun FileTreeRow(
                 if (!checked) selectedIds.remove(file.uuid)
             },
             onOpenMenu = if (hasMenuActions) ({ showMenu = true }) else null,
-            modifier = Modifier.then(
-                if (handleActivate != null) {
-                    Modifier.combinedClickable(
-                        role = Role.Button,
-                        onClickLabel = file.name,
-                        onLongClickLabel = optionsLabel.takeIf { hasMenuActions },
-                        onLongClick = if (hasMenuActions) ({ showMenu = true }) else null,
-                        onClick = handleActivate,
-                    )
-                } else {
-                    Modifier
-                },
-            ),
+            modifier = Modifier
+                .testTag("files_panel_node_${file.uuid}")
+                .then(
+                    if (handleActivate != null) {
+                        Modifier.combinedClickable(
+                            role = Role.Button,
+                            onClickLabel = file.name,
+                            onLongClickLabel = optionsLabel.takeIf { hasMenuActions },
+                            onLongClick = if (hasMenuActions) ({ showMenu = true }) else null,
+                            onClick = handleActivate,
+                        )
+                    } else {
+                        Modifier
+                    },
+                ),
             nowMillis = nowMillis,
         )
 
@@ -606,24 +603,28 @@ private fun FileTreeRow(
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.files_extract_knowledge_graph)) },
                         onClick = { showMenu = false; onExtractKG(file.uuid) },
+                        modifier = Modifier.testTag("files_panel_extract_kg_action_${file.uuid}"),
                     )
                 }
                 if (onViewKG != null) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.files_view_graph)) },
                         onClick = { showMenu = false; onViewKG(file.uuid) },
+                        modifier = Modifier.testTag("files_panel_view_kg_action_${file.uuid}"),
                     )
                 }
             } else if (onViewKG != null) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.files_view_folder_graph)) },
                     onClick = { showMenu = false; onViewKG(file.uuid) },
+                    modifier = Modifier.testTag("files_panel_view_kg_action_${file.uuid}"),
                 )
             }
             if (onRename != null) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.files_rename)) },
                     onClick = { showMenu = false; showRenameDialog = true },
+                    modifier = Modifier.testTag("files_panel_rename_action_${file.uuid}"),
                 )
             }
             if (onMove != null && !file.isDirectory) {
@@ -637,6 +638,7 @@ private fun FileTreeRow(
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.shared_btn_copy)) },
                     onClick = { showMenu = false; onCopy(file.uuid) },
+                    modifier = Modifier.testTag("files_panel_copy_action_${file.uuid}"),
                 )
             }
             if (!isMultiSelectMode && supportsMultiSelect) {
@@ -653,6 +655,7 @@ private fun FileTreeRow(
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.shared_btn_delete), color = MaterialTheme.colorScheme.error) },
                     onClick = { showMenu = false; onDelete(file.uuid) },
+                    modifier = Modifier.testTag("files_panel_delete_action_${file.uuid}"),
                 )
             }
         }
@@ -660,6 +663,7 @@ private fun FileTreeRow(
 
     if (showRenameDialog) {
         RenameDialog(
+            fileUuid = file.uuid,
             currentName = file.name,
             onDismiss = { showRenameDialog = false },
             onConfirm = { newName ->
@@ -785,6 +789,7 @@ private fun FileRow(
 
 @Composable
 private fun RenameDialog(
+    fileUuid: String,
     currentName: String,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
@@ -798,11 +803,17 @@ private fun RenameDialog(
                 value = name,
                 onValueChange = { name = it },
                 label = { Text(stringResource(R.string.files_new_name)) },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("files_panel_rename_input_$fileUuid"),
             )
         },
         confirmButton = {
-            TextButton(onClick = { if (name.isNotBlank()) onConfirm(name.trim()) }, enabled = name.isNotBlank()) {
+            TextButton(
+                onClick = { if (name.isNotBlank()) onConfirm(name.trim()) },
+                enabled = name.isNotBlank(),
+                modifier = Modifier.testTag("files_panel_rename_confirm_$fileUuid"),
+            ) {
                 Text(stringResource(R.string.files_confirm))
             }
         },
