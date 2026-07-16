@@ -4,9 +4,13 @@ import com.promenar.nexara.data.local.db.dao.FileEntryDao
 import com.promenar.nexara.data.local.db.dao.WorkspaceSeqDao
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
+import com.promenar.nexara.domain.repository.RenameResult
 import com.promenar.nexara.infra.util.Sha256Utils
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -25,6 +29,7 @@ class WorkspaceRepository(
     private val deleteCommitter: (suspend (String, List<String>) -> Unit)? = null,
     private val onDeleteCommitted: (List<String>) -> Unit = {},
     private val bulkDeleteSnapshotHook: suspend () -> Unit = {},
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : IWorkspaceRepository {
     @Volatile
     private var defaultParentIdentity: String? = null
@@ -487,32 +492,75 @@ class WorkspaceRepository(
             commitMove(entry, oldPrefix, newPath, updates)
         } }
 
-    override suspend fun rename(workspaceRootUuid: String, uuid: String, newName: String) =
-        withContext(Dispatchers.IO) { withRootMutation(workspaceRootUuid) {
-            validateName(newName)
-            val entry = dao.getByUuid(workspaceRootUuid, uuid) ?: return@withRootMutation
-            if (entry.uuid == workspaceRootUuid) throw SecurityException("工作区根目录不可重命名")
-            val parent = entry.parentUuid?.let { dao.getByUuid(workspaceRootUuid, it) }
-                ?: throw SecurityException("父目录不属于当前工作区")
-            val newPath = joinMaterializedPath(parent.materializedPath, newName)
-            if (dao.getByRootAndMaterializedPath(workspaceRootUuid, newPath) != null) {
-                throw IllegalStateException("目标名称已存在")
-            }
-            val now = System.currentTimeMillis()
-            val oldPrefix = entry.materializedPath
-            val updates = mutableListOf(entry.copy(name = newName, materializedPath = newPath, updatedAt = now))
-            if (entry.isDirectory) {
-                dao.getSubtree(workspaceRootUuid, oldPrefix, entry.inRecycleBin)
-                    .filterNot { it.uuid == uuid }
-                    .forEach { child ->
-                        updates += child.copy(
-                            materializedPath = newPath + child.materializedPath.removePrefix(oldPrefix),
-                            updatedAt = now,
+    override suspend fun rename(
+        workspaceRootUuid: String,
+        uuid: String,
+        newName: String,
+        expectedName: String?,
+    ): RenameResult = withContext(Dispatchers.IO) {
+        withRootMutation(workspaceRootUuid) {
+                    validateName(newName)
+                    val entry = dao.getByUuid(workspaceRootUuid, uuid)
+                        ?: return@withRootMutation RenameResult.NotFound
+                    if (entry.uuid == workspaceRootUuid) {
+                        throw SecurityException("工作区根目录不可重命名")
+                    }
+                    if (entry.name == newName) {
+                        return@withRootMutation RenameResult.Success(
+                            name = entry.name,
+                            targetHash = entry.hash,
+                            targetEpoch = entry.updatedAt,
+                            changed = false,
                         )
                     }
+                    if (expectedName != null && entry.name != expectedName) {
+                        return@withRootMutation RenameResult.Conflict(
+                            expected = expectedName,
+                            current = entry.name,
+                        )
+                    }
+                    val parent = entry.parentUuid?.let { dao.getByUuid(workspaceRootUuid, it) }
+                        ?: throw SecurityException("父目录不属于当前工作区")
+                    val newPath = joinMaterializedPath(parent.materializedPath, newName)
+                    if (dao.getByRootAndMaterializedPath(workspaceRootUuid, newPath) != null) {
+                        throw IllegalStateException("目标名称已存在")
+                    }
+                    val commitClock = clock()
+                    val nextEpoch = nextMutationEpoch(commitClock, entry.updatedAt)
+                    val oldPrefix = entry.materializedPath
+                    val updates = mutableListOf(
+                        entry.copy(
+                            name = newName,
+                            materializedPath = newPath,
+                            updatedAt = nextEpoch,
+                            vectorizedAt = null,
+                            kgExtractedAt = null,
+                        ),
+                    )
+                    if (entry.isDirectory) {
+                        dao.getSubtree(workspaceRootUuid, oldPrefix, entry.inRecycleBin)
+                            .filterNot { it.uuid == uuid }
+                            .forEach { child ->
+                                updates += child.copy(
+                                    materializedPath = newPath + child.materializedPath.removePrefix(oldPrefix),
+                                    updatedAt = nextMutationEpoch(commitClock, child.updatedAt),
+                                    vectorizedAt = null,
+                                    kgExtractedAt = null,
+                                )
+                            }
+                    }
+                    currentCoroutineContext().ensureActive()
+                    withContext(NonCancellable) {
+                        commitMove(entry, oldPrefix, newPath, updates)
+                        RenameResult.Success(
+                            name = newName,
+                            targetHash = entry.hash,
+                            targetEpoch = nextEpoch,
+                            changed = true,
+                        )
+                    }
+                }
             }
-            commitMove(entry, oldPrefix, newPath, updates)
-        } }
 
     override suspend fun getNextSeqForDate(dateKey: String): Int = seqDao.getNextSeqForDate(dateKey)
 
@@ -625,6 +673,11 @@ class WorkspaceRepository(
             name.startsWith(".nexara", ignoreCase = true) || name == ".recycle_bin") {
             throw SecurityException("工作区名称无效")
         }
+    }
+
+    private fun nextMutationEpoch(clockValue: Long, previousEpoch: Long): Long {
+        check(previousEpoch != Long.MAX_VALUE) { "文件修改时间已达上限" }
+        return maxOf(clockValue, previousEpoch + 1L)
     }
 
     private suspend fun reconcileEntryTree(entry: FileEntry) {

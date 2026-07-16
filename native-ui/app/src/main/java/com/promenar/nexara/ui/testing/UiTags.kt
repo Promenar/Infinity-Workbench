@@ -222,6 +222,8 @@ object UiTags {
     const val DOC_EDITOR_RETRY_LOAD = "doc_editor_retry_load"
     const val DOC_EDITOR_RETRY_SAVE = "doc_editor_retry_save"
     const val DOC_EDITOR_COPY_LOCAL = "doc_editor_copy_local"
+    const val DOC_EDITOR_USE_WORKSPACE_TITLE = "doc_editor_use_workspace_title"
+    const val DOC_EDITOR_RETRY_MY_TITLE = "doc_editor_retry_my_title"
     const val DOC_EDITOR_REQUEST_RELOAD = "doc_editor_request_reload"
     const val DOC_EDITOR_WARNING_DISMISS = "doc_editor_warning_dismiss"
     const val DOC_EDITOR_DISCARD_DIALOG = "doc_editor_discard_dialog"

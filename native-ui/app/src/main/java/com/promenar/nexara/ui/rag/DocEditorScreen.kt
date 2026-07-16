@@ -139,6 +139,8 @@ data class DocEditorScreenActions(
     val onDismissConfirmation: () -> Unit = {},
     val onConfirmDiscard: () -> Unit = {},
     val onConfirmReload: () -> Unit = {},
+    val onUseWorkspaceTitle: () -> Unit = {},
+    val onRetryMyTitle: () -> Unit = {},
 )
 
 fun docEditorBackDecision(
@@ -214,6 +216,8 @@ fun DocEditorScreen(
             },
             onDismissWarning = viewModel::dismissWarning,
             onConfirmReload = viewModel::reload,
+            onUseWorkspaceTitle = viewModel::useWorkspaceTitle,
+            onRetryMyTitle = viewModel::retryMyTitle,
         ),
     )
 }
@@ -504,17 +508,37 @@ private fun LoadedDocumentContent(
                 onPrimary = actions.onRetrySave,
                 tag = UiTags.DOC_EDITOR_STATE_SAVE_ERROR,
             )
-            DocEditorVisibleState.SaveConflict -> SaveNotice(
-                title = stringResource(R.string.doc_editor_conflict_title),
-                description = stringResource(R.string.doc_editor_conflict_description),
-                primaryLabel = stringResource(R.string.doc_editor_copy_local),
-                primaryTag = UiTags.DOC_EDITOR_COPY_LOCAL,
-                onPrimary = actions.onCopyLocalContent,
-                secondaryLabel = stringResource(R.string.doc_editor_reload_latest),
-                secondaryTag = UiTags.DOC_EDITOR_REQUEST_RELOAD,
-                onSecondary = actions.onRequestReload,
-                tag = UiTags.DOC_EDITOR_STATE_CONFLICT,
-            )
+            DocEditorVisibleState.SaveConflict -> if (
+                editor.failureCode == DocEditorFailureCode.TitleConflict
+            ) {
+                SaveNotice(
+                    title = stringResource(R.string.doc_editor_title_conflict_title),
+                    description = stringResource(
+                        R.string.doc_editor_title_conflict_description,
+                        editor.titleConflictCurrentName.orEmpty(),
+                    ),
+                    primaryLabel = stringResource(R.string.doc_editor_use_workspace_title),
+                    primaryTag = UiTags.DOC_EDITOR_USE_WORKSPACE_TITLE,
+                    primaryIcon = Icons.Rounded.Refresh,
+                    onPrimary = actions.onUseWorkspaceTitle,
+                    secondaryLabel = stringResource(R.string.doc_editor_retry_my_title),
+                    secondaryTag = UiTags.DOC_EDITOR_RETRY_MY_TITLE,
+                    onSecondary = actions.onRetryMyTitle,
+                    tag = UiTags.DOC_EDITOR_STATE_CONFLICT,
+                )
+            } else {
+                SaveNotice(
+                    title = stringResource(R.string.doc_editor_conflict_title),
+                    description = stringResource(R.string.doc_editor_conflict_description),
+                    primaryLabel = stringResource(R.string.doc_editor_copy_local),
+                    primaryTag = UiTags.DOC_EDITOR_COPY_LOCAL,
+                    onPrimary = actions.onCopyLocalContent,
+                    secondaryLabel = stringResource(R.string.doc_editor_reload_latest),
+                    secondaryTag = UiTags.DOC_EDITOR_REQUEST_RELOAD,
+                    onSecondary = actions.onRequestReload,
+                    tag = UiTags.DOC_EDITOR_STATE_CONFLICT,
+                )
+            }
             DocEditorVisibleState.NotFoundAfterSave -> SaveNotice(
                 title = stringResource(R.string.doc_editor_missing_after_save_title),
                 description = stringResource(R.string.doc_editor_missing_after_save_description),

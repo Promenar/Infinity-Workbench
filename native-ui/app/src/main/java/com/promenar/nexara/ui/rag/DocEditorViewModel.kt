@@ -8,6 +8,7 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
+import com.promenar.nexara.domain.repository.RenameResult
 import com.promenar.nexara.domain.repository.WriteResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -35,6 +36,7 @@ enum class DocEditorFailureCode {
     TitleRenameFailed,
     ContentSaveFailed,
     ContentConflict,
+    TitleConflict,
     SaveNotFound,
     SaveCancelled,
 }
@@ -61,6 +63,7 @@ data class DocEditorUiState(
     /** 仅保留给未来经脱敏的技术诊断；绝不直接写入异常原文。 */
     val failureDetail: String? = null,
     val conflictCurrentHash: String? = null,
+    val titleConflictCurrentName: String? = null,
 ) {
     val isDirty: Boolean
         get() = titleDirty || contentDirty
@@ -209,6 +212,7 @@ class DocEditorViewModel(
                 failureCode = null,
                 failureDetail = null,
                 conflictCurrentHash = null,
+                titleConflictCurrentName = null,
             )
         }
         viewModelScope.launch {
@@ -234,18 +238,50 @@ class DocEditorViewModel(
     }
 
     private suspend fun renameTitle(snapshot: DocEditorUiState): Boolean = try {
-        workspaceRepository.rename(
+        when (val result = workspaceRepository.rename(
             workspaceRootUuid = snapshot.workspaceRootUuid,
             uuid = snapshot.documentId,
             newName = snapshot.title,
-        )
-        updateSameDocument(snapshot) { current ->
-            current.copy(
-                persistedTitle = snapshot.title,
-                titleDirty = current.title != snapshot.title,
-            )
+            expectedName = snapshot.persistedTitle,
+        )) {
+            is RenameResult.Success -> {
+                updateSameDocument(snapshot) { current ->
+                    current.copy(
+                        persistedTitle = result.name,
+                        titleDirty = current.title != result.name,
+                        lastModified = result.targetEpoch,
+                        titleConflictCurrentName = null,
+                    )
+                }
+                true
+            }
+
+            is RenameResult.Conflict -> {
+                updateSameDocument(snapshot) { current ->
+                    current.copy(
+                        phase = DocEditorPhase.SaveConflict,
+                        failureCode = DocEditorFailureCode.TitleConflict,
+                        failureDetail = null,
+                        conflictCurrentHash = null,
+                        titleConflictCurrentName = result.current,
+                    )
+                }
+                false
+            }
+
+            RenameResult.NotFound -> {
+                updateSameDocument(snapshot) { current ->
+                    current.copy(
+                        phase = DocEditorPhase.NotFound,
+                        failureCode = DocEditorFailureCode.SaveNotFound,
+                        failureDetail = null,
+                        conflictCurrentHash = null,
+                        titleConflictCurrentName = null,
+                    )
+                }
+                false
+            }
         }
-        true
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
@@ -292,6 +328,7 @@ class DocEditorViewModel(
                         failureCode = null,
                         failureDetail = null,
                         conflictCurrentHash = null,
+                        titleConflictCurrentName = null,
                     )
                 }
             }
@@ -302,6 +339,7 @@ class DocEditorViewModel(
                     failureCode = DocEditorFailureCode.ContentConflict,
                     failureDetail = null,
                     conflictCurrentHash = result.currentHash,
+                    titleConflictCurrentName = null,
                 )
             }
 
@@ -310,6 +348,7 @@ class DocEditorViewModel(
                     phase = DocEditorPhase.NotFound,
                     failureCode = DocEditorFailureCode.SaveNotFound,
                     failureDetail = null,
+                    titleConflictCurrentName = null,
                 )
             }
         }
@@ -322,6 +361,7 @@ class DocEditorViewModel(
                 failureCode = null,
                 failureDetail = null,
                 conflictCurrentHash = null,
+                titleConflictCurrentName = null,
             )
         }
     }
@@ -337,6 +377,7 @@ class DocEditorViewModel(
                     failureCode = DocEditorFailureCode.SaveCancelled,
                     failureDetail = null,
                     conflictCurrentHash = null,
+                    titleConflictCurrentName = null,
                 )
             }
         }
@@ -390,6 +431,9 @@ class DocEditorViewModel(
                 conflictCurrentHash = current.conflictCurrentHash.takeIf {
                     current.phase == DocEditorPhase.SaveConflict
                 },
+                titleConflictCurrentName = current.titleConflictCurrentName.takeIf {
+                    current.phase == DocEditorPhase.SaveConflict
+                },
             )
         }
     }
@@ -403,6 +447,43 @@ class DocEditorViewModel(
                     current.phase == DocEditorPhase.SaveConflict
                 },
                 failureDetail = null,
+            )
+        }
+    }
+
+    fun useWorkspaceTitle() {
+        _uiState.update { current ->
+            val workspaceTitle = current.titleConflictCurrentName
+            if (current.phase != DocEditorPhase.SaveConflict ||
+                current.failureCode != DocEditorFailureCode.TitleConflict ||
+                workspaceTitle == null
+            ) current else current.copy(
+                phase = DocEditorPhase.Ready,
+                title = workspaceTitle,
+                persistedTitle = workspaceTitle,
+                titleDirty = false,
+                failureCode = null,
+                failureDetail = null,
+                conflictCurrentHash = null,
+                titleConflictCurrentName = null,
+            )
+        }
+    }
+
+    fun retryMyTitle() {
+        _uiState.update { current ->
+            val workspaceTitle = current.titleConflictCurrentName
+            if (current.phase != DocEditorPhase.SaveConflict ||
+                current.failureCode != DocEditorFailureCode.TitleConflict ||
+                workspaceTitle == null
+            ) current else current.copy(
+                phase = DocEditorPhase.Ready,
+                persistedTitle = workspaceTitle,
+                titleDirty = current.title != workspaceTitle,
+                failureCode = null,
+                failureDetail = null,
+                conflictCurrentHash = null,
+                titleConflictCurrentName = null,
             )
         }
     }

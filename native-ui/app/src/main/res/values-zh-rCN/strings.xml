@@ -926,6 +926,10 @@
     <string name="doc_editor_retry_save">重试保存</string>
     <string name="doc_editor_conflict_title">存在更新的版本</string>
     <string name="doc_editor_conflict_description">本地内容已保留。你可以先复制，或重新加载最新版；系统不会覆盖远端文档。</string>
+    <string name="doc_editor_title_conflict_title">工作区标题已变更</string>
+    <string name="doc_editor_title_conflict_description">当前工作区标题为“%1$s”。请选择要保留的标题；正文修改仍会保留。</string>
+    <string name="doc_editor_use_workspace_title">使用工作区标题</string>
+    <string name="doc_editor_retry_my_title">重试我的标题</string>
     <string name="doc_editor_copy_local">复制本地内容</string>
     <string name="doc_editor_clipboard_label">本地文档内容</string>
     <string name="doc_editor_reload_latest">重新加载最新版</string>

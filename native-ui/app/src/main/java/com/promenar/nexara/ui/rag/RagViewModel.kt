@@ -17,6 +17,7 @@ import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
+import com.promenar.nexara.domain.repository.RenameResult
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
 import com.promenar.nexara.domain.repository.MemoryVectorRecord
@@ -534,6 +535,8 @@ class RagViewModel(
         viewModelScope.launch {
             try {
                 _vectorStats.value = vectorStatsService.getStats()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) { }
         }
     }
@@ -589,8 +592,14 @@ class RagViewModel(
         viewModelScope.launch {
             try {
                 val rootUuid = _workspaceRootUuid.value ?: return@launch
-                workspaceRepository.rename(rootUuid, id, newName)
-                loadStats()
+                when (workspaceRepository.rename(rootUuid, id, newName)) {
+                    is RenameResult.Success -> loadStats()
+                    is RenameResult.Conflict,
+                    RenameResult.NotFound,
+                    -> Unit
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) { }
         }
     }

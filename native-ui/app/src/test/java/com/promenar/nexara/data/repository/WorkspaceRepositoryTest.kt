@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.SessionEntity
+import com.promenar.nexara.domain.repository.RenameResult
 import com.promenar.nexara.infra.util.Sha256Utils
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -127,6 +128,291 @@ class WorkspaceRepositoryTest {
             rejected = true
         }
         assertThat(rejected).isTrue()
+    }
+
+    @Test
+    fun `rename CAS success returns committed name hash epoch and changed`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+
+        val result = repo.rename(root.uuid, entry.uuid, "b.txt", expectedName = "a.txt")
+
+        assertThat(result).isInstanceOf(RenameResult.Success::class.java)
+        result as RenameResult.Success
+        assertThat(result.name).isEqualTo("b.txt")
+        assertThat(result.targetHash).isEqualTo(entry.hash)
+        assertThat(result.targetEpoch).isGreaterThan(entry.updatedAt)
+        assertThat(result.changed).isTrue()
+        assertThat(File(rootA, "a.txt").exists()).isFalse()
+        assertThat(File(rootA, "b.txt").readText()).isEqualTo("A")
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, entry.uuid)!!.updatedAt)
+            .isEqualTo(result.targetEpoch)
+    }
+
+    @Test
+    fun `rename CAS conflict leaves physical file and database unchanged`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "actual.txt", "A", root.uuid, "/actual.txt")
+
+        val result = repo.rename(root.uuid, entry.uuid, "local.txt", expectedName = "stale.txt")
+
+        assertThat(result).isEqualTo(
+            RenameResult.Conflict(expected = "stale.txt", current = "actual.txt"),
+        )
+        assertThat(File(rootA, "actual.txt").readText()).isEqualTo("A")
+        assertThat(File(rootA, "local.txt").exists()).isFalse()
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, entry.uuid)).isEqualTo(entry)
+    }
+
+    @Test
+    fun `rename missing target returns NotFound without physical mutation`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+
+        val result = repo.rename(root.uuid, "missing", "new.txt", expectedName = "old.txt")
+
+        assertThat(result).isEqualTo(RenameResult.NotFound)
+        assertThat(rootA.listFiles().orEmpty().map { it.name })
+            .containsNoneOf("old.txt", "new.txt")
+    }
+
+    @Test
+    fun `rename default expectedName keeps explicit unconditional behavior`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+
+        val result = repo.rename(root.uuid, entry.uuid, "b.txt")
+
+        assertThat(result).isInstanceOf(RenameResult.Success::class.java)
+        assertThat((result as RenameResult.Success).changed).isTrue()
+        assertThat(File(rootA, "b.txt").readText()).isEqualTo("A")
+    }
+
+    @Test
+    fun `rename to current name is idempotent no-op without epoch advance or move`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        val delegate = TestWorkspaceFileOps()
+        var moveCount = 0
+        val countingOps = object : WorkspaceFileOps by delegate {
+            override fun move(
+                root: java.nio.file.Path,
+                source: List<String>,
+                target: List<String>,
+            ): WorkspaceFileRollback {
+                moveCount++
+                return delegate.move(root, source, target)
+            }
+        }
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            fileOps = countingOps,
+        )
+
+        val result = repo.rename(root.uuid, entry.uuid, "a.txt", expectedName = "stale-retry.txt")
+
+        assertThat(result).isEqualTo(
+            RenameResult.Success(
+                name = "a.txt",
+                targetHash = entry.hash,
+                targetEpoch = entry.updatedAt,
+                changed = false,
+            ),
+        )
+        assertThat(moveCount).isEqualTo(0)
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, entry.uuid)).isEqualTo(entry)
+    }
+
+    @Test
+    fun `rename occupied target fails without partial physical or database move`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val source = repo.createFileInWorkspace(root.uuid, "source", "a.txt", "A", root.uuid, "/a.txt")
+        val occupied = repo.createFileInWorkspace(root.uuid, "occupied", "b.txt", "B", root.uuid, "/b.txt")
+
+        val failure = runCatching {
+            repo.rename(root.uuid, source.uuid, "b.txt", expectedName = "a.txt")
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(File(rootA, "a.txt").readText()).isEqualTo("A")
+        assertThat(File(rootA, "b.txt").readText()).isEqualTo("B")
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, source.uuid)).isEqualTo(source)
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, occupied.uuid)).isEqualTo(occupied)
+    }
+
+    @Test
+    fun `rename cancelled after validation but before commit leaves zero mutation`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        val clockReached = CountDownLatch(1)
+        val releaseClock = CountDownLatch(1)
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            fileOps = TestWorkspaceFileOps(),
+            clock = {
+                clockReached.countDown()
+                check(releaseClock.await(5, TimeUnit.SECONDS))
+                entry.updatedAt
+            },
+        )
+
+        val pending = async(Dispatchers.Default) {
+            repo.rename(root.uuid, entry.uuid, "b.txt", expectedName = "a.txt")
+        }
+        assertThat(clockReached.await(5, TimeUnit.SECONDS)).isTrue()
+        pending.cancel()
+        releaseClock.countDown()
+        runCatching { pending.await() }
+
+        assertThat(pending.isCancelled).isTrue()
+        assertThat(File(rootA, "a.txt").readText()).isEqualTo("A")
+        assertThat(File(rootA, "b.txt").exists()).isFalse()
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, entry.uuid)).isEqualTo(entry)
+    }
+
+    @Test
+    fun `rename commit point completes atomically under cancellation and retry reports Success`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        val dbCommitted = CompletableDeferred<Unit>()
+        val releaseCommit = CompletableDeferred<Unit>()
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            fileOps = TestWorkspaceFileOps(),
+            updateCommitter = { updates ->
+                db.fileEntryDao().updateAll(updates)
+                dbCommitted.complete(Unit)
+                releaseCommit.await()
+            },
+            clock = { entry.updatedAt },
+        )
+
+        val pending = async(Dispatchers.Default) {
+            repo.rename(root.uuid, entry.uuid, "b.txt", expectedName = "a.txt")
+        }
+        dbCommitted.await()
+        pending.cancel()
+        releaseCommit.complete(Unit)
+        val cancellation = runCatching { pending.await() }.exceptionOrNull()
+
+        assertThat(cancellation).isInstanceOf(kotlinx.coroutines.CancellationException::class.java)
+        val committed = db.fileEntryDao().getByUuid(root.uuid, entry.uuid)!!
+        assertThat(committed.name).isEqualTo("b.txt")
+        assertThat(File(rootA, "b.txt").readText()).isEqualTo("A")
+        val retry = repo.rename(root.uuid, entry.uuid, "b.txt", expectedName = "a.txt")
+        assertThat(retry).isEqualTo(
+            RenameResult.Success("b.txt", entry.hash, committed.updatedAt, changed = false),
+        )
+    }
+
+    @Test
+    fun `rename epoch remains monotonic when clock returns same millisecond`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            fileOps = TestWorkspaceFileOps(),
+            clock = { entry.updatedAt },
+        )
+
+        val first = repo.rename(root.uuid, entry.uuid, "b.txt", expectedName = "a.txt") as RenameResult.Success
+        val second = repo.rename(root.uuid, entry.uuid, "c.txt", expectedName = "b.txt") as RenameResult.Success
+
+        assertThat(first.targetEpoch).isEqualTo(entry.updatedAt + 1L)
+        assertThat(second.targetEpoch).isEqualTo(first.targetEpoch + 1L)
+    }
+
+    @Test
+    fun `rename changed file clears derived indexing timestamps in the same commit`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val created = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        val indexed = created.copy(vectorizedAt = 200L, kgExtractedAt = 300L)
+        db.fileEntryDao().update(indexed)
+
+        val result = repo.rename(root.uuid, created.uuid, "b.txt", expectedName = "a.txt")
+
+        assertThat((result as RenameResult.Success).changed).isTrue()
+        val renamed = db.fileEntryDao().getByUuid(root.uuid, created.uuid)!!
+        assertThat(renamed.vectorizedAt).isNull()
+        assertThat(renamed.kgExtractedAt).isNull()
+    }
+
+    @Test
+    fun `directory rename keeps every descendant epoch monotonic and clears derived timestamps`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val folder = repo.createDirectoryInWorkspace(root.uuid, "folder", "docs", root.uuid, "/docs")
+        val child = repo.createFileInWorkspace(
+            root.uuid,
+            "child",
+            "a.txt",
+            "A",
+            folder.uuid,
+            "/docs/a.txt",
+        )
+        val childEpoch = maxOf(folder.updatedAt, child.updatedAt) + 10_000L
+        db.fileEntryDao().update(
+            child.copy(
+                updatedAt = childEpoch,
+                vectorizedAt = 400L,
+                kgExtractedAt = 500L,
+            ),
+        )
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            fileOps = TestWorkspaceFileOps(),
+            clock = { folder.updatedAt },
+        )
+
+        repo.rename(root.uuid, folder.uuid, "renamed-docs", expectedName = "docs")
+
+        val renamedChild = db.fileEntryDao().getByUuid(root.uuid, child.uuid)!!
+        assertThat(renamedChild.materializedPath).isEqualTo("/renamed-docs/a.txt")
+        assertThat(renamedChild.updatedAt).isEqualTo(childEpoch + 1L)
+        assertThat(renamedChild.vectorizedAt).isNull()
+        assertThat(renamedChild.kgExtractedAt).isNull()
+    }
+
+    @Test
+    fun `directory rename rejects descendant epoch overflow before physical commit`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val folder = repo.createDirectoryInWorkspace(root.uuid, "folder", "docs", root.uuid, "/docs")
+        val child = repo.createFileInWorkspace(
+            root.uuid,
+            "child",
+            "a.txt",
+            "A",
+            folder.uuid,
+            "/docs/a.txt",
+        )
+        db.fileEntryDao().update(child.copy(updatedAt = Long.MAX_VALUE))
+
+        val failure = runCatching {
+            repo.rename(root.uuid, folder.uuid, "renamed-docs", expectedName = "docs")
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(File(rootA, "docs/a.txt").readText()).isEqualTo("A")
+        assertThat(File(rootA, "renamed-docs").exists()).isFalse()
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, folder.uuid)!!.materializedPath)
+            .isEqualTo("/docs")
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, child.uuid)!!.materializedPath)
+            .isEqualTo("/docs/a.txt")
     }
 
     @Test

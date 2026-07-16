@@ -52,7 +52,28 @@ interface IWorkspaceRepository {
     suspend fun permanentDelete(workspaceRootUuid: String, uuid: String)
     suspend fun emptyRecycleBin(workspaceRootUuid: String)
     suspend fun updateParent(workspaceRootUuid: String, uuid: String, newParentUuid: String)
-    suspend fun rename(workspaceRootUuid: String, uuid: String, newName: String)
+    suspend fun rename(
+        workspaceRootUuid: String,
+        uuid: String,
+        newName: String,
+        expectedName: String? = null,
+    ): RenameResult
     suspend fun getNextSeqForDate(dateKey: String): Int
     suspend fun resetAllRAGStatus(workspaceRootUuid: String)
+}
+
+sealed interface RenameResult {
+    data class Success(
+        val name: String,
+        val targetHash: String,
+        val targetEpoch: Long,
+        val changed: Boolean,
+    ) : RenameResult
+
+    data class Conflict(
+        val expected: String,
+        val current: String,
+    ) : RenameResult
+
+    data object NotFound : RenameResult
 }

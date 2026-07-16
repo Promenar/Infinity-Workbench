@@ -919,6 +919,10 @@
     <string name="doc_editor_retry_save">Retry save</string>
     <string name="doc_editor_conflict_title">A newer version exists</string>
     <string name="doc_editor_conflict_description">Your local content is preserved. Copy it or reload the latest version; the remote document will not be overwritten.</string>
+    <string name="doc_editor_title_conflict_title">Title changed in the workspace</string>
+    <string name="doc_editor_title_conflict_description">The current workspace title is “%1$s”. Choose which title to keep; your content edits will remain.</string>
+    <string name="doc_editor_use_workspace_title">Use workspace title</string>
+    <string name="doc_editor_retry_my_title">Retry my title</string>
     <string name="doc_editor_copy_local">Copy local content</string>
     <string name="doc_editor_clipboard_label">Local document content</string>
     <string name="doc_editor_reload_latest">Reload latest</string>

@@ -9,6 +9,7 @@ import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.PatchOperation
 import com.promenar.nexara.domain.repository.PatchResult
 import com.promenar.nexara.domain.repository.ReadResult
+import com.promenar.nexara.domain.repository.RenameResult
 import com.promenar.nexara.domain.repository.WriteResult
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -110,7 +111,7 @@ class DocEditorViewModelTest {
         assertThat(vm.uiState.value.title).isEqualTo("guide.md")
         assertThat(vm.uiState.value.content).isEmpty()
         assertThat(vm.uiState.value.isDirty).isFalse()
-        coVerify(exactly = 0) { workspaceRepository.rename(any(), any(), any()) }
+        coVerify(exactly = 0) { workspaceRepository.rename(any(), any(), any(), any()) }
         coVerify(exactly = 0) {
             fileRepository.writeFileAtomic(any(), any(), any(), any(), any())
         }
@@ -168,7 +169,7 @@ class DocEditorViewModelTest {
 
         assertThat(vm.uiState.value.title).isEqualTo("renamed.md")
         assertThat(vm.uiState.value.titleDirty).isTrue()
-        coVerify(exactly = 0) { workspaceRepository.rename(any(), any(), any()) }
+        coVerify(exactly = 0) { workspaceRepository.rename(any(), any(), any(), any()) }
         coVerify(exactly = 0) { fileRepository.writeFileAtomic(any(), any(), any(), any(), any()) }
     }
 
@@ -177,7 +178,8 @@ class DocEditorViewModelTest {
         val vm = loadedViewModel()
         vm.updateTitle("renamed.md")
         vm.onContentChanged("updated")
-        coEvery { workspaceRepository.rename(ROOT, DOC, "renamed.md") } returns Unit
+        coEvery { workspaceRepository.rename(ROOT, DOC, "renamed.md", "guide.md") } returns
+            renameSuccess("renamed.md")
         coEvery {
             fileRepository.writeFileAtomic(ROOT, DOC, "updated", "editor", "hash-1")
         } returns WriteResult.Success("hash-2")
@@ -186,7 +188,7 @@ class DocEditorViewModelTest {
         advanceUntilIdle()
 
         coVerifyOrder {
-            workspaceRepository.rename(ROOT, DOC, "renamed.md")
+            workspaceRepository.rename(ROOT, DOC, "renamed.md", "guide.md")
             fileRepository.writeFileAtomic(ROOT, DOC, "updated", "editor", "hash-1")
         }
         assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Ready)
@@ -200,7 +202,9 @@ class DocEditorViewModelTest {
         val vm = loadedViewModel()
         vm.updateTitle("renamed.md")
         vm.onContentChanged("updated")
-        coEvery { workspaceRepository.rename(ROOT, DOC, "renamed.md") } throws IllegalArgumentException("duplicate")
+        coEvery {
+            workspaceRepository.rename(ROOT, DOC, "renamed.md", "guide.md")
+        } throws IllegalArgumentException("duplicate")
 
         vm.saveDocument()
         advanceUntilIdle()
@@ -213,11 +217,136 @@ class DocEditorViewModelTest {
     }
 
     @Test
+    fun `标题保存传入 persistedTitle 且 CAS 冲突不继续写正文`() = runTest(dispatcher) {
+        val vm = loadedViewModel()
+        vm.updateTitle("local.md")
+        vm.onContentChanged("updated")
+        coEvery {
+            workspaceRepository.rename(ROOT, DOC, "local.md", expectedName = "guide.md")
+        } returns RenameResult.Conflict(expected = "guide.md", current = "remote.md")
+
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.SaveConflict)
+        assertThat(vm.uiState.value.failureCode).isEqualTo(DocEditorFailureCode.TitleConflict)
+        assertThat(vm.uiState.value.titleConflictCurrentName).isEqualTo("remote.md")
+        assertThat(vm.uiState.value.titleDirty).isTrue()
+        assertThat(vm.uiState.value.contentDirty).isTrue()
+        coVerify(exactly = 1) {
+            workspaceRepository.rename(ROOT, DOC, "local.md", expectedName = "guide.md")
+        }
+        coVerify(exactly = 0) { fileRepository.writeFileAtomic(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `标题冲突采用工作区标题但保留正文 dirty`() = runTest(dispatcher) {
+        val vm = loadedViewModel()
+        vm.updateTitle("local.md")
+        vm.onContentChanged("updated body")
+        coEvery {
+            workspaceRepository.rename(ROOT, DOC, "local.md", expectedName = "guide.md")
+        } returns RenameResult.Conflict(expected = "guide.md", current = "remote.md")
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        vm.useWorkspaceTitle()
+
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Ready)
+        assertThat(vm.uiState.value.title).isEqualTo("remote.md")
+        assertThat(vm.uiState.value.persistedTitle).isEqualTo("remote.md")
+        assertThat(vm.uiState.value.titleDirty).isFalse()
+        assertThat(vm.uiState.value.content).isEqualTo("updated body")
+        assertThat(vm.uiState.value.contentDirty).isTrue()
+        assertThat(vm.uiState.value.titleConflictCurrentName).isNull()
+    }
+
+    @Test
+    fun `标题冲突重试我的标题以远端名作新 CAS 基线`() = runTest(dispatcher) {
+        val vm = loadedViewModel()
+        vm.updateTitle("local.md")
+        coEvery {
+            workspaceRepository.rename(ROOT, DOC, "local.md", expectedName = "guide.md")
+        } returns RenameResult.Conflict(expected = "guide.md", current = "remote.md")
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        vm.retryMyTitle()
+
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Ready)
+        assertThat(vm.uiState.value.title).isEqualTo("local.md")
+        assertThat(vm.uiState.value.persistedTitle).isEqualTo("remote.md")
+        assertThat(vm.uiState.value.titleDirty).isTrue()
+        assertThat(vm.uiState.value.titleConflictCurrentName).isNull()
+
+        coEvery {
+            workspaceRepository.rename(ROOT, DOC, "local.md", expectedName = "remote.md")
+        } returns RenameResult.Success("local.md", "hash-1", 789L, changed = true)
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            workspaceRepository.rename(ROOT, DOC, "local.md", expectedName = "remote.md")
+        }
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Ready)
+        assertThat(vm.uiState.value.persistedTitle).isEqualTo("local.md")
+        assertThat(vm.uiState.value.titleDirty).isFalse()
+    }
+
+    @Test
+    fun `标题保存 NotFound 进入缺失状态且不继续写正文`() = runTest(dispatcher) {
+        val vm = loadedViewModel()
+        vm.updateTitle("local.md")
+        vm.onContentChanged("updated")
+        coEvery {
+            workspaceRepository.rename(ROOT, DOC, "local.md", expectedName = "guide.md")
+        } returns RenameResult.NotFound
+
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.NotFound)
+        assertThat(vm.uiState.value.failureCode).isEqualTo(DocEditorFailureCode.SaveNotFound)
+        assertThat(vm.uiState.value.titleDirty).isTrue()
+        assertThat(vm.uiState.value.contentDirty).isTrue()
+        coVerify(exactly = 0) { fileRepository.writeFileAtomic(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `标题已确定成功而正文提交前取消保留局部成功事实`() = runTest(dispatcher) {
+        val vm = loadedViewModel()
+        vm.updateTitle("renamed.md")
+        vm.onContentChanged("updated")
+        coEvery {
+            workspaceRepository.rename(ROOT, DOC, "renamed.md", expectedName = "guide.md")
+        } returns RenameResult.Success(
+            name = "renamed.md",
+            targetHash = "hash-1",
+            targetEpoch = 456L,
+            changed = true,
+        )
+        coEvery {
+            fileRepository.writeFileAtomic(ROOT, DOC, "updated", "editor", "hash-1")
+        } throws CancellationException("cancelled before content commit")
+
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.SaveError)
+        assertThat(vm.uiState.value.failureCode).isEqualTo(DocEditorFailureCode.SaveCancelled)
+        assertThat(vm.uiState.value.persistedTitle).isEqualTo("renamed.md")
+        assertThat(vm.uiState.value.titleDirty).isFalse()
+        assertThat(vm.uiState.value.contentDirty).isTrue()
+        assertThat(vm.uiState.value.lastModified).isEqualTo(456L)
+    }
+
+    @Test
     fun `正文冲突保留原 expectedHash 与 dirty 且普通保存不会隐式覆盖`() = runTest(dispatcher) {
         val vm = loadedViewModel()
         vm.updateTitle("renamed.md")
         vm.onContentChanged("updated")
-        coEvery { workspaceRepository.rename(ROOT, DOC, "renamed.md") } returns Unit
+        coEvery { workspaceRepository.rename(ROOT, DOC, "renamed.md", "guide.md") } returns
+            renameSuccess("renamed.md")
         coEvery {
             fileRepository.writeFileAtomic(ROOT, DOC, "updated", "editor", "hash-1")
         } returns WriteResult.Conflict("remote-hash", "hash-1", "remote detail")
@@ -238,7 +367,9 @@ class DocEditorViewModelTest {
         vm.saveDocument()
         advanceUntilIdle()
 
-        coVerify(exactly = 1) { workspaceRepository.rename(ROOT, DOC, "renamed.md") }
+        coVerify(exactly = 1) {
+            workspaceRepository.rename(ROOT, DOC, "renamed.md", "guide.md")
+        }
         coVerify(exactly = 1) {
             fileRepository.writeFileAtomic(ROOT, DOC, "updated", "editor", "hash-1")
         }
@@ -256,7 +387,8 @@ class DocEditorViewModelTest {
         val vm = loadedViewModel()
         vm.updateTitle("renamed.md")
         vm.onContentChanged("updated")
-        coEvery { workspaceRepository.rename(ROOT, DOC, "renamed.md") } returns Unit
+        coEvery { workspaceRepository.rename(ROOT, DOC, "renamed.md", "guide.md") } returns
+            renameSuccess("renamed.md")
         coEvery {
             fileRepository.writeFileAtomic(ROOT, DOC, "updated", "editor", "hash-1")
         } throws IllegalStateException("temporary") andThen WriteResult.Success("hash-2")
@@ -270,7 +402,9 @@ class DocEditorViewModelTest {
         vm.saveDocument()
         advanceUntilIdle()
 
-        coVerify(exactly = 1) { workspaceRepository.rename(ROOT, DOC, "renamed.md") }
+        coVerify(exactly = 1) {
+            workspaceRepository.rename(ROOT, DOC, "renamed.md", "guide.md")
+        }
         coVerify(exactly = 2) {
             fileRepository.writeFileAtomic(ROOT, DOC, "updated", "editor", "hash-1")
         }
@@ -449,7 +583,7 @@ class DocEditorViewModelTest {
         vm.saveDocument()
         advanceUntilIdle()
 
-        coVerify(exactly = 0) { workspaceRepository.rename(any(), any(), any()) }
+        coVerify(exactly = 0) { workspaceRepository.rename(any(), any(), any(), any()) }
         coVerify(exactly = 0) { fileRepository.writeFileAtomic(any(), any(), any(), any(), any()) }
         confirmVerified(workspaceRepository, fileRepository)
     }
@@ -485,9 +619,10 @@ class DocEditorViewModelTest {
             readResult(uuid = DOC_A, name = "a.md", content = "A")
         coEvery { fileRepository.readFileRange(ROOT, DOC_B) } returns
             readResult(uuid = DOC_B, name = "b.md", content = "B")
-        coEvery { workspaceRepository.rename(ROOT, DOC_A, "a-renamed.md") } coAnswers {
+        coEvery { workspaceRepository.rename(ROOT, DOC_A, "a-renamed.md", "a.md") } coAnswers {
             renameStarted.complete(Unit)
             withContext(NonCancellable) { releaseRename.await() }
+            renameSuccess("a-renamed.md")
         }
         val vm = viewModel()
         vm.loadDocument(ROOT, DOC_A)
@@ -720,6 +855,17 @@ class DocEditorViewModelTest {
         content = content,
         hash = hash,
         lastModified = 123L,
+    )
+
+    private fun renameSuccess(
+        name: String,
+        targetHash: String = "hash-1",
+        targetEpoch: Long = 124L,
+    ) = RenameResult.Success(
+        name = name,
+        targetHash = targetHash,
+        targetEpoch = targetEpoch,
+        changed = true,
     )
 
     private fun metadataEntry(

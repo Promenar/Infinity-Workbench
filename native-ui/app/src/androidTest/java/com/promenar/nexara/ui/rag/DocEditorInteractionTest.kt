@@ -214,6 +214,50 @@ class DocEditorInteractionTest {
     }
 
     @Test
+    fun titleConflictUsesDedicatedWorkspaceAndRetryActions() {
+        val useWorkspace = AtomicInteger(0)
+        val retryMine = AtomicInteger(0)
+        rule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(density.density, fontScale = 2f),
+            ) {
+                Box(Modifier.requiredSize(width = 360.dp, height = 800.dp)) {
+                    TestContent(
+                        screenState = DocEditorScreenState(
+                            editorState = readyEditorState(
+                                phase = DocEditorPhase.SaveConflict,
+                                dirty = true,
+                            ).copy(
+                                failureCode = DocEditorFailureCode.TitleConflict,
+                                titleConflictCurrentName = "remote.md",
+                            ),
+                        ),
+                        actions = DocEditorScreenActions(
+                            onUseWorkspaceTitle = { useWorkspace.incrementAndGet() },
+                            onRetryMyTitle = { retryMine.incrementAndGet() },
+                        ),
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_COPY_LOCAL).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_USE_WORKSPACE_TITLE)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_RETRY_MY_TITLE)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        assertThat(useWorkspace.get()).isEqualTo(1)
+        assertThat(retryMine.get()).isEqualTo(1)
+    }
+
+    @Test
     fun savingPreventsRepeatSave() {
         rule.setContent {
             TestContent(
