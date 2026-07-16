@@ -5,10 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.data.rag.FileIndexEvent
+import com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.RenameResult
+import com.promenar.nexara.domain.repository.RenameIndexTarget
 import com.promenar.nexara.domain.repository.WriteResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -16,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import java.util.concurrent.atomic.AtomicReference
@@ -64,6 +68,8 @@ data class DocEditorUiState(
     val failureDetail: String? = null,
     val conflictCurrentHash: String? = null,
     val titleConflictCurrentName: String? = null,
+    val indexPendingTargets: List<RenameIndexTarget> = emptyList(),
+    val indexQueueFailed: Boolean = false,
 ) {
     val isDirty: Boolean
         get() = titleDirty || contentDirty
@@ -87,6 +93,8 @@ data class DocEditorUiState(
 class DocEditorViewModel(
     private val fileOperationRepository: IFileOperationRepository,
     private val workspaceRepository: IWorkspaceRepository,
+    private val indexEventSink: com.promenar.nexara.data.rag.FileIndexEventSink? = null,
+    private val pendingIndexCoordinator: PendingDocumentIndexCoordinator? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DocEditorUiState())
     val uiState: StateFlow<DocEditorUiState> = _uiState.asStateFlow()
@@ -95,6 +103,16 @@ class DocEditorViewModel(
     private var loadGeneration = 0L
     private val saveMutex = Mutex()
     private val activeSaveIdentity = AtomicReference<SaveIdentity?>(null)
+
+    init {
+        pendingIndexCoordinator?.let { coordinator ->
+            viewModelScope.launch {
+                coordinator.pendingTargets.collect {
+                    synchronizeSharedPendingTargets()
+                }
+            }
+        }
+    }
 
     fun loadFile(workspaceRootUuid: String, uuid: String) {
         val activeSave = activeSaveIdentity.get()
@@ -111,17 +129,21 @@ class DocEditorViewModel(
 
         loadJob?.cancel()
         val generation = ++loadGeneration
+        val loadingPendingTargets = sharedPendingTargets(workspaceRootUuid, uuid)
         _uiState.value = DocEditorUiState(
             phase = DocEditorPhase.Loading,
             workspaceRootUuid = workspaceRootUuid,
             documentId = uuid,
             documentEpoch = generation,
+            indexPendingTargets = loadingPendingTargets,
+            indexQueueFailed = loadingPendingTargets.isNotEmpty(),
         )
         loadJob = viewModelScope.launch {
             try {
                 val fileEntry = workspaceRepository.getByUuid(workspaceRootUuid, uuid)
                     ?: throw NoSuchElementException(uuid)
                 if (fileEntry.sizeBytes > LARGE_FILE_SIZE_BYTES) {
+                    val readyPendingTargets = sharedPendingTargets(workspaceRootUuid, uuid)
                     updateCurrentLoad(generation, workspaceRootUuid, uuid) {
                         DocEditorUiState(
                             phase = DocEditorPhase.Ready,
@@ -135,11 +157,14 @@ class DocEditorViewModel(
                             sizeBytes = fileEntry.sizeBytes,
                             isLargeFile = true,
                             hasLoadedDocument = true,
+                            indexPendingTargets = readyPendingTargets,
+                            indexQueueFailed = readyPendingTargets.isNotEmpty(),
                         )
                     }
                     return@launch
                 }
                 val result = fileOperationRepository.readFileRange(workspaceRootUuid, uuid)
+                val readyPendingTargets = sharedPendingTargets(workspaceRootUuid, uuid)
                 updateCurrentLoad(generation, workspaceRootUuid, uuid) {
                     DocEditorUiState(
                         phase = DocEditorPhase.Ready,
@@ -155,6 +180,8 @@ class DocEditorViewModel(
                         lastModified = result.lastModified,
                         sizeBytes = fileEntry.sizeBytes,
                         hasLoadedDocument = true,
+                        indexPendingTargets = readyPendingTargets,
+                        indexQueueFailed = readyPendingTargets.isNotEmpty(),
                     )
                 }
             } catch (cancelled: CancellationException) {
@@ -253,6 +280,29 @@ class DocEditorViewModel(
                         titleConflictCurrentName = null,
                     )
                 }
+                if (pendingIndexCoordinator == null) {
+                    mergePendingIndexTargets(snapshot, result.affectedTargets)
+                }
+                result.affectedTargets.forEach { target ->
+                    try {
+                        val event = FileIndexEvent.Changed(
+                            workspaceRootUuid = snapshot.workspaceRootUuid,
+                            fileUuid = target.fileUuid,
+                            contentHash = target.targetHash,
+                            targetEpoch = target.targetEpoch,
+                        )
+                        if (pendingIndexCoordinator != null) {
+                            pendingIndexCoordinator.publish(event)
+                        } else {
+                            indexEventSink?.publish(event)
+                            removePendingIndexTarget(snapshot, target)
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // 重命名已经提交；精确 target 留在补偿队列中。
+                    }
+                }
                 true
             }
 
@@ -320,15 +370,36 @@ class DocEditorViewModel(
         when (result) {
             is WriteResult.Success -> {
                 updateSameDocument(snapshot) { current ->
+                    val pending = if (pendingIndexCoordinator != null) {
+                        sharedPendingTargets(snapshot.workspaceRootUuid, snapshot.documentId)
+                    } else {
+                        current.indexPendingTargets
+                            .filterNot { it.fileUuid == snapshot.documentId }
+                            .toMutableList()
+                            .apply {
+                                if (!result.indexQueued && result.targetEpoch != null) {
+                                    add(
+                                        RenameIndexTarget(
+                                            fileUuid = snapshot.documentId,
+                                            targetHash = result.newHash,
+                                            targetEpoch = result.targetEpoch,
+                                        ),
+                                    )
+                                }
+                            }
+                    }
                     current.copy(
                         phase = DocEditorPhase.Ready,
                         persistedContent = snapshot.content,
                         currentHash = result.newHash,
+                        lastModified = result.targetEpoch ?: current.lastModified,
                         contentDirty = current.content != snapshot.content,
                         failureCode = null,
                         failureDetail = null,
                         conflictCurrentHash = null,
                         titleConflictCurrentName = null,
+                        indexPendingTargets = pending,
+                        indexQueueFailed = pending.isNotEmpty(),
                     )
                 }
             }
@@ -492,6 +563,104 @@ class DocEditorViewModel(
         _uiState.update { it.copy(warningDismissed = true) }
     }
 
+    fun retryPendingIndex() {
+        if (_uiState.value.indexPendingTargets.isEmpty()) return
+        viewModelScope.launch {
+            retryPendingIndexNow()
+        }
+    }
+
+    internal suspend fun retryPendingIndexNow() {
+        val snapshot = _uiState.value
+        if (pendingIndexCoordinator != null) {
+            pendingIndexCoordinator.snapshot()
+                .filter {
+                    it.workspaceRootUuid == snapshot.workspaceRootUuid &&
+                        it.fileUuid == snapshot.documentId
+                }
+                .forEach { pendingIndexCoordinator.retry(it) }
+            synchronizeSharedPendingTargets()
+            return
+        }
+        snapshot.indexPendingTargets.forEach { target ->
+            try {
+                indexEventSink?.publish(
+                    com.promenar.nexara.data.rag.FileIndexEvent.Changed(
+                        workspaceRootUuid = snapshot.workspaceRootUuid,
+                        fileUuid = target.fileUuid,
+                        contentHash = target.targetHash,
+                        targetEpoch = target.targetEpoch,
+                    ),
+                )
+                removePendingIndexTarget(snapshot, target)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // 单个 target 失败不阻止其它独立 target；失败项保持原样。
+            }
+        }
+    }
+
+    private fun mergePendingIndexTargets(
+        snapshot: DocEditorUiState,
+        targets: List<RenameIndexTarget>,
+    ) {
+        if (targets.isEmpty()) return
+        updateSameDocument(snapshot) { current ->
+            val merged = LinkedHashMap<String, RenameIndexTarget>()
+            current.indexPendingTargets.forEach { merged[it.fileUuid] = it }
+            targets.forEach { incoming ->
+                val existing = merged[incoming.fileUuid]
+                if (existing == null || incoming.targetEpoch >= existing.targetEpoch) {
+                    merged[incoming.fileUuid] = incoming
+                }
+            }
+            current.copy(
+                indexPendingTargets = merged.values.toList(),
+                indexQueueFailed = merged.isNotEmpty(),
+            )
+        }
+    }
+
+    private fun removePendingIndexTarget(
+        snapshot: DocEditorUiState,
+        target: RenameIndexTarget,
+    ) {
+        updateSameDocument(snapshot) { current ->
+            val pending = current.indexPendingTargets.filterNot { it == target }
+            current.copy(
+                indexPendingTargets = pending,
+                indexQueueFailed = pending.isNotEmpty(),
+            )
+        }
+    }
+
+    private fun sharedPendingTargets(
+        workspaceRootUuid: String,
+        documentId: String,
+    ): List<RenameIndexTarget> = pendingIndexCoordinator?.snapshot().orEmpty()
+        .asSequence()
+        .filter { it.workspaceRootUuid == workspaceRootUuid && it.fileUuid == documentId }
+        .map { event ->
+            RenameIndexTarget(
+                fileUuid = event.fileUuid,
+                targetHash = event.contentHash,
+                targetEpoch = event.targetEpoch,
+            )
+        }
+        .toList()
+
+    private fun synchronizeSharedPendingTargets() {
+        if (pendingIndexCoordinator == null) return
+        _uiState.update { current ->
+            val pending = sharedPendingTargets(current.workspaceRootUuid, current.documentId)
+            current.copy(
+                indexPendingTargets = pending,
+                indexQueueFailed = pending.isNotEmpty(),
+            )
+        }
+    }
+
     class Factory(
         private val application: Application,
     ) : ViewModelProvider.Factory {
@@ -501,6 +670,7 @@ class DocEditorViewModel(
             return DocEditorViewModel(
                 fileOperationRepository = app.fileOperationRepository,
                 workspaceRepository = app.workspaceRepository,
+                pendingIndexCoordinator = app.pendingDocumentIndexCoordinator,
             ) as T
         }
     }

@@ -5,6 +5,12 @@ import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.WriteResult
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class FileWriteSkill(
     private val fileOpRepo: IFileOperationRepository
@@ -26,7 +32,22 @@ class FileWriteSkill(
         return when (val result = fileOpRepo.writeFileAtomic(context.workspaceRootUuid, uuid, content, context.sessionId, expectedHash)) {
             is WriteResult.Success -> ToolResult(
                 "write_file_${System.currentTimeMillis()}",
-                "写入成功。新 Hash: ${result.newHash}"
+                if (result.indexQueued) {
+                    "写入成功，索引已入队。新 Hash: ${result.newHash}"
+                } else if (result.targetEpoch == null) {
+                    "写入成功，但索引尚未入队且缺少 targetEpoch，无法生成安全的补偿重试指令。"
+                } else {
+                    "写入成功，但索引尚未入队。请按返回契约依次调用 read_file 与 write_file 原样写回补偿。"
+                },
+                status = if (result.indexQueued) "success" else "error",
+                data = indexResultData(
+                    operation = "write_file",
+                    workspaceRootUuid = context.workspaceRootUuid,
+                    fileUuid = uuid,
+                    contentHash = result.newHash,
+                    targetEpoch = result.targetEpoch,
+                    indexQueued = result.indexQueued,
+                ),
             )
             is WriteResult.Conflict -> ToolResult(
                 "write_file_${System.currentTimeMillis()}",
@@ -41,4 +62,47 @@ class FileWriteSkill(
             )
         }
     }
+
+    private fun indexResultData(
+        operation: String,
+        workspaceRootUuid: String,
+        fileUuid: String,
+        contentHash: String,
+        targetEpoch: Long?,
+        indexQueued: Boolean,
+    ): String = buildJsonObject {
+        put("operation", operation)
+        put("fileUuid", fileUuid)
+        put("contentHash", contentHash)
+        put("targetEpoch", targetEpoch?.let(::JsonPrimitive) ?: JsonNull)
+        put("indexQueued", indexQueued)
+        if (!indexQueued && targetEpoch != null) {
+            put("indexRetry", buildJsonObject {
+                put("strategy", "read_then_rewrite_same_content")
+                put("workspaceRootUuid", workspaceRootUuid)
+                put("fileUuid", fileUuid)
+                put("contentHash", contentHash)
+                put("targetEpoch", targetEpoch)
+                put("steps", buildJsonArray {
+                    add(buildJsonObject {
+                        put("action", "read_file")
+                        put("arguments", buildJsonObject {
+                            put("uuid", fileUuid)
+                            put("mode", "range")
+                            put("startLine", 1)
+                            put("endLine", Int.MAX_VALUE)
+                        })
+                    })
+                    add(buildJsonObject {
+                        put("action", "write_file")
+                        put("arguments", buildJsonObject {
+                            put("uuid", fileUuid)
+                            put("content", "{{read_file.content}}")
+                            put("expectedHash", contentHash)
+                        })
+                    })
+                })
+            })
+        }
+    }.toString()
 }

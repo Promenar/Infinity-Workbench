@@ -98,6 +98,31 @@ internal fun isAllRagFolderDocumentsSelected(documentCount: Int, selectedCount: 
 
 internal fun shouldShowRagDocumentCheckbox(): Boolean = true
 
+internal enum class RagFolderIndexAction {
+    Upload,
+    Move,
+    Delete,
+    RetryFailed,
+    RetryPending,
+    None,
+}
+
+internal fun resolveRagFolderIndexAction(
+    noticeCode: String?,
+    hasSelection: Boolean,
+    canRetryLastFailedIndex: Boolean,
+    canRetryPendingIndex: Boolean,
+): RagFolderIndexAction = when {
+    noticeCode == IndexingNotice.CODE_IMPORT_FAILED -> RagFolderIndexAction.Upload
+    noticeCode == IndexingNotice.CODE_MOVE_FAILED && hasSelection -> RagFolderIndexAction.Move
+    noticeCode == IndexingNotice.CODE_DELETE_FAILED && hasSelection -> RagFolderIndexAction.Delete
+    noticeCode in setOf(IndexingNotice.CODE_FAILED, IndexingNotice.CODE_PARTIAL) &&
+        canRetryLastFailedIndex -> RagFolderIndexAction.RetryFailed
+    noticeCode != null -> RagFolderIndexAction.None
+    canRetryPendingIndex -> RagFolderIndexAction.RetryPending
+    else -> RagFolderIndexAction.None
+}
+
 internal data class RagFolderScreenState(
     val title: String,
     val workspaceRootUuid: String?,
@@ -113,6 +138,8 @@ internal data class RagFolderScreenState(
     val isRetryingLastFailedIndex: Boolean = false,
     val isMovingDocuments: Boolean = false,
     val isDeletingDocuments: Boolean = false,
+    val canRetryPendingRenameIndex: Boolean = false,
+    val isRetryingPendingRenameIndex: Boolean = false,
 )
 
 internal data class RagFolderScreenActions(
@@ -121,6 +148,7 @@ internal data class RagFolderScreenActions(
     val onOpenDocument: (String, String) -> Unit = { _, _ -> },
     val onRetryLoad: () -> Unit = {},
     val onRetryIndex: () -> Unit = {},
+    val onRetryPendingRenameIndex: () -> Unit = {},
     val onDismissIndexNotice: () -> Unit = {},
     val onReindex: (Collection<String>) -> Unit = {},
     val onMove: (Collection<String>, String, (Boolean, List<String>) -> Unit) -> Unit = { _, _, _ -> },
@@ -141,6 +169,8 @@ fun RagFolderScreen(
     val indexingNotice by viewModel.indexingNotice.collectAsState()
     val canRetryLastFailedIndex by viewModel.canRetryLastFailedIndex.collectAsState()
     val isRetryingLastFailedIndex by viewModel.isRetryingLastFailedIndex.collectAsState()
+    val pendingRenameIndexTargets by viewModel.pendingRenameIndexTargets.collectAsState()
+    val isRetryingPendingRenameIndex by viewModel.isRetryingPendingRenameIndex.collectAsState()
     val isMovingDocuments by viewModel.isMovingDocuments.collectAsState()
     val isDeletingDocuments by viewModel.isDeletingDocuments.collectAsState()
     val selectedIds = remember { mutableStateListOf<String>() }
@@ -195,6 +225,8 @@ fun RagFolderScreen(
             isRetryingLastFailedIndex = isRetryingLastFailedIndex,
             isMovingDocuments = isMovingDocuments,
             isDeletingDocuments = isDeletingDocuments,
+            canRetryPendingRenameIndex = pendingRenameIndexTargets.isNotEmpty(),
+            isRetryingPendingRenameIndex = isRetryingPendingRenameIndex,
         ),
         actions = RagFolderScreenActions(
             onBack = onNavigateBack,
@@ -202,6 +234,7 @@ fun RagFolderScreen(
             onOpenDocument = onNavigateToDocEditor,
             onRetryLoad = { folderLoadAttempt += 1 },
             onRetryIndex = viewModel::retryLastFailedIndex,
+            onRetryPendingRenameIndex = viewModel::retryPendingRenameIndex,
             onDismissIndexNotice = viewModel::dismissQueueError,
             onReindex = viewModel::reindexDocuments,
             onMove = viewModel::moveDocuments,
@@ -353,42 +386,54 @@ internal fun RagFolderScreenContent(
                 .testTag(UiTags.RAG_FOLDER_CONTENT),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (state.isIndexing || state.indexingNotice != null) {
+            if (shouldShowRagIndexSection(
+                    isIndexing = state.isIndexing,
+                    hasNotice = state.indexingNotice != null,
+                    canRetryPendingIndex = state.canRetryPendingRenameIndex,
+                )
+            ) {
                 val notice = state.indexingNotice?.let(IndexingNotice::template)
                 val status = notice?.let { stringResource(it.resourceId, *it.args.toTypedArray()) }
-                    ?: stringResource(R.string.rag_index_phase_unknown)
-                val retryAction: (() -> Unit)? = when {
-                    state.canRetryLastFailedIndex -> actions.onRetryIndex
-                    state.indexingNotice?.code == IndexingNotice.CODE_IMPORT_FAILED -> actions.onUpload
-                    state.indexingNotice?.code == IndexingNotice.CODE_MOVE_FAILED && state.selectedIds.isNotEmpty() -> {
-                        { showMoveSheet = true }
-                    }
-                    state.indexingNotice?.code == IndexingNotice.CODE_DELETE_FAILED && state.selectedIds.isNotEmpty() -> {
-                        { showDeleteConfirm = true }
-                    }
-                    state.indexingNotice?.code in setOf(IndexingNotice.CODE_FAILED, IndexingNotice.CODE_WARNING) &&
-                        state.selectedIds.isNotEmpty() -> {
-                        { actions.onReindex(state.selectedIds.toList()) }
-                    }
-                    else -> null
+                    ?: stringResource(
+                        ragIndexFallbackStatusResource(state.canRetryPendingRenameIndex),
+                    )
+                val indexAction = resolveRagFolderIndexAction(
+                    noticeCode = state.indexingNotice?.code,
+                    hasSelection = state.selectedIds.isNotEmpty(),
+                    canRetryLastFailedIndex = state.canRetryLastFailedIndex,
+                    canRetryPendingIndex = state.canRetryPendingRenameIndex,
+                )
+                val retryAction: (() -> Unit)? = when (indexAction) {
+                    RagFolderIndexAction.Upload -> actions.onUpload
+                    RagFolderIndexAction.Move -> ({ showMoveSheet = true })
+                    RagFolderIndexAction.Delete -> ({ showDeleteConfirm = true })
+                    RagFolderIndexAction.RetryFailed -> actions.onRetryIndex
+                    RagFolderIndexAction.RetryPending -> actions.onRetryPendingRenameIndex
+                    RagFolderIndexAction.None -> null
                 }
                 Column {
+                    val retrying = state.isRetryingLastFailedIndex ||
+                        state.isRetryingPendingRenameIndex
                     IndexingProgressBar(
                         progress = state.indexingProgress,
                         statusText = status,
                         isError = state.indexingNotice?.severity == NoticeSeverity.Error,
                     )
-                    if (state.indexingNotice != null) {
+                    if (shouldShowRagIndexActions(
+                            hasNotice = state.indexingNotice != null,
+                            canRetryPendingIndex = state.canRetryPendingRenameIndex,
+                        )
+                    ) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             if (retryAction != null) {
                                 TextButton(
                                     onClick = retryAction,
-                                    enabled = !state.isRetryingLastFailedIndex,
+                                    enabled = !retrying,
                                 ) { Text(stringResource(R.string.shared_btn_retry)) }
                             }
                             TextButton(
                                 onClick = actions.onDismissIndexNotice,
-                                enabled = !state.isRetryingLastFailedIndex,
+                                enabled = !retrying,
                             ) {
                                 Text(stringResource(R.string.common_dismiss))
                             }

@@ -32,6 +32,12 @@ interface VectorizationTaskDao {
     @Query("SELECT * FROM vectorization_tasks WHERE doc_id = :docId")
     suspend fun getByDocId(docId: String): List<VectorizationTaskEntity>
 
+    @Query("SELECT * FROM vectorization_tasks WHERE workspace_root_uuid = :workspaceRootUuid AND doc_id IN (:docIds)")
+    suspend fun getByWorkspaceFiles(
+        workspaceRootUuid: String,
+        docIds: List<String>,
+    ): List<VectorizationTaskEntity>
+
     @Query("SELECT * FROM vectorization_tasks WHERE workspace_root_uuid = :workspaceRootUuid AND doc_id = :docId AND type = :type LIMIT 1")
     suspend fun getByWorkspaceFile(workspaceRootUuid: String, docId: String, type: String): VectorizationTaskEntity?
 
@@ -70,7 +76,7 @@ interface VectorizationTaskDao {
           AND target_content_hash IS :targetContentHash
           AND target_epoch = :targetEpoch
     """)
-    suspend fun deleteForTarget(taskId: String, targetContentHash: String, targetEpoch: Long): Int
+    suspend fun deleteForTarget(taskId: String, targetContentHash: String?, targetEpoch: Long): Int
 
     @Query("""
         UPDATE vectorization_tasks
@@ -98,6 +104,7 @@ interface VectorizationTaskDao {
         WHERE workspace_root_uuid IS :workspaceRootUuid
           AND doc_id IS :docId
           AND type = :type
+          AND id = :expectedTaskId
           AND target_content_hash IS :expectedTargetContentHash
           AND target_epoch = :expectedTargetEpoch
     """)
@@ -105,6 +112,7 @@ interface VectorizationTaskDao {
         workspaceRootUuid: String?,
         docId: String?,
         type: String,
+        expectedTaskId: String,
         expectedTargetContentHash: String?,
         expectedTargetEpoch: Long,
         replacementId: String,
@@ -137,6 +145,7 @@ interface VectorizationTaskDao {
         workspaceRootUuid = expected.workspaceRootUuid,
         docId = expected.docId,
         type = expected.type,
+        expectedTaskId = expected.id,
         expectedTargetContentHash = expected.targetContentHash,
         expectedTargetEpoch = expected.targetEpoch,
         replacementId = replacement.id,
@@ -160,6 +169,36 @@ interface VectorizationTaskDao {
         replacementTargetEpoch = replacement.targetEpoch,
         replacementCreatedAt = replacement.createdAt,
         replacementUpdatedAt = replacement.updatedAt,
+    )
+
+    suspend fun updateForTarget(task: VectorizationTaskEntity): Int = replaceTargetIfExpectedRaw(
+        workspaceRootUuid = task.workspaceRootUuid,
+        docId = task.docId,
+        type = task.type,
+        expectedTaskId = task.id,
+        expectedTargetContentHash = task.targetContentHash,
+        expectedTargetEpoch = task.targetEpoch,
+        replacementId = task.id,
+        replacementStatus = task.status,
+        replacementDocTitle = task.docTitle,
+        replacementSessionId = task.sessionId,
+        replacementUserContent = task.userContent,
+        replacementAiContent = task.aiContent,
+        replacementUserMessageId = task.userMessageId,
+        replacementAssistantMessageId = task.assistantMessageId,
+        replacementLastChunkIndex = task.lastChunkIndex,
+        replacementTotalChunks = task.totalChunks,
+        replacementProgress = task.progress,
+        replacementError = task.error,
+        replacementKgStrategy = task.kgStrategy,
+        replacementSkipVectorization = task.skipVectorization,
+        replacementSubStatus = task.subStatus,
+        replacementSourceMimeType = task.sourceMimeType,
+        replacementContentTruncated = task.contentTruncated,
+        replacementTargetContentHash = task.targetContentHash,
+        replacementTargetEpoch = task.targetEpoch,
+        replacementCreatedAt = task.createdAt,
+        replacementUpdatedAt = task.updatedAt,
     )
 
     @Transaction
@@ -224,8 +263,14 @@ interface VectorizationTaskDao {
     @Query("SELECT * FROM vectorization_tasks WHERE status IN ('pending', 'interrupted') ORDER BY created_at ASC")
     suspend fun getRecoverableTasks(): List<VectorizationTaskEntity>
 
-    @Query("SELECT * FROM vectorization_tasks WHERE type = 'document_reference' AND status IN ('failed', 'partial') ORDER BY updated_at DESC")
+    @Query("SELECT * FROM vectorization_tasks WHERE type IN ('document_reference', 'document') AND status IN ('failed', 'partial') ORDER BY updated_at DESC")
     suspend fun getAttentionTasks(): List<VectorizationTaskEntity>
+
+    @Query("""
+        SELECT * FROM vectorization_tasks
+        WHERE type = 'document_reference' AND status = 'completed'
+    """)
+    suspend fun getCompletedDocumentReferenceTasks(): List<VectorizationTaskEntity>
 
     @Query("""
         UPDATE vectorization_tasks
@@ -242,11 +287,39 @@ interface VectorizationTaskDao {
     """)
     suspend fun markProcessingAsInterrupted(updatedAt: Long): Int
 
-    @Query("DELETE FROM vectorization_tasks WHERE status = 'completed' OR (status = 'failed' AND type != 'document_reference')")
+    @Query("""
+        DELETE FROM vectorization_tasks
+        WHERE status = 'completed' OR (status = 'failed' AND type = 'memory')
+    """)
     suspend fun deleteCompletedTasks()
+
+    @Query("""
+        DELETE FROM vectorization_tasks
+        WHERE type != 'document_reference'
+          AND (status = 'completed' OR (status = 'failed' AND type = 'memory'))
+    """)
+    suspend fun deleteCompletedNonReferenceTasks()
 
     @Query("DELETE FROM vectorization_tasks WHERE workspace_root_uuid = :workspaceRootUuid AND doc_id = :docId")
     suspend fun deleteByWorkspaceFile(workspaceRootUuid: String, docId: String)
+
+    @Query("DELETE FROM vectorization_tasks WHERE workspace_root_uuid = :workspaceRootUuid AND doc_id IN (:docIds)")
+    suspend fun deleteByWorkspaceFiles(workspaceRootUuid: String, docIds: List<String>): Int
+
+    @Transaction
+    suspend fun migrateLegacyToTarget(
+        legacyTaskId: String,
+        replacement: VectorizationTaskEntity,
+    ): VectorizationTaskTargetUpsertResult? {
+        val legacy = getById(legacyTaskId) ?: return null
+        if (legacy.type != "document" || legacy.workspaceRootUuid != replacement.workspaceRootUuid ||
+            legacy.docId != replacement.docId || replacement.type != DOCUMENT_REFERENCE_TYPE
+        ) return null
+        val upsert = upsertTarget(replacement)
+        checkNotNull(getById(upsert.activeTaskId)) { "legacy 迁移后 active target 不存在" }
+        delete(legacy)
+        return upsert
+    }
 
     private companion object {
         const val DOCUMENT_REFERENCE_TYPE = "document_reference"

@@ -247,13 +247,71 @@ class FileOperationRepositoryTest {
             writeHash,
         ) as PatchResult.Success
 
-        assertThat(firstSinkEvents).containsExactly(FileIndexEvent.Changed(ROOT, entry.uuid, writeHash))
-        assertThat(secondSinkEvents).containsExactly(FileIndexEvent.Changed(ROOT, entry.uuid, patch.newHash))
+        val first = firstSinkEvents.single() as FileIndexEvent.Changed
+        val second = secondSinkEvents.single() as FileIndexEvent.Changed
+        assertThat(first.contentHash).isEqualTo(writeHash)
+        assertThat(first.targetEpoch).isGreaterThan(entry.updatedAt)
+        assertThat(second.contentHash).isEqualTo(patch.newHash)
+        assertThat(second.targetEpoch).isGreaterThan(first.targetEpoch)
+    }
+
+    @Test
+    fun `同毫秒或时钟回拨时write与patch仍发布数据库已提交的严格递增epoch`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "line1\nline2")
+        val events = mutableListOf<FileIndexEvent.Changed>()
+        repo = FileOperationRepository(
+            db.fileEntryDao(),
+            db.fileVersionDao(),
+            TestWorkspaceFileOps(),
+            indexEventSink = FileIndexEventSink { events += it as FileIndexEvent.Changed },
+            clock = { entry.updatedAt },
+        )
+
+        val write = repo.writeFileAtomic(ROOT, entry.uuid, "line1\nwrite", "session", entry.hash)
+            as WriteResult.Success
+        val afterWrite = db.fileEntryDao().getByUuid(ROOT, entry.uuid)!!
+        val patch = repo.patchFile(
+            ROOT,
+            entry.uuid,
+            listOf(PatchOperation("replace_lines", startLine = 2, endLine = 2, newContent = "patch")),
+            write.newHash,
+        ) as PatchResult.Success
+        val afterPatch = db.fileEntryDao().getByUuid(ROOT, entry.uuid)!!
+
+        assertThat(afterWrite.updatedAt).isEqualTo(entry.updatedAt + 1)
+        assertThat(afterPatch.updatedAt).isEqualTo(afterWrite.updatedAt + 1)
+        assertThat(patch.targetEpoch).isEqualTo(afterPatch.updatedAt)
+        assertThat(events.map { it.contentHash }).containsExactly(write.newHash, patch.newHash).inOrder()
+        assertThat(events.map { it.targetEpoch })
+            .containsExactly(afterWrite.updatedAt, afterPatch.updatedAt)
+            .inOrder()
+    }
+
+    @Test
+    fun `epoch达到上限时在任何物理或数据库写入前拒绝内容变更`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "stable")
+        db.fileEntryDao().update(entry.copy(updatedAt = Long.MAX_VALUE))
+        repo = FileOperationRepository(
+            db.fileEntryDao(),
+            db.fileVersionDao(),
+            TestWorkspaceFileOps(),
+            clock = { 0L },
+        )
+
+        val failure = runCatching {
+            repo.writeFileAtomic(ROOT, entry.uuid, "changed", "session", entry.hash)
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(File(testDir, "test.txt").readText()).isEqualTo("stable")
+        assertThat(db.fileEntryDao().getByUuid(ROOT, entry.uuid)?.hash).isEqualTo(entry.hash)
+        assertThat(db.fileVersionDao().getByFile(ROOT, entry.uuid)).isEmpty()
     }
 
     @Test
     fun `写入失败冲突与相同内容不发布索引事件`() = runBlocking<Unit> {
         val entry = insertTestFile(content = "stable")
+        db.fileEntryDao().update(entry.copy(vectorizedAt = entry.updatedAt))
         val events = mutableListOf<FileIndexEvent>()
         repo = FileOperationRepository(
             db.fileEntryDao(),
@@ -296,7 +354,98 @@ class FileOperationRepositoryTest {
             result.newHash,
         ) as PatchResult.Success
         assertThat(patch.indexQueued).isFalse()
+        assertThat(patch.targetEpoch)
+            .isEqualTo(db.fileEntryDao().getByUuid(ROOT, entry.uuid)?.updatedAt)
         assertThat(File(testDir, "test.txt").readText()).isEqualTo("patched")
+    }
+
+    @Test
+    fun `提交后索引发布取消仍返回带真实目标的成功结果`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "stable")
+        repo = FileOperationRepository(
+            db.fileEntryDao(),
+            db.fileVersionDao(),
+            TestWorkspaceFileOps(),
+            indexEventSink = FileIndexEventSink {
+                throw kotlinx.coroutines.CancellationException("cancel after commit")
+            },
+        )
+
+        val result = repo.writeFileAtomic(ROOT, entry.uuid, "committed", "session", entry.hash)
+            as WriteResult.Success
+        val committed = db.fileEntryDao().getByUuid(ROOT, entry.uuid)!!
+
+        assertThat(result.indexQueued).isFalse()
+        assertThat(result.newHash).isEqualTo(committed.hash)
+        assertThat(result.targetEpoch).isNotNull()
+        assertThat(result.targetEpoch).isEqualTo(committed.updatedAt)
+        assertThat(File(testDir, "test.txt").readText()).isEqualTo("committed")
+    }
+
+    @Test
+    fun `同内容write与patch在向量marker过期时重新发布当前目标`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "stable")
+        db.fileEntryDao().update(entry.copy(vectorizedAt = entry.updatedAt - 1L))
+        val events = mutableListOf<FileIndexEvent.Changed>()
+        repo = FileOperationRepository(
+            db.fileEntryDao(),
+            db.fileVersionDao(),
+            TestWorkspaceFileOps(),
+            indexEventSink = FileIndexEventSink { events += it as FileIndexEvent.Changed },
+        )
+
+        val write = repo.writeFileAtomic(ROOT, entry.uuid, "stable", "session", entry.hash)
+            as WriteResult.Success
+        val patch = repo.patchFile(
+            ROOT,
+            entry.uuid,
+            listOf(PatchOperation("replace_lines", startLine = 1, endLine = 1, newContent = "stable")),
+            entry.hash,
+        ) as PatchResult.Success
+
+        assertThat(write.indexQueued).isTrue()
+        assertThat(write.targetEpoch).isEqualTo(entry.updatedAt)
+        assertThat(patch.indexQueued).isTrue()
+        assertThat(patch.targetEpoch).isEqualTo(entry.updatedAt)
+        assertThat(events).containsExactly(
+            FileIndexEvent.Changed(ROOT, entry.uuid, entry.hash, entry.updatedAt),
+            FileIndexEvent.Changed(ROOT, entry.uuid, entry.hash, entry.updatedAt),
+        ).inOrder()
+        assertThat(db.fileVersionDao().getByFile(ROOT, entry.uuid)).isEmpty()
+    }
+
+    @Test
+    fun `首次发布取消后同内容write可按原目标重试入队`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "stable")
+        val events = mutableListOf<FileIndexEvent.Changed>()
+        var attempts = 0
+        repo = FileOperationRepository(
+            db.fileEntryDao(),
+            db.fileVersionDao(),
+            TestWorkspaceFileOps(),
+            indexEventSink = FileIndexEventSink { event ->
+                attempts += 1
+                if (attempts == 1) {
+                    throw kotlinx.coroutines.CancellationException("first publish cancelled")
+                }
+                events += event as FileIndexEvent.Changed
+            },
+        )
+
+        val first = repo.writeFileAtomic(ROOT, entry.uuid, "committed", "session", entry.hash)
+            as WriteResult.Success
+        val second = repo.writeFileAtomic(ROOT, entry.uuid, "committed", "session", first.newHash)
+            as WriteResult.Success
+
+        assertThat(first.indexQueued).isFalse()
+        assertThat(first.targetEpoch).isNotNull()
+        assertThat(second.indexQueued).isTrue()
+        assertThat(second.newHash).isEqualTo(first.newHash)
+        assertThat(second.targetEpoch).isEqualTo(first.targetEpoch)
+        assertThat(events).containsExactly(
+            FileIndexEvent.Changed(ROOT, entry.uuid, first.newHash, requireNotNull(first.targetEpoch)),
+        )
+        assertThat(db.fileVersionDao().getByFile(ROOT, entry.uuid)).hasSize(1)
     }
 
     private companion object {

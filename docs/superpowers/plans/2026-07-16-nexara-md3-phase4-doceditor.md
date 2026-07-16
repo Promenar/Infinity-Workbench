@@ -3,7 +3,7 @@
 > 日期：2026-07-16
 > 分支：`codex/md3-redesign`
 > 依据：`docs/superpowers/specs/2026-07-16-nexara-md3-redesign-design.md`
-> 状态：实施中（计划终审 C0/I0/M0；视觉计划 P0/P1/P2 清零）
+> 状态：实施中（Task 1-3 已完成；Task 4-8 待执行）
 > 范围：DocEditor 保存/重命名/索引可靠性、长文档性能、Material 3 视觉、响应式与无障碍；不改 RAG 检索策略
 
 ## 目标与边界
@@ -114,31 +114,31 @@
 - Modify: `native-ui/app/src/test/java/com/promenar/nexara/ui/rag/DocEditorViewModelTest.kt`
 - Modify: relevant constructor/call-site tests discovered by `rg 'rename\\('`
 
-- [ ] **Step 1：写 RenameResult RED**
+- [x] **Step 1：写 RenameResult RED**
 
   契约必须覆盖 expectedName 匹配成功、远端已改名 Conflict、保存前删除 NotFound、同名冲突异常和普通 RagViewModel 无条件重命名调用。返回值不得依赖异常文本判断。
 
-- [ ] **Step 2：实现根级事务内 CAS**
+- [x] **Step 2：实现根级事务内 CAS**
 
   在 `withRootMutation` 锁内重新读取目标并比较 `expectedName`，再执行物理路径与数据库提交；验证完成后先 `ensureActive()`，物理移动、FileEntry 更新和 rollback commit 使用窄范围 `NonCancellable` 提交点，使调用方能确定 Success/Conflict/NotFound。Success 返回新名称、hash 和单调 targetEpoch；epoch 使用 `max(clock(), previous.updatedAt + 1)`，不能依赖同毫秒 wall clock 自然递增。DocEditor 使用 `persistedTitle`，普通文件管理调用保持明确的无条件语义。
 
-- [ ] **Step 3：写索引入队 RED**
+- [x] **Step 3：写索引入队 RED**
 
   覆盖标题单独保存、正文保存和标题+正文保存三条路径：标题提交后即可安全持久入队；正文成功后以最新 hash 幂等覆盖同一文档的目标代际。事件失败时文件仍算已保存，`persistedTitle/content/hash` 前移并按当前输入重新计算 dirty，索引故障只由独立 `indexPending(targetHash, epoch)` 表达；重试成功后清除对应代际 pending。
 
-- [ ] **Step 4：实现显式 reindex 端口和 UI 状态**
+- [x] **Step 4：实现显式 reindex 端口和 UI 状态**
 
   复用现有 `FileIndexEventSink`/持久化 `VectorizationQueue`，在文件操作端口提供可测试的重试入口。队列按 workspaceRootUuid + docId 幂等 upsert 最新目标 hash/代际：标题提交必须先持久入队，正文成功再覆盖，不依赖后续写入必然成功。旧 processor 的完成/失败/删除和旧重试都必须用 targetHash + targetEpoch CAS，不能覆盖或删除新目标；重复点击不得产生重复持久任务。成功回写同步刷新 `sizeBytes`、`lastModified` 和 hash。
 
-- [ ] **Step 5：执行 Room v1→v2 正式迁移**
+- [x] **Step 5：执行 Room v1→v2 正式迁移**
 
   `vectorization_tasks` 增加 `target_content_hash TEXT NULL` 与 `target_epoch INTEGER NOT NULL DEFAULT 0`，保留 `(workspace_root_uuid, doc_id, type)` 唯一键，以单行版本化 upsert 表达最新目标。迁移对 document_reference 从 FileEntry hash/updatedAt 回填，注册 `MIGRATION_1_2` 并生成 schema 2.json；同步更新备份 schema/version/identity-hash 兼容逻辑。禁止改写冻结的 1.json、使用 destructive fallback，或把目标版本塞进 task ID/subStatus/userContent。
 
-- [ ] **Step 6：补齐重命名取消提交点 RED**
+- [x] **Step 6：补齐重命名取消提交点 RED**
 
   覆盖提交前取消、物理/数据库提交点后取消、标题已成功而正文 Conflict/NotFound/异常；ViewModel 必须据 `RenameResult` 保留真实局部成功，且标题索引事件不会因正文失败而丢失。
 
-- [ ] **Step 7：运行仓库、迁移、备份与 ViewModel 回归**
+- [x] **Step 7：运行仓库、迁移、备份与 ViewModel 回归**
 
   ```bash
   cd native-ui
@@ -146,9 +146,18 @@
   ANDROID_SERIAL=<api36> ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.promenar.nexara.data.local.db.NexaraDatabaseMigration1To2Test
   ```
 
-- [ ] **Step 8：提交**
+- [x] **Step 8：提交**
 
   `git commit -m "fix: make document rename and indexing explicit"`
+
+Task 3 实际按三个安全提交点完成：`e6ef4f4` 建立重命名 CAS，`1ca2511` 建立 Room 目标版本与正式 v1→v2 迁移，本阶段第三个提交收口索引队列/删除屏障/补偿状态。最终实现额外覆盖：
+
+- `targetHash + targetEpoch` 从 Room、内存队列到事务回写全链路 CAS，旧 worker、旧重试和 completed 清理均不得覆盖或删除 newer target。
+- 文件、文件夹与工作区删除使用 cancel-and-join + fence + Room 提交屏障；失败时安全回滚并恢复当前目标，成功后清理共享 pending。
+- 应用级 pending coordinator 跨 Home、Folder、DocEditor ViewModel 保留精确失败目标；预取消先短登记，成功保留 latest watermark，永久删除保留进程内 tombstone，拒绝迟到旧事件制造幽灵告警。
+- 进程死亡发生在文件提交后、Queue 接收前时，冷启动扫描 `vectorizedAt` 缺失/落后文件并以当前 hash、epoch 与 KG 配置重建 reference task。
+- DocEditor 在 Loading、LoadError、SaveError、SaveConflict 等组合状态下仍显示唯一 MD3 索引告警与 48dp 重试入口；新增 360×640dp、2× 字体、SaveConflict 双动作 + pending 的仪器契约。
+- 最终主控门禁：1872 个 JVM 测试，0 failure/error、14 skip；AndroidTest 源码编译与 `lintDebug` 通过；两路只读终审最终均为 C0/I0/M0。当前无 ADB 设备，新增仪器测试仅完成编译，真机/模拟器执行仍属于 Task 7/8。
 
 ---
 

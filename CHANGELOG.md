@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 重设计第四阶段：DocEditor 可靠性检查点（2026-07-17）
+
+- **重命名与索引目标版本化**：DocEditor 重命名使用 persisted-title CAS 与单调 epoch；Room `document_reference` 任务以 `workspace + file + hash + epoch` 表达唯一当前目标，旧 worker、旧失败和旧清理不能覆盖或删除 newer target。
+- **删除、重置与取消线性化**：文件/目录/工作区永久删除在数据库提交前取消并等待目标 worker、建立 enqueue fence，并在失败时安全恢复；Provider/Embedding/KG 配置切换等待旧队列关闭后由唯一新队列接管，监听器关闭与状态通知异常不会破坏资源替换。
+- **已提交文件与索引补偿分离**：文件写入、Patch 或重命名在物理/Room 提交后即使调用协程取消，也返回真实 committed 事实并保留 `indexQueued=false`；应用级 pending coordinator 让 Home、Folder 与 DocEditor 共用精确失败目标、重试与删除清理，并用 latest watermark/删除 tombstone 拒绝迟到旧事件制造幽灵告警。
+- **冷启动完整恢复**：进程死亡发生在文件事务提交后、Queue 接收前时，启动扫描会从 FileEntry 当前 hash/epoch 重建 reference task；`vectorizedAt` 为空或落后的文件均覆盖，KG 开启时恢复显式 `full` 策略，关闭时保持无 KG。
+- **工具与分享一致性**：File Write/Patch 只使用真实 `read_file → write_file` 补偿路径，区分“文件已提交、索引待处理”与写入失败；分享导入使用当前文件版本和 KG 配置，空图谱也写入完成标记，避免持续显示未完成。
+- **DocEditor 索引告警可达性**：索引 pending 从普通统计栏拆为独立单层 MD3 notice，在加载/保存错误与冲突状态仍唯一可见；重试按钮保持 48dp。新增 360×640dp、2× 字体、SaveConflict 双动作 + pending 的仪器契约，当前仅完成编译，设备执行保留到第四阶段视觉/设备门禁。
+- **检查点门禁**：1872 个 JVM 测试，0 failure/error、14 skip；AndroidTest 源码编译、`lintDebug` 与 `git diff --check` 通过；独立终审最终 C0/I0/M0。第四阶段仍未完成长文档性能、9+ 视觉基线与 API 31/35/36 设备矩阵，不代表整体 Release 已放行。
+
 ### Material 3 重设计第三阶段：知识库与资源管理（2026-07-16）
 
 - **知识库与索引状态统一**：RAG 搜索、索引进度、状态提示、首页、Memory 与文件夹页面统一为单层 Material 3 列表/tonal surface；进度卡只向 TalkBack 发布一次进度、状态描述与 LiveRegion，内部可见文字和真实进度条不再重复朗读。

@@ -14,6 +14,11 @@ import java.util.UUID
 interface DocumentIndexService {
     suspend fun rebuild(event: FileIndexEvent): DocumentIndexResult
     suspend fun delete(workspaceRootUuid: String, fileUuid: String): DocumentIndexResult
+    suspend fun prepareLegacyRetry(
+        workspaceRootUuid: String,
+        fileUuid: String,
+        legacyTaskId: String,
+    ): Boolean = false
 }
 
 sealed interface DocumentIndexResult {
@@ -55,6 +60,7 @@ class WorkspaceDocumentIndexCandidateBuilder(
         val entry = fileEntryDao.getByUuid(event.workspaceRootUuid, event.fileUuid)
             ?: throw java.io.FileNotFoundException("索引文件不存在")
         require(entry.hash == event.contentHash) { "索引事件 hash 已过期" }
+        require(entry.updatedAt == event.targetEpoch) { "索引事件 epoch 已过期" }
         val file = File(entry.physicalRootPath, entry.materializedPath.trimStart('/')).canonicalFile
         val before = file.sha256()
         require(before == event.contentHash) { "索引前文件内容与数据库 hash 不一致" }
@@ -149,6 +155,10 @@ class RoomDocumentIndexService(
     override suspend fun rebuild(event: FileIndexEvent): DocumentIndexResult {
         if (event is FileIndexEvent.Deleted) return delete(event.workspaceRootUuid, event.fileUuid)
         event as FileIndexEvent.Changed
+        val activeTaskId = event.activeTaskId
+            ?: return DocumentIndexResult.Failed(
+                IllegalArgumentException("索引提交缺少活动任务标识"),
+            )
         val candidate = try {
             candidateBuilder.build(event)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -159,20 +169,28 @@ class RoomDocumentIndexService(
         return try {
             database.withTransaction {
                 val current = database.fileEntryDao().getByUuid(event.workspaceRootUuid, event.fileUuid)
-                if (current?.hash != event.contentHash) {
+                if (current?.hash != event.contentHash || current.updatedAt != event.targetEpoch) {
                     return@withTransaction DocumentIndexResult.HashChanged(current?.hash)
+                }
+                val activeTask = database.vectorizationTaskDao().getByWorkspaceFile(
+                    event.workspaceRootUuid,
+                    event.fileUuid,
+                    DOCUMENT_REFERENCE_TYPE,
+                )
+                if (activeTask?.id != activeTaskId ||
+                    activeTask.targetContentHash != event.contentHash ||
+                    activeTask.targetEpoch != event.targetEpoch
+                ) {
+                    return@withTransaction DocumentIndexResult.HashChanged(current.hash)
                 }
                 artifacts.clear(event.workspaceRootUuid, event.fileUuid, deleteTags = false)
                 if (candidate.vectors.isNotEmpty()) database.vectorDao().insertAll(candidate.vectors)
                 candidate.nodes.forEach { database.kgNodeDao().insert(it) }
                 candidate.edges.forEach { database.kgEdgeDao().insert(it) }
-                val timestamp = now()
+                val timestamp = maxOf(now(), event.targetEpoch)
                 database.fileEntryDao().update(current.copy(
                     vectorizedAt = timestamp,
-                    kgExtractedAt = timestamp.takeIf {
-                        candidate.nodes.isNotEmpty() || candidate.edges.isNotEmpty()
-                    },
-                    updatedAt = maxOf(current.updatedAt, timestamp),
+                    kgExtractedAt = timestamp.takeIf { event.kgStrategy != null },
                 ))
                 DocumentIndexResult.Rebuilt(event.fileUuid)
             }
@@ -186,6 +204,7 @@ class RoomDocumentIndexService(
     override suspend fun delete(workspaceRootUuid: String, fileUuid: String): DocumentIndexResult = try {
         database.withTransaction {
             artifacts.clear(workspaceRootUuid, fileUuid, deleteTags = true)
+            database.vectorizationTaskDao().deleteByWorkspaceFile(workspaceRootUuid, fileUuid)
             DocumentIndexResult.Deleted(fileUuid)
         }
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -194,7 +213,36 @@ class RoomDocumentIndexService(
         DocumentIndexResult.Failed(failure)
     }
 
+    override suspend fun prepareLegacyRetry(
+        workspaceRootUuid: String,
+        fileUuid: String,
+        legacyTaskId: String,
+    ): Boolean = try {
+        database.withTransaction {
+            val task = database.vectorizationTaskDao().getById(legacyTaskId)
+                ?: return@withTransaction false
+            if (task.type != "document" || task.workspaceRootUuid != workspaceRootUuid || task.docId != fileUuid) {
+                return@withTransaction false
+            }
+            artifacts.clear(workspaceRootUuid, fileUuid, deleteTags = false)
+            database.vectorizationTaskDao().update(
+                task.copy(
+                    status = "interrupted",
+                    error = null,
+                    subStatus = "删除回滚，等待安全重建",
+                    updatedAt = now(),
+                ),
+            ) == 1
+        }
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (_: Throwable) {
+        false
+    }
+
 }
+
+private const val DOCUMENT_REFERENCE_TYPE = "document_reference"
 
 class RoomDocumentArtifacts(
     private val database: NexaraDatabase,
@@ -204,6 +252,5 @@ class RoomDocumentArtifacts(
         database.kgEdgeDao().deleteByDocId(fileUuid)
         database.kgNodeDao().deleteByFileUuid(fileUuid)
         if (deleteTags) database.documentTagDao().deleteByDocId(fileUuid)
-        database.vectorizationTaskDao().deleteByWorkspaceFile(workspaceRootUuid, fileUuid)
     }
 }

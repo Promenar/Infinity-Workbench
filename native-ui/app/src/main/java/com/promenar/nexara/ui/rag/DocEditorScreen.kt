@@ -45,10 +45,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -93,6 +95,7 @@ import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import java.util.Locale
 import kotlinx.coroutines.CoroutineStart
@@ -141,6 +144,7 @@ data class DocEditorScreenActions(
     val onConfirmReload: () -> Unit = {},
     val onUseWorkspaceTitle: () -> Unit = {},
     val onRetryMyTitle: () -> Unit = {},
+    val onRetryPendingIndex: () -> Unit = {},
 )
 
 fun docEditorBackDecision(
@@ -176,6 +180,9 @@ fun DocEditorUiState.toVisibleState(): DocEditorVisibleState {
         }
     }
 }
+
+internal fun shouldShowDocEditorPendingIndexNotice(editor: DocEditorUiState): Boolean =
+    editor.indexQueueFailed && editor.indexPendingTargets.isNotEmpty()
 
 @Composable
 fun DocEditorScreen(
@@ -218,6 +225,7 @@ fun DocEditorScreen(
             onConfirmReload = viewModel::reload,
             onUseWorkspaceTitle = viewModel::useWorkspaceTitle,
             onRetryMyTitle = viewModel::retryMyTitle,
+            onRetryPendingIndex = viewModel::retryPendingIndex,
         ),
     )
 }
@@ -452,6 +460,10 @@ fun DocEditorScreenContent(
                         actions = actions,
                         modifier = Modifier.weight(1f),
                     )
+                }
+
+                if (shouldShowDocEditorPendingIndexNotice(editor)) {
+                    PendingIndexNotice(onRetry = actions.onRetryPendingIndex)
                 }
 
                 val noticeOwnsRemainingSpace = visibleState in setOf(
@@ -1092,7 +1104,10 @@ private fun SaveNotice(
 }
 
 @Composable
-private fun EditorStatusBar(editor: DocEditorUiState, viewMode: DocEditorViewMode) {
+private fun EditorStatusBar(
+    editor: DocEditorUiState,
+    viewMode: DocEditorViewMode,
+) {
     val wordCount = remember(editor.content) {
         editor.content.split(Regex("\\s+")).count { it.isNotBlank() }
     }
@@ -1135,6 +1150,49 @@ private fun EditorStatusBar(editor: DocEditorUiState, viewMode: DocEditorViewMod
                     ),
             )
             Text(modeLabel, style = NexaraTypography.bodySmall, color = NexaraColors.OnSurface)
+        }
+    }
+}
+
+@Composable
+private fun PendingIndexNotice(onRetry: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(
+                horizontal = NexaraSpacing.Medium,
+                vertical = NexaraSpacing.Small,
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Warning,
+                contentDescription = null,
+                tint = NexaraColors.StatusWarning,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = stringResource(R.string.rag_index_retry_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                onClick = onRetry,
+                modifier = Modifier.defaultMinSize(
+                    minWidth = NexaraSpacing.MinimumTouchTarget,
+                    minHeight = NexaraSpacing.MinimumTouchTarget,
+                ),
+            ) {
+                Text(stringResource(R.string.shared_btn_retry))
+            }
         }
     }
 }

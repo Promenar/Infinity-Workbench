@@ -5,6 +5,37 @@ import org.junit.jupiter.api.Test
 
 class DocEditorScreenStateTest {
     @Test
+    fun `pending索引告警与编辑器phase正交且只由pending事实决定`() {
+        listOf(
+            DocEditorPhase.LoadError,
+            DocEditorPhase.Ready,
+            DocEditorPhase.SaveError,
+            DocEditorPhase.SaveConflict,
+        ).forEach { phase ->
+            assertThat(
+                shouldShowDocEditorPendingIndexNotice(
+                    DocEditorUiState(
+                        phase = phase,
+                        indexQueueFailed = true,
+                        indexPendingTargets = listOf(
+                            com.promenar.nexara.domain.repository.RenameIndexTarget(
+                                fileUuid = "doc",
+                                targetHash = "hash",
+                                targetEpoch = 1L,
+                            ),
+                        ),
+                    ),
+                ),
+            ).isTrue()
+        }
+        assertThat(
+            shouldShowDocEditorPendingIndexNotice(
+                DocEditorUiState(indexQueueFailed = true, indexPendingTargets = emptyList()),
+            ),
+        ).isFalse()
+    }
+
+    @Test
     fun `dirty 返回必须确认而 clean 返回直接导航`() {
         assertThat(docEditorBackDecision(isDirty = true))
             .isEqualTo(DocEditorBackDecision.ConfirmDiscard)

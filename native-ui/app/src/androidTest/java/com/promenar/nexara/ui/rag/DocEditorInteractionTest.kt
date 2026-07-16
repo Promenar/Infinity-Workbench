@@ -127,6 +127,135 @@ class DocEditorInteractionTest {
     }
 
     @Test
+    fun readyWithPendingIndexShowsWarningAndRetriesIndex() {
+        val retries = AtomicInteger(0)
+        rule.setContent {
+            TestContent(
+                screenState = DocEditorScreenState(
+                    editorState = readyEditorState().copy(
+                        indexQueueFailed = true,
+                        indexPendingTargets = listOf(
+                            com.promenar.nexara.domain.repository.RenameIndexTarget(
+                                fileUuid = "doc",
+                                targetHash = "hash-2",
+                                targetEpoch = 456L,
+                            ),
+                        ),
+                    ),
+                ),
+                actions = DocEditorScreenActions(
+                    onRetryPendingIndex = { retries.incrementAndGet() },
+                ),
+            )
+        }
+
+        rule.onNodeWithText(
+            rule.activity.getString(com.promenar.nexara.R.string.rag_index_retry_hint),
+        ).assertIsDisplayed()
+        rule.onNodeWithText(
+            rule.activity.getString(com.promenar.nexara.R.string.shared_btn_retry),
+        )
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        assertThat(retries.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun pendingIndexWarningIsSingleAndRetryableAcrossSaveConflictAndLoadError() {
+        val retries = AtomicInteger(0)
+        var editorState by mutableStateOf(
+            readyEditorState(phase = DocEditorPhase.SaveConflict, dirty = true).withPendingIndex(),
+        )
+        rule.setContent {
+            TestContent(
+                screenState = DocEditorScreenState(editorState = editorState),
+                actions = DocEditorScreenActions(
+                    onRetryPendingIndex = { retries.incrementAndGet() },
+                ),
+            )
+        }
+        val hint = rule.activity.getString(com.promenar.nexara.R.string.rag_index_retry_hint)
+        val retry = rule.activity.getString(com.promenar.nexara.R.string.shared_btn_retry)
+
+        rule.onAllNodesWithText(hint).assertCountEquals(1)
+        rule.onAllNodesWithText(retry).assertCountEquals(1)
+        rule.onNodeWithText(retry).performClick()
+        assertThat(retries.get()).isEqualTo(1)
+
+        rule.runOnIdle {
+            editorState = DocEditorUiState(
+                phase = DocEditorPhase.LoadError,
+                workspaceRootUuid = "root",
+                documentId = "doc",
+                failureCode = DocEditorFailureCode.LoadFailed,
+            ).withPendingIndex()
+        }
+        rule.onAllNodesWithText(hint).assertCountEquals(1)
+        rule.onAllNodesWithText(retry).assertCountEquals(1)
+    }
+
+    @Test
+    fun compactDoubleFontConflictKeepsBothConflictActionsAndSinglePendingRetryVisible() {
+        val copies = AtomicInteger(0)
+        val reloads = AtomicInteger(0)
+        val pendingRetries = AtomicInteger(0)
+        rule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(density.density, fontScale = 2f),
+            ) {
+                Box(Modifier.requiredSize(width = 360.dp, height = 640.dp)) {
+                    TestContent(
+                        screenState = DocEditorScreenState(
+                            editorState = readyEditorState(
+                                phase = DocEditorPhase.SaveConflict,
+                                dirty = true,
+                            ).withPendingIndex(),
+                        ),
+                        actions = DocEditorScreenActions(
+                            onCopyLocalContent = { copies.incrementAndGet() },
+                            onRequestReload = { reloads.incrementAndGet() },
+                            onRetryPendingIndex = { pendingRetries.incrementAndGet() },
+                        ),
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithText(
+            rule.activity.getString(com.promenar.nexara.R.string.doc_editor_conflict_description),
+        ).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_COPY_LOCAL)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_REQUEST_RELOAD)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        val pendingHint = rule.activity.getString(com.promenar.nexara.R.string.rag_index_retry_hint)
+        val pendingRetry = rule.activity.getString(com.promenar.nexara.R.string.shared_btn_retry)
+        rule.onAllNodesWithText(pendingHint).assertCountEquals(1)
+        rule.onNodeWithText(pendingHint).assertIsDisplayed()
+        rule.onAllNodesWithText(pendingRetry).assertCountEquals(1)
+        rule.onNodeWithText(pendingRetry)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        assertThat(copies.get()).isEqualTo(1)
+        assertThat(reloads.get()).isEqualTo(1)
+        assertThat(pendingRetries.get()).isEqualTo(1)
+    }
+
+    @Test
     fun saveCancelledShowsRetainedLocalChangesFeedback() {
         val retries = AtomicInteger(0)
         rule.setContent {
@@ -541,5 +670,16 @@ class DocEditorInteractionTest {
             DocEditorPhase.SaveConflict -> DocEditorFailureCode.ContentConflict
             else -> null
         },
+    )
+
+    private fun DocEditorUiState.withPendingIndex() = copy(
+        indexQueueFailed = true,
+        indexPendingTargets = listOf(
+            com.promenar.nexara.domain.repository.RenameIndexTarget(
+                fileUuid = "doc",
+                targetHash = "hash-2",
+                targetEpoch = 456L,
+            ),
+        ),
     )
 }

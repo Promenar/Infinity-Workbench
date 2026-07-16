@@ -5,6 +5,7 @@ import com.promenar.nexara.data.local.db.dao.WorkspaceSeqDao
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.RenameResult
+import com.promenar.nexara.domain.repository.RenameIndexTarget
 import com.promenar.nexara.infra.util.Sha256Utils
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +20,18 @@ import java.io.File
 import java.util.UUID
 import java.io.OutputStream
 
+interface WorkspaceDeleteBarrierLease {
+    suspend fun awaitReady()
+    suspend fun commit()
+    suspend fun abort()
+}
+
+private object NoOpWorkspaceDeleteBarrierLease : WorkspaceDeleteBarrierLease {
+    override suspend fun awaitReady() = Unit
+    override suspend fun commit() = Unit
+    override suspend fun abort() = Unit
+}
+
 class WorkspaceRepository(
     private val dao: FileEntryDao,
     private val seqDao: WorkspaceSeqDao,
@@ -27,7 +40,9 @@ class WorkspaceRepository(
     private val insertCommitter: (suspend (FileEntry) -> Unit)? = null,
     private val updateCommitter: (suspend (List<FileEntry>) -> Unit)? = null,
     private val deleteCommitter: (suspend (String, List<String>) -> Unit)? = null,
-    private val onDeleteCommitted: (List<String>) -> Unit = {},
+    private val beforeDeleteCommitted: suspend (String, List<String>) -> WorkspaceDeleteBarrierLease =
+        { _, _ -> NoOpWorkspaceDeleteBarrierLease },
+    private val afterDeleteCommitted: suspend (String, List<String>) -> Unit = { _, _ -> },
     private val bulkDeleteSnapshotHook: suspend () -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
 ) : IWorkspaceRepository {
@@ -207,6 +222,7 @@ class WorkspaceRepository(
             parentUuid = parentUuid,
             name = name,
             hash = Sha256Utils.hash(content),
+            mimeType = "text/plain",
             sizeBytes = content.toByteArray(Charsets.UTF_8).size.toLong(),
             physicalRootPath = root.physicalRootPath,
             materializedPath = normalizedPath,
@@ -403,18 +419,27 @@ class WorkspaceRepository(
             workspaceDeletionToken(entry.uuid),
         )
         val ids = children.map { it.uuid } + uuid
+        var barrier: WorkspaceDeleteBarrierLease? = null
         try {
+            barrier = beforeDeleteCommitted(workspaceRootUuid, ids)
+            barrier.awaitReady()
             requireNotNull(deleteCommitter) {
                 "永久删除必须配置包含派生数据清理的事务提交器"
             }.invoke(workspaceRootUuid, ids)
         } catch (failure: Throwable) {
             runCatching { staged.rollback() }.exceptionOrNull()?.let(failure::addSuppressed)
+            withContext(NonCancellable) {
+                runCatching { barrier?.abort() }.exceptionOrNull()?.let(failure::addSuppressed)
+            }
             throw failure
         }
-        try {
-            onDeleteCommitted(ids)
-        } catch (_: Exception) {
-            // 数据库与物理删除已提交；运行时队列通知失败不能反转持久状态。
+        withContext(NonCancellable) {
+            checkNotNull(barrier).commit()
+            runCatching { afterDeleteCommitted(workspaceRootUuid, ids) }
+                .exceptionOrNull()
+                ?.let { failure ->
+                    runCatching { NexaraLogger.logError("WorkspaceDelete.afterCommitted", failure) }
+                }
         }
         // Tombstone 清理失败时保留在受控目录，后续维护清理可幂等重试。
         runCatching { staged.commit() }
@@ -557,6 +582,13 @@ class WorkspaceRepository(
                             targetHash = entry.hash,
                             targetEpoch = nextEpoch,
                             changed = true,
+                            affectedTargets = updates.filterNot { it.isDirectory }.map { updated ->
+                                RenameIndexTarget(
+                                    fileUuid = updated.uuid,
+                                    targetHash = updated.hash,
+                                    targetEpoch = updated.updatedAt,
+                                )
+                            },
                         )
                     }
                 }

@@ -9,13 +9,18 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 class FilePatchSkill(
     private val fileOpRepo: IFileOperationRepository
@@ -49,7 +54,24 @@ class FilePatchSkill(
         return when (val result = fileOpRepo.patchFile(context.workspaceRootUuid, uuid, operations, expectedHash)) {
             is PatchResult.Success -> ToolResult(
                 "patch_file_${System.currentTimeMillis()}",
-                "补丁应用成功。新 Hash: ${result.newHash}，已应用 ${result.appliedOperations} 个操作。"
+                if (result.indexQueued) {
+                    "补丁应用成功，索引已入队。新 Hash: ${result.newHash}，已应用 ${result.appliedOperations} 个操作。"
+                } else if (result.targetEpoch == null) {
+                    "补丁应用成功，但索引尚未入队且缺少 targetEpoch，无法生成安全的补偿重试指令。" +
+                        "新 Hash: ${result.newHash}，已应用 ${result.appliedOperations} 个操作。"
+                } else {
+                    "补丁应用成功，但索引尚未入队。请按返回契约依次调用 read_file 与 write_file 原样写回补偿。" +
+                        "新 Hash: ${result.newHash}，已应用 ${result.appliedOperations} 个操作。"
+                },
+                status = if (result.indexQueued) "success" else "error",
+                data = indexResultData(
+                    workspaceRootUuid = context.workspaceRootUuid,
+                    fileUuid = uuid,
+                    contentHash = result.newHash,
+                    targetEpoch = result.targetEpoch,
+                    indexQueued = result.indexQueued,
+                    appliedOperations = result.appliedOperations,
+                ),
             )
             is PatchResult.Failure -> ToolResult(
                 "patch_file_${System.currentTimeMillis()}",
@@ -58,6 +80,50 @@ class FilePatchSkill(
             )
         }
     }
+
+    private fun indexResultData(
+        workspaceRootUuid: String,
+        fileUuid: String,
+        contentHash: String,
+        targetEpoch: Long?,
+        indexQueued: Boolean,
+        appliedOperations: Int,
+    ): String = buildJsonObject {
+        put("operation", "patch_file")
+        put("fileUuid", fileUuid)
+        put("contentHash", contentHash)
+        put("targetEpoch", targetEpoch?.let(::JsonPrimitive) ?: JsonNull)
+        put("indexQueued", indexQueued)
+        put("appliedOperations", appliedOperations)
+        if (!indexQueued && targetEpoch != null) {
+            put("indexRetry", buildJsonObject {
+                put("strategy", "read_then_rewrite_same_content")
+                put("workspaceRootUuid", workspaceRootUuid)
+                put("fileUuid", fileUuid)
+                put("contentHash", contentHash)
+                put("targetEpoch", targetEpoch)
+                put("steps", buildJsonArray {
+                    add(buildJsonObject {
+                        put("action", "read_file")
+                        put("arguments", buildJsonObject {
+                            put("uuid", fileUuid)
+                            put("mode", "range")
+                            put("startLine", 1)
+                            put("endLine", Int.MAX_VALUE)
+                        })
+                    })
+                    add(buildJsonObject {
+                        put("action", "write_file")
+                        put("arguments", buildJsonObject {
+                            put("uuid", fileUuid)
+                            put("content", "{{read_file.content}}")
+                            put("expectedHash", contentHash)
+                        })
+                    })
+                })
+            })
+        }
+    }.toString()
 
     private fun parseOperations(raw: Any): List<PatchOperation>? {
         return try {

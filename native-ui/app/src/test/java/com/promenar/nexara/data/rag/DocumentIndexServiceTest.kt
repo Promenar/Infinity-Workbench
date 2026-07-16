@@ -13,6 +13,8 @@ import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.local.db.entity.TagEntity
 import com.promenar.nexara.data.local.db.entity.VectorEntity
 import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -69,6 +71,149 @@ class DocumentIndexServiceTest {
     }
 
     @Test
+    fun `候选完成后epoch变化即使hash相同也拒绝提交`() = runTest {
+        seedFileAndOldArtifacts()
+        val service = RoomDocumentIndexService(database) {
+            val file = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+            database.fileEntryDao().update(file.copy(updatedAt = EPOCH + 1))
+            candidate()
+        }
+
+        val result = service.rebuild(changed())
+
+        assertThat(result).isEqualTo(DocumentIndexResult.HashChanged(HASH))
+        assertThat(database.vectorDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_VECTOR)
+        assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_EDGE)
+    }
+
+    @Test
+    fun `候选构建开始前拒绝hash相同但epoch过期的事件`() = runTest {
+        seedFileAndOldArtifacts()
+        val embedding = mockk<EmbeddingClient>()
+        val builder = WorkspaceDocumentIndexCandidateBuilder(
+            database.fileEntryDao(),
+            embedding,
+            RagConfiguration(),
+        )
+
+        val failure = runCatching {
+            builder.build(FileIndexEvent.Changed(ROOT, FILE, HASH, EPOCH + 1))
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalArgumentException::class.java)
+        coVerify(exactly = 0) { embedding.embedDocuments(any()) }
+    }
+
+    @Test
+    fun `候选完成后活动任务目标变化时拒绝旧目标提交`() = runTest {
+        seedFileAndOldArtifacts()
+        val service = RoomDocumentIndexService(database) {
+            val task = database.vectorizationTaskDao().getById(TASK)!!
+            database.vectorizationTaskDao().update(
+                task.copy(targetContentHash = "hash-newer", targetEpoch = EPOCH + 1),
+            )
+            candidate()
+        }
+
+        val result = service.rebuild(changed())
+
+        assertThat(result).isEqualTo(DocumentIndexResult.HashChanged(HASH))
+        assertThat(database.vectorDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_VECTOR)
+        assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_EDGE)
+        assertThat(database.vectorizationTaskDao().getById(TASK)?.targetEpoch).isEqualTo(EPOCH + 1)
+    }
+
+    @Test
+    fun `旧候选构建中同hash换epoch与newer任务后拒绝提交且保留旧派生数据`() = runTest {
+        seedFileAndOldArtifacts()
+        val fileDao = database.fileEntryDao()
+        val taskDao = database.vectorizationTaskDao()
+        val original = fileDao.getByUuid(ROOT, FILE)!!
+        fileDao.update(original.copy(vectorizedAt = MARKER, kgExtractedAt = MARKER))
+        val candidateStarted = CompletableDeferred<Unit>()
+        val releaseCandidate = CompletableDeferred<Unit>()
+        val service = RoomDocumentIndexService(database) {
+            candidateStarted.complete(Unit)
+            releaseCandidate.await()
+            candidate()
+        }
+
+        val oldRebuild = async { service.rebuild(changed()) }
+        candidateStarted.await()
+        fileDao.update(fileDao.getByUuid(ROOT, FILE)!!.copy(updatedAt = EPOCH + 1))
+        val oldTask = taskDao.getById(TASK)!!
+        taskDao.upsertTarget(
+            oldTask.copy(status = "pending", targetContentHash = HASH, targetEpoch = EPOCH + 1),
+        )
+        releaseCandidate.complete(Unit)
+
+        val result = oldRebuild.await()
+
+        assertThat(result).isEqualTo(DocumentIndexResult.HashChanged(HASH))
+        assertThat(database.vectorDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_VECTOR)
+        assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_EDGE)
+        val current = fileDao.getByUuid(ROOT, FILE)!!
+        assertThat(current.updatedAt).isEqualTo(EPOCH + 1)
+        assertThat(current.vectorizedAt).isEqualTo(MARKER)
+        assertThat(current.kgExtractedAt).isEqualTo(MARKER)
+        val active = taskDao.getByWorkspaceFile(ROOT, FILE, VectorizationQueue.TYPE_DOCUMENT_REFERENCE)!!
+        assertThat(active.id).isEqualTo(TASK)
+        assertThat(active.targetContentHash).isEqualTo(HASH)
+        assertThat(active.targetEpoch).isEqualTo(EPOCH + 1)
+    }
+
+    @Test
+    fun `旧service先提交后同hash换epoch仍能建立newer活动任务`() = runTest {
+        seedFileAndOldArtifacts()
+        val fileDao = database.fileEntryDao()
+        val taskDao = database.vectorizationTaskDao()
+        val service = RoomDocumentIndexService(database, now = { EPOCH }) { candidate() }
+
+        val oldResult = service.rebuild(changed())
+
+        assertThat(oldResult).isEqualTo(DocumentIndexResult.Rebuilt(FILE))
+        val completedOldTarget = taskDao.getById(TASK)
+        assertThat(completedOldTarget).isNotNull()
+        assertThat(completedOldTarget!!.targetEpoch).isEqualTo(EPOCH)
+        fileDao.update(fileDao.getByUuid(ROOT, FILE)!!.copy(
+            updatedAt = EPOCH + 1,
+            vectorizedAt = null,
+            kgExtractedAt = null,
+        ))
+        taskDao.upsertTarget(
+            completedOldTarget.copy(
+                status = "pending",
+                targetContentHash = HASH,
+                targetEpoch = EPOCH + 1,
+            ),
+        )
+
+        val active = taskDao.getByWorkspaceFile(ROOT, FILE, VectorizationQueue.TYPE_DOCUMENT_REFERENCE)!!
+        assertThat(active.id).isEqualTo(TASK)
+        assertThat(active.targetContentHash).isEqualTo(HASH)
+        assertThat(active.targetEpoch).isEqualTo(EPOCH + 1)
+        val current = fileDao.getByUuid(ROOT, FILE)!!
+        assertThat(current.updatedAt).isEqualTo(EPOCH + 1)
+        assertThat(current.vectorizedAt).isNull()
+        assertThat(current.kgExtractedAt).isNull()
+    }
+
+    @Test
+    fun `KG已尝试但零节点零边也写入当前epoch完成标记`() = runTest {
+        seedFileAndOldArtifacts()
+        val service = RoomDocumentIndexService(database, now = { EPOCH }) {
+            DocumentIndexCandidate(vectors = emptyList(), nodes = emptyList(), edges = emptyList())
+        }
+
+        val result = service.rebuild(changed().copy(kgStrategy = "full"))
+
+        assertThat(result).isEqualTo(DocumentIndexResult.Rebuilt(FILE))
+        val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+        assertThat(current.vectorizedAt).isAtLeast(EPOCH)
+        assertThat(current.kgExtractedAt).isAtLeast(EPOCH)
+    }
+
+    @Test
     fun `事务中候选写入失败会回滚并保留全部旧派生数据`() = runTest {
         seedFileAndOldArtifacts()
         val invalid = candidate().copy(
@@ -86,9 +231,9 @@ class DocumentIndexServiceTest {
     }
 
     @Test
-    fun `hash未变时事务切换新索引并保留用户标签清理旧任务`() = runTest {
+    fun `目标未变时事务切换新索引且不推进文件epoch也不清理队列任务`() = runTest {
         seedFileAndOldArtifacts()
-        val service = RoomDocumentIndexService(database) { candidate() }
+        val service = RoomDocumentIndexService(database, now = { EPOCH - 1 }) { candidate() }
 
         val result = service.rebuild(changed())
 
@@ -100,8 +245,9 @@ class DocumentIndexServiceTest {
         assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(NEW_EDGE)
         assertThat(database.kgNodeDao().getById("old-source")).isNull()
         assertThat(database.documentTagDao().getByDocId(FILE)).hasSize(1)
-        assertThat(database.vectorizationTaskDao().getByDocId(FILE)).isEmpty()
-        assertThat(database.fileEntryDao().getByUuid(ROOT, FILE)?.vectorizedAt).isNotNull()
+        assertThat(database.vectorizationTaskDao().getByDocId(FILE)).hasSize(1)
+        assertThat(database.fileEntryDao().getByUuid(ROOT, FILE)?.vectorizedAt).isEqualTo(EPOCH)
+        assertThat(database.fileEntryDao().getByUuid(ROOT, FILE)?.updatedAt).isEqualTo(EPOCH)
     }
 
     @Test
@@ -143,7 +289,7 @@ class DocumentIndexServiceTest {
             )
             val hash = database.fileEntryDao().getByUuid(ROOT, FILE)!!.hash
 
-            val candidate = builder.build(FileIndexEvent.Changed(ROOT, FILE, hash))
+            val candidate = builder.build(FileIndexEvent.Changed(ROOT, FILE, hash, current.updatedAt))
 
             assertThat(candidate.vectors).isNotEmpty()
             assertThat(candidate.vectors.all { it.docId == FILE && it.fileUuid == FILE }).isTrue()
@@ -179,7 +325,7 @@ class DocumentIndexServiceTest {
                 graphCandidateBuilder = graphBuilder,
             )
 
-            val candidate = builder.build(FileIndexEvent.Changed(ROOT, FILE, hash))
+            val candidate = builder.build(FileIndexEvent.Changed(ROOT, FILE, hash, current.updatedAt))
 
             coVerify(exactly = 1) { graphBuilder.build("Alice knows Bob", FILE) }
             assertThat(candidate.nodes.map { it.name }).containsExactly("Alice", "Bob")
@@ -211,7 +357,7 @@ class DocumentIndexServiceTest {
             )
 
             val candidate = builder.build(FileIndexEvent.Changed(
-                ROOT, FILE, hash, skipVectorization = true,
+                ROOT, FILE, hash, current.updatedAt, skipVectorization = true,
                 kgStrategy = null, useConfiguredKgStrategy = false,
             ))
 
@@ -256,7 +402,7 @@ class DocumentIndexServiceTest {
         database.fileEntryDao().insert(FileEntry(
             uuid = FILE, workspaceRootUuid = ROOT, parentUuid = ROOT, name = "doc.txt", hash = HASH,
             mimeType = "text/plain", sizeBytes = 3, physicalRootPath = "/tmp", materializedPath = "/doc.txt",
-            createdAt = 1, updatedAt = 1,
+            createdAt = 1, updatedAt = EPOCH,
         ))
         database.vectorDao().insert(vector(OLD_VECTOR, "old searchable"))
         database.kgNodeDao().insert(node("old-source"))
@@ -265,12 +411,19 @@ class DocumentIndexServiceTest {
         database.tagDao().insert(TagEntity("tag", "tag", createdAt = 1))
         database.documentTagDao().insert(DocumentTagEntity(FILE, "tag", 1))
         database.vectorizationTaskDao().insert(VectorizationTaskEntity(
-            id = "task", type = VectorizationQueue.TYPE_DOCUMENT_REFERENCE, status = "failed",
-            docId = FILE, workspaceRootUuid = ROOT, sourceMimeType = "text/plain", createdAt = 1, updatedAt = 1,
+            id = TASK, type = VectorizationQueue.TYPE_DOCUMENT_REFERENCE, status = "failed",
+            docId = FILE, workspaceRootUuid = ROOT, sourceMimeType = "text/plain",
+            targetContentHash = HASH, targetEpoch = EPOCH, createdAt = 1, updatedAt = 1,
         ))
     }
 
-    private fun changed() = FileIndexEvent.Changed(ROOT, FILE, HASH)
+    private fun changed() = FileIndexEvent.Changed(
+        ROOT,
+        FILE,
+        HASH,
+        EPOCH,
+        activeTaskId = TASK,
+    )
 
     private fun candidate() = DocumentIndexCandidate(
         vectors = listOf(vector(NEW_VECTOR, "new searchable")),
@@ -296,6 +449,9 @@ class DocumentIndexServiceTest {
         const val ROOT = "root"
         const val FILE = "file"
         const val HASH = "hash-v1"
+        const val EPOCH = 10L
+        const val MARKER = 7L
+        const val TASK = "task"
         const val OLD_VECTOR = "old-vector"
         const val NEW_VECTOR = "new-vector"
         const val OLD_EDGE = "old-edge"

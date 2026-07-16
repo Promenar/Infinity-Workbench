@@ -68,6 +68,7 @@ sealed interface RenameResult {
         val targetHash: String,
         val targetEpoch: Long,
         val changed: Boolean,
+        val affectedTargets: List<RenameIndexTarget> = emptyList(),
     ) : RenameResult
 
     data class Conflict(
@@ -77,3 +78,9 @@ sealed interface RenameResult {
 
     data object NotFound : RenameResult
 }
+
+data class RenameIndexTarget(
+    val fileUuid: String,
+    val targetHash: String,
+    val targetEpoch: Long,
+)

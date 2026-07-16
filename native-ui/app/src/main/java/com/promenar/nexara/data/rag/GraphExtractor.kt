@@ -4,6 +4,7 @@ import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.utils.NexaraLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 
@@ -47,6 +48,10 @@ class GraphExtractor(
     /** 仅构建候选图谱，不触碰现有图谱；由上层与向量索引在同一事务内切换。 */
     suspend fun extractCandidate(text: String, docId: String? = null): ExtractionResult =
         extract(text, docId, scope = null, persist = false)
+
+    suspend fun clearPersistedGraphForDoc(docId: String) {
+        graphStore.clearGraphForDoc(docId)
+    }
 
     private suspend fun extract(
         text: String,
@@ -108,6 +113,8 @@ class GraphExtractor(
                         successCount++
                         NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} OK: ${chunkRes.nodes.size} nodes, ${chunkRes.edges.size} edges")
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (e: Exception) {
                     failCount++
                     NexaraLogger.logError("[RAG][GraphExtractor] chunk ${index + 1}/${chunks.size}", e)
@@ -180,6 +187,8 @@ class GraphExtractor(
                     try {
                         val id = graphStore.upsertNode(node.name, node.type, node.metadata, scope)
                         nameToIdMap[node.name] = id
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
                     } catch (e: Exception) {
                         NexaraLogger.logError("[RAG][GraphExtractor] Node upsert failed", e)
                     }
@@ -191,6 +200,8 @@ class GraphExtractor(
                     if (sourceId != null && targetId != null) {
                         try {
                             graphStore.createEdge(sourceId, targetId, edge.relation, docId, edge.weight, scope)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
                         } catch (e: Exception) {
                             NexaraLogger.logError("[RAG][GraphExtractor] Edge create failed", e)
                         }
@@ -210,6 +221,8 @@ class GraphExtractor(
             }
 
             ExtractionResult(nodes = mergedNodes, edges = mergedEdges)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             NexaraLogger.logError("GraphExtractor.extractAndSave", e)
             ExtractionResult(nodes = emptyList(), edges = emptyList(), error = e.message?.take(80))

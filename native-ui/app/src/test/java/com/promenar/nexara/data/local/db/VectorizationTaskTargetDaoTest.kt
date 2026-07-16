@@ -162,6 +162,62 @@ class VectorizationTaskTargetDaoTest {
         assertThat(active?.targetEpoch).isEqualTo(1)
     }
 
+    @Test
+    fun `同target tuple的旧task id不能把active主键改回`() = runTest {
+        seedFile()
+        val dao = database.vectorizationTaskDao()
+        val active = task("active-id", "hash-v1", 1)
+        dao.upsertTarget(active)
+
+        val changed = dao.updateForTarget(
+            active.copy(id = "stale-worker-id", status = "failed", error = "stale"),
+        )
+
+        assertThat(changed).isEqualTo(0)
+        assertThat(dao.getById("stale-worker-id")).isNull()
+        assertThat(dao.getById("active-id")?.status).isEqualTo("pending")
+    }
+
+    @Test
+    fun `legacy到reference迁移在Room事务内原子替换`() = runTest {
+        seedFile()
+        val dao = database.vectorizationTaskDao()
+        val legacy = VectorizationTaskEntity(
+            id = "legacy-document",
+            type = "document",
+            status = "saving",
+            docId = DOC,
+            workspaceRootUuid = ROOT,
+            userContent = "legacy",
+            createdAt = 1,
+            updatedAt = 1,
+        )
+        dao.insert(legacy)
+        val replacement = task("reference", "hash-current", 2)
+
+        val migrated = dao.migrateLegacyToTarget(legacy.id, replacement)
+
+        assertThat(migrated?.activeTaskId).isEqualTo("reference")
+        assertThat(dao.getById(legacy.id)).isNull()
+        assertThat(dao.getByWorkspaceFile(ROOT, DOC, TYPE)).isEqualTo(replacement)
+        assertThat(dao.getByDocId(DOC)).containsExactly(replacement)
+    }
+
+    @Test
+    fun `workspace多doc任务使用单批量SQL删除`() = runTest {
+        seedFile()
+        database.fileEntryDao().insert(file(ROOT, DOC_OTHER, isDirectory = false))
+        val dao = database.vectorizationTaskDao()
+        dao.upsertTarget(task("first", "hash-1", 1))
+        dao.upsertTarget(task("second", "hash-2", 2, DOC_OTHER))
+
+        val deleted = dao.deleteByWorkspaceFiles(ROOT, listOf(DOC, DOC_OTHER))
+
+        assertThat(deleted).isEqualTo(2)
+        assertThat(dao.getByDocId(DOC)).isEmpty()
+        assertThat(dao.getByDocId(DOC_OTHER)).isEmpty()
+    }
+
     private suspend fun seedFile() {
         database.fileEntryDao().insert(file(ROOT, ROOT, isDirectory = true))
         database.fileEntryDao().insert(file(ROOT, DOC, isDirectory = false))

@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
+import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.domain.repository.DiffResult
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
@@ -14,9 +15,17 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.Test
 
 class FileSkillsScopeTest {
+    private val json = Json
     private val context = object : SkillExecutionContext {
         override val sessionId = "session"
         override val agentId = "agent"
@@ -68,5 +77,140 @@ class FileSkillsScopeTest {
         FileSearchSkill(workspace).execute(mapOf("query" to "x"), context)
 
         verify(exactly = 2) { workspace.observeChildren("root-a", "root-a") }
+    }
+
+    @Test
+    fun `write与patch已入队时返回精确目标结构`() = runTest {
+        val operations = mockk<IFileOperationRepository>()
+        coEvery { operations.writeFileAtomic("root-a", "file", "new", "session", "old-hash") } returns
+            WriteResult.Success("write-hash", indexQueued = true, targetEpoch = 101L)
+        coEvery { operations.patchFile("root-a", "file", any(), "write-hash") } returns
+            PatchResult.Success("patch-hash", 1, indexQueued = true, targetEpoch = 102L)
+
+        val write = FileWriteSkill(operations).execute(
+            mapOf("uuid" to "file", "content" to "new", "expectedHash" to "old-hash"),
+            context,
+        )
+        val patch = FilePatchSkill(operations).execute(
+            mapOf(
+                "uuid" to "file",
+                "expectedHash" to "write-hash",
+                "operations" to listOf(
+                    mapOf("action" to "replace_lines", "startLine" to 1, "endLine" to 1, "newContent" to "patched"),
+                ),
+            ),
+            context,
+        )
+
+        assertIndexResult(write, "file", "write-hash", 101L, true, "success")
+        assertIndexResult(patch, "file", "patch-hash", 102L, true, "success")
+        assertThat(write.content).contains("索引已入队")
+        assertThat(patch.content).contains("索引已入队")
+    }
+
+    @Test
+    fun `write与patch索引未入队时返回可补偿的精确目标结构`() = runTest {
+        val operations = mockk<IFileOperationRepository>()
+        coEvery { operations.writeFileAtomic("root-a", "file", "new", "session", "old-hash") } returns
+            WriteResult.Success("write-hash", indexQueued = false, targetEpoch = 201L)
+        coEvery { operations.patchFile("root-a", "file", any(), "write-hash") } returns
+            PatchResult.Success("patch-hash", 1, indexQueued = false, targetEpoch = 202L)
+
+        val write = FileWriteSkill(operations).execute(
+            mapOf("uuid" to "file", "content" to "new", "expectedHash" to "old-hash"),
+            context,
+        )
+        val patch = FilePatchSkill(operations).execute(
+            mapOf(
+                "uuid" to "file",
+                "expectedHash" to "write-hash",
+                "operations" to listOf(
+                    mapOf("action" to "replace_lines", "startLine" to 1, "endLine" to 1, "newContent" to "patched"),
+                ),
+            ),
+            context,
+        )
+
+        assertIndexResult(write, "file", "write-hash", 201L, false, "error")
+        assertIndexResult(patch, "file", "patch-hash", 202L, false, "error")
+        assertThat(write.content).contains("写入成功，但索引尚未入队")
+        assertThat(patch.content).contains("补丁应用成功，但索引尚未入队")
+        assertRetryContract(write, "write-hash", 201L)
+        assertRetryContract(patch, "patch-hash", 202L)
+    }
+
+    @Test
+    fun `索引未入队且缺少epoch时拒绝伪报完整成功`() = runTest {
+        val operations = mockk<IFileOperationRepository>()
+        coEvery { operations.writeFileAtomic("root-a", "file", "new", "session", "old-hash") } returns
+            WriteResult.Success("write-hash", indexQueued = false, targetEpoch = null)
+        coEvery { operations.patchFile("root-a", "file", any(), "write-hash") } returns
+            PatchResult.Success("patch-hash", 1, indexQueued = false, targetEpoch = null)
+
+        val write = FileWriteSkill(operations).execute(
+            mapOf("uuid" to "file", "content" to "new", "expectedHash" to "old-hash"),
+            context,
+        )
+        val patch = FilePatchSkill(operations).execute(
+            mapOf(
+                "uuid" to "file",
+                "expectedHash" to "write-hash",
+                "operations" to listOf(
+                    mapOf("action" to "replace_lines", "startLine" to 1, "endLine" to 1, "newContent" to "patched"),
+                ),
+            ),
+            context,
+        )
+
+        listOf(write, patch).forEach { result ->
+            assertThat(result.status).isEqualTo("error")
+            assertThat(result.content).contains("缺少 targetEpoch")
+            val data = json.parseToJsonElement(requireNotNull(result.data)).jsonObject
+            assertThat(data.getValue("targetEpoch")).isEqualTo(JsonNull)
+            assertThat(data.getValue("indexQueued").jsonPrimitive.boolean).isFalse()
+            assertThat(data).doesNotContainKey("indexRetry")
+        }
+    }
+
+    private fun assertIndexResult(
+        result: com.promenar.nexara.data.model.ToolResult,
+        fileUuid: String,
+        contentHash: String,
+        targetEpoch: Long,
+        indexQueued: Boolean,
+        status: String,
+    ) {
+        assertThat(result.status).isEqualTo(status)
+        val data = json.parseToJsonElement(requireNotNull(result.data)).jsonObject
+        assertThat(data.getValue("fileUuid").jsonPrimitive.content).isEqualTo(fileUuid)
+        assertThat(data.getValue("contentHash").jsonPrimitive.content).isEqualTo(contentHash)
+        assertThat(data.getValue("targetEpoch").jsonPrimitive.long).isEqualTo(targetEpoch)
+        assertThat(data.getValue("indexQueued").jsonPrimitive.boolean).isEqualTo(indexQueued)
+    }
+
+    private fun assertRetryContract(
+        result: com.promenar.nexara.data.model.ToolResult,
+        contentHash: String,
+        targetEpoch: Long,
+    ) {
+        val retry = json.parseToJsonElement(requireNotNull(result.data))
+            .jsonObject
+            .getValue("indexRetry")
+            .jsonObject
+        assertThat(retry.getValue("workspaceRootUuid").jsonPrimitive.content).isEqualTo("root-a")
+        assertThat(retry.getValue("fileUuid").jsonPrimitive.content).isEqualTo("file")
+        assertThat(retry.getValue("contentHash").jsonPrimitive.content).isEqualTo(contentHash)
+        assertThat(retry.getValue("targetEpoch").jsonPrimitive.long).isEqualTo(targetEpoch)
+        val steps = retry.getValue("steps").jsonArray
+        assertThat(steps.map { it.jsonObject.getValue("action").jsonPrimitive.content })
+            .containsExactly("read_file", "write_file")
+            .inOrder()
+        val readArgs = steps[0].jsonObject.getValue("arguments").jsonObject
+        assertThat(readArgs.getValue("uuid").jsonPrimitive.content).isEqualTo("file")
+        val writeArgs = steps[1].jsonObject.getValue("arguments").jsonObject
+        assertThat(writeArgs.getValue("uuid").jsonPrimitive.content).isEqualTo("file")
+        assertThat(writeArgs.getValue("content").jsonPrimitive.content).isEqualTo("{{read_file.content}}")
+        assertThat(writeArgs.getValue("expectedHash").jsonPrimitive.content).isEqualTo(contentHash)
+        assertThat(requireNotNull(result.data)).doesNotContain("publish_file_index_changed")
     }
 }

@@ -9,7 +9,10 @@ import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.domain.repository.RenameResult
 import com.promenar.nexara.infra.util.Sha256Utils
+import io.mockk.coEvery
+import io.mockk.mockk
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
@@ -25,6 +28,7 @@ import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
@@ -135,7 +139,6 @@ class WorkspaceRepositoryTest {
         insertSession("session-a", rootA.absolutePath)
         val root = repo.ensureSessionRoot("session-a")
         val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
-
         val result = repo.rename(root.uuid, entry.uuid, "b.txt", expectedName = "a.txt")
 
         assertThat(result).isInstanceOf(RenameResult.Success::class.java)
@@ -183,6 +186,7 @@ class WorkspaceRepositoryTest {
         insertSession("session-a", rootA.absolutePath)
         val root = repo.ensureSessionRoot("session-a")
         val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        assertThat(entry.mimeType).isEqualTo("text/plain")
 
         val result = repo.rename(root.uuid, entry.uuid, "b.txt")
 
@@ -378,13 +382,21 @@ class WorkspaceRepositoryTest {
             clock = { folder.updatedAt },
         )
 
-        repo.rename(root.uuid, folder.uuid, "renamed-docs", expectedName = "docs")
+        val result = repo.rename(root.uuid, folder.uuid, "renamed-docs", expectedName = "docs")
 
         val renamedChild = db.fileEntryDao().getByUuid(root.uuid, child.uuid)!!
         assertThat(renamedChild.materializedPath).isEqualTo("/renamed-docs/a.txt")
         assertThat(renamedChild.updatedAt).isEqualTo(childEpoch + 1L)
         assertThat(renamedChild.vectorizedAt).isNull()
         assertThat(renamedChild.kgExtractedAt).isNull()
+        assertThat((result as RenameResult.Success).affectedTargets)
+            .containsExactly(
+                com.promenar.nexara.domain.repository.RenameIndexTarget(
+                    child.uuid,
+                    child.hash,
+                    childEpoch + 1L,
+                ),
+            )
     }
 
     @Test
@@ -682,6 +694,212 @@ class WorkspaceRepositoryTest {
     }
 
     @Test
+    fun `永久删除在barrier join完成前不得进入数据库提交`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        val barrierEntered = CompletableDeferred<Unit>()
+        val releaseBarrier = CompletableDeferred<Unit>()
+        val committerCalled = CompletableDeferred<Unit>()
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            beforeDeleteCommitted = { _, ids ->
+                assertThat(ids).containsExactly(entry.uuid)
+                object : WorkspaceDeleteBarrierLease {
+                    override suspend fun awaitReady() {
+                        barrierEntered.complete(Unit)
+                        releaseBarrier.await()
+                    }
+                    override suspend fun commit() = Unit
+                    override suspend fun abort() = Unit
+                }
+            },
+            deleteCommitter = { workspace, ids ->
+                committerCalled.complete(Unit)
+                WorkspaceDeletionTransaction(db).delete(workspace, ids)
+            },
+        )
+
+        val deletion = async(Dispatchers.Default) { repo.permanentDelete(root.uuid, entry.uuid) }
+        barrierEntered.await()
+
+        assertThat(committerCalled.isCompleted).isFalse()
+        assertThat(File(rootA, "a.txt").exists()).isFalse()
+        releaseBarrier.complete(Unit)
+        deletion.await()
+
+        assertThat(committerCalled.isCompleted).isTrue()
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, entry.uuid)).isNull()
+    }
+
+    @Test
+    fun `永久删除必须等待legacy vector worker取消后再清理任务与物理文件`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        val embeddingStarted = CompletableDeferred<Unit>()
+        val embeddingCancelled = CompletableDeferred<Unit>()
+        val embeddingClient = mockk<com.promenar.nexara.data.rag.EmbeddingClient>()
+        coEvery { embeddingClient.embedDocuments(any()) } coAnswers {
+            embeddingStarted.complete(Unit)
+            try {
+                awaitCancellation()
+            } finally {
+                embeddingCancelled.complete(Unit)
+            }
+        }
+        val queue = com.promenar.nexara.data.rag.VectorizationQueue(
+            vectorStore = mockk(relaxed = true),
+            embeddingClient = embeddingClient,
+            graphExtractor = null,
+            vectorDao = db.vectorDao(),
+            vectorizationTaskDao = db.vectorizationTaskDao(),
+            dispatcher = Dispatchers.Default,
+        )
+        queue.enqueueDocument(root.uuid, entry.uuid, entry.name, "A")
+        embeddingStarted.await()
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            beforeDeleteCommitted = { workspace, ids -> queue.acquireDeleteBarrier(workspace, ids) },
+            deleteCommitter = { workspace, ids ->
+                check(embeddingCancelled.isCompleted) { "持久删除前必须等待 legacy worker 取消" }
+                WorkspaceDeletionTransaction(db).delete(workspace, ids)
+            },
+        )
+
+        repo.permanentDelete(root.uuid, entry.uuid)
+
+        assertThat(embeddingCancelled.isCompleted).isTrue()
+        assertThat(db.vectorizationTaskDao().getByDocId(entry.uuid)).isEmpty()
+        assertThat(File(rootA, "a.txt").exists()).isFalse()
+        queue.shutdown()
+    }
+
+    @Test
+    fun `deleteCommitter失败先恢复物理文件再abort恢复legacy任务`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        val calls = AtomicInteger()
+        val firstStarted = CompletableDeferred<Unit>()
+        val firstCancelled = CompletableDeferred<Unit>()
+        val secondStarted = CompletableDeferred<Unit>()
+        val embeddingClient = mockk<com.promenar.nexara.data.rag.EmbeddingClient>()
+        coEvery { embeddingClient.embedDocuments(any()) } coAnswers {
+            if (calls.incrementAndGet() == 1) firstStarted.complete(Unit) else secondStarted.complete(Unit)
+            try {
+                awaitCancellation()
+            } finally {
+                firstCancelled.complete(Unit)
+            }
+        }
+        val queue = com.promenar.nexara.data.rag.VectorizationQueue(
+            vectorStore = mockk(relaxed = true),
+            embeddingClient = embeddingClient,
+            graphExtractor = null,
+            vectorDao = db.vectorDao(),
+            vectorizationTaskDao = db.vectorizationTaskDao(),
+            dispatcher = Dispatchers.Default,
+        )
+        queue.enqueueDocument(root.uuid, entry.uuid, entry.name, "A")
+        firstStarted.await()
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            beforeDeleteCommitted = { workspace, ids -> queue.acquireDeleteBarrier(workspace, ids) },
+            deleteCommitter = { _, _ -> throw IllegalStateException("injected delete failure") },
+        )
+
+        val failure = runCatching { repo.permanentDelete(root.uuid, entry.uuid) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        firstCancelled.await()
+        secondStarted.await()
+        assertThat(File(rootA, "a.txt").readText()).isEqualTo("A")
+        assertThat(db.vectorizationTaskDao().getByDocId(entry.uuid)).hasSize(1)
+        assertThat(queue.snapshotState().queue.single().docId).isEqualTo(entry.uuid)
+        queue.shutdown()
+    }
+
+    @Test
+    fun `legacy已写向量后删除回滚迁移为reference重建且不重复叠加`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        db.fileEntryDao().update(
+            entry.copy(mimeType = "text/plain", hash = "hash-current", updatedAt = 2),
+        )
+        val graphStarted = CompletableDeferred<Unit>()
+        val graphCancelled = CompletableDeferred<Unit>()
+        val rebuildCompleted = CompletableDeferred<Unit>()
+        val embeddingClient = mockk<com.promenar.nexara.data.rag.EmbeddingClient>()
+        coEvery { embeddingClient.embedDocuments(any()) } answers {
+            com.promenar.nexara.data.rag.EmbeddingResult(
+                firstArg<List<String>>().map { floatArrayOf(1f, 0f) },
+            )
+        }
+        val graphExtractor = mockk<com.promenar.nexara.data.rag.GraphExtractor>()
+        coEvery { graphExtractor.extractAndSave(any(), any()) } coAnswers {
+            graphStarted.complete(Unit)
+            try {
+                awaitCancellation()
+            } finally {
+                graphCancelled.complete(Unit)
+            }
+        }
+        val documentService = object : com.promenar.nexara.data.rag.DocumentIndexService {
+            override suspend fun rebuild(event: com.promenar.nexara.data.rag.FileIndexEvent): com.promenar.nexara.data.rag.DocumentIndexResult {
+                db.vectorDao().deleteByDocId(event.fileUuid)
+                db.vectorDao().insert(
+                    com.promenar.nexara.data.local.db.entity.VectorEntity(
+                        id = "rebuilt-vector",
+                        docId = event.fileUuid,
+                        content = "rebuilt",
+                        embedding = byteArrayOf(0, 0, 0, 0),
+                        createdAt = 2,
+                        fileUuid = event.fileUuid,
+                    ),
+                )
+                rebuildCompleted.complete(Unit)
+                return com.promenar.nexara.data.rag.DocumentIndexResult.Rebuilt(event.fileUuid)
+            }
+
+            override suspend fun delete(workspaceRootUuid: String, fileUuid: String) =
+                com.promenar.nexara.data.rag.DocumentIndexResult.Deleted(fileUuid)
+        }
+        val queue = com.promenar.nexara.data.rag.VectorizationQueue(
+            vectorStore = com.promenar.nexara.data.rag.VectorStore(
+                db.vectorDao(), db.kgNodeDao(), db.kgEdgeDao(),
+            ),
+            embeddingClient = embeddingClient,
+            graphExtractor = graphExtractor,
+            vectorDao = db.vectorDao(),
+            vectorizationTaskDao = db.vectorizationTaskDao(),
+            dispatcher = Dispatchers.Default,
+            fileEntryDao = db.fileEntryDao(),
+            documentIndexService = documentService,
+        )
+        queue.enqueueDocument(root.uuid, entry.uuid, entry.name, "A", kgStrategy = "full")
+        kotlinx.coroutines.withTimeout(5_000) { graphStarted.await() }
+        assertThat(db.vectorDao().getByDocId(entry.uuid)).hasSize(1)
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            beforeDeleteCommitted = { workspace, ids -> queue.acquireDeleteBarrier(workspace, ids) },
+            deleteCommitter = { _, _ -> throw IllegalStateException("injected delete failure") },
+        )
+
+        val failure = runCatching { repo.permanentDelete(root.uuid, entry.uuid) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        kotlinx.coroutines.withTimeout(5_000) { graphCancelled.await() }
+        kotlinx.coroutines.withTimeout(5_000) { rebuildCompleted.await() }
+        assertThat(File(rootA, "a.txt").readText()).isEqualTo("A")
+        assertThat(db.vectorDao().getByDocId(entry.uuid).map { it.content }).containsExactly("rebuilt")
+        assertThat(db.vectorizationTaskDao().getByDocId(entry.uuid).map { it.type })
+            .doesNotContain("document")
+        queue.shutdown()
+    }
+
+    @Test
     fun `仓储永久删除目录在同一数据库事务清理全部子文件派生数据`() = runBlocking<Unit> {
         insertSession("session-a", rootA.absolutePath)
         val root = repo.ensureSessionRoot("session-a")
@@ -703,15 +921,131 @@ class WorkspaceRepositoryTest {
     }
 
     @Test
+    fun `永久删除成功commit后清理单文件与目录子树pending`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val single = repo.createFileInWorkspace(root.uuid, "single", "single.txt", "S", root.uuid, "/single.txt")
+        val folder = repo.createDirectoryInWorkspace(root.uuid, "folder", "folder", root.uuid, "/folder")
+        val child = repo.createFileInWorkspace(root.uuid, "child", "child.txt", "C", folder.uuid, "/folder/child.txt")
+        val coordinator = com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator(
+            com.promenar.nexara.data.rag.FileIndexEventSink { throw IllegalStateException("hold pending") },
+        )
+        listOf(single, child).forEach { entry ->
+            runCatching {
+                coordinator.publish(
+                    com.promenar.nexara.data.rag.FileIndexEvent.Changed(
+                        root.uuid, entry.uuid, entry.hash, entry.updatedAt,
+                    ),
+                )
+            }
+        }
+        var barrierCommitted = false
+        val callbackIds = mutableListOf<List<String>>()
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
+            beforeDeleteCommitted = { _, _ ->
+                object : WorkspaceDeleteBarrierLease {
+                    override suspend fun awaitReady() = Unit
+                    override suspend fun commit() { barrierCommitted = true }
+                    override suspend fun abort() = Unit
+                }
+            },
+            afterDeleteCommitted = { workspace, ids ->
+                check(barrierCommitted) { "callback must run after barrier commit" }
+                callbackIds += ids
+                coordinator.clearCommitted(workspace, ids)
+            },
+        )
+
+        repo.permanentDelete(root.uuid, single.uuid)
+        assertThat(coordinator.snapshot().map { it.fileUuid }).containsExactly(child.uuid)
+        barrierCommitted = false
+        repo.permanentDelete(root.uuid, folder.uuid)
+
+        assertThat(coordinator.snapshot()).isEmpty()
+        assertThat(callbackIds[0]).containsExactly(single.uuid)
+        assertThat(callbackIds[1]).containsAtLeast(folder.uuid, child.uuid)
+    }
+
+    @Test
+    fun `删除失败abort不调用committed回调且pending保留`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val file = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        val coordinator = com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator(
+            com.promenar.nexara.data.rag.FileIndexEventSink { throw IllegalStateException("hold pending") },
+        )
+        val target = com.promenar.nexara.data.rag.FileIndexEvent.Changed(
+            root.uuid, file.uuid, file.hash, file.updatedAt,
+        )
+        runCatching { coordinator.publish(target) }
+        var aborted = false
+        var callbackCalls = 0
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = { _, _ -> throw IllegalStateException("delete failed") },
+            beforeDeleteCommitted = { _, _ ->
+                object : WorkspaceDeleteBarrierLease {
+                    override suspend fun awaitReady() = Unit
+                    override suspend fun commit() = Unit
+                    override suspend fun abort() { aborted = true }
+                }
+            },
+            afterDeleteCommitted = { workspace, ids ->
+                callbackCalls += 1
+                coordinator.clearCommitted(workspace, ids)
+            },
+        )
+
+        val failure = runCatching { repo.permanentDelete(root.uuid, file.uuid) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(aborted).isTrue()
+        assertThat(callbackCalls).isEqualTo(0)
+        assertThat(coordinator.snapshot()).containsExactly(target)
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, file.uuid)).isNotNull()
+    }
+
+    @Test
+    fun `committed回调异常不反转已完成删除`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val file = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
+            afterDeleteCommitted = { _, _ ->
+                throw kotlinx.coroutines.CancellationException("callback cancelled")
+            },
+        )
+
+        repo.permanentDelete(root.uuid, file.uuid)
+
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, file.uuid)).isNull()
+        assertThat(File(rootA, "a.txt").exists()).isFalse()
+    }
+
+    @Test
     fun `派生清理或文件记录删除失败会回滚数据库并恢复物理文件`() = runBlocking<Unit> {
         insertSession("session-a", rootA.absolutePath)
         val root = repo.ensureSessionRoot("session-a")
         val file = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
         seedDerivedArtifacts(root.uuid, file.uuid)
         val deletion = WorkspaceDeletionTransaction(db) { throw IllegalStateException("injected transaction failure") }
+        var abortObservedPhysicalRollback = false
         repo = WorkspaceRepository(
             db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
             deleteCommitter = deletion::delete,
+            beforeDeleteCommitted = { _, _ ->
+                object : WorkspaceDeleteBarrierLease {
+                    override suspend fun awaitReady() = Unit
+                    override suspend fun commit() = Unit
+                    override suspend fun abort() {
+                        abortObservedPhysicalRollback = File(rootA, "a.txt").exists()
+                    }
+                }
+            },
         )
 
         val failure = runCatching { repo.permanentDelete(root.uuid, file.uuid) }.exceptionOrNull()
@@ -721,6 +1055,8 @@ class WorkspaceRepositoryTest {
         assertThat(db.fileEntryDao().getByUuid(root.uuid, file.uuid)).isNotNull()
         assertThat(db.vectorDao().getByDocId(file.uuid)).hasSize(1)
         assertThat(db.documentTagDao().getByDocId(file.uuid)).hasSize(1)
+        assertThat(db.vectorizationTaskDao().getByDocId(file.uuid)).hasSize(1)
+        assertThat(abortObservedPhysicalRollback).isTrue()
     }
 
     private suspend fun seedDerivedArtifacts(workspaceRootUuid: String, fileUuid: String) {
@@ -863,6 +1199,18 @@ class WorkspaceRepositoryTest {
         repo.moveToRecycleBin(root.uuid, folder.uuid)
         val delegate = TestWorkspaceFileOps()
         var stagedDeletes = 0
+        val coordinator = com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator(
+            com.promenar.nexara.data.rag.FileIndexEventSink { throw IllegalStateException("hold pending") },
+        )
+        val child = db.fileEntryDao().getByUuid(root.uuid, "child")!!
+        runCatching {
+            coordinator.publish(
+                com.promenar.nexara.data.rag.FileIndexEvent.Changed(
+                    root.uuid, child.uuid, child.hash, child.updatedAt,
+                ),
+            )
+        }
+        var clearedIds: List<String> = emptyList()
         repo = WorkspaceRepository(
             db.fileEntryDao(),
             db.workspaceSeqDao(),
@@ -877,6 +1225,10 @@ class WorkspaceRepositoryTest {
                 }
             },
             deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
+            afterDeleteCommitted = { workspace, ids ->
+                clearedIds = ids
+                coordinator.clearCommitted(workspace, ids)
+            },
         )
 
         repo.emptyRecycleBin(root.uuid)
@@ -884,6 +1236,8 @@ class WorkspaceRepositoryTest {
         assertThat(stagedDeletes).isEqualTo(1)
         assertThat(db.fileEntryDao().getByUuid(root.uuid, folder.uuid)).isNull()
         assertThat(db.fileEntryDao().getByUuid(root.uuid, "child")).isNull()
+        assertThat(clearedIds).containsAtLeast(folder.uuid, "child")
+        assertThat(coordinator.snapshot()).isEmpty()
     }
 
     @Test

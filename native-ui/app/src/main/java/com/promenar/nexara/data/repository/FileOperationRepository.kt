@@ -28,6 +28,7 @@ class FileOperationRepository(
     private val fileOps: WorkspaceFileOps = SecureWorkspaceFileOps(),
     private val versionCommitter: (suspend (FileVersionEntity, FileEntry) -> Unit)? = null,
     private val indexEventSink: FileIndexEventSink = FileIndexEventSink.None,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : IFileOperationRepository {
 
     override suspend fun writeFileAtomic(
@@ -49,9 +50,14 @@ class FileOperationRepository(
                     message = "文件已被其他会话修改。请先读取最新版本再重试。",
                 )
             }
-            val newHash = commitContentChange(entry, newContent, sessionId)
-            val indexQueued = newHash == null || publishIndexEvent(workspaceRootUuid, uuid, newHash)
-            WriteResult.Success(newHash ?: entry.hash, indexQueued)
+            val committed = commitContentChange(entry, newContent, sessionId)
+            val indexTarget = committed ?: entry.currentIndexTargetIfStale()
+            val indexQueued = indexTarget == null || publishIndexEvent(workspaceRootUuid, uuid, indexTarget)
+            WriteResult.Success(
+                newHash = committed?.contentHash ?: entry.hash,
+                indexQueued = indexQueued,
+                targetEpoch = committed?.targetEpoch ?: entry.updatedAt,
+            )
         }
     }
 
@@ -177,24 +183,38 @@ class FileOperationRepository(
             }
 
             val newContent = lines.joinToString("\n")
-            val newHash = commitContentChange(entry, newContent, null)
-            val indexQueued = newHash == null || publishIndexEvent(workspaceRootUuid, uuid, newHash)
-            PatchResult.Success(newHash ?: entry.hash, operations.size, indexQueued)
+            val committed = commitContentChange(entry, newContent, null)
+            val indexTarget = committed ?: entry.currentIndexTargetIfStale()
+            val indexQueued = indexTarget == null || publishIndexEvent(workspaceRootUuid, uuid, indexTarget)
+            PatchResult.Success(
+                newHash = committed?.contentHash ?: entry.hash,
+                appliedOperations = operations.size,
+                indexQueued = indexQueued,
+                targetEpoch = committed?.targetEpoch ?: entry.updatedAt,
+            )
         }
     }
 
-    private suspend fun publishIndexEvent(workspaceRootUuid: String, uuid: String, newHash: String): Boolean =
+    private suspend fun publishIndexEvent(
+        workspaceRootUuid: String,
+        uuid: String,
+        target: CommittedIndexTarget,
+    ): Boolean =
         try {
-            indexEventSink.publish(FileIndexEvent.Changed(workspaceRootUuid, uuid, newHash))
+            indexEventSink.publish(
+                FileIndexEvent.Changed(workspaceRootUuid, uuid, target.contentHash, target.targetEpoch),
+            )
             true
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
         } catch (_: Exception) {
-            // 文件与版本记录已经提交，不能再把索引入队故障伪装成写入失败。
+            // 文件与版本记录已经提交；包括取消在内的发布失败只能标记为待补偿。
             false
         }
 
-    private suspend fun commitContentChange(entry: FileEntry, newContent: String, sessionId: String?): String? {
+    private suspend fun commitContentChange(
+        entry: FileEntry,
+        newContent: String,
+        sessionId: String?,
+    ): CommittedIndexTarget? {
         val root = File(entry.physicalRootPath).toPath()
         val oldContent = readContent(entry)
         val physicalHash = Sha256Utils.hash(oldContent)
@@ -203,6 +223,7 @@ class FileOperationRepository(
         }
         val newHash = Sha256Utils.hash(newContent)
         if (newHash == entry.hash && oldContent == newContent) return null
+        val targetEpoch = nextMutationEpoch(entry.updatedAt)
 
         val versionId = UUID.randomUUID().toString()
         val snapshotRelative = snapshotRelative(entry, versionId)
@@ -224,7 +245,7 @@ class FileOperationRepository(
             lastWriteSessionId = sessionId,
             vectorizedAt = null,
             kgExtractedAt = null,
-            updatedAt = System.currentTimeMillis(),
+            updatedAt = targetEpoch,
         )
 
         var replacement: WorkspaceFileRollback? = null
@@ -240,7 +261,7 @@ class FileOperationRepository(
             databaseCommitted = true
             // 备份清理失败不反转已经提交的 DB/物理新版本；残留隐藏备份可由维护任务清理。
             runCatching { activeReplacement.commit() }
-            return newHash
+            return CommittedIndexTarget(newHash, updated.updatedAt)
         } catch (failure: Throwable) {
             if (!databaseCommitted) {
                 if (replacement != null) rollbackReplacement(replacement, failure)
@@ -248,6 +269,23 @@ class FileOperationRepository(
             }
             throw failure
         }
+    }
+
+    private data class CommittedIndexTarget(
+        val contentHash: String,
+        val targetEpoch: Long,
+    )
+
+    private fun FileEntry.currentIndexTargetIfStale(): CommittedIndexTarget? =
+        if (vectorizedAt == null || vectorizedAt < updatedAt) {
+            CommittedIndexTarget(hash, updatedAt)
+        } else {
+            null
+        }
+
+    private fun nextMutationEpoch(previousEpoch: Long): Long {
+        check(previousEpoch != Long.MAX_VALUE) { "文件修改时间已达上限" }
+        return maxOf(clock(), previousEpoch + 1L)
     }
 
     private fun rollbackReplacement(replacement: WorkspaceFileRollback, failure: Throwable) {

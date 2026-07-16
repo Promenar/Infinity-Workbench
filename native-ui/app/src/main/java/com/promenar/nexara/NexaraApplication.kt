@@ -25,6 +25,8 @@ import com.promenar.nexara.data.rag.KeywordSearcher
 import com.promenar.nexara.data.rag.MemoryManager
 import com.promenar.nexara.data.rag.MicroGraphExtractor
 import com.promenar.nexara.data.rag.MicroGraphKgAdapter
+import com.promenar.nexara.data.rag.FileIndexEventSink
+import com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator
 import com.promenar.nexara.data.rag.QueryRewriter
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.RerankClient
@@ -305,8 +307,29 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             database.workspaceSeqDao(),
             File(filesDir, "session_workspaces"),
             deleteCommitter = com.promenar.nexara.data.repository.WorkspaceDeletionTransaction(database)::delete,
-            onDeleteCommitted = { ids ->
-                vectorizationQueueResource.peek()?.let { queue -> ids.forEach(queue::cancel) }
+            beforeDeleteCommitted = { workspaceRootUuid, ids ->
+                vectorizationQueue.acquireDeleteBarrier(workspaceRootUuid, ids)
+            },
+            afterDeleteCommitted = { workspaceRootUuid, ids ->
+                pendingDocumentIndexCoordinator.clearCommitted(workspaceRootUuid, ids)
+            },
+        )
+    }
+
+    val pendingDocumentIndexCoordinator: PendingDocumentIndexCoordinator by lazy {
+        PendingDocumentIndexCoordinator(
+            downstream = FileIndexEventSink { event -> vectorizationQueue.publish(event) },
+            resolveCurrentTarget = { target ->
+                val entry = database.fileEntryDao().getByUuid(
+                    target.workspaceRootUuid,
+                    target.fileUuid,
+                )
+                entry?.let {
+                    target.copy(
+                        contentHash = entry.hash,
+                        targetEpoch = entry.updatedAt,
+                    )
+                }
             },
         )
     }
@@ -315,9 +338,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         FileOperationRepository(
             database.fileEntryDao(),
             database.fileVersionDao(),
-            indexEventSink = com.promenar.nexara.data.rag.FileIndexEventSink { event ->
-                vectorizationQueue.publish(event)
-            },
+            indexEventSink = pendingDocumentIndexCoordinator,
         )
     }
 
@@ -931,6 +952,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 documentIndexService = createDocumentIndexService(config),
             )
         }
+
+    fun observeVectorizationQueueInstances(
+        observer: (com.promenar.nexara.data.rag.VectorizationQueue) -> Unit,
+    ): AutoCloseable = vectorizationQueueResource.observeInstances(observer)
 
     val defaultAgents: List<com.promenar.nexara.domain.model.Agent> by lazy {
         // DB 只保存与 Locale 无关的稳定 fallback；显示与编辑按 Activity 当前 Locale 叠加。

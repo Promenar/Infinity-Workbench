@@ -16,6 +16,141 @@ class RagHomeScreenContractTest {
     }
 
     @Test
+    fun `pending且没有notice时Home与Folder共用重试提示资源`() {
+        assertThat(ragIndexFallbackStatusResource(canRetryPendingIndex = true))
+            .isEqualTo(com.promenar.nexara.R.string.rag_index_retry_hint)
+        assertThat(ragIndexFallbackStatusResource(canRetryPendingIndex = false))
+            .isEqualTo(com.promenar.nexara.R.string.rag_index_phase_unknown)
+    }
+
+    @Test
+    fun `pending独立进入Home与Folder索引区外层gate`() {
+        assertThat(
+            shouldShowRagIndexSection(
+                isIndexing = false,
+                hasNotice = false,
+                canRetryPendingIndex = true,
+            ),
+        ).isTrue()
+        assertThat(shouldShowRagIndexSection(false, false, false)).isFalse()
+        assertThat(shouldShowRagIndexSection(true, false, false)).isTrue()
+        assertThat(shouldShowRagIndexSection(false, true, false)).isTrue()
+    }
+
+    @Test
+    fun `pending且没有notice时Home与Folder仍渲染可达操作区`() {
+        assertThat(
+            shouldShowRagIndexActions(
+                hasNotice = false,
+                canRetryPendingIndex = true,
+            ),
+        ).isTrue()
+        assertThat(
+            shouldShowRagIndexActions(
+                hasNotice = false,
+                canRetryPendingIndex = false,
+            ),
+        ).isFalse()
+        assertThat(
+            shouldShowRagIndexActions(
+                hasNotice = true,
+                canRetryPendingIndex = false,
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun `Home动作优先服从可见notice且仅无notice时使用pending`() {
+        assertThat(
+            resolveRagHomeIndexAction(
+                noticeCode = IndexingNotice.CODE_FAILED,
+                canRetryLastFailedIndex = true,
+                canRetryPendingIndex = true,
+            ),
+        ).isEqualTo(RagHomeIndexAction.RetryFailed)
+        assertThat(
+            resolveRagHomeIndexAction(
+                noticeCode = IndexingNotice.CODE_IMPORT_FAILED,
+                canRetryLastFailedIndex = false,
+                canRetryPendingIndex = true,
+            ),
+        ).isEqualTo(RagHomeIndexAction.None)
+        assertThat(
+            resolveRagHomeIndexAction(
+                noticeCode = null,
+                canRetryLastFailedIndex = false,
+                canRetryPendingIndex = true,
+            ),
+        ).isEqualTo(RagHomeIndexAction.RetryPending)
+        assertThat(
+            resolveRagHomeIndexAction(null, false, false),
+        ).isEqualTo(RagHomeIndexAction.None)
+    }
+
+    @Test
+    fun `Folder动作优先服从import move delete与失败notice`() {
+        assertThat(
+            resolveRagFolderIndexAction(
+                noticeCode = IndexingNotice.CODE_IMPORT_FAILED,
+                hasSelection = false,
+                canRetryLastFailedIndex = false,
+                canRetryPendingIndex = true,
+            ),
+        ).isEqualTo(RagFolderIndexAction.Upload)
+        assertThat(
+            resolveRagFolderIndexAction(
+                noticeCode = IndexingNotice.CODE_MOVE_FAILED,
+                hasSelection = true,
+                canRetryLastFailedIndex = false,
+                canRetryPendingIndex = true,
+            ),
+        ).isEqualTo(RagFolderIndexAction.Move)
+        assertThat(
+            resolveRagFolderIndexAction(
+                noticeCode = IndexingNotice.CODE_DELETE_FAILED,
+                hasSelection = true,
+                canRetryLastFailedIndex = false,
+                canRetryPendingIndex = true,
+            ),
+        ).isEqualTo(RagFolderIndexAction.Delete)
+        assertThat(
+            resolveRagFolderIndexAction(
+                noticeCode = IndexingNotice.CODE_PARTIAL,
+                hasSelection = true,
+                canRetryLastFailedIndex = true,
+                canRetryPendingIndex = true,
+            ),
+        ).isEqualTo(RagFolderIndexAction.RetryFailed)
+        assertThat(
+            resolveRagFolderIndexAction(
+                noticeCode = IndexingNotice.CODE_WARNING,
+                hasSelection = true,
+                canRetryLastFailedIndex = false,
+                canRetryPendingIndex = true,
+            ),
+        ).isEqualTo(RagFolderIndexAction.None)
+        assertThat(
+            resolveRagFolderIndexAction(
+                noticeCode = IndexingNotice.CODE_FAILED,
+                hasSelection = true,
+                canRetryLastFailedIndex = false,
+                canRetryPendingIndex = true,
+            ),
+        ).isEqualTo(RagFolderIndexAction.None)
+        assertThat(
+            resolveRagFolderIndexAction(
+                noticeCode = null,
+                hasSelection = false,
+                canRetryLastFailedIndex = false,
+                canRetryPendingIndex = true,
+            ),
+        ).isEqualTo(RagFolderIndexAction.RetryPending)
+        assertThat(
+            resolveRagFolderIndexAction(null, false, false, false),
+        ).isEqualTo(RagFolderIndexAction.None)
+    }
+
+    @Test
     fun `route owns runtime dependencies while content remains deterministic`() {
         assertThat(screenSource).contains("data class RagHomeScreenState")
         assertThat(screenSource).contains("data class RagHomeScreenActions")

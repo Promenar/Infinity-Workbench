@@ -3,6 +3,9 @@ package com.promenar.nexara.ui.rag
 import androidx.lifecycle.ViewModelStore
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.entity.FileEntry
+import com.promenar.nexara.data.rag.FileIndexEvent
+import com.promenar.nexara.data.rag.FileIndexEventSink
+import com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator
 import com.promenar.nexara.domain.repository.DiffResult
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
@@ -10,11 +13,14 @@ import com.promenar.nexara.domain.repository.PatchOperation
 import com.promenar.nexara.domain.repository.PatchResult
 import com.promenar.nexara.domain.repository.ReadResult
 import com.promenar.nexara.domain.repository.RenameResult
+import com.promenar.nexara.domain.repository.RenameIndexTarget
 import com.promenar.nexara.domain.repository.WriteResult
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
+import io.mockk.clearMocks
 import io.mockk.confirmVerified
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -52,6 +58,58 @@ class DocEditorViewModelTest {
     @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `应用级待索引target在编辑器销毁重建后恢复并可重试`() = runTest(dispatcher) {
+        var shouldFail = true
+        val coordinator = PendingDocumentIndexCoordinator(
+            FileIndexEventSink { if (shouldFail) error("queue unavailable") },
+        )
+        val target = RenameIndexTarget(DOC, "hash-renamed", 456L)
+        coEvery {
+            workspaceRepository.rename(ROOT, DOC, "renamed.md", "guide.md")
+        } returns renameSuccess(
+            name = "renamed.md",
+            targetHash = target.targetHash,
+            targetEpoch = target.targetEpoch,
+            affectedTargets = listOf(target),
+        )
+        val first = loadedViewModel(pendingIndexCoordinator = coordinator)
+        first.updateTitle("renamed.md")
+        first.saveDocument()
+        advanceUntilIdle()
+        assertThat(first.uiState.value.indexPendingTargets).containsExactly(target)
+
+        ViewModelStore().also { it.put("first", first) }.clear()
+        val recreated = loadedViewModel(pendingIndexCoordinator = coordinator)
+        advanceUntilIdle()
+        assertThat(recreated.uiState.value.indexPendingTargets).containsExactly(target)
+
+        shouldFail = false
+        recreated.retryPendingIndexNow()
+        advanceUntilIdle()
+        assertThat(recreated.uiState.value.indexPendingTargets).isEmpty()
+        assertThat(coordinator.pendingTargets.value).isEmpty()
+    }
+
+    @Test
+    fun `每个load阶段只读取一次共享pending快照并由同一list计算flag`() = runTest(dispatcher) {
+        val coordinator = mockk<PendingDocumentIndexCoordinator>()
+        val pendingFlow = kotlinx.coroutines.flow.MutableStateFlow<List<FileIndexEvent.Changed>>(emptyList())
+        every { coordinator.pendingTargets } returns pendingFlow
+        every { coordinator.snapshot() } returns emptyList()
+        coEvery { fileRepository.readFileRange(ROOT, DOC) } returns readResult()
+        val vm = viewModel(pendingIndexCoordinator = coordinator)
+        runCurrent()
+        clearMocks(coordinator, answers = false, recordedCalls = true)
+
+        vm.loadDocument(ROOT, DOC)
+        advanceUntilIdle()
+
+        io.mockk.verify(exactly = 2) { coordinator.snapshot() }
+        assertThat(vm.uiState.value.indexPendingTargets).isEmpty()
+        assertThat(vm.uiState.value.indexQueueFailed).isFalse()
     }
 
     @Test
@@ -195,6 +253,168 @@ class DocEditorViewModelTest {
         assertThat(vm.uiState.value.titleDirty).isFalse()
         assertThat(vm.uiState.value.contentDirty).isFalse()
         assertThat(vm.uiState.value.currentHash).isEqualTo("hash-2")
+    }
+
+    @Test
+    fun `重命名已提交但索引发布失败时保留待索引目标且可独立重试`() = runTest(dispatcher) {
+        val published = mutableListOf<FileIndexEvent>()
+        var shouldFail = true
+        val sink = FileIndexEventSink { event ->
+            if (shouldFail) throw IllegalStateException("queue unavailable")
+            published += event
+        }
+        val target = RenameIndexTarget(
+            fileUuid = DOC,
+            targetHash = "hash-renamed",
+            targetEpoch = 456L,
+        )
+        val vm = loadedViewModel(sink)
+        vm.updateTitle("renamed.md")
+        coEvery { workspaceRepository.rename(ROOT, DOC, "renamed.md", "guide.md") } returns
+            renameSuccess(
+                name = "renamed.md",
+                targetHash = target.targetHash,
+                targetEpoch = target.targetEpoch,
+                affectedTargets = listOf(target),
+            )
+
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Ready)
+        assertThat(vm.uiState.value.persistedTitle).isEqualTo("renamed.md")
+        assertThat(vm.uiState.value.titleDirty).isFalse()
+        assertThat(vm.uiState.value.lastModified).isEqualTo(456L)
+        assertThat(vm.uiState.value.indexQueueFailed).isTrue()
+        assertThat(vm.uiState.value.indexPendingTargets).containsExactly(target)
+
+        shouldFail = false
+        vm.retryPendingIndex()
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.indexQueueFailed).isFalse()
+        assertThat(vm.uiState.value.indexPendingTargets).isEmpty()
+        assertThat(published).containsExactly(
+            FileIndexEvent.Changed(
+                workspaceRootUuid = ROOT,
+                fileUuid = DOC,
+                contentHash = "hash-renamed",
+                targetEpoch = 456L,
+            ),
+        )
+    }
+
+    @Test
+    fun `正文写入成功但未入队时保留带epoch的待索引目标`() = runTest(dispatcher) {
+        val vm = loadedViewModel(FileIndexEventSink.None)
+        vm.onContentChanged("updated")
+        coEvery {
+            fileRepository.writeFileAtomic(ROOT, DOC, "updated", "editor", "hash-1")
+        } returns WriteResult.Success(
+            newHash = "hash-2",
+            indexQueued = false,
+            targetEpoch = 789L,
+        )
+
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Ready)
+        assertThat(vm.uiState.value.persistedContent).isEqualTo("updated")
+        assertThat(vm.uiState.value.currentHash).isEqualTo("hash-2")
+        assertThat(vm.uiState.value.lastModified).isEqualTo(789L)
+        assertThat(vm.uiState.value.contentDirty).isFalse()
+        assertThat(vm.uiState.value.indexQueueFailed).isTrue()
+        assertThat(vm.uiState.value.indexPendingTargets).containsExactly(
+            RenameIndexTarget(
+                fileUuid = DOC,
+                targetHash = "hash-2",
+                targetEpoch = 789L,
+            ),
+        )
+    }
+
+    @Test
+    fun `重命名提交后索引发布取消会立即传播并保留精确待补偿target`() = runTest(dispatcher) {
+        val target = RenameIndexTarget(DOC, "hash-renamed", 456L)
+        val vm = loadedViewModel(
+            FileIndexEventSink { throw CancellationException("cancel index publish") },
+        )
+        vm.updateTitle("renamed.md")
+        coEvery { workspaceRepository.rename(ROOT, DOC, "renamed.md", "guide.md") } returns
+            renameSuccess(
+                name = "renamed.md",
+                targetHash = target.targetHash,
+                targetEpoch = target.targetEpoch,
+                affectedTargets = listOf(target),
+            )
+
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.persistedTitle).isEqualTo("renamed.md")
+        assertThat(vm.uiState.value.failureCode).isEqualTo(DocEditorFailureCode.SaveCancelled)
+        assertThat(vm.uiState.value.indexPendingTargets).containsExactly(target)
+    }
+
+    @Test
+    fun `待索引重试取消会向调用者传播且不删除target`() = runTest(dispatcher) {
+        val target = RenameIndexTarget(DOC, "hash-2", 789L)
+        val vm = loadedViewModel(
+            FileIndexEventSink { throw CancellationException("cancel retry") },
+        )
+        vm.onContentChanged("updated")
+        coEvery {
+            fileRepository.writeFileAtomic(ROOT, DOC, "updated", "editor", "hash-1")
+        } returns WriteResult.Success("hash-2", indexQueued = false, targetEpoch = 789L)
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        val failure = runCatching { vm.retryPendingIndexNow() }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(CancellationException::class.java)
+        assertThat(vm.uiState.value.indexPendingTargets).containsExactly(target)
+    }
+
+    @Test
+    fun `待索引重试挂起期间同文件升级target不会被旧snapshot覆盖`() = runTest(dispatcher) {
+        val oldPublishStarted = CompletableDeferred<Unit>()
+        val releaseOldPublish = CompletableDeferred<Unit>()
+        val sink = FileIndexEventSink { event ->
+            event as FileIndexEvent.Changed
+            if (event.contentHash == "hash-2") {
+                oldPublishStarted.complete(Unit)
+                releaseOldPublish.await()
+            }
+        }
+        val vm = loadedViewModel(sink)
+        vm.onContentChanged("first")
+        coEvery {
+            fileRepository.writeFileAtomic(ROOT, DOC, "first", "editor", "hash-1")
+        } returns WriteResult.Success("hash-2", indexQueued = false, targetEpoch = 200L)
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        vm.retryPendingIndex()
+        runCurrent()
+        oldPublishStarted.await()
+
+        vm.onContentChanged("second")
+        coEvery {
+            fileRepository.writeFileAtomic(ROOT, DOC, "second", "editor", "hash-2")
+        } returns WriteResult.Success("hash-3", indexQueued = false, targetEpoch = 300L)
+        vm.saveDocument()
+        runCurrent()
+        assertThat(vm.uiState.value.indexPendingTargets).containsExactly(
+            RenameIndexTarget(DOC, "hash-3", 300L),
+        )
+
+        releaseOldPublish.complete(Unit)
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.indexPendingTargets).containsExactly(
+            RenameIndexTarget(DOC, "hash-3", 300L),
+        )
     }
 
     @Test
@@ -828,14 +1048,22 @@ class DocEditorViewModelTest {
         assertThat(casRepository.readCount(DOC_A)).isEqualTo(3)
     }
 
-    private fun viewModel() = DocEditorViewModel(
+    private fun viewModel(
+        indexEventSink: com.promenar.nexara.data.rag.FileIndexEventSink? = null,
+        pendingIndexCoordinator: PendingDocumentIndexCoordinator? = null,
+    ) = DocEditorViewModel(
         fileOperationRepository = fileRepository,
         workspaceRepository = workspaceRepository,
+        indexEventSink = indexEventSink,
+        pendingIndexCoordinator = pendingIndexCoordinator,
     )
 
-    private suspend fun loadedViewModel(): DocEditorViewModel {
+    private suspend fun loadedViewModel(
+        indexEventSink: com.promenar.nexara.data.rag.FileIndexEventSink? = null,
+        pendingIndexCoordinator: PendingDocumentIndexCoordinator? = null,
+    ): DocEditorViewModel {
         coEvery { fileRepository.readFileRange(ROOT, DOC) } returns readResult()
-        return viewModel().also {
+        return viewModel(indexEventSink, pendingIndexCoordinator).also {
             it.loadDocument(ROOT, DOC)
             dispatcher.scheduler.advanceUntilIdle()
         }
@@ -861,11 +1089,13 @@ class DocEditorViewModelTest {
         name: String,
         targetHash: String = "hash-1",
         targetEpoch: Long = 124L,
+        affectedTargets: List<RenameIndexTarget> = emptyList(),
     ) = RenameResult.Success(
         name = name,
         targetHash = targetHash,
         targetEpoch = targetEpoch,
         changed = true,
+        affectedTargets = affectedTargets,
     )
 
     private fun metadataEntry(

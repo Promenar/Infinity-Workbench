@@ -103,6 +103,34 @@ import java.text.SimpleDateFormat
 
 internal enum class PortalTab { DOCUMENTS, MEMORY, GRAPH }
 
+internal fun ragIndexFallbackStatusResource(canRetryPendingIndex: Boolean): Int =
+    if (canRetryPendingIndex) R.string.rag_index_retry_hint else R.string.rag_index_phase_unknown
+
+internal fun shouldShowRagIndexActions(
+    hasNotice: Boolean,
+    canRetryPendingIndex: Boolean,
+): Boolean = hasNotice || canRetryPendingIndex
+
+internal enum class RagHomeIndexAction { RetryFailed, RetryPending, None }
+
+internal fun resolveRagHomeIndexAction(
+    noticeCode: String?,
+    canRetryLastFailedIndex: Boolean,
+    canRetryPendingIndex: Boolean,
+): RagHomeIndexAction = when {
+    noticeCode in setOf(IndexingNotice.CODE_FAILED, IndexingNotice.CODE_PARTIAL) &&
+        canRetryLastFailedIndex -> RagHomeIndexAction.RetryFailed
+    noticeCode != null -> RagHomeIndexAction.None
+    canRetryPendingIndex -> RagHomeIndexAction.RetryPending
+    else -> RagHomeIndexAction.None
+}
+
+internal fun shouldShowRagIndexSection(
+    isIndexing: Boolean,
+    hasNotice: Boolean,
+    canRetryPendingIndex: Boolean,
+): Boolean = isIndexing || hasNotice || canRetryPendingIndex
+
 internal data class RagHomeScreenState(
     val currentTab: PortalTab,
     val searchQuery: String,
@@ -119,6 +147,8 @@ internal data class RagHomeScreenState(
     val isRetryingLastFailedIndex: Boolean,
     val indexingFileIds: Set<String>,
     val kgExtractionStates: Map<String, KgStatus>,
+    val canRetryPendingRenameIndex: Boolean = false,
+    val isRetryingPendingRenameIndex: Boolean = false,
 )
 
 internal data class RagHomeScreenActions(
@@ -130,6 +160,7 @@ internal data class RagHomeScreenActions(
     val onOpenFilePicker: () -> Unit = {},
     val onCreateFolder: (String) -> Unit = {},
     val onRetryLastFailedIndex: () -> Unit = {},
+    val onRetryPendingRenameIndex: () -> Unit = {},
     val onDismissQueueError: () -> Unit = {},
     val onNavigateToDocEditor: (String, String) -> Unit = { _, _ -> },
     val onReindexFile: (String) -> Unit = {},
@@ -191,6 +222,8 @@ fun RagHomeScreen(
     val indexingNotice by viewModel.indexingNotice.collectAsState()
     val canRetryLastFailedIndex by viewModel.canRetryLastFailedIndex.collectAsState()
     val isRetryingLastFailedIndex by viewModel.isRetryingLastFailedIndex.collectAsState()
+    val pendingRenameIndexTargets by viewModel.pendingRenameIndexTargets.collectAsState()
+    val isRetryingPendingRenameIndex by viewModel.isRetryingPendingRenameIndex.collectAsState()
     val memoryVectors by viewModel.memoryVectors.collectAsState()
     val kgExtractionStates by viewModel.kgExtractionStates.collectAsState()
     val workspaceRootUuid by viewModel.workspaceRootUuid.collectAsState()
@@ -214,6 +247,8 @@ fun RagHomeScreen(
         indexingNotice,
         canRetryLastFailedIndex,
         isRetryingLastFailedIndex,
+        pendingRenameIndexTargets,
+        isRetryingPendingRenameIndex,
         indexingFileIds,
         kgExtractionStates,
     ) {
@@ -233,6 +268,8 @@ fun RagHomeScreen(
             isRetryingLastFailedIndex = isRetryingLastFailedIndex,
             indexingFileIds = indexingFileIds,
             kgExtractionStates = kgExtractionStates,
+            canRetryPendingRenameIndex = pendingRenameIndexTargets.isNotEmpty(),
+            isRetryingPendingRenameIndex = isRetryingPendingRenameIndex,
         )
     }
 
@@ -256,6 +293,7 @@ fun RagHomeScreen(
         onOpenFilePicker = { filePickerLauncher.launch(arrayOf("*/*")) },
         onCreateFolder = viewModel::createFolder,
         onRetryLastFailedIndex = viewModel::retryLastFailedIndex,
+        onRetryPendingRenameIndex = viewModel::retryPendingRenameIndex,
         onDismissQueueError = viewModel::dismissQueueError,
         onNavigateToDocEditor = onNavigateToDocEditor,
         onReindexFile = viewModel::reindexFile,
@@ -485,7 +523,11 @@ internal fun RagHomeScreenContent(
                 Spacer(Modifier.height(NexaraSpacing.Medium))
 
                 AnimatedVisibility(
-                    visible = state.isIndexing || state.indexingNotice != null,
+                    visible = shouldShowRagIndexSection(
+                        isIndexing = state.isIndexing,
+                        hasNotice = state.indexingNotice != null,
+                        canRetryPendingIndex = state.canRetryPendingRenameIndex,
+                    ),
                     enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { -it },
                     exit = fadeOut(tween(400)) + slideOutVertically(tween(400)) { -it }
                 ) {
@@ -496,19 +538,29 @@ internal fun RagHomeScreenContent(
                         val resolvedNotice = state.indexingNotice?.let { IndexingNotice.template(it) }
                         val statusText = resolvedNotice?.let { resolved ->
                             stringResource(resolved.resourceId, *resolved.args.toTypedArray())
-                        } ?: stringResource(R.string.rag_index_phase_unknown)
-                        val isError = state.indexingNotice?.severity == NoticeSeverity.Error
-                        val showRetry = state.canRetryLastFailedIndex && state.indexingNotice?.code in setOf(
-                            IndexingNotice.CODE_FAILED,
-                            IndexingNotice.CODE_PARTIAL,
+                        } ?: stringResource(
+                            ragIndexFallbackStatusResource(state.canRetryPendingRenameIndex),
                         )
+                        val isError = state.indexingNotice?.severity == NoticeSeverity.Error
+                        val indexAction = resolveRagHomeIndexAction(
+                            noticeCode = state.indexingNotice?.code,
+                            canRetryLastFailedIndex = state.canRetryLastFailedIndex,
+                            canRetryPendingIndex = state.canRetryPendingRenameIndex,
+                        )
+                        val showRetry = indexAction != RagHomeIndexAction.None
+                        val retrying = state.isRetryingLastFailedIndex ||
+                            state.isRetryingPendingRenameIndex
 
-                        if (state.indexingNotice != null) {
+                        if (shouldShowRagIndexActions(
+                                hasNotice = state.indexingNotice != null,
+                                canRetryPendingIndex = state.canRetryPendingRenameIndex,
+                            )
+                        ) {
                             Column {
                                 IndexingProgressBar(
                                     progress = state.indexingProgress.coerceAtLeast(0f),
                                     statusText = statusText,
-                                    subStatusText = if (showRetry && !state.isRetryingLastFailedIndex) {
+                                    subStatusText = if (showRetry && !retrying) {
                                         stringResource(R.string.rag_index_retry_hint)
                                     } else {
                                         null
@@ -522,8 +574,12 @@ internal fun RagHomeScreenContent(
                                 ) {
                                     if (showRetry) {
                                         TextButton(
-                                            onClick = actions.onRetryLastFailedIndex,
-                                            enabled = !state.isRetryingLastFailedIndex,
+                                            onClick = when (indexAction) {
+                                                RagHomeIndexAction.RetryFailed -> actions.onRetryLastFailedIndex
+                                                RagHomeIndexAction.RetryPending -> actions.onRetryPendingRenameIndex
+                                                RagHomeIndexAction.None -> ({})
+                                            },
+                                            enabled = !retrying,
                                             modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
                                         ) {
                                             Text(stringResource(R.string.shared_btn_retry))
@@ -531,7 +587,7 @@ internal fun RagHomeScreenContent(
                                     }
                                     TextButton(
                                         onClick = actions.onDismissQueueError,
-                                        enabled = !state.isRetryingLastFailedIndex,
+                                        enabled = !retrying,
                                         modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
                                     ) {
                                         Text(stringResource(R.string.common_dismiss))

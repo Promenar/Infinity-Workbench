@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.SessionEntity
+import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.RagOptions
@@ -105,8 +106,26 @@ class RagImportRetrievalPipelineTest {
                 config,
             ),
         )
+        database.vectorizationTaskDao().insert(VectorizationTaskEntity(
+            id = "pipeline-index-task",
+            type = VectorizationQueue.TYPE_DOCUMENT_REFERENCE,
+            status = "processing",
+            docId = fileId,
+            workspaceRootUuid = root.uuid,
+            sourceMimeType = "text/plain",
+            targetContentHash = created.hash,
+            targetEpoch = created.updatedAt,
+            createdAt = created.updatedAt,
+            updatedAt = created.updatedAt,
+        ))
 
-        val indexed = indexService.rebuild(FileIndexEvent.Changed(root.uuid, fileId, created.hash))
+        val indexed = indexService.rebuild(FileIndexEvent.Changed(
+            root.uuid,
+            fileId,
+            created.hash,
+            created.updatedAt,
+            activeTaskId = "pipeline-index-task",
+        ))
 
         assertThat(indexed).isEqualTo(DocumentIndexResult.Rebuilt(fileId))
         assertThat(database.fileEntryDao().getByUuid(root.uuid, fileId)!!.vectorizedAt).isNotNull()

@@ -12,12 +12,15 @@ import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.VectorStats
 import com.promenar.nexara.data.rag.VectorStatsService
 import com.promenar.nexara.data.rag.KeywordSearcher
+import com.promenar.nexara.data.rag.FileIndexEvent
+import com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator
 import com.promenar.nexara.utils.NexaraLogger
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.RenameResult
+import com.promenar.nexara.domain.repository.RenameIndexTarget
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
 import com.promenar.nexara.domain.repository.MemoryVectorRecord
@@ -72,6 +75,7 @@ class RagViewModel(
     injectedImporter: SharedFileImporter? = null,
     injectedRequestFactory: ((Uri, String) -> ShareRequest)? = null,
     ragWorkspaceIoContext: CoroutineContext = kotlinx.coroutines.Dispatchers.IO,
+    injectedPendingIndexCoordinator: PendingDocumentIndexCoordinator? = null,
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
@@ -84,6 +88,7 @@ class RagViewModel(
     private val importRequestFactory = injectedRequestFactory
         ?: AndroidSafImportRequestFactory(app.contentResolver)::create
     private val ragWorkspaceIoContext = ragWorkspaceIoContext
+    private val pendingIndexCoordinator = injectedPendingIndexCoordinator
 
     private val vectorStatsService = VectorStatsService(vectorRepository)
 
@@ -121,6 +126,14 @@ class RagViewModel(
     private val _isRetryingLastFailedIndex = MutableStateFlow(false)
     val isRetryingLastFailedIndex: StateFlow<Boolean> = _isRetryingLastFailedIndex.asStateFlow()
 
+    private val _pendingRenameIndexTargets = MutableStateFlow<List<RenameIndexTarget>>(emptyList())
+    val pendingRenameIndexTargets: StateFlow<List<RenameIndexTarget>> =
+        _pendingRenameIndexTargets.asStateFlow()
+
+    private val _isRetryingPendingRenameIndex = MutableStateFlow(false)
+    val isRetryingPendingRenameIndex: StateFlow<Boolean> =
+        _isRetryingPendingRenameIndex.asStateFlow()
+
     private val _isMovingDocuments = MutableStateFlow(false)
     val isMovingDocuments: StateFlow<Boolean> = _isMovingDocuments.asStateFlow()
 
@@ -135,6 +148,9 @@ class RagViewModel(
     val kgExtractionStates: StateFlow<Map<String, KgStatus>> = _kgExtractionStates.asStateFlow()
 
     private val _kgExtractingIds = mutableSetOf<String>()
+    private var queueResourceObservation: AutoCloseable? = null
+    private var queueStateObservation: AutoCloseable? = null
+    @Volatile private var observedQueue: com.promenar.nexara.data.rag.VectorizationQueue? = null
 
     private val _config = MutableStateFlow(RagConfiguration())
     val config: StateFlow<RagConfiguration> = _config.asStateFlow()
@@ -158,6 +174,13 @@ class RagViewModel(
         startDataObservation()
         observeQueue()
         ensureRagWorkspaceRoot()
+        pendingIndexCoordinator?.let { coordinator ->
+            viewModelScope.launch {
+                coordinator.pendingTargets.collect {
+                    synchronizeSharedPendingTargets()
+                }
+            }
+        }
     }
 
     /** 为全局知识库建立不可见的系统 Session owner，再通过统一 repository 认领真实 root。 */
@@ -170,6 +193,7 @@ class RagViewModel(
                     workspaceRepository = workspaceRepository,
                     ioContext = ragWorkspaceIoContext,
                 ).ensureRoot().uuid
+                synchronizeSharedPendingTargets()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -184,63 +208,79 @@ class RagViewModel(
     }
 
     private fun observeQueue() {
-        app.vectorizationQueue.setOnStateChange { queue, currentTask ->
-            val isProcessing = app.vectorizationQueue.state.value.isProcessing
-            _isIndexing.value = isProcessing
-            // 使用 currentTask 的进度；若队列空但有残留错误，保持上次进度
-            _indexingProgress.value = (currentTask?.progress ?: 0.0).toFloat() / 100f
+        queueResourceObservation = app.observeVectorizationQueueInstances { observedQueue ->
+            queueStateObservation?.close()
+            queueStateObservation = null
+            this.observedQueue = observedQueue
+            queueStateObservation = observedQueue.setOnStateChange { queue, currentTask ->
+                if (this.observedQueue !== observedQueue) return@setOnStateChange
+                val isProcessing = observedQueue.state.value.isProcessing
+                _isIndexing.value = isProcessing
+                // 使用 currentTask 的进度；若队列空但有残留错误，保持上次进度
+                _indexingProgress.value = (currentTask?.progress ?: 0.0).toFloat() / 100f
 
-            // 更新正在索引中的文件 UUID 集合
-            _indexingDocIds.value = queue.filter {
-                it.type in setOf("document", com.promenar.nexara.data.rag.VectorizationQueue.TYPE_DOCUMENT_REFERENCE) &&
-                    it.docId != null
-            }
-                .mapNotNull { it.docId }.toSet()
+                // 更新正在索引中的文件 UUID 集合
+                _indexingDocIds.value = queue.filter {
+                    it.type in setOf("document", com.promenar.nexara.data.rag.VectorizationQueue.TYPE_DOCUMENT_REFERENCE) &&
+                        it.docId != null
+                }
+                    .mapNotNull { it.docId }.toSet()
 
-            val queueNotice = currentTask?.let(IndexingNotice::fromTask)
-            if (queueNotice != null) {
-                _indexingNotice.value = queueNotice
-            } else if (!shouldKeepNotice(_indexingNotice.value)) {
-                _indexingNotice.value = null
-            }
-
-            val task = currentTask
-            if (task != null && task.status in setOf("failed", "partial")) {
-                lastFailedIndexTarget = task.toRetryTarget()
-                _canRetryLastFailedIndex.value = lastFailedIndexTarget != null
-                _isIndexing.value = true  // 保持错误卡片可见
-                _indexingProgress.value = (task.progress / 100.0).toFloat()
-            } else if (task != null) {
-                clearRetryTarget()
-            }
-
-            // 队列空 & 无当前任务 & 无错误留存 → 停止展示
-            if (queue.isEmpty() && currentTask == null) {
-                refreshStats()
-                if (!shouldKeepNotice(_indexingNotice.value)) {
-                    _isIndexing.value = false
+                val queueNotice = currentTask?.let(IndexingNotice::fromTask)
+                if (queueNotice != null) {
+                    _indexingNotice.value = queueNotice
+                } else if (!shouldKeepNotice(_indexingNotice.value)) {
                     _indexingNotice.value = null
                 }
-                if (shouldKeepNotice(_indexingNotice.value)) {
-                    _isIndexing.value = true
-                }
-            }
 
-            // KG extraction state tracking
-            val kgDocId = currentTask?.docId
-            if (kgDocId != null && kgDocId in _kgExtractingIds) {
-                when (currentTask!!.status) {
-                    "completed", "warning" -> {
-                        _kgExtractingIds.remove(kgDocId)
-                        _kgExtractionStates.value = _kgExtractionStates.value + (kgDocId to KgStatus.COMPLETED)
+                val task = currentTask
+                if (task != null && task.status in setOf("failed", "partial")) {
+                    lastFailedIndexTarget = task.toRetryTarget()
+                    _canRetryLastFailedIndex.value = lastFailedIndexTarget != null
+                    _isIndexing.value = true  // 保持错误卡片可见
+                    _indexingProgress.value = (task.progress / 100.0).toFloat()
+                } else if (task != null) {
+                    clearRetryTarget()
+                }
+
+                // 队列空 & 无当前任务 & 无错误留存 → 停止展示
+                if (queue.isEmpty() && currentTask == null) {
+                    refreshStats()
+                    if (!shouldKeepNotice(_indexingNotice.value)) {
+                        _isIndexing.value = false
+                        _indexingNotice.value = null
                     }
-                    "failed" -> {
-                        _kgExtractingIds.remove(kgDocId)
-                        _kgExtractionStates.value = _kgExtractionStates.value + (kgDocId to KgStatus.FAILED)
+                    if (shouldKeepNotice(_indexingNotice.value)) {
+                        _isIndexing.value = true
                     }
                 }
+
+                // KG extraction state tracking
+                val kgDocId = currentTask?.docId
+                if (kgDocId != null && kgDocId in _kgExtractingIds) {
+                    when (currentTask.status) {
+                        "completed", "warning" -> {
+                            _kgExtractingIds.remove(kgDocId)
+                            _kgExtractionStates.value = _kgExtractionStates.value + (kgDocId to KgStatus.COMPLETED)
+                        }
+                        "failed" -> {
+                            _kgExtractingIds.remove(kgDocId)
+                            _kgExtractionStates.value = _kgExtractionStates.value + (kgDocId to KgStatus.FAILED)
+                        }
+                    }
+                }
+                recomputeIndexingVisibility()
             }
         }
+    }
+
+    override fun onCleared() {
+        observedQueue = null
+        queueResourceObservation?.close()
+        queueResourceObservation = null
+        queueStateObservation?.close()
+        queueStateObservation = null
+        super.onCleared()
     }
 
     private sealed interface FailedIndexTarget {
@@ -305,17 +345,24 @@ class RagViewModel(
 
     private suspend fun retryDocument(target: FailedIndexTarget.Document): Boolean {
         val entry = workspaceRepository.getByUuid(target.workspaceRootUuid, target.docId) ?: return false
-        val content = fileOperationRepository.readFileRange(target.workspaceRootUuid, target.docId).content
-        if (content.isBlank()) return false
-        app.vectorizationQueue.cancel(target.docId)
-        app.vectorizationQueue.enqueueDocument(
-            workspaceRootUuid = target.workspaceRootUuid,
-            docId = target.docId,
+        app.vectorizationQueue.cancelAndJoin(target.workspaceRootUuid, listOf(target.docId))
+        enqueueCurrentDocumentReference(target.workspaceRootUuid, entry)
+        return true
+    }
+
+    private suspend fun enqueueCurrentDocumentReference(
+        workspaceRootUuid: String,
+        entry: FileEntry,
+    ) {
+        app.vectorizationQueue.enqueueDocumentReference(
+            workspaceRootUuid = workspaceRootUuid,
+            docId = entry.uuid,
             docTitle = entry.name,
-            content = content,
+            sourceMimeType = requireNotNull(entry.mimeType) { "重新索引文件缺少 MIME" },
+            targetContentHash = entry.hash,
+            targetEpoch = entry.updatedAt,
             kgStrategy = if (_config.value.enableKnowledgeGraph) "full" else null,
         )
-        return true
     }
 
     private fun clearRetryTarget() {
@@ -326,15 +373,19 @@ class RagViewModel(
     private fun discardFailedIndexTarget() {
         val discardedTarget = lastFailedIndexTarget
         clearRetryTarget()
-        discardedTarget?.let { app.vectorizationQueue.cancel(it.docId) }
+        discardedTarget?.let { target ->
+            viewModelScope.launch {
+                app.vectorizationQueue.cancelAndJoin(target.workspaceRootUuid, listOf(target.docId))
+            }
+        }
     }
 
     /** 手动关闭错误提示（用户点击关闭后清除） */
     fun dismissQueueError() {
-        if (_isRetryingLastFailedIndex.value) return
+        if (_isRetryingLastFailedIndex.value || _isRetryingPendingRenameIndex.value) return
         discardFailedIndexTarget()
         _indexingNotice.value = null
-        _isIndexing.value = false
+        recomputeIndexingVisibility()
     }
 
     private fun shouldKeepNotice(notice: UiStatusNotice?): Boolean = when (notice?.code) {
@@ -592,8 +643,39 @@ class RagViewModel(
         viewModelScope.launch {
             try {
                 val rootUuid = _workspaceRootUuid.value ?: return@launch
-                when (workspaceRepository.rename(rootUuid, id, newName)) {
-                    is RenameResult.Success -> loadStats()
+                when (val result = workspaceRepository.rename(rootUuid, id, newName)) {
+                    is RenameResult.Success -> {
+                        if (pendingIndexCoordinator == null) {
+                            mergePendingRenameTargets(result.affectedTargets)
+                        }
+                        result.affectedTargets.forEach { target ->
+                            try {
+                                val event = target.toChangedEvent(rootUuid)
+                                if (pendingIndexCoordinator != null) {
+                                    pendingIndexCoordinator.publish(event)
+                                } else {
+                                    app.vectorizationQueue.publish(event)
+                                    removePendingRenameTarget(target)
+                                }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                // 已提交的重命名不能回滚；target 留在 VM 生命周期补偿队列中。
+                            }
+                        }
+                        synchronizeSharedPendingTargets()
+                        if (pendingIndexCoordinator == null) {
+                            if (_pendingRenameIndexTargets.value.isNotEmpty()) {
+                                _indexingNotice.value = UiStatusNotice(
+                                    NoticeSeverity.Warning,
+                                    IndexingNotice.CODE_WARNING,
+                                )
+                            } else if (_indexingNotice.value?.code == IndexingNotice.CODE_WARNING) {
+                                _indexingNotice.value = null
+                            }
+                        }
+                        loadStats()
+                    }
                     is RenameResult.Conflict,
                     RenameResult.NotFound,
                     -> Unit
@@ -602,6 +684,112 @@ class RagViewModel(
                 throw cancelled
             } catch (_: Exception) { }
         }
+    }
+
+    private fun mergePendingRenameTargets(targets: List<RenameIndexTarget>) {
+        if (targets.isEmpty()) return
+        val merged = LinkedHashMap<String, RenameIndexTarget>()
+        _pendingRenameIndexTargets.value.forEach { merged[it.fileUuid] = it }
+        targets.forEach { merged[it.fileUuid] = it }
+        _pendingRenameIndexTargets.value = merged.values.toList()
+    }
+
+    private fun removePendingRenameTarget(target: RenameIndexTarget) {
+        _pendingRenameIndexTargets.value = _pendingRenameIndexTargets.value.filterNot { pending ->
+            pending == target
+        }
+    }
+
+    private suspend fun publishRenameIndexTarget(
+        workspaceRootUuid: String,
+        target: RenameIndexTarget,
+    ) {
+        app.vectorizationQueue.publish(
+            com.promenar.nexara.data.rag.FileIndexEvent.Changed(
+                workspaceRootUuid = workspaceRootUuid,
+                fileUuid = target.fileUuid,
+                contentHash = target.targetHash,
+                targetEpoch = target.targetEpoch,
+            ),
+        )
+    }
+
+    private fun RenameIndexTarget.toChangedEvent(workspaceRootUuid: String) =
+        FileIndexEvent.Changed(
+            workspaceRootUuid = workspaceRootUuid,
+            fileUuid = fileUuid,
+            contentHash = targetHash,
+            targetEpoch = targetEpoch,
+        )
+
+    internal suspend fun retryPendingRenameIndexNow() {
+        val rootUuid = _workspaceRootUuid.value ?: return
+        if (pendingIndexCoordinator != null) {
+            pendingIndexCoordinator.snapshot()
+                .filter { it.workspaceRootUuid == rootUuid }
+                .forEach { pendingIndexCoordinator.retry(it) }
+            synchronizeSharedPendingTargets()
+            return
+        }
+        val snapshot = _pendingRenameIndexTargets.value
+        snapshot.forEach { target ->
+            try {
+                publishRenameIndexTarget(rootUuid, target)
+                removePendingRenameTarget(target)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // 保留失败 target，继续补偿其它互不依赖的文件。
+            }
+        }
+        if (_pendingRenameIndexTargets.value.isEmpty()) {
+            if (_indexingNotice.value?.code == IndexingNotice.CODE_WARNING) {
+                _indexingNotice.value = null
+            }
+        } else {
+            _indexingNotice.value = UiStatusNotice(
+                NoticeSeverity.Warning,
+                IndexingNotice.CODE_WARNING,
+            )
+        }
+    }
+
+    fun retryPendingRenameIndex() {
+        if (_isRetryingPendingRenameIndex.value || _pendingRenameIndexTargets.value.isEmpty()) return
+        _isRetryingPendingRenameIndex.value = true
+        viewModelScope.launch {
+            try {
+                retryPendingRenameIndexNow()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } finally {
+                _isRetryingPendingRenameIndex.value = false
+            }
+        }
+    }
+
+    private fun synchronizeSharedPendingTargets() {
+        val coordinator = pendingIndexCoordinator ?: return
+        val rootUuid = _workspaceRootUuid.value
+        _pendingRenameIndexTargets.value = coordinator.snapshot()
+            .asSequence()
+            .filter { it.workspaceRootUuid == rootUuid }
+            .map { event ->
+                RenameIndexTarget(
+                    fileUuid = event.fileUuid,
+                    targetHash = event.contentHash,
+                    targetEpoch = event.targetEpoch,
+                )
+            }
+            .toList()
+        recomputeIndexingVisibility()
+    }
+
+    private fun recomputeIndexingVisibility() {
+        _isIndexing.value = _pendingRenameIndexTargets.value.isNotEmpty() ||
+            observedQueue?.state?.value?.isProcessing == true ||
+            shouldKeepNotice(_indexingNotice.value) ||
+            _canRetryLastFailedIndex.value
     }
 
     fun deleteFolder(id: String) = deleteCollection(id)
@@ -718,17 +906,7 @@ class RagViewModel(
             try {
                 val rootUuid = _workspaceRootUuid.value ?: return@launch
                 val entry = workspaceRepository.getByUuid(rootUuid, uuid) ?: return@launch
-                val result = fileOperationRepository.readFileRange(rootUuid, uuid)
-                if (result.content.isNotBlank()) {
-                    val kgStrategy = if (_config.value.enableKnowledgeGraph) "full" else null
-                    app.vectorizationQueue.enqueueDocument(
-                        workspaceRootUuid = rootUuid,
-                        docId = uuid,
-                        docTitle = entry.name,
-                        content = result.content,
-                        kgStrategy = kgStrategy
-                    )
-                }
+                enqueueCurrentDocumentReference(rootUuid, entry)
             } catch (_: Exception) { }
         }
     }
@@ -750,19 +928,8 @@ class RagViewModel(
             uuids.forEach { uuid ->
                 try {
                     val entry = workspaceRepository.getByUuid(rootUuid, uuid) ?: return@forEach
-                    val result = fileOperationRepository.readFileRange(rootUuid, uuid)
-                    if (result.content.isNotBlank()) {
-                        submitted += 1
-                        app.vectorizationQueue.enqueueDocument(
-                            workspaceRootUuid = rootUuid,
-                            docId = uuid,
-                            docTitle = entry.name,
-                            content = result.content,
-                            kgStrategy = if (_config.value.enableKnowledgeGraph) "full" else null
-                        )
-                    } else {
-                        failed += 1
-                    }
+                    enqueueCurrentDocumentReference(rootUuid, entry)
+                    submitted += 1
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (e: Exception) {
@@ -987,7 +1154,6 @@ class RagViewModel(
     }
 
     private fun clearDocumentRuntimeState(docId: String) {
-        app.vectorizationQueue.cancel(docId)
         _indexingDocIds.update { ids -> ids - docId }
         _kgExtractionStates.update { states -> states - docId }
         _kgExtractingIds.remove(docId)
@@ -1085,7 +1251,8 @@ class RagViewModel(
                         ),
                         fileOperationRepository = app.fileOperationRepository,
                         ragConfigPersistence = RagConfigPersistence(ragPrefs),
-                        keywordSearcher = app.keywordSearcher
+                        keywordSearcher = app.keywordSearcher,
+                        injectedPendingIndexCoordinator = app.pendingDocumentIndexCoordinator,
                     ) as T
                 }
             }

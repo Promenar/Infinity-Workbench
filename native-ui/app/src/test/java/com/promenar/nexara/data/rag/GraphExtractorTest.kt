@@ -6,6 +6,7 @@ import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.PromptResponse
 import io.mockk.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
@@ -157,5 +158,59 @@ class GraphExtractorTest {
         // 验证完全提取落库后，打扫临时 checkpoint 缓存，防止垃圾垃圾残留
         val checkpointDir = File(tempDir, "kg_extraction_checkpoint/$docId")
         assertThat(checkpointDir.exists()).isFalse()
+    }
+
+    @Test
+    fun `chunk取消必须透传且不得进入图谱写入`() = runTest {
+        coEvery { protocol.sendPromptSync(any()) } throws CancellationException("deleted")
+        val extractor = GraphExtractor(protocol, graphStore)
+
+        val failure = runCatching { extractor.extractAndSave("cancel me", docId = "doc") }
+            .exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(CancellationException::class.java)
+        coVerify(exactly = 0) { graphStore.clearGraphForDoc(any()) }
+        coVerify(exactly = 0) { graphStore.upsertNode(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `node写入取消必须透传且不继续写后node与edge`() = runTest {
+        coEvery { protocol.sendPromptSync(any()) } returns PromptResponse(
+            content = """{
+                "nodes":[{"name":"NodeA","type":"concept"},{"name":"NodeB","type":"concept"}],
+                "edges":[{"source":"NodeA","target":"NodeB","relation":"rel","weight":1.0}]
+            }""",
+        )
+        coEvery { graphStore.upsertNode(any(), any(), any(), any()) } throws
+            CancellationException("deleted")
+        val extractor = GraphExtractor(protocol, graphStore)
+
+        val failure = runCatching { extractor.extractAndSave("nodes", docId = "doc") }
+            .exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(CancellationException::class.java)
+        coVerify(exactly = 1) { graphStore.upsertNode(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { graphStore.createEdge(any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `edge写入取消必须透传且不伪装成成功`() = runTest {
+        coEvery { protocol.sendPromptSync(any()) } returns PromptResponse(
+            content = """{
+                "nodes":[{"name":"NodeA","type":"concept"},{"name":"NodeB","type":"concept"}],
+                "edges":[{"source":"NodeA","target":"NodeB","relation":"rel","weight":1.0}]
+            }""",
+        )
+        coEvery { graphStore.upsertNode("NodeA", any(), any(), any()) } returns "a"
+        coEvery { graphStore.upsertNode("NodeB", any(), any(), any()) } returns "b"
+        coEvery { graphStore.createEdge(any(), any(), any(), any(), any(), any()) } throws
+            CancellationException("deleted")
+        val extractor = GraphExtractor(protocol, graphStore)
+
+        val failure = runCatching { extractor.extractAndSave("edge", docId = "doc") }
+            .exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(CancellationException::class.java)
+        coVerify(exactly = 1) { graphStore.createEdge("a", "b", "rel", "doc", 1.0, any()) }
     }
 }
