@@ -12,9 +12,9 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -62,8 +62,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -374,7 +372,7 @@ internal fun RagFolderScreenContent(
                     }
                     else -> null
                 }
-                Column(Modifier.semantics { stateDescription = status }) {
+                Column {
                     IndexingProgressBar(
                         progress = state.indexingProgress,
                         statusText = status,
@@ -446,6 +444,7 @@ internal fun RagFolderScreenContent(
             Column(
                 Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight()
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -454,7 +453,7 @@ internal fun RagFolderScreenContent(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 420.dp)
+                        .weight(1f)
                         .testTag(UiTags.RAG_FOLDER_MOVE_LIST),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {

@@ -186,6 +186,51 @@ class FilesPanelStateTest {
     }
 
     @Test
+    fun `可见后代要求所有展开祖先目录持续订阅`() {
+        val outer = entry("outer", "root", "/outer", isDirectory = true)
+        val branch = entry("branch", "outer", "/outer/branch", isDirectory = true)
+        val visibleLeaf = entry(
+            "visible-leaf",
+            "branch",
+            "/outer/branch/visible.md",
+            isDirectory = false,
+        )
+        val unrelated = entry("unrelated", "root", "/unrelated", isDirectory = true)
+        val visibleNodes = listOf(
+            VisibleFileNode(outer, depth = 0),
+            VisibleFileNode(branch, depth = 1),
+            VisibleFileNode(visibleLeaf, depth = 2),
+            VisibleFileNode(unrelated, depth = 0),
+        )
+        val requiredIds = resolveRequiredDirectorySubscriptionIds(
+            visibleNodes = visibleNodes,
+            visibleNodeIds = setOf(visibleLeaf.uuid),
+            expandedDirectoryIds = setOf(outer.uuid, branch.uuid, unrelated.uuid),
+        )
+
+        assertThat(requiredIds).containsExactly(outer.uuid, branch.uuid)
+    }
+
+    @Test
+    fun `最后一个可见后代离开后不再要求祖先目录订阅`() {
+        val outer = entry("outer", "root", "/outer", isDirectory = true)
+        val branch = entry("branch", "outer", "/outer/branch", isDirectory = true)
+        val leaf = entry("leaf", "branch", "/outer/branch/leaf.md", isDirectory = false)
+
+        val requiredIds = resolveRequiredDirectorySubscriptionIds(
+            visibleNodes = listOf(
+                VisibleFileNode(outer, depth = 0),
+                VisibleFileNode(branch, depth = 1),
+                VisibleFileNode(leaf, depth = 2),
+            ),
+            visibleNodeIds = emptySet(),
+            expandedDirectoryIds = setOf(outer.uuid, branch.uuid),
+        )
+
+        assertThat(requiredIds).isEmpty()
+    }
+
+    @Test
     fun `生产文件树使用UUID键单层Material列表和有界移动目录`() {
         val projectRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
             if (root.resolve("src/main").isDirectory) root else root.resolve("app")
@@ -196,6 +241,9 @@ class FilesPanelStateTest {
 
         assertThat(source).contains("items = visibleNodes")
         assertThat(source).contains("key = { it.file.uuid }")
+        assertThat(source).contains(
+            "val rootsFlow = remember(rootFiles, workspaceRootUuid, workspaceRepo)",
+        )
         assertThat(source).contains("ListItem(")
         assertThat(source).contains(".heightIn(max = 420.dp)")
         assertThat(source).doesNotContain("NexaraGlassCard")
@@ -204,7 +252,7 @@ class FilesPanelStateTest {
     }
 
     @Test
-    fun `文件树内部API的目录订阅位于实际组合行生命周期`() {
+    fun `文件树目录订阅由投影视口持有而不是组合行持有`() {
         val projectRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
             if (root.resolve("src/main").isDirectory) root else root.resolve("app")
         }
@@ -216,9 +264,10 @@ class FilesPanelStateTest {
             .substringBefore("Box(modifier =")
 
         assertThat(source).contains("internal fun FilesPanel(")
-        assertThat(beforeContent).doesNotContain("observeChildren(rootUuid, node.file.uuid)")
-        assertThat(contentBody).contains("observeChildren(rootUuid, node.file.uuid)")
-        assertThat(source).doesNotContain("visibleNodes.asSequence()")
+        assertThat(source).contains("resolveRequiredDirectorySubscriptionIds(")
+        assertThat(beforeContent).contains("requiredDirectorySubscriptionIds.forEach")
+        assertThat(beforeContent).contains("observeChildren(rootUuid, parentUuid)")
+        assertThat(contentBody).doesNotContain("observeChildren(")
     }
 
     private fun entry(

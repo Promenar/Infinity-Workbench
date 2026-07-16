@@ -15,9 +15,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -53,7 +53,7 @@ fun IndexingProgressBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .semantics(mergeDescendants = true) {
+            .clearAndSetSemantics {
                 liveRegion = if (accessibility.assertive) {
                     LiveRegionMode.Assertive
                 } else {
@@ -84,11 +84,13 @@ fun IndexingProgressBar(
                 ) {
                     Text(
                         text = statusText,
+                        modifier = Modifier.clearAndSetSemantics { },
                         style = MaterialTheme.typography.labelLarge,
                     )
                     if (!subStatusText.isNullOrBlank()) {
                         Text(
                             text = subStatusText,
+                            modifier = Modifier.clearAndSetSemantics { },
                             style = MaterialTheme.typography.bodySmall,
                             color = if (isError) contentColor else colors.onSurfaceVariant,
                         )
@@ -96,6 +98,7 @@ fun IndexingProgressBar(
                 }
                 Text(
                     text = "${(accessibility.progress * 100).toInt()}%",
+                    modifier = Modifier.clearAndSetSemantics { },
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
@@ -108,7 +111,8 @@ fun IndexingProgressBar(
                 progress = { accessibility.progress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(6.dp),
+                    .height(6.dp)
+                    .clearAndSetSemantics { },
                 color = accentColor,
                 trackColor = colors.surfaceContainerHighest,
             )

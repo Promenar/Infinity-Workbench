@@ -22,6 +22,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -30,6 +32,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -77,6 +80,278 @@ class ResourceExplorerViewModelTest {
         assertThat(bRecycle.subscriptionCount.value).isEqualTo(1)
         assertThat(viewModel.workspaceRootUuid.value).isEqualTo("root-b")
         verify(exactly = 0) { repo.observeRoots(any()) }
+    }
+
+    @Test
+    fun `deactivating explorer stops session observers and reopening creates one fresh pair`() = runTest(dispatcher) {
+        val repo = mockk<IWorkspaceRepository>()
+        val files = MutableSharedFlow<List<FileEntry>>()
+        val recycle = MutableSharedFlow<List<FileEntry>>()
+        coEvery { repo.ensureSessionRoot("session") } returns root("root")
+        every { repo.observeChildren("root", "root") } returns files
+        every { repo.observeRecycleBin("root") } returns recycle
+        val viewModel = ResourceExplorerViewModel(
+            ApplicationProvider.getApplicationContext<Application>(),
+            repo,
+        )
+
+        assertThat(files.subscriptionCount.value).isEqualTo(0)
+        assertThat(recycle.subscriptionCount.value).isEqualTo(0)
+        viewModel.loadSession("session")
+        advanceUntilIdle()
+        assertThat(files.subscriptionCount.value).isEqualTo(1)
+        assertThat(recycle.subscriptionCount.value).isEqualTo(1)
+
+        val deactivate = viewModel.javaClass.methods.singleOrNull { it.name == "deactivateSession" }
+        assertThat(deactivate).isNotNull()
+        deactivate?.invoke(viewModel)
+        advanceUntilIdle()
+        assertThat(files.subscriptionCount.value).isEqualTo(0)
+        assertThat(recycle.subscriptionCount.value).isEqualTo(0)
+
+        viewModel.loadSession("session")
+        advanceUntilIdle()
+        assertThat(files.subscriptionCount.value).isEqualTo(1)
+        assertThat(recycle.subscriptionCount.value).isEqualTo(1)
+    }
+
+    @Test
+    fun `same session deactivate and reload preserves running import until completion`() = runTest(dispatcher) {
+        val repo = mockk<IWorkspaceRepository>()
+        val importer = mockk<SharedFileImporter>()
+        val uri = Uri.parse("content://test/resumed-import.txt")
+        val importGate = CompletableDeferred<Unit>()
+        val cancellationObserved = CompletableDeferred<Unit>()
+        coEvery { repo.ensureSessionRoot("session") } returns root("root")
+        every { repo.observeChildren("root", "root") } returns flowOf(emptyList())
+        every { repo.observeRecycleBin("root") } returns flowOf(emptyList())
+        coEvery { importer.inspect(any()) } returns listOf(item(uri, ShareImportStatus.Pending))
+        coEvery { importer.import(any(), "root", null, "root") } coAnswers {
+            try {
+                importGate.await()
+                ShareImportBatchResult(listOf(item(uri, ShareImportStatus.Created)))
+            } catch (cancelled: CancellationException) {
+                cancellationObserved.complete(Unit)
+                throw cancelled
+            }
+        }
+        val viewModel = ResourceExplorerViewModel(
+            ApplicationProvider.getApplicationContext<Application>(),
+            repo,
+            importer,
+        )
+        viewModel.loadSession("session")
+        advanceUntilIdle()
+        viewModel.importDocuments(listOf(uri))
+        dispatcher.scheduler.runCurrent()
+        assertThat(viewModel.isImporting.value).isTrue()
+        assertThat(viewModel.importItems.value.map { it.status })
+            .containsExactly(ShareImportStatus.Importing)
+
+        viewModel.deactivateSession()
+        viewModel.loadSession("session")
+        dispatcher.scheduler.runCurrent()
+        val cancellationAfterReload = cancellationObserved.isCompleted
+        val importingAfterReload = viewModel.isImporting.value
+        val statusesAfterReload = viewModel.importItems.value.map { it.status }
+
+        importGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertThat(cancellationAfterReload).isFalse()
+        assertThat(importingAfterReload).isTrue()
+        assertThat(statusesAfterReload).containsExactly(ShareImportStatus.Importing)
+        assertThat(viewModel.isImporting.value).isFalse()
+        assertThat(viewModel.importItems.value.map { it.status })
+            .containsExactly(ShareImportStatus.Created)
+        coVerify(exactly = 1) { importer.import(any(), "root", null, "root") }
+    }
+
+    @Test
+    fun `same session deactivate and reload preserves running recycle operation until completion`() =
+        runTest(dispatcher) {
+            val repo = mockk<IWorkspaceRepository>()
+            val recycledFile = recycled("resumed-recycle")
+            val restoreGate = CompletableDeferred<Unit>()
+            val cancellationObserved = CompletableDeferred<Unit>()
+            coEvery { repo.ensureSessionRoot("session") } returns root("root")
+            every { repo.observeChildren("root", "root") } returns flowOf(emptyList())
+            every { repo.observeRecycleBin("root") } returns flowOf(listOf(recycledFile))
+            coEvery { repo.restoreFromRecycleBin("root", recycledFile.uuid) } coAnswers {
+                try {
+                    restoreGate.await()
+                } catch (cancelled: CancellationException) {
+                    cancellationObserved.complete(Unit)
+                    throw cancelled
+                }
+            }
+            val viewModel = ResourceExplorerViewModel(
+                ApplicationProvider.getApplicationContext<Application>(),
+                repo,
+            )
+            viewModel.loadSession("session")
+            advanceUntilIdle()
+            viewModel.restoreRecycledFiles(listOf(recycledFile))
+            dispatcher.scheduler.runCurrent()
+            val running = RecycleOperationState.Running(
+                RecycleOperation.Restore,
+                listOf(recycledFile.uuid),
+            )
+            assertThat(viewModel.recycleOperationState.value).isEqualTo(running)
+
+            viewModel.deactivateSession()
+            viewModel.loadSession("session")
+            dispatcher.scheduler.runCurrent()
+            val cancellationAfterReload = cancellationObserved.isCompleted
+            val stateAfterReload = viewModel.recycleOperationState.value
+
+            restoreGate.complete(Unit)
+            advanceUntilIdle()
+
+            assertThat(cancellationAfterReload).isFalse()
+            assertThat(stateAfterReload).isEqualTo(running)
+            assertThat(viewModel.recycleOperationState.value).isEqualTo(
+                RecycleOperationState.Success(
+                    RecycleOperation.Restore,
+                    listOf(recycledFile.uuid),
+                )
+            )
+            coVerify(exactly = 1) { repo.restoreFromRecycleBin("root", recycledFile.uuid) }
+        }
+
+    @Test
+    fun `same session observer failure preserves running import and valid root`() = runTest(dispatcher) {
+        val repo = mockk<IWorkspaceRepository>()
+        val importer = mockk<SharedFileImporter>()
+        val uri = Uri.parse("content://test/observer-failure-import.txt")
+        val importGate = CompletableDeferred<Unit>()
+        val observerFailureGate = CompletableDeferred<Unit>()
+        val initialFiles = MutableSharedFlow<List<FileEntry>>()
+        val initialRecycle = MutableSharedFlow<List<FileEntry>>()
+        val resumedRecycle = MutableSharedFlow<List<FileEntry>>()
+        val failingFiles = flow<List<FileEntry>> {
+            observerFailureGate.await()
+            throw IllegalStateException("resumed observer failed")
+        }
+        coEvery { repo.ensureSessionRoot("session") } returns root("root")
+        every { repo.observeChildren("root", "root") } returnsMany listOf(initialFiles, failingFiles)
+        every { repo.observeRecycleBin("root") } returnsMany listOf(initialRecycle, resumedRecycle)
+        coEvery { importer.inspect(any()) } returns listOf(item(uri, ShareImportStatus.Pending))
+        coEvery { importer.import(any(), "root", null, "root") } coAnswers {
+            importGate.await()
+            ShareImportBatchResult(listOf(item(uri, ShareImportStatus.Created)))
+        }
+        val viewModel = ResourceExplorerViewModel(
+            ApplicationProvider.getApplicationContext<Application>(),
+            repo,
+            importer,
+        )
+        viewModel.loadSession("session")
+        dispatcher.scheduler.runCurrent()
+        viewModel.importDocuments(listOf(uri))
+        dispatcher.scheduler.runCurrent()
+        val importingBeforeReload = viewModel.isImporting.value
+
+        viewModel.deactivateSession()
+        viewModel.loadSession("session")
+        dispatcher.scheduler.runCurrent()
+        observerFailureGate.complete(Unit)
+        dispatcher.scheduler.runCurrent()
+        val errorAfterFailure = viewModel.loadError.value
+        val rootAfterFailure = viewModel.workspaceRootUuid.value
+        val importingAfterFailure = viewModel.isImporting.value
+        val statusesAfterFailure = viewModel.importItems.value.map { it.status }
+
+        importGate.complete(Unit)
+        advanceUntilIdle()
+        val finalRoot = viewModel.workspaceRootUuid.value
+        val finalStatuses = viewModel.importItems.value.map { it.status }
+        viewModel.deactivateSession()
+        dispatcher.scheduler.runCurrent()
+
+        assertThat(errorAfterFailure?.code).isEqualTo(ResourceExplorerNotice.CODE_WORKSPACE_LOAD_FAILED)
+        assertThat(importingBeforeReload).isTrue()
+        assertThat(rootAfterFailure).isEqualTo("root")
+        assertThat(importingAfterFailure).isTrue()
+        assertThat(statusesAfterFailure).containsExactly(ShareImportStatus.Importing)
+        assertThat(finalRoot).isEqualTo("root")
+        assertThat(finalStatuses).containsExactly(ShareImportStatus.Created)
+        coVerify(exactly = 1) { importer.import(any(), "root", null, "root") }
+    }
+
+    @Test
+    fun `late failure from cancelled observer cannot clear reopened same session`() = runTest(dispatcher) {
+        val repo = mockk<IWorkspaceRepository>()
+        val oldObserverStarted = CompletableDeferred<Unit>()
+        val oldCancellationObserved = CompletableDeferred<Unit>()
+        val lateFailureGate = CompletableDeferred<Unit>()
+        val oldFiles = flow<List<FileEntry>> {
+            oldObserverStarted.complete(Unit)
+            try {
+                awaitCancellation()
+            } catch (_: CancellationException) {
+                withContext(NonCancellable) {
+                    oldCancellationObserved.complete(Unit)
+                    lateFailureGate.await()
+                }
+                throw IllegalStateException("late failure from cancelled observer")
+            }
+        }
+        val oldRecycle = MutableSharedFlow<List<FileEntry>>()
+        val newRootFile = recycled("new-root-file")
+        val newRecycledFile = recycled("new-recycled-file")
+        val newFiles = MutableSharedFlow<List<FileEntry>>(replay = 1).apply {
+            tryEmit(listOf(newRootFile))
+        }
+        val newRecycle = MutableSharedFlow<List<FileEntry>>(replay = 1).apply {
+            tryEmit(listOf(newRecycledFile))
+        }
+        coEvery { repo.ensureSessionRoot("session") } returns root("root")
+        every { repo.observeChildren("root", "root") } returnsMany listOf(oldFiles, newFiles)
+        every { repo.observeRecycleBin("root") } returnsMany listOf(oldRecycle, newRecycle)
+        val viewModel = ResourceExplorerViewModel(
+            ApplicationProvider.getApplicationContext<Application>(),
+            repo,
+        )
+        viewModel.loadSession("session")
+        dispatcher.scheduler.runCurrent()
+        val oldStartedBeforeDeactivate = oldObserverStarted.isCompleted
+
+        viewModel.deactivateSession()
+        dispatcher.scheduler.runCurrent()
+        val oldCancelledBeforeReload = oldCancellationObserved.isCompleted
+        viewModel.loadSession("session")
+        dispatcher.scheduler.runCurrent()
+        val newFileSubscriptionsBeforeLateFailure = newFiles.subscriptionCount.value
+        val newRecycleSubscriptionsBeforeLateFailure = newRecycle.subscriptionCount.value
+        val filesBeforeLateFailure = viewModel.rootFiles.value
+        val recycleBeforeLateFailure = viewModel.recycledFiles.value
+
+        lateFailureGate.complete(Unit)
+        dispatcher.scheduler.runCurrent()
+        val errorAfterLateFailure = viewModel.loadError.value
+        val rootAfterLateFailure = viewModel.workspaceRootUuid.value
+        val filesAfterLateFailure = viewModel.rootFiles.value
+        val recycleAfterLateFailure = viewModel.recycledFiles.value
+        val newFileSubscriptions = newFiles.subscriptionCount.value
+        val newRecycleSubscriptions = newRecycle.subscriptionCount.value
+        viewModel.deactivateSession()
+        dispatcher.scheduler.runCurrent()
+
+        assertThat(oldStartedBeforeDeactivate).isTrue()
+        assertThat(oldCancelledBeforeReload).isTrue()
+        assertThat(newFileSubscriptionsBeforeLateFailure).isEqualTo(1)
+        assertThat(newRecycleSubscriptionsBeforeLateFailure).isEqualTo(1)
+        assertThat(filesBeforeLateFailure).containsExactly(newRootFile)
+        assertThat(recycleBeforeLateFailure).containsExactly(newRecycledFile)
+        assertThat(errorAfterLateFailure).isNull()
+        assertThat(rootAfterLateFailure).isEqualTo("root")
+        assertThat(filesAfterLateFailure).containsExactly(newRootFile)
+        assertThat(recycleAfterLateFailure).containsExactly(newRecycledFile)
+        assertThat(newFileSubscriptions).isEqualTo(1)
+        assertThat(newRecycleSubscriptions).isEqualTo(1)
+        assertThat(newFiles.subscriptionCount.value).isEqualTo(0)
+        assertThat(newRecycle.subscriptionCount.value).isEqualTo(0)
     }
 
     @Test

@@ -113,6 +113,7 @@ class ResourceExplorerViewModel(
 
     private var currentSessionId: String? = null
     private var loadGeneration = 0L
+    private var sessionObserverEpoch = 0L
     private var sessionJob: Job? = null
     private var importJob: Job? = null
     private var recycleOperationJob: Job? = null
@@ -124,48 +125,124 @@ class ResourceExplorerViewModel(
     }
 
     fun loadSession(sessionId: String) {
+        val existingRootUuid = _workspaceRootUuid.value
+        if (sessionId == currentSessionId && existingRootUuid != null) {
+            val generation = loadGeneration
+            _loadError.value = null
+            _isLoading.value = false
+            startSessionObservers(existingRootUuid, generation)
+            return
+        }
+
         currentSessionId = sessionId
         val generation = ++loadGeneration
-        sessionJob?.cancel()
+        invalidateSessionObservers()
         importJob?.cancel()
         recycleOperationJob?.cancel()
         clearSessionState()
         _isLoading.value = true
-        sessionJob = viewModelScope.launch {
-            try {
-                val rootUuid = workspaceRepo.ensureSessionRoot(sessionId).uuid
-                if (generation != loadGeneration) return@launch
-                _workspaceRootUuid.value = rootUuid
-                _isLoading.value = false
-                coroutineScope {
-                    launch {
-                        workspaceRepo.observeChildren(rootUuid, rootUuid).collect { files ->
-                            if (generation == loadGeneration) _rootFiles.value = files
-                        }
-                    }
-                    launch {
-                        workspaceRepo.observeRecycleBin(rootUuid).collect { files ->
-                            if (generation == loadGeneration) {
-                                _recycledFiles.value = files
-                                _recycleBinCount.value = files.size
-                            }
-                        }
-                    }
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                if (generation == loadGeneration) {
-                    clearSessionState()
-                    _loadError.value = ResourceExplorerNotice.workspaceLoadFailed(failure.message)
-                    _isLoading.value = false
-                }
-            }
-        }
+        startSessionRootLoad(sessionId, generation)
     }
 
     fun retryLoadSession() {
         currentSessionId?.let(::loadSession)
+    }
+
+    /** 资源管理器离开组合树时停止会话数据库观察，已发起的导入/回收操作不因此中断。 */
+    fun deactivateSession() {
+        invalidateSessionObservers()
+    }
+
+    private fun startSessionRootLoad(sessionId: String, generation: Long) {
+        val observerEpoch = beginSessionObserverEpoch()
+        sessionJob = viewModelScope.launch {
+            val rootUuid = try {
+                workspaceRepo.ensureSessionRoot(sessionId).uuid
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                handleRootLoadFailure(generation, observerEpoch, failure)
+                return@launch
+            }
+            if (!isCurrentSessionObserver(generation, observerEpoch)) return@launch
+            _workspaceRootUuid.value = rootUuid
+            _isLoading.value = false
+            observeSessionWithFailureHandling(rootUuid, generation, observerEpoch)
+        }
+    }
+
+    private fun startSessionObservers(rootUuid: String, generation: Long) {
+        val observerEpoch = beginSessionObserverEpoch()
+        sessionJob = viewModelScope.launch {
+            observeSessionWithFailureHandling(rootUuid, generation, observerEpoch)
+        }
+    }
+
+    private fun beginSessionObserverEpoch(): Long {
+        val observerEpoch = ++sessionObserverEpoch
+        sessionJob?.cancel()
+        return observerEpoch
+    }
+
+    private fun invalidateSessionObservers() {
+        ++sessionObserverEpoch
+        sessionJob?.cancel()
+        sessionJob = null
+    }
+
+    private suspend fun observeSessionWithFailureHandling(
+        rootUuid: String,
+        generation: Long,
+        observerEpoch: Long,
+    ) {
+        try {
+            observeSession(rootUuid, generation, observerEpoch)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            if (isCurrentSessionObserver(generation, observerEpoch)) {
+                _loadError.value = ResourceExplorerNotice.workspaceLoadFailed(failure.message)
+                _isLoading.value = false
+            }
+        }
+    }
+
+    private fun handleRootLoadFailure(
+        generation: Long,
+        observerEpoch: Long,
+        failure: Exception,
+    ) {
+        if (!isCurrentSessionObserver(generation, observerEpoch)) return
+        clearSessionState()
+        _loadError.value = ResourceExplorerNotice.workspaceLoadFailed(failure.message)
+        _isLoading.value = false
+    }
+
+    private fun isCurrentSessionObserver(generation: Long, observerEpoch: Long): Boolean =
+        generation == loadGeneration && observerEpoch == sessionObserverEpoch
+
+    private suspend fun observeSession(
+        rootUuid: String,
+        generation: Long,
+        observerEpoch: Long,
+    ) {
+        coroutineScope {
+            launch {
+                workspaceRepo.observeChildren(rootUuid, rootUuid).collect { files ->
+                    if (isCurrentSessionObserver(generation, observerEpoch)) {
+                        _rootFiles.value = files
+                    }
+                }
+            }
+            launch {
+                workspaceRepo.observeRecycleBin(rootUuid).collect { files ->
+                    if (isCurrentSessionObserver(generation, observerEpoch)) {
+                        _recycledFiles.value = files
+                        _recycleBinCount.value = files.size
+                    }
+                }
+            }
+        }
     }
 
     fun importDocuments(uris: List<Uri>) {

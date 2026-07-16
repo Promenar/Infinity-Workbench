@@ -144,4 +144,11 @@ class RagHomeScreenContractTest {
         assertThat(filesPanelSource).contains("showSelectionOverlay && isMultiSelectMode")
         assertThat(screenSource).contains("showSelectionOverlay = false")
     }
+
+    @Test
+    fun `move sheet does not use a fixed seventy percent height`() {
+        val fixedHeightRatio = Regex("""\.fillMaxHeight\s*\(\s*0\.7f\s*\)""")
+
+        assertThat(fixedHeightRatio.containsMatchIn(screenSource)).isFalse()
+    }
 }

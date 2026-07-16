@@ -82,11 +82,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -415,7 +411,31 @@ internal fun RagHomeScreenContent(
                     containerColor = MaterialTheme.colorScheme.background,
                 ),
             )
-        }
+        },
+        bottomBar = {
+            if (state.currentTab == PortalTab.DOCUMENTS && state.selectedIds.isNotEmpty()) {
+                RagHomeSelectionBar(
+                    selectedCount = state.selectedIds.size,
+                    operationsEnabled = !isMovingSelection && !isDeletingSelection,
+                    onClear = state.selectedIds::clear,
+                    onMove = { showMoveSheet = true },
+                    onReindex = {
+                        actions.onReindexDocuments(state.selectedIds.toList())
+                        state.selectedIds.clear()
+                    },
+                    onDelete = {
+                        requestDocumentDelete(state.selectedIds.toList()) { result ->
+                            applyBatchSelectionResult(
+                                selectedIds = state.selectedIds,
+                                movingIds = result.attemptedIds.toSet(),
+                                failedIds = result.failedIds.toSet(),
+                                succeeded = result.attemptedIds.isNotEmpty() && result.failedIds.isEmpty(),
+                            )
+                        }
+                    },
+                )
+            }
+        },
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -484,12 +504,7 @@ internal fun RagHomeScreenContent(
                         )
 
                         if (state.indexingNotice != null) {
-                            Column(
-                                modifier = Modifier.semantics {
-                                    liveRegion = if (isError) LiveRegionMode.Assertive else LiveRegionMode.Polite
-                                    stateDescription = statusText
-                                }
-                            ) {
+                            Column {
                                 IndexingProgressBar(
                                     progress = state.indexingProgress.coerceAtLeast(0f),
                                     statusText = statusText,
@@ -595,95 +610,6 @@ internal fun RagHomeScreenContent(
                             )
                         }
 
-                        if (state.selectedIds.isNotEmpty()) {
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = NexaraSpacing.Medium)
-                                    .testTag(UiTags.RAG_HOME_SELECTION_BAR),
-                                shape = MaterialTheme.shapes.large,
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(NexaraSpacing.Medium),
-                                    verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(
-                                            stringResource(R.string.rag_home_selected_count, state.selectedIds.size),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                        TextButton(
-                                            onClick = { state.selectedIds.clear() },
-                                            modifier = Modifier
-                                                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                                                .testTag(UiTags.RAG_HOME_CLEAR_SELECTION),
-                                        ) {
-                                            Text(stringResource(R.string.rag_home_clear_all))
-                                        }
-                                    }
-                                    FlowRow(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        TextButton(
-                                            onClick = { showMoveSheet = true },
-                                            enabled = !isMovingSelection && !isDeletingSelection,
-                                            modifier = Modifier
-                                                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                                                .testTag(UiTags.RAG_HOME_MOVE_SELECTION),
-                                        ) {
-                                            Icon(Icons.Rounded.Folder, null, modifier = Modifier.size(18.dp))
-                                            Spacer(Modifier.size(4.dp))
-                                            Text(stringResource(R.string.rag_home_move))
-                                        }
-                                        TextButton(
-                                            onClick = {
-                                                actions.onReindexDocuments(state.selectedIds.toList())
-                                                state.selectedIds.clear()
-                                            },
-                                            enabled = !isMovingSelection && !isDeletingSelection,
-                                            modifier = Modifier
-                                                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                                                .testTag(UiTags.RAG_HOME_REINDEX_SELECTION),
-                                        ) {
-                                            Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
-                                            Spacer(Modifier.size(4.dp))
-                                            Text(stringResource(R.string.rag_home_reindex))
-                                        }
-                                        TextButton(
-                                            onClick = {
-                                                requestDocumentDelete(state.selectedIds.toList()) { result ->
-                                                    applyBatchSelectionResult(
-                                                        selectedIds = state.selectedIds,
-                                                        movingIds = result.attemptedIds.toSet(),
-                                                        failedIds = result.failedIds.toSet(),
-                                                        succeeded = result.attemptedIds.isNotEmpty() && result.failedIds.isEmpty(),
-                                                    )
-                                                }
-                                            },
-                                            enabled = !isMovingSelection && !isDeletingSelection,
-                                            colors = ButtonDefaults.textButtonColors(contentColor = NexaraColors.Error),
-                                            modifier = Modifier
-                                                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                                                .testTag(UiTags.RAG_HOME_DELETE_SELECTION),
-                                        ) {
-                                            Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(18.dp))
-                                            Spacer(Modifier.size(4.dp))
-                                            Text(stringResource(R.string.shared_btn_delete))
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
 
                     PortalTab.MEMORY -> {
@@ -909,7 +835,7 @@ internal fun RagHomeScreenContent(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.7f)
+                    .fillMaxHeight()
                     .testTag("rag-home-move-folder-list"),
                 contentPadding = PaddingValues(
                     start = NexaraSpacing.Large,
@@ -1084,5 +1010,99 @@ internal fun RagHomeScreenContent(
             titleContentColor = NexaraColors.OnSurface,
             textContentColor = NexaraColors.OnSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun RagHomeSelectionBar(
+    selectedCount: Int,
+    operationsEnabled: Boolean,
+    onClear: () -> Unit,
+    onMove: () -> Unit,
+    onReindex: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier
+                .widthIn(max = 720.dp)
+                .fillMaxWidth()
+                .padding(horizontal = NexaraSpacing.ScreenHorizontal)
+                .padding(bottom = NexaraSpacing.Medium)
+                .testTag(UiTags.RAG_HOME_SELECTION_BAR),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(NexaraSpacing.Medium),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.rag_home_selected_count, selectedCount),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(
+                        onClick = onClear,
+                        enabled = operationsEnabled,
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .testTag(UiTags.RAG_HOME_CLEAR_SELECTION),
+                    ) {
+                        Text(stringResource(R.string.rag_home_clear_all))
+                    }
+                }
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TextButton(
+                        onClick = onMove,
+                        enabled = operationsEnabled,
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .testTag(UiTags.RAG_HOME_MOVE_SELECTION),
+                    ) {
+                        Icon(Icons.Rounded.Folder, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text(stringResource(R.string.rag_home_move))
+                    }
+                    TextButton(
+                        onClick = onReindex,
+                        enabled = operationsEnabled,
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .testTag(UiTags.RAG_HOME_REINDEX_SELECTION),
+                    ) {
+                        Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text(stringResource(R.string.rag_home_reindex))
+                    }
+                    TextButton(
+                        onClick = onDelete,
+                        enabled = operationsEnabled,
+                        colors = ButtonDefaults.textButtonColors(contentColor = NexaraColors.Error),
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .testTag(UiTags.RAG_HOME_DELETE_SELECTION),
+                    ) {
+                        Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text(stringResource(R.string.shared_btn_delete))
+                    }
+                }
+            }
+        }
     }
 }

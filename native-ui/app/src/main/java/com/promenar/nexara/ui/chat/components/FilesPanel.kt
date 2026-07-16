@@ -62,6 +62,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -167,9 +168,11 @@ internal fun FilesPanel(
     onFileClick: ((String) -> Unit)? = null,
     nowMillis: Long = System.currentTimeMillis(),
 ) {
-    val rootsFlow = if (rootFiles == null) workspaceRootUuid?.let { workspaceRepo.observeChildren(it, it) }
-        ?: flowOf(emptyList())
-    else flowOf(rootFiles)
+    val rootsFlow = remember(rootFiles, workspaceRootUuid, workspaceRepo) {
+        if (rootFiles == null) workspaceRootUuid?.let { workspaceRepo.observeChildren(it, it) }
+            ?: flowOf(emptyList())
+        else flowOf(rootFiles)
+    }
     val roots by rootsFlow.collectAsState(initial = rootFiles.orEmpty())
 
     val searchVisibleIds by produceState<Set<String>?>(
@@ -230,6 +233,34 @@ internal fun FilesPanel(
         expansionOverrides = expansionOverrides,
         forceExpandedIds = forceExpandedIds,
     )
+    val composedNodeRefCounts = remember(workspaceRootUuid, workspaceRepo) {
+        mutableStateMapOf<String, Int>()
+    }
+    val expandedDirectoryIds = visibleNodes.asSequence()
+        .filter { node ->
+            node.file.isDirectory && isFileNodeExpanded(
+                uuid = node.file.uuid,
+                depth = node.depth,
+                expansionOverrides = expansionOverrides,
+                forceExpandedIds = forceExpandedIds,
+            )
+        }
+        .mapTo(linkedSetOf()) { it.file.uuid }
+    val requiredDirectorySubscriptionIds = resolveRequiredDirectorySubscriptionIds(
+        visibleNodes = visibleNodes,
+        visibleNodeIds = composedNodeRefCounts.keys.toSet(),
+        expandedDirectoryIds = expandedDirectoryIds,
+    )
+    requiredDirectorySubscriptionIds.forEach { parentUuid ->
+        key(parentUuid) {
+            LaunchedEffect(workspaceRootUuid, workspaceRepo, parentUuid) {
+                val rootUuid = workspaceRootUuid ?: return@LaunchedEffect
+                workspaceRepo.observeChildren(rootUuid, parentUuid).collectLatest { children ->
+                    childrenByParent[parentUuid] = children
+                }
+            }
+        }
+    }
 
     // 多选状态
     val localSelectedIds = remember { mutableStateListOf<String>() }
@@ -277,12 +308,14 @@ internal fun FilesPanel(
             expansionOverrides = expansionOverrides,
             forceExpandedIds = forceExpandedIds,
         )
-        if (node.file.isDirectory && expanded) {
-            // 订阅跟随实际组合行；LazyColumn 回收行或目录折叠时自动取消。
-            LaunchedEffect(workspaceRootUuid, workspaceRepo, node.file.uuid) {
-                val rootUuid = workspaceRootUuid ?: return@LaunchedEffect
-                workspaceRepo.observeChildren(rootUuid, node.file.uuid).collectLatest { children ->
-                    childrenByParent[node.file.uuid] = children
+        DisposableEffect(node.file.uuid, workspaceRootUuid, workspaceRepo) {
+            composedNodeRefCounts[node.file.uuid] = (composedNodeRefCounts[node.file.uuid] ?: 0) + 1
+            onDispose {
+                val remaining = (composedNodeRefCounts[node.file.uuid] ?: 1) - 1
+                if (remaining > 0) {
+                    composedNodeRefCounts[node.file.uuid] = remaining
+                } else {
+                    composedNodeRefCounts.remove(node.file.uuid)
                 }
             }
         }

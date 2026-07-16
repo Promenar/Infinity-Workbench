@@ -37,4 +37,17 @@ class ResourceExplorerMaterialContractTest {
 
         assertThat(recycle).doesNotContain("NexaraColors.RagPending")
     }
+
+    @Test
+    fun `资源管理器仅在工作区覆盖层活动时组合并按生命周期收集`() {
+        val chatRoute = source("src/main/java/com/promenar/nexara/ui/chat/ChatRoute.kt")
+        val explorer = source("src/main/java/com/promenar/nexara/ui/chat/ResourceExplorerSheet.kt")
+
+        assertThat(chatRoute).contains("if (activeOverlay == ChatOverlay.Workspace)")
+        assertThat(explorer).contains("DisposableEffect(sessionId, viewModel)")
+        assertThat(explorer).contains("viewModel.deactivateSession()")
+        assertThat(explorer).contains("collectAsStateWithLifecycle()")
+        assertThat(explorer).doesNotContain("LaunchedEffect(sessionId)")
+        assertThat(explorer).doesNotContain("collectAsState()")
+    }
 }

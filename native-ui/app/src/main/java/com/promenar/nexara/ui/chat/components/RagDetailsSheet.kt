@@ -65,6 +65,7 @@ import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import kotlin.math.abs
@@ -198,15 +199,18 @@ fun RagDetailsSheetContent(
 
     fun requestOpen(url: String) {
         scope.launch {
-            runCatching { linkOpener(url) }
-                .onFailure {
-                    val result = snackbarHostState.showSnackbar(
-                        message = failureMessage,
-                        actionLabel = retryLabel,
-                        withDismissAction = false,
-                    )
-                    if (result == SnackbarResult.ActionPerformed) requestOpen(url)
-                }
+            try {
+                linkOpener(url)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                val result = snackbarHostState.showSnackbar(
+                    message = failureMessage,
+                    actionLabel = retryLabel,
+                    withDismissAction = false,
+                )
+                if (result == SnackbarResult.ActionPerformed) requestOpen(url)
+            }
         }
     }
 

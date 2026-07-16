@@ -504,11 +504,12 @@ fun ChatRoute(
             )
         }
     }
-    ResourceExplorerSheet(
-        show = activeOverlay == ChatOverlay.Workspace,
-        onDismiss = { activeOverlayToken = null },
-        sessionId = sessionId,
-    )
+    if (activeOverlay == ChatOverlay.Workspace) {
+        ResourceExplorerSheet(
+            onDismiss = { activeOverlayToken = null },
+            sessionId = sessionId,
+        )
+    }
     SessionSettingsSheet(
         show = activeOverlay == ChatOverlay.ModelSettings,
         onDismiss = { activeOverlayToken = null },

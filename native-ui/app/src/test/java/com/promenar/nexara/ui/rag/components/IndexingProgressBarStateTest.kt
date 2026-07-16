@@ -36,4 +36,9 @@ class IndexingProgressBarStateTest {
         assertThat(source).contains("MaterialTheme.typography")
         assertThat(source).contains("stateDescription = statusText")
     }
+
+    @Test
+    fun `可见状态文字百分比和内层进度不作为额外无障碍事实源`() {
+        assertThat(source).contains("clearAndSetSemantics")
+    }
 }

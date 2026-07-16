@@ -39,8 +39,8 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
@@ -61,6 +61,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.chat.components.FilesPanel
 import com.promenar.nexara.ui.chat.components.RecycleBinPanel
@@ -78,7 +79,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun ResourceExplorerSheet(
-    show: Boolean,
     onDismiss: () -> Unit,
     sessionId: String,
     viewModel: ResourceExplorerViewModel = viewModel(
@@ -87,17 +87,20 @@ fun ResourceExplorerSheet(
         )
     )
 ) {
-    LaunchedEffect(sessionId) { viewModel.loadSession(sessionId) }
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val recycleBinCount by viewModel.recycleBinCount.collectAsState()
-    val workspaceRootUuid by viewModel.workspaceRootUuid.collectAsState()
-    val rootFiles by viewModel.rootFiles.collectAsState()
-    val recycledFiles by viewModel.recycledFiles.collectAsState()
-    val recycleOperationState by viewModel.recycleOperationState.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val loadError by viewModel.loadError.collectAsState()
-    val importItems by viewModel.importItems.collectAsState()
-    val isImporting by viewModel.isImporting.collectAsState()
+    DisposableEffect(sessionId, viewModel) {
+        viewModel.loadSession(sessionId)
+        onDispose { viewModel.deactivateSession() }
+    }
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val recycleBinCount by viewModel.recycleBinCount.collectAsStateWithLifecycle()
+    val workspaceRootUuid by viewModel.workspaceRootUuid.collectAsStateWithLifecycle()
+    val rootFiles by viewModel.rootFiles.collectAsStateWithLifecycle()
+    val recycledFiles by viewModel.recycledFiles.collectAsStateWithLifecycle()
+    val recycleOperationState by viewModel.recycleOperationState.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val loadError by viewModel.loadError.collectAsStateWithLifecycle()
+    val importItems by viewModel.importItems.collectAsStateWithLifecycle()
+    val isImporting by viewModel.isImporting.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable(sessionId) { mutableStateOf(ResourceExplorerTab.Files) }
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
@@ -106,7 +109,7 @@ fun ResourceExplorerSheet(
     }
 
     NexaraBottomSheet(
-        show = show,
+        show = true,
         onDismiss = onDismiss,
         title = stringResource(R.string.resource_explorer_title),
         modifier = Modifier.fillMaxHeight(),

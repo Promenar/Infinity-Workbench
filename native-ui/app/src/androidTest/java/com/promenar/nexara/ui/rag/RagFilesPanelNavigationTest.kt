@@ -36,10 +36,10 @@ import com.promenar.nexara.ui.rag.components.RagStatus
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import java.lang.reflect.Proxy
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Rule
 import org.junit.Test
@@ -216,11 +216,34 @@ class RagFilesPanelNavigationTest {
     }
 
     @Test
-    fun 大量目录只订阅实际组合行且滚动折叠会取消collector() {
-        val directoryCount = 80
+    fun 折叠目录会取消该目录collector() {
+        val folder = entry("collapsible-folder", "可折叠目录", isDirectory = true, parentUuid = ROOT)
+        val child = entry("collapsible-child", "折叠后隐藏.md", parentUuid = folder.uuid)
+        val trackingRepo = TrackingChildrenRepository().apply {
+            emitChildren(folder.uuid, listOf(child))
+        }
+
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                FilesPanel(
+                    workspaceRootUuid = ROOT,
+                    workspaceRepo = trackingRepo.repository,
+                    rootFiles = listOf(folder),
+                    initialChildrenByParent = mapOf(folder.uuid to listOf(child)),
+                )
+            }
+        }
+
+        rule.waitUntil(timeoutMillis = 5_000) { trackingRepo.activeCollectorCount(folder.uuid) == 1 }
+        rule.onNodeWithTag("files_panel_node_${folder.uuid}").performClick()
+        rule.waitUntil(timeoutMillis = 5_000) { trackingRepo.activeCollectorCount(folder.uuid) == 0 }
+        rule.onNodeWithTag("files_panel_node_${child.uuid}").assertDoesNotExist()
+    }
+
+    @Test
+    fun 大量目录只订阅当前组合分支且滚动后collector保持有界() {
         val activeCollectorBound = 32
-        val peakCollectorBound = 40
-        val roots = (0 until directoryCount).map { index ->
+        val roots = (0 until 80).map { index ->
             entry(
                 uuid = "bounded-directory-$index",
                 name = "有界目录 $index",
@@ -228,43 +251,92 @@ class RagFilesPanelNavigationTest {
                 parentUuid = ROOT,
             )
         }
-        val activeCollectors = AtomicInteger(0)
-        val maximumCollectors = AtomicInteger(0)
+        val trackingRepo = TrackingChildrenRepository().apply {
+            roots.forEach { folder -> emitChildren(folder.uuid, emptyList()) }
+        }
 
         rule.setContent {
             NexaraTheme(dynamicColor = false) {
-                FilesPanel(
-                    workspaceRootUuid = ROOT,
-                    workspaceRepo = trackingRepository(activeCollectors, maximumCollectors),
-                    rootFiles = roots,
-                )
+                Box(modifier = Modifier.height(360.dp)) {
+                    FilesPanel(
+                        workspaceRootUuid = ROOT,
+                        workspaceRepo = trackingRepo.repository,
+                        rootFiles = roots,
+                    )
+                }
             }
         }
 
-        rule.waitUntil(timeoutMillis = 5_000) { activeCollectors.get() > 0 }
-        rule.runOnIdle {
-            assertThat(activeCollectors.get()).isLessThan(activeCollectorBound)
-            assertThat(maximumCollectors.get()).isLessThan(peakCollectorBound)
-        }
+        rule.waitUntil(timeoutMillis = 5_000) { trackingRepo.totalActiveCollectorCount() > 0 }
+        assertThat(trackingRepo.totalActiveCollectorCount()).isLessThan(activeCollectorBound)
 
         rule.onNodeWithTag("files_panel_tree_list")
             .performScrollToNode(hasTestTag("files_panel_node_bounded-directory-79"))
         rule.waitUntil(timeoutMillis = 5_000) {
-            activeCollectors.get() in 1 until activeCollectorBound
-        }
-        rule.runOnIdle {
-            assertThat(maximumCollectors.get()).isLessThan(peakCollectorBound)
+            trackingRepo.activeCollectorCount("bounded-directory-0") == 0 &&
+                trackingRepo.activeCollectorCount("bounded-directory-79") == 1
         }
 
-        rule.onNodeWithTag("files_panel_tree_list")
-            .performScrollToNode(hasTestTag("files_panel_node_bounded-directory-0"))
-        rule.waitUntil(timeoutMillis = 5_000) { activeCollectors.get() > 0 }
-        val beforeCollapse = activeCollectors.get()
-        rule.onNodeWithTag("files_panel_node_bounded-directory-0").performClick()
-        rule.waitUntil(timeoutMillis = 5_000) { activeCollectors.get() < beforeCollapse }
-        rule.runOnIdle {
-            assertThat(maximumCollectors.get()).isLessThan(peakCollectorBound)
+        assertThat(trackingRepo.totalActiveCollectorCount()).isLessThan(activeCollectorBound)
+    }
+
+    @Test
+    fun 父目录行离屏但后代可见时持续订阅并响应外部更新() {
+        val outer = entry("offscreen-outer", "外层目录", isDirectory = true, parentUuid = ROOT)
+        val branch = entry("offscreen-branch", "被滚离父目录", isDirectory = true, parentUuid = outer.uuid)
+        val initialLeaves = (0 until 40).map { index ->
+            entry(
+                uuid = "offscreen-leaf-$index",
+                name = "深层后代 $index.md",
+                parentUuid = branch.uuid,
+            )
         }
+        val targetIndex = 32
+        val oldLeaf = initialLeaves[targetIndex]
+        val newLeaf = entry(
+            uuid = "offscreen-leaf-updated",
+            name = "外部更新后.md",
+            parentUuid = branch.uuid,
+        )
+        val updatedLeaves = initialLeaves.toMutableList().apply { this[targetIndex] = newLeaf }
+        val trackingRepo = TrackingChildrenRepository().apply {
+            emitChildren(outer.uuid, listOf(branch))
+            emitChildren(branch.uuid, initialLeaves)
+        }
+
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                Box(modifier = Modifier.height(360.dp)) {
+                    FilesPanel(
+                        workspaceRootUuid = ROOT,
+                        workspaceRepo = trackingRepo.repository,
+                        rootFiles = listOf(outer),
+                        initialChildrenByParent = mapOf(
+                            outer.uuid to listOf(branch),
+                            branch.uuid to initialLeaves,
+                        ),
+                    )
+                }
+            }
+        }
+
+        rule.waitUntil(timeoutMillis = 5_000) { trackingRepo.activeCollectorCount(branch.uuid) == 1 }
+        rule.onNodeWithTag("files_panel_tree_list")
+            .performScrollToNode(hasTestTag("files_panel_node_${oldLeaf.uuid}"))
+        rule.onNodeWithTag("files_panel_node_${oldLeaf.uuid}").assertIsDisplayed()
+        rule.onNodeWithTag("files_panel_node_${branch.uuid}").assertDoesNotExist()
+        rule.waitForIdle()
+
+        assertThat(trackingRepo.activeCollectorCount(branch.uuid)).isEqualTo(1)
+        assertThat(trackingRepo.emitChildren(branch.uuid, updatedLeaves)).isTrue()
+        rule.waitUntil(timeoutMillis = 5_000) {
+            runCatching {
+                rule.onNodeWithTag("files_panel_node_${newLeaf.uuid}").fetchSemanticsNode()
+            }.isSuccess
+        }
+
+        rule.onNodeWithTag("files_panel_node_${oldLeaf.uuid}").assertDoesNotExist()
+        rule.onNodeWithTag("files_panel_node_${newLeaf.uuid}").assertIsDisplayed()
     }
 
     @Test
@@ -390,30 +462,35 @@ class RagFilesPanelNavigationTest {
             }
         } as IWorkspaceRepository
 
-    private fun trackingRepository(
-        activeCollectors: AtomicInteger,
-        maximumCollectors: AtomicInteger,
-    ): IWorkspaceRepository = Proxy.newProxyInstance(
-        IWorkspaceRepository::class.java.classLoader,
-        arrayOf(IWorkspaceRepository::class.java),
-    ) { proxy, method, args ->
-        when (method.name) {
-            "observeChildren" -> flow<List<FileEntry>> {
-                val active = activeCollectors.incrementAndGet()
-                maximumCollectors.updateAndGet { previous -> maxOf(previous, active) }
-                try {
-                    awaitCancellation()
-                } finally {
-                    activeCollectors.decrementAndGet()
-                }
+    private class TrackingChildrenRepository {
+        private val flows = ConcurrentHashMap<String, MutableSharedFlow<List<FileEntry>>>()
+
+        val repository: IWorkspaceRepository = Proxy.newProxyInstance(
+            IWorkspaceRepository::class.java.classLoader,
+            arrayOf(IWorkspaceRepository::class.java),
+        ) { proxy, method, args ->
+            when (method.name) {
+                "observeChildren" -> flowFor(args?.get(1) as String)
+                "searchByName" -> flowOf(emptyList<FileEntry>())
+                "toString" -> "RagFilesPanelNavigationTrackingRepository"
+                "hashCode" -> System.identityHashCode(proxy)
+                "equals" -> proxy === args?.firstOrNull()
+                else -> throw UnsupportedOperationException(method.name)
             }
-            "searchByName" -> flowOf(emptyList<FileEntry>())
-            "toString" -> "RagFilesPanelNavigationTrackingRepository"
-            "hashCode" -> System.identityHashCode(proxy)
-            "equals" -> proxy === args?.firstOrNull()
-            else -> throw UnsupportedOperationException(method.name)
-        }
-    } as IWorkspaceRepository
+        } as IWorkspaceRepository
+
+        fun emitChildren(parentUuid: String, children: List<FileEntry>): Boolean =
+            flowFor(parentUuid).tryEmit(children)
+
+        fun activeCollectorCount(parentUuid: String): Int =
+            flowFor(parentUuid).subscriptionCount.value
+
+        fun totalActiveCollectorCount(): Int =
+            flows.values.sumOf { flow -> flow.subscriptionCount.value }
+
+        private fun flowFor(parentUuid: String): MutableSharedFlow<List<FileEntry>> =
+            flows.computeIfAbsent(parentUuid) { MutableSharedFlow(replay = 1) }
+    }
 
     private fun entry(
         uuid: String,

@@ -12,18 +12,23 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.DeviceConfigurationOverride
 import androidx.compose.ui.test.FontScale
 import androidx.compose.ui.test.WindowSize
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.Role
@@ -47,6 +52,9 @@ import com.promenar.nexara.ui.common.FileIndexStatus
 import com.promenar.nexara.ui.common.IndexStatusBadge
 import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.KgStatusIcon
+import com.promenar.nexara.ui.common.status.NoticeSeverity
+import com.promenar.nexara.ui.common.status.UiStatusNotice
+import com.promenar.nexara.ui.rag.components.IndexingProgressBar
 import com.promenar.nexara.ui.rag.components.RagDocItem
 import com.promenar.nexara.ui.rag.components.RagStatus
 import java.util.concurrent.atomic.AtomicInteger
@@ -57,6 +65,86 @@ import org.junit.Test
 class RagReleaseAccessibilityTest {
     @get:Rule
     val rule = createComposeRule()
+
+    @Test
+    fun indexingProgressBarPublishesOneProgressStateAndLiveRegionWithoutAccessibleDisplayText() {
+        val status = "Indexing release documents"
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                IndexingProgressBar(
+                    progress = 0.42f,
+                    statusText = status,
+                    modifier = Modifier.testTag("indexing-progress-contract"),
+                )
+            }
+        }
+
+        assertSingleIndexingSemantics(
+            scopeTag = "indexing-progress-contract",
+            status = status,
+            percentage = "42%",
+            liveRegionMode = LiveRegionMode.Polite,
+        )
+    }
+
+    @Test
+    fun ragHomeIndexingNoticePublishesOneAccessibilityFactSource() {
+        val status = InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(R.string.rag_index_phase_pending)
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                RagHomeScreenContent(
+                    state = releaseState().copy(
+                        isIndexing = true,
+                        indexingProgress = 0.42f,
+                        indexingNotice = UiStatusNotice(
+                            severity = NoticeSeverity.Info,
+                            code = IndexingNotice.CODE_PENDING,
+                        ),
+                    ),
+                    actions = RagHomeScreenActions(),
+                    documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
+                )
+            }
+        }
+
+        assertSingleIndexingSemantics(
+            scopeTag = UiTags.RAG_HOME_INDEXING_NOTICE,
+            status = status,
+            percentage = "42%",
+            liveRegionMode = LiveRegionMode.Polite,
+        )
+    }
+
+    @Test
+    fun ragFolderIndexingNoticePublishesOneAccessibilityFactSource() {
+        val status = InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(R.string.rag_index_phase_pending)
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                RagFolderScreenContent(
+                    state = ragFolderState(
+                        selectedIds = remember { mutableStateListOf() },
+                    ).copy(
+                        isIndexing = true,
+                        indexingProgress = 0.42f,
+                        indexingNotice = UiStatusNotice(
+                            severity = NoticeSeverity.Info,
+                            code = IndexingNotice.CODE_PENDING,
+                        ),
+                    ),
+                    actions = RagFolderScreenActions(),
+                )
+            }
+        }
+
+        assertSingleIndexingSemantics(
+            scopeTag = UiTags.RAG_FOLDER_CONTENT,
+            status = status,
+            percentage = "42%",
+            liveRegionMode = LiveRegionMode.Polite,
+        )
+    }
 
     @Test
     fun ragFolderDocumentRowExposesButtonRoleLocalizedActionAndIndependentCheckbox() {
@@ -221,6 +309,81 @@ class RagReleaseAccessibilityTest {
         rule.onNodeWithText("Folder 20").assertIsDisplayed().performClick()
         rule.runOnIdle { assertThat(movedTarget.get()).isEqualTo("folder-20") }
         rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECTION_BAR).assertExists()
+    }
+
+    @Test
+    fun ragFolderMoveSheetAtLargeFontScrollsClicksLastOfTwentyFolders() {
+        val movedTarget = AtomicReference<String?>(null)
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 800.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
+                NexaraTheme(dynamicColor = false) {
+                    val selected = remember { mutableStateListOf<String>() }
+                    RagFolderScreenContent(
+                        state = ragFolderState(
+                            selectedIds = selected,
+                            folders = (1..20).map { Folder("folder-$it", "Folder $it") },
+                        ).copy(documents = listOf(ragFolderDocument("doc-a"))),
+                        actions = RagFolderScreenActions(
+                            onMove = { ids, target, complete ->
+                                movedTarget.set(target)
+                                complete(false, ids.toList())
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+
+        rule.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox),
+            useUnmergedTree = true,
+        ).assertIsDisplayed().performClick()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECTION_BAR).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_MOVE_SELECTION).assertIsDisplayed().performClick()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_MOVE_SHEET).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_MOVE_LIST).assertIsDisplayed().performScrollToIndex(19)
+        rule.onNodeWithText("Folder 20").assertIsDisplayed().assertHasClickAction().performClick()
+        rule.runOnIdle { assertThat(movedTarget.get()).isEqualTo("folder-20") }
+    }
+
+    @Test
+    fun ragFolderMoveSheetInLandscapeScrollsClicksLastOfTwentyFolders() {
+        val movedTarget = AtomicReference<String?>(null)
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(800.dp, 360.dp)),
+            ) {
+                NexaraTheme(dynamicColor = false) {
+                    val selected = remember { mutableStateListOf<String>() }
+                    RagFolderScreenContent(
+                        state = ragFolderState(
+                            selectedIds = selected,
+                            folders = (1..20).map { Folder("folder-$it", "Folder $it") },
+                        ).copy(documents = listOf(ragFolderDocument("doc-a"))),
+                        actions = RagFolderScreenActions(
+                            onMove = { ids, target, complete ->
+                                movedTarget.set(target)
+                                complete(false, ids.toList())
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+
+        rule.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox),
+            useUnmergedTree = true,
+        ).assertIsDisplayed().performClick()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECTION_BAR).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_MOVE_SELECTION).assertIsDisplayed().performClick()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_MOVE_SHEET).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_MOVE_LIST).assertIsDisplayed().performScrollToIndex(19)
+        rule.onNodeWithText("Folder 20").assertIsDisplayed().assertHasClickAction().performClick()
+        rule.runOnIdle { assertThat(movedTarget.get()).isEqualTo("folder-20") }
     }
 
     @Test
@@ -563,24 +726,68 @@ class RagReleaseAccessibilityTest {
     }
 
     @Test
-    fun selectionMoveSheetScrollsToTheLastOfTwentyFolders() {
+    fun selectionMoveSheetAtLargeFontScrollsClicksLastOfTwentyFolders() {
         val selections = mutableStateListOf("doc-a")
         val folders = (1..20).map { index ->
             Folder(id = "folder-$index", name = "Folder $index")
         }
+        val movedTarget = AtomicReference<String?>(null)
         rule.setContent {
-            NexaraTheme(dynamicColor = false) {
-                RagHomeScreenContent(
-                    state = releaseState().copy(selectedIds = selections, folders = folders),
-                    actions = RagHomeScreenActions(),
-                    documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
-                )
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 800.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
+                NexaraTheme(dynamicColor = false) {
+                    RagHomeScreenContent(
+                        state = releaseState().copy(selectedIds = selections, folders = folders),
+                        actions = RagHomeScreenActions(
+                            onMoveDocuments = { ids, target, complete ->
+                                movedTarget.set(target)
+                                complete(false, ids.toList())
+                            },
+                        ),
+                        documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
+                    )
+                }
             }
         }
 
         rule.onNodeWithTag(UiTags.RAG_HOME_MOVE_SELECTION).performClick()
         rule.onNodeWithTag("rag-home-move-folder-list").performScrollToIndex(20)
-        rule.onNodeWithText("Folder 20").assertIsDisplayed()
+        rule.onNodeWithText("Folder 20").assertIsDisplayed().performClick()
+        rule.runOnIdle { assertThat(movedTarget.get()).isEqualTo("folder-20") }
+    }
+
+    @Test
+    fun selectionMoveSheetInLandscapeScrollsClicksLastOfTwentyFolders() {
+        val selections = mutableStateListOf("doc-a")
+        val folders = (1..20).map { index ->
+            Folder(id = "folder-$index", name = "Folder $index")
+        }
+        val movedTarget = AtomicReference<String?>(null)
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(800.dp, 360.dp)),
+            ) {
+                NexaraTheme(dynamicColor = false) {
+                    RagHomeScreenContent(
+                        state = releaseState().copy(selectedIds = selections, folders = folders),
+                        actions = RagHomeScreenActions(
+                            onMoveDocuments = { ids, target, complete ->
+                                movedTarget.set(target)
+                                complete(false, ids.toList())
+                            },
+                        ),
+                        documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.RAG_HOME_MOVE_SELECTION).performClick()
+        rule.onNodeWithTag("rag-home-move-folder-list").performScrollToIndex(20)
+        rule.onNodeWithText("Folder 20").assertIsDisplayed().performClick()
+        rule.runOnIdle { assertThat(movedTarget.get()).isEqualTo("folder-20") }
     }
 
     @Test
@@ -668,4 +875,27 @@ class RagReleaseAccessibilityTest {
         createdAt = 1L,
         updatedAt = 1L,
     )
+
+    private fun assertSingleIndexingSemantics(
+        scopeTag: String,
+        status: String,
+        percentage: String,
+        liveRegionMode: LiveRegionMode,
+    ) {
+        val scope = hasTestTag(scopeTag) or hasAnyAncestor(hasTestTag(scopeTag))
+        rule.onAllNodes(
+            scope and SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo),
+            useUnmergedTree = true,
+        ).assertCountEquals(1)
+        rule.onAllNodes(
+            scope and SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, status),
+            useUnmergedTree = true,
+        ).assertCountEquals(1)
+        rule.onAllNodes(
+            scope and SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, liveRegionMode),
+            useUnmergedTree = true,
+        ).assertCountEquals(1)
+        rule.onAllNodes(scope and hasText(status), useUnmergedTree = true).assertCountEquals(0)
+        rule.onAllNodes(scope and hasText(percentage), useUnmergedTree = true).assertCountEquals(0)
+    }
 }

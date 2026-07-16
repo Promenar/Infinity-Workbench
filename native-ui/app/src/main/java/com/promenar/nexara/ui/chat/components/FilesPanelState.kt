@@ -59,6 +59,37 @@ internal fun isFileNodeExpanded(
 internal fun boundedFileTreeIndentLevel(depth: Int): Int =
     depth.coerceIn(0, MAX_FILE_TREE_INDENT_LEVEL)
 
+/**
+ * 解析当前组合节点需要维持的目录订阅。
+ *
+ * 当前组合中的展开目录需要订阅自身；普通后代则要求其全部展开祖先持续订阅。
+ * 因此 Lazy 列表回收祖先行时，只要仍有后代处于组合中，祖先订阅就不会中断；
+ * 与当前组合分支无关的离屏目录不会进入结果，避免大目录列表无限持有 collector。
+ */
+internal fun resolveRequiredDirectorySubscriptionIds(
+    visibleNodes: List<VisibleFileNode>,
+    visibleNodeIds: Set<String>,
+    expandedDirectoryIds: Set<String>,
+): Set<String> {
+    if (visibleNodeIds.isEmpty() || expandedDirectoryIds.isEmpty()) return emptySet()
+
+    val nodesById = visibleNodes.associateBy { it.file.uuid }
+    return buildSet {
+        visibleNodeIds.forEach { visibleNodeId ->
+            var current = nodesById[visibleNodeId] ?: return@forEach
+            val visited = mutableSetOf<String>()
+            while (visited.add(current.file.uuid)) {
+                if (current.file.isDirectory && current.file.uuid in expandedDirectoryIds) {
+                    add(current.file.uuid)
+                }
+                val parentUuid = current.file.parentUuid
+                if (parentUuid.isNullOrBlank()) break
+                current = nodesById[parentUuid] ?: break
+            }
+        }
+    }
+}
+
 private const val DEFAULT_EXPANDED_DEPTH = 2
 private const val MAX_FILE_TREE_INDENT_LEVEL = 4
 

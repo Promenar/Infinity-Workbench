@@ -46,4 +46,15 @@ class RagDetailsDesignContractTest {
 
         assertThat(source).doesNotContain("withDismissAction = true")
     }
+
+    @Test
+    fun `RAG 链接打开保留协程取消语义`() {
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/components/RagDetailsSheet.kt",
+        ).readText()
+
+        assertThat(source).contains("catch (cancelled: CancellationException)")
+        assertThat(source).contains("throw cancelled")
+        assertThat(source).doesNotContain("runCatching { linkOpener(url) }")
+    }
 }
