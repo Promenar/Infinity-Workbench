@@ -213,23 +213,23 @@
 - Modify: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/chat/ResourceExplorerRecycleBinInteractionTest.kt`
 - Modify: `native-ui/app/src/screenshotTest/kotlin/com/promenar/nexara/ui/ReleasePreviewScreenshotTest.kt`
 
-- [ ] **Step 1：写入上下文动作和长错误 RED**
+- [x] **Step 1：写入上下文动作和长错误 RED**
 
   回收站 Tab 不得显示导入动作或导入结果；导入失败原因可完整阅读且重试可达；长文件名、运行/失败、批量操作、删除确认和 2.0x 下底部内容均可滚动到达。
 
-- [ ] **Step 2：实现标准 Sheet 层级**
+- [x] **Step 2：实现标准 Sheet 层级**
 
   移除固定 70% 高度依赖或为其建立响应式上限；标题、Tab、上下文主操作、运行状态和内容区不重复占层级。导入动作只属于文件 Tab。
 
-- [ ] **Step 3：重排导入结果与回收站条目**
+- [x] **Step 3：重排导入结果与回收站条目**
 
   失败原因允许多行，重试/恢复/彻底删除使用独立 48dp 目标；回收站条目和状态提示改为单层 M3 列表/notice，不再逐项 Glass 卡。
 
-- [ ] **Step 4：截图与设备验证**
+- [x] **Step 4：截图与设备验证**
 
   覆盖文件/导入成功/导入失败、回收站运行/失败/删除确认、中文 2.0x 与横屏；在 `ResourceExplorerInteractionTest` 和 `ResourceExplorerRecycleBinInteractionTest` 新增横屏及 Sheet 最后一项可达用例，运行两个交互类并人工对照。
 
-- [ ] **Step 5：提交**
+- [x] **Step 5：提交**
 
   `git commit -m "feat: rebuild resource explorer with Material 3"`
 
@@ -243,11 +243,11 @@
 - Modify: `.agent/handover-index.md`（仅由 HLG 脚本生成）
 - Modify: this plan
 
-- [ ] **Step 1：静态、JVM、Lint 与构建门禁**
+- [x] **Step 1：静态、JVM、Lint 与构建门禁**
 
   `cd native-ui && ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :mainactivity-e2e:assembleDeviceTest`
 
-- [ ] **Step 2：完整截图与同尺寸人工对照**
+- [x] **Step 2：完整截图与同尺寸人工对照**
 
   `cd native-ui && ./gradlew :app:validateDebugScreenshotTest`
 
