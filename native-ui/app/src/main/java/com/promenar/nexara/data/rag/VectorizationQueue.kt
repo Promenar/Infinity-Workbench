@@ -588,6 +588,8 @@ class VectorizationQueue(
         subStatus = subStatus,
         sourceMimeType = sourceMimeType,
         contentTruncated = contentTruncated,
+        targetContentHash = targetContentHash,
+        targetEpoch = targetEpoch,
         createdAt = createdAt,
         updatedAt = updatedAt,
     )
@@ -663,6 +665,8 @@ class VectorizationQueue(
         subStatus = subStatus,
         sourceMimeType = sourceMimeType,
         contentTruncated = contentTruncated,
+        targetContentHash = targetContentHash,
+        targetEpoch = targetEpoch,
         createdAt = createdAt,
         updatedAt = updatedAt,
     )

@@ -168,6 +168,9 @@ android {
             kotlin.directories.add("src/debug/java")
             res.directories.add("src/debug/res")
         }
+        getByName("androidTest") {
+            assets.directories.add("$projectDir/schemas")
+        }
     }
 
     compileOptions {
@@ -273,6 +276,7 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
     testImplementation("androidx.room:room-testing:$roomVersion")
+    androidTestImplementation("androidx.room:room-testing:$roomVersion")
 
     // ─── Markdown 渲染 ───
     val markdownRendererVersion = "0.41.0"

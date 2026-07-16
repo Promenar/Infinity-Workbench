@@ -21,6 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import java.io.File
+import java.security.MessageDigest
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
@@ -29,8 +30,20 @@ class NexaraDatabaseBaselineTest {
     fun backupSchemaGateMatchesExportedRoomIdentityHash() {
         val schema = exportedSchema()
 
-        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V1_IDENTITY_HASH)
+        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V2_IDENTITY_HASH)
             .isEqualTo(schema.identityHash)
+        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V1_IDENTITY_HASH)
+            .isEqualTo(exportedSchema(1).identityHash)
+    }
+
+    @Test
+    fun exportedSchemaV1SnapshotRemainsByteFrozen() {
+        val file = File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/1.json")
+        val sha256 = MessageDigest.getInstance("SHA-256")
+            .digest(file.readBytes())
+            .joinToString("") { byte -> "%02x".format(byte) }
+
+        assertThat(sha256).isEqualTo("dbc19124b5704696e9d2a0c480f4b336a46e041a87796e2c9c35552ff7ce7a68")
     }
     private lateinit var context: Context
     private val databaseName = "nexara-v2-baseline-test.db"
@@ -47,7 +60,7 @@ class NexaraDatabaseBaselineTest {
     }
 
     @Test
-    fun realDatabaseCanBeCreatedClosedAndReopenedWithFrozenSchemaV1() {
+    fun realDatabaseCanBeCreatedClosedAndReopenedWithSchemaV2() {
         val schema = exportedSchema()
         val first = openDatabase()
         val databaseFile = context.getDatabasePath(databaseName)
@@ -63,12 +76,12 @@ class NexaraDatabaseBaselineTest {
     }
 
     @Test
-    fun applicationUsesDedicatedV2DatabaseWithoutLegacyMigrationOrDestructiveFallback() {
+    fun applicationRegistersMigrationWithoutDestructiveFallback() {
         val source = File("app/src/main/java/com/promenar/nexara/NexaraApplication.kt").readText()
         val builder = "Room.databaseBuilder(this, NexaraDatabase::class.java, \"nexara_v2.db\")"
 
         assertThat(source).contains(builder)
-        assertThat(source).doesNotContain(".addMigrations(")
+        assertThat(source).contains(".addMigrations(MIGRATION_1_2)")
         assertThat(source).doesNotContain(".fallbackToDestructiveMigration")
     }
 
@@ -77,8 +90,8 @@ class NexaraDatabaseBaselineTest {
             .allowMainThreadQueries()
             .build()
 
-    private fun exportedSchema(): ExportedSchema {
-        val file = File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/1.json")
+    private fun exportedSchema(version: Int = 2): ExportedSchema {
+        val file = File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json")
         assertThat(file.isFile).isTrue()
         val database = Json.parseToJsonElement(file.readText()).jsonObject
             .getValue("database").jsonObject
@@ -120,8 +133,8 @@ class NexaraDatabaseBaselineTest {
         database: SupportSQLiteDatabase,
         schema: ExportedSchema,
     ) {
-        assertThat(schema.version).isEqualTo(1)
-        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(1L)
+        assertThat(schema.version).isEqualTo(2)
+        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(2L)
         assertThat(database.longQuery("PRAGMA foreign_keys")).isEqualTo(1L)
 
         val runtimeTables = database.stringColumnQuery(
@@ -247,8 +260,13 @@ class NexaraDatabaseBaselineTest {
             "sub_status",
             "source_mime_type",
             "content_truncated",
+            "target_content_hash",
+            "target_epoch",
         )
         assertThat(columns.getValue("session_id").notNull).isFalse()
+        assertThat(columns.getValue("target_content_hash").notNull).isFalse()
+        assertThat(columns.getValue("target_epoch").notNull).isTrue()
+        assertThat(columns.getValue("target_epoch").defaultValue).isEqualTo("0")
         val indexNames = database.stringColumnQuery("PRAGMA index_list(`vectorization_tasks`)", "name")
         assertThat(indexNames).containsAtLeast(
             "index_vectorization_tasks_workspace_root_uuid_doc_id",
@@ -291,6 +309,7 @@ class NexaraDatabaseBaselineTest {
                         RuntimeColumn(
                             notNull = cursor.int("notnull") == 1,
                             primaryKeyPosition = cursor.int("pk"),
+                            defaultValue = cursor.getString(cursor.getColumnIndexOrThrow("dflt_value")),
                         ),
                     )
                 }
@@ -358,5 +377,6 @@ class NexaraDatabaseBaselineTest {
     private data class RuntimeColumn(
         val notNull: Boolean,
         val primaryKeyPosition: Int,
+        val defaultValue: String?,
     )
 }

@@ -296,6 +296,10 @@ class RoomBackupDataSourceTest {
 
             val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
             val text = snapshot.database.toString(Charsets.UTF_8)
+            val payload = Json.parseToJsonElement(text).jsonObject
+
+            assertThat(snapshot.databaseSchemaVersion).isEqualTo(1)
+            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("1")
 
             listOf(
                 "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",

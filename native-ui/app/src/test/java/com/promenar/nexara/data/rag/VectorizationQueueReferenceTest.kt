@@ -189,6 +189,63 @@ class VectorizationQueueReferenceTest {
     }
 
     @Test
+    fun `失败文件任务重新入队时Entity到内存模型保留target`() = runTest {
+        val taskDao = mockk<VectorizationTaskDao>(relaxed = true)
+        val existing = entity("target-retry").copy(
+            status = "failed",
+            targetContentHash = "content-hash",
+            targetEpoch = 42,
+        )
+        coEvery {
+            taskDao.getByWorkspaceFile(ROOT, DOC, VectorizationQueue.TYPE_DOCUMENT_REFERENCE)
+        } returns existing
+        coEvery { taskDao.update(any()) } returns 1
+        val queue = queue(taskDao, StandardTestDispatcher(testScheduler))
+
+        queue.enqueueDocumentReference(ROOT, DOC, "note.txt", "text/plain")
+
+        val restored = queue.snapshotState().queue.single()
+        assertThat(restored.targetContentHash).isEqualTo("content-hash")
+        assertThat(restored.targetEpoch).isEqualTo(42)
+    }
+
+    @Test
+    fun `启动恢复后的任务再次保存仍保留迁移target`() = runTest {
+        val saved = mutableListOf<VectorizationTaskEntity>()
+        val taskDao = mockk<VectorizationTaskDao>(relaxed = true)
+        val recoverable = entity("target-recover").copy(
+            status = "interrupted",
+            targetContentHash = "migrated-hash",
+            targetEpoch = 99,
+        )
+        coEvery { taskDao.getRecoverableTasks() } returns listOf(recoverable)
+        coEvery { taskDao.getAttentionTasks() } returns emptyList()
+        coEvery { taskDao.insert(capture(saved)) } just Runs
+        val fileDao = mockk<FileEntryDao>(relaxed = true)
+        coEvery { fileDao.getUnvectorizedSupportedFiles(any()) } returns emptyList()
+        coEvery { fileDao.getByUuid(ROOT, DOC) } returns null
+        val queue = VectorizationQueue(
+            vectorStore = mockk(relaxed = true),
+            embeddingClient = mockk(relaxed = true),
+            graphExtractor = null,
+            vectorDao = mockk(relaxed = true),
+            vectorizationTaskDao = taskDao,
+            dispatcher = StandardTestDispatcher(testScheduler),
+            fileEntryDao = fileDao,
+        )
+
+        assertThat(queue.resumeInterruptedTasks().isSuccess).isTrue()
+        assertThat(queue.snapshotState().queue.single().targetContentHash).isEqualTo("migrated-hash")
+        assertThat(queue.snapshotState().queue.single().targetEpoch).isEqualTo(99)
+
+        advanceUntilIdle()
+
+        assertThat(saved).isNotEmpty()
+        assertThat(saved.last().targetContentHash).isEqualTo("migrated-hash")
+        assertThat(saved.last().targetEpoch).isEqualTo(99)
+    }
+
+    @Test
     fun `处理协程取消不标记failed且不进入内部重试`() = runTest {
         val taskDao = mockk<VectorizationTaskDao>(relaxed = true)
         val saved = mutableListOf<VectorizationTaskEntity>()

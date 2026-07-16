@@ -67,6 +67,10 @@ data class VectorizationTaskEntity(
     val sourceMimeType: String? = null,
     @ColumnInfo(name = "content_truncated")
     val contentTruncated: Boolean = false,
+    @ColumnInfo(name = "target_content_hash")
+    val targetContentHash: String? = null,
+    @ColumnInfo(name = "target_epoch", defaultValue = "0")
+    val targetEpoch: Long = 0,
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
     @ColumnInfo(name = "updated_at")

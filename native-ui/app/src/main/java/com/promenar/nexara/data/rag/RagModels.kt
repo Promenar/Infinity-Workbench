@@ -220,6 +220,8 @@ data class VectorizationTask(
     var skipVectorization: Boolean = false,
     var sourceMimeType: String? = null,
     var contentTruncated: Boolean = false,
+    val targetContentHash: String? = null,
+    val targetEpoch: Long = 0,
     val createdAt: Long = System.currentTimeMillis(),
     var updatedAt: Long = System.currentTimeMillis()
 )

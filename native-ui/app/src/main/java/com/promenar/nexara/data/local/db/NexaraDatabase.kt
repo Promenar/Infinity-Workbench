@@ -71,7 +71,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceSeqEntity
         ToolExecutionLedgerEntity::class,
         FileVersionEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
