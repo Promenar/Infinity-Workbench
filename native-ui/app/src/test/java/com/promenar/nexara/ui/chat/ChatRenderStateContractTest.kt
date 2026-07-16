@@ -265,7 +265,6 @@ class ChatRenderStateContractTest {
             assertThat(cardSource).doesNotContain("GlassBorder")
         }
         assertThat(cardSources[0]).contains("MaterialTheme.colorScheme.surfaceContainerLow")
-        assertThat(cardSources[0]).contains("onClick = { showDetailsSheet = true }")
         assertThat(cardSources[0]).contains(
             "heightIn(min = NexaraSpacing.MinimumTouchTarget)",
         )

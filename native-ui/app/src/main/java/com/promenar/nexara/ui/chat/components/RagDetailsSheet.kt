@@ -65,6 +65,8 @@ import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.launch
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -72,6 +74,80 @@ enum class RagDetailsTab(val labelRes: Int) {
     Retrieved(R.string.rag_details_tab_retrieved),
     WebSearch(R.string.rag_details_tab_web_search),
     KnowledgeGraph(R.string.rag_details_tab_knowledge_graph),
+}
+
+internal fun ragReferenceStableKey(reference: RagReference): String {
+    val explicitId = reference.id.trim()
+    return if (explicitId.isNotEmpty()) {
+        canonicalStableIdentity("reference-id", explicitId)
+    } else {
+        canonicalStableIdentity(
+            "reference-content",
+            reference.documentId.orEmpty(),
+            reference.source,
+            reference.chunkIndex.toString(),
+            reference.content,
+        )
+    }
+}
+
+internal fun citationStableKey(citation: Citation): String = canonicalStableIdentity(
+    "citation",
+    citation.url.trim(),
+    citation.title,
+    citation.source.orEmpty(),
+    citation.snippet.orEmpty(),
+)
+
+internal fun kgEdgeStableKey(edge: com.promenar.nexara.data.model.KgEdge): String =
+    canonicalStableIdentity(
+        "kg-edge",
+        edge.sourceId,
+        edge.targetId,
+        edge.relation,
+        edge.weight.toString(),
+    )
+
+internal fun kgPathStableKey(path: KgPath): String = canonicalStableIdentity(
+    "kg-path",
+    path.queryKeywords.sorted().joinToString(separator = "\u001f"),
+    path.nodes
+        .map { node ->
+            canonicalStableIdentity("kg-node", node.id, node.label, node.type, node.metadata.orEmpty())
+        }
+        .sorted()
+        .joinToString(separator = "\u001f"),
+    path.edges.map(::kgEdgeStableKey).sorted().joinToString(separator = "\u001f"),
+    path.reasoning.orEmpty(),
+)
+
+internal fun stableOccurrenceKeys(baseIdentities: List<String>): List<String> {
+    val occurrences = mutableMapOf<String, Int>()
+    return baseIdentities.map { identity ->
+        val occurrence = occurrences.getOrDefault(identity, 0)
+        occurrences[identity] = occurrence + 1
+        "$identity:occurrence:$occurrence"
+    }
+}
+
+private data class StableKeyedItem<T>(val key: String, val value: T)
+
+private fun <T> stableKeyedItems(items: List<T>, identity: (T) -> String): List<StableKeyedItem<T>> {
+    val keys = stableOccurrenceKeys(items.map(identity))
+    return items.mapIndexed { index, item -> StableKeyedItem(keys[index], item) }
+}
+
+private fun canonicalStableIdentity(namespace: String, vararg components: String): String {
+    val canonical = buildString {
+        append(namespace.length).append(':').append(namespace)
+        components.forEach { component ->
+            append('|').append(component.length).append(':').append(component)
+        }
+    }
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest(canonical.toByteArray(StandardCharsets.UTF_8))
+        .joinToString(separator = "") { byte -> "%02x".format(byte) }
+    return "$namespace:$digest"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -127,7 +203,7 @@ fun RagDetailsSheetContent(
                     val result = snackbarHostState.showSnackbar(
                         message = failureMessage,
                         actionLabel = retryLabel,
-                        withDismissAction = true,
+                        withDismissAction = false,
                     )
                     if (result == SnackbarResult.ActionPerformed) requestOpen(url)
                 }
@@ -218,7 +294,10 @@ private fun RagDetailsTab.testTag(): String = when (this) {
 
 @Composable
 private fun RetrievedReferencesList(references: List<RagReference>) {
-    if (references.isEmpty()) {
+    val keyedReferences = remember(references) {
+        stableKeyedItems(references, ::ragReferenceStableKey)
+    }
+    if (keyedReferences.isEmpty()) {
         EmptyDetailsState()
         return
     }
@@ -229,13 +308,14 @@ private fun RetrievedReferencesList(references: List<RagReference>) {
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
         itemsIndexed(
-            items = references,
-            key = { index, reference ->
-                reference.id.ifBlank { "${reference.source}:${reference.chunkIndex}:$index" }
-            },
-        ) { index, reference ->
+            items = keyedReferences,
+            key = { _, keyedReference -> keyedReference.key },
+        ) { index, keyedReference ->
+            val reference = keyedReference.value
             RetrievedReferenceRow(reference, index)
-            if (index != references.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            if (index != keyedReferences.lastIndex) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
         }
     }
 }
@@ -320,7 +400,10 @@ private fun scoreSummary(reference: RagReference): String {
 
 @Composable
 private fun WebCitationsList(citations: List<Citation>, onOpen: (String) -> Unit) {
-    if (citations.isEmpty()) {
+    val keyedCitations = remember(citations) {
+        stableKeyedItems(citations, ::citationStableKey)
+    }
+    if (keyedCitations.isEmpty()) {
         EmptyDetailsState()
         return
     }
@@ -332,10 +415,10 @@ private fun WebCitationsList(citations: List<Citation>, onOpen: (String) -> Unit
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
         itemsIndexed(
-            items = citations,
-            key = { index, citation -> "${citation.url}:$index" },
-        ) { index, citation ->
-            WebCitationRow(citation, index, onOpen)
+            items = keyedCitations,
+            key = { _, keyedCitation -> keyedCitation.key },
+        ) { index, keyedCitation ->
+            WebCitationRow(keyedCitation.value, index, onOpen)
         }
     }
 }
@@ -438,7 +521,10 @@ private fun WebCitationRow(citation: Citation, index: Int, onOpen: (String) -> U
 
 @Composable
 private fun KnowledgeGraphList(kgPaths: List<KgPath>) {
-    if (kgPaths.isEmpty()) {
+    val keyedPaths = remember(kgPaths) {
+        stableKeyedItems(kgPaths, ::kgPathStableKey)
+    }
+    if (keyedPaths.isEmpty()) {
         EmptyDetailsState()
         return
     }
@@ -448,16 +534,18 @@ private fun KnowledgeGraphList(kgPaths: List<KgPath>) {
             .testTag(UiTags.RAG_DETAILS_LIST),
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
-        kgPaths.forEachIndexed { pathIndex, path ->
-            item(key = "path-header:$pathIndex:${path.queryKeywords.joinToString()}") {
+        keyedPaths.forEachIndexed { pathIndex, keyedPath ->
+            val pathKey = keyedPath.key
+            val path = keyedPath.value
+            val keyedEdges = stableKeyedItems(path.edges, ::kgEdgeStableKey)
+            item(key = "$pathKey:header") {
                 KgPathHeader(path, pathIndex)
             }
             itemsIndexed(
-                items = path.edges,
-                key = { edgeIndex, edge ->
-                    "path-edge:$pathIndex:$edgeIndex:${edge.sourceId}:${edge.targetId}:${edge.relation}"
-                },
-            ) { edgeIndex, edge ->
+                items = keyedEdges,
+                key = { _, keyedEdge -> "$pathKey:${keyedEdge.key}" },
+            ) { edgeIndex, keyedEdge ->
+                val edge = keyedEdge.value
                 val source = path.nodes.find { it.id == edge.sourceId }?.label ?: edge.sourceId
                 val target = path.nodes.find { it.id == edge.targetId }?.label ?: edge.targetId
                 KgRelationshipSentence(
@@ -468,7 +556,7 @@ private fun KnowledgeGraphList(kgPaths: List<KgPath>) {
                 )
             }
             path.reasoning?.takeIf(String::isNotBlank)?.let { reasoning ->
-                item(key = "path-reasoning:$pathIndex") {
+                item(key = "$pathKey:reasoning") {
                     Row(
                         modifier = Modifier.padding(start = 36.dp, bottom = 12.dp),
                         verticalAlignment = Alignment.Top,
@@ -489,8 +577,8 @@ private fun KnowledgeGraphList(kgPaths: List<KgPath>) {
                     }
                 }
             }
-            if (pathIndex != kgPaths.lastIndex) {
-                item(key = "path-divider:$pathIndex") {
+            if (pathIndex != keyedPaths.lastIndex) {
+                item(key = "$pathKey:divider") {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }

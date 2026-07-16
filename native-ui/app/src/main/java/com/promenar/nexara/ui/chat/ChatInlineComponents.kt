@@ -24,9 +24,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.testTag as semanticsTestTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -452,6 +456,9 @@ fun RagProgressCard(
         else -> 0f
     }
     val openDetailsLabel = stringResource(R.string.chat_rag_open_details)
+    val doneLabel = stringResource(R.string.chat_rag_done)
+    val openDetails = { showDetailsSheet = true }
+    val accessibilityState = if (retrievalReady) "$currentText · $doneLabel" else currentText
 
     Surface(
         modifier = modifier
@@ -460,12 +467,20 @@ fun RagProgressCard(
             .clickable(
                 onClickLabel = openDetailsLabel,
                 role = Role.Button,
-                onClick = { showDetailsSheet = true },
+                onClick = openDetails,
             )
-            .semantics {
-                progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f)
-            }
-            .testTag(UiTags.RAG_PROGRESS_CARD),
+            .clearAndSetSemantics {
+                semanticsTestTag = UiTags.RAG_PROGRESS_CARD
+                role = Role.Button
+                stateDescription = accessibilityState
+                onClick(label = openDetailsLabel) {
+                    openDetails()
+                    true
+                }
+                if (!retrievalReady) {
+                    progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f)
+                }
+            },
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = NexaraElevation.Level0
@@ -488,7 +503,9 @@ fun RagProgressCard(
             } else {
                 CircularProgressIndicator(
                     progress = { progress },
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clearAndSetSemantics {},
                     color = MaterialTheme.colorScheme.primary,
                     trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                     strokeWidth = 2.dp,
@@ -498,7 +515,9 @@ fun RagProgressCard(
                 text = currentText,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .clearAndSetSemantics {},
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -510,6 +529,7 @@ fun RagProgressCard(
                 },
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.clearAndSetSemantics {},
             )
         }
     }

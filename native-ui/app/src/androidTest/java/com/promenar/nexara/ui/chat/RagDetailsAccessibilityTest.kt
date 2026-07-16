@@ -12,10 +12,12 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
@@ -100,6 +102,94 @@ class RagDetailsAccessibilityTest {
             .assertHeightIsAtLeast(48.dp)
             .performClick()
         rule.onNodeWithTag("RAG_DETAILS_ROOT").assertIsDisplayed()
+    }
+
+    @Test
+    fun runningRetrievalEntryHasSingleProgressSemanticsSource() {
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                RagProgressCard(
+                    phases = listOf(RagPhase("vector_search", "Retrieving", PhaseStatus.ACTIVE, 42)),
+                    references = previewReferences(),
+                    isComplete = false,
+                )
+            }
+        }
+
+        rule.onAllNodes(
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo),
+            useUnmergedTree = true,
+        ).assertCountEquals(1)
+        rule.onAllNodes(hasText("42%"), useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun completedRetrievalEntryHasSingleStateSemanticsWithoutProgressOrDuplicateDoneText() {
+        val done = resources().getString(R.string.chat_rag_done)
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                RagProgressCard(
+                    phases = emptyList(),
+                    references = previewReferences(),
+                    isComplete = true,
+                )
+            }
+        }
+
+        rule.onNodeWithTag("RAG_PROGRESS_CARD")
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription))
+        rule.onAllNodes(
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo),
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        rule.onAllNodes(hasText(done), useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun realSheetLargeFontWebListScrollsToLastItemWithinModalWindow() {
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 800.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
+                NexaraTheme(dynamicColor = false) {
+                    com.promenar.nexara.ui.chat.components.RagDetailsSheet(
+                        references = emptyList(),
+                        citations = longCitations(),
+                        kgPaths = emptyList(),
+                        onDismissRequest = {},
+                        openLink = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        rule.onNodeWithTag("RAG_DETAILS_LIST").performScrollToIndex(11)
+        rule.onNodeWithTag("RAG_DETAILS_WEB_ITEM:11").assertIsDisplayed()
+    }
+
+    @Test
+    fun realSheetLandscapeKnowledgeGraphScrollsToLastRelationshipWithinModalWindow() {
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(800.dp, 360.dp)),
+            ) {
+                NexaraTheme(dynamicColor = false) {
+                    com.promenar.nexara.ui.chat.components.RagDetailsSheet(
+                        references = emptyList(),
+                        citations = emptyList(),
+                        kgPaths = longKgPaths(),
+                        onDismissRequest = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+
+        rule.onNodeWithTag("RAG_DETAILS_LIST")
+            .performScrollToNode(hasTestTag("RAG_DETAILS_KG_RELATION:9:0"))
+        rule.onNodeWithTag("RAG_DETAILS_KG_RELATION:9:0").assertIsDisplayed()
     }
 
     @Test

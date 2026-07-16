@@ -37,4 +37,13 @@ class RagDetailsDesignContractTest {
         assertThat(ragSource).doesNotContain("Color(0xFF00FF66)")
         assertThat(ragSource).doesNotContain("Color(0xFFB026FF)")
     }
+
+    @Test
+    fun `RAG 链接失败提示不声明未渲染的关闭动作`() {
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/components/RagDetailsSheet.kt",
+        ).readText()
+
+        assertThat(source).doesNotContain("withDismissAction = true")
+    }
 }
