@@ -207,8 +207,16 @@ class ReleaseReachableUiLocalizationContractTest {
         ).findAll(recycleBin).count()
 
         assertThat(accessibleIconButtons).isAtLeast(2)
-        assertThat(recycleBin).contains("contentDescription = stringResource(R.string.recycle_bin_restore)")
-        assertThat(recycleBin).contains("contentDescription = stringResource(R.string.recycle_bin_permanent_delete_title)")
+        assertThat(recycleBin).contains(
+            "val restoreLabel = stringResource(R.string.recycle_bin_restore_document, file.name)",
+        )
+        assertThat(recycleBin).contains(
+            "val deleteLabel = stringResource(R.string.recycle_bin_delete_document, file.name)",
+        )
+        assertThat(recycleBin).contains("onClick(label = restoreLabel)")
+        assertThat(recycleBin).contains("onClick(label = deleteLabel)")
+        assertThat(recycleBin).contains("contentDescription = restoreLabel")
+        assertThat(recycleBin).contains("contentDescription = deleteLabel")
         assertThat(recycleBin).contains("R.string.files_time_minutes_ago")
         assertThat(recycleBin).contains("R.string.files_time_hours_ago")
         assertThat(recycleBin).contains("R.string.files_time_days_ago")

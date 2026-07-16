@@ -39,9 +39,10 @@ class RagNavigationChainContractTest {
         )
 
         assertThat(ragFolder).contains("onNavigateToDocEditor: (String, String) -> Unit")
-        assertThat(ragFolder).contains("onNavigateToDocEditor(rootUuid, doc.uuid)")
+        assertThat(ragFolder).contains("onOpenDocument = onNavigateToDocEditor")
+        assertThat(ragFolder).contains("actions.onOpenDocument(it, doc.uuid)")
         assertThat(ragFolder).doesNotContain("if (isSelected) selectedIds.remove(doc.uuid)")
-        assertThat(ragFolder).contains("getByUuid(rootUuid, folderId)")
+        assertThat(ragFolder).contains("getByUuid(root, folderId)")
         assertThat(ragFolder).contains("resolvedFolderName ?: stringResource(R.string.rag_home_documents)")
     }
 
