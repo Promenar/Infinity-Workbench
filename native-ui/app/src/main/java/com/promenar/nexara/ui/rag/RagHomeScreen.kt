@@ -8,10 +8,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +26,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,6 +36,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Folder
@@ -46,14 +48,19 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -71,7 +78,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
@@ -82,25 +88,21 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import com.promenar.nexara.ui.chat.components.FileBatchOperationResult
 import com.promenar.nexara.ui.chat.components.FilesPanel
-import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.rag.components.IndexingProgressBar
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
-import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import java.text.SimpleDateFormat
 
 internal enum class PortalTab { DOCUMENTS, MEMORY, GRAPH }
@@ -176,7 +178,7 @@ fun applyMoveSelectionResult(
     succeeded: Boolean,
 ): Boolean = applyBatchSelectionResult(selectedIds, movingIds, failedIds, succeeded)
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RagHomeScreen(
     viewModel: RagViewModel = viewModel(factory = RagViewModel.factory(LocalContext.current.applicationContext as android.app.Application)),
@@ -327,7 +329,7 @@ fun RagHomeScreen(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RagHomeScreenContent(
     state: RagHomeScreenState,
@@ -337,6 +339,8 @@ internal fun RagHomeScreenContent(
         MutableList<String>,
         (Collection<String>, (FileBatchOperationResult) -> Unit) -> Unit,
     ) -> Unit,
+    initiallyExpandedMemoryId: String? = null,
+    initialMemoryDeleteTargetId: String? = null,
 ) {
     val locale = LocalConfiguration.current.locales[0]
     val sdf = remember(locale) { SimpleDateFormat("MMM d, HH:mm", locale) }
@@ -345,8 +349,10 @@ internal fun RagHomeScreenContent(
     var isMovingSelection by remember { mutableStateOf(false) }
     var isDeletingSelection by remember { mutableStateOf(false) }
     var pendingDocumentDelete by remember { mutableStateOf<PendingDocumentDelete?>(null) }
-    var expandedMemoryId by remember { mutableStateOf<String?>(null) }
-    var memoryDeleteTarget by remember { mutableStateOf<MemoryVectorRecord?>(null) }
+    var expandedMemoryId by remember(initiallyExpandedMemoryId) { mutableStateOf(initiallyExpandedMemoryId) }
+    var memoryDeleteTarget by remember(initialMemoryDeleteTargetId, state.memoryVectors) {
+        mutableStateOf(state.memoryVectors.firstOrNull { it.id == initialMemoryDeleteTargetId })
+    }
 
     val requestDocumentDelete: (Collection<String>, (FileBatchOperationResult) -> Unit) -> Unit = { ids, completion ->
         val distinctIds = ids.distinct()
@@ -361,84 +367,102 @@ internal fun RagHomeScreenContent(
 
     Scaffold(
         modifier = Modifier.testTag(UiTags.RAG_HOME_ROOT),
-        containerColor = NexaraColors.CanvasBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.statusBars,
         topBar = {
             TopAppBar(
                 title = {
                     Text(
                         stringResource(R.string.rag_home_title),
-                        style = NexaraTypography.headlineLarge,
-                        color = NexaraColors.OnSurface,
-                        modifier = Modifier.padding(start = 4.dp),
+                        style = MaterialTheme.typography.titleLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 180.dp),
                     )
                 },
                 actions = {
                     IconButton(
+                        onClick = actions.onOpenGraph,
+                        modifier = Modifier
+                            .sizeIn(
+                                minWidth = NexaraSpacing.MinimumTouchTarget,
+                                minHeight = NexaraSpacing.MinimumTouchTarget,
+                            )
+                            .testTag(UiTags.RAG_HOME_TAB_GRAPH),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.AccountTree,
+                            contentDescription = stringResource(R.string.rag_home_graph),
+                        )
+                    }
+                    IconButton(
                         onClick = actions.onOpenConfig,
                         modifier = Modifier
-                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .sizeIn(
+                                minWidth = NexaraSpacing.MinimumTouchTarget,
+                                minHeight = NexaraSpacing.MinimumTouchTarget,
+                            )
                             .testTag(UiTags.RAG_HOME_CONFIG),
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Settings,
                             contentDescription = stringResource(R.string.common_cd_config),
-                            tint = NexaraColors.OnSurface,
                             modifier = Modifier.size(24.dp),
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f),
-                    titleContentColor = NexaraColors.OnSurface
-                )
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
             )
         }
     ) { paddingValues ->
-        Box(modifier = Modifier.fillMaxSize().padding(paddingValues).imePadding()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .imePadding(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
             Column(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 720.dp)
+                    .padding(horizontal = NexaraSpacing.ScreenHorizontal),
             ) {
-                NexaraSearchBar(
-                    value = state.searchQuery,
-                    onValueChange = { actions.onSearch(it) },
-                    placeholder = stringResource(R.string.rag_home_search),
-                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp).testTag(UiTags.RAG_HOME_SEARCH),
-                )
-
-                TabRow(
-                    selectedTabIndex = state.currentTab.ordinal,
-                    containerColor = Color.Transparent,
-                    contentColor = NexaraColors.Primary,
-                    divider = { HorizontalDivider(color = NexaraColors.OutlineVariant) }
+                PrimaryTabRow(
+                    selectedTabIndex = if (state.currentTab == PortalTab.MEMORY) 1 else 0,
+                    containerColor = MaterialTheme.colorScheme.background,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) },
                 ) {
-                    listOf(
-                        PortalTab.DOCUMENTS to (Icons.Rounded.Description to stringResource(R.string.rag_home_documents)),
-                        PortalTab.MEMORY to (Icons.Rounded.Psychology to stringResource(R.string.rag_home_memory)),
-                        PortalTab.GRAPH to (Icons.Rounded.AccountTree to stringResource(R.string.rag_home_graph)),
-                    ).forEach { (tab, data) ->
+                    listOf(PortalTab.DOCUMENTS, PortalTab.MEMORY).forEach { tab ->
                         Tab(
                             selected = state.currentTab == tab,
-                            onClick = {
-                                if (tab == PortalTab.GRAPH) {
-                                    actions.onOpenGraph()
-                                } else {
-                                    actions.onChangeTab(tab)
-                                }
+                            onClick = { actions.onChangeTab(tab) },
+                            text = {
+                                Text(
+                                    text = stringResource(
+                                        if (tab == PortalTab.DOCUMENTS) {
+                                            R.string.rag_home_documents
+                                        } else {
+                                            R.string.rag_home_memory
+                                        },
+                                    ),
+                                    style = MaterialTheme.typography.titleSmall,
+                                )
                             },
-                            text = { Text(data.second, style = NexaraTypography.labelMedium) },
-                            selectedContentColor = NexaraColors.Primary,
-                            unselectedContentColor = NexaraColors.OnSurfaceVariant,
                             modifier = when (tab) {
                                 PortalTab.DOCUMENTS -> Modifier.testTag(UiTags.RAG_HOME_TAB_DOCUMENTS)
                                 PortalTab.MEMORY -> Modifier.testTag(UiTags.RAG_HOME_TAB_MEMORY)
-                                PortalTab.GRAPH -> Modifier.testTag(UiTags.RAG_HOME_TAB_GRAPH)
+                                PortalTab.GRAPH -> Modifier
                             }
+                                .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget),
                         )
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(NexaraSpacing.Medium))
 
                 AnimatedVisibility(
                     visible = state.isIndexing || state.indexingNotice != null,
@@ -513,66 +537,49 @@ internal fun RagHomeScreenContent(
 
                 when (state.currentTab) {
                     PortalTab.DOCUMENTS -> {
+                        NexaraSearchBar(
+                            value = state.searchQuery,
+                            onValueChange = actions.onSearch,
+                            placeholder = stringResource(R.string.rag_home_search),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = NexaraSpacing.Small)
+                                .testTag(UiTags.RAG_HOME_SEARCH),
+                        )
+
                         FlowRow(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                .padding(bottom = NexaraSpacing.Small),
+                            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                         ) {
-                            val newFolderLabel = stringResource(R.string.rag_home_new)
-                            Box(
+                            FilledTonalButton(
+                                onClick = actions.onOpenFilePicker,
                                 modifier = Modifier
-                                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(NexaraColors.SurfaceHigh)
-                                    .clickable(
-                                        onClickLabel = newFolderLabel,
-                                        role = Role.Button,
-                                        onClick = { showNewFolderDialog = true },
+                                    .sizeIn(
+                                        minWidth = NexaraSpacing.MinimumTouchTarget,
+                                        minHeight = NexaraSpacing.MinimumTouchTarget,
                                     )
-                                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                                    .testTag(UiTags.RAG_HOME_NEW_FOLDER),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    Icon(Icons.Rounded.CreateNewFolder, null, tint = NexaraColors.Primary, modifier = Modifier.size(16.dp))
-                                    Text(
-                                        stringResource(R.string.rag_home_new),
-                                        style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                                        color = NexaraColors.Primary
-                                    )
-                                }
-                            }
-
-                            val uploadLabel = stringResource(R.string.rag_home_upload_area)
-                            Box(
-                                modifier = Modifier
-                                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(NexaraColors.SurfaceHigh)
-                                    .clickable(
-                                        onClickLabel = uploadLabel,
-                                        role = Role.Button,
-                                        onClick = actions.onOpenFilePicker,
-                                    )
-                                    .padding(horizontal = 12.dp, vertical = 8.dp)
                                     .testTag(UiTags.RAG_HOME_UPLOAD),
-                                contentAlignment = Alignment.Center,
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Icon(Icons.Rounded.CloudUpload, null, tint = NexaraColors.Primary, modifier = Modifier.size(16.dp))
-                                    Text(
-                                        stringResource(R.string.rag_home_upload_area),
-                                        style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                                        color = NexaraColors.Primary
-                                    )
-                                }
+                                Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(NexaraSpacing.Small))
+                                Text(stringResource(R.string.rag_folder_upload))
                             }
-
+                            TextButton(
+                                onClick = { showNewFolderDialog = true },
+                                modifier = Modifier
+                                    .sizeIn(
+                                        minWidth = NexaraSpacing.MinimumTouchTarget,
+                                        minHeight = NexaraSpacing.MinimumTouchTarget,
+                                    )
+                                    .testTag(UiTags.RAG_HOME_NEW_FOLDER),
+                            ) {
+                                Icon(Icons.Rounded.CreateNewFolder, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(NexaraSpacing.Small))
+                                Text(stringResource(R.string.rag_home_new_folder_title))
+                            }
                         }
 
                         Box(
@@ -589,16 +596,19 @@ internal fun RagHomeScreenContent(
                         }
 
                         if (state.selectedIds.isNotEmpty()) {
-                            NexaraGlassCard(
+                            Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(bottom = 12.dp)
+                                    .padding(bottom = NexaraSpacing.Medium)
                                     .testTag(UiTags.RAG_HOME_SELECTION_BAR),
-                                shape = RoundedCornerShape(16.dp),
+                                shape = MaterialTheme.shapes.large,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
                             ) {
                                 Column(
-                                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(NexaraSpacing.Medium),
+                                    verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                                 ) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -607,8 +617,8 @@ internal fun RagHomeScreenContent(
                                     ) {
                                         Text(
                                             stringResource(R.string.rag_home_selected_count, state.selectedIds.size),
-                                            style = NexaraTypography.labelMedium,
-                                            color = NexaraColors.OnSurfaceVariant,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                         TextButton(
                                             onClick = { state.selectedIds.clear() },
@@ -680,35 +690,44 @@ internal fun RagHomeScreenContent(
                         LazyColumn(
                             modifier = Modifier
                                 .weight(1f)
+                                .fillMaxWidth()
                                 .testTag(UiTags.RAG_HOME_MEMORY_CONTENT),
-                            contentPadding = PaddingValues(bottom = 24.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(bottom = NexaraSpacing.XLarge),
+                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                         ) {
                             item {
-                                Text(
-                                    stringResource(R.string.rag_home_memory_section),
-                                    style = NexaraTypography.headlineMedium,
-                                    color = NexaraColors.OnSurface
-                                )
-                            }
-                            item {
-                                NexaraGlassCard(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = NexaraShapes.large as RoundedCornerShape
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = NexaraSpacing.Small),
+                                    verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
                                 ) {
-                                    Column(
-                                        Modifier.fillMaxWidth().padding(16.dp),
-                                        Arrangement.spacedBy(4.dp),
+                                    Text(
+                                        text = stringResource(R.string.rag_home_memory_section),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        maxLines = 1,
+                                    )
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+                                        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
                                     ) {
                                         Text(
-                                            stringResource(R.string.rag_home_memory_total_count, state.memoryVectors.size),
-                                            style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = NexaraColors.OnSurface
+                                            text = stringResource(
+                                                R.string.rag_home_memory_total_count,
+                                                state.memoryVectors.size,
+                                            ),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
                                         )
                                         Text(
-                                            stringResource(R.string.rag_home_memory_est_tokens, state.memoryVectors.sumOf { it.content.length / 3 }),
-                                            style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp, fontFamily = FontFamily.Monospace),
-                                            color = NexaraColors.OnSurfaceVariant
+                                            text = stringResource(
+                                                R.string.rag_home_memory_est_tokens,
+                                                state.memoryVectors.sumOf { it.content.length / 3 },
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
                                         )
                                     }
                                 }
@@ -716,67 +735,118 @@ internal fun RagHomeScreenContent(
 
                             if (state.memoryVectors.isEmpty()) {
                                 item {
-                                    NexaraGlassCard(Modifier.fillMaxWidth(), NexaraShapes.large as RoundedCornerShape) {
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("memory-empty"),
+                                        shape = MaterialTheme.shapes.large,
+                                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    ) {
                                         Column(
-                                            Modifier.fillMaxWidth().padding(32.dp),
-                                            Arrangement.spacedBy(8.dp),
-                                            Alignment.CenterHorizontally,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(NexaraSpacing.XXLarge),
+                                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
                                         ) {
-                                            Icon(Icons.Rounded.Psychology, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(40.dp))
-                                            Text(stringResource(R.string.rag_home_memory_empty), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                                            Icon(
+                                                Icons.Rounded.Psychology,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(40.dp),
+                                            )
+                                            Text(
+                                                text = stringResource(R.string.rag_home_memory_empty),
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
                                         }
                                     }
                                 }
                             } else {
                                 items(state.memoryVectors, key = { it.id }) { memory ->
                                     val isExpanded = expandedMemoryId == memory.id
-                                    val expandLabel = stringResource(
-                                        if (isExpanded) R.string.common_cd_collapse else R.string.common_cd_expand
-                                    )
-                                    val deleteLabel = stringResource(R.string.common_cd_delete)
-                                    NexaraGlassCard(
-                                        Modifier
+                                    ListItem(
+                                        modifier = Modifier
                                             .fillMaxWidth()
-                                            .combinedClickable(
-                                                role = Role.Button,
-                                                onClickLabel = expandLabel,
-                                                onLongClickLabel = deleteLabel,
-                                                onClick = {
-                                                    expandedMemoryId = if (isExpanded) null else memory.id
-                                                },
-                                                onLongClick = {
-                                                    memoryDeleteTarget = memory
-                                                },
-                                            ),
-                                        RoundedCornerShape(12.dp),
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.fillMaxWidth().padding(12.dp, 10.dp),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                                        ) {
+                                            .clip(MaterialTheme.shapes.medium)
+                                            .testTag("memory-item-${memory.id}"),
+                                        headlineContent = {
                                             Text(
-                                                text = if (isExpanded) memory.content else memory.content.take(120) + if (memory.content.length > 120) "…" else "",
-                                                style = NexaraTypography.bodyMedium,
-                                                color = NexaraColors.OnSurface,
+                                                text = memory.content,
+                                                style = MaterialTheme.typography.bodyLarge,
                                                 maxLines = if (isExpanded) Int.MAX_VALUE else 2,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
-                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        },
+                                        supportingContent = {
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                                                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+                                            ) {
                                                 memory.sessionId?.let {
                                                     Text(
                                                         "${stringResource(R.string.sessions_tag_session)}: ${it.take(8)}…",
-                                                        style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp, fontFamily = FontFamily.Monospace),
-                                                        color = NexaraColors.Primary.copy(alpha = 0.7f),
+                                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                                        color = MaterialTheme.colorScheme.primary,
                                                     )
                                                 }
                                                 Text(
                                                     sdf.format(java.util.Date(memory.createdAt)),
-                                                    style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
-                                                    color = NexaraColors.OnSurfaceVariant,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 )
                                             }
-                                        }
-                                    }
+                                        },
+                                        trailingContent = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                IconButton(
+                                                    onClick = {
+                                                        expandedMemoryId = if (isExpanded) null else memory.id
+                                                    },
+                                                    modifier = Modifier
+                                                        .sizeIn(
+                                                            minWidth = NexaraSpacing.MinimumTouchTarget,
+                                                            minHeight = NexaraSpacing.MinimumTouchTarget,
+                                                        )
+                                                        .testTag("memory-expand-${memory.id}"),
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (isExpanded) {
+                                                            Icons.Rounded.ExpandLess
+                                                        } else {
+                                                            Icons.Rounded.ExpandMore
+                                                        },
+                                                        contentDescription = stringResource(
+                                                            if (isExpanded) {
+                                                                R.string.common_cd_collapse
+                                                            } else {
+                                                                R.string.common_cd_expand
+                                                            },
+                                                        ),
+                                                    )
+                                                }
+                                                IconButton(
+                                                    onClick = { memoryDeleteTarget = memory },
+                                                    modifier = Modifier
+                                                        .sizeIn(
+                                                            minWidth = NexaraSpacing.MinimumTouchTarget,
+                                                            minHeight = NexaraSpacing.MinimumTouchTarget,
+                                                        )
+                                                        .testTag("memory-delete-${memory.id}"),
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Delete,
+                                                        contentDescription = stringResource(R.string.common_cd_delete),
+                                                        tint = MaterialTheme.colorScheme.error,
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        colors = ListItemDefaults.colors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                        ),
+                                    )
                                 }
                             }
                         }
@@ -794,7 +864,10 @@ internal fun RagHomeScreenContent(
             onDismissRequest = { showNewFolderDialog = false },
             title = {
                 Box(modifier = Modifier.testTag(UiTags.RAG_HOME_NEW_FOLDER_DIALOG)) {
-                    Text(stringResource(R.string.rag_home_new_folder_title), style = NexaraTypography.headlineSmall)
+                    Text(
+                        stringResource(R.string.rag_home_new_folder_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
                 }
             },
             text = {
@@ -833,23 +906,34 @@ internal fun RagHomeScreenContent(
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
             modifier = Modifier.testTag(UiTags.RAG_HOME_MOVE_SHEET),
         ) {
-            Column(
-                Modifier
+            LazyColumn(
+                modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(0.7f)
-                    .padding(24.dp)
-                    .padding(bottom = 40.dp),
-                Arrangement.spacedBy(8.dp),
+                    .testTag("rag-home-move-folder-list"),
+                contentPadding = PaddingValues(
+                    start = NexaraSpacing.Large,
+                    top = NexaraSpacing.Medium,
+                    end = NexaraSpacing.Large,
+                    bottom = NexaraSpacing.XXLarge,
+                ),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
             ) {
-                Text(stringResource(R.string.rag_home_move_to_folder), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
-                state.folders.forEach { folder ->
+                item {
+                    Text(
+                        stringResource(R.string.rag_home_move_to_folder),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = NexaraSpacing.Small),
+                    )
+                }
+                items(state.folders, key = { it.id }) { folder ->
                     val moveLabel = stringResource(R.string.rag_home_move)
-                    Row(
-                        Modifier
+                    ListItem(
+                        modifier = Modifier
                             .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(NexaraColors.SurfaceContainer)
+                            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+                            .clip(MaterialTheme.shapes.medium)
                             .clickable(
                                 enabled = !isMovingSelection,
                                 onClickLabel = moveLabel,
@@ -871,18 +955,23 @@ internal fun RagHomeScreenContent(
                                         }
                                     }
                                 }
-                            }
-                            .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(folder.name, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                        Text(
-                            stringResource(R.string.rag_home_docs_count, state.folderStats[folder.id] ?: 0),
-                            style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
-                            color = NexaraColors.OnSurfaceVariant,
-                        )
-                    }
+                            },
+                        headlineContent = {
+                            Text(
+                                folder.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                stringResource(R.string.rag_home_docs_count, state.folderStats[folder.id] ?: 0),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        ),
+                    )
                 }
             }
         }
@@ -904,7 +993,7 @@ internal fun RagHomeScreenContent(
             title = {
                 Text(
                     stringResource(R.string.rag_home_delete_confirm_title, pendingDelete.ids.size),
-                    style = NexaraTypography.headlineSmall,
+                    style = MaterialTheme.typography.headlineSmall,
                 )
             },
             confirmButton = {
@@ -956,11 +1045,18 @@ internal fun RagHomeScreenContent(
     if (memoryDeleteTarget != null) {
         AlertDialog(
             onDismissRequest = { memoryDeleteTarget = null },
+            modifier = Modifier.testTag("memory-delete-dialog"),
             title = {
-                Text(stringResource(R.string.rag_home_memory_delete_confirm_title), style = NexaraTypography.headlineSmall)
+                Text(
+                    stringResource(R.string.rag_home_memory_delete_confirm_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                )
             },
             text = {
-                Text(stringResource(R.string.rag_home_memory_delete_confirm_msg), style = NexaraTypography.bodyMedium)
+                Text(
+                    stringResource(R.string.rag_home_memory_delete_confirm_msg),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             },
             confirmButton = {
                 Button(
@@ -968,7 +1064,13 @@ internal fun RagHomeScreenContent(
                         memoryDeleteTarget?.let { actions.onDeleteMemory(it.id) }
                         memoryDeleteTarget = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = NexaraColors.Error)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier
+                        .sizeIn(
+                            minWidth = NexaraSpacing.MinimumTouchTarget,
+                            minHeight = NexaraSpacing.MinimumTouchTarget,
+                        )
+                        .testTag("memory-delete-confirm"),
                 ) {
                     Text(stringResource(R.string.shared_btn_delete))
                 }

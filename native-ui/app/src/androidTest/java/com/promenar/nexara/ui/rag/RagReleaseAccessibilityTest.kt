@@ -8,17 +8,22 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.unit.Density
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.test.platform.app.InstrumentationRegistry
@@ -27,6 +32,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.domain.model.Folder
+import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import com.promenar.nexara.ui.chat.components.FileBatchOperationResult
 import com.promenar.nexara.ui.common.FileIndexStatus
 import com.promenar.nexara.ui.common.IndexStatusBadge
@@ -133,6 +139,102 @@ class RagReleaseAccessibilityTest {
     }
 
     @Test
+    fun searchIsOnlyShownForDocumentsAndGraphDoesNotChangeTab() {
+        val graphClicks = AtomicInteger(0)
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                var state by remember { mutableStateOf(releaseState()) }
+                RagHomeScreenContent(
+                    state = state,
+                    actions = RagHomeScreenActions(
+                        onChangeTab = { state = state.copy(currentTab = it) },
+                        onOpenGraph = { graphClicks.incrementAndGet() },
+                    ),
+                    documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.RAG_HOME_SEARCH).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.RAG_HOME_TAB_GRAPH).performClick()
+        rule.runOnIdle { assertThat(graphClicks.get()).isEqualTo(1) }
+        rule.onNodeWithTag(UiTags.RAG_HOME_DOCUMENTS_CONTENT).assertExists()
+        rule.onNodeWithTag(UiTags.RAG_HOME_SEARCH).assertIsDisplayed()
+
+        rule.onNodeWithTag(UiTags.RAG_HOME_TAB_MEMORY).performClick()
+        rule.onNodeWithTag(UiTags.RAG_HOME_MEMORY_CONTENT).assertExists()
+        rule.onNodeWithTag(UiTags.RAG_HOME_SEARCH).assertDoesNotExist()
+    }
+
+    @Test
+    fun memoryContentExposesExpandAndDeleteThenConfirmsDeletion() {
+        val deletedId = AtomicReference<String?>(null)
+        val memory = MemoryVectorRecord(
+            id = "memory-a",
+            content = "A long memory with enough detail to verify the visible expansion control and the complete readable content after expansion. ".repeat(4),
+            sessionId = "session-12345678",
+            createdAt = 1_725_000_000_000,
+        )
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                RagHomeScreenContent(
+                    state = releaseState().copy(
+                        currentTab = PortalTab.MEMORY,
+                        memoryVectors = listOf(memory),
+                    ),
+                    actions = RagHomeScreenActions(onDeleteMemory = deletedId::set),
+                    documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
+                )
+            }
+        }
+
+        rule.onNodeWithTag("memory-expand-memory-a").assertHasClickAction().performClick()
+        rule.onNodeWithText(memory.content).assertIsDisplayed()
+        rule.onNodeWithTag("memory-delete-memory-a").assertHasClickAction().performClick()
+        rule.onNodeWithTag("memory-delete-dialog").assertExists()
+        rule.runOnIdle { assertThat(deletedId.get()).isNull() }
+        rule.onNodeWithTag("memory-delete-confirm").assertHasClickAction().performClick()
+        rule.runOnIdle { assertThat(deletedId.get()).isEqualTo("memory-a") }
+    }
+
+    @Test
+    fun memoryEmptyStateIsDistinctFromContent() {
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                RagHomeScreenContent(
+                    state = releaseState().copy(currentTab = PortalTab.MEMORY),
+                    actions = RagHomeScreenActions(),
+                    documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
+                )
+            }
+        }
+
+        rule.onNodeWithTag("memory-empty").assertIsDisplayed()
+        rule.onNodeWithTag("memory-item-memory-a").assertDoesNotExist()
+    }
+
+    @Test
+    fun largeFontKeepsGraphAndConfigActionsVisible() {
+        rule.setContent {
+            val systemDensity = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(systemDensity.density, fontScale = 2f),
+            ) {
+                NexaraTheme(dynamicColor = false) {
+                    RagHomeScreenContent(
+                        state = releaseState().copy(currentTab = PortalTab.MEMORY),
+                        actions = RagHomeScreenActions(),
+                        documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.RAG_HOME_TAB_GRAPH).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.RAG_HOME_CONFIG).assertIsDisplayed()
+    }
+
+    @Test
     fun selectionBarClearsReindexesAndRetainsOnlyFailedDeletes() {
         val selections = mutableStateListOf("doc-a", "doc-b")
         val reindexed = AtomicReference<List<String>>(emptyList())
@@ -204,6 +306,27 @@ class RagReleaseAccessibilityTest {
 
         rule.onNodeWithTag(UiTags.RAG_HOME_MOVE_SELECTION).assertHasClickAction().performClick()
         rule.onNodeWithTag(UiTags.RAG_HOME_MOVE_SHEET).assertExists()
+    }
+
+    @Test
+    fun selectionMoveSheetScrollsToTheLastOfTwentyFolders() {
+        val selections = mutableStateListOf("doc-a")
+        val folders = (1..20).map { index ->
+            Folder(id = "folder-$index", name = "Folder $index")
+        }
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                RagHomeScreenContent(
+                    state = releaseState().copy(selectedIds = selections, folders = folders),
+                    actions = RagHomeScreenActions(),
+                    documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.RAG_HOME_MOVE_SELECTION).performClick()
+        rule.onNodeWithTag("rag-home-move-folder-list").performScrollToIndex(20)
+        rule.onNodeWithText("Folder 20").assertIsDisplayed()
     }
 
     @Test

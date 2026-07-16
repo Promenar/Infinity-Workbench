@@ -44,6 +44,7 @@ import com.promenar.nexara.domain.generation.GenerationFailureCode
 import com.promenar.nexara.domain.generation.GenerationFailureCodec
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
+import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import com.promenar.nexara.onboarding.OnboardingState
 import com.promenar.nexara.onboarding.OnboardingStep
 import com.promenar.nexara.ui.chat.ChatScreenActions
@@ -118,6 +119,41 @@ private const val PHONE_HEIGHT_DP = 892
 private const val LANDSCAPE_WIDTH_DP = 892
 private const val LANDSCAPE_HEIGHT_DP = 412
 private const val PREVIEW_CHAT_MODEL_ID = "default::deepseek-v4-flash"
+private const val PREVIEW_MEMORY_ID = "preview-memory-1"
+
+private val PREVIEW_MEMORY_VECTORS = listOf(
+    MemoryVectorRecord(
+        id = PREVIEW_MEMORY_ID,
+        content = "The release review established that every visual baseline must be checked at phone width and large font before delivery. This memory keeps the complete decision readable when expanded.",
+        sessionId = "session-release-review",
+        createdAt = 1_725_000_000_000,
+    ),
+    MemoryVectorRecord(
+        id = "preview-memory-2",
+        content = "Knowledge graph navigation opens its own destination and is not a third content tab.",
+        sessionId = "session-rag-design",
+        createdAt = 1_724_900_000_000,
+    ),
+)
+
+@PreviewTest
+@Preview(
+    name = "RAG home memory content phone",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragHomeMemoryContentPhoneReleasePreview() {
+    ReleasePreviewSurface {
+        RagHomeScreenContent(
+            state = previewMemoryState(PREVIEW_MEMORY_VECTORS),
+            actions = RagHomeScreenActions(),
+            documentsContent = { modifier, _, _ -> Box(modifier) },
+        )
+    }
+}
 
 @PreviewTest
 @Preview(
@@ -767,6 +803,66 @@ fun ragFilesPanelDeepTreeLargeFontReleasePreview() {
 
 @PreviewTest
 @Preview(
+    name = "RAG home memory expanded phone",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragHomeMemoryExpandedPhoneReleasePreview() {
+    ReleasePreviewSurface {
+        RagHomeScreenContent(
+            state = previewMemoryState(PREVIEW_MEMORY_VECTORS),
+            actions = RagHomeScreenActions(),
+            documentsContent = { modifier, _, _ -> Box(modifier) },
+            initiallyExpandedMemoryId = PREVIEW_MEMORY_ID,
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG home memory content Chinese large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragHomeMemoryContentLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        RagHomeScreenContent(
+            state = previewMemoryState(PREVIEW_MEMORY_VECTORS),
+            actions = RagHomeScreenActions(),
+            documentsContent = { modifier, _, _ -> Box(modifier) },
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG home memory delete confirmation phone",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragHomeMemoryDeleteConfirmationReleasePreview() {
+    ReleasePreviewSurface {
+        RagHomeScreenContent(
+            state = previewMemoryState(PREVIEW_MEMORY_VECTORS),
+            actions = RagHomeScreenActions(),
+            documentsContent = { modifier, _, _ -> Box(modifier) },
+            initialMemoryDeleteTargetId = PREVIEW_MEMORY_ID,
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
     name = "RAG home memory Chinese large font",
     widthDp = 840,
     heightDp = 900,
@@ -799,6 +895,23 @@ fun ragHomeMemoryChineseLargeFontReleasePreview() {
         )
     }
 }
+
+private fun previewMemoryState(memoryVectors: List<MemoryVectorRecord>) = RagHomeScreenState(
+    currentTab = PortalTab.MEMORY,
+    searchQuery = "",
+    selectedIds = mutableListOf(),
+    workspaceRootUuid = "preview-root",
+    folders = emptyList(),
+    folderStats = emptyMap(),
+    stats = RagStats(documentCount = 2, memoryCount = memoryVectors.size, graphEntityCount = 8),
+    memoryVectors = memoryVectors,
+    isIndexing = false,
+    indexingProgress = 0f,
+    canRetryLastFailedIndex = false,
+    isRetryingLastFailedIndex = false,
+    indexingFileIds = emptySet(),
+    kgExtractionStates = emptyMap(),
+)
 
 @PreviewTest
 @Preview(
