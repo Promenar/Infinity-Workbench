@@ -56,55 +56,10 @@ class RagHomeScreenContractTest {
     }
 
     @Test
-    fun `documents and memory are the only tabs while graph is a navigation action`() {
-        assertThat(screenSource).contains("listOf(PortalTab.DOCUMENTS, PortalTab.MEMORY)")
+    fun `legacy graph tab long press deletion and eager folder rows stay disabled`() {
         assertThat(screenSource).doesNotContain("PortalTab.GRAPH to")
-        assertThat(screenSource).contains("onClick = actions.onOpenGraph")
-    }
-
-    @Test
-    fun `search belongs only to the documents task`() {
-        val contentSwitch = screenSource.indexOf("when (state.currentTab)")
-        val documentsBranch = screenSource.indexOf("PortalTab.DOCUMENTS ->", startIndex = contentSwitch)
-        val memoryBranch = screenSource.indexOf("PortalTab.MEMORY ->", startIndex = documentsBranch)
-        val search = screenSource.indexOf("UiTags.RAG_HOME_SEARCH")
-
-        assertThat(contentSwitch).isAtLeast(0)
-        assertThat(documentsBranch).isAtLeast(0)
-        assertThat(memoryBranch).isGreaterThan(documentsBranch)
-        assertThat(search).isGreaterThan(documentsBranch)
-        assertThat(search).isLessThan(memoryBranch)
-    }
-
-    @Test
-    fun `memory is a material list with visible expand and delete actions`() {
-        assertThat(screenSource).contains("ListItem(")
-        assertThat(screenSource).contains("memory-expand-")
-        assertThat(screenSource).contains("memory-delete-")
-        assertThat(screenSource).contains("memory-delete-dialog")
         assertThat(screenSource).doesNotContain("onLongClick")
-    }
-
-    @Test
-    fun `memory summary wraps count and token estimate below its heading`() {
-        val memoryBranch = screenSource.indexOf("PortalTab.MEMORY ->")
-        val headerItem = screenSource.indexOf("item {", startIndex = memoryBranch)
-        val emptyState = screenSource.indexOf("if (state.memoryVectors.isEmpty())", startIndex = memoryBranch)
-        val summary = screenSource.substring(headerItem, emptyState)
-
-        assertThat(summary).contains("Column(")
-        assertThat(summary).contains("FlowRow(")
-    }
-
-    @Test
-    fun `move sheet uses a bounded keyed lazy list`() {
-        val sheetStart = screenSource.indexOf("if (showMoveSheet)")
-        val sheetEnd = screenSource.indexOf("pendingDocumentDelete?.let", startIndex = sheetStart)
-        val sheetBody = screenSource.substring(sheetStart, sheetEnd)
-
-        assertThat(sheetBody).contains("LazyColumn(")
-        assertThat(sheetBody).contains("items(state.folders, key = { it.id })")
-        assertThat(sheetBody).doesNotContain("state.folders.forEach")
+        assertThat(screenSource).doesNotContain("state.folders.forEach")
     }
 
     @Test

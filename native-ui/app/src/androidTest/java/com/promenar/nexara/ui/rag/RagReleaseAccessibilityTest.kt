@@ -198,6 +198,50 @@ class RagReleaseAccessibilityTest {
     }
 
     @Test
+    fun memoryRefreshKeepsDeleteConfirmationAndOriginalTarget() {
+        val deletedId = AtomicReference<String?>(null)
+        val originalMemory = MemoryVectorRecord(
+            id = "memory-a",
+            content = "Original memory selected for deletion",
+            sessionId = "session-a",
+            createdAt = 1_725_000_000_000,
+        )
+        val refreshedMemory = MemoryVectorRecord(
+            id = "memory-b",
+            content = "Memory arriving from an asynchronous refresh",
+            sessionId = "session-b",
+            createdAt = 1_725_000_100_000,
+        )
+        lateinit var updateVectors: (List<MemoryVectorRecord>) -> Unit
+
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                var state by remember {
+                    mutableStateOf(
+                        releaseState().copy(
+                            currentTab = PortalTab.MEMORY,
+                            memoryVectors = listOf(originalMemory),
+                        ),
+                    )
+                }
+                updateVectors = { vectors -> state = state.copy(memoryVectors = vectors) }
+                RagHomeScreenContent(
+                    state = state,
+                    actions = RagHomeScreenActions(onDeleteMemory = deletedId::set),
+                    documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
+                )
+            }
+        }
+
+        rule.onNodeWithTag("memory-delete-memory-a").performClick()
+        rule.onNodeWithTag("memory-delete-dialog").assertIsDisplayed()
+        rule.runOnIdle { updateVectors(listOf(refreshedMemory)) }
+        rule.onNodeWithTag("memory-delete-dialog").assertIsDisplayed()
+        rule.onNodeWithTag("memory-delete-confirm").performClick()
+        rule.runOnIdle { assertThat(deletedId.get()).isEqualTo("memory-a") }
+    }
+
+    @Test
     fun memoryEmptyStateIsDistinctFromContent() {
         rule.setContent {
             NexaraTheme(dynamicColor = false) {

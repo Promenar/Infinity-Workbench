@@ -731,6 +731,42 @@ fun ragHomeDocumentsReleasePreviewEnglish() {
 
 @PreviewTest
 @Preview(
+    name = "RAG home documents landscape",
+    widthDp = LANDSCAPE_WIDTH_DP,
+    heightDp = LANDSCAPE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragHomeDocumentsLandscapeReleasePreview() {
+    ReleasePreviewSurface {
+        RagHomeScreenContent(
+            state = RagHomeScreenState(
+                currentTab = PortalTab.DOCUMENTS,
+                searchQuery = "",
+                selectedIds = mutableListOf(),
+                workspaceRootUuid = "preview-root",
+                folders = emptyList(),
+                folderStats = emptyMap(),
+                stats = RagStats(documentCount = 2, memoryCount = 1, graphEntityCount = 8),
+                memoryVectors = emptyList(),
+                isIndexing = false,
+                indexingProgress = 0f,
+                canRetryLastFailedIndex = false,
+                isRetryingLastFailedIndex = false,
+                indexingFileIds = emptySet(),
+                kgExtractionStates = emptyMap(),
+            ),
+            actions = RagHomeScreenActions(),
+            documentsContent = { modifier, selectedIds, requestDelete ->
+                PreviewRagDocuments(modifier, selectedIds, requestDelete)
+            },
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
     name = "RAG home selected documents phone",
     widthDp = 360,
     heightDp = 800,

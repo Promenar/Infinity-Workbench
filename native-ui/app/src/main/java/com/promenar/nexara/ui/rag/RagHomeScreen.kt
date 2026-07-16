@@ -350,8 +350,8 @@ internal fun RagHomeScreenContent(
     var isDeletingSelection by remember { mutableStateOf(false) }
     var pendingDocumentDelete by remember { mutableStateOf<PendingDocumentDelete?>(null) }
     var expandedMemoryId by remember(initiallyExpandedMemoryId) { mutableStateOf(initiallyExpandedMemoryId) }
-    var memoryDeleteTarget by remember(initialMemoryDeleteTargetId, state.memoryVectors) {
-        mutableStateOf(state.memoryVectors.firstOrNull { it.id == initialMemoryDeleteTargetId })
+    var memoryDeleteTargetId by remember(initialMemoryDeleteTargetId) {
+        mutableStateOf(initialMemoryDeleteTargetId)
     }
 
     val requestDocumentDelete: (Collection<String>, (FileBatchOperationResult) -> Unit) -> Unit = { ids, completion ->
@@ -827,7 +827,7 @@ internal fun RagHomeScreenContent(
                                                     )
                                                 }
                                                 IconButton(
-                                                    onClick = { memoryDeleteTarget = memory },
+                                                    onClick = { memoryDeleteTargetId = memory.id },
                                                     modifier = Modifier
                                                         .sizeIn(
                                                             minWidth = NexaraSpacing.MinimumTouchTarget,
@@ -1042,9 +1042,9 @@ internal fun RagHomeScreenContent(
         )
     }
 
-    if (memoryDeleteTarget != null) {
+    if (memoryDeleteTargetId != null) {
         AlertDialog(
-            onDismissRequest = { memoryDeleteTarget = null },
+            onDismissRequest = { memoryDeleteTargetId = null },
             modifier = Modifier.testTag("memory-delete-dialog"),
             title = {
                 Text(
@@ -1061,8 +1061,8 @@ internal fun RagHomeScreenContent(
             confirmButton = {
                 Button(
                     onClick = {
-                        memoryDeleteTarget?.let { actions.onDeleteMemory(it.id) }
-                        memoryDeleteTarget = null
+                        memoryDeleteTargetId?.let(actions.onDeleteMemory)
+                        memoryDeleteTargetId = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     modifier = Modifier
@@ -1076,7 +1076,7 @@ internal fun RagHomeScreenContent(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { memoryDeleteTarget = null }) {
+                TextButton(onClick = { memoryDeleteTargetId = null }) {
                     Text(stringResource(R.string.common_btn_cancel))
                 }
             },
