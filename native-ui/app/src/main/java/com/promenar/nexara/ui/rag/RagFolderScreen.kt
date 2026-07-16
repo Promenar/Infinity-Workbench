@@ -3,39 +3,48 @@ package com.promenar.nexara.ui.rag
 import android.app.Application
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,34 +58,31 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.local.db.entity.FileEntry
+import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.share.core.SharedFileImporter
-import com.promenar.nexara.ui.common.NexaraGlassCard
-import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.common.status.NoticeSeverity
+import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.rag.components.IndexingProgressBar
 import com.promenar.nexara.ui.rag.components.RagDocItem
 import com.promenar.nexara.ui.rag.components.RagStatus
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
-import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.testing.UiTags
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 
-internal enum class RagFolderContentState {
-    Loading,
-    Error,
-    Empty,
-    Content,
-}
+internal enum class RagFolderContentState { Loading, Error, Empty, Content }
 
 internal fun resolveRagFolderContentState(
     hasLoaded: Boolean,
@@ -94,16 +100,43 @@ internal fun isAllRagFolderDocumentsSelected(documentCount: Int, selectedCount: 
 
 internal fun shouldShowRagDocumentCheckbox(): Boolean = true
 
-internal fun ragFolderSelectionBarReservedHeight(hasSelection: Boolean): Int =
-    if (hasSelection) 176 else 0
+internal fun ragFolderSelectionBarReservedHeight(hasSelection: Boolean): Int = 0
 
-@OptIn(ExperimentalMaterial3Api::class)
+internal data class RagFolderScreenState(
+    val title: String,
+    val workspaceRootUuid: String?,
+    val documents: List<FileEntry>,
+    val folders: List<Folder>,
+    val currentFolderId: String,
+    val selectedIds: MutableList<String>,
+    val contentState: RagFolderContentState,
+    val isIndexing: Boolean = false,
+    val indexingProgress: Float = 0f,
+    val indexingNotice: UiStatusNotice? = null,
+    val canRetryLastFailedIndex: Boolean = false,
+    val isRetryingLastFailedIndex: Boolean = false,
+    val isMovingDocuments: Boolean = false,
+    val isDeletingDocuments: Boolean = false,
+)
+
+internal data class RagFolderScreenActions(
+    val onBack: () -> Unit = {},
+    val onUpload: () -> Unit = {},
+    val onOpenDocument: (String, String) -> Unit = { _, _ -> },
+    val onRetryLoad: () -> Unit = {},
+    val onRetryIndex: () -> Unit = {},
+    val onDismissIndexNotice: () -> Unit = {},
+    val onReindex: (Collection<String>) -> Unit = {},
+    val onMove: (Collection<String>, String, (Boolean, List<String>) -> Unit) -> Unit = { _, _, _ -> },
+    val onDelete: (Collection<String>, (Boolean, List<String>) -> Unit) -> Unit = { _, _ -> },
+)
+
 @Composable
 fun RagFolderScreen(
     folderId: String,
     viewModel: RagViewModel = viewModel(factory = RagViewModel.factory(LocalContext.current.applicationContext as Application)),
     onNavigateToDocEditor: (String, String) -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
 ) {
     val workspaceRootUuid by viewModel.workspaceRootUuid.collectAsState()
     val folders by viewModel.folders.collectAsState()
@@ -119,43 +152,28 @@ fun RagFolderScreen(
     var resolvedFolderName by remember(folderId) { mutableStateOf<String?>(null) }
     var folderLoadError by remember(folderId) { mutableStateOf(false) }
     var folderLoadAttempt by remember(folderId) { mutableStateOf(0) }
-    var showMoveSheet by remember { mutableStateOf(false) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris ->
-        if (uris.isNotEmpty()) {
-            viewModel.importDocuments(uris, folderId)
-        }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) viewModel.importDocuments(uris, folderId)
     }
 
     LaunchedEffect(folderId, workspaceRootUuid) {
-        resolvedFolderName = null
-        val rootUuid = workspaceRootUuid ?: return@LaunchedEffect
-        try {
-            resolvedFolderName = viewModel.getWorkspaceRepo()
-                .getByUuid(rootUuid, folderId)
-                ?.name
-                ?.takeIf { it.isNotBlank() }
+        val root = workspaceRootUuid ?: return@LaunchedEffect
+        resolvedFolderName = try {
+            viewModel.getWorkspaceRepo().getByUuid(root, folderId)?.name?.takeIf(String::isNotBlank)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            // 标题读取失败不阻断文件夹内容加载，继续使用本地化回退标题。
+            null
         }
     }
-
     LaunchedEffect(folderId, workspaceRootUuid, folderLoadAttempt) {
         folderEntries = null
         folderLoadError = false
-        val rootUuid = workspaceRootUuid ?: return@LaunchedEffect
+        val root = workspaceRootUuid ?: return@LaunchedEffect
         try {
-            viewModel.getWorkspaceRepo().observeChildren(rootUuid, folderId).collect { entries ->
+            viewModel.getWorkspaceRepo().observeChildren(root, folderId).collect { entries ->
                 folderEntries = entries.filterNot { it.isDirectory }
                 selectedIds.retainAll(folderEntries.orEmpty().mapTo(mutableSetOf()) { it.uuid })
-                if (showDeleteConfirm && selectedIds.isEmpty()) {
-                    showDeleteConfirm = false
-                }
-                folderLoadError = false
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -163,98 +181,214 @@ fun RagFolderScreen(
             folderLoadError = true
         }
     }
-    val documents = folderEntries.orEmpty()
-    val contentState = resolveRagFolderContentState(
-        hasLoaded = folderEntries != null,
-        hasLoadError = folderLoadError,
-        documentCount = documents.size,
-    )
-    val allDocumentsSelected = isAllRagFolderDocumentsSelected(
-        documentCount = documents.size,
-        selectedCount = selectedIds.size,
-    )
 
-    Box(modifier = Modifier.fillMaxSize()) {
-    NexaraPageLayout(
-        title = resolvedFolderName ?: stringResource(R.string.rag_home_documents),
-        onBack = onNavigateBack,
-        scrollable = false, // 内容包含 LazyColumn，禁用外层滚动避免冲突
-        actions = {
-            IconButton(onClick = {
-                if (allDocumentsSelected) {
-                    selectedIds.clear()
-                } else {
-                    selectedIds.clear()
-                    selectedIds.addAll(documents.map { it.uuid })
-                }
-            }, enabled = documents.isNotEmpty()) {
-                Text(
-                    if (allDocumentsSelected) stringResource(R.string.rag_folder_deselect) else stringResource(R.string.rag_folder_select_all),
-                    style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary
-                )
-            }
+    val documents = folderEntries.orEmpty()
+    RagFolderScreenContent(
+        state = RagFolderScreenState(
+            title = resolvedFolderName ?: stringResource(R.string.rag_home_documents),
+            workspaceRootUuid = workspaceRootUuid,
+            documents = documents,
+            folders = folders,
+            currentFolderId = folderId,
+            selectedIds = selectedIds,
+            contentState = resolveRagFolderContentState(folderEntries != null, folderLoadError, documents.size),
+            isIndexing = isIndexing,
+            indexingProgress = indexingProgress,
+            indexingNotice = indexingNotice,
+            canRetryLastFailedIndex = canRetryLastFailedIndex,
+            isRetryingLastFailedIndex = isRetryingLastFailedIndex,
+            isMovingDocuments = isMovingDocuments,
+            isDeletingDocuments = isDeletingDocuments,
+        ),
+        actions = RagFolderScreenActions(
+            onBack = onNavigateBack,
+            onUpload = { picker.launch(SharedFileImporter.SUPPORTED_MIME_TYPES.toTypedArray()) },
+            onOpenDocument = onNavigateToDocEditor,
+            onRetryLoad = { folderLoadAttempt += 1 },
+            onRetryIndex = viewModel::retryLastFailedIndex,
+            onDismissIndexNotice = viewModel::dismissQueueError,
+            onReindex = viewModel::reindexDocuments,
+            onMove = viewModel::moveDocuments,
+            onDelete = viewModel::deleteDocuments,
+        ),
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+internal fun RagFolderScreenContent(
+    state: RagFolderScreenState,
+    actions: RagFolderScreenActions,
+    initialShowMoveSheet: Boolean = false,
+    initialShowDeleteConfirm: Boolean = false,
+) {
+    var showMoveSheet by remember { mutableStateOf(initialShowMoveSheet) }
+    var showDeleteConfirm by remember { mutableStateOf(initialShowDeleteConfirm) }
+    var showTopMenu by remember { mutableStateOf(false) }
+    val allSelected = isAllRagFolderDocumentsSelected(state.documents.size, state.selectedIds.size)
+    val operationsEnabled = !state.isMovingDocuments && !state.isDeletingDocuments
+    val largeFont = LocalDensity.current.fontScale >= 1.5f
+    val toggleAll: () -> Unit = {
+        state.selectedIds.clear()
+        if (!allSelected) state.selectedIds.addAll(state.documents.map { it.uuid })
+    }
+
+    LaunchedEffect(state.selectedIds.isEmpty()) {
+        if (state.selectedIds.isEmpty()) {
+            showMoveSheet = false
+            showDeleteConfirm = false
         }
-    ) {
+    }
+
+    Scaffold(
+        modifier = Modifier.testTag(UiTags.RAG_FOLDER_ROOT),
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.statusBars,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        state.title,
+                        style = if (largeFont) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = actions.onBack) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.common_cd_back))
+                    }
+                },
+                actions = {
+                    if (largeFont) {
+                        Box {
+                            IconButton(
+                                onClick = { showTopMenu = true },
+                                enabled = state.documents.isNotEmpty(),
+                                modifier = Modifier.testTag(UiTags.RAG_FOLDER_SELECT_ALL),
+                            ) {
+                                Icon(Icons.Rounded.MoreVert, stringResource(if (allSelected) R.string.rag_folder_deselect else R.string.rag_folder_select_all))
+                            }
+                            DropdownMenu(expanded = showTopMenu, onDismissRequest = { showTopMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(if (allSelected) R.string.rag_folder_deselect else R.string.rag_folder_select_all)) },
+                                    onClick = {
+                                        toggleAll()
+                                        showTopMenu = false
+                                    },
+                                )
+                            }
+                        }
+                    } else {
+                        TextButton(
+                            onClick = toggleAll,
+                            enabled = state.documents.isNotEmpty(),
+                            modifier = Modifier
+                                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                .testTag(UiTags.RAG_FOLDER_SELECT_ALL),
+                        ) {
+                            Text(stringResource(if (allSelected) R.string.rag_folder_deselect else R.string.rag_folder_select_all))
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+            )
+        },
+        bottomBar = {
+            if (state.selectedIds.isNotEmpty()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .testTag(UiTags.RAG_FOLDER_SELECTION_BAR),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 3.dp,
+                ) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                stringResource(R.string.rag_home_selected_count, state.selectedIds.size),
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            TextButton(
+                                onClick = state.selectedIds::clear,
+                                enabled = operationsEnabled,
+                                modifier = Modifier.testTag(UiTags.RAG_FOLDER_CLEAR_SELECTION),
+                            ) { Text(stringResource(R.string.rag_home_clear_all)) }
+                        }
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            TextButton(
+                                onClick = { showMoveSheet = true },
+                                enabled = operationsEnabled,
+                                modifier = Modifier.testTag(UiTags.RAG_FOLDER_MOVE_SELECTION),
+                            ) { Text(stringResource(R.string.rag_home_move)) }
+                            TextButton(
+                                onClick = { actions.onReindex(state.selectedIds.toList()) },
+                                enabled = operationsEnabled,
+                                modifier = Modifier.testTag(UiTags.RAG_FOLDER_REINDEX_SELECTION),
+                            ) { Text(stringResource(R.string.rag_home_reindex)) }
+                            TextButton(
+                                onClick = { showDeleteConfirm = true },
+                                enabled = operationsEnabled,
+                                modifier = Modifier.testTag(UiTags.RAG_FOLDER_DELETE_SELECTION),
+                            ) { Text(stringResource(R.string.shared_btn_delete), color = MaterialTheme.colorScheme.error) }
+                        }
+                    }
+                }
+            }
+        },
+    ) { paddingValues ->
         Column(
-            modifier = Modifier.padding(
-                bottom = ragFolderSelectionBarReservedHeight(selectedIds.isNotEmpty()).dp,
-            ),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .testTag(UiTags.RAG_FOLDER_CONTENT),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (isIndexing || indexingNotice != null) {
-                val resolvedNotice = indexingNotice?.let(IndexingNotice::template)
-                val statusText = resolvedNotice?.let { resolved ->
-                    stringResource(resolved.resourceId, *resolved.args.toTypedArray())
-                } ?: stringResource(R.string.rag_index_phase_unknown)
-                val isError = indexingNotice?.severity == NoticeSeverity.Error
+            if (state.isIndexing || state.indexingNotice != null) {
+                val notice = state.indexingNotice?.let(IndexingNotice::template)
+                val status = notice?.let { stringResource(it.resourceId, *it.args.toTypedArray()) }
+                    ?: stringResource(R.string.rag_index_phase_unknown)
                 val retryAction: (() -> Unit)? = when {
-                    canRetryLastFailedIndex -> viewModel::retryLastFailedIndex
-                    indexingNotice?.code == IndexingNotice.CODE_IMPORT_FAILED -> {
-                        { filePickerLauncher.launch(SharedFileImporter.SUPPORTED_MIME_TYPES.toTypedArray()) }
-                    }
-                    indexingNotice?.code == IndexingNotice.CODE_MOVE_FAILED && selectedIds.isNotEmpty() -> {
+                    state.canRetryLastFailedIndex -> actions.onRetryIndex
+                    state.indexingNotice?.code == IndexingNotice.CODE_IMPORT_FAILED -> actions.onUpload
+                    state.indexingNotice?.code == IndexingNotice.CODE_MOVE_FAILED && state.selectedIds.isNotEmpty() -> {
                         { showMoveSheet = true }
                     }
-                    indexingNotice?.code == IndexingNotice.CODE_DELETE_FAILED && selectedIds.isNotEmpty() -> {
+                    state.indexingNotice?.code == IndexingNotice.CODE_DELETE_FAILED && state.selectedIds.isNotEmpty() -> {
                         { showDeleteConfirm = true }
                     }
-                    indexingNotice?.code in setOf(IndexingNotice.CODE_FAILED, IndexingNotice.CODE_WARNING) &&
-                        selectedIds.isNotEmpty() -> {
-                        { viewModel.reindexDocuments(selectedIds.toList()) }
+                    state.indexingNotice?.code in setOf(IndexingNotice.CODE_FAILED, IndexingNotice.CODE_WARNING) &&
+                        state.selectedIds.isNotEmpty() -> {
+                        { actions.onReindex(state.selectedIds.toList()) }
                     }
                     else -> null
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.semantics { stateDescription = status }) {
                     IndexingProgressBar(
-                        progress = indexingProgress,
-                        statusText = statusText,
-                        subStatusText = if (retryAction != null && !isRetryingLastFailedIndex) {
-                            stringResource(R.string.rag_index_retry_hint)
-                        } else {
-                            null
-                        },
-                        isError = isError,
+                        progress = state.indexingProgress,
+                        statusText = status,
+                        isError = state.indexingNotice?.severity == NoticeSeverity.Error,
                     )
-                    if (indexingNotice != null) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            retryAction?.let { retry ->
+                    if (state.indexingNotice != null) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            if (retryAction != null) {
                                 TextButton(
-                                    onClick = retry,
-                                    enabled = !isRetryingLastFailedIndex,
-                                    modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
-                                ) {
-                                    Text(stringResource(R.string.shared_btn_retry))
-                                }
+                                    onClick = retryAction,
+                                    enabled = !state.isRetryingLastFailedIndex,
+                                ) { Text(stringResource(R.string.shared_btn_retry)) }
                             }
                             TextButton(
-                                onClick = viewModel::dismissQueueError,
-                                enabled = !isRetryingLastFailedIndex,
-                                modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+                                onClick = actions.onDismissIndexNotice,
+                                enabled = !state.isRetryingLastFailedIndex,
                             ) {
                                 Text(stringResource(R.string.common_dismiss))
                             }
@@ -263,299 +397,89 @@ fun RagFolderScreen(
                 }
             }
 
-            when (contentState) {
-                RagFolderContentState.Loading -> RagFolderLoadingState()
-                RagFolderContentState.Error -> RagFolderLoadErrorState(
-                    onRetry = { folderLoadAttempt += 1 },
-                )
-                RagFolderContentState.Empty -> {
-                    NexaraGlassCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = NexaraShapes.large as RoundedCornerShape
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Description,
-                                contentDescription = null,
-                                tint = NexaraColors.OnSurfaceVariant,
-                                modifier = Modifier.size(40.dp)
-                            )
-                            Text(
-                                text = stringResource(R.string.rag_folder_empty),
-                                style = NexaraTypography.labelMedium,
-                                color = NexaraColors.OnSurface
-                            )
-                            Text(
-                                text = stringResource(R.string.rag_folder_empty_subtitle),
-                                style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
-                                color = NexaraColors.OnSurfaceVariant
-                            )
-                        }
-                    }
-                }
-                RagFolderContentState.Content -> {
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        items(documents, key = { it.uuid }) { doc ->
-                            val status = if (doc.vectorizedAt != null) RagStatus.READY else RagStatus.PENDING
-                            val isSelected = selectedIds.contains(doc.uuid)
-
-                            RagDocItem(
-                                title = doc.name.ifBlank { doc.uuid },
-                                status = status,
-                                isSelected = isSelected,
-                                showCheckbox = shouldShowRagDocumentCheckbox(),
-                                onCheckedChange = { checked ->
-                                    if (checked && doc.uuid !in selectedIds) selectedIds.add(doc.uuid)
-                                    else selectedIds.remove(doc.uuid)
-                                },
-                                fileSize = formatFileSize(doc.sizeBytes),
-                                date = formatDate(doc.updatedAt),
-                                onClick = {
-                                    workspaceRootUuid?.let { rootUuid ->
-                                        onNavigateToDocEditor(rootUuid, doc.uuid)
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Button(
-                onClick = { filePickerLauncher.launch(SharedFileImporter.SUPPORTED_MIME_TYPES.toTypedArray()) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = NexaraColors.SurfaceHigh,
-                    contentColor = NexaraColors.Primary
-                )
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(
-                    Icons.Rounded.Add,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = NexaraColors.Primary
-                )
-                androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
-                Text(
-                    stringResource(R.string.rag_folder_upload),
-                    style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary
-                )
-            }
-
-        }
-    }
-
-    if (selectedIds.isNotEmpty()) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(NexaraColors.SurfaceLow.copy(alpha = 0.95f))
-                    .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(16.dp))
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .height(48.dp)
-                            .clickable(
-                                enabled = !isMovingDocuments && !isDeletingDocuments,
-                                role = Role.Button,
-                                onClickLabel = stringResource(R.string.rag_home_clear_all)
-                            ) { selectedIds.clear() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            stringResource(R.string.rag_home_clear_all),
-                            style = NexaraTypography.labelMedium,
-                            color = NexaraColors.Primary
+                when (state.contentState) {
+                    RagFolderContentState.Loading -> item { RagFolderLoadingState() }
+                    RagFolderContentState.Error -> item { RagFolderLoadErrorState(actions.onRetryLoad) }
+                    RagFolderContentState.Empty -> item { RagFolderEmptyState() }
+                    RagFolderContentState.Content -> items(state.documents, key = { it.uuid }) { doc ->
+                        RagDocItem(
+                            title = doc.name.ifBlank { doc.uuid },
+                            status = if (doc.vectorizedAt != null) RagStatus.READY else RagStatus.PENDING,
+                            isSelected = doc.uuid in state.selectedIds,
+                            showCheckbox = shouldShowRagDocumentCheckbox(),
+                            onCheckedChange = { checked ->
+                                if (checked && doc.uuid !in state.selectedIds) state.selectedIds.add(doc.uuid)
+                                else if (!checked) state.selectedIds.remove(doc.uuid)
+                            },
+                            fileSize = formatFileSize(doc.sizeBytes),
+                            date = formatDate(doc.updatedAt),
+                            onClick = { state.workspaceRootUuid?.let { actions.onOpenDocument(it, doc.uuid) } },
                         )
                     }
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        stringResource(R.string.rag_home_selected_count, selectedIds.size),
-                        style = NexaraTypography.labelMedium,
-                        color = NexaraColors.OnSurfaceVariant
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(NexaraColors.SurfaceContainer)
-                        .clickable(
-                            enabled = !isMovingDocuments && !isDeletingDocuments,
-                            role = Role.Button,
-                            onClickLabel = stringResource(R.string.rag_folder_cd_move)
-                        ) { showMoveSheet = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(
-                                Icons.Rounded.Folder,
-                                contentDescription = null,
-                                tint = NexaraColors.OnSurface,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Text(stringResource(R.string.rag_home_move), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(NexaraColors.SurfaceContainer)
-                            .clickable(
-                                enabled = !isMovingDocuments && !isDeletingDocuments,
-                                role = Role.Button,
-                                onClickLabel = stringResource(R.string.rag_folder_cd_reindex)
-                            ) { viewModel.reindexDocuments(selectedIds.toList()) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(
-                                Icons.Rounded.Refresh,
-                                contentDescription = null,
-                                tint = NexaraColors.OnSurface,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                stringResource(R.string.rag_home_reindex),
-                                style = NexaraTypography.labelMedium,
-                                color = NexaraColors.OnSurface
-                            )
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(NexaraColors.Error.copy(alpha = 0.1f))
-                            .border(0.5.dp, NexaraColors.Error.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
-                            .clickable(
-                                enabled = !isMovingDocuments && !isDeletingDocuments,
-                                role = Role.Button,
-                                onClickLabel = stringResource(R.string.shared_btn_delete)
-                            ) { showDeleteConfirm = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.Delete,
-                                contentDescription = null,
-                                tint = NexaraColors.Error,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                stringResource(R.string.shared_btn_delete),
-                                style = NexaraTypography.labelMedium,
-                                color = NexaraColors.Error
-                            )
-                        }
-                    }
-                }
+            }
+            Button(
+                onClick = actions.onUpload,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 48.dp)
+                    .testTag(UiTags.RAG_FOLDER_UPLOAD),
+            ) {
+                Icon(Icons.Rounded.Add, null, Modifier.size(20.dp))
+                Text(stringResource(R.string.rag_folder_upload), Modifier.padding(start = 8.dp))
             }
         }
-    }
     }
 
     if (showMoveSheet) {
         ModalBottomSheet(
-            onDismissRequest = { if (!isMovingDocuments) showMoveSheet = false },
+            onDismissRequest = { if (!state.isMovingDocuments) showMoveSheet = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = NexaraColors.SurfaceLow,
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+            modifier = Modifier.testTag(UiTags.RAG_FOLDER_MOVE_SHEET),
         ) {
             Column(
-                modifier = Modifier
+                Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.7f)
-                    .padding(24.dp)
-                    .padding(bottom = 40.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(stringResource(R.string.rag_home_move_to_folder), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
-                folders.forEach { folder ->
-                    if (folder.id != folderId) {
-                        val moveToName = stringResource(R.string.rag_folder_cd_move_to, folder.name)
-                        Row(
+                Text(stringResource(R.string.rag_home_move_to_folder), style = MaterialTheme.typography.titleLarge)
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .testTag(UiTags.RAG_FOLDER_MOVE_LIST),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(
+                        items = state.folders.filterNot { it.id == state.currentFolderId },
+                        key = { it.id },
+                    ) { folder ->
+                        ListItem(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(NexaraColors.SurfaceContainer)
+                                .defaultMinSize(minHeight = 48.dp)
+                                .clip(MaterialTheme.shapes.medium)
                                 .clickable(
-                                    enabled = !isMovingDocuments,
+                                    enabled = !state.isMovingDocuments,
                                     role = Role.Button,
-                                    onClickLabel = moveToName,
+                                    onClickLabel = stringResource(R.string.rag_folder_cd_move_to, folder.name),
                                 ) {
-                                    val movingIds = selectedIds.toList()
-                                    if (movingIds.isEmpty()) return@clickable
-                                    viewModel.moveDocuments(
-                                        uuids = movingIds,
-                                        targetParentUuid = folder.id,
-                                    ) { allSucceeded, failedIds ->
-                                        applyMoveSelectionResult(
-                                            selectedIds = selectedIds,
-                                            movingIds = movingIds.toSet(),
-                                            failedIds = failedIds.toSet(),
-                                            succeeded = allSucceeded,
-                                        )
-                                        if (allSucceeded) {
-                                            showMoveSheet = false
-                                        }
+                                    val movingIds = state.selectedIds.toList()
+                                    actions.onMove(movingIds, folder.id) { succeeded, failedIds ->
+                                        applyMoveSelectionResult(state.selectedIds, movingIds.toSet(), failedIds.toSet(), succeeded)
+                                        if (succeeded) showMoveSheet = false
                                     }
-                                }
-                                .padding(14.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Rounded.Folder,
-                                    contentDescription = null,
-                                    tint = NexaraColors.OnSurfaceVariant,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Text(folder.name, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                            }
-                        }
+                                },
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                            leadingContent = { Icon(Icons.Rounded.Folder, null) },
+                            headlineContent = { Text(folder.name) },
+                        )
                     }
                 }
             }
@@ -563,94 +487,71 @@ fun RagFolderScreen(
     }
 
     if (showDeleteConfirm) {
-        ModalBottomSheet(
-            onDismissRequest = { if (!isDeletingDocuments) showDeleteConfirm = false },
-            containerColor = NexaraColors.SurfaceLow,
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.7f)
-                    .padding(24.dp)
-                    .padding(bottom = 40.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(stringResource(R.string.rag_folder_delete_confirm_title, selectedIds.size), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
-                Text(stringResource(R.string.shared_action_cannot_undo), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(
-                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
-                            .background(NexaraColors.SurfaceContainer)
-                            .clickable(enabled = !isDeletingDocuments) { showDeleteConfirm = false }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) { Text(stringResource(R.string.common_btn_cancel), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) }
-                    Box(
-                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
-                            .background(NexaraColors.Error)
-                            .clickable(enabled = !isDeletingDocuments) {
-                                val deletingIds = selectedIds.toList()
-                                viewModel.deleteDocuments(deletingIds) { succeeded, failedIds ->
-                                    applyMoveSelectionResult(
-                                        selectedIds = selectedIds,
-                                        movingIds = deletingIds.toSet(),
-                                        failedIds = failedIds.toSet(),
-                                        succeeded = succeeded,
-                                    )
-                                    showDeleteConfirm = false
-                                }
-                            }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) { Text(stringResource(R.string.shared_btn_delete), style = NexaraTypography.labelMedium, color = NexaraColors.OnError) }
+        AlertDialog(
+            modifier = Modifier.testTag(UiTags.RAG_FOLDER_DELETE_CONFIRM_DIALOG),
+            onDismissRequest = { if (!state.isDeletingDocuments) showDeleteConfirm = false },
+            title = { Text(stringResource(R.string.rag_folder_delete_confirm_title, state.selectedIds.size)) },
+            text = { Text(stringResource(R.string.shared_action_cannot_undo)) },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }, enabled = !state.isDeletingDocuments) {
+                    Text(stringResource(R.string.common_btn_cancel))
                 }
-            }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val deletingIds = state.selectedIds.toList()
+                        actions.onDelete(deletingIds) { succeeded, failedIds ->
+                            applyMoveSelectionResult(state.selectedIds, deletingIds.toSet(), failedIds.toSet(), succeeded)
+                            showDeleteConfirm = false
+                        }
+                    },
+                    enabled = !state.isDeletingDocuments,
+                    modifier = Modifier.testTag(UiTags.RAG_FOLDER_DELETE_CONFIRM_BUTTON),
+                ) { Text(stringResource(R.string.shared_btn_delete), color = MaterialTheme.colorScheme.error) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun RagFolderEmptyState() {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(
+            Modifier.fillMaxWidth().padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.Rounded.Description, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.rag_folder_empty), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.rag_folder_empty_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
 
 @Composable
 private fun RagFolderLoadingState() {
-    NexaraGlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = NexaraShapes.large as RoundedCornerShape,
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            Text(
-                stringResource(R.string.shared_loading),
-                style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurfaceVariant,
-            )
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.fillMaxWidth().padding(32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(stringResource(R.string.shared_loading), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
 private fun RagFolderLoadErrorState(onRetry: () -> Unit) {
-    NexaraGlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = NexaraShapes.large as RoundedCornerShape,
-    ) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(24.dp),
+            Modifier.fillMaxWidth().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                stringResource(R.string.common_cd_failed),
-                style = NexaraTypography.labelMedium,
-                color = NexaraColors.Error,
-            )
-            TextButton(
-                onClick = onRetry,
-                modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
-            ) {
+            Text(stringResource(R.string.common_cd_failed), color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = onRetry, modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)) {
                 Text(stringResource(R.string.shared_btn_retry))
             }
         }
@@ -660,13 +561,9 @@ private fun RagFolderLoadErrorState(onRetry: () -> Unit) {
 private fun formatFileSize(bytes: Long): String {
     if (bytes <= 0) return "0 B"
     val units = arrayOf("B", "KB", "MB", "GB")
-    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
-        .coerceIn(0, units.size - 1)
-    val value = bytes / Math.pow(1024.0, digitGroups.toDouble())
-    return "${"%.1f".format(value)} ${units[digitGroups]}"
+    val group = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.lastIndex)
+    return "${"%.1f".format(bytes / Math.pow(1024.0, group.toDouble()))} ${units[group]}"
 }
 
-private fun formatDate(timestamp: Long): String {
-    val sdf = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
-    return sdf.format(Date(timestamp))
-}
+private fun formatDate(timestamp: Long): String =
+    SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(timestamp))

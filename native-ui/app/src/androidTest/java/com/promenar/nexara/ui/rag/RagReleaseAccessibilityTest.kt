@@ -32,12 +32,15 @@ import com.promenar.nexara.R
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.domain.model.Folder
+import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import com.promenar.nexara.ui.chat.components.FileBatchOperationResult
 import com.promenar.nexara.ui.common.FileIndexStatus
 import com.promenar.nexara.ui.common.IndexStatusBadge
 import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.KgStatusIcon
+import com.promenar.nexara.ui.rag.components.RagDocItem
+import com.promenar.nexara.ui.rag.components.RagStatus
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Rule
@@ -46,6 +49,101 @@ import org.junit.Test
 class RagReleaseAccessibilityTest {
     @get:Rule
     val rule = createComposeRule()
+
+    @Test
+    fun ragFolderDocumentRowExposesStableNode() {
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                RagDocItem(
+                    title = "Release checklist.md",
+                    status = RagStatus.READY,
+                    showCheckbox = true,
+                )
+            }
+        }
+
+        rule.onNodeWithTag("RAG_FOLDER_DOCUMENT_ITEM").assertExists()
+    }
+
+    @Test
+    fun ragFolderLargeFontKeepsSelectionActionsReachableAndDeleteConfirmed() {
+        val deleteCalls = AtomicInteger(0)
+        rule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+                NexaraTheme(dynamicColor = false) {
+                    val selected = remember { mutableStateListOf("doc-a", "doc-b") }
+                    RagFolderScreenContent(
+                        state = ragFolderState(selectedIds = selected),
+                        actions = RagFolderScreenActions(
+                            onDelete = { ids, complete ->
+                                deleteCalls.incrementAndGet()
+                                complete(false, listOf(ids.last()))
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECTION_BAR).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_MOVE_SELECTION).assertHasClickAction()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_REINDEX_SELECTION).assertHasClickAction()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_DELETE_SELECTION).assertHasClickAction().performClick()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_DELETE_CONFIRM_DIALOG).assertExists()
+        rule.runOnIdle { assertThat(deleteCalls.get()).isEqualTo(0) }
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_DELETE_CONFIRM_BUTTON).performClick()
+        rule.runOnIdle { assertThat(deleteCalls.get()).isEqualTo(1) }
+    }
+
+    @Test
+    fun ragFolderMoveSheetScrollsToLastOfTwentyFoldersAndRetainsFailure() {
+        val movedTarget = AtomicReference<String?>(null)
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                val selected = remember { mutableStateListOf("doc-a", "doc-b") }
+                RagFolderScreenContent(
+                    state = ragFolderState(
+                        selectedIds = selected,
+                        folders = (1..20).map { Folder("folder-$it", "Folder $it") },
+                    ),
+                    actions = RagFolderScreenActions(
+                        onMove = { ids, target, complete ->
+                            movedTarget.set(target)
+                            complete(false, listOf(ids.last()))
+                        },
+                    ),
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_MOVE_SELECTION).performClick()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_MOVE_LIST).performScrollToIndex(19)
+        rule.onNodeWithText("Folder 20").assertIsDisplayed().performClick()
+        rule.runOnIdle { assertThat(movedTarget.get()).isEqualTo("folder-20") }
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECTION_BAR).assertExists()
+    }
+
+    @Test
+    fun ragFolderLandscapeKeepsNavigationUploadAndDocumentOpenReachable() {
+        val opened = AtomicReference<String?>(null)
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                RagFolderScreenContent(
+                    state = ragFolderState(selectedIds = remember { mutableStateListOf() }),
+                    actions = RagFolderScreenActions(
+                        onOpenDocument = { _, documentId -> opened.set(documentId) },
+                    ),
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_ROOT).assertExists()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECT_ALL).assertHasClickAction()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_UPLOAD).assertHasClickAction()
+        rule.onNodeWithText("doc-a release checklist with responsive typography.md").performClick()
+        rule.runOnIdle { assertThat(opened.get()).isEqualTo("doc-a") }
+    }
 
     @Test
     fun indexAndKnowledgeGraphStatusesExposeLocalizedTextAndStateDescriptions() {
@@ -429,5 +527,33 @@ class RagReleaseAccessibilityTest {
         isRetryingLastFailedIndex = false,
         indexingFileIds = emptySet(),
         kgExtractionStates = emptyMap(),
+    )
+
+    private fun ragFolderState(
+        selectedIds: MutableList<String>,
+        folders: List<Folder> = emptyList(),
+    ) = RagFolderScreenState(
+        title = "Release Documents",
+        workspaceRootUuid = "root",
+        documents = listOf(ragFolderDocument("doc-a"), ragFolderDocument("doc-b")),
+        folders = folders,
+        currentFolderId = "current-folder",
+        selectedIds = selectedIds,
+        contentState = RagFolderContentState.Content,
+    )
+
+    private fun ragFolderDocument(id: String) = FileEntry(
+        uuid = id,
+        workspaceRootUuid = "root",
+        parentUuid = "current-folder",
+        name = "$id release checklist with responsive typography.md",
+        hash = "sha256:$id",
+        mimeType = "text/markdown",
+        sizeBytes = 4096,
+        physicalRootPath = "/preview",
+        materializedPath = "/$id.md",
+        vectorizedAt = 1L,
+        createdAt = 1L,
+        updatedAt = 1L,
     )
 }

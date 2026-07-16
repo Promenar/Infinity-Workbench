@@ -7,7 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -15,10 +16,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraTypography
 
 enum class RagStatus {
     READY,
@@ -27,42 +28,61 @@ enum class RagStatus {
     PENDING
 }
 
-private val RagStatus.color: Color
-    get() = when (this) {
-        RagStatus.READY -> NexaraColors.RagReady
-        RagStatus.INDEXING -> NexaraColors.RagIndexing
-        RagStatus.ERROR -> NexaraColors.RagError
-        RagStatus.PENDING -> NexaraColors.RagPending
-    }
-
 @Composable
 fun RagStatusChip(
     status: RagStatus,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(status.color.copy(alpha = 0.15f))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically
+    val label = stringResource(
+        when (status) {
+            RagStatus.READY -> R.string.rag_status_ready
+            RagStatus.INDEXING -> R.string.rag_status_indexing
+            RagStatus.ERROR -> R.string.rag_status_error
+            RagStatus.PENDING -> R.string.rag_status_pending
+        },
+    )
+    val containerColor: Color
+    val contentColor: Color
+    when (status) {
+        RagStatus.READY -> {
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        }
+        RagStatus.INDEXING -> {
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+        }
+        RagStatus.ERROR -> {
+            containerColor = MaterialTheme.colorScheme.errorContainer
+            contentColor = MaterialTheme.colorScheme.onErrorContainer
+        }
+        RagStatus.PENDING -> {
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    }
+
+    Surface(
+        modifier = modifier.semantics { stateDescription = label },
+        shape = MaterialTheme.shapes.small,
+        color = containerColor,
+        contentColor = contentColor,
     ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(status.color)
-        )
-        Text(
-            text = when (status) {
-                RagStatus.READY -> stringResource(R.string.rag_status_ready)
-                RagStatus.INDEXING -> stringResource(R.string.rag_status_indexing)
-                RagStatus.ERROR -> stringResource(R.string.rag_status_error)
-                RagStatus.PENDING -> stringResource(R.string.rag_status_pending)
-            },
-            style = NexaraTypography.labelMedium,
-            color = status.color
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(contentColor),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
     }
 }

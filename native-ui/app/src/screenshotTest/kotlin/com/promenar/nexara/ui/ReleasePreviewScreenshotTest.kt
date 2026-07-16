@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,6 +86,10 @@ import com.promenar.nexara.ui.rag.PortalTab
 import com.promenar.nexara.ui.rag.RagHomeScreenActions
 import com.promenar.nexara.ui.rag.RagHomeScreenContent
 import com.promenar.nexara.ui.rag.RagHomeScreenState
+import com.promenar.nexara.ui.rag.RagFolderContentState
+import com.promenar.nexara.ui.rag.RagFolderScreenActions
+import com.promenar.nexara.ui.rag.RagFolderScreenContent
+import com.promenar.nexara.ui.rag.RagFolderScreenState
 import com.promenar.nexara.ui.rag.RagStats
 import com.promenar.nexara.ui.settings.ModelSyncNotice
 import com.promenar.nexara.ui.settings.ModelInfo
@@ -803,6 +808,61 @@ fun ragHomeSelectedDocumentsPhoneReleasePreview() {
 
 @PreviewTest
 @Preview(
+    name = "RAG folder content phone",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragFolderContentPhoneReleasePreview() {
+    ReleasePreviewSurface {
+        RagFolderScreenContent(
+            state = previewRagFolderState(mutableStateListOf()),
+            actions = RagFolderScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG folder selected large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "en",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragFolderSelectedLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        RagFolderScreenContent(
+            state = previewRagFolderState(mutableStateListOf("preview-folder-doc-1", "preview-folder-doc-2")),
+            actions = RagFolderScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG folder content landscape",
+    widthDp = LANDSCAPE_WIDTH_DP,
+    heightDp = LANDSCAPE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragFolderContentLandscapeReleasePreview() {
+    ReleasePreviewSurface {
+        RagFolderScreenContent(
+            state = previewRagFolderState(mutableStateListOf()),
+            actions = RagFolderScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
     name = "RAG FilesPanel deep tree Chinese large font",
     widthDp = 360,
     heightDp = 800,
@@ -947,6 +1007,32 @@ private fun previewMemoryState(memoryVectors: List<MemoryVectorRecord>) = RagHom
     isRetryingLastFailedIndex = false,
     indexingFileIds = emptySet(),
     kgExtractionStates = emptyMap(),
+)
+
+private fun previewRagFolderState(selectedIds: MutableList<String>) = RagFolderScreenState(
+    title = "Release Evidence",
+    workspaceRootUuid = PREVIEW_RAG_ROOT_ID,
+    documents = listOf(
+        previewRagFile(
+            uuid = "preview-folder-doc-1",
+            parentUuid = "preview-folder",
+            name = "Release-readiness-checklist.md",
+            mimeType = "text/markdown",
+            sizeBytes = 24_576L,
+            vectorizedAt = PREVIEW_RAG_NOW_MILLIS - 3_600_000L,
+        ),
+        previewRagFile(
+            uuid = "preview-folder-doc-2",
+            parentUuid = "preview-folder",
+            name = "Android-device-matrix-and-accessibility-results.pdf",
+            mimeType = "application/pdf",
+            sizeBytes = 1_572_864L,
+        ),
+    ),
+    folders = emptyList(),
+    currentFolderId = "preview-folder",
+    selectedIds = selectedIds,
+    contentState = RagFolderContentState.Content,
 )
 
 @PreviewTest
