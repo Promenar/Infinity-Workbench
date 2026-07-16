@@ -23,9 +23,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.R
 
 @Composable
 fun RagDocItem(
@@ -38,10 +41,21 @@ fun RagDocItem(
     date: String? = null,
     onClick: (() -> Unit)? = null
 ) {
+    val openActionLabel = stringResource(R.string.rag_folder_cd_open_document, title)
     val rowModifier = Modifier
         .clip(MaterialTheme.shapes.medium)
         .testTag(UiTags.RAG_FOLDER_DOCUMENT_ITEM)
-        .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+        .then(
+            if (onClick != null) {
+                Modifier.clickable(
+                    onClickLabel = openActionLabel,
+                    role = Role.Button,
+                    onClick = onClick,
+                )
+            } else {
+                Modifier
+            },
+        )
     val metadata = listOfNotNull(fileSize, date).joinToString(" • ")
 
     if (LocalDensity.current.fontScale >= 1.5f) {

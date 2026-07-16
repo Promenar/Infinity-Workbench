@@ -63,37 +63,28 @@ class RagFolderUiStateTest {
     }
 
     @Test
-    fun `选择操作栏不使用固定高度预留空间`() {
-        assertThat(ragFolderSelectionBarReservedHeight(hasSelection = false)).isEqualTo(0)
-        assertThat(ragFolderSelectionBarReservedHeight(hasSelection = true)).isEqualTo(0)
-    }
-
-    @Test
-    fun `文件夹页和文档行使用单层Material表面`() {
+    fun `文件夹页和文档行不恢复Glass表面`() {
         val screen = source("src/main/java/com/promenar/nexara/ui/rag/RagFolderScreen.kt")
         val row = source("src/main/java/com/promenar/nexara/ui/rag/components/RagDocItem.kt")
 
         assertThat(screen).doesNotContain("NexaraGlassCard")
         assertThat(row).doesNotContain("NexaraGlassCard")
-        assertThat(row).contains("ListItem(")
     }
 
     @Test
-    fun `顶部全选使用文字动作或大字体菜单`() {
+    fun `顶部动作不恢复文字IconButton`() {
         val screen = source("src/main/java/com/promenar/nexara/ui/rag/RagFolderScreen.kt")
+        val textIconButton = Regex(
+            """IconButton\s*\(onClick\s*=\s*\{[\s\S]{0,800}?\}\s*,\s*enabled\s*=[\s\S]{0,200}?\)\s*\{\s*Text\s*\("""
+        )
 
-        assertThat(screen).contains("TextButton(")
-        assertThat(screen).contains("DropdownMenuItem(")
-        assertThat(screen).contains("fontScale >= 1.5f")
+        assertThat(textIconButton.containsMatchIn(screen)).isFalse()
     }
 
     @Test
-    fun `移动目录使用有界懒列表且二十项末项可达`() {
+    fun `移动目录不恢复不可滚动forEach列表`() {
         val screen = source("src/main/java/com/promenar/nexara/ui/rag/RagFolderScreen.kt")
 
-        assertThat(screen).contains("RAG_FOLDER_MOVE_LIST")
-        assertThat(screen).contains("LazyColumn(")
-        assertThat(screen).contains("heightIn(max = 420.dp)")
         assertThat(screen).doesNotContain("folders.forEach")
     }
 
@@ -102,25 +93,5 @@ class RagFolderUiStateTest {
         val status = source("src/main/java/com/promenar/nexara/ui/rag/components/RagStatusChip.kt")
 
         assertThat(status).doesNotContain("RoundedCornerShape(50)")
-        assertThat(status).contains("MaterialTheme.colorScheme")
-        assertThat(status).contains("stateDescription")
-    }
-
-    @Test
-    fun `文件夹内容具有可测试状态缝并由Scaffold实测选择栏高度`() {
-        val screen = source("src/main/java/com/promenar/nexara/ui/rag/RagFolderScreen.kt")
-
-        assertThat(screen).contains("internal fun RagFolderScreenContent(")
-        assertThat(screen).contains("bottomBar =")
-        assertThat(screen).contains("RAG_FOLDER_SELECTION_BAR")
-        assertThat(screen).doesNotContain("align(Alignment.BottomCenter)")
-    }
-
-    @Test
-    fun `文档行在二倍字体下把状态移出标题尾部`() {
-        val row = source("src/main/java/com/promenar/nexara/ui/rag/components/RagDocItem.kt")
-
-        assertThat(row).contains("fontScale >= 1.5f")
-        assertThat(row).contains("RagDocItemLargeFont(")
     }
 }

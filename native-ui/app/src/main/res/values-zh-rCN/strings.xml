@@ -896,6 +896,7 @@
     <string name="rag_folder_empty">暂无文档</string>
     <string name="rag_folder_empty_subtitle">上传文档以开始构建知识库。</string>
     <string name="rag_folder_upload">上传文档</string>
+    <string name="rag_folder_cd_open_document">打开 %1$s</string>
     <string name="rag_folder_delete_confirm_title">删除 %1$d 个文档？</string>
 
     <!-- DocEditorScreen -->

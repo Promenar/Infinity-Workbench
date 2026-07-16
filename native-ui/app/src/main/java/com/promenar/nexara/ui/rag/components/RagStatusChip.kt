@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
@@ -63,7 +63,7 @@ fun RagStatusChip(
     }
 
     Surface(
-        modifier = modifier.semantics { stateDescription = label },
+        modifier = modifier.clearAndSetSemantics { stateDescription = label },
         shape = MaterialTheme.shapes.small,
         color = containerColor,
         contentColor = contentColor,

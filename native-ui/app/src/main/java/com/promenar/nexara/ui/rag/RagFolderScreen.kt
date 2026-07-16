@@ -100,8 +100,6 @@ internal fun isAllRagFolderDocumentsSelected(documentCount: Int, selectedCount: 
 
 internal fun shouldShowRagDocumentCheckbox(): Boolean = true
 
-internal fun ragFolderSelectionBarReservedHeight(hasSelection: Boolean): Int = 0
-
 internal data class RagFolderScreenState(
     val title: String,
     val workspaceRootUuid: String?,
@@ -255,7 +253,10 @@ internal fun RagFolderScreenContent(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = actions.onBack) {
+                    IconButton(
+                        onClick = actions.onBack,
+                        modifier = Modifier.testTag(UiTags.RAG_FOLDER_BACK),
+                    ) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.common_cd_back))
                     }
                 },
@@ -272,6 +273,7 @@ internal fun RagFolderScreenContent(
                             DropdownMenu(expanded = showTopMenu, onDismissRequest = { showTopMenu = false }) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(if (allSelected) R.string.rag_folder_deselect else R.string.rag_folder_select_all)) },
+                                    modifier = Modifier.testTag(UiTags.RAG_FOLDER_SELECT_ALL_MENU_ITEM),
                                     onClick = {
                                         toggleAll()
                                         showTopMenu = false

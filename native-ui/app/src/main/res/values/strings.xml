@@ -889,6 +889,7 @@
     <string name="rag_folder_empty">No documents yet</string>
     <string name="rag_folder_empty_subtitle">Upload documents to start building your knowledge base.</string>
     <string name="rag_folder_upload">Upload Document</string>
+    <string name="rag_folder_cd_open_document">Open %1$s</string>
     <string name="rag_folder_delete_confirm_title">Delete %1$d documents?</string>
 
     <!-- DocEditorScreen -->

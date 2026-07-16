@@ -15,6 +15,9 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.FontScale
+import androidx.compose.ui.test.WindowSize
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -22,8 +25,13 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.then
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.test.platform.app.InstrumentationRegistry
@@ -51,26 +59,117 @@ class RagReleaseAccessibilityTest {
     val rule = createComposeRule()
 
     @Test
-    fun ragFolderDocumentRowExposesStableNode() {
+    fun ragFolderDocumentRowExposesButtonRoleLocalizedActionAndIndependentCheckbox() {
+        val clicked = AtomicInteger(0)
+        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
+        val expectedOpenLabel = if (resources.configuration.locales[0].language == "zh") {
+            "打开 Release checklist.md"
+        } else {
+            "Open Release checklist.md"
+        }
         rule.setContent {
             NexaraTheme(dynamicColor = false) {
                 RagDocItem(
                     title = "Release checklist.md",
                     status = RagStatus.READY,
                     showCheckbox = true,
+                    onCheckedChange = {},
+                    onClick = { clicked.incrementAndGet() },
                 )
             }
         }
 
-        rule.onNodeWithTag("RAG_FOLDER_DOCUMENT_ITEM").assertExists()
+        rule.onNodeWithTag("RAG_FOLDER_DOCUMENT_ITEM")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assert(
+                SemanticsMatcher("document row has localized open label") { node ->
+                    runCatching { node.config[SemanticsActions.OnClick].label }.getOrNull() ==
+                        expectedOpenLabel
+                },
+            )
+            .performClick()
+        rule.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox),
+            useUnmergedTree = true,
+        ).assertExists()
+        rule.runOnIdle { assertThat(clicked.get()).isEqualTo(1) }
+    }
+
+    @Test
+    fun ragFolderStatusChipHasStateDescriptionWithoutDuplicateTextSemantics() {
+        val ready = InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(R.string.rag_status_ready)
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                RagDocItem(
+                    title = "Release checklist.md",
+                    status = RagStatus.READY,
+                    onClick = {},
+                )
+            }
+        }
+
+        rule.onNodeWithTag("RAG_FOLDER_DOCUMENT_ITEM")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, ready))
+            .assert(
+                SemanticsMatcher("document row does not duplicate status as text semantics") { node ->
+                    runCatching { node.config[SemanticsProperties.Text] }
+                        .getOrNull()
+                        .orEmpty()
+                        .none { it.text == ready }
+                },
+            )
+    }
+
+    @Test
+    fun ragFolderLargeFontOverflowTogglesAllAndPrimaryCallbacksRemainReachable() {
+        val backClicks = AtomicInteger(0)
+        val uploadClicks = AtomicInteger(0)
+        lateinit var selected: MutableList<String>
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 800.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
+                NexaraTheme(dynamicColor = false) {
+                    selected = remember { mutableStateListOf("doc-a", "doc-b") }
+                    RagFolderScreenContent(
+                        state = ragFolderState(selectedIds = selected),
+                        actions = RagFolderScreenActions(
+                            onBack = { backClicks.incrementAndGet() },
+                            onUpload = { uploadClicks.incrementAndGet() },
+                        ),
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECT_ALL).performClick()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECT_ALL_MENU_ITEM).assertIsDisplayed().performClick()
+        rule.runOnIdle { assertThat(selected).isEmpty() }
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECTION_BAR).assertDoesNotExist()
+
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECT_ALL).performClick()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECT_ALL_MENU_ITEM).assertIsDisplayed().performClick()
+        rule.runOnIdle { assertThat(selected).containsExactly("doc-a", "doc-b").inOrder() }
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECTION_BAR).assertIsDisplayed()
+
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_BACK).assertIsDisplayed().performClick()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_UPLOAD).assertIsDisplayed().performClick()
+        rule.runOnIdle {
+            assertThat(backClicks.get()).isEqualTo(1)
+            assertThat(uploadClicks.get()).isEqualTo(1)
+        }
     }
 
     @Test
     fun ragFolderLargeFontKeepsSelectionActionsReachableAndDeleteConfirmed() {
         val deleteCalls = AtomicInteger(0)
         rule.setContent {
-            val density = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 800.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
                 NexaraTheme(dynamicColor = false) {
                     val selected = remember { mutableStateListOf("doc-a", "doc-b") }
                     RagFolderScreenContent(
@@ -127,22 +226,35 @@ class RagReleaseAccessibilityTest {
     @Test
     fun ragFolderLandscapeKeepsNavigationUploadAndDocumentOpenReachable() {
         val opened = AtomicReference<String?>(null)
+        val backClicks = AtomicInteger(0)
+        val uploadClicks = AtomicInteger(0)
         rule.setContent {
-            NexaraTheme(dynamicColor = false) {
-                RagFolderScreenContent(
-                    state = ragFolderState(selectedIds = remember { mutableStateListOf() }),
-                    actions = RagFolderScreenActions(
-                        onOpenDocument = { _, documentId -> opened.set(documentId) },
-                    ),
-                )
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(800.dp, 360.dp)),
+            ) {
+                NexaraTheme(dynamicColor = false) {
+                    RagFolderScreenContent(
+                        state = ragFolderState(selectedIds = remember { mutableStateListOf() }),
+                        actions = RagFolderScreenActions(
+                            onBack = { backClicks.incrementAndGet() },
+                            onUpload = { uploadClicks.incrementAndGet() },
+                            onOpenDocument = { _, documentId -> opened.set(documentId) },
+                        ),
+                    )
+                }
             }
         }
 
         rule.onNodeWithTag(UiTags.RAG_FOLDER_ROOT).assertExists()
         rule.onNodeWithTag(UiTags.RAG_FOLDER_SELECT_ALL).assertHasClickAction()
-        rule.onNodeWithTag(UiTags.RAG_FOLDER_UPLOAD).assertHasClickAction()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_BACK).assertIsDisplayed().performClick()
+        rule.onNodeWithTag(UiTags.RAG_FOLDER_UPLOAD).assertIsDisplayed().performClick()
         rule.onNodeWithText("doc-a release checklist with responsive typography.md").performClick()
-        rule.runOnIdle { assertThat(opened.get()).isEqualTo("doc-a") }
+        rule.runOnIdle {
+            assertThat(backClicks.get()).isEqualTo(1)
+            assertThat(uploadClicks.get()).isEqualTo(1)
+            assertThat(opened.get()).isEqualTo("doc-a")
+        }
     }
 
     @Test
