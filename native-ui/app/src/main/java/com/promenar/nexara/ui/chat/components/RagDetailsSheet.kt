@@ -1,46 +1,77 @@
-// UNIT TEST EXEMPTION STATEMENT: 本文件仅涉及 Jetpack Compose 纯布局、UI 交互展现与跳转逻辑，不包含任何数据转换、判定、图算法或状态流转核心业务逻辑，故依全局开发规范 §3.4 予以单元测试豁免。
+// UNIT TEST EXEMPTION STATEMENT: 本文件仅涉及 Jetpack Compose 纯布局、UI 交互展现与跳转逻辑，不包含任何数据转换、判定、图算法或状态流转核心业务逻辑，故依全局开发规范 §4.2 予以单元测试豁免。
 package com.promenar.nexara.ui.chat.components
 
-
-import androidx.compose.animation.*
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.automirrored.rounded.TrendingDown
+import androidx.compose.material.icons.automirrored.rounded.TrendingUp
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Source
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.promenar.nexara.data.model.KgPath
-import com.promenar.nexara.data.model.RagReference
-import com.promenar.nexara.ui.common.NexaraGlassCard
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraTypography
-import kotlin.math.roundToInt
-
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.Citation
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.res.stringResource
+import com.promenar.nexara.data.model.KgPath
+import com.promenar.nexara.data.model.RagReference
+import com.promenar.nexara.ui.testing.UiTags
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
-private enum class InspectionTab(val labelRes: Int) {
+enum class RagDetailsTab(val labelRes: Int) {
     Retrieved(R.string.rag_details_tab_retrieved),
     WebSearch(R.string.rag_details_tab_web_search),
-    KnowledgeGraph(R.string.rag_details_tab_knowledge_graph)
+    KnowledgeGraph(R.string.rag_details_tab_knowledge_graph),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,254 +80,356 @@ fun RagDetailsSheet(
     references: List<RagReference>?,
     kgPaths: List<KgPath>?,
     citations: List<Citation>? = null,
-    onDismissRequest: () -> Unit
+    onDismissRequest: () -> Unit,
+    openLink: ((String) -> Unit)? = null,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    
-    val hasReferences = !references.isNullOrEmpty()
-    val hasKgPaths = !kgPaths.isNullOrEmpty()
-    val hasCitations = !citations.isNullOrEmpty()
-
-    val initialTab = when {
-        hasReferences -> 0
-        hasCitations -> 1
-        hasKgPaths -> 2
-        else -> 0
-    }
-    var selectedTab by remember { mutableIntStateOf(initialTab) }
-    val tabs = InspectionTab.entries
-
+    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+    )
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
-        containerColor = NexaraColors.SurfaceLow,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.3f)) }
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        dragHandle = { BottomSheetDefaults.DragHandle() },
     ) {
+        RagDetailsSheetContent(
+            references = references.orEmpty(),
+            citations = citations.orEmpty(),
+            kgPaths = kgPaths.orEmpty(),
+            modifier = Modifier.fillMaxHeight(0.82f),
+            openLink = openLink,
+        )
+    }
+}
+
+@Composable
+fun RagDetailsSheetContent(
+    references: List<RagReference>,
+    citations: List<Citation>,
+    kgPaths: List<KgPath>,
+    modifier: Modifier = Modifier,
+    initialTab: RagDetailsTab = initialRagDetailsTab(references, citations, kgPaths),
+    openLink: ((String) -> Unit)? = null,
+) {
+    var selectedTabIndex by rememberSaveable(initialTab) { mutableIntStateOf(initialTab.ordinal) }
+    val tabs = RagDetailsTab.entries
+    val uriHandler = LocalUriHandler.current
+    val linkOpener = openLink ?: uriHandler::openUri
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val failureMessage = stringResource(R.string.rag_details_link_error)
+    val retryLabel = stringResource(R.string.rag_details_retry)
+
+    fun requestOpen(url: String) {
+        scope.launch {
+            runCatching { linkOpener(url) }
+                .onFailure {
+                    val result = snackbarHostState.showSnackbar(
+                        message = failureMessage,
+                        actionLabel = retryLabel,
+                        withDismissAction = true,
+                    )
+                    if (result == SnackbarResult.ActionPerformed) requestOpen(url)
+                }
+        }
+    }
+
+    Scaffold(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag(UiTags.RAG_DETAILS_ROOT),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    modifier = Modifier.testTag(UiTags.RAG_DETAILS_LINK_ERROR),
+                    action = {
+                        TextButton(
+                            onClick = data::performAction,
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag(UiTags.RAG_DETAILS_LINK_RETRY),
+                        ) {
+                            Text(data.visuals.actionLabel.orEmpty())
+                        }
+                    },
+                    dismissAction = null,
+                ) {
+                    Text(data.visuals.message)
+                }
+            }
+        },
+    ) { contentPadding ->
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.8f)
-                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .fillMaxSize()
+                .padding(contentPadding)
+                .padding(horizontal = 16.dp),
         ) {
             Text(
                 text = stringResource(R.string.rag_details_title),
-                style = NexaraTypography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = NexaraColors.OnSurface,
-                modifier = Modifier.padding(bottom = 12.dp)
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
             )
-
-            ScrollableTabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = NexaraColors.SurfaceLow,
-                contentColor = NexaraColors.Primary,
+            PrimaryScrollableTabRow(
+                selectedTabIndex = selectedTabIndex,
                 edgePadding = 0.dp,
-                indicator = { tabPositions ->
-                    if (selectedTab < tabPositions.size) {
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                            height = 2.dp,
-                            color = NexaraColors.Primary
-                        )
-                    }
-                },
-                divider = {}
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                divider = {},
             ) {
                 tabs.forEachIndexed { index, tab ->
                     Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = {
-                            Text(
-                                text = stringResource(tab.labelRes),
-                                style = NexaraTypography.labelMedium.copy(
-                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
-                                ),
-                                color = if (selectedTab == index) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
-                            )
-                        }
+                        selected = selectedTabIndex == index,
+                        onClick = { selectedTabIndex = index },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag(tab.testTag()),
+                        text = { Text(stringResource(tab.labelRes)) },
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Crossfade(
-                targetState = selectedTab,
-                label = "tab-crossfade",
-                modifier = Modifier.weight(1f)
-            ) { page ->
-                when (page) {
-                    0 -> {
-                        if (hasReferences) {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.spacedBy(16.dp),
-                                contentPadding = PaddingValues(bottom = 32.dp)
-                            ) {
-                                item {
-                                    SectionHeader(
-                                        title = stringResource(R.string.rag_details_section_retrieved),
-                                        icon = Icons.Rounded.Source
-                                    )
-                                }
-                                itemsIndexed(references!!) { index, ref ->
-                                    RagReferenceCard(ref = ref, rank = index + 1)
-                                }
-                            }
-                        } else {
-                            EmptyStateText()
-                        }
-                    }
-                    1 -> {
-                        if (hasCitations) {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                contentPadding = PaddingValues(bottom = 32.dp)
-                            ) {
-                                item {
-                                    SectionHeader(
-                                        title = stringResource(R.string.rag_details_section_web_search),
-                                        icon = Icons.Rounded.TravelExplore
-                                    )
-                                }
-                                itemsIndexed(citations!!) { index, citation ->
-                                    WebSearchReferenceCard(citation = citation, rank = index + 1)
-                                }
-                            }
-                        } else {
-                            EmptyStateText()
-                        }
-                    }
-                    2 -> {
-                        if (hasKgPaths) {
-                            KgPathsTab(
-                                kgPaths = kgPaths!!,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            EmptyStateText()
-                        }
-                    }
-                }
+            Spacer(Modifier.height(8.dp))
+            when (tabs[selectedTabIndex]) {
+                RagDetailsTab.Retrieved -> RetrievedReferencesList(references)
+                RagDetailsTab.WebSearch -> WebCitationsList(citations, ::requestOpen)
+                RagDetailsTab.KnowledgeGraph -> KnowledgeGraphList(kgPaths)
             }
         }
     }
 }
 
+private fun initialRagDetailsTab(
+    references: List<RagReference>,
+    citations: List<Citation>,
+    kgPaths: List<KgPath>,
+): RagDetailsTab = when {
+    references.isNotEmpty() -> RagDetailsTab.Retrieved
+    citations.isNotEmpty() -> RagDetailsTab.WebSearch
+    kgPaths.isNotEmpty() -> RagDetailsTab.KnowledgeGraph
+    else -> RagDetailsTab.Retrieved
+}
+
+private fun RagDetailsTab.testTag(): String = when (this) {
+    RagDetailsTab.Retrieved -> UiTags.RAG_DETAILS_TAB_RETRIEVED
+    RagDetailsTab.WebSearch -> UiTags.RAG_DETAILS_TAB_WEB
+    RagDetailsTab.KnowledgeGraph -> UiTags.RAG_DETAILS_TAB_KG
+}
+
 @Composable
-private fun WebSearchReferenceCard(citation: Citation, rank: Int) {
-    val uriHandler = LocalUriHandler.current
-    val openLinkLabel = stringResource(R.string.rag_details_open_link)
-    NexaraGlassCard(
+private fun RetrievedReferencesList(references: List<RagReference>) {
+    if (references.isEmpty()) {
+        EmptyDetailsState()
+        return
+    }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag(UiTags.RAG_DETAILS_LIST),
+        contentPadding = PaddingValues(bottom = 24.dp),
+    ) {
+        itemsIndexed(
+            items = references,
+            key = { index, reference ->
+                reference.id.ifBlank { "${reference.source}:${reference.chunkIndex}:$index" }
+            },
+        ) { index, reference ->
+            RetrievedReferenceRow(reference, index)
+            if (index != references.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
+    }
+}
+
+@Composable
+private fun RetrievedReferenceRow(reference: RagReference, index: Int) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClickLabel = openLinkLabel) {
-                try {
-                    uriHandler.openUri(citation.url)
-                } catch (e: Exception) {
-                    // 防御性崩溃保护
-                }
-            },
-        shape = RoundedCornerShape(12.dp)
+            .testTag(UiTags.ragDetailsReferenceItem(index))
+            .padding(vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            RankLabel(index + 1)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .background(NexaraColors.Primary.copy(alpha = 0.2f), CircleShape),
-                        contentAlignment = Alignment.Center
+                Text(
+                    text = reference.source.substringAfterLast('/').ifBlank {
+                        stringResource(R.string.rag_details_unknown_source)
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                scoreSummary(reference).takeIf(String::isNotBlank)?.let { summary ->
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (reference.rankChange != null && reference.rankChange != 0) {
+                    val movedUp = reference.rankChange > 0
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
+                        Icon(
+                            imageVector = if (movedUp) Icons.AutoMirrored.Rounded.TrendingUp else Icons.AutoMirrored.Rounded.TrendingDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
                         Text(
-                            "#$rank",
-                            style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = NexaraColors.Primary
+                            text = stringResource(
+                                if (movedUp) R.string.rag_details_rank_up else R.string.rag_details_rank_down,
+                                abs(reference.rankChange),
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+            }
+        }
+        Text(
+            text = reference.content,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
+private fun scoreSummary(reference: RagReference): String {
+    val scores = buildList {
+        if (reference.score > 0f) {
+            add("${stringResource(R.string.rag_details_score_vector)} ${(reference.score * 100).roundToInt()}%")
+        }
+        reference.rerankScore?.let { score ->
+            add("${stringResource(R.string.rag_details_score_rerank)} ${(score * 100).roundToInt()}%")
+        }
+    }
+    return scores.joinToString(" · ")
+}
+
+@Composable
+private fun WebCitationsList(citations: List<Citation>, onOpen: (String) -> Unit) {
+    if (citations.isEmpty()) {
+        EmptyDetailsState()
+        return
+    }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag(UiTags.RAG_DETAILS_LIST),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(bottom = 24.dp),
+    ) {
+        itemsIndexed(
+            items = citations,
+            key = { index, citation -> "${citation.url}:$index" },
+        ) { index, citation ->
+            WebCitationRow(citation, index, onOpen)
+        }
+    }
+}
+
+@Composable
+private fun WebCitationRow(citation: Citation, index: Int, onOpen: (String) -> Unit) {
+    val openLabel = stringResource(R.string.rag_details_open_link)
+    val unknownSource = stringResource(R.string.rag_details_unknown_source)
+    val usesStackedHeader = LocalDensity.current.fontScale >= 1.5f
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(
+                onClickLabel = openLabel,
+                role = Role.Button,
+                onClick = { onOpen(citation.url) },
+            )
+            .testTag(UiTags.ragDetailsWebItem(index)),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (usesStackedHeader) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RankLabel(index + 1)
+                    Spacer(Modifier.weight(1f))
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Text(
+                    text = citation.title.ifBlank { stringResource(R.string.rag_details_unknown_webpage) },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            } else {
+                Row(
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    RankLabel(index + 1)
                     Text(
                         text = citation.title.ifBlank { stringResource(R.string.rag_details_unknown_webpage) },
-                        style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = NexaraColors.OnSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
                     )
-                }
-
-                // 来源小标签 (Tavily/DuckDuckGo/SearXNG/Google Grounding 等)
-                val source = citation.source ?: "Google"
-                Surface(
-                    color = NexaraColors.Tertiary.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(4.dp),
-                    border = BorderStroke(0.5.dp, NexaraColors.Tertiary.copy(alpha = 0.3f))
-                ) {
-                    Text(
-                        text = source,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        style = NexaraTypography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
-                        color = NexaraColors.Tertiary
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
-
-            // Web snippet / abstract text block
-            if (!citation.snippet.isNullOrBlank()) {
-                Surface(
-                    color = NexaraColors.SurfaceContainer.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = citation.snippet,
-                        style = NexaraTypography.bodySmall.copy(
-                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.85f),
-                            lineHeight = 16.sp
-                        ),
-                        modifier = Modifier.padding(10.dp)
-                    )
-                }
+            Text(
+                text = citation.source?.takeIf(String::isNotBlank) ?: unknownSource,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            citation.snippet?.takeIf(String::isNotBlank)?.let { snippet ->
+                Text(
+                    text = snippet,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-
-            // URL 链接展现与新页面打开提示
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.fillMaxWidth()
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(
-                    Icons.Rounded.Language,
+                    imageVector = Icons.Rounded.Link,
                     contentDescription = null,
-                    tint = NexaraColors.Primary.copy(alpha = 0.7f),
-                    modifier = Modifier.size(12.dp)
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
                 )
                 Text(
                     text = citation.url,
-                    style = NexaraTypography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp
-                    ),
-                    color = NexaraColors.Primary.copy(alpha = 0.8f),
-                    maxLines = 1,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                Icon(
-                    Icons.Rounded.OpenInNew,
-                    contentDescription = openLinkLabel,
-                    tint = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(12.dp)
+                    modifier = Modifier.weight(1f),
                 )
             }
         }
@@ -304,273 +437,151 @@ private fun WebSearchReferenceCard(citation: Citation, rank: Int) {
 }
 
 @Composable
-private fun EmptyStateText() {
-    Box(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = stringResource(R.string.rag_details_empty),
-            style = NexaraTypography.bodyMedium,
-            color = NexaraColors.OnSurfaceVariant
-        )
+private fun KnowledgeGraphList(kgPaths: List<KgPath>) {
+    if (kgPaths.isEmpty()) {
+        EmptyDetailsState()
+        return
     }
-}
-
-@Composable
-private fun SectionHeader(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(bottom = 8.dp)
-    ) {
-        Icon(icon, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
-        Text(
-            text = title,
-            style = NexaraTypography.labelLarge.copy(fontWeight = FontWeight.Bold),
-            color = NexaraColors.OnSurface
-        )
-    }
-}
-
-@Composable
-private fun RagReferenceCard(ref: RagReference, rank: Int) {
-    NexaraGlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .background(NexaraColors.Primary.copy(alpha = 0.2f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("#$rank", style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold), color = NexaraColors.Primary)
-                    }
-                    Text(
-                        text = ref.source.substringAfterLast("/"),
-                        style = NexaraTypography.labelMedium,
-                        color = NexaraColors.OnSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                }
-
-                // Scores
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (ref.score > 0f) {
-                        ScoreBadge(
-                            label = stringResource(R.string.rag_details_score_vector),
-                            score = ref.score,
-                            color = NexaraColors.Tertiary
-                        )
-                    }
-                    if (ref.rerankScore != null) {
-                        ScoreBadge(
-                            label = stringResource(R.string.rag_details_score_rerank),
-                            score = ref.rerankScore,
-                            color = NexaraColors.Primary
-                        )
-                    }
-                }
-            }
-
-            // Rank Change
-            if (ref.rankChange != null && ref.rankChange != 0) {
-                val successColor = androidx.compose.ui.graphics.Color(0xFF4CAF50)
-                val errorColor = androidx.compose.ui.graphics.Color(0xFFF44336)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(
-                        if (ref.rankChange > 0) Icons.Rounded.TrendingUp else Icons.Rounded.TrendingDown,
-                        contentDescription = null,
-                        tint = if (ref.rankChange > 0) successColor else errorColor,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = stringResource(
-                            if (ref.rankChange > 0) R.string.rag_details_rank_up else R.string.rag_details_rank_down,
-                            kotlin.math.abs(ref.rankChange)
-                        ),
-                        style = NexaraTypography.labelSmall,
-                        color = if (ref.rankChange > 0) successColor else errorColor
-                    )
-                }
-            }
-
-            // Content
-            Surface(
-                color = NexaraColors.SurfaceContainer.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text(
-                    text = ref.content,
-                    style = NexaraTypography.bodySmall,
-                    color = NexaraColors.OnSurfaceVariant,
-                    modifier = Modifier.padding(10.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ScoreBadge(label: String, score: Float, color: androidx.compose.ui.graphics.Color) {
-    Surface(
-        color = color.copy(alpha = 0.1f),
-        border = BorderStroke(0.5.dp, color.copy(alpha = 0.3f)),
-        shape = RoundedCornerShape(4.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(label, style = NexaraTypography.labelSmall.copy(fontSize = 9.sp), color = color.copy(alpha = 0.8f))
-            Text("${(score * 100).roundToInt()}%", style = NexaraTypography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold), color = color)
-        }
-    }
-}
-
-@Composable
-private fun KgPathsTab(kgPaths: List<KgPath>, modifier: Modifier = Modifier) {
     LazyColumn(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(bottom = 32.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag(UiTags.RAG_DETAILS_LIST),
+        contentPadding = PaddingValues(bottom = 24.dp),
     ) {
-        itemsIndexed(kgPaths) { index, path ->
-            KgPathSection(path = path, index = index + 1)
+        kgPaths.forEachIndexed { pathIndex, path ->
+            item(key = "path-header:$pathIndex:${path.queryKeywords.joinToString()}") {
+                KgPathHeader(path, pathIndex)
+            }
+            itemsIndexed(
+                items = path.edges,
+                key = { edgeIndex, edge ->
+                    "path-edge:$pathIndex:$edgeIndex:${edge.sourceId}:${edge.targetId}:${edge.relation}"
+                },
+            ) { edgeIndex, edge ->
+                val source = path.nodes.find { it.id == edge.sourceId }?.label ?: edge.sourceId
+                val target = path.nodes.find { it.id == edge.targetId }?.label ?: edge.targetId
+                KgRelationshipSentence(
+                    source = source,
+                    relation = edge.relation,
+                    target = target,
+                    modifier = Modifier.testTag(UiTags.ragDetailsKgRelation(pathIndex, edgeIndex)),
+                )
+            }
+            path.reasoning?.takeIf(String::isNotBlank)?.let { reasoning ->
+                item(key = "path-reasoning:$pathIndex") {
+                    Row(
+                        modifier = Modifier.padding(start = 36.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Lightbulb,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = reasoning,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            if (pathIndex != kgPaths.lastIndex) {
+                item(key = "path-divider:$pathIndex") {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun KgPathSection(path: KgPath, index: Int) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun KgPathHeader(path: KgPath, pathIndex: Int) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(UiTags.ragDetailsKgPath(pathIndex))
+            .padding(top = 12.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(20.dp)
-                    .background(NexaraColors.Tertiary.copy(alpha = 0.2f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    stringResource(R.string.rag_details_path_label, index),
-                    style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = NexaraColors.Tertiary
-                )
-            }
+            RankLabel(pathIndex + 1)
             Text(
-                text = stringResource(
-                    R.string.rag_details_keywords,
-                    path.queryKeywords.joinToString(", ")
-                ),
-                style = NexaraTypography.labelSmall,
-                color = NexaraColors.OnSurfaceVariant
+                text = stringResource(R.string.rag_details_path_label, pathIndex + 1),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
             )
         }
-
-        path.edges.forEachIndexed { i, edge ->
-            val sourceNode = path.nodes.find { it.id == edge.sourceId }?.label ?: edge.sourceId
-            val targetNode = path.nodes.find { it.id == edge.targetId }?.label ?: edge.targetId
-
-            KgEdgeRow(
-                sourceLabel = sourceNode,
-                targetLabel = targetNode,
-                relation = edge.relation
-            )
-
-            if (i < path.edges.size - 1) {
-                Box(
-                    modifier = Modifier
-                        .padding(start = 10.dp)
-                        .width(2.dp)
-                        .height(8.dp)
-                        .background(NexaraColors.OutlineVariant.copy(alpha = 0.3f))
-                )
-            }
-        }
-
-        if (!path.reasoning.isNullOrBlank()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(
-                    Icons.Rounded.Lightbulb,
-                    null,
-                    tint = NexaraColors.Primary,
-                    modifier = Modifier.size(14.dp)
-                )
-                Text(
-                    text = path.reasoning,
-                    style = NexaraTypography.labelSmall,
-                    color = NexaraColors.OnSurfaceVariant
-                )
-            }
-        }
+        Text(
+            text = stringResource(R.string.rag_details_keywords, path.queryKeywords.joinToString(", ")),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 36.dp),
+        )
     }
 }
 
 @Composable
-private fun KgEdgeRow(sourceLabel: String, targetLabel: String, relation: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+private fun KgRelationshipSentence(
+    source: String,
+    relation: String,
+    target: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = 36.dp, end = 4.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        KgNodeCard(label = sourceLabel, modifier = Modifier.weight(1f))
-        KgRelationBadge(relation = relation)
-        KgNodeCard(label = targetLabel, modifier = Modifier.weight(1f))
+        Text(source, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        Text(relation, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text(target, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
 @Composable
-private fun KgNodeCard(label: String, modifier: Modifier = Modifier) {
-    NexaraGlassCard(
-        modifier = modifier,
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(2.dp)
-                    .background(NexaraColors.Primary)
-            )
-            Text(
-                text = label,
-                style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                color = NexaraColors.OnSurface,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun KgRelationBadge(relation: String) {
+private fun RankLabel(rank: Int) {
     Surface(
-        color = NexaraColors.SurfaceHigh,
-        shape = RoundedCornerShape(4.dp)
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
         Text(
-            text = relation,
-            style = NexaraTypography.labelSmall.copy(
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace
-            ),
-            color = NexaraColors.OnSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+            text = rank.toString(),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         )
+    }
+}
+
+@Composable
+private fun EmptyDetailsState() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Source,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(R.string.rag_details_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

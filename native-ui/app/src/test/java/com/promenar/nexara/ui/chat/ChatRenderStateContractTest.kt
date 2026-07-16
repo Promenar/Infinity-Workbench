@@ -251,7 +251,7 @@ class ChatRenderStateContractTest {
         val cardSources = listOf(
             source
                 .substringAfter("fun RagProgressCard(")
-                .substringBefore("\n@Composable\nprivate fun NeonMicroRail("),
+                .substringBefore("\n@Composable\nfun ToolExecutionTimeline("),
             source
                 .substringAfter("fun SummaryCard(")
                 .substringBefore("\n@Composable\nfun ApprovalCard("),

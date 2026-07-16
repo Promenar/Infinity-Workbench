@@ -181,6 +181,26 @@ object UiTags {
     const val RAG_FOLDER_DELETE_CONFIRM_BUTTON = "RAG_FOLDER_DELETE_CONFIRM_BUTTON"
     const val RAG_FOLDER_UPLOAD = "RAG_FOLDER_UPLOAD"
 
+    // ============ RAG Details ==========
+    const val RAG_DETAILS_ROOT = "RAG_DETAILS_ROOT"
+    const val RAG_DETAILS_TAB_RETRIEVED = "RAG_DETAILS_TAB_RETRIEVED"
+    const val RAG_DETAILS_TAB_WEB = "RAG_DETAILS_TAB_WEB"
+    const val RAG_DETAILS_TAB_KG = "RAG_DETAILS_TAB_KG"
+    const val RAG_DETAILS_LIST = "RAG_DETAILS_LIST"
+    const val RAG_DETAILS_LINK_ERROR = "RAG_DETAILS_LINK_ERROR"
+    const val RAG_DETAILS_LINK_RETRY = "RAG_DETAILS_LINK_RETRY"
+    const val RAG_PROGRESS_CARD = "RAG_PROGRESS_CARD"
+    private const val RAG_DETAILS_REFERENCE_ITEM_PREFIX = "RAG_DETAILS_REFERENCE_ITEM:"
+    private const val RAG_DETAILS_WEB_ITEM_PREFIX = "RAG_DETAILS_WEB_ITEM:"
+    private const val RAG_DETAILS_KG_PATH_PREFIX = "RAG_DETAILS_KG_PATH:"
+    private const val RAG_DETAILS_KG_RELATION_PREFIX = "RAG_DETAILS_KG_RELATION:"
+
+    fun ragDetailsReferenceItem(index: Int): String = "$RAG_DETAILS_REFERENCE_ITEM_PREFIX$index"
+    fun ragDetailsWebItem(index: Int): String = "$RAG_DETAILS_WEB_ITEM_PREFIX$index"
+    fun ragDetailsKgPath(index: Int): String = "$RAG_DETAILS_KG_PATH_PREFIX$index"
+    fun ragDetailsKgRelation(pathIndex: Int, edgeIndex: Int): String =
+        "$RAG_DETAILS_KG_RELATION_PREFIX$pathIndex:$edgeIndex"
+
     // ============ Doc Editor ==========
     const val DOC_EDITOR_ROOT = "doc_editor_root"
     const val DOC_EDITOR_BACK = "doc_editor_back"

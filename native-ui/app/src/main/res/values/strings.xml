@@ -1173,6 +1173,10 @@
     <string name="rag_details_path_label">Path %1$d</string>
     <string name="rag_details_keywords">Keywords: %1$s</string>
     <string name="rag_details_open_link">Open link</string>
+    <string name="rag_details_unknown_source">Unknown source</string>
+    <string name="rag_details_link_error">Couldn’t open this link.</string>
+    <string name="rag_details_retry">Retry</string>
+    <string name="chat_rag_open_details">Open retrieval details</string>
 
     <string name="recycle_bin_auto_cleanup">Items in the recycle bin are automatically deleted after 30 days</string>
     <string name="recycle_bin_permanent_delete_title">Permanently delete</string>

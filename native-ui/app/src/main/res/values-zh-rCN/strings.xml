@@ -1174,6 +1174,10 @@
     <string name="rag_details_path_label">路径 %1$d</string>
     <string name="rag_details_keywords">关键词：%1$s</string>
     <string name="rag_details_open_link">打开链接</string>
+    <string name="rag_details_unknown_source">未知来源</string>
+    <string name="rag_details_link_error">无法打开此链接。</string>
+    <string name="rag_details_retry">重试</string>
+    <string name="chat_rag_open_details">打开检索详情</string>
 
     <string name="recycle_bin_auto_cleanup">回收站中的项目将在 30 天后自动清理</string>
     <string name="recycle_bin_permanent_delete_title">永久删除</string>

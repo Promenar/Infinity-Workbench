@@ -27,6 +27,10 @@ import androidx.compose.ui.unit.dp
 import com.android.tools.screenshot.PreviewTest
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ApprovalRequest
+import com.promenar.nexara.data.model.Citation
+import com.promenar.nexara.data.model.KgEdge
+import com.promenar.nexara.data.model.KgNode
+import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Session
@@ -34,6 +38,7 @@ import com.promenar.nexara.data.backup.BackupExportOptions
 import com.promenar.nexara.data.backup.PendingRestoreMetadata
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.webdav.RemoteBackup
 import com.promenar.nexara.data.remote.webdav.WebDavConfig
@@ -58,6 +63,7 @@ import com.promenar.nexara.ui.chat.ResourceExplorerSheetContent
 import com.promenar.nexara.ui.chat.ResourceExplorerSheetState
 import com.promenar.nexara.ui.chat.ResourceExplorerTab
 import com.promenar.nexara.ui.chat.components.FilesPanel
+import com.promenar.nexara.ui.chat.components.RagDetailsSheetContent
 import com.promenar.nexara.ui.chat.components.RecycleBinPanel
 import com.promenar.nexara.ui.chat.components.RecycleBinPermanentDeleteDialog
 import com.promenar.nexara.ui.chat.components.RecycleOperation
@@ -125,6 +131,63 @@ private const val LANDSCAPE_WIDTH_DP = 892
 private const val LANDSCAPE_HEIGHT_DP = 412
 private const val PREVIEW_CHAT_MODEL_ID = "default::deepseek-v4-flash"
 private const val PREVIEW_MEMORY_ID = "preview-memory-1"
+
+private val PREVIEW_RAG_DETAILS_REFERENCES = listOf(
+    RagReference(
+        id = "reference-release-gate",
+        source = "/knowledge/release/complete-accessibility-and-visual-regression-checklist.md",
+        content = "The release candidate must keep every action reachable at phone width, landscape, and large font scale while preserving the complete source context.",
+        score = 0.94f,
+        rerankScore = 0.89f,
+        rankChange = 2,
+    ),
+    RagReference(
+        id = "reference-material",
+        source = "/knowledge/design/material-three-component-guidance.md",
+        content = "Use stable Material 3 components, tonal surfaces, readable typography, and explicit recovery actions for failures.",
+        score = 0.87f,
+    ),
+)
+
+private val PREVIEW_RAG_DETAILS_CITATIONS = listOf(
+    Citation(
+        title = "Material Design accessibility guidance for responsive modal content",
+        url = "https://m3.material.io/foundations/accessible-design/overview",
+        source = "Material Design",
+        snippet = "Touch targets, readable text, selected states, and clear recovery feedback remain available at every supported window size.",
+    ),
+    Citation(
+        title = "Android large text and responsive layout testing",
+        url = "https://developer.android.com/guide/topics/ui/accessibility/testing",
+        source = "Android Developers",
+        snippet = "Test long content, dynamic type, landscape, semantics, and complete scroll reachability before release.",
+    ),
+)
+
+private val PREVIEW_RAG_DETAILS_KG_PATHS = (1..4).map { index ->
+    val source = KgNode(
+        id = "kg-source-$index",
+        label = "Release validation source entity with a deliberately long label $index",
+        type = "requirement",
+    )
+    val target = KgNode(
+        id = "kg-target-$index",
+        label = "Commercial quality delivery condition with readable long content $index",
+        type = "gate",
+    )
+    KgPath(
+        queryKeywords = listOf("release", "accessibility", "visual quality"),
+        nodes = listOf(source, target),
+        edges = listOf(
+            KgEdge(
+                sourceId = source.id,
+                targetId = target.id,
+                relation = "must be verified through a complete responsive validation workflow",
+            ),
+        ),
+        reasoning = "The relationship stays readable as a vertical sentence instead of three compressed columns.",
+    )
+}
 
 private val PREVIEW_MEMORY_VECTORS = listOf(
     MemoryVectorRecord(
@@ -857,6 +920,64 @@ fun ragFolderContentLandscapeReleasePreview() {
         RagFolderScreenContent(
             state = previewRagFolderState(mutableStateListOf()),
             actions = RagFolderScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG details retrieved phone",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragDetailsRetrievedPhoneReleasePreview() {
+    ReleasePreviewSurface {
+        RagDetailsSheetContent(
+            references = PREVIEW_RAG_DETAILS_REFERENCES,
+            citations = emptyList(),
+            kgPaths = emptyList(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG details web large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragDetailsWebLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        RagDetailsSheetContent(
+            references = emptyList(),
+            citations = PREVIEW_RAG_DETAILS_CITATIONS,
+            kgPaths = emptyList(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG details KG long landscape",
+    widthDp = LANDSCAPE_WIDTH_DP,
+    heightDp = LANDSCAPE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragDetailsKgLongLandscapeReleasePreview() {
+    ReleasePreviewSurface {
+        RagDetailsSheetContent(
+            references = emptyList(),
+            citations = emptyList(),
+            kgPaths = PREVIEW_RAG_DETAILS_KG_PATHS,
         )
     }
 }

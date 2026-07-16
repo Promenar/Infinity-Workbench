@@ -23,6 +23,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -442,131 +446,71 @@ fun RagProgressCard(
         }
     }
 
+    val progress = when {
+        retrievalReady -> 1f
+        activePhase != null -> (activePhase.progress.coerceIn(0, 100) / 100f)
+        else -> 0f
+    }
+    val openDetailsLabel = stringResource(R.string.chat_rag_open_details)
+
     Surface(
-        onClick = { showDetailsSheet = true },
         modifier = modifier
-            .fillMaxWidth(0.7f)
+            .fillMaxWidth()
             .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-            .padding(vertical = NexaraSpacing.XSmall),
-        enabled = true,
-        shape = MaterialTheme.shapes.large,
+            .clickable(
+                onClickLabel = openDetailsLabel,
+                role = Role.Button,
+                onClick = { showDetailsSheet = true },
+            )
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f)
+            }
+            .testTag(UiTags.RAG_PROGRESS_CARD),
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = NexaraElevation.Level0
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        Row(
+            modifier = Modifier.padding(
+                horizontal = NexaraSpacing.Large,
+                vertical = NexaraSpacing.Small,
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
         ) {
-            // 第一行：极简单行状态与百分比
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // 雷达旋转加载动画
-                    val infiniteTransition = rememberInfiniteTransition(label = "rag_radar")
-                    val rotationAngle by infiniteTransition.animateFloat(
-                        initialValue = 0f,
-                        targetValue = 360f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(2200, easing = LinearEasing),
-                            repeatMode = RepeatMode.Restart
-                        ),
-                        label = "angle"
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .size(16.dp)
-                            .rotate(if (isComplete) 0f else rotationAngle)
-                    ) {
-                        if (isComplete) {
-                            Icon(
-                                Icons.Rounded.CheckCircle,
-                                null,
-                                tint = NexaraColors.StatusSuccess,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        } else {
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                drawArc(
-                                    brush = Brush.sweepGradient(
-                                        colors = listOf(
-                                            NexaraColors.Primary.copy(alpha = 0.2f),
-                                            NexaraColors.Primary,
-                                            NexaraColors.Tertiary,
-                                            NexaraColors.Primary.copy(alpha = 0.2f)
-                                        )
-                                    ),
-                                    startAngle = 0f,
-                                    sweepAngle = 300f,
-                                    useCenter = false,
-                                    style = androidx.compose.ui.graphics.drawscope.Stroke(
-                                        width = 1.5.dp.toPx(),
-                                        cap = androidx.compose.ui.graphics.StrokeCap.Round
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    // 智能垂直翻页文本
-                    AnimatedContent(
-                        targetState = currentText,
-                        transitionSpec = {
-                            (slideInVertically { height -> height } + fadeIn())
-                                .togetherWith(slideOutVertically { height -> -height } + fadeOut())
-                                .using(SizeTransform(clip = false))
-                        },
-                        label = "rag_text",
-                        modifier = Modifier.weight(1f)
-                    ) { text ->
-                        Text(
-                            text = text,
-                            style = NexaraTypography.labelMedium.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
-                            color = if (retrievalReady) NexaraColors.OnSurfaceVariant.copy(alpha = 0.8f) else NexaraColors.OnSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // 右侧微标
-                if (retrievalReady) {
-                    Text(
-                        text = stringResource(R.string.chat_rag_done),
-                        style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = NexaraColors.StatusSuccess
-                    )
-                } else if (activePhase != null) {
-                    Text(
-                        text = "${activePhase.progress}%",
-                        style = NexaraTypography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        ),
-                        color = NexaraColors.Primary
-                    )
+            if (retrievalReady) {
+                Icon(
+                    imageVector = Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            } else {
+                CircularProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.size(18.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    strokeWidth = 2.dp,
+                )
+            }
+            Text(
+                text = currentText,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = if (retrievalReady) {
+                    stringResource(R.string.chat_rag_done)
                 } else {
-                    Text(
-                        text = stringResource(R.string.chat_rag_active),
-                        style = NexaraTypography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = NexaraColors.Primary
-                    )
-                }
-            }
-
-            if (displayPhases.isNotEmpty()) {
-                NeonMicroRail(phases = displayPhases, isComplete = retrievalReady)
-            }
+                    "${(progress * 100).toInt()}%"
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 
@@ -577,120 +521,6 @@ fun RagProgressCard(
             citations = citations,
             onDismissRequest = { showDetailsSheet = false }
         )
-    }
-}
-
-@Composable
-private fun NeonMicroRail(
-    phases: List<RagPhase>,
-    isComplete: Boolean
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        val infiniteTransition = rememberInfiniteTransition(label = "shimmer_flow")
-        
-        // 活跃段的光晕呼吸系数
-        val activeGlowAlpha by infiniteTransition.animateFloat(
-            initialValue = 0.22f,
-            targetValue = 0.38f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1200),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "glow_alpha"
-        )
-
-        phases.forEach { phase ->
-            val status = if (isComplete) PhaseStatus.DONE else phase.status
-            val weightModifier = Modifier.weight(1f)
-
-            when (status) {
-                PhaseStatus.DONE -> {
-                    val neonGreen = Color(0xFF00FF66)
-                    Canvas(modifier = weightModifier.height(8.dp)) {
-                        // 1. 底层半透明发光层（高度 6.dp）
-                        drawRoundRect(
-                            color = neonGreen.copy(alpha = 0.25f),
-                            size = androidx.compose.ui.geometry.Size(size.width, 6.dp.toPx()),
-                            topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 6.dp.toPx()) / 2f),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
-                        )
-                        // 2. 顶层高亮实体核心段（高度 3.dp）
-                        drawRoundRect(
-                            color = neonGreen,
-                            size = androidx.compose.ui.geometry.Size(size.width, 3.dp.toPx()),
-                            topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 3.dp.toPx()) / 2f),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5.dp.toPx())
-                        )
-                    }
-                }
-                PhaseStatus.ACTIVE -> {
-                    val progressFloat = phase.progress / 100f
-                    val animatedProgress by animateFloatAsState(
-                        targetValue = progressFloat,
-                        animationSpec = spring(
-                            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
-                            stiffness = androidx.compose.animation.core.Spring.StiffnessLow
-                        ),
-                        label = "active_progress"
-                    )
-
-                    val neonPurple = Color(0xFFB026FF)
-                    val innerHighlightColor = Color(0xFFFDF4FF)
-
-                    Canvas(modifier = weightModifier.height(8.dp)) {
-                        // 1. 绘制准备底轨
-                        drawRoundRect(
-                            color = Color(0xFF3F3F46).copy(alpha = 0.35f),
-                            size = androidx.compose.ui.geometry.Size(size.width, 3.dp.toPx()),
-                            topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 3.dp.toPx()) / 2f),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5.dp.toPx())
-                        )
-
-                        val activeWidth = size.width * animatedProgress
-                        if (activeWidth > 0f) {
-                            // 2. 绘制填充段发光层
-                            drawRoundRect(
-                                color = neonPurple.copy(alpha = activeGlowAlpha),
-                                size = androidx.compose.ui.geometry.Size(activeWidth, 6.dp.toPx()),
-                                topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 6.dp.toPx()) / 2f),
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
-                            )
-                            // 3. 绘制填充段实体层
-                            drawRoundRect(
-                                color = neonPurple,
-                                size = androidx.compose.ui.geometry.Size(activeWidth, 3.dp.toPx()),
-                                topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 3.dp.toPx()) / 2f),
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5.dp.toPx())
-                            )
-                            // 4. 极细高亮灯丝核心线
-                            drawRoundRect(
-                                color = innerHighlightColor.copy(alpha = 0.85f),
-                                size = androidx.compose.ui.geometry.Size(activeWidth, 1.dp.toPx()),
-                                topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 1.dp.toPx()) / 2f),
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(0.5.dp.toPx())
-                            )
-                        }
-                    }
-                }
-                PhaseStatus.PENDING -> {
-                    val darkGrey = Color(0xFF3F3F46)
-                    Canvas(modifier = weightModifier.height(8.dp)) {
-                        drawRoundRect(
-                            color = darkGrey.copy(alpha = 0.5f),
-                            size = androidx.compose.ui.geometry.Size(size.width, 2.dp.toPx()),
-                            topLeft = androidx.compose.ui.geometry.Offset(0f, (size.height - 2.dp.toPx()) / 2f),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx())
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 
