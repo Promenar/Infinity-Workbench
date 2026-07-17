@@ -4,17 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Material 3 重设计第四阶段：DocEditor 可靠性检查点（2026-07-17）
+### Material 3 重设计第四阶段：DocEditor 可靠性与视觉迁移（2026-07-17）
 
 - **重命名与索引目标版本化**：DocEditor 重命名使用 persisted-title CAS 与单调 epoch；Room `document_reference` 任务以 `workspace + file + hash + epoch` 表达唯一当前目标，旧 worker、旧失败和旧清理不能覆盖或删除 newer target。
 - **删除、重置与取消线性化**：文件/目录/工作区永久删除在数据库提交前取消并等待目标 worker、建立 enqueue fence，并在失败时安全恢复；Provider/Embedding/KG 配置切换等待旧队列关闭后由唯一新队列接管，监听器关闭与状态通知异常不会破坏资源替换。
 - **已提交文件与索引补偿分离**：文件写入、Patch 或重命名在物理/Room 提交后即使调用协程取消，也返回真实 committed 事实并保留 `indexQueued=false`；应用级 pending coordinator 让 Home、Folder 与 DocEditor 共用精确失败目标、重试与删除清理，并用 latest watermark/删除 tombstone 拒绝迟到旧事件制造幽灵告警。
 - **冷启动完整恢复**：进程死亡发生在文件事务提交后、Queue 接收前时，启动扫描会从 FileEntry 当前 hash/epoch 重建 reference task；`vectorizedAt` 为空或落后的文件均覆盖，KG 开启时恢复显式 `full` 策略，关闭时保持无 KG。
 - **工具与分享一致性**：File Write/Patch 只使用真实 `read_file → write_file` 补偿路径，区分“文件已提交、索引待处理”与写入失败；分享导入使用当前文件版本和 KG 配置，空图谱也写入完成标记，避免持续显示未完成。
-- **DocEditor 索引告警可达性**：索引 pending 从普通统计栏拆为独立单层 MD3 notice，在加载/保存错误与冲突状态仍唯一可见；重试按钮保持 48dp。新增 360×640dp、2× 字体、SaveConflict 双动作 + pending 的仪器契约，当前仅完成编译，设备执行保留到第四阶段视觉/设备门禁。
+- **DocEditor 索引告警可达性**：索引 pending 从普通统计栏拆为独立单层 MD3 notice，在加载/保存错误与冲突状态仍唯一可见；重试按钮保持 48dp。新增 360×640dp、2× 字体、SaveConflict 双动作 + pending 的仪器契约，并在 API 31/35/36 的 DocEditor 31/31 矩阵中完成设备执行。
 - **DocEditor 长文档性能保护**：文件大小严格超过 1 MiB 时在读取前进入 `MetadataOnly`；已读取正文严格超过 32K 个 UTF-16 代码单元、2,000 行或单行 16K 个 UTF-16 代码单元时进入 `PerformanceProtected`。保护态不构建全文编辑器或 Markdown，仅预览约前 16K 字符并提供复制完整全文；若一次输入跨过软线，dirty 全文仍完整保留，可以原样参与 CAS 保存与冲突处理，不使用预览截断片段。
-- **DocEditor API 36 性能门禁**：固定 Pixel_7 AVD 以 3 轮预热/5 轮采样两次完成 6/6 保护态与 Editable 边界矩阵；取两次通过结果的最差值，保护态 p95 17–19 ms/最大帧 33 ms/PSS 增量 ≤477 KiB，Editable p95 19‑35 ms/最大帧 40 ms/PSS 增量 ≤1,685 KiB。初始近 1 MiB 约 7 秒与 10,000 行约 1.05 秒的失败证据促成性能保护；门禁仍为 p95 ≤50 ms、单帧 ≤150 ms、PSS 增量 ≤64 MiB，未放宽。
-- **检查点门禁**：1890 个 JVM 测试，0 failure/error、14 skip；AndroidTest 与 screenshot test 源码编译、`lintDebug`、DocEditor API 36 性能矩阵 6/6、性能保护交互测试 1/1 与 `git diff --check` 通过；独立终审最终 C0/I0/M0。第四阶段仍未完成 Task 5-8 的视觉基线、响应式、TalkBack 与 API 31/35/36 全矩阵，不代表整体 Release 已放行。
+- **DocEditor API 36 性能门禁**：固定 Pixel_7 AVD、headless `-gpu host` Apple M5 / Metal 后端，以 3 轮预热/5 轮采样两次完成 6/6 保护态与 Editable 边界矩阵；60 个原始样本最差 p95 35 ms、最大帧 40 ms、PSS 增量 12,194 KiB。初始近 1 MiB 约 7 秒与 10,000 行约 1.05 秒的失败证据促成性能保护；门禁仍为 p95 ≤50 ms、单帧 ≤150 ms、PSS 增量 ≤64 MiB，未放宽。
+- **标准 Material 3 编辑器**：DocEditor 迁移到标准 TopAppBar、SegmentedButton、Surface、TextField、AlertDialog 与 tonal notice；移除本页 Glass、固定微字号、硬编码页面色和重复描边。360dp、2.0x、精确 800×360、840dp/2.0x Split 与真实横屏 IME 均保持标题、编辑、保存和恢复动作可达。
+- **Markdown 与代码块可达性**：基于 Markdown AST 和真实 `TextMeasurer` 识别宽代码/宽表格；顶层及任意深度引用/列表内 GFM 表格由第一方外层承担横向滚动，第三方回调内不叠加滚动。CodeBlock 全屏、导出、编辑/保存、复制均使用真实 48dp 目标和双语描述，装饰语言/行号不进入 TalkBack 焦点。
+- **状态与 IME 恢复**：保存错误、冲突、NotFound 与索引待重试在 IME 展开时主动让出键盘空间并保留草稿、dirty、局部保存和恢复动作；保存中返回、冲突双动作、索引重试、只读和行号静音均有可复核语义。
+- **性能证据防假绿**：最终 FrameMetrics 门禁不再拒绝或替换超标样本；两次完整 6/6 的 60 个原始样本全部直接纳入判定，最差 p95 35 ms、最大帧 40 ms、PSS 增量 12,194 KiB，`UNKNOWN_DELAY` 仅用于诊断。
+- **最终门禁**：新鲜 `--rerun-tasks` 执行 130/130 Gradle tasks；1915 个 JVM 测试（0 failure/error、14 skip）、56/56 截图、Lint、Debug APK、deviceTest APK 与 AndroidTest 编译通过。DocEditor API 31/35/36 分别 31/31；API 36 bulk 228 项（0 failure、3 个既有分阶段 skip）及两项 force-stop 冷启动方法各 1/1。第四轮终审 C0/C1/C2/C3=0、P0/P1/P2=0。第四阶段完成不代表整体 Release 放行，签名 APK 真机 TalkBack/人工业务验收与 GitHub tag/Release 仍为阻断项。
 
 ### Material 3 重设计第三阶段：知识库与资源管理（2026-07-16）
 

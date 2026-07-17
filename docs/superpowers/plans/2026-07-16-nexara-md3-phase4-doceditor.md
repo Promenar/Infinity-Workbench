@@ -3,7 +3,7 @@
 > 日期：2026-07-16
 > 分支：`codex/md3-redesign`
 > 依据：`docs/superpowers/specs/2026-07-16-nexara-md3-redesign-design.md`
-> 状态：实施中（Task 1-3 已完成；Task 4 Step 1-3 已完成；Task 5-8 待执行）
+> 状态：已完成（Task 1-8 已闭环；整体 Release 仍为 NO-GO）
 > 范围：DocEditor 保存/重命名/索引可靠性、长文档性能、Material 3 视觉、响应式与无障碍；不改 RAG 检索策略
 
 ## 目标与边界
@@ -182,9 +182,9 @@ Task 3 实际按三个安全提交点完成：`e6ef4f4` 建立重命名 CAS，`1
 
   输入值、dirty、总行数、字数/字符数、保存 snapshot 与冲突行为必须保持正确；若 Compose 编辑控件仍无法在近阈值设备门禁内稳定，才基于实测增加独立“复杂文档只读”阈值，不凭猜测降级。
 
-  实测收口：固定 API 36 `Pixel_7` AVD（arm64，1080×2400 / 420 dpi，4 核，约 2 GiB，SwiftShader），每项 3 轮预热、5 轮采样。初始近 1 MiB Markdown 预览出现约 7 秒 Davey 帧，10,000 行全文编辑出现约 1.05 秒 Davey 帧，因此引入 `MetadataOnly / PerformanceProtected / Editable` 单一访问事实，并以阶梯设备数据而非猜测收紧软线。`64K UTF-16 代码单元总长 / 5,000 行 / 单行 32K UTF-16 代码单元` 候选未通过，最终阈值为严格超过 `32K UTF-16 代码单元总长 / 2,000 行 / 单行 16K UTF-16 代码单元`。
+  实测收口：固定 API 36 `Pixel_7` AVD（arm64，1080×2400 / 420 dpi，4 核，约 2 GiB），最终稳定门禁采用 headless `-gpu host` 的 Apple M5 / Metal 后端；每项 3 轮预热、5 轮采样。初始近 1 MiB Markdown 预览出现约 7 秒 Davey 帧，10,000 行全文编辑出现约 1.05 秒 Davey 帧，因此引入 `MetadataOnly / PerformanceProtected / Editable` 单一访问事实，并以阶梯设备数据而非猜测收紧软线。`64K UTF-16 代码单元总长 / 5,000 行 / 单行 32K UTF-16 代码单元` 候选未通过，最终阈值为严格超过 `32K UTF-16 代码单元总长 / 2,000 行 / 单行 16K UTF-16 代码单元`。
 
-  最终两次 6/6 矩阵全部通过；取两次通过结果的最差值，三组保护态数据集 p95 17–19 ms、最大帧 33 ms、稳定 PSS 增量 ≤477 KiB；三组 Editable 边界数据集每轮真实追加 30 次并通过可见 ModeSelector 切换 10 次，p95 19‑35 ms、最大帧 40 ms、稳定 PSS 增量 ≤1,685 KiB。全程保持 p95 ≤50 ms、单帧 ≤150 ms、PSS 增量 ≤64 MiB 与方差 ≤20% 门禁，未放宽验收线。
+  最终两次 6/6 矩阵全部通过；每次固定采集 30 个样本，60 个原始样本均直接纳入判定，不再自动拒绝或替换超标样本。取两次结果最差值，p95 35 ms、最大帧 40 ms、稳定 PSS 增量 12,194 KiB；`UNKNOWN_DELAY` 等 breakdown 只作诊断，任意原始总帧 p95 >50 ms 或 max >150 ms 立即失败。全程保持 p95 ≤50 ms、单帧 ≤150 ms、PSS 增量 ≤64 MiB 与方差 ≤20% 门禁，未放宽验收线。
 
 - [x] **Step 4：提交**
 
@@ -201,29 +201,31 @@ Task 3 实际按三个安全提交点完成：`e6ef4f4` 建立重命名 CAS，`1
 - Modify: `native-ui/app/src/test/java/com/promenar/nexara/ui/rag/DocEditorScreenStateTest.kt`
 - Modify: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/rag/DocEditorInteractionTest.kt`
 
-- [ ] **Step 1：写 MD3 结构和响应式 RED**
+- [x] **Step 1：写 MD3 结构和响应式 RED**
 
   在独立 Material contract 测试中写入 Glass/旧令牌/硬编码字号/非生命周期收集清零 RED，并断言小型 Top App Bar、文档身份、模式选择、编辑/预览/分屏主面和底部状态是单层结构；360dp/2.0x 与 800×360 中所有主操作可达，720dp 断点行为稳定，IME 展开后仍可编辑和保存。对现有三张中文 golden 中返回箭头消失建立真机/截图双重 RED，先判定是 Preview 宿主还是生产导航图标问题，禁止直接接受缺图基线。
 
-- [ ] **Step 2：改为生命周期感知与复合文档身份**
+- [x] **Step 2：改为生命周期感知与复合文档身份**
 
   使用 `collectAsStateWithLifecycle()`；`rememberSaveable` 身份包含 workspaceRootUuid + docId，避免跨工作区复用模式或确认状态。
 
-- [ ] **Step 3：实现标准 MD3 页面层级**
+- [x] **Step 3：实现标准 MD3 页面层级**
 
   使用 `MaterialTheme.colorScheme/typography/shapes`、标准 TopAppBar、SingleChoiceSegmentedButtonRow（或稳定 M3 等价单选组件）、Surface/TextField。顶栏使用唯一导航标题，正文可编辑文件名必须降一级，禁止两个同权重标题重复显示同一名称。移除整页 Glass 卡、卡套卡和重复描边；手机 16dp、宽屏 24/32dp 边距。
 
-- [ ] **Step 4：重排 Edit / Preview / Split**
+- [x] **Step 4：重排 Edit / Preview / Split**
 
   编辑区与预览区是主内容表面，不额外套大卡；Split 只在可用宽度 ≥720dp 出现，分隔线使用 outlineVariant。长代码、超长链接和宽表格必须具有明确且可测试的横向可达策略；Split 两侧独立滚动，不得在窄屏产生不可恢复裁切。
 
-- [ ] **Step 5：建立 IME 与光标可达策略**
+- [x] **Step 5：建立 IME 与光标可达策略**
 
   使用真实 `WindowInsets.ime`/`imePadding` 责任和 `BringIntoViewRequester`（或稳定等价实现）。设备测试必须点击标题与正文分别唤起真实 IME，把光标移到长文档末行并输入，断言当前行进入可视区、保存或等价恢复入口可达；关闭 IME 后滚动位置、dirty 和输入不丢失，800×360 横屏至少执行一次。Edit/Preview/Split 切换不得跳回文首、丢 dirty 或重复渲染旧快照。
 
-- [ ] **Step 6：提交**
+- [x] **Step 6：提交**
 
   `git commit -m "feat: migrate DocEditor shell to Material 3"`
+
+  实际整合提交为 `66a72ac`（`feat: complete Material 3 DocEditor phase`）。生产页已清除 Glass/固定微字号/硬编码页面色，完成标准 MD3 顶栏、分段模式、单层内容表面、响应式横屏/平板和真实 IME；长代码、顶层与任意深度引用/列表内 GFM 宽表格由页面外层承担横向滚动，第三方 Markdown 回调内无嵌套滚动。
 
 ---
 
@@ -236,25 +238,27 @@ Task 3 实际按三个安全提交点完成：`e6ef4f4` 建立重命名 CAS，`1
 - Modify: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/rag/DocEditorInteractionTest.kt`
 - Modify: `native-ui/app/src/screenshotTest/kotlin/com/promenar/nexara/ui/ReleasePreviewScreenshotTest.kt`
 
-- [ ] **Step 1：写状态语义 RED**
+- [x] **Step 1：写状态语义 RED**
 
   Loading、LoadError、NotFound、Saving、SaveError、SaveConflict、IndexPending、LargeFile 和确认对话框分别有唯一、非重复的可见文案/LiveRegion；装饰图标和行号 gutter 不单独聚焦，正文只暴露一个可编辑语义节点，按钮标签能说明对象和后果。
 
-- [ ] **Step 2：实现标准状态与 notice**
+- [x] **Step 2：实现标准状态与 notice**
 
   空态/错误态使用居中但不占满的大型内容区；保存冲突和索引待处理使用单层 tonal notice，双操作在窄屏或 2.0x 纵向堆叠。状态栏改为弱化元数据行，不使用 GlassBorder 或仅靠红绿圆点。
 
-- [ ] **Step 3：保留数据安全对话框语义**
+- [x] **Step 3：保留数据安全对话框语义**
 
   放弃修改和重新加载迁移到标准 M3 `AlertDialog`（或项目已验证的等价封装），确认/取消均 ≥48dp；Reload 文案必须明确会丢弃本地内容。Saving 返回不复用放弃文案。自动化只称为 TalkBack 语义代理验收，不替代签名 APK 真机听觉检查。
 
-- [ ] **Step 4：设备 TalkBack 自动验收**
+- [x] **Step 4：设备 TalkBack 自动验收**
 
   覆盖焦点顺序、行号静音、Role.Tab/Selected、dirty/clean 明确 `stateDescription`、保存禁用/进行中、冲突双动作、索引重试、大文件只读、顶部/系统返回同源行为和 2.0x 操作尺寸。
 
-- [ ] **Step 5：提交**
+- [x] **Step 5：提交**
 
   `git commit -m "feat: unify DocEditor states and accessibility"`
+
+  实际随 `66a72ac` 整合提交。保存失败/冲突/NotFound/索引待重试在 IME 展开时优先清焦点并显示可恢复动作；CodeBlock 全屏、导出、编辑/保存、复制目标均为真实 48dp，双语描述完整，语言标签、行号和装饰分隔线移出无障碍树。
 
 ---
 
@@ -266,25 +270,27 @@ Task 3 实际按三个安全提交点完成：`e6ef4f4` 建立重命名 CAS，`1
 - Modify: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/rag/DocEditorInteractionTest.kt`
 - Modify: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/rag/DocEditorPerformanceTest.kt`
 
-- [ ] **Step 1：保持并扩展状态矩阵**
+- [x] **Step 1：保持并扩展状态矩阵**
 
   保留 loading、load error 2x、dirty edit、conflict 2x、rich preview、tablet split、large file、discard、landscape 9 张基线；强制新增至少一张 360dp 或 2.0x 的 IndexPending golden，完整呈现“内容已保存、索引待重试”、重试动作、非错误色单独表达和唯一 live region。
 
-- [ ] **Step 2：生成 reference/actual 同尺寸组合图**
+- [x] **Step 2：生成 reference/actual 同尺寸组合图**
 
   逐图检查：Loading 不再是巨大空卡；2x 错误/冲突标题不裁切；编辑/预览/分屏无卡套卡；代码块不异常折断；横屏和大文件不浪费或遮挡关键空间；对话框层级与触控目标正确。`docEditorLoadErrorChineseLargeFont`、`docEditorSaveConflictChineseLargeFont`、`docEditorLargeFileChineseTablet` 必须与其余所有状态一样实际绘制返回图标；语义节点存在但像素缺失仍算失败。
 
-- [ ] **Step 3：API 31/35/36 设备矩阵**
+- [x] **Step 3：API 31/35/36 设备矩阵**
 
   对三个 API 分别运行 `DocEditorInteractionTest`；API 36 额外运行性能类、360dp/2.0x、800×360、840dp、840dp+2.0x Split、真实 IME、显示大小放大和减少动效。返回按钮在所有状态/语言/字号/尺寸下必须实际可见、48dp、可点击并有正确 TalkBack 标签。修改字体、显示缩放、方向、动画等系统设置前记录并在 finally 恢复；每个 serial 必须核对 SDK。
 
-- [ ] **Step 4：截图门禁**
+- [x] **Step 4：截图门禁**
 
   `cd native-ui && ./gradlew :app:validateDebugScreenshotTest`
 
-- [ ] **Step 5：提交**
+- [x] **Step 5：提交**
 
   `git commit -m "test: lock Material 3 DocEditor release states"`
+
+  实际随 `66a72ac` 整合提交。9 张既有 DocEditor golden 更新，并新增精确 800×360 与 360×800 IndexPending 两张；完整截图 56/56。`DocEditorInteractionTest` 在 API 31/35/36 分别 31/31、0 skip/failed/error；API 36 另有 Markdown 宽内容 4/4 与 CodeBlock 无障碍 2/2。
 
 ---
 
@@ -297,25 +303,27 @@ Task 3 实际按三个安全提交点完成：`e6ef4f4` 建立重命名 CAS，`1
 - Modify: this plan
 - Modify: `docs/release/v0.2-beta-validation.md`（仅新增已完成的可复核证据，不提前关闭真机人工门禁）
 
-- [ ] **Step 1：全量静态、JVM、Lint 与构建**
+- [x] **Step 1：全量静态、JVM、Lint 与构建**
 
   `cd native-ui && ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :mainactivity-e2e:assembleDeviceTest`
 
-- [ ] **Step 2：全量截图与设备回归**
+- [x] **Step 2：全量截图与设备回归**
 
   运行完整 screenshot suite；API 31/35/36 至少执行 DocEditor 类，API 36 使用显式 runner 执行完整 AndroidTest。执行前从测试 APK XML/runner 列表记录预期测试数和允许的条件 skip 清单，执行后对 XML 汇总 tests/failures/errors/skipped；任何新增或未解释 skip 均失败，禁止只跑 DocEditor 后误报“完整 AndroidTest”。
 
-- [ ] **Step 3：独立代码与视觉评审**
+- [x] **Step 3：独立代码与视觉评审**
 
   代码评审必须达到 C0/I0；视觉评审达到 P0/P1/P2 清零。截图必须与旧基线/方案 3 组合对照，不能只看 actual。
 
-- [ ] **Step 4：DIA/HLG**
+- [x] **Step 4：DIA/HLG**
 
   更新 CHANGELOG、计划状态、handover 与索引；`docs/release/v0.2-beta-validation.md` 只记录真实完成的自动化/设备证据。签名 APK 真机 TalkBack 全焦点与听觉检查仍保留为最终人工发行门禁。
 
-- [ ] **Step 5：提交阶段收口**
+- [x] **Step 5：提交阶段收口**
 
   `git commit -m "docs: close Material 3 DocEditor phase"`
+
+  最终新鲜门禁：`--rerun-tasks` 强制执行 130/130 Gradle tasks；1915 个 JVM 测试（0 failure/error、14 个既有条件 skip）、56/56 截图、Lint、Debug APK、deviceTest APK 与 AndroidTest 编译通过。API 36 bulk 排除专用冷启动类后完成 228 tests（0 failure、3 个既有分阶段 skip），两项后台冷启动方法按重装、确认 PID、force-stop、直接 instrumentation 的既有协议分别 1/1。第四轮独立复核为 C0/C1/C2/C3=0、P0/P1/P2=0。
 
 ## 完成定义
 
