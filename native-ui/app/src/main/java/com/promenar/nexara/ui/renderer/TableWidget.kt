@@ -1,7 +1,6 @@
 package com.promenar.nexara.ui.renderer
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -11,8 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,26 +25,34 @@ import com.mikepenz.markdown.compose.components.MarkdownComponentModel
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 
-private data class ParsedTable(
+private val DefaultTableColumnWidth = 120.dp
+
+internal data class ParsedTable(
     val headerCells: List<String>,
     val rows: List<List<String>>,
-)
+) {
+    val requiredWidth: Dp
+        get() = DefaultTableColumnWidth * headerCells.size.coerceAtLeast(1)
+}
 
-private fun parseTable(model: MarkdownComponentModel): ParsedTable? {
-    val headerNode = model.node.children.find { it.type == GFMElementTypes.HEADER } ?: return null
+internal fun parseMarkdownTable(content: String, node: ASTNode): ParsedTable? {
+    if (node.type != GFMElementTypes.TABLE) return null
+    val headerNode = node.children.find { it.type == GFMElementTypes.HEADER } ?: return null
     val headerCells = headerNode.children
         .filter { it.type == GFMTokenTypes.CELL }
-        .map { cell -> model.content.substring(cell.startOffset, cell.endOffset).trim() }
+        .map { cell -> content.substring(cell.startOffset, cell.endOffset).trim() }
+    if (headerCells.isEmpty()) return null
 
-    val rows = model.node.children
+    val rows = node.children
         .filter { it.type == GFMElementTypes.ROW }
         .map { row ->
             row.children
                 .filter { it.type == GFMTokenTypes.CELL }
-                .map { cell -> model.content.substring(cell.startOffset, cell.endOffset).trim() }
+                .map { cell -> content.substring(cell.startOffset, cell.endOffset).trim() }
         }
 
     return ParsedTable(headerCells, rows)
@@ -61,35 +66,40 @@ fun NexaraTableWidget(
     minColumnWidth: Dp = 80.dp,
     maxColumnWidth: Dp = 200.dp,
 ) {
-    val table = remember(model) { parseTable(model) } ?: return
+    val table = remember(model.content, model.node.startOffset, model.node.endOffset) {
+        parseMarkdownTable(model.content, model.node)
+    } ?: return
+    val preferredColumnWidth = DefaultTableColumnWidth.coerceIn(minColumnWidth, maxColumnWidth)
 
-    val cellWidth = 120.dp
-    val columnCount = table.headerCells.size
-    val totalWidth = cellWidth * columnCount
+    NexaraTableWidget(
+        table = table,
+        modifier = modifier,
+        fontSize = fontSize,
+        preferredColumnWidth = preferredColumnWidth,
+    )
+}
 
+/**
+ * 仅负责有限宽度内的表格绘制。横向手势由 Markdown 顶层 AST 宿主注册，避免在第三方回调内嵌套滚动。
+ */
+@Composable
+internal fun NexaraTableWidget(
+    table: ParsedTable,
+    modifier: Modifier = Modifier,
+    fontSize: Int = 13,
+    preferredColumnWidth: Dp = DefaultTableColumnWidth,
+) {
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .clip(NexaraShapes.medium)
-            .background(NexaraColors.SurfaceLow)
+            .background(NexaraColors.SurfaceLow),
     ) {
-        val columnWidth = 120.dp
-        val columnCount = table.headerCells.size
-        val totalWidth = columnWidth * columnCount
-        val scrollable = maxWidth < totalWidth
-
-        Column(
-            modifier = if (scrollable) {
-                Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .width(totalWidth)
-            } else {
-                Modifier.fillMaxWidth()
-            }
-        ) {
+        val fixedColumns = maxWidth <= table.requiredWidth
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
-                    .then(if (scrollable) Modifier.width(totalWidth) else Modifier.fillMaxWidth())
+                    .fillMaxWidth()
                     .background(NexaraColors.SurfaceContainer)
                     .height(IntrinsicSize.Max),
                 verticalAlignment = Alignment.CenterVertically,
@@ -98,45 +108,43 @@ fun NexaraTableWidget(
                     TableCell(
                         text = cellText,
                         isHeader = true,
-                        columnWidth = if (scrollable) columnWidth else 0.dp,
-                        weight = if (scrollable) 0f else 1f,
-                        fontSize = fontSize
+                        columnWidth = preferredColumnWidth,
+                        fixedWidth = fixedColumns,
+                        fontSize = fontSize,
                     )
                 }
             }
 
-            // 表头与正文之间的分隔线
             HorizontalDivider(
                 thickness = 0.5.dp,
-                color = NexaraColors.OutlineVariant.copy(alpha = 0.4f)
+                color = NexaraColors.OutlineVariant.copy(alpha = 0.4f),
             )
 
             table.rows.forEachIndexed { rowIndex, row ->
                 Row(
                     modifier = Modifier
-                        .then(if (scrollable) Modifier.width(totalWidth) else Modifier.fillMaxWidth())
+                        .fillMaxWidth()
                         .background(
                             if (rowIndex % 2 == 0) NexaraColors.SurfaceLowest
-                            else NexaraColors.SurfaceLow
+                            else NexaraColors.SurfaceLow,
                         )
                         .height(IntrinsicSize.Max),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    row.forEach { cellText ->
+                    table.headerCells.indices.forEach { columnIndex ->
                         TableCell(
-                            text = cellText,
+                            text = row.getOrNull(columnIndex).orEmpty(),
                             isHeader = false,
-                            columnWidth = if (scrollable) columnWidth else 0.dp,
-                            weight = if (scrollable) 0f else 1f,
-                            fontSize = fontSize
+                            columnWidth = preferredColumnWidth,
+                            fixedWidth = fixedColumns,
+                            fontSize = fontSize,
                         )
                     }
                 }
-                // 行间细分割线（最后一行除外）
                 if (rowIndex < table.rows.lastIndex) {
                     HorizontalDivider(
                         thickness = 0.5.dp,
-                        color = NexaraColors.OutlineVariant.copy(alpha = 0.2f)
+                        color = NexaraColors.OutlineVariant.copy(alpha = 0.2f),
                     )
                 }
             }
@@ -149,8 +157,8 @@ private fun RowScope.TableCell(
     text: String,
     isHeader: Boolean,
     columnWidth: Dp,
-    weight: Float,
-    fontSize: Int
+    fixedWidth: Boolean,
+    fontSize: Int,
 ) {
     Text(
         text = text,
@@ -170,8 +178,8 @@ private fun RowScope.TableCell(
         },
         modifier = Modifier
             .then(
-                if (weight > 0f) Modifier.weight(weight)
-                else Modifier.width(columnWidth)
+                if (fixedWidth) Modifier.width(columnWidth)
+                else Modifier.weight(1f)
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
     )

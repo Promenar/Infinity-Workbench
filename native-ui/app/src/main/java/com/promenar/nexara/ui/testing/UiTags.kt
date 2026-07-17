@@ -4,6 +4,7 @@ package com.promenar.nexara.ui.testing
  * 面向自动化测试的稳定语义标识。标识描述控件职责，不依赖本地化文案或动态数据。
  */
 object UiTags {
+    const val MARKDOWN_WIDE_CONTENT = "markdown_wide_content"
     const val BACKUP_EXPORT = "backup_export"
     const val BACKUP_IMPORT = "backup_import"
     const val BACKUP_OPERATION_STATUS = "backup_operation_status"
@@ -204,11 +205,17 @@ object UiTags {
     // ============ Doc Editor ==========
     const val DOC_EDITOR_ROOT = "doc_editor_root"
     const val DOC_EDITOR_BACK = "doc_editor_back"
+    const val DOC_EDITOR_IDENTITY = "doc_editor_identity"
     const val DOC_EDITOR_TITLE_INPUT = "doc_editor_title_input"
+    const val DOC_EDITOR_METADATA = "doc_editor_metadata"
+    const val DOC_EDITOR_STATISTICS = "doc_editor_statistics"
     const val DOC_EDITOR_SAVE = "doc_editor_save"
+    const val DOC_EDITOR_MODE_SELECTOR = "doc_editor_mode_selector"
     const val DOC_EDITOR_MODE_EDIT = "doc_editor_mode_edit"
     const val DOC_EDITOR_MODE_PREVIEW = "doc_editor_mode_preview"
     const val DOC_EDITOR_MODE_SPLIT = "doc_editor_mode_split"
+    const val DOC_EDITOR_MAIN_PANE = "doc_editor_main_pane"
+    const val DOC_EDITOR_SPLIT_DIVIDER = "doc_editor_split_divider"
     const val DOC_EDITOR_INPUT = "doc_editor_input"
     const val DOC_EDITOR_PREVIEW = "doc_editor_preview"
     const val DOC_EDITOR_STATUS = "doc_editor_status"

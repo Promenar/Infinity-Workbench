@@ -60,6 +60,14 @@
     <string name="common_cd_sync">Sync</string>
     <string name="common_cd_delete">Delete</string>
     <string name="common_cd_edit">Edit</string>
+    <string name="code_block_language_fallback">CODE</string>
+    <string name="code_block_plain_text">plain text</string>
+    <string name="code_block_full_screen">View full screen</string>
+    <string name="code_block_export_png">Export as PNG</string>
+    <string name="code_block_edit">Edit code</string>
+    <string name="code_block_save">Save code</string>
+    <string name="code_block_copy">Copy code</string>
+    <string name="code_block_copied">Code copied</string>
     <string name="secret_field_placeholder">Enter a new secret</string>
     <string name="secret_field_show">Temporarily show full secret</string>
     <string name="secret_field_hide">Hide secret</string>
@@ -1310,5 +1318,9 @@
         <item quantity="zero">%1$d chars</item>
         <item quantity="one">%1$d char</item>
         <item quantity="other">%1$d chars</item>
+    </plurals>
+    <plurals name="code_block_description">
+        <item quantity="one">Code block in %1$s, %2$d line</item>
+        <item quantity="other">Code block in %1$s, %2$d lines</item>
     </plurals>
 </resources>

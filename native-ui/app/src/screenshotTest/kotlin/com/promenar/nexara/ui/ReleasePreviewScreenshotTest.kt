@@ -51,6 +51,7 @@ import com.promenar.nexara.domain.generation.GenerationFailureCodec
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.MemoryVectorRecord
+import com.promenar.nexara.domain.repository.RenameIndexTarget
 import com.promenar.nexara.onboarding.OnboardingState
 import com.promenar.nexara.onboarding.OnboardingStep
 import com.promenar.nexara.ui.chat.ChatScreenActions
@@ -1237,6 +1238,39 @@ fun docEditorReadyEditDirtyEnglishPhoneReleasePreview() {
 
 @PreviewTest
 @Preview(
+    name = "DocEditor index pending Chinese phone",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun docEditorIndexPendingChinesePhoneReleasePreview() {
+    ReleasePreviewSurface {
+        DocEditorScreenContent(
+            state = DocEditorScreenState(
+                editorState = previewDocEditorState(
+                    title = "发行检查清单",
+                    content = PREVIEW_DOC_EDITOR_CONFLICT_CONTENT,
+                ).copy(
+                    indexPendingTargets = listOf(
+                        RenameIndexTarget(
+                            fileUuid = PREVIEW_DOC_EDITOR_DOCUMENT_ID,
+                            targetHash = PREVIEW_DOC_EDITOR_HASH,
+                            targetEpoch = PREVIEW_DOC_EDITOR_EPOCH,
+                        ),
+                    ),
+                    indexQueueFailed = true,
+                ),
+                viewMode = DocEditorViewMode.EDIT,
+            ),
+            actions = DocEditorScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
     name = "DocEditor save conflict Chinese large font",
     widthDp = 360,
     heightDp = 800,
@@ -1759,6 +1793,32 @@ fun docEditorReadyEditDirtyEnglishLandscapeReleasePreview() {
 
 @PreviewTest
 @Preview(
+    name = "DocEditor exact 800x360 edit dirty English",
+    widthDp = 800,
+    heightDp = 360,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun docEditorExact800x360EditDirtyEnglishReleasePreview() {
+    ReleasePreviewSurface {
+        DocEditorScreenContent(
+            state = DocEditorScreenState(
+                editorState = previewDocEditorState(
+                    title = "Nexara release checklist — edited",
+                    content = PREVIEW_DOC_EDITOR_EDIT_CONTENT,
+                    titleDirty = true,
+                    contentDirty = true,
+                ),
+                viewMode = DocEditorViewMode.EDIT,
+            ),
+            actions = DocEditorScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
     name = "Provider models Chinese landscape",
     widthDp = LANDSCAPE_WIDTH_DP,
     heightDp = LANDSCAPE_HEIGHT_DP,
@@ -1858,6 +1918,7 @@ private fun previewDocEditorState(
     persistedContent = PREVIEW_DOC_EDITOR_PERSISTED_CONTENT,
     currentHash = PREVIEW_DOC_EDITOR_HASH,
     totalLines = content.lineSequence().count(),
+    wordCount = content.split(Regex("\\s+")).count(String::isNotBlank),
     lastModified = PREVIEW_DOC_EDITOR_LAST_MODIFIED,
     sizeBytes = sizeBytes,
     titleDirty = titleDirty,
@@ -1896,7 +1957,7 @@ This **deterministic preview** verifies production Markdown rendering.
 - Security gates are complete
 - Accessibility checks are repeatable
 
-`./gradlew :app:validateDebugScreenshotTest`
+`./gradlew :app:validateDebugScreenshotTest :app:testDebugUnitTest :app:lintDebug :app:assembleDebug`
 
 | Gate | Result |
 | --- | --- |

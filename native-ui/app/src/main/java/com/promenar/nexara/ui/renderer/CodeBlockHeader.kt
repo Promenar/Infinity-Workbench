@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.renderer
 
+import android.webkit.WebView
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -32,6 +34,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -39,14 +44,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
-import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.R
 import kotlinx.coroutines.delay
-import android.webkit.WebView
 
+private val CodeBlockActionTouchTarget = 48.dp
+private val CodeBlockActionIconSize = 20.dp
 
 @Composable
 fun CodeBlockWithHeader(
@@ -64,6 +69,21 @@ fun CodeBlockWithHeader(
     var editedCode by remember(code) { mutableStateOf(code) }
     val lines = remember(code) { code.lines() }
     val lineCount = lines.size
+    val languageDescription = language
+        ?.takeIf(String::isNotBlank)
+        ?: stringResource(R.string.code_block_plain_text)
+    val blockDescription = pluralStringResource(
+        R.plurals.code_block_description,
+        lineCount,
+        languageDescription,
+        lineCount,
+    )
+    val fullScreenDescription = stringResource(R.string.code_block_full_screen)
+    val exportPngDescription = stringResource(R.string.code_block_export_png)
+    val editDescription = stringResource(R.string.code_block_edit)
+    val saveDescription = stringResource(R.string.code_block_save)
+    val copyDescription = stringResource(R.string.code_block_copy)
+    val copiedDescription = stringResource(R.string.code_block_copied)
     val gutterWidth = when {
         lineCount >= 100 -> 28.dp
         lineCount >= 10 -> 20.dp
@@ -88,46 +108,50 @@ fun CodeBlockWithHeader(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(NexaraShapes.medium)
-            .background(NexaraColors.SurfaceLowest)
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
             .semantics {
-                contentDescription = "Code block in ${language ?: "plain text"}, $lineCount lines"
+                contentDescription = blockDescription
             }
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(NexaraColors.SurfaceContainer)
-                .padding(horizontal = 16.dp, vertical = 6.dp),
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = language?.uppercase() ?: "CODE",
-                style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                color = NexaraColors.OnSurfaceVariant,
-                modifier = Modifier.weight(1f)
+                text = language?.uppercase() ?: stringResource(R.string.code_block_language_fallback),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .clearAndSetSemantics { },
             )
             if (!isEditing && isRenderableHtml) {
                 IconButton(
                     onClick = { showFullScreen = true },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(CodeBlockActionTouchTarget),
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Fullscreen,
-                        contentDescription = "Full screen",
-                        tint = NexaraColors.OnSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
+                        contentDescription = fullScreenDescription,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(CodeBlockActionIconSize),
                     )
                 }
                 IconButton(
                     onClick = { webView?.let { exportHtmlArtifactPng(it, context) } },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(CodeBlockActionTouchTarget),
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Download,
-                        contentDescription = "Export PNG",
-                        tint = NexaraColors.OnSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
+                        contentDescription = exportPngDescription,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(CodeBlockActionIconSize),
                     )
                 }
             }
@@ -139,13 +163,17 @@ fun CodeBlockWithHeader(
                         }
                         isEditing = !isEditing
                     },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(CodeBlockActionTouchTarget),
                 ) {
                     Icon(
                         imageVector = if (isEditing) Icons.Rounded.Check else Icons.Rounded.Edit,
-                        contentDescription = if (isEditing) "Save" else "Edit code",
-                        tint = if (isEditing) NexaraColors.StatusSuccess else NexaraColors.OnSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
+                        contentDescription = if (isEditing) saveDescription else editDescription,
+                        tint = if (isEditing) {
+                            MaterialTheme.colorScheme.tertiary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(CodeBlockActionIconSize),
                     )
                 }
             }
@@ -154,14 +182,18 @@ fun CodeBlockWithHeader(
                     clipboardManager.setText(AnnotatedString(code))
                     copied = true
                 },
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(CodeBlockActionTouchTarget),
             ) {
-                AnimatedContent(targetState = copied, label = "copy") { isCopied ->
+                AnimatedContent(targetState = copied, label = "code-block-copy-state") { isCopied ->
                     Icon(
                         imageVector = if (isCopied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                        contentDescription = if (isCopied) "Copied" else "Copy",
-                        tint = if (isCopied) NexaraColors.StatusSuccess else NexaraColors.OnSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
+                        contentDescription = if (isCopied) copiedDescription else copyDescription,
+                        tint = if (isCopied) {
+                            MaterialTheme.colorScheme.tertiary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(CodeBlockActionIconSize),
                     )
                 }
             }
@@ -174,30 +206,32 @@ fun CodeBlockWithHeader(
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 8.dp)
                     .heightIn(min = 100.dp),
-                textStyle = NexaraTypography.bodySmall.copy(
+                textStyle = MaterialTheme.typography.bodySmall.copy(
                     fontFamily = FontFamily.Monospace,
                     fontSize = fontSize.sp
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = NexaraColors.Primary.copy(alpha = 0.5f),
-                    unfocusedBorderColor = NexaraColors.OutlineVariant.copy(alpha = 0.3f),
-                    cursorColor = NexaraColors.Primary,
-                    focusedTextColor = NexaraColors.OnBackground,
-                    unfocusedTextColor = NexaraColors.OnBackground
+                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                 ),
-                shape = NexaraShapes.small
+                shape = MaterialTheme.shapes.small,
             )
         } else {
             Row(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier.padding(start = 8.dp, end = 6.dp, top = 16.dp, bottom = 16.dp)
+                    modifier = Modifier
+                        .padding(start = 8.dp, end = 6.dp, top = 16.dp, bottom = 16.dp)
+                        .clearAndSetSemantics { },
                 ) {
                     lines.forEachIndexed { index, _ ->
                         Text(
                             text = "${index + 1}",
-                            style = NexaraTypography.bodySmall.copy(
+                            style = MaterialTheme.typography.bodySmall.copy(
                                 fontSize = 12.sp,
-                                color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.4f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                 textAlign = TextAlign.End
                             ),
                             modifier = Modifier.widthIn(min = gutterWidth)
@@ -209,7 +243,8 @@ fun CodeBlockWithHeader(
                         .fillMaxHeight()
                         .padding(vertical = 16.dp)
                         .width(0.5.dp)
-                        .background(NexaraColors.OutlineVariant)
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                        .clearAndSetSemantics { },
                 )
                 Box(
                     modifier = Modifier

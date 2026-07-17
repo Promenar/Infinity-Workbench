@@ -3,33 +3,34 @@ package com.promenar.nexara.ui.rag
 import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Description
@@ -40,14 +41,21 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.VerticalSplit
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SingleChoiceSegmentedButtonRowScope
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -55,6 +63,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -68,36 +77,32 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.MarkdownText
-import com.promenar.nexara.ui.common.NexaraConfirmDialog
-import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraSpacing
-import com.promenar.nexara.ui.theme.NexaraTypography
 import java.util.Locale
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -202,7 +207,7 @@ fun DocEditorScreen(
     val viewModel: DocEditorViewModel = viewModel(
         factory = DocEditorViewModel.Factory(application = app),
     )
-    val editorState by viewModel.uiState.collectAsState()
+    val editorState by viewModel.uiState.collectAsStateWithLifecycle()
     val clipboard = context.getSystemService(ClipboardManager::class.java)
     val clipboardLabel = stringResource(R.string.doc_editor_clipboard_label)
 
@@ -321,7 +326,7 @@ fun DocEditorRouteContent(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun DocEditorScreenContent(
     state: DocEditorScreenState,
@@ -331,6 +336,25 @@ fun DocEditorScreenContent(
 ) {
     val editor = state.editorState
     val visibleState = editor.toVisibleState()
+    val isRecoveryState = when (visibleState) {
+        DocEditorVisibleState.SaveError,
+        DocEditorVisibleState.SaveConflict,
+        DocEditorVisibleState.NotFoundAfterSave,
+        -> true
+        else -> false
+    }
+    val shouldPrioritizeRecoveryFeedback =
+        isRecoveryState || shouldShowDocEditorPendingIndexNotice(editor)
+    if (shouldPrioritizeRecoveryFeedback) {
+        val focusManager = LocalFocusManager.current
+        val softwareKeyboardController = LocalSoftwareKeyboardController.current
+        LaunchedEffect(Unit) {
+            // 异步保存终态与索引失败的恢复操作比继续输入更紧急。
+            // 先主动释放焦点与 IME，同时下方布局优先级确保关闭动画期间也不隐藏反馈。
+            focusManager.clearFocus(force = true)
+            softwareKeyboardController?.hide()
+        }
+    }
     val savingContentDescription = stringResource(R.string.doc_editor_saving)
     val canSave = editor.hasLoadedDocument &&
         editor.contentAccess != DocEditorContentAccess.MetadataOnly &&
@@ -343,7 +367,7 @@ fun DocEditorScreenContent(
 
     Scaffold(
         modifier = modifier.testTagCompat(UiTags.DOC_EDITOR_ROOT),
-        containerColor = NexaraColors.CanvasBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = {
             snackbarHostState?.let { hostState ->
                 SnackbarHost(hostState = hostState)
@@ -353,32 +377,26 @@ fun DocEditorScreenContent(
             TopAppBar(
                 title = {
                     Text(
-                        text = editor.title.ifBlank {
-                            stringResource(R.string.doc_editor_screen_title)
-                        },
-                        style = NexaraTypography.headlineMedium,
-                        color = NexaraColors.OnSurface,
+                        text = stringResource(R.string.doc_editor_screen_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {
-                    Box(
+                    IconButton(
+                        onClick = actions.onRequestBack,
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(NexaraSpacing.MinimumTouchTarget)
                             .zIndex(1f)
-                            .testTagCompat(UiTags.DOC_EDITOR_BACK)
-                            .clickable(
-                                role = Role.Button,
-                                onClick = actions.onRequestBack,
-                            ),
-                        contentAlignment = Alignment.Center,
+                            .testTagCompat(UiTags.DOC_EDITOR_BACK),
                     ) {
                         Icon(
                             imageVector = DOC_EDITOR_BACK_ICON,
                             contentDescription = stringResource(R.string.common_cd_back),
-                            tint = NexaraColors.OnSurface,
-                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(NexaraSpacing.XLarge),
                         )
                     }
                 },
@@ -389,7 +407,7 @@ fun DocEditorScreenContent(
                         if (editor.phase == DocEditorPhase.Saving) {
                             Box(
                                 modifier = Modifier
-                                    .size(48.dp)
+                                    .size(NexaraSpacing.MinimumTouchTarget)
                                     .testTagCompat(UiTags.DOC_EDITOR_STATE_SAVING)
                                     .semantics {
                                         contentDescription = savingContentDescription
@@ -398,7 +416,7 @@ fun DocEditorScreenContent(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
+                                    modifier = Modifier.size(NexaraSpacing.XLarge),
                                     strokeWidth = 2.dp,
                                 )
                             }
@@ -407,16 +425,16 @@ fun DocEditorScreenContent(
                                 onClick = actions.onSave,
                                 enabled = canSave,
                                 modifier = Modifier
-                                    .size(48.dp)
+                                    .size(NexaraSpacing.MinimumTouchTarget)
                                     .testTagCompat(UiTags.DOC_EDITOR_SAVE),
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Save,
                                     contentDescription = stringResource(R.string.common_cd_save),
                                     tint = if (canSave) {
-                                        NexaraColors.Primary
+                                        MaterialTheme.colorScheme.primary
                                     } else {
-                                        NexaraColors.OnSurfaceVariant
+                                        MaterialTheme.colorScheme.onSurfaceVariant
                                     },
                                 )
                             }
@@ -424,7 +442,7 @@ fun DocEditorScreenContent(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = NexaraColors.CanvasBackground,
+                    containerColor = MaterialTheme.colorScheme.background,
                 ),
             )
         },
@@ -435,16 +453,52 @@ fun DocEditorScreenContent(
                 .padding(paddingValues),
         ) {
             val splitAvailable = isDocEditorSplitAvailable(maxWidth.value)
+            val density = LocalDensity.current
+            // 放大字体时，原本「正常高度」的手机窗口也会被标题、模式和状态区占满。
+            // 这里及早切换到紧凑结构，把正文/故障操作保留在可见区域，而不是让
+            // 可点击的恢复操作被零高度编辑区挤出窗口。
+            val compactVertical = maxHeight < 480.dp || (
+                maxHeight < 680.dp && density.fontScale >= 1.3f
+            )
+            // imePadding() 只会在测量阶段收缩 Column；这里直接读取真实 IME inset，
+            // 在收缩后已不足以同时容纳输入面板与辅助 chrome 时，优先保留可编辑内容。
+            val isImeVisible = WindowInsets.isImeVisible
+            val imeBottomDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
+            val prioritizeEditorSurface = isImeVisible &&
+                !shouldPrioritizeRecoveryFeedback &&
+                maxHeight - imeBottomDp < DOC_EDITOR_IME_MIN_EDITABLE_HEIGHT_DP.dp
+            // 索引待重试也可能在保存完成后异步出现。IME 关闭动画期间先让出
+            // 身份、模式与状态栏高度，确保失败提示和 48dp 重试操作立即可达。
+            val prioritizeImeFeedbackActions = compactVertical && isImeVisible &&
+                shouldPrioritizeRecoveryFeedback
+            // 保存终态没有继续编辑的收益，紧凑窗口应先确保恢复操作而不是文档身份和模式。
+            val prioritizeRecoveryActions = compactVertical && isRecoveryState
+            val showEditorChrome = !prioritizeEditorSurface &&
+                !prioritizeImeFeedbackActions &&
+                !prioritizeRecoveryActions
             val effectiveMode = if (!splitAvailable && state.viewMode == DocEditorViewMode.SPLIT) {
                 DocEditorViewMode.EDIT
             } else {
                 state.viewMode
             }
+            val horizontalPadding = when {
+                maxWidth >= 840.dp -> NexaraSpacing.XXLarge
+                maxWidth >= 600.dp -> NexaraSpacing.XLarge
+                else -> NexaraSpacing.Large
+            }
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .widthIn(max = 960.dp)
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .align(Alignment.TopCenter)
+                    .imePadding()
+                    .padding(
+                        horizontal = horizontalPadding,
+                        // 紧凑保存终态把全部纵向预算交给恢复操作与待索引重试。
+                        vertical = if (prioritizeRecoveryActions) 0.dp else NexaraSpacing.Small,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
             ) {
                 when (visibleState) {
                     DocEditorVisibleState.Loading -> LoadingState(Modifier.weight(1f))
@@ -466,24 +520,27 @@ fun DocEditorScreenContent(
                         visibleState = visibleState,
                         viewMode = effectiveMode,
                         splitAvailable = splitAvailable,
+                        compactVertical = compactVertical,
+                        showEditorChrome = showEditorChrome,
+                        showRecoveryNotice = !prioritizeEditorSurface,
                         actions = actions,
                         modifier = Modifier.weight(1f),
                     )
                 }
 
-                if (shouldShowDocEditorPendingIndexNotice(editor)) {
+                if (shouldShowDocEditorPendingIndexNotice(editor) && !prioritizeEditorSurface) {
                     PendingIndexNotice(onRetry = actions.onRetryPendingIndex)
                 }
 
-                val noticeOwnsRemainingSpace = visibleState in setOf(
-                    DocEditorVisibleState.SaveError,
-                    DocEditorVisibleState.SaveConflict,
-                    DocEditorVisibleState.NotFoundAfterSave,
-                )
-                if (editor.hasLoadedDocument && !noticeOwnsRemainingSpace) {
+                if (editor.hasLoadedDocument &&
+                    !isRecoveryState &&
+                    !prioritizeEditorSurface &&
+                    !prioritizeImeFeedbackActions
+                ) {
                     EditorStatusBar(
                         editor = editor,
                         viewMode = effectiveMode,
+                        compactVertical = compactVertical,
                     )
                 }
             }
@@ -502,6 +559,9 @@ private fun LoadedDocumentContent(
     visibleState: DocEditorVisibleState,
     viewMode: DocEditorViewMode,
     splitAvailable: Boolean,
+    compactVertical: Boolean,
+    showEditorChrome: Boolean,
+    showRecoveryNotice: Boolean,
     actions: DocEditorScreenActions,
     modifier: Modifier = Modifier,
 ) {
@@ -529,23 +589,62 @@ private fun LoadedDocumentContent(
     DisposableEffect(previewSnapshotController) {
         onDispose(previewSnapshotController::close)
     }
+    val editorVerticalScrollState = rememberSaveable(
+        editor.workspaceRootUuid,
+        editor.documentId,
+        saver = ScrollState.Saver,
+    ) { ScrollState(0) }
+    val editorHorizontalScrollState = rememberSaveable(
+        editor.workspaceRootUuid,
+        editor.documentId,
+        saver = ScrollState.Saver,
+    ) { ScrollState(0) }
+    val previewVerticalScrollState = rememberSaveable(
+        editor.workspaceRootUuid,
+        editor.documentId,
+        saver = ScrollState.Saver,
+    ) { ScrollState(0) }
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
-        DocumentIdentity(
-            editor = editor,
-            editable = isPerformanceProtected || viewMode != DocEditorViewMode.PREVIEW,
-            onTitleChange = actions.onTitleChange,
-        )
-        if (!isPerformanceProtected) {
-            ModeSelector(
-                selectedMode = viewMode,
-                splitAvailable = splitAvailable,
-                onModeChange = actions.onViewModeChange,
+        val titleEditable = isPerformanceProtected || viewMode != DocEditorViewMode.PREVIEW
+        if (showEditorChrome && compactVertical && !isPerformanceProtected) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+            ) {
+                DocumentIdentity(
+                    editor = editor,
+                    editable = titleEditable,
+                    onTitleChange = actions.onTitleChange,
+                    compactVertical = true,
+                    modifier = Modifier.weight(1f),
+                )
+                ModeSelector(
+                    selectedMode = viewMode,
+                    splitAvailable = splitAvailable,
+                    onModeChange = actions.onViewModeChange,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        } else if (showEditorChrome) {
+            DocumentIdentity(
+                editor = editor,
+                editable = titleEditable,
+                onTitleChange = actions.onTitleChange,
+                compactVertical = compactVertical,
             )
+            if (!isPerformanceProtected) {
+                ModeSelector(
+                    selectedMode = viewMode,
+                    splitAvailable = splitAvailable,
+                    onModeChange = actions.onViewModeChange,
+                )
+            }
         }
-        when (visibleState) {
+        if (showRecoveryNotice) when (visibleState) {
             DocEditorVisibleState.SaveError -> SaveNotice(
                 title = stringResource(R.string.doc_editor_save_failed_title),
                 description = failureDescription(editor.failureCode),
@@ -554,6 +653,7 @@ private fun LoadedDocumentContent(
                 primaryIcon = Icons.Rounded.Refresh,
                 onPrimary = actions.onRetrySave,
                 tag = UiTags.DOC_EDITOR_STATE_SAVE_ERROR,
+                compact = compactVertical,
             )
             DocEditorVisibleState.SaveConflict -> if (
                 editor.failureCode == DocEditorFailureCode.TitleConflict
@@ -572,6 +672,7 @@ private fun LoadedDocumentContent(
                     secondaryTag = UiTags.DOC_EDITOR_RETRY_MY_TITLE,
                     onSecondary = actions.onRetryMyTitle,
                     tag = UiTags.DOC_EDITOR_STATE_CONFLICT,
+                    compact = compactVertical,
                 )
             } else {
                 SaveNotice(
@@ -584,6 +685,7 @@ private fun LoadedDocumentContent(
                     secondaryTag = UiTags.DOC_EDITOR_REQUEST_RELOAD,
                     onSecondary = actions.onRequestReload,
                     tag = UiTags.DOC_EDITOR_STATE_CONFLICT,
+                    compact = compactVertical,
                 )
             }
             DocEditorVisibleState.NotFoundAfterSave -> SaveNotice(
@@ -596,47 +698,68 @@ private fun LoadedDocumentContent(
                 secondaryTag = UiTags.DOC_EDITOR_REQUEST_RELOAD,
                 onSecondary = actions.onRequestReload,
                 tag = UiTags.DOC_EDITOR_STATE_NOT_FOUND,
+                compact = compactVertical,
             )
             else -> Unit
         }
 
-        NexaraGlassCard(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            shape = NexaraShapes.large as RoundedCornerShape,
-        ) {
-            if (isPerformanceProtected) {
-                PerformanceProtectedPane(
-                    previewSnapshot = previewSnapshot,
-                    onCopyFullContent = actions.onCopyLocalContent,
-                )
-            } else when (viewMode) {
-                DocEditorViewMode.EDIT -> EditorPane(
-                    content = editor.content,
-                    onContentChange = actions.onContentChange,
-                )
-                DocEditorViewMode.PREVIEW -> PreviewPane(
-                    content = previewSnapshot.content,
-                    isTruncated = previewSnapshot.isTruncated,
-                )
-                DocEditorViewMode.SPLIT -> Row(Modifier.fillMaxSize()) {
-                    EditorPane(
+        val suppressEditorSurfaceForCompactRecovery = compactVertical && showRecoveryNotice &&
+            visibleState in setOf(
+                DocEditorVisibleState.SaveError,
+                DocEditorVisibleState.SaveConflict,
+                DocEditorVisibleState.NotFoundAfterSave,
+            )
+        // 保存终态的正文不能与恢复操作竞争 weight；否则第二个冲突操作会被压缩到
+        // 小于触控目标。IME 路径会传入 showRecoveryNotice=false，因此仍保留编辑面板。
+        if (!suppressEditorSurfaceForCompactRecovery) {
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .testTagCompat(UiTags.DOC_EDITOR_MAIN_PANE),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                if (isPerformanceProtected) {
+                    PerformanceProtectedPane(
+                        previewSnapshot = previewSnapshot,
+                        onCopyFullContent = actions.onCopyLocalContent,
+                        previewScrollState = previewVerticalScrollState,
+                    )
+                } else when (viewMode) {
+                    DocEditorViewMode.EDIT -> EditorPane(
                         content = editor.content,
                         onContentChange = actions.onContentChange,
-                        modifier = Modifier.weight(1f),
+                        verticalScrollState = editorVerticalScrollState,
+                        horizontalScrollState = editorHorizontalScrollState,
                     )
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .fillMaxHeight()
-                            .background(NexaraColors.OutlineVariant),
-                    )
-                    PreviewPane(
+                    DocEditorViewMode.PREVIEW -> PreviewPane(
                         content = previewSnapshot.content,
                         isTruncated = previewSnapshot.isTruncated,
-                        modifier = Modifier.weight(1f),
+                        verticalScrollState = previewVerticalScrollState,
                     )
+                    DocEditorViewMode.SPLIT -> Row(Modifier.fillMaxSize()) {
+                        EditorPane(
+                            content = editor.content,
+                            onContentChange = actions.onContentChange,
+                            verticalScrollState = editorVerticalScrollState,
+                            horizontalScrollState = editorHorizontalScrollState,
+                            modifier = Modifier.weight(1f),
+                        )
+                        VerticalDivider(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .testTagCompat(UiTags.DOC_EDITOR_SPLIT_DIVIDER),
+                            thickness = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
+                        PreviewPane(
+                            content = previewSnapshot.content,
+                            isTruncated = previewSnapshot.isTruncated,
+                            verticalScrollState = previewVerticalScrollState,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
         }
@@ -648,57 +771,113 @@ private fun DocumentIdentity(
     editor: DocEditorUiState,
     editable: Boolean,
     onTitleChange: (String) -> Unit,
+    compactVertical: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .testTagCompat(UiTags.DOC_EDITOR_IDENTITY),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
     ) {
         Icon(
             imageVector = Icons.Rounded.Description,
             contentDescription = null,
-            tint = NexaraColors.Primary,
-            modifier = Modifier.size(24.dp),
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(NexaraSpacing.XLarge),
         )
-        Column(Modifier.weight(1f)) {
-            val titleDescription = stringResource(R.string.doc_editor_title_input_description)
-            BasicTextField(
-                value = editor.title,
-                onValueChange = onTitleChange,
-                readOnly = !editable,
-                singleLine = true,
-                textStyle = NexaraTypography.headlineMedium.copy(color = NexaraColors.OnSurface),
-                cursorBrush = SolidColor(NexaraColors.Primary),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .defaultMinSize(minHeight = 48.dp)
-                    .testTagCompat(UiTags.DOC_EDITOR_TITLE_INPUT)
-                    .semantics { contentDescription = titleDescription },
-                decorationBox = { innerTextField ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (editor.title.isEmpty()) {
-                            Text(
-                                text = stringResource(R.string.doc_editor_title_placeholder),
-                                style = NexaraTypography.headlineMedium,
-                                color = NexaraColors.OnSurfaceVariant,
-                            )
-                        }
-                        innerTextField()
-                    }
-                },
-            )
-            Text(
-                text = stringResource(
-                    R.string.doc_editor_metadata,
-                    formatFileSize(editor.sizeBytes),
-                    stringResource(R.string.doc_editor_document_type),
-                ),
-                style = NexaraTypography.labelMedium,
-                color = NexaraColors.OnSurfaceVariant,
-                maxLines = 2,
-            )
+        if (compactVertical) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+            ) {
+                DocumentTitleField(
+                    editor = editor,
+                    editable = editable,
+                    onTitleChange = onTitleChange,
+                    modifier = Modifier.weight(1f),
+                )
+                DocumentMetadata(
+                    editor = editor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        } else {
+            Column(Modifier.weight(1f)) {
+                DocumentTitleField(
+                    editor = editor,
+                    editable = editable,
+                    onTitleChange = onTitleChange,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                DocumentMetadata(editor = editor)
+            }
         }
     }
+}
+
+@Composable
+private fun DocumentTitleField(
+    editor: DocEditorUiState,
+    editable: Boolean,
+    onTitleChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val titleDescription = stringResource(R.string.doc_editor_title_input_description)
+    BasicTextField(
+        value = editor.title,
+        onValueChange = onTitleChange,
+        readOnly = !editable,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.titleLarge.copy(
+            color = MaterialTheme.colorScheme.onSurface,
+        ),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        modifier = modifier
+            .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
+            // 紧凑横屏中标题与元数据各占一半宽度；BasicTextField 的单行绘制不能
+            // 越过自身测量边界压住相邻元数据。
+            .clipToBounds()
+            .testTagCompat(UiTags.DOC_EDITOR_TITLE_INPUT)
+            .semantics { contentDescription = titleDescription },
+        decorationBox = { innerTextField ->
+            Box(contentAlignment = Alignment.CenterStart) {
+                if (editor.title.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.doc_editor_title_placeholder),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                innerTextField()
+            }
+        },
+    )
+}
+
+@Composable
+private fun DocumentMetadata(
+    editor: DocEditorUiState,
+    maxLines: Int = 2,
+    overflow: TextOverflow = TextOverflow.Clip,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = stringResource(
+            R.string.doc_editor_metadata,
+            formatFileSize(editor.sizeBytes),
+            stringResource(R.string.doc_editor_document_type),
+        ),
+        modifier = modifier.testTagCompat(UiTags.DOC_EDITOR_METADATA),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = maxLines,
+        overflow = overflow,
+    )
 }
 
 @Composable
@@ -706,81 +885,77 @@ private fun ModeSelector(
     selectedMode: DocEditorViewMode,
     splitAvailable: Boolean,
     onModeChange: (DocEditorViewMode) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = Modifier
+    val modes = buildList {
+        add(DocEditorViewMode.EDIT to Icons.Rounded.Edit)
+        add(DocEditorViewMode.PREVIEW to Icons.Rounded.Visibility)
+        if (splitAvailable) add(DocEditorViewMode.SPLIT to Icons.Rounded.VerticalSplit)
+    }
+    SingleChoiceSegmentedButtonRow(
+        modifier = modifier
             .fillMaxWidth()
-            .clip(NexaraShapes.medium)
-            .background(NexaraColors.SurfaceContainer)
-            .border(0.5.dp, NexaraColors.OutlineVariant, NexaraShapes.medium),
+            .testTagCompat(UiTags.DOC_EDITOR_MODE_SELECTOR),
     ) {
-        ModeTab(
-            icon = Icons.Rounded.Edit,
-            label = stringResource(R.string.doc_editor_edit),
-            selected = selectedMode == DocEditorViewMode.EDIT,
-            tag = UiTags.DOC_EDITOR_MODE_EDIT,
-            modifier = Modifier.weight(1f),
-            onClick = { onModeChange(DocEditorViewMode.EDIT) },
-        )
-        ModeTab(
-            icon = Icons.Rounded.Visibility,
-            label = stringResource(R.string.doc_editor_preview),
-            selected = selectedMode == DocEditorViewMode.PREVIEW,
-            tag = UiTags.DOC_EDITOR_MODE_PREVIEW,
-            modifier = Modifier.weight(1f),
-            onClick = { onModeChange(DocEditorViewMode.PREVIEW) },
-        )
-        if (splitAvailable) {
+        modes.forEachIndexed { index, (mode, icon) ->
             ModeTab(
-                icon = Icons.Rounded.VerticalSplit,
-                label = stringResource(R.string.doc_editor_split),
-                selected = selectedMode == DocEditorViewMode.SPLIT,
-                tag = UiTags.DOC_EDITOR_MODE_SPLIT,
-                modifier = Modifier.weight(1f),
-                onClick = { onModeChange(DocEditorViewMode.SPLIT) },
+                mode = mode,
+                icon = icon,
+                selected = selectedMode == mode,
+                index = index,
+                count = modes.size,
+                onClick = { onModeChange(mode) },
             )
         }
     }
 }
 
 @Composable
-private fun ModeTab(
+private fun SingleChoiceSegmentedButtonRowScope.ModeTab(
+    mode: DocEditorViewMode,
     icon: ImageVector,
-    label: String,
     selected: Boolean,
-    tag: String,
-    modifier: Modifier = Modifier,
+    index: Int,
+    count: Int,
     onClick: () -> Unit,
 ) {
-    val background by animateColorAsState(
-        targetValue = if (selected) NexaraColors.SurfaceBright else Color.Transparent,
-        label = "docEditorMode",
+    val label = stringResource(
+        when (mode) {
+            DocEditorViewMode.EDIT -> R.string.doc_editor_edit
+            DocEditorViewMode.PREVIEW -> R.string.doc_editor_preview
+            DocEditorViewMode.SPLIT -> R.string.doc_editor_split
+        },
     )
-    Row(
-        modifier = modifier
-            .defaultMinSize(minHeight = 48.dp)
-            .background(background)
-            .selectable(
-                selected = selected,
-                role = Role.Tab,
-                onClick = onClick,
-            )
+    val tag = when (mode) {
+        DocEditorViewMode.EDIT -> UiTags.DOC_EDITOR_MODE_EDIT
+        DocEditorViewMode.PREVIEW -> UiTags.DOC_EDITOR_MODE_PREVIEW
+        DocEditorViewMode.SPLIT -> UiTags.DOC_EDITOR_MODE_SPLIT
+    }
+    this@ModeTab.SegmentedButton(
+        selected = selected,
+        onClick = onClick,
+        shape = SegmentedButtonDefaults.itemShape(index = index, count = count),
+        modifier = Modifier
+            .weight(1f)
+            .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
+            .fillMaxWidth()
+            // Tag 与 Role 必须落在实际 SegmentedButton，而不是由外层容器伪造。
             .testTagCompat(tag)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
+            .semantics {
+                role = Role.Tab
+                this.selected = selected
+            },
+        icon = {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+        },
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = if (selected) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant,
-        )
-        Spacer(Modifier.width(6.dp))
         Text(
             text = label,
-            style = NexaraTypography.labelMedium,
-            color = if (selected) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant,
+            style = MaterialTheme.typography.labelLarge,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -791,38 +966,34 @@ private fun ModeTab(
 private fun EditorPane(
     content: String,
     onContentChange: (String) -> Unit,
+    verticalScrollState: ScrollState,
+    horizontalScrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
-    val verticalScrollState = rememberScrollState()
-    val horizontalScrollState = rememberScrollState()
     val inputDescription = stringResource(R.string.doc_editor_content_input_description)
     BasicTextField(
         value = content,
         onValueChange = onContentChange,
-        textStyle = TextStyle(
+        textStyle = MaterialTheme.typography.bodyMedium.copy(
             fontFamily = FontFamily.Monospace,
-            fontSize = 14.sp,
-            lineHeight = 22.sp,
-            color = NexaraColors.OnSurface,
+            color = MaterialTheme.colorScheme.onSurface,
         ),
-        cursorBrush = SolidColor(NexaraColors.Primary),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(verticalScrollState)
             .horizontalScroll(horizontalScrollState)
-            .defaultMinSize(minHeight = 240.dp)
             .testTagCompat(UiTags.DOC_EDITOR_INPUT)
             .semantics { contentDescription = inputDescription }
-            .padding(12.dp),
+            .padding(NexaraSpacing.Medium),
         decorationBox = { innerTextField ->
             Box {
                 if (content.isEmpty()) {
                     Text(
                         text = stringResource(R.string.doc_editor_typing_placeholder),
-                        style = TextStyle(
+                        style = MaterialTheme.typography.bodyMedium.copy(
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 14.sp,
-                            color = NexaraColors.OnSurfaceVariant,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
                     )
                 }
@@ -836,21 +1007,22 @@ private fun EditorPane(
 private fun PreviewPane(
     content: String,
     isTruncated: Boolean,
+    verticalScrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(verticalScrollState)
             .testTagCompat(UiTags.DOC_EDITOR_PREVIEW)
-            .padding(20.dp),
+            .padding(NexaraSpacing.Large),
         verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
         if (isTruncated) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = NexaraShapes.medium,
-                color = NexaraColors.SurfaceLow,
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
                 Text(
                     text = stringResource(R.string.doc_editor_preview_truncated),
@@ -858,15 +1030,15 @@ private fun PreviewPane(
                         horizontal = NexaraSpacing.Medium,
                         vertical = NexaraSpacing.Small,
                     ),
-                    style = NexaraTypography.bodySmall,
-                    color = NexaraColors.OnSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
         MarkdownText(
             markdown = content,
-            fontSize = 15,
-            overrideColor = NexaraColors.OnSurface,
+            fontSize = MaterialTheme.typography.bodyMedium.fontSize.value.toInt(),
+            overrideColor = MaterialTheme.colorScheme.onSurface,
         )
     }
 }
@@ -875,20 +1047,21 @@ private fun PreviewPane(
 private fun PerformanceProtectedPane(
     previewSnapshot: DocEditorPreviewSnapshot,
     onCopyFullContent: () -> Unit,
+    previewScrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(previewScrollState)
             .testTagCompat(UiTags.DOC_EDITOR_STATE_PERFORMANCE_PROTECTED)
-            .padding(20.dp),
+            .padding(NexaraSpacing.Large),
         verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = NexaraShapes.medium,
-            color = NexaraColors.SurfaceLow,
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
             Column(
                 modifier = Modifier.padding(NexaraSpacing.Medium),
@@ -896,18 +1069,18 @@ private fun PerformanceProtectedPane(
             ) {
                 Text(
                     text = stringResource(R.string.doc_editor_performance_protected_title),
-                    style = NexaraTypography.titleMedium,
-                    color = NexaraColors.OnSurface,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = stringResource(R.string.doc_editor_performance_protected_description),
-                    style = NexaraTypography.bodyMedium,
-                    color = NexaraColors.OnSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedButton(
                     onClick = onCopyFullContent,
                     modifier = Modifier
-                        .defaultMinSize(minHeight = 48.dp)
+                        .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
                         .testTagCompat(UiTags.DOC_EDITOR_COPY_PROTECTED_FULL),
                 ) {
                     Icon(Icons.Rounded.ContentCopy, contentDescription = null)
@@ -919,8 +1092,8 @@ private fun PerformanceProtectedPane(
         Box(Modifier.testTagCompat(UiTags.DOC_EDITOR_PREVIEW)) {
             MarkdownText(
                 markdown = previewSnapshot.content,
-                fontSize = 15,
-                overrideColor = NexaraColors.OnSurface,
+                fontSize = MaterialTheme.typography.bodyMedium.fontSize.value.toInt(),
+                overrideColor = MaterialTheme.colorScheme.onSurface,
             )
         }
     }
@@ -935,7 +1108,7 @@ private fun LoadingState(modifier: Modifier = Modifier) {
         tag = UiTags.DOC_EDITOR_STATE_LOADING,
         modifier = modifier,
     ) {
-        CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
+        CircularProgressIndicator(Modifier.size(NexaraSpacing.XXLarge), strokeWidth = 3.dp)
     }
 }
 
@@ -951,11 +1124,11 @@ private fun LoadErrorState(onRetry: () -> Unit, modifier: Modifier = Modifier) {
         Button(
             onClick = onRetry,
             modifier = Modifier
-                .defaultMinSize(minHeight = 48.dp)
+                .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
                 .testTagCompat(UiTags.DOC_EDITOR_RETRY_LOAD),
         ) {
             Icon(Icons.Rounded.Refresh, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(NexaraSpacing.Small))
             Text(stringResource(R.string.doc_editor_retry_load))
         }
     }
@@ -973,7 +1146,7 @@ private fun NotFoundState(onRetry: () -> Unit, modifier: Modifier = Modifier) {
         OutlinedButton(
             onClick = onRetry,
             modifier = Modifier
-                .defaultMinSize(minHeight = 48.dp)
+                .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
                 .testTagCompat(UiTags.DOC_EDITOR_RETRY_LOAD),
         ) {
             Text(stringResource(R.string.doc_editor_retry_load))
@@ -989,38 +1162,43 @@ private fun MetadataOnlyState(
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
         DocumentIdentityReadOnly(editor)
         if (!editor.warningDismissed) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(NexaraShapes.medium)
-                    .background(NexaraColors.ErrorContainer.copy(alpha = 0.22f))
-                    .border(0.5.dp, NexaraColors.Error.copy(alpha = 0.35f), NexaraShapes.medium)
-                    .padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.errorContainer,
             ) {
-                Icon(Icons.Rounded.Warning, contentDescription = null, tint = NexaraColors.Error)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.doc_editor_large_file_warning),
-                    style = NexaraTypography.bodyMedium,
-                    color = NexaraColors.OnSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(
-                    onClick = onDismissWarning,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .testTagCompat(UiTags.DOC_EDITOR_WARNING_DISMISS),
+                Row(
+                    modifier = Modifier.padding(start = NexaraSpacing.Medium),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = stringResource(R.string.doc_editor_dismiss),
-                        tint = NexaraColors.OnSurfaceVariant,
+                        Icons.Rounded.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
                     )
+                    Spacer(Modifier.width(NexaraSpacing.Small))
+                    Text(
+                        text = stringResource(R.string.doc_editor_large_file_warning),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = onDismissWarning,
+                        modifier = Modifier
+                            .size(NexaraSpacing.MinimumTouchTarget)
+                            .testTagCompat(UiTags.DOC_EDITOR_WARNING_DISMISS),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = stringResource(R.string.doc_editor_dismiss),
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
                 }
             }
         }
@@ -1039,11 +1217,15 @@ private fun MetadataOnlyState(
 
 @Composable
 private fun DocumentIdentityReadOnly(editor: DocEditorUiState) {
-    Column(Modifier.fillMaxWidth()) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .testTagCompat(UiTags.DOC_EDITOR_IDENTITY),
+    ) {
         Text(
             text = editor.title,
-            style = NexaraTypography.headlineMedium,
-            color = NexaraColors.OnSurface,
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1053,8 +1235,9 @@ private fun DocumentIdentityReadOnly(editor: DocEditorUiState) {
                 formatFileSize(editor.sizeBytes),
                 stringResource(R.string.doc_editor_document_type),
             ),
-            style = NexaraTypography.labelMedium,
-            color = NexaraColors.OnSurfaceVariant,
+            modifier = Modifier.testTagCompat(UiTags.DOC_EDITOR_METADATA),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -1068,17 +1251,16 @@ private fun StatePanel(
     modifier: Modifier = Modifier,
     action: @Composable (() -> Unit)? = null,
 ) {
-    NexaraGlassCard(
+    Box(
         modifier = modifier
-            .fillMaxWidth()
+            .fillMaxSize()
+            // 加载/错误信息在短高窗口或 2x 字体下可以完整滚动到行动按钮。
+            .verticalScroll(rememberScrollState())
             .testTagCompat(tag),
-        shape = NexaraShapes.large as RoundedCornerShape,
+        contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+            modifier = Modifier.padding(NexaraSpacing.XLarge),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -1086,27 +1268,27 @@ private fun StatePanel(
                 Icon(
                     imageVector = it,
                     contentDescription = null,
-                    tint = NexaraColors.Primary,
-                    modifier = Modifier.size(36.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(NexaraSpacing.XXLarge),
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(NexaraSpacing.Medium))
             }
             Text(
                 text = title,
                 modifier = Modifier.semantics {
                     liveRegion = LiveRegionMode.Polite
                 },
-                style = NexaraTypography.headlineMedium,
-                color = NexaraColors.OnSurface,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(NexaraSpacing.Small))
             Text(
                 text = description,
-                style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             action?.let {
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(NexaraSpacing.Large))
                 it()
             }
         }
@@ -1125,72 +1307,85 @@ private fun SaveNotice(
     secondaryLabel: String? = null,
     secondaryTag: String? = null,
     onSecondary: (() -> Unit)? = null,
+    compact: Boolean = false,
 ) {
-    Column(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(NexaraShapes.medium)
-            .background(NexaraColors.SurfaceLow)
-            .border(0.5.dp, NexaraColors.OutlineVariant, NexaraShapes.medium)
-            .testTagCompat(tag)
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .testTagCompat(tag),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
-        Text(
-            text = title,
-            modifier = Modifier.semantics {
-                liveRegion = LiveRegionMode.Assertive
-            },
-            style = NexaraTypography.titleMedium,
-            color = NexaraColors.OnSurface,
-        )
-        Text(description, style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
-        val primaryButton: @Composable (Modifier) -> Unit = { buttonModifier ->
-            Button(
-                onClick = onPrimary,
-                modifier = buttonModifier
-                    .testTagCompat(primaryTag)
-                    .defaultMinSize(minHeight = 48.dp),
-            ) {
-                Icon(primaryIcon, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text(primaryLabel)
-            }
-        }
-        val secondaryButton: @Composable (Modifier) -> Unit = { buttonModifier ->
-            if (secondaryLabel != null && secondaryTag != null && onSecondary != null) {
-                OutlinedButton(
-                    onClick = onSecondary,
-                    modifier = buttonModifier
-                        .testTagCompat(secondaryTag)
-                        .defaultMinSize(minHeight = 48.dp),
-                ) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text(secondaryLabel)
-                }
-            }
-        }
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val stackActions = shouldStackDocEditorNoticeActions(
-                availableWidthDp = maxWidth.value,
-                fontScale = LocalDensity.current.fontScale,
+        Column(
+            modifier = Modifier.padding(
+                horizontal = NexaraSpacing.Medium,
+                vertical = if (compact) NexaraSpacing.Small else NexaraSpacing.Medium,
+            ),
+            // 紧凑恢复态只压缩标题/说明/操作组之间的间隔；两个恢复按钮仍保留 8dp 间隔。
+            verticalArrangement = Arrangement.spacedBy(
+                if (compact) NexaraSpacing.XSmall else NexaraSpacing.Small,
+            ),
+        ) {
+            Text(
+                text = title,
+                modifier = Modifier.semantics {
+                    liveRegion = LiveRegionMode.Assertive
+                },
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
             )
-            if (stackActions) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+            Text(
+                description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            val primaryButton: @Composable (Modifier) -> Unit = { buttonModifier ->
+                Button(
+                    onClick = onPrimary,
+                    modifier = buttonModifier
+                        .testTagCompat(primaryTag)
+                        .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget),
                 ) {
-                    primaryButton(Modifier.fillMaxWidth())
-                    secondaryButton(Modifier.fillMaxWidth())
+                    Icon(primaryIcon, contentDescription = null)
+                    Spacer(Modifier.width(NexaraSpacing.Small))
+                    Text(primaryLabel)
                 }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    primaryButton(Modifier)
-                    secondaryButton(Modifier)
+            }
+            val secondaryButton: @Composable (Modifier) -> Unit = { buttonModifier ->
+                if (secondaryLabel != null && secondaryTag != null && onSecondary != null) {
+                    OutlinedButton(
+                        onClick = onSecondary,
+                        modifier = buttonModifier
+                            .testTagCompat(secondaryTag)
+                            .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget),
+                    ) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = null)
+                        Spacer(Modifier.width(NexaraSpacing.Small))
+                        Text(secondaryLabel)
+                    }
+                }
+            }
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val stackActions = shouldStackDocEditorNoticeActions(
+                    availableWidthDp = maxWidth.value,
+                    fontScale = LocalDensity.current.fontScale,
+                )
+                if (stackActions) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                    ) {
+                        primaryButton(Modifier.fillMaxWidth())
+                        secondaryButton(Modifier.fillMaxWidth())
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                    ) {
+                        primaryButton(Modifier)
+                        secondaryButton(Modifier)
+                    }
                 }
             }
         }
@@ -1201,6 +1396,7 @@ private fun SaveNotice(
 private fun EditorStatusBar(
     editor: DocEditorUiState,
     viewMode: DocEditorViewMode,
+    compactVertical: Boolean,
 ) {
     val modeLabel = when {
         editor.phase == DocEditorPhase.Saving -> stringResource(R.string.doc_editor_saving)
@@ -1216,42 +1412,82 @@ private fun EditorStatusBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(NexaraShapes.medium)
-            .background(NexaraColors.SurfaceLow)
-            .border(0.5.dp, NexaraColors.GlassBorder, NexaraShapes.medium)
-            .testTagCompat(UiTags.DOC_EDITOR_STATUS)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .testTagCompat(UiTags.DOC_EDITOR_STATUS),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
     ) {
-        Text(
-            text = stringResource(
-                R.string.doc_editor_statistics,
-                stringResource(R.string.doc_editor_utf8),
-                editor.wordCount,
-                editor.content.length,
-            ),
-            style = NexaraTypography.bodySmall,
-            color = NexaraColors.OnSurfaceVariant,
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        val statistics = stringResource(
+            R.string.doc_editor_statistics,
+            stringResource(R.string.doc_editor_utf8),
+            editor.wordCount,
+            editor.content.length,
         )
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Box(
+        if (compactVertical) {
+            Row(
+                modifier = Modifier.padding(horizontal = NexaraSpacing.XSmall),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+            ) {
+                Text(
+                    text = statistics,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTagCompat(UiTags.DOC_EDITOR_STATISTICS),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                EditorStatusIndicator(editor = editor, modeLabel = modeLabel)
+            }
+        } else {
+            Text(
+                text = statistics,
                 modifier = Modifier
-                    .size(8.dp)
-                    .background(
-                        if (editor.isDirty) NexaraColors.StatusWarning else NexaraColors.StatusSuccess,
-                        CircleShape,
-                    ),
+                    .padding(horizontal = NexaraSpacing.XSmall)
+                    .testTagCompat(UiTags.DOC_EDITOR_STATISTICS),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(modeLabel, style = NexaraTypography.bodySmall, color = NexaraColors.OnSurface)
+            Row(
+                modifier = Modifier.padding(horizontal = NexaraSpacing.XSmall),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+            ) {
+                EditorStatusIndicator(editor = editor, modeLabel = modeLabel)
+            }
         }
     }
 }
 
 @Composable
+private fun EditorStatusIndicator(
+    editor: DocEditorUiState,
+    modeLabel: String,
+) {
+    Icon(
+        imageVector = if (editor.isDirty) Icons.Rounded.Warning else Icons.Rounded.CheckCircle,
+        contentDescription = null,
+        tint = if (editor.isDirty) {
+            MaterialTheme.colorScheme.tertiary
+        } else {
+            MaterialTheme.colorScheme.primary
+        },
+        modifier = Modifier.size(18.dp),
+    )
+    Text(
+        text = modeLabel,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
 private fun PendingIndexNotice(onRetry: () -> Unit) {
+    val retryPendingIndexDescription = "${stringResource(R.string.shared_btn_retry)}：" +
+        stringResource(R.string.rag_index_retry_hint)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -1271,7 +1507,7 @@ private fun PendingIndexNotice(onRetry: () -> Unit) {
             Icon(
                 imageVector = Icons.Rounded.Warning,
                 contentDescription = null,
-                tint = NexaraColors.StatusWarning,
+                tint = MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.size(20.dp),
             )
             Text(
@@ -1282,10 +1518,15 @@ private fun PendingIndexNotice(onRetry: () -> Unit) {
             )
             TextButton(
                 onClick = onRetry,
-                modifier = Modifier.defaultMinSize(
-                    minWidth = NexaraSpacing.MinimumTouchTarget,
-                    minHeight = NexaraSpacing.MinimumTouchTarget,
-                ),
+                modifier = Modifier
+                    .defaultMinSize(
+                        minWidth = NexaraSpacing.MinimumTouchTarget,
+                        minHeight = NexaraSpacing.MinimumTouchTarget,
+                    )
+                    // 明确这一个“重试”对应的是索引队列，而不是保存/加载重试。
+                    // TextButton 会合并内部 Text 的语义，因此该描述也是辅助功能与测试
+                    // 可以稳定定位的唯一可操作节点。
+                    .semantics { contentDescription = retryPendingIndexDescription },
             ) {
                 Text(stringResource(R.string.shared_btn_retry))
             }
@@ -1300,40 +1541,41 @@ private fun DocEditorConfirmationDialog(
 ) {
     if (confirmation == null) return
     val isDiscard = confirmation == DocEditorConfirmation.DiscardChanges
-    Dialog(onDismissRequest = actions.onDismissConfirmation) {
-        Box(
-            modifier = Modifier.testTagCompat(
-                if (isDiscard) UiTags.DOC_EDITOR_DISCARD_DIALOG else UiTags.DOC_EDITOR_RELOAD_DIALOG,
-            ),
-        ) {
-            NexaraConfirmDialog(
-                title = stringResource(
+    AlertDialog(
+        onDismissRequest = actions.onDismissConfirmation,
+        modifier = Modifier.testTagCompat(
+            if (isDiscard) UiTags.DOC_EDITOR_DISCARD_DIALOG else UiTags.DOC_EDITOR_RELOAD_DIALOG,
+        ),
+        title = {
+            Text(
+                stringResource(
                     if (isDiscard) {
                         R.string.doc_editor_discard_title
                     } else {
                         R.string.doc_editor_reload_title
                     },
                 ),
-                message = stringResource(
+            )
+        },
+        text = {
+            Text(
+                stringResource(
                     if (isDiscard) {
                         R.string.doc_editor_discard_description
                     } else {
                         R.string.doc_editor_reload_description
                     },
                 ),
-                confirmText = stringResource(
-                    if (isDiscard) {
-                        R.string.doc_editor_discard_confirm
-                    } else {
-                        R.string.doc_editor_reload_confirm
-                    },
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = if (isDiscard) actions.onConfirmDiscard else actions.onConfirmReload,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
                 ),
-                cancelText = null,
-                onConfirm = if (isDiscard) actions.onConfirmDiscard else actions.onConfirmReload,
-                onCancel = actions.onDismissConfirmation,
-                isDestructive = true,
-                confirmButtonModifier = Modifier
-                    .defaultMinSize(minHeight = 48.dp)
+                modifier = Modifier
+                    .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
                     .testTagCompat(
                         if (isDiscard) {
                             UiTags.DOC_EDITOR_DISCARD_CONFIRM
@@ -1341,25 +1583,35 @@ private fun DocEditorConfirmationDialog(
                             UiTags.DOC_EDITOR_RELOAD_CONFIRM
                         },
                     ),
-                content = {
-                    TextButton(
-                        onClick = actions.onDismissConfirmation,
-                        modifier = Modifier
-                            .defaultMinSize(minHeight = 48.dp)
-                            .testTagCompat(
-                                if (isDiscard) {
-                                    UiTags.DOC_EDITOR_DISCARD_CANCEL
-                                } else {
-                                    UiTags.DOC_EDITOR_RELOAD_CANCEL
-                                },
-                            ),
-                    ) {
-                        Text(stringResource(R.string.common_btn_cancel))
-                    }
-                },
-            )
-        }
-    }
+            ) {
+                Text(
+                    stringResource(
+                        if (isDiscard) {
+                            R.string.doc_editor_discard_confirm
+                        } else {
+                            R.string.doc_editor_reload_confirm
+                        },
+                    ),
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = actions.onDismissConfirmation,
+                modifier = Modifier
+                    .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
+                    .testTagCompat(
+                        if (isDiscard) {
+                            UiTags.DOC_EDITOR_DISCARD_CANCEL
+                        } else {
+                            UiTags.DOC_EDITOR_RELOAD_CANCEL
+                        },
+                    ),
+            ) {
+                Text(stringResource(R.string.common_btn_cancel))
+            }
+        },
+    )
 }
 
 @Composable
@@ -1387,3 +1639,4 @@ private fun Modifier.testTagCompat(tag: String): Modifier =
 
 private const val SPLIT_MIN_WIDTH_DP = 720f
 private const val NOTICE_ACTIONS_STACK_MIN_WIDTH_DP = 480f
+private const val DOC_EDITOR_IME_MIN_EDITABLE_HEIGHT_DP = 300f

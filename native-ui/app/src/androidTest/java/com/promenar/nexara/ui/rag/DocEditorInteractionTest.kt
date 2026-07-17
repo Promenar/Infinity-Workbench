@@ -1,5 +1,9 @@
 package com.promenar.nexara.ui.rag
 
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.os.SystemClock
+import android.view.WindowInsets as AndroidWindowInsets
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
@@ -10,12 +14,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.FontScale
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.WindowSize
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -23,23 +31,45 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.then
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.test.espresso.Espresso
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.abs
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 
 class DocEditorInteractionTest {
     @get:Rule
     val rule = createAndroidComposeRule<ComponentActivity>()
+
+    @After
+    fun closeImeAfterTest() {
+        if (imeVisible()) {
+            Espresso.pressBack()
+            awaitImeClosed()
+        }
+        rule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
 
     @Test
     fun loadingDoesNotRenderFakeEditor() {
@@ -152,9 +182,7 @@ class DocEditorInteractionTest {
         rule.onNodeWithText(
             rule.activity.getString(com.promenar.nexara.R.string.rag_index_retry_hint),
         ).assertIsDisplayed()
-        rule.onNodeWithText(
-            rule.activity.getString(com.promenar.nexara.R.string.shared_btn_retry),
-        )
+        rule.onNodeWithContentDescription(pendingIndexRetryDescription())
             .assertIsDisplayed()
             .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)
@@ -178,11 +206,11 @@ class DocEditorInteractionTest {
             )
         }
         val hint = rule.activity.getString(com.promenar.nexara.R.string.rag_index_retry_hint)
-        val retry = rule.activity.getString(com.promenar.nexara.R.string.shared_btn_retry)
+        val retry = pendingIndexRetryDescription()
 
         rule.onAllNodesWithText(hint).assertCountEquals(1)
-        rule.onAllNodesWithText(retry).assertCountEquals(1)
-        rule.onNodeWithText(retry).performClick()
+        rule.onAllNodes(hasContentDescription(retry)).assertCountEquals(1)
+        rule.onNodeWithContentDescription(retry).performClick()
         assertThat(retries.get()).isEqualTo(1)
 
         rule.runOnIdle {
@@ -194,7 +222,7 @@ class DocEditorInteractionTest {
             ).withPendingIndex()
         }
         rule.onAllNodesWithText(hint).assertCountEquals(1)
-        rule.onAllNodesWithText(retry).assertCountEquals(1)
+        rule.onAllNodes(hasContentDescription(retry)).assertCountEquals(1)
     }
 
     @Test
@@ -238,13 +266,18 @@ class DocEditorInteractionTest {
             .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)
             .performClick()
+        // 紧凑保存终态应把恢复操作放在首位，不能留下隐藏但仍占高度的编辑 chrome。
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_IDENTITY).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_SELECTOR).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_STATUS).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_MAIN_PANE).assertDoesNotExist()
 
         val pendingHint = rule.activity.getString(com.promenar.nexara.R.string.rag_index_retry_hint)
-        val pendingRetry = rule.activity.getString(com.promenar.nexara.R.string.shared_btn_retry)
+        val pendingRetry = pendingIndexRetryDescription()
         rule.onAllNodesWithText(pendingHint).assertCountEquals(1)
         rule.onNodeWithText(pendingHint).assertIsDisplayed()
-        rule.onAllNodesWithText(pendingRetry).assertCountEquals(1)
-        rule.onNodeWithText(pendingRetry)
+        rule.onAllNodes(hasContentDescription(pendingRetry)).assertCountEquals(1)
+        rule.onNodeWithContentDescription(pendingRetry)
             .assertIsDisplayed()
             .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)
@@ -253,6 +286,41 @@ class DocEditorInteractionTest {
         assertThat(copies.get()).isEqualTo(1)
         assertThat(reloads.get()).isEqualTo(1)
         assertThat(pendingRetries.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun compactTerminalStatesDoNotReserveEditorChromeSpace() {
+        var editorState by mutableStateOf(
+            readyEditorState(phase = DocEditorPhase.SaveError, dirty = true),
+        )
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 640.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
+                TestContent(screenState = DocEditorScreenState(editorState = editorState))
+            }
+        }
+
+        val terminalStates = listOf(
+            readyEditorState(phase = DocEditorPhase.SaveError, dirty = true) to
+                UiTags.DOC_EDITOR_RETRY_SAVE,
+            readyEditorState(phase = DocEditorPhase.SaveConflict, dirty = true) to
+                UiTags.DOC_EDITOR_COPY_LOCAL,
+            readyEditorState(phase = DocEditorPhase.NotFound, dirty = true) to
+                UiTags.DOC_EDITOR_COPY_LOCAL,
+        )
+        terminalStates.forEach { (state, recoveryActionTag) ->
+            rule.runOnIdle { editorState = state }
+            rule.onNodeWithTag(recoveryActionTag)
+                .assertIsDisplayed()
+                .assertHasClickAction()
+                .assertHeightIsAtLeast(48.dp)
+            rule.onNodeWithTag(UiTags.DOC_EDITOR_IDENTITY).assertDoesNotExist()
+            rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_SELECTOR).assertDoesNotExist()
+            rule.onNodeWithTag(UiTags.DOC_EDITOR_STATUS).assertDoesNotExist()
+            rule.onNodeWithTag(UiTags.DOC_EDITOR_MAIN_PANE).assertDoesNotExist()
+        }
     }
 
     @Test
@@ -604,17 +672,15 @@ class DocEditorInteractionTest {
     @Test
     fun phoneAtDoubleFontScaleKeepsPrimaryActionsReachableAndAtLeast48Dp() {
         rule.setContent {
-            val density = LocalDensity.current
-            CompositionLocalProvider(
-                LocalDensity provides Density(density.density, fontScale = 2f),
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 800.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
             ) {
-                Box(Modifier.requiredSize(width = 360.dp, height = 800.dp)) {
-                    TestContent(
-                        screenState = DocEditorScreenState(
-                            editorState = readyEditorState(dirty = true),
-                        ),
-                    )
-                }
+                TestContent(
+                    screenState = DocEditorScreenState(
+                        editorState = readyEditorState(dirty = true),
+                    ),
+                )
             }
         }
 
@@ -632,8 +698,282 @@ class DocEditorInteractionTest {
         rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_EDIT)
             .assertIsSelected()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_TITLE_INPUT).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.DOC_EDITOR_STATUS).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_SPLIT).assertDoesNotExist()
+    }
+
+    @Test
+    fun exact800x360KeepsEditorIdentityModesBodyStatusAndPrimaryActionsReachable() {
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(800.dp, 360.dp)),
+            ) {
+                TestContent(
+                    screenState = DocEditorScreenState(
+                        editorState = readyEditorState(dirty = true),
+                    ),
+                )
+            }
+        }
+
+        listOf(
+            UiTags.DOC_EDITOR_BACK,
+            UiTags.DOC_EDITOR_SAVE,
+            UiTags.DOC_EDITOR_MODE_EDIT,
+            UiTags.DOC_EDITOR_MODE_PREVIEW,
+            UiTags.DOC_EDITOR_MODE_SPLIT,
+        ).forEach { tag ->
+            rule.onNodeWithTag(tag)
+                .assertIsDisplayed()
+                .assertHasClickAction()
+                .assertWidthIsAtLeast(48.dp)
+                .assertHeightIsAtLeast(48.dp)
+        }
+        val identityBounds = rule.onNodeWithTag(UiTags.DOC_EDITOR_IDENTITY)
+            .assertIsDisplayed()
+            .fetchSemanticsNode().boundsInRoot
+        val titleBounds = rule.onNodeWithTag(UiTags.DOC_EDITOR_TITLE_INPUT)
+            .assertIsDisplayed()
+            .fetchSemanticsNode().boundsInRoot
+        assertThat(titleBounds.right).isAtMost(identityBounds.right)
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_STATUS).assertIsDisplayed()
+    }
+
+    @Test
+    fun tablet840x900AtDoubleFontScaleKeepsSplitThreeModesAndBothPanesReachable() {
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(840.dp, 900.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
+                TestContent(
+                    screenState = DocEditorScreenState(
+                        editorState = readyEditorState(dirty = true),
+                        viewMode = DocEditorViewMode.SPLIT,
+                    ),
+                )
+            }
+        }
+
+        listOf(
+            UiTags.DOC_EDITOR_MODE_EDIT,
+            UiTags.DOC_EDITOR_MODE_PREVIEW,
+            UiTags.DOC_EDITOR_MODE_SPLIT,
+        ).forEach { tag ->
+            rule.onNodeWithTag(tag)
+                .assertIsDisplayed()
+                .assertHasClickAction()
+                .assertHeightIsAtLeast(48.dp)
+        }
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_SPLIT)
+            .assertIsSelected()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_BACK).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_SAVE).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_TITLE_INPUT).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_PREVIEW).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_STATUS).assertIsDisplayed()
+    }
+
+    @Test
+    fun physicalLandscapeRealImeKeepsCurrentEditorSurfaceAndSaveActionAboveKeyboard() {
+        rule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        rule.waitUntil(8_000) {
+            rule.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        }
+        var content by mutableStateOf("line before IME")
+        rule.setContent {
+            TestContent(
+                screenState = DocEditorScreenState(
+                    editorState = readyEditorState(dirty = true).copy(content = content),
+                ),
+                actions = DocEditorScreenActions(onContentChange = { content = it }),
+            )
+        }
+
+        val currentLine = "current line remains reachable above IME"
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT)
+            .assertIsDisplayed()
+            .performClick()
+        val imeInset = awaitImeOpened()
+        assertThat(imeInset).isGreaterThan(0)
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT).performTextReplacement(currentLine)
+        settleLayout()
+
+        val visibleBottomPx = decorHeightPx().toFloat() - imeInset.toFloat()
+        val tolerancePx = with(rule.density) { 2.dp.toPx() }
+        val input = rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT)
+            .assertIsDisplayed()
+            .assertTextContains(currentLine)
+            .fetchSemanticsNode().boundsInRoot
+        val save = rule.onNodeWithTag(UiTags.DOC_EDITOR_SAVE)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .fetchSemanticsNode().boundsInRoot
+
+        assertThat(input.bottom).isAtMost(visibleBottomPx + tolerancePx)
+        assertThat(save.bottom).isAtMost(visibleBottomPx + tolerancePx)
+
+        Espresso.pressBack()
+        assertThat(awaitImeClosed()).isTrue()
+        settleLayout()
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_IDENTITY).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_EDIT).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_PREVIEW).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_STATUS).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT)
+            .assertIsDisplayed()
+            .assertTextContains(currentLine)
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_SAVE)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+    }
+
+    @Test
+    fun asynchronousSaveTerminalStatesDismissRealImeAndExposeRecoveryWithoutLosingDraft() {
+        rule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        rule.waitUntil(8_000) {
+            rule.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        }
+        val localDraft = "local draft survives asynchronous save terminal state"
+        var editorState by mutableStateOf(
+            readyEditorState(dirty = true).copy(content = localDraft),
+        )
+        rule.setContent {
+            TestContent(screenState = DocEditorScreenState(editorState = editorState))
+        }
+
+        val terminalStates = listOf(
+            Triple(
+                readyEditorState(phase = DocEditorPhase.SaveError, dirty = true).copy(
+                    content = localDraft,
+                    failureCode = DocEditorFailureCode.ContentSaveFailed,
+                ),
+                UiTags.DOC_EDITOR_STATE_SAVE_ERROR,
+                listOf(UiTags.DOC_EDITOR_RETRY_SAVE),
+            ),
+            Triple(
+                readyEditorState(phase = DocEditorPhase.SaveConflict, dirty = true).copy(
+                    content = localDraft,
+                    failureCode = DocEditorFailureCode.ContentConflict,
+                ),
+                UiTags.DOC_EDITOR_STATE_CONFLICT,
+                listOf(UiTags.DOC_EDITOR_COPY_LOCAL, UiTags.DOC_EDITOR_REQUEST_RELOAD),
+            ),
+            Triple(
+                readyEditorState(phase = DocEditorPhase.NotFound, dirty = true).copy(
+                    content = localDraft,
+                ),
+                UiTags.DOC_EDITOR_STATE_NOT_FOUND,
+                listOf(UiTags.DOC_EDITOR_COPY_LOCAL, UiTags.DOC_EDITOR_REQUEST_RELOAD),
+            ),
+        )
+
+        terminalStates.forEach { (terminalState, terminalTag, recoveryActionTags) ->
+            rule.runOnIdle {
+                editorState = readyEditorState(dirty = true).copy(content = localDraft)
+            }
+            rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT).performClick()
+            assertThat(awaitImeOpened()).isGreaterThan(0)
+
+            rule.runOnIdle { editorState = terminalState }
+            settleLayout()
+
+            rule.onNodeWithTag(terminalTag).assertIsDisplayed()
+            recoveryActionTags.forEach { actionTag ->
+                rule.onNodeWithTag(actionTag)
+                    .assertIsDisplayed()
+                    .assertHasClickAction()
+                    .assertHeightIsAtLeast(48.dp)
+            }
+            assertThat(awaitImeClosed()).isTrue()
+
+            rule.runOnIdle {
+                editorState = readyEditorState(dirty = true).copy(content = localDraft)
+            }
+            rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT)
+                .assertIsDisplayed()
+                .assertTextContains(localDraft)
+            rule.onNodeWithTag(UiTags.DOC_EDITOR_SAVE)
+                .assertIsDisplayed()
+                .assertIsEnabled()
+        }
+    }
+
+    @Test
+    fun asynchronousPendingIndexDismissesRealImeAndKeepsRetryReachableWithoutLosingDraft() {
+        rule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        rule.waitUntil(8_000) {
+            rule.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        }
+        val localDraft = "local draft survives pending index feedback"
+        var editorState by mutableStateOf(
+            readyEditorState(dirty = true).copy(content = localDraft),
+        )
+        rule.setContent {
+            TestContent(screenState = DocEditorScreenState(editorState = editorState))
+        }
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT).performClick()
+        assertThat(awaitImeOpened()).isGreaterThan(0)
+        rule.runOnIdle { editorState = editorState.withPendingIndex() }
+        settleLayout()
+
+        rule.onNodeWithText(
+            rule.activity.getString(com.promenar.nexara.R.string.rag_index_retry_hint),
+        ).assertIsDisplayed()
+        rule.onNodeWithContentDescription(pendingIndexRetryDescription())
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+        assertThat(awaitImeClosed()).isTrue()
+
+        rule.runOnIdle {
+            editorState = readyEditorState(dirty = true).copy(content = localDraft)
+        }
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT)
+            .assertIsDisplayed()
+            .assertTextContains(localDraft)
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_SAVE)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+    }
+
+    @Test
+    fun backNavigationControlDrawsVisibleForegroundPixels() {
+        rule.setContent {
+            TestContent(
+                screenState = DocEditorScreenState(
+                    editorState = readyEditorState(dirty = true),
+                ),
+            )
+        }
+
+        val back = rule.onNodeWithTag(UiTags.DOC_EDITOR_BACK)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+        val image = back.captureToImage()
+        val pixels = image.toPixelMap()
+        val background = pixels[0, 0]
+        var foregroundPixels = 0
+        for (y in 0 until image.height) {
+            for (x in 0 until image.width) {
+                val pixel = pixels[x, y]
+                val difference = abs(pixel.red - background.red) +
+                    abs(pixel.green - background.green) +
+                    abs(pixel.blue - background.blue)
+                if (pixel.alpha > 0.1f && difference > 0.25f) foregroundPixels++
+            }
+        }
+
+        assertThat(foregroundPixels).isGreaterThan((image.width * image.height) / 100)
     }
 
     @Test
@@ -652,6 +992,209 @@ class DocEditorInteractionTest {
 
         rule.runOnIdle { width = 719.dp }
         rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_SPLIT).assertDoesNotExist()
+    }
+
+    @Test
+    fun standaloneLongInlineCodeAtDoubleFontScaleReachesBothEndSentinels() {
+        val sentinels = listOf("WIDE_CONTENT_END_SENTINEL_中文🚀_A███", "WIDE_CONTENT_END_SENTINEL_中文🚀_B███")
+        val commands = sentinels.map { sentinel ->
+            "./gradlew :app:validateDebugScreenshotTest --tests " +
+                "com.promenar.nexara.ui.rag.DocEditorInteractionTest.$sentinel"
+        }
+        val controls = commands.map { command -> command.replace("███", "   ") }
+        var markdown by mutableStateOf(commands.joinToString("\n\n") { command -> "`$command`" })
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 800.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
+                TestContent(
+                    screenState = DocEditorScreenState(
+                        editorState = readyEditorState().copy(
+                            content = markdown,
+                        ),
+                        viewMode = DocEditorViewMode.PREVIEW,
+                    ),
+                )
+            }
+        }
+
+        val wideHosts = rule.onAllNodesWithTag(UiTags.MARKDOWN_WIDE_CONTENT)
+        wideHosts.assertCountEquals(sentinels.size)
+        val sentinelImages = mutableListOf<androidx.compose.ui.graphics.ImageBitmap>()
+        sentinels.indices.forEach { index ->
+            val wideHost = wideHosts[index]
+                .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange))
+            val initialRange = wideHost.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange]
+            assertThat(initialRange.maxValue()).isGreaterThan(0f)
+
+            wideHost.performSemanticsAction(SemanticsActions.ScrollBy) { scrollBy ->
+                assertThat(scrollBy(100_000f, 0f)).isTrue()
+            }
+            val finalRange = wideHost.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange]
+            assertThat(finalRange.value()).isAtLeast(finalRange.maxValue() - 1f)
+            rule.onNodeWithText(sentinels[index], substring = true).assertIsDisplayed()
+            sentinelImages += wideHost.captureToImage()
+        }
+
+        rule.runOnIdle {
+            markdown = controls.joinToString("\n\n") { command -> "`$command`" }
+        }
+        val controlHosts = rule.onAllNodesWithTag(UiTags.MARKDOWN_WIDE_CONTENT)
+        controlHosts.assertCountEquals(controls.size)
+        controls.indices.forEach { index ->
+            val controlHost = controlHosts[index]
+            controlHost.performSemanticsAction(SemanticsActions.ScrollBy) { scrollBy ->
+                assertThat(scrollBy(100_000f, 0f)).isTrue()
+            }
+            assertRightEdgePixelDifference(
+                sentinelImage = sentinelImages[index],
+                controlImage = controlHost.captureToImage(),
+            )
+        }
+    }
+
+    @Test
+    fun wideGfmTableAtDoubleFontScaleReachesTerminalCellAndPaintsItsTailGlyphs() {
+        val sentinel = "TABLE_END_SENTINEL_中文🚀███"
+        val table = """
+            | Model | Provider | Context | Vision | Tools | Terminal |
+            |---|---|---|---|---|---|
+            | DeepSeek V4 Flash | Local Aggregator | 64K | Yes | Yes | $sentinel |
+        """.trimIndent()
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 800.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
+                TestContent(
+                    screenState = DocEditorScreenState(
+                        editorState = readyEditorState().copy(content = table),
+                        viewMode = DocEditorViewMode.PREVIEW,
+                    ),
+                )
+            }
+        }
+
+        val wideHost = rule.onNodeWithTag(UiTags.MARKDOWN_WIDE_CONTENT)
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange))
+        val initialRange = wideHost.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange]
+        assertThat(initialRange.maxValue()).isGreaterThan(0f)
+
+        wideHost.performSemanticsAction(SemanticsActions.ScrollBy) { scrollBy ->
+            assertThat(scrollBy(100_000f, 0f)).isTrue()
+        }
+
+        val finalRange = wideHost.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange]
+        assertThat(finalRange.value()).isAtLeast(finalRange.maxValue() - 1f)
+        rule.onNodeWithText(sentinel).assertIsDisplayed()
+        assertGlyphPixelsVisible(rule.onNodeWithText(sentinel).captureToImage())
+    }
+
+    @Test
+    fun blockQuoteNestedWideTablePreservesQuoteAndReachesTerminalCell() {
+        val sentinel = "QUOTE_TABLE_END_中文🚀███"
+        val markdown = """
+            > | Model | Provider | Context | Vision | Tools | Terminal |
+            > |---|---|---|---|---|---|
+            > | DeepSeek | Local | 64K | Yes | Yes | $sentinel |
+        """.trimIndent()
+
+        renderPreviewAtDoubleFont(markdown)
+
+        scrollSingleWideHostToEnd()
+        val sentinelNode = rule.onNodeWithText(sentinel).assertIsDisplayed()
+        assertGlyphPixelsVisible(sentinelNode.captureToImage())
+    }
+
+    @Test
+    fun listItemNestedWideTablePreservesListAndReachesTerminalCell() {
+        val sentinel = "LIST_TABLE_END_中文🚀███"
+        val markdown = """
+            - Models
+
+              | Model | Provider | Context | Vision | Tools | Terminal |
+              |---|---|---|---|---|---|
+              | DeepSeek | Local | 64K | Yes | Yes | $sentinel |
+        """.trimIndent()
+
+        renderPreviewAtDoubleFont(markdown)
+
+        rule.onNodeWithText("Models").assertIsDisplayed()
+        scrollSingleWideHostToEnd()
+        val sentinelNode = rule.onNodeWithText(sentinel).assertIsDisplayed()
+        assertGlyphPixelsVisible(sentinelNode.captureToImage())
+    }
+
+    private fun renderPreviewAtDoubleFont(markdown: String) {
+        rule.setContent {
+            DeviceConfigurationOverride(
+                DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 800.dp)) then
+                    DeviceConfigurationOverride.FontScale(2f),
+            ) {
+                TestContent(
+                    screenState = DocEditorScreenState(
+                        editorState = readyEditorState().copy(content = markdown),
+                        viewMode = DocEditorViewMode.PREVIEW,
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun scrollSingleWideHostToEnd() {
+        val wideHost = rule.onNodeWithTag(UiTags.MARKDOWN_WIDE_CONTENT)
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange))
+        val initialRange = wideHost.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange]
+        assertThat(initialRange.maxValue()).isGreaterThan(0f)
+        wideHost.performSemanticsAction(SemanticsActions.ScrollBy) { scrollBy ->
+            assertThat(scrollBy(100_000f, 0f)).isTrue()
+        }
+        val finalRange = wideHost.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange]
+        assertThat(finalRange.value()).isAtLeast(finalRange.maxValue() - 1f)
+    }
+
+    private fun assertGlyphPixelsVisible(image: androidx.compose.ui.graphics.ImageBitmap) {
+        val pixels = image.toPixelMap()
+        val background = pixels[0, 0]
+        var foregroundPixels = 0
+        for (y in 0 until image.height) {
+            for (x in 0 until image.width) {
+                val pixel = pixels[x, y]
+                val difference = abs(pixel.red - background.red) +
+                    abs(pixel.green - background.green) +
+                    abs(pixel.blue - background.blue)
+                if (pixel.alpha > 0.1f && difference > 0.25f) foregroundPixels++
+            }
+        }
+
+        assertThat(foregroundPixels).isGreaterThan((image.width * image.height) / 100)
+    }
+
+    private fun assertRightEdgePixelDifference(
+        sentinelImage: androidx.compose.ui.graphics.ImageBitmap,
+        controlImage: androidx.compose.ui.graphics.ImageBitmap,
+    ) {
+        assertThat(controlImage.width).isEqualTo(sentinelImage.width)
+        assertThat(controlImage.height).isEqualTo(sentinelImage.height)
+        val sentinelPixels = sentinelImage.toPixelMap()
+        val controlPixels = controlImage.toPixelMap()
+        val scanStartX = sentinelImage.width * 3 / 4
+        var changedPixels = 0
+        for (y in 0 until sentinelImage.height) {
+            for (x in scanStartX until sentinelImage.width) {
+                val sentinel = sentinelPixels[x, y]
+                val control = controlPixels[x, y]
+                val difference = abs(sentinel.red - control.red) +
+                    abs(sentinel.green - control.green) +
+                    abs(sentinel.blue - control.blue) +
+                    abs(sentinel.alpha - control.alpha)
+                if (difference > 0.2f) changedPixels++
+            }
+        }
+
+        val comparedPixels = (sentinelImage.width - scanStartX) * sentinelImage.height
+        assertThat(changedPixels).isGreaterThan(comparedPixels / 500)
     }
 
     @Composable
@@ -712,4 +1255,53 @@ class DocEditorInteractionTest {
             ),
         ),
     )
+
+    private fun pendingIndexRetryDescription(): String =
+        "${rule.activity.getString(com.promenar.nexara.R.string.shared_btn_retry)}：" +
+            rule.activity.getString(com.promenar.nexara.R.string.rag_index_retry_hint)
+
+    private fun awaitImeOpened(timeoutMs: Long = 8_000): Int {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        var last = imeBottomInset()
+        var stableMs = 0L
+        while (SystemClock.elapsedRealtime() < deadline) {
+            SystemClock.sleep(100)
+            val current = imeBottomInset()
+            stableMs = if (current > 0 && current == last) stableMs + 100 else 0L
+            last = current
+            if (current > 0 && stableMs >= 200) return current
+        }
+        return last
+    }
+
+    private fun awaitImeClosed(timeoutMs: Long = 6_000): Boolean {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        var stableMs = 0L
+        while (SystemClock.elapsedRealtime() < deadline) {
+            SystemClock.sleep(100)
+            stableMs = if (!imeVisible() && imeBottomInset() == 0) stableMs + 100 else 0L
+            if (stableMs >= 200) return true
+        }
+        return !imeVisible() && imeBottomInset() == 0
+    }
+
+    private fun settleLayout() {
+        rule.waitForIdle()
+        SystemClock.sleep(150)
+        rule.waitForIdle()
+    }
+
+    private fun imeVisible(): Boolean = rule.runOnUiThread {
+        val insets = rule.activity.window.decorView.rootWindowInsets
+        insets != null && insets.isVisible(AndroidWindowInsets.Type.ime())
+    }
+
+    private fun imeBottomInset(): Int = rule.runOnUiThread {
+        rule.activity.window.decorView.rootWindowInsets
+            ?.getInsets(AndroidWindowInsets.Type.ime())?.bottom ?: 0
+    }
+
+    private fun decorHeightPx(): Int = rule.runOnUiThread {
+        rule.activity.window.decorView.height
+    }
 }

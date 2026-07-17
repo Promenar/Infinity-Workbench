@@ -60,6 +60,14 @@
     <string name="common_cd_sync">同步</string>
     <string name="common_cd_delete">删除</string>
     <string name="common_cd_edit">编辑</string>
+    <string name="code_block_language_fallback">代码</string>
+    <string name="code_block_plain_text">纯文本</string>
+    <string name="code_block_full_screen">全屏查看</string>
+    <string name="code_block_export_png">导出为 PNG</string>
+    <string name="code_block_edit">编辑代码</string>
+    <string name="code_block_save">保存代码</string>
+    <string name="code_block_copy">复制代码</string>
+    <string name="code_block_copied">代码已复制</string>
     <string name="secret_field_placeholder">输入新密钥</string>
     <string name="secret_field_show">临时显示完整密钥</string>
     <string name="secret_field_hide">隐藏密钥</string>
@@ -1311,5 +1319,8 @@
         <item quantity="zero">共 %1$d 字</item>
         <item quantity="one">共 %1$d 字</item>
         <item quantity="other">共 %1$d 字</item>
+    </plurals>
+    <plurals name="code_block_description">
+        <item quantity="other">%1$s代码块，共 %2$d 行</item>
     </plurals>
 </resources>

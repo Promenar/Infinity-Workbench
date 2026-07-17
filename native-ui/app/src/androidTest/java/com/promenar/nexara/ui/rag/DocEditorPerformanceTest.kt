@@ -4,8 +4,10 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Debug
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import android.util.SparseIntArray
+import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -15,11 +17,13 @@ import androidx.compose.ui.test.performClick
 import androidx.core.app.FrameMetricsAggregator
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
+import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import kotlin.math.ceil
 import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,11 +36,39 @@ class DocEditorPerformanceTest {
 
     private lateinit var screenState: MutableState<DocEditorScreenState>
     private lateinit var contentChangeAction: (String) -> Unit
-    private var editableRoundSequence: Int = 0
+
+    @Before
+    fun isolateGuestBackgroundWork() {
+        BACKGROUND_PACKAGE_ALLOWLIST.forEach { packageName ->
+            val command = "am force-stop $packageName"
+            Log.i(LOG_TAG, "DOC_EDITOR_PERF_ISOLATION command=$command")
+            val descriptor = InstrumentationRegistry.getInstrumentation()
+                .uiAutomation
+                .executeShellCommand(command)
+            ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input ->
+                val output = input.bufferedReader().readText().trim()
+                if (output.isNotEmpty()) {
+                    Log.i(LOG_TAG, "DOC_EDITOR_PERF_ISOLATION_OUTPUT package=$packageName output=$output")
+                }
+            }
+        }
+        Thread.sleep(GUEST_BACKGROUND_SETTLE_MILLIS)
+    }
 
     @After
     fun restoreOrientation() {
-        rule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        if (::screenState.isInitialized) {
+            rule.runOnIdle {
+                rule.activity.setContentView(FrameLayout(rule.activity))
+            }
+            rule.waitForIdle()
+        }
+        rule.runOnIdle {
+            rule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        rule.waitUntil(ORIENTATION_TIMEOUT_MILLIS) {
+            rule.activity.resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
+        }
     }
 
     @Test
@@ -102,29 +134,10 @@ class DocEditorPerformanceTest {
         prepareLandscapeSurface(initialContent)
         assertPerformanceProtectedSurface()
 
-        repeat(WARMUP_ROUNDS) {
-            exerciseRound(initialContent)
-        }
+        warmUpFrameMetrics(dataset) { exerciseRound(initialContent) }
 
         val baselinePssKb = stablePssKb()
-        val rounds = buildList {
-            repeat(SAMPLE_ROUNDS) { round ->
-                settleManagedRuntimeBeforeRound()
-                val aggregator = FrameMetricsAggregator(FrameMetricsAggregator.TOTAL_DURATION)
-                aggregator.add(rule.activity)
-                var histogram: SparseIntArray? = null
-                try {
-                    exerciseRound(initialContent)
-                    rule.waitForIdle()
-                    Thread.sleep(FRAME_CALLBACK_SETTLE_MILLIS)
-                } finally {
-                    histogram = aggregator.remove(rule.activity)
-                        ?.getOrNull(FrameMetricsAggregator.TOTAL_INDEX)
-                        ?: SparseIntArray()
-                }
-                add(checkNotNull(histogram).toRoundMetrics(round + 1))
-            }
-        }
+        val rounds = collectMeasuredRounds(dataset) { exerciseRound(initialContent) }
         val finalPssKb = stablePssKb()
         val pssDeltaKb = (finalPssKb - baselinePssKb).coerceAtLeast(0L)
         val report = buildReport(
@@ -162,29 +175,10 @@ class DocEditorPerformanceTest {
         prepareLandscapeSurface(initialContent)
         assertEditableSurface()
 
-        repeat(WARMUP_ROUNDS) {
-            exerciseEditableRound(initialContent)
-        }
+        warmUpFrameMetrics(dataset) { exerciseEditableRound(initialContent) }
 
         val baselinePssKb = stablePssKb()
-        val rounds = buildList {
-            repeat(SAMPLE_ROUNDS) { round ->
-                settleManagedRuntimeBeforeRound()
-                val aggregator = FrameMetricsAggregator(FrameMetricsAggregator.TOTAL_DURATION)
-                aggregator.add(rule.activity)
-                var histogram: SparseIntArray? = null
-                try {
-                    exerciseEditableRound(initialContent)
-                    rule.waitForIdle()
-                    Thread.sleep(FRAME_CALLBACK_SETTLE_MILLIS)
-                } finally {
-                    histogram = aggregator.remove(rule.activity)
-                        ?.getOrNull(FrameMetricsAggregator.TOTAL_INDEX)
-                        ?: SparseIntArray()
-                }
-                add(checkNotNull(histogram).toRoundMetrics(round + 1))
-            }
-        }
+        val rounds = collectMeasuredRounds(dataset) { exerciseEditableRound(initialContent) }
         val finalPssKb = stablePssKb()
         val pssDeltaKb = (finalPssKb - baselinePssKb).coerceAtLeast(0L)
         val report = buildReport(
@@ -222,28 +216,29 @@ class DocEditorPerformanceTest {
             rule.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         }
         val statistics = analyzeDocEditorText(initialContent)
-        contentChangeAction = { content -> applyEditableContentChange(content) }
-        screenState = mutableStateOf(
-            DocEditorScreenState(
-                editorState = DocEditorUiState(
-                    phase = DocEditorPhase.Ready,
-                    workspaceRootUuid = "perf-root",
-                    documentId = "perf-doc",
-                    documentEpoch = 1L,
-                    title = "performance.md",
-                    content = initialContent,
-                    persistedTitle = "performance.md",
-                    persistedContent = initialContent,
-                    currentHash = "perf-hash",
-                    totalLines = statistics.lineCount,
-                    wordCount = statistics.wordCount,
-                    contentAccess = contentAccessFor(initialContent.length, statistics),
-                    lastModified = 1L,
-                    sizeBytes = initialContent.length.toLong(),
-                    hasLoadedDocument = true,
-                ),
+        val initialScreenState = DocEditorScreenState(
+            editorState = DocEditorUiState(
+                phase = DocEditorPhase.Ready,
+                workspaceRootUuid = "perf-root",
+                documentId = "perf-doc",
+                documentEpoch = 1L,
+                title = "performance.md",
+                content = initialContent,
+                persistedTitle = "performance.md",
+                persistedContent = initialContent,
+                currentHash = "perf-hash",
+                totalLines = statistics.lineCount,
+                wordCount = statistics.wordCount,
+                contentAccess = contentAccessFor(initialContent.length, statistics),
+                lastModified = 1L,
+                sizeBytes = initialContent.length.toLong(),
+                hasLoadedDocument = true,
             ),
         )
+        rule.runOnIdle {
+            screenState = mutableStateOf(initialScreenState)
+            contentChangeAction = { content -> applyEditableContentChange(content) }
+        }
         rule.setContent {
             NexaraTheme(dynamicColor = false) {
                 DocEditorScreenContent(
@@ -295,7 +290,8 @@ class DocEditorPerformanceTest {
     }
 
     private fun exerciseEditableRound(initialContent: String) {
-        val appendedCharacter = if (editableRoundSequence++ % 2 == 0) "x" else "y"
+        // 固定使用与边界正文不同的第二字形，保持各轮字形分段负载一致并覆盖较慢路径。
+        val appendedCharacter = "y"
         val initialStatistics = analyzeDocEditorText(initialContent)
         rule.runOnIdle {
             val editor = screenState.value.editorState
@@ -372,8 +368,7 @@ class DocEditorPerformanceTest {
         }
 
     private fun stablePssKb(): Long {
-        Runtime.getRuntime().gc()
-        System.runFinalization()
+        // 显式 GC 会清空预热缓存并与 RenderThread 争用；等待后取中位数即可稳定 PSS。
         Thread.sleep(PSS_SETTLE_MILLIS)
         return buildList {
             repeat(PSS_SAMPLES) {
@@ -385,10 +380,84 @@ class DocEditorPerformanceTest {
         }.sorted()[PSS_SAMPLES / 2]
     }
 
-    private fun settleManagedRuntimeBeforeRound() {
-        Runtime.getRuntime().gc()
-        System.runFinalization()
+    private fun settleBeforeRound() {
         Thread.sleep(PRE_ROUND_SETTLE_MILLIS)
+    }
+
+    private fun warmUpFrameMetrics(dataset: String, exercise: () -> Unit) {
+        val aggregator = FrameMetricsAggregator(FrameMetricsAggregator.EVERY_DURATION)
+        aggregator.add(rule.activity)
+        val metrics = try {
+            repeat(WARMUP_ROUNDS) { exercise() }
+            rule.waitForIdle()
+            Thread.sleep(FRAME_CALLBACK_SETTLE_MILLIS)
+            aggregator.remove(rule.activity)
+        } catch (failure: Throwable) {
+            aggregator.remove(rule.activity)
+            throw failure
+        }
+        val snapshot = metrics.toFrameMetricsSnapshot(round = 0)
+        Log.i(
+            LOG_TAG,
+            "DOC_EDITOR_FRAME_WARMUP dataset=$dataset rounds=$WARMUP_ROUNDS " +
+                "discarded=true raw=${snapshot.describe()}",
+        )
+    }
+
+    private fun collectMeasuredRounds(dataset: String, exercise: () -> Unit): List<RoundMetrics> {
+        val rounds = buildList {
+            repeat(SAMPLE_ROUNDS) { index ->
+                val round = index + 1
+                val snapshot = collectFrameMetrics(round, exercise)
+                logFrameMetricBreakdown(dataset, round, snapshot)
+                if (!snapshot.total.passesFrameGate()) {
+                    throw AssertionError(
+                        "FRAME_GATE_FAILED: dataset=$dataset round=$round " +
+                            "total p95=${snapshot.total.p95Millis}ms、" +
+                            "max=${snapshot.total.maxMillis}ms；" +
+                            "分项指标仅供诊断，不得用于拒样或放行。raw=${snapshot.describe()}",
+                    )
+                }
+                add(snapshot.total.copy(round = round))
+                Log.i(
+                    LOG_TAG,
+                    "DOC_EDITOR_SAMPLE_ACCEPTED dataset=$dataset round=$round " +
+                        "p95=${snapshot.total.p95Millis}ms max=${snapshot.total.maxMillis}ms",
+                )
+            }
+        }
+        Log.i(LOG_TAG, "DOC_EDITOR_SAMPLE_SUMMARY dataset=$dataset samples=${rounds.size}")
+        return rounds
+    }
+
+    private fun collectFrameMetrics(round: Int, exercise: () -> Unit): FrameMetricsSnapshot {
+        settleBeforeRound()
+        val aggregator = FrameMetricsAggregator(FrameMetricsAggregator.EVERY_DURATION)
+        aggregator.add(rule.activity)
+        val metrics = try {
+            exercise()
+            rule.waitForIdle()
+            Thread.sleep(FRAME_CALLBACK_SETTLE_MILLIS)
+            aggregator.remove(rule.activity)
+        } catch (failure: Throwable) {
+            aggregator.remove(rule.activity)
+            throw failure
+        }
+        return metrics.toFrameMetricsSnapshot(round)
+    }
+
+    private fun Array<SparseIntArray?>?.toFrameMetricsSnapshot(
+        round: Int,
+    ): FrameMetricsSnapshot {
+        val byIndex = FRAME_METRIC_NAMES.indices.map { index ->
+            this?.getOrNull(index)
+                ?.takeIf { it.size() > 0 }
+                ?.toRoundMetrics(round)
+        }
+        return FrameMetricsSnapshot(
+            round = round,
+            metricsByIndex = byIndex,
+        )
     }
 
     private fun SparseIntArray.toRoundMetrics(round: Int): RoundMetrics {
@@ -411,6 +480,17 @@ class DocEditorPerformanceTest {
             frameCount = frameCount,
             p95Millis = p95Millis,
             maxMillis = keyAt(size() - 1),
+        )
+    }
+
+    private fun logFrameMetricBreakdown(
+        dataset: String,
+        round: Int,
+        snapshot: FrameMetricsSnapshot,
+    ) {
+        Log.i(
+            LOG_TAG,
+            "DOC_EDITOR_FRAME_BREAKDOWN dataset=$dataset round=$round raw=${snapshot.describe()}",
         )
     }
 
@@ -478,7 +558,26 @@ class DocEditorPerformanceTest {
         val frameCount: Int,
         val p95Millis: Int,
         val maxMillis: Int,
-    )
+    ) {
+        fun passesFrameGate(): Boolean =
+            p95Millis <= P95_GATE_MILLIS && maxMillis <= MAX_GATE_MILLIS
+    }
+
+    private data class FrameMetricsSnapshot(
+        val round: Int,
+        val metricsByIndex: List<RoundMetrics?>,
+    ) {
+        val total: RoundMetrics
+            get() = checkNotNull(metricsByIndex.getOrNull(FrameMetricsAggregator.TOTAL_INDEX)) {
+                "FRAME_METRICS_UNAVAILABLE: round=$round，FrameMetricsAggregator 未返回总帧数据"
+            }
+
+        fun describe(): String = FRAME_METRIC_NAMES.mapIndexedNotNull { index, name ->
+            metricsByIndex.getOrNull(index)?.let { metrics ->
+                "$name(frames=${metrics.frameCount},p95=${metrics.p95Millis}ms,max=${metrics.maxMillis}ms)"
+            }
+        }.joinToString(prefix = "[", postfix = "]")
+    }
 
     private companion object {
         const val LOG_TAG = "DocEditorPerf"
@@ -499,11 +598,29 @@ class DocEditorPerformanceTest {
         const val PSS_SETTLE_MILLIS = 250L
         const val PSS_SAMPLE_INTERVAL_MILLIS = 100L
         const val PRE_ROUND_SETTLE_MILLIS = 100L
+        const val GUEST_BACKGROUND_SETTLE_MILLIS = 1_000L
         const val PSS_SAMPLES = 3
+        val BACKGROUND_PACKAGE_ALLOWLIST = listOf(
+            "com.android.vending",
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.as",
+            "com.google.android.as.oss",
+        )
         val MODE_SEQUENCE = listOf(
             DocEditorViewMode.SPLIT,
             DocEditorViewMode.PREVIEW,
             DocEditorViewMode.EDIT,
+        )
+        val FRAME_METRIC_NAMES = listOf(
+            "total",
+            "input",
+            "layout",
+            "draw",
+            "sync",
+            "command",
+            "swap",
+            "delay",
+            "animation",
         )
     }
 }

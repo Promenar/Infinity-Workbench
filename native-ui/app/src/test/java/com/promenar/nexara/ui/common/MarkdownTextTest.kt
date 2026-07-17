@@ -1,6 +1,10 @@
 package com.promenar.nexara.ui.common
 
 import com.google.common.truth.Truth.assertThat
+import org.intellij.markdown.MarkdownElementTypes
+import org.intellij.markdown.ast.ASTNode
+import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
+import org.intellij.markdown.parser.MarkdownParser
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 
@@ -511,6 +515,148 @@ class MarkdownTextTest {
             val result = splitRichSegments(input)
             assertThat(result).hasSize(1)
             assertThat(result[0]).isInstanceOf(ContentSegment.Mermaid::class.java)
+        }
+    }
+
+    @Nested
+    inner class StandaloneInlineCode {
+
+        private fun paragraph(markdown: String): ASTNode =
+            MarkdownParser(GFMFlavourDescriptor())
+                .buildMarkdownTreeFromString(markdown)
+                .children
+                .single { it.type == MarkdownElementTypes.PARAGRAPH }
+
+        @Test
+        fun `recognizes a paragraph whose AST has exactly one code span`() {
+            val command = "./gradlew :app:validateDebugScreenshotTest --tests WIDE_CONTENT_END_SENTINEL"
+            val markdown = "`$command`"
+
+            val result = standaloneInlineCode(paragraph(markdown), markdown)
+
+            assertThat(result).isEqualTo(command)
+        }
+
+        @Test
+        fun `recognizes a multi backtick code span without handwritten delimiter parsing`() {
+            val markdown = "`` code ` inside ``"
+
+            val result = standaloneInlineCode(paragraph(markdown), markdown)
+
+            assertThat(result).isEqualTo("code ` inside")
+        }
+
+        @Test
+        fun `rejects paragraph when code span has prose sibling nodes`() {
+            val markdown = "Run `./gradlew test` before publishing."
+
+            val result = standaloneInlineCode(paragraph(markdown), markdown)
+
+            assertThat(result).isNull()
+        }
+
+        @Test
+        fun `rejects paragraph when it has multiple code span nodes`() {
+            val markdown = "`./gradlew test` `./gradlew lint`"
+
+            val result = standaloneInlineCode(paragraph(markdown), markdown)
+
+            assertThat(result).isNull()
+        }
+
+        @Test
+        fun `rejects non paragraph AST node even when it contains one code span`() {
+            val markdown = "- `./gradlew test`"
+            val list = MarkdownParser(GFMFlavourDescriptor())
+                .buildMarkdownTreeFromString(markdown)
+                .children
+                .single()
+
+            val result = standaloneInlineCode(list, markdown)
+
+            assertThat(result).isNull()
+        }
+    }
+
+    @Nested
+    inner class WideContentMeasurement {
+
+        @Test
+        fun `chooses widest measured logical line instead of longest string`() {
+            val text = "iiiiiiiiiiiiiiii\nWWWW\n中文🚀"
+            val measuredWidths = mapOf(
+                "iiiiiiiiiiiiiiii" to 48,
+                "WWWW" to 92,
+                "中文🚀" to 76,
+            )
+
+            val width = widestLogicalLineWidthPx(text) { line -> measuredWidths.getValue(line) }
+
+            assertThat(width).isEqualTo(92)
+        }
+
+        @Test
+        fun `measures every logical line including empty and emoji lines`() {
+            val measured = mutableListOf<String>()
+
+            val width = widestLogicalLineWidthPx("first\n\n🚀") { line ->
+                measured += line
+                when (line) {
+                    "first" -> 20
+                    "" -> 0
+                    else -> 44
+                }
+            }
+
+            assertThat(measured).containsExactly("first", "", "🚀").inOrder()
+            assertThat(width).isEqualTo(44)
+        }
+    }
+
+    @Nested
+    inner class NestedWideTableDetection {
+
+        @Test
+        fun `finds a GFM table nested inside a block quote`() {
+            val markdown = """
+                > | A | B | C | D | E | F |
+                > |---|---|---|---|---|---|
+                > | 1 | 2 | 3 | 4 | 5 | END |
+            """.trimIndent()
+            val blockQuote = MarkdownParser(GFMFlavourDescriptor())
+                .buildMarkdownTreeFromString(markdown)
+                .children
+                .single()
+
+            assertThat(blockQuote.containsWideTableDescendant()).isTrue()
+        }
+
+        @Test
+        fun `finds a GFM table nested inside a list item`() {
+            val markdown = """
+                - item
+
+                  | A | B | C | D | E | F |
+                  |---|---|---|---|---|---|
+                  | 1 | 2 | 3 | 4 | 5 | END |
+            """.trimIndent()
+            val list = MarkdownParser(GFMFlavourDescriptor())
+                .buildMarkdownTreeFromString(markdown)
+                .children
+                .single()
+
+            assertThat(list.containsWideTableDescendant()).isTrue()
+        }
+
+        @Test
+        fun `ordinary quote and list do not enter the recursive wide renderer`() {
+            val markdown = "> ordinary quote\n\n- ordinary list item"
+            val roots = MarkdownParser(GFMFlavourDescriptor())
+                .buildMarkdownTreeFromString(markdown)
+                .children
+
+            assertThat(roots).isNotEmpty()
+            roots.forEach { node -> assertThat(node.containsWideTableDescendant()).isFalse() }
         }
     }
 }

@@ -10,7 +10,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -32,18 +36,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl
 import com.mikepenz.markdown.compose.LocalImageTransformer
+import com.mikepenz.markdown.compose.LocalMarkdownTypography
+import com.mikepenz.markdown.compose.MarkdownElement
 import com.mikepenz.markdown.compose.components.MarkdownComponent
 import com.mikepenz.markdown.compose.components.MarkdownComponentModel
+import com.mikepenz.markdown.compose.components.MarkdownComponents
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.compose.elements.MarkdownBlockQuote
 import com.mikepenz.markdown.model.markdownAnnotator
@@ -67,13 +78,17 @@ import com.promenar.nexara.ui.renderer.NexaraTableWidget
 import com.promenar.nexara.ui.renderer.PlantUmlBlock
 import com.promenar.nexara.ui.renderer.nexaraMarkdownColors
 import com.promenar.nexara.ui.renderer.nexaraMarkdownTypography
+import com.promenar.nexara.ui.renderer.parseMarkdownTable
 import com.promenar.nexara.ui.renderer.parseGfmAlert
 import com.promenar.nexara.ui.theme.NexaraColors
+import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.testing.UiTags
 import org.intellij.markdown.IElementType
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.ASTNode
+import org.intellij.markdown.flavours.gfm.GFMElementTypes
 
 private fun ASTNode.findLinkDestination(): ASTNode? {
     children.forEach { child ->
@@ -95,6 +110,59 @@ internal sealed class ContentSegment {
 internal class ParseCache {
     var text: String = ""
     var segments: List<ContentSegment> = emptyList()
+}
+
+/** 仅接管 AST 已确认是“单个 CODE_SPAN 子节点”的顶层段落，不自行重写 CommonMark 分隔符规则。 */
+internal fun standaloneInlineCode(node: ASTNode, content: String): String? {
+    if (node.type != MarkdownElementTypes.PARAGRAPH) return null
+    val codeSpan = node.children.singleOrNull()
+        ?.takeIf { it.type == MarkdownElementTypes.CODE_SPAN }
+        ?: return null
+    val opening = codeSpan.children.firstOrNull()
+        ?.takeIf { it.type == MarkdownTokenTypes.BACKTICK }
+        ?: return null
+    val closing = codeSpan.children.lastOrNull()
+        ?.takeIf { it.type == MarkdownTokenTypes.BACKTICK }
+        ?: return null
+    if (opening.endOffset > closing.startOffset) return null
+
+    val rawCode = content.substring(opening.endOffset, closing.startOffset)
+        .replace("\r\n", " ")
+        .replace('\r', ' ')
+        .replace('\n', ' ')
+    return if (
+        rawCode.length >= 2 &&
+        rawCode.first() == ' ' &&
+        rawCode.last() == ' ' &&
+        rawCode.any { it != ' ' }
+    ) {
+        rawCode.substring(1, rawCode.lastIndex)
+    } else {
+        rawCode
+    }
+}
+
+internal fun widestLogicalLineWidthPx(
+    text: String,
+    measureLine: (String) -> Int,
+): Int = text.lineSequence().maxOfOrNull(measureLine) ?: 0
+
+internal fun ASTNode.containsWideTableDescendant(): Boolean =
+    type == GFMElementTypes.TABLE || children.any(ASTNode::containsWideTableDescendant)
+
+private fun nestedTableMinimumWidth(
+    content: String,
+    root: ASTNode,
+    chromePerLevel: androidx.compose.ui.unit.Dp = 48.dp,
+): androidx.compose.ui.unit.Dp? {
+    fun visit(node: ASTNode, depth: Int): androidx.compose.ui.unit.Dp? {
+        if (node.type == GFMElementTypes.TABLE) {
+            return parseMarkdownTable(content, node)?.requiredWidth?.plus(chromePerLevel * depth)
+        }
+        return node.children.mapNotNull { child -> visit(child, depth + 1) }.maxOrNull()
+    }
+
+    return visit(root, depth = 0)
 }
 
 private const val RE_PARSE_THRESHOLD = 100
@@ -622,7 +690,7 @@ private fun MarkdownSafe(
     Markdown(
         content = content,
         annotator = markdownAnnotator(
-            config = markdownAnnotatorConfig(eolAsNewLine = true)
+            config = markdownAnnotatorConfig(eolAsNewLine = true),
         ),
         padding = markdownPadding(
             block = if (compactSpacing) 3.dp else 8.dp,
@@ -634,8 +702,236 @@ private fun MarkdownSafe(
         colors = nexaraMarkdownColors(textColor = textColor),
         typography = nexaraMarkdownTypography(fontSize, fontStyle = fontStyle),
         components = components,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        success = { state, resolvedComponents, successModifier ->
+            Column(modifier = successModifier) {
+                state.node.children.forEach { node ->
+                    key(node.startOffset, node.endOffset, node.type) {
+                        when {
+                            node.type == GFMElementTypes.TABLE -> {
+                                val table = remember(state.content, node.startOffset, node.endOffset) {
+                                    parseMarkdownTable(state.content, node)
+                                }
+                                if (table == null) {
+                                    MarkdownElement(node, resolvedComponents, state.content)
+                                } else {
+                                    WideContentHost(
+                                        text = "",
+                                        textStyle = LocalMarkdownTypography.current.text,
+                                        horizontalChrome = 0.dp,
+                                        minimumContentWidth = table.requiredWidth,
+                                    ) {
+                                        NexaraTableWidget(
+                                            table = table,
+                                            fontSize = fontSize,
+                                            modifier = Modifier
+                                                .padding(vertical = 8.dp)
+                                                .fillMaxWidth(),
+                                        )
+                                    }
+                                }
+                            }
+
+                            node.containsWideTableDescendant() -> {
+                                val minimumWidth = remember(
+                                    state.content,
+                                    node.startOffset,
+                                    node.endOffset,
+                                ) {
+                                    nestedTableMinimumWidth(state.content, node)
+                                }
+                                if (minimumWidth == null) {
+                                    MarkdownElement(node, resolvedComponents, state.content)
+                                } else {
+                                    WideAwareContainer(
+                                        node = node,
+                                        components = resolvedComponents,
+                                        content = state.content,
+                                        minimumWidth = minimumWidth,
+                                    )
+                                }
+                            }
+
+                            node.type == MarkdownElementTypes.PARAGRAPH -> {
+                                val standaloneCode = standaloneInlineCode(node, state.content)
+                                if (standaloneCode == null) {
+                                    MarkdownElement(node, resolvedComponents, state.content)
+                                } else {
+                                    val codeStyle = LocalMarkdownTypography.current.code.copy(
+                                        color = textColor,
+                                        fontFamily = FontFamily.Monospace,
+                                    )
+                                    WideContentHost(
+                                        text = standaloneCode,
+                                        textStyle = codeStyle,
+                                        horizontalChrome = 16.dp,
+                                    ) {
+                                        Text(
+                                            text = standaloneCode,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(NexaraColors.SurfaceContainer, NexaraShapes.small)
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                            style = codeStyle,
+                                            softWrap = false,
+                                        )
+                                    }
+                                }
+                            }
+
+                            node.type == MarkdownElementTypes.CODE_FENCE -> MarkdownCodeFence(
+                                content = state.content,
+                                node = node,
+                                style = LocalMarkdownTypography.current.code,
+                            ) { code, language, style ->
+                                WideContentHost(
+                                    text = code,
+                                    textStyle = style,
+                                    horizontalChrome = 80.dp,
+                                ) {
+                                    CodeBlockWithHeader(
+                                        code = code,
+                                        language = language,
+                                        fontSize = fontSize,
+                                        onCodeChange = if (currentOnContentChange.value != null) {
+                                            { newCode ->
+                                                currentOnContentChange.value?.invoke(
+                                                    replaceCodeInMarkdown(
+                                                        currentMarkdown.value,
+                                                        language,
+                                                        code,
+                                                        newCode,
+                                                    ),
+                                                )
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                    ) {
+                                        MarkdownHighlightedCode(
+                                            code = code,
+                                            language = language,
+                                            style = style,
+                                        )
+                                    }
+                                }
+                            }
+
+                            node.type == MarkdownElementTypes.CODE_BLOCK -> MarkdownCodeBlock(
+                                content = state.content,
+                                node = node,
+                                style = LocalMarkdownTypography.current.code,
+                            ) { code, language, style ->
+                                WideContentHost(
+                                    text = code,
+                                    textStyle = style,
+                                    horizontalChrome = 80.dp,
+                                ) {
+                                    CodeBlockWithHeader(
+                                        code = code,
+                                        language = language,
+                                        fontSize = fontSize,
+                                        onCodeChange = if (currentOnContentChange.value != null) {
+                                            { newCode ->
+                                                currentOnContentChange.value?.invoke(
+                                                    replaceCodeInMarkdown(
+                                                        currentMarkdown.value,
+                                                        language,
+                                                        code,
+                                                        newCode,
+                                                    ),
+                                                )
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                    ) {
+                                        MarkdownHighlightedCode(
+                                            code = code,
+                                            language = language,
+                                            style = style,
+                                        )
+                                    }
+                                }
+                            }
+
+                            else -> MarkdownElement(node, resolvedComponents, state.content)
+                        }
+                    }
+                }
+            }
+        },
     )
+}
+
+/**
+ * 为含任意深度 GFM 表格的完整容器提供第一方外层横向视口；容器正文仍交给官方 renderer，
+ * 因而引用条、列表标记、缩进、遍历语义与普通 Markdown 路径保持一致。
+ */
+@Composable
+private fun WideAwareContainer(
+    node: ASTNode,
+    components: MarkdownComponents,
+    content: String,
+    minimumWidth: androidx.compose.ui.unit.Dp,
+) {
+    WideContentHost(
+        text = "",
+        textStyle = LocalMarkdownTypography.current.text,
+        horizontalChrome = 0.dp,
+        minimumContentWidth = minimumWidth,
+    ) {
+        MarkdownElement(node, components, content)
+    }
+}
+
+/**
+ * 横向手势只在第一方顶层宿主注册；内部宽内容始终获得有限的显式宽度，避免向第三方组件回调传播无限约束。
+ */
+@Composable
+private fun WideContentHost(
+    text: String,
+    textStyle: TextStyle,
+    horizontalChrome: androidx.compose.ui.unit.Dp,
+    minimumContentWidth: androidx.compose.ui.unit.Dp = 0.dp,
+    content: @Composable () -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val textMeasurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val viewportWidth = maxWidth
+        val measuredTextWidthPx = remember(text, textStyle, density.density, density.fontScale) {
+            widestLogicalLineWidthPx(text) { line ->
+                textMeasurer.measure(
+                    text = AnnotatedString(line),
+                    style = textStyle,
+                    softWrap = false,
+                ).size.width
+            }
+        }
+        val contentWidth = remember(
+            measuredTextWidthPx,
+            horizontalChrome,
+            minimumContentWidth,
+            density.density,
+        ) {
+            with(density) {
+                maxOf(measuredTextWidthPx.toDp() + horizontalChrome, minimumContentWidth)
+            }
+        }
+        val targetWidth = maxOf(viewportWidth, contentWidth)
+        val scrollState = rememberScrollState()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState)
+                .testTag(UiTags.MARKDOWN_WIDE_CONTENT),
+        ) {
+            Box(modifier = Modifier.width(targetWidth)) {
+                content()
+            }
+        }
+    }
 }
 
 internal fun insertCjkSpacing(text: String): String {
