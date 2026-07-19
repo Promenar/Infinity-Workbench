@@ -43,6 +43,7 @@ import com.promenar.nexara.background.generation.NotificationPermissionOverlaySt
 import com.promenar.nexara.background.generation.NotificationPermissionPromptState
 import com.promenar.nexara.background.generation.shouldExplainNotificationPermission
 import com.promenar.nexara.background.generation.shouldShowNotificationPermissionDialog
+import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
 import com.promenar.nexara.ui.common.EditorMode
@@ -190,6 +191,14 @@ fun ChatRoute(
     val ragPhases by chatViewModel.ragPhases.collectAsStateWithLifecycle()
     val compressionState by chatViewModel.compressionState.collectAsStateWithLifecycle()
     val postProcessTasks by chatViewModel.postProcessTasks.collectAsStateWithLifecycle()
+    val providerModels by ProviderManager.getInstance().providerModels.collectAsStateWithLifecycle()
+    val modelDisplayNames = remember(providerModels, uiState.session?.modelId, uiState.messages) {
+        resolveModelDisplayNames(
+            sessionModelId = uiState.session?.modelId,
+            messageModelIds = uiState.messages.map { it.modelId },
+            providerModels = providerModels,
+        )
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
     var snackbarData by remember { mutableStateOf<NexaraSnackbarData?>(null) }
@@ -373,6 +382,7 @@ fun ChatRoute(
             compressionState = compressionState,
             postProcessTasks = postProcessTasks,
             selectedImageUris = selectedImageUris,
+            modelDisplayNames = modelDisplayNames,
         ),
         actions = ChatScreenActions(
             onNavigateBack = onNavigateBack,

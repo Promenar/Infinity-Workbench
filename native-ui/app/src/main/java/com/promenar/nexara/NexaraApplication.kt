@@ -41,6 +41,7 @@ import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.toCredentialUpdate
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderRequestRouter
@@ -444,6 +445,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             NexaraLogger.log("[NexaraRestoreRelay] application_early_exit_before_runtime_and_writers")
             return
         }
+
+        ModelCatalogRuntime.initialize(this)
 
         PDFBoxResourceLoader.init(applicationContext)
         startBackupRecovery()

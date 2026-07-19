@@ -1323,4 +1323,5 @@
     <plurals name="code_block_description">
         <item quantity="other">%1$s代码块，共 %2$d 行</item>
     </plurals>
+    <string name="sessions_operation_failed">无法更新会话，请重试</string>
 </resources>

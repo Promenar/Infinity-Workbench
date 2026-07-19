@@ -1,0 +1,5995 @@
+[
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen-flash",
+    "contextTokens": 1000000,
+    "displayName": "Qwen Flash",
+    "family": "qwen",
+    "knowledge": "2024-04",
+    "last_updated": "2025-07-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2025-07-28",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen-max",
+    "contextTokens": 32768,
+    "displayName": "Qwen Max",
+    "family": "qwen",
+    "knowledge": "2024-04",
+    "last_updated": "2025-01-25",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2024-04-03",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen-omni-turbo",
+    "contextTokens": 32768,
+    "displayName": "Qwen-Omni Turbo",
+    "family": "qwen",
+    "knowledge": "2024-04",
+    "last_updated": "2025-03-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video"
+      ],
+      "output": [
+        "text",
+        "audio"
+      ]
+    },
+    "outputTokens": 2048,
+    "reasoning": false,
+    "release_date": "2025-01-19",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen-plus",
+    "contextTokens": 1000000,
+    "displayName": "Qwen Plus",
+    "family": "qwen",
+    "knowledge": "2024-04",
+    "last_updated": "2025-09-11",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2024-01-25",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen-turbo",
+    "contextTokens": 1000000,
+    "displayName": "Qwen Turbo",
+    "family": "qwen",
+    "knowledge": "2024-04",
+    "last_updated": "2025-04-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": true,
+    "release_date": "2024-11-01",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen-vl-max",
+    "contextTokens": 131072,
+    "displayName": "Qwen-VL Max",
+    "family": "qwen",
+    "knowledge": "2024-04",
+    "last_updated": "2025-08-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2024-04-08",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen-vl-plus",
+    "contextTokens": 131072,
+    "displayName": "Qwen-VL Plus",
+    "family": "qwen",
+    "knowledge": "2024-04",
+    "last_updated": "2025-08-15",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2024-01-25",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen2-5-vl-72b-instruct",
+    "contextTokens": 131072,
+    "displayName": "Qwen2.5-VL 72B Instruct",
+    "family": "qwen",
+    "knowledge": "2024-04",
+    "last_updated": "2024-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2024-09",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3-235b-a22b",
+    "contextTokens": 131072,
+    "displayName": "Qwen3 235B-A22B",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2025-04",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": true,
+    "release_date": "2025-04",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3-32b",
+    "contextTokens": 131072,
+    "displayName": "Qwen3 32B",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2025-04",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": true,
+    "release_date": "2025-04",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3-coder-30b-a3b-instruct",
+    "contextTokens": 262144,
+    "displayName": "Qwen3-Coder 30B-A3B Instruct",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2025-04",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": false,
+    "release_date": "2025-04",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3-coder-480b-a35b-instruct",
+    "contextTokens": 262144,
+    "displayName": "Qwen3-Coder 480B-A35B Instruct",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2025-04",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": false,
+    "release_date": "2025-04",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3-coder-flash",
+    "contextTokens": 1000000,
+    "displayName": "Qwen3 Coder Flash",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2025-07-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": false,
+    "release_date": "2025-07-28",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3-coder-plus",
+    "contextTokens": 1048576,
+    "displayName": "Qwen3 Coder Plus",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2025-07-23",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": false,
+    "release_date": "2025-07-23",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3-max",
+    "contextTokens": 262144,
+    "displayName": "Qwen3 Max",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2025-09-23",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": false,
+    "release_date": "2025-09-23",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3-next-80b-a3b-instruct",
+    "contextTokens": 131072,
+    "displayName": "Qwen3-Next 80B-A3B Instruct",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2025-09",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": false,
+    "release_date": "2025-09",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3-next-80b-a3b-thinking",
+    "contextTokens": 131072,
+    "displayName": "Qwen3-Next 80B-A3B (Thinking)",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2025-09",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2025-09",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3-vl-plus",
+    "contextTokens": 262144,
+    "displayName": "Qwen3-VL Plus",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2025-09-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2025-09-23",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "alibaba/qwen3.5-122b-a10b",
+    "contextTokens": 262144,
+    "displayName": "Qwen3.5 122B-A10B",
+    "family": "qwen",
+    "knowledge": null,
+    "last_updated": "2026-02-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-02-23",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "alibaba/qwen3.5-27b",
+    "contextTokens": 262144,
+    "displayName": "Qwen3.5 27B",
+    "family": "qwen",
+    "knowledge": null,
+    "last_updated": "2026-02-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-02-23",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "alibaba/qwen3.5-35b-a3b",
+    "contextTokens": 262144,
+    "displayName": "Qwen3.5 35B-A3B",
+    "family": "qwen",
+    "knowledge": null,
+    "last_updated": "2026-02-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-02-23",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "alibaba/qwen3.5-397b-a17b",
+    "contextTokens": 262144,
+    "displayName": "Qwen3.5 397B-A17B",
+    "family": "qwen",
+    "knowledge": null,
+    "last_updated": "2026-02-15",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-02-15",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3.5-9b",
+    "contextTokens": 262144,
+    "displayName": "Qwen3.5 9B",
+    "family": "qwen",
+    "knowledge": null,
+    "last_updated": "2026-02-23",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-02-23",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3.5-plus",
+    "contextTokens": 1000000,
+    "displayName": "Qwen3.5 Plus",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2026-02-16",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-02-16",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "alibaba/qwen3.6-27b",
+    "contextTokens": 262144,
+    "displayName": "Qwen3.6 27B",
+    "family": "qwen",
+    "knowledge": null,
+    "last_updated": "2026-04-22",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-04-22",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "alibaba/qwen3.6-35b-a3b",
+    "contextTokens": 262144,
+    "displayName": "Qwen3.6 35B-A3B",
+    "family": "qwen",
+    "knowledge": null,
+    "last_updated": "2026-04-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-04-17",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "alibaba/qwen3.6-flash",
+    "contextTokens": 1000000,
+    "displayName": "Qwen3.6 Flash",
+    "family": "qwen3.6",
+    "knowledge": null,
+    "last_updated": "2026-04-27",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-04-27",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3.6-max-preview",
+    "contextTokens": 262144,
+    "displayName": "Qwen3.6 Max Preview",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2026-04-20",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-04-20",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3.6-plus",
+    "contextTokens": 1000000,
+    "displayName": "Qwen3.6 Plus",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2026-04-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-04-02",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3.7-max",
+    "contextTokens": 1000000,
+    "displayName": "Qwen3.7 Max",
+    "family": "qwen",
+    "knowledge": null,
+    "last_updated": "2026-05-21",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-05-21",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen3.7-plus",
+    "contextTokens": 1000000,
+    "displayName": "Qwen3.7 Plus",
+    "family": "qwen",
+    "knowledge": "2025-04",
+    "last_updated": "2026-06-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2026-06-02",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwq-plus",
+    "contextTokens": 131072,
+    "displayName": "QwQ Plus",
+    "family": "qwen",
+    "knowledge": "2024-04",
+    "last_updated": "2025-03-05",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": true,
+    "release_date": "2025-03-05",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-3-5-haiku-20241022",
+    "contextTokens": 200000,
+    "displayName": "Claude Haiku 3.5",
+    "family": "claude-haiku",
+    "knowledge": "2024-07-31",
+    "last_updated": "2024-10-22",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2024-10-22",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-3-5-sonnet-20241022",
+    "contextTokens": 200000,
+    "displayName": "Claude Sonnet 3.5 v2",
+    "family": "claude-sonnet",
+    "knowledge": "2024-04-30",
+    "last_updated": "2024-10-22",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2024-10-22",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-3-7-sonnet-20250219",
+    "contextTokens": 200000,
+    "displayName": "Claude Sonnet 3.7",
+    "family": "claude-sonnet",
+    "knowledge": "2024-10-31",
+    "last_updated": "2025-02-19",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2025-02-19",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-3-haiku-20240307",
+    "contextTokens": 200000,
+    "displayName": "Claude Haiku 3",
+    "family": "claude-haiku",
+    "knowledge": "2023-08-31",
+    "last_updated": "2024-03-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": false,
+    "release_date": "2024-03-13",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-fable-5",
+    "contextTokens": 1000000,
+    "displayName": "Claude Fable 5",
+    "family": "claude-fable",
+    "knowledge": "2026-01-31",
+    "last_updated": "2026-06-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-06-09",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-haiku-4-5",
+    "contextTokens": 200000,
+    "displayName": "Claude Haiku 4.5 (latest)",
+    "family": "claude-haiku",
+    "knowledge": "2025-02-28",
+    "last_updated": "2025-10-15",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2025-10-15",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-haiku-4-5-20251001",
+    "contextTokens": 200000,
+    "displayName": "Claude Haiku 4.5",
+    "family": "claude-haiku",
+    "knowledge": "2025-02-28",
+    "last_updated": "2025-10-15",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2025-10-15",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-opus-4-0",
+    "contextTokens": 200000,
+    "displayName": "Claude Opus 4 (latest)",
+    "family": "claude-opus",
+    "knowledge": "2025-03-31",
+    "last_updated": "2025-05-22",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32000,
+    "reasoning": true,
+    "release_date": "2025-05-22",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-opus-4-1",
+    "contextTokens": 200000,
+    "displayName": "Claude Opus 4.1 (latest)",
+    "family": "claude-opus",
+    "knowledge": "2025-03-31",
+    "last_updated": "2025-08-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32000,
+    "reasoning": true,
+    "release_date": "2025-08-05",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-opus-4-1-20250805",
+    "contextTokens": 200000,
+    "displayName": "Claude Opus 4.1",
+    "family": "claude-opus",
+    "knowledge": "2025-03-31",
+    "last_updated": "2025-08-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32000,
+    "reasoning": true,
+    "release_date": "2025-08-05",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-opus-4-20250514",
+    "contextTokens": 200000,
+    "displayName": "Claude Opus 4",
+    "family": "claude-opus",
+    "knowledge": "2025-03-31",
+    "last_updated": "2025-05-22",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32000,
+    "reasoning": true,
+    "release_date": "2025-05-22",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-opus-4-5",
+    "contextTokens": 200000,
+    "displayName": "Claude Opus 4.5 (latest)",
+    "family": "claude-opus",
+    "knowledge": "2025-05",
+    "last_updated": "2025-11-24",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2025-11-24",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-opus-4-5-20251101",
+    "contextTokens": 200000,
+    "displayName": "Claude Opus 4.5",
+    "family": "claude-opus",
+    "knowledge": "2025-05",
+    "last_updated": "2025-11-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2025-11-01",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-opus-4-6",
+    "contextTokens": 1000000,
+    "displayName": "Claude Opus 4.6",
+    "family": "claude-opus",
+    "knowledge": "2025-05-31",
+    "last_updated": "2026-03-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-02-05",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-opus-4-7",
+    "contextTokens": 1000000,
+    "displayName": "Claude Opus 4.7",
+    "family": "claude-opus",
+    "knowledge": "2026-01-31",
+    "last_updated": "2026-04-16",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-04-16",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-opus-4-8",
+    "contextTokens": 1000000,
+    "displayName": "Claude Opus 4.8",
+    "family": "claude-opus",
+    "knowledge": "2026-01",
+    "last_updated": "2026-05-28",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-05-28",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-sonnet-4-0",
+    "contextTokens": 200000,
+    "displayName": "Claude Sonnet 4 (latest)",
+    "family": "claude-sonnet",
+    "knowledge": "2025-03-31",
+    "last_updated": "2025-05-22",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2025-05-22",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-sonnet-4-20250514",
+    "contextTokens": 200000,
+    "displayName": "Claude Sonnet 4",
+    "family": "claude-sonnet",
+    "knowledge": "2025-03-31",
+    "last_updated": "2025-05-22",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2025-05-22",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-sonnet-4-5",
+    "contextTokens": 200000,
+    "displayName": "Claude Sonnet 4.5 (latest)",
+    "family": "claude-sonnet",
+    "knowledge": "2025-07-31",
+    "last_updated": "2025-09-29",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2025-09-29",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-sonnet-4-5-20250929",
+    "contextTokens": 200000,
+    "displayName": "Claude Sonnet 4.5",
+    "family": "claude-sonnet",
+    "knowledge": "2025-07-31",
+    "last_updated": "2025-09-29",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2025-09-29",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-sonnet-4-6",
+    "contextTokens": 1000000,
+    "displayName": "Claude Sonnet 4.6",
+    "family": "claude-sonnet",
+    "knowledge": "2025-08-31",
+    "last_updated": "2026-03-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2026-02-17",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "anthropic/claude-sonnet-5",
+    "contextTokens": 1000000,
+    "displayName": "Claude Sonnet 5",
+    "family": "claude-sonnet",
+    "knowledge": "2026-01-31",
+    "last_updated": "2026-06-30",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-06-30",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "cohere/c4ai-aya-expanse-32b",
+    "contextTokens": 128000,
+    "displayName": "Aya Expanse 32B",
+    "family": null,
+    "knowledge": null,
+    "last_updated": "2024-10-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4000,
+    "reasoning": false,
+    "release_date": "2024-10-24",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "cohere/c4ai-aya-expanse-8b",
+    "contextTokens": 8000,
+    "displayName": "Aya Expanse 8B",
+    "family": null,
+    "knowledge": null,
+    "last_updated": "2024-10-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4000,
+    "reasoning": false,
+    "release_date": "2024-10-24",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "cohere/c4ai-aya-vision-32b",
+    "contextTokens": 16000,
+    "displayName": "Aya Vision 32B",
+    "family": null,
+    "knowledge": null,
+    "last_updated": "2025-05-14",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4000,
+    "reasoning": false,
+    "release_date": "2025-03-04",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "cohere/c4ai-aya-vision-8b",
+    "contextTokens": 16000,
+    "displayName": "Aya Vision 8B",
+    "family": null,
+    "knowledge": null,
+    "last_updated": "2025-05-14",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4000,
+    "reasoning": false,
+    "release_date": "2025-03-04",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "cohere/command-a-03-2025",
+    "contextTokens": 256000,
+    "displayName": "Command A",
+    "family": "command-a",
+    "knowledge": "2024-06-01",
+    "last_updated": "2025-03-13",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8000,
+    "reasoning": false,
+    "release_date": "2025-03-13",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "cohere/command-a-plus-05-2026",
+    "contextTokens": 128000,
+    "displayName": "Command A Plus",
+    "family": "command-a",
+    "knowledge": "2025-04-01",
+    "last_updated": "2026-06-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2026-05-20",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "cohere/command-a-reasoning-08-2025",
+    "contextTokens": 256000,
+    "displayName": "Command A Reasoning",
+    "family": "command-a",
+    "knowledge": "2024-06-01",
+    "last_updated": "2025-08-21",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32000,
+    "reasoning": true,
+    "release_date": "2025-08-21",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "cohere/command-a-translate-08-2025",
+    "contextTokens": 8000,
+    "displayName": "Command A Translate",
+    "family": "command-a",
+    "knowledge": "2024-06-01",
+    "last_updated": "2025-08-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8000,
+    "reasoning": false,
+    "release_date": "2025-08-28",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "cohere/command-a-vision-07-2025",
+    "contextTokens": 128000,
+    "displayName": "Command A Vision",
+    "family": "command-a",
+    "knowledge": "2024-06-01",
+    "last_updated": "2025-07-31",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8000,
+    "reasoning": false,
+    "release_date": "2025-07-31",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "cohere/command-r-08-2024",
+    "contextTokens": 128000,
+    "displayName": "Command R",
+    "family": "command-r",
+    "knowledge": "2024-06-01",
+    "last_updated": "2024-08-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4000,
+    "reasoning": false,
+    "release_date": "2024-08-30",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "cohere/command-r-plus-08-2024",
+    "contextTokens": 128000,
+    "displayName": "Command R+",
+    "family": "command-r",
+    "knowledge": "2024-06-01",
+    "last_updated": "2024-08-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4000,
+    "reasoning": false,
+    "release_date": "2024-08-30",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "cohere/command-r7b-12-2024",
+    "contextTokens": 128000,
+    "displayName": "Command R7B",
+    "family": "command-r",
+    "knowledge": "2024-06-01",
+    "last_updated": "2024-12-02",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4000,
+    "reasoning": false,
+    "release_date": "2024-12-02",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "cohere/command-r7b-arabic-02-2025",
+    "contextTokens": 128000,
+    "displayName": "Command R7B Arabic",
+    "family": "command-r",
+    "knowledge": "2024-06-01",
+    "last_updated": "2025-02-27",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4000,
+    "reasoning": false,
+    "release_date": "2025-02-27",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "cohere/north-mini-code-1-0",
+    "contextTokens": 256000,
+    "displayName": "North Mini Code",
+    "family": "north",
+    "knowledge": "2025-09-23",
+    "last_updated": "2026-06-09",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2026-06-09",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "deepreinforce/ornith-1.0-31b",
+    "contextTokens": 262144,
+    "displayName": "Ornith 1.0 31B",
+    "family": "ornith",
+    "knowledge": null,
+    "last_updated": "2026-06-25",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "reasoning": true,
+    "release_date": "2026-06-25",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "deepreinforce/ornith-1.0-35b",
+    "contextTokens": 262144,
+    "displayName": "Ornith 1.0 35B",
+    "family": "ornith",
+    "knowledge": null,
+    "last_updated": "2026-06-25",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "reasoning": true,
+    "release_date": "2026-06-25",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "deepreinforce/ornith-1.0-397b",
+    "contextTokens": 262144,
+    "displayName": "Ornith 1.0 397B",
+    "family": "ornith",
+    "knowledge": null,
+    "last_updated": "2026-06-25",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "reasoning": true,
+    "release_date": "2026-06-25",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "deepreinforce/ornith-1.0-9b",
+    "contextTokens": 262144,
+    "displayName": "Ornith 1.0 9B",
+    "family": "ornith",
+    "knowledge": null,
+    "last_updated": "2026-06-25",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "reasoning": true,
+    "release_date": "2026-06-25",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "deepseek/deepseek-chat",
+    "contextTokens": 1000000,
+    "displayName": "DeepSeek Chat",
+    "family": "deepseek",
+    "knowledge": "2025-09",
+    "last_updated": "2026-02-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 384000,
+    "reasoning": false,
+    "release_date": "2025-12-01",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "deepseek/deepseek-r1",
+    "contextTokens": 128000,
+    "displayName": "DeepSeek-R1",
+    "family": "deepseek-thinking",
+    "knowledge": "2024-07",
+    "last_updated": "2025-05-29",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2025-01-20",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "deepseek/deepseek-reasoner",
+    "contextTokens": 1000000,
+    "displayName": "DeepSeek Reasoner",
+    "family": "deepseek-thinking",
+    "knowledge": "2025-09",
+    "last_updated": "2026-02-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 384000,
+    "reasoning": true,
+    "release_date": "2025-12-01",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "deepseek/deepseek-v4-flash",
+    "contextTokens": 1000000,
+    "displayName": "DeepSeek V4 Flash",
+    "family": "deepseek-flash",
+    "knowledge": "2025-05",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 384000,
+    "reasoning": true,
+    "release_date": "2026-04-24",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "deepseek/deepseek-v4-pro",
+    "contextTokens": 1000000,
+    "displayName": "DeepSeek V4 Pro",
+    "family": "deepseek-thinking",
+    "knowledge": "2025-05",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 384000,
+    "reasoning": true,
+    "release_date": "2026-04-24",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-2.0-flash",
+    "contextTokens": 1048576,
+    "displayName": "Gemini 2.0 Flash",
+    "family": "gemini-flash",
+    "knowledge": "2024-06",
+    "last_updated": "2024-12-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2024-12-11",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-2.0-flash-lite",
+    "contextTokens": 1048576,
+    "displayName": "Gemini 2.0 Flash-Lite",
+    "family": "gemini-flash-lite",
+    "knowledge": "2024-06",
+    "last_updated": "2024-12-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2024-12-11",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-2.5-flash",
+    "contextTokens": 1048576,
+    "displayName": "Gemini 2.5 Flash",
+    "family": "gemini-flash",
+    "knowledge": "2025-01",
+    "last_updated": "2025-06-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2025-06-17",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-2.5-flash-image",
+    "contextTokens": 32768,
+    "displayName": "Nano Banana",
+    "family": "gemini-flash",
+    "knowledge": "2024-06",
+    "last_updated": "2025-08-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2025-08-26",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-2.5-flash-lite",
+    "contextTokens": 1048576,
+    "displayName": "Gemini 2.5 Flash-Lite",
+    "family": "gemini-flash-lite",
+    "knowledge": "2025-01",
+    "last_updated": "2025-06-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2025-06-17",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "google/gemini-2.5-flash-tts",
+    "contextTokens": 32768,
+    "displayName": "Gemini 2.5 Flash TTS",
+    "family": "gemini-flash",
+    "knowledge": "2025-01",
+    "last_updated": "2025-12-10",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": false,
+    "release_date": "2025-09-30",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-2.5-pro",
+    "contextTokens": 1048576,
+    "displayName": "Gemini 2.5 Pro",
+    "family": "gemini-pro",
+    "knowledge": "2025-01",
+    "last_updated": "2025-06-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2025-06-17",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "google/gemini-2.5-pro-tts",
+    "contextTokens": 32768,
+    "displayName": "Gemini 2.5 Pro TTS",
+    "family": "gemini-pro",
+    "knowledge": "2025-01",
+    "last_updated": "2025-12-10",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": false,
+    "release_date": "2025-09-30",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-3-flash-preview",
+    "contextTokens": 1048576,
+    "displayName": "Gemini 3 Flash Preview",
+    "family": "gemini-flash",
+    "knowledge": "2025-01",
+    "last_updated": "2025-12-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2025-12-17",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-3-pro-image",
+    "contextTokens": 65536,
+    "displayName": "Nano Banana Pro",
+    "family": "gemini-pro",
+    "knowledge": "2025-01",
+    "last_updated": "2026-05-28",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2026-05-28",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-3-pro-image-preview",
+    "contextTokens": 65536,
+    "displayName": "Nano Banana Pro",
+    "family": "gemini-pro",
+    "knowledge": "2025-01",
+    "last_updated": "2025-11-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2025-11-20",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-3-pro-preview",
+    "contextTokens": 1048576,
+    "displayName": "Gemini 3 Pro Preview",
+    "family": "gemini-pro",
+    "knowledge": "2025-01",
+    "last_updated": "2025-11-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2025-11-18",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-3.1-flash-image",
+    "contextTokens": 131072,
+    "displayName": "Nano Banana 2",
+    "family": "gemini-flash",
+    "knowledge": "2025-01",
+    "last_updated": "2026-05-28",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2026-05-28",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-3.1-flash-image-preview",
+    "contextTokens": 65536,
+    "displayName": "Nano Banana 2",
+    "family": "gemini-flash",
+    "knowledge": "2025-01",
+    "last_updated": "2026-02-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-02-26",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-3.1-flash-lite",
+    "contextTokens": 1048576,
+    "displayName": "Gemini 3.1 Flash Lite",
+    "family": "gemini-flash-lite",
+    "knowledge": "2025-01",
+    "last_updated": "2026-05-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-05-07",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-3.1-flash-lite-preview",
+    "contextTokens": 1048576,
+    "displayName": "Gemini 3.1 Flash Lite Preview",
+    "family": "gemini-flash-lite",
+    "knowledge": "2025-01",
+    "last_updated": "2026-03-03",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-03-03",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-3.1-pro-preview",
+    "contextTokens": 1048576,
+    "displayName": "Gemini 3.1 Pro Preview",
+    "family": "gemini-pro",
+    "knowledge": "2025-01",
+    "last_updated": "2026-02-19",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-02-19",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-3.1-pro-preview-customtools",
+    "contextTokens": 1048576,
+    "displayName": "Gemini 3.1 Pro Preview Custom Tools",
+    "family": "gemini-pro",
+    "knowledge": "2025-01",
+    "last_updated": "2026-02-19",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-02-19",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-3.5-flash",
+    "contextTokens": 1048576,
+    "displayName": "Gemini 3.5 Flash",
+    "family": "gemini-flash",
+    "knowledge": "2025-01",
+    "last_updated": "2026-05-19",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-05-19",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "google/gemini-embedding-001",
+    "contextTokens": 2048,
+    "displayName": "Gemini Embedding 001",
+    "family": "gemini",
+    "knowledge": "2025-05",
+    "last_updated": "2025-05-20",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 1,
+    "reasoning": false,
+    "release_date": "2025-05-20",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-flash-latest",
+    "contextTokens": 1048576,
+    "displayName": "Gemini Flash Latest",
+    "family": "gemini-flash",
+    "knowledge": "2025-01",
+    "last_updated": "2026-05-19",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-05-19",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-flash-lite-latest",
+    "contextTokens": 1048576,
+    "displayName": "Gemini Flash-Lite Latest",
+    "family": "gemini-flash-lite",
+    "knowledge": "2025-01",
+    "last_updated": "2026-05-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-05-07",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemini-omni-flash-preview",
+    "contextTokens": 1048576,
+    "displayName": "Gemini Omni Flash Preview",
+    "family": "gemini",
+    "knowledge": null,
+    "last_updated": "2026-06-30",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "video"
+      ]
+    },
+    "outputTokens": 57920,
+    "reasoning": true,
+    "release_date": "2026-06-30",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemma-4-26b-a4b-it",
+    "contextTokens": 262144,
+    "displayName": "Gemma 4 26B A4B IT",
+    "family": "gemma",
+    "knowledge": null,
+    "last_updated": "2026-04-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2026-04-02",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemma-4-31b-it",
+    "contextTokens": 262144,
+    "displayName": "Gemma 4 31B IT",
+    "family": "gemma",
+    "knowledge": null,
+    "last_updated": "2026-04-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2026-04-02",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemma-4-E2B-it",
+    "contextTokens": 131072,
+    "displayName": "Gemma 4 E2B IT",
+    "family": "gemma",
+    "knowledge": null,
+    "last_updated": "2026-04-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": true,
+    "release_date": "2026-04-02",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "google/gemma-4-E4B-it",
+    "contextTokens": 131072,
+    "displayName": "Gemma 4 E4B IT",
+    "family": "gemma",
+    "knowledge": null,
+    "last_updated": "2026-04-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": true,
+    "release_date": "2026-04-02",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "meituan/longcat-2.0",
+    "contextTokens": 1000000,
+    "displayName": "LongCat-2.0",
+    "family": "longcat",
+    "knowledge": null,
+    "last_updated": "2026-06-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-06-30",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "meta/llama-3.3-70b-instruct",
+    "contextTokens": 128000,
+    "displayName": "Llama-3.3-70B-Instruct",
+    "family": "llama",
+    "knowledge": "2023-12",
+    "last_updated": "2024-12-06",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": false,
+    "release_date": "2024-12-06",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "meta/llama-4-maverick-17b-instruct",
+    "contextTokens": 1000000,
+    "displayName": "Llama 4 Maverick 17B Instruct",
+    "family": "llama",
+    "knowledge": "2024-08",
+    "last_updated": "2025-04-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": false,
+    "release_date": "2025-04-05",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "meta/llama-4-scout-17b-instruct",
+    "contextTokens": 3500000,
+    "displayName": "Llama 4 Scout 17B Instruct",
+    "family": "llama",
+    "knowledge": "2024-08",
+    "last_updated": "2025-04-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": false,
+    "release_date": "2025-04-05",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "meta/muse-spark-1.1",
+    "contextTokens": 1000000,
+    "displayName": "Muse Spark 1.1",
+    "family": "muse",
+    "knowledge": null,
+    "last_updated": "2026-07-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32000,
+    "reasoning": true,
+    "release_date": "2026-04-08",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "microsoft/mai-code-1-flash",
+    "contextTokens": 256000,
+    "displayName": "MAI-Code-1-Flash",
+    "family": "mai",
+    "knowledge": "2025-12",
+    "last_updated": "2026-06-08",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-06-02",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "minimax/MiniMax-M2",
+    "contextTokens": 196608,
+    "displayName": "MiniMax-M2",
+    "family": "minimax",
+    "knowledge": null,
+    "last_updated": "2025-10-27",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-10-27",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "minimax/MiniMax-M2.1",
+    "contextTokens": 204800,
+    "displayName": "MiniMax-M2.1",
+    "family": "minimax",
+    "knowledge": null,
+    "last_updated": "2025-12-23",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2025-12-23",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "minimax/MiniMax-M2.5",
+    "contextTokens": 204800,
+    "displayName": "MiniMax-M2.5",
+    "family": "minimax",
+    "knowledge": null,
+    "last_updated": "2026-02-12",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-02-12",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "minimax/MiniMax-M2.5-highspeed",
+    "contextTokens": 204800,
+    "displayName": "MiniMax-M2.5-highspeed",
+    "family": "minimax",
+    "knowledge": null,
+    "last_updated": "2026-02-13",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-02-13",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "minimax/MiniMax-M2.7",
+    "contextTokens": 204800,
+    "displayName": "MiniMax-M2.7",
+    "family": "minimax",
+    "knowledge": null,
+    "last_updated": "2026-03-18",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-03-18",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "minimax/MiniMax-M2.7-highspeed",
+    "contextTokens": 204800,
+    "displayName": "MiniMax-M2.7-highspeed",
+    "family": "minimax",
+    "knowledge": null,
+    "last_updated": "2026-03-18",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-03-18",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "minimax/MiniMax-M3",
+    "contextTokens": 512000,
+    "displayName": "MiniMax-M3",
+    "family": "minimax",
+    "knowledge": null,
+    "last_updated": "2026-06-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-06-01",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "mistral/codestral-latest",
+    "contextTokens": 256000,
+    "displayName": "Codestral (latest)",
+    "family": "codestral",
+    "knowledge": "2024-10",
+    "last_updated": "2025-01-04",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": false,
+    "release_date": "2024-05-29",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "mistral/devstral-2512",
+    "contextTokens": 262144,
+    "displayName": "Devstral 2",
+    "family": "devstral",
+    "knowledge": "2025-12",
+    "last_updated": "2025-12-09",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": false,
+    "release_date": "2025-12-09",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "mistral/devstral-medium-2507",
+    "contextTokens": 128000,
+    "displayName": "Devstral Medium",
+    "family": "devstral",
+    "knowledge": "2025-05",
+    "last_updated": "2025-07-10",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": false,
+    "release_date": "2025-07-10",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "mistral/devstral-medium-latest",
+    "contextTokens": 262144,
+    "displayName": "Devstral 2 (latest)",
+    "family": "devstral",
+    "knowledge": "2025-12",
+    "last_updated": "2025-12-02",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": false,
+    "release_date": "2025-12-02",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "mistral/devstral-small-2507",
+    "contextTokens": 128000,
+    "displayName": "Devstral Small",
+    "family": "devstral",
+    "knowledge": "2025-05",
+    "last_updated": "2025-07-10",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": false,
+    "release_date": "2025-07-10",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "mistral/magistral-medium-latest",
+    "contextTokens": 128000,
+    "displayName": "Magistral Medium (latest)",
+    "family": "magistral-medium",
+    "knowledge": "2025-06",
+    "last_updated": "2025-03-20",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": true,
+    "release_date": "2025-03-17",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "mistral/mistral-large-2411",
+    "contextTokens": 131072,
+    "displayName": "Mistral Large 2.1",
+    "family": "mistral-large",
+    "knowledge": "2024-11",
+    "last_updated": "2024-11-18",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": false,
+    "release_date": "2024-11-18",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "mistral/mistral-large-2512",
+    "contextTokens": 262144,
+    "displayName": "Mistral Large 3",
+    "family": "mistral-large",
+    "knowledge": "2024-11",
+    "last_updated": "2025-12-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": false,
+    "release_date": "2024-11-01",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "mistral/mistral-large-latest",
+    "contextTokens": 262144,
+    "displayName": "Mistral Large (latest)",
+    "family": "mistral-large",
+    "knowledge": "2024-11",
+    "last_updated": "2025-12-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": false,
+    "release_date": "2024-11-01",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "mistral/mistral-medium-2505",
+    "contextTokens": 131072,
+    "displayName": "Mistral Medium 3",
+    "family": "mistral-medium",
+    "knowledge": "2025-05",
+    "last_updated": "2025-05-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": false,
+    "release_date": "2025-05-07",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "mistral/mistral-medium-2604",
+    "contextTokens": 262144,
+    "displayName": "Mistral Medium 3.5",
+    "family": "mistral-medium",
+    "knowledge": null,
+    "last_updated": "2026-04-29",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": true,
+    "release_date": "2026-04-29",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "mistral/mistral-medium-latest",
+    "contextTokens": 262144,
+    "displayName": "Mistral Medium (latest)",
+    "family": "mistral-medium",
+    "knowledge": null,
+    "last_updated": "2026-04-29",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": true,
+    "release_date": "2026-04-29",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "mistral/mistral-nemo",
+    "contextTokens": 128000,
+    "displayName": "Mistral Nemo",
+    "family": "mistral-nemo",
+    "knowledge": "2024-07",
+    "last_updated": "2024-07-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": false,
+    "release_date": "2024-07-01",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "mistral/mistral-small-2506",
+    "contextTokens": 128000,
+    "displayName": "Mistral Small 3.2",
+    "family": "mistral-small",
+    "knowledge": "2025-03",
+    "last_updated": "2025-06-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": false,
+    "release_date": "2025-06-20",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "mistral/mistral-small-2603",
+    "contextTokens": 256000,
+    "displayName": "Mistral Small 4",
+    "family": "mistral-small",
+    "knowledge": "2025-06",
+    "last_updated": "2026-03-16",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 256000,
+    "reasoning": true,
+    "release_date": "2026-03-16",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "mistral/mistral-small-latest",
+    "contextTokens": 256000,
+    "displayName": "Mistral Small (latest)",
+    "family": "mistral-small",
+    "knowledge": "2025-06",
+    "last_updated": "2026-03-16",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 256000,
+    "reasoning": true,
+    "release_date": "2026-03-16",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "mistral/pixtral-12b",
+    "contextTokens": 128000,
+    "displayName": "Pixtral 12B",
+    "family": "pixtral",
+    "knowledge": "2024-09",
+    "last_updated": "2024-09-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": false,
+    "release_date": "2024-09-01",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "mistral/pixtral-large-latest",
+    "contextTokens": 128000,
+    "displayName": "Pixtral Large (latest)",
+    "family": "pixtral",
+    "knowledge": "2024-11",
+    "last_updated": "2024-11-04",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": false,
+    "release_date": "2024-11-01",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "moonshotai/kimi-k2-thinking",
+    "contextTokens": 262144,
+    "displayName": "Kimi K2 Thinking",
+    "family": "kimi-thinking",
+    "knowledge": "2024-08",
+    "last_updated": "2025-11-06",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": true,
+    "release_date": "2025-11-06",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "moonshotai/kimi-k2-thinking-turbo",
+    "contextTokens": 262144,
+    "displayName": "Kimi K2 Thinking Turbo",
+    "family": "kimi-thinking",
+    "knowledge": "2024-08",
+    "last_updated": "2025-11-06",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": true,
+    "release_date": "2025-11-06",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "moonshotai/kimi-k2.5",
+    "contextTokens": 262144,
+    "displayName": "Kimi K2.5",
+    "family": "kimi-k2",
+    "knowledge": "2025-01",
+    "last_updated": "2026-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": true,
+    "release_date": "2026-01",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "moonshotai/kimi-k2.6",
+    "contextTokens": 262144,
+    "displayName": "Kimi K2.6",
+    "family": "kimi-k2",
+    "knowledge": "2025-01",
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": true,
+    "release_date": "2026-04-21",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "moonshotai/kimi-k2.7-code",
+    "contextTokens": 262144,
+    "displayName": "Kimi K2.7 Code",
+    "family": "kimi-k2",
+    "knowledge": "2025-01",
+    "last_updated": "2026-06-12",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": true,
+    "release_date": "2026-06-12",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "moonshotai/kimi-k2.7-code-highspeed",
+    "contextTokens": 262144,
+    "displayName": "Kimi K2.7 Code Highspeed",
+    "family": "kimi-k2",
+    "knowledge": "2025-01",
+    "last_updated": "2026-06-12",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": true,
+    "release_date": "2026-06-12",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "moonshotai/kimi-k3",
+    "contextTokens": 1048576,
+    "displayName": "Kimi K3",
+    "family": "kimi-k3",
+    "knowledge": null,
+    "last_updated": "2026-07-16",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-07-16",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/llama-3.1-nemotron-70b-instruct",
+    "contextTokens": 128000,
+    "displayName": "Llama 3.1 Nemotron 70B Instruct",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2025-04-15",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2025-04-15",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+    "contextTokens": 128000,
+    "displayName": "Llama 3.1 Nemotron Safety Guard 8B v3",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2025-10-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": false,
+    "release_date": "2025-10-28",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/llama-3.1-nemotron-ultra-253b",
+    "contextTokens": 128000,
+    "displayName": "Llama 3.1 Nemotron Ultra 253B",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2025-04-07",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": true,
+    "release_date": "2025-04-07",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/llama-3.3-nemotron-super-49b-v1",
+    "contextTokens": 131072,
+    "displayName": "Llama 3.3 Nemotron Super 49B v1",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2025-04-07",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2025-04-07",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    "contextTokens": 131072,
+    "displayName": "Llama 3.3 Nemotron Super 49B v1.5",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2025-07-25",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2025-07-25",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "nvidia/llama-nemotron-embed-vl-1b-v2",
+    "contextTokens": 32768,
+    "displayName": "Llama Nemotron Embed VL 1B v2",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2026-02-10",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 2048,
+    "reasoning": false,
+    "release_date": "2026-02-10",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "nvidia/llama-nemotron-rerank-vl-1b-v2",
+    "contextTokens": 128000,
+    "displayName": "Llama Nemotron Rerank VL 1B v2",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2026-03-31",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": false,
+    "release_date": "2026-03-31",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/mistral-nemotron",
+    "contextTokens": 128000,
+    "displayName": "Mistral Nemotron",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2025-06-12",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2025-06-11",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/nemotron-3-content-safety",
+    "contextTokens": 128000,
+    "displayName": "Nemotron 3 Content Safety",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2026-04-16",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": false,
+    "release_date": "2026-04-16",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/nemotron-3-nano-30b-a3b",
+    "contextTokens": 262144,
+    "displayName": "Nemotron 3 Nano 30B A3B",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2025-12-15",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": true,
+    "release_date": "2025-12-15",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    "contextTokens": 256000,
+    "displayName": "Nemotron 3 Nano Omni 30B A3B Reasoning",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2026-04-28",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2026-04-28",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/nemotron-3-super-120b-a12b",
+    "contextTokens": 262144,
+    "displayName": "Nemotron 3 Super 120B A12B",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2026-03-11",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 262144,
+    "reasoning": true,
+    "release_date": "2026-03-11",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/nemotron-3-ultra-550b-a55b",
+    "contextTokens": 1000000,
+    "displayName": "Nemotron 3 Ultra 550B A55B",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2026-06-04",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-06-04",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "nvidia/nemotron-3.5-content-safety",
+    "contextTokens": 128000,
+    "displayName": "Nemotron 3.5 Content Safety",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2026-06-04",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": true,
+    "release_date": "2026-06-04",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/nemotron-cascade-2-30b-a3b",
+    "contextTokens": 256000,
+    "displayName": "Nemotron Cascade 2 30B A3B",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2026-04-09",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2026-03-24",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/nemotron-content-safety-reasoning-4b",
+    "contextTokens": 128000,
+    "displayName": "Nemotron Content Safety Reasoning 4B",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2026-01-22",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": true,
+    "release_date": "2026-01-22",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/nemotron-mini-4b-instruct",
+    "contextTokens": 128000,
+    "displayName": "Nemotron Mini 4B Instruct",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2024-08-26",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2024-08-21",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "nvidia/nemotron-nano-12b-v2-vl",
+    "contextTokens": 128000,
+    "displayName": "Nemotron Nano 12B v2 VL",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2025-10-28",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-10-28",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "nvidia/nemotron-nano-9b-v2",
+    "contextTokens": 131072,
+    "displayName": "Nemotron Nano 9B v2",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2025-08-18",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2025-08-18",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "nvidia/nemotron-voicechat",
+    "contextTokens": 128000,
+    "displayName": "Nemotron VoiceChat",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2026-03-16",
+    "modalities": {
+      "input": [
+        "text",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2026-03-16",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "openai/gpt-3.5-turbo",
+    "contextTokens": 16385,
+    "displayName": "GPT-3.5-turbo",
+    "family": "gpt",
+    "knowledge": "2021-09-01",
+    "last_updated": "2023-11-06",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": false,
+    "release_date": "2023-03-01",
+    "structured_output": false,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-4",
+    "contextTokens": 8192,
+    "displayName": "GPT-4",
+    "family": "gpt",
+    "knowledge": "2023-11",
+    "last_updated": "2024-04-09",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2023-11-06",
+    "structured_output": false,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-4-turbo",
+    "contextTokens": 128000,
+    "displayName": "GPT-4 Turbo",
+    "family": "gpt",
+    "knowledge": "2023-12",
+    "last_updated": "2024-04-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": false,
+    "release_date": "2023-11-06",
+    "structured_output": false,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-4.1",
+    "contextTokens": 1047576,
+    "displayName": "GPT-4.1",
+    "family": "gpt",
+    "knowledge": "2024-04",
+    "last_updated": "2025-04-14",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": false,
+    "release_date": "2025-04-14",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-4.1-mini",
+    "contextTokens": 1047576,
+    "displayName": "GPT-4.1 mini",
+    "family": "gpt-mini",
+    "knowledge": "2024-04",
+    "last_updated": "2025-04-14",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": false,
+    "release_date": "2025-04-14",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-4.1-nano",
+    "contextTokens": 1047576,
+    "displayName": "GPT-4.1 nano",
+    "family": "gpt-nano",
+    "knowledge": "2024-04",
+    "last_updated": "2025-04-14",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": false,
+    "release_date": "2025-04-14",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-4o",
+    "contextTokens": 128000,
+    "displayName": "GPT-4o",
+    "family": "gpt",
+    "knowledge": "2023-09",
+    "last_updated": "2024-08-06",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": false,
+    "release_date": "2024-05-13",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-4o-2024-05-13",
+    "contextTokens": 128000,
+    "displayName": "GPT-4o (2024-05-13)",
+    "family": "gpt",
+    "knowledge": "2023-09",
+    "last_updated": "2024-05-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": false,
+    "release_date": "2024-05-13",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-4o-2024-08-06",
+    "contextTokens": 128000,
+    "displayName": "GPT-4o (2024-08-06)",
+    "family": "gpt",
+    "knowledge": "2023-09",
+    "last_updated": "2024-08-06",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": false,
+    "release_date": "2024-08-06",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-4o-2024-11-20",
+    "contextTokens": 128000,
+    "displayName": "GPT-4o (2024-11-20)",
+    "family": "gpt",
+    "knowledge": "2023-09",
+    "last_updated": "2024-11-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": false,
+    "release_date": "2024-11-20",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-4o-mini",
+    "contextTokens": 128000,
+    "displayName": "GPT-4o mini",
+    "family": "gpt-mini",
+    "knowledge": "2023-09",
+    "last_updated": "2024-07-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": false,
+    "release_date": "2024-07-18",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5",
+    "contextTokens": 400000,
+    "displayName": "GPT-5",
+    "family": "gpt",
+    "inputTokens": 272000,
+    "knowledge": "2024-09-30",
+    "last_updated": "2025-08-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-08-07",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5-chat-latest",
+    "contextTokens": 400000,
+    "displayName": "GPT-5 Chat (latest)",
+    "family": "gpt-codex",
+    "inputTokens": 272000,
+    "knowledge": "2024-09-30",
+    "last_updated": "2025-08-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-08-07",
+    "structured_output": true,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "openai/gpt-5-codex",
+    "contextTokens": 400000,
+    "displayName": "GPT-5-Codex",
+    "family": "gpt-codex",
+    "inputTokens": 272000,
+    "knowledge": "2024-09-30",
+    "last_updated": "2025-09-15",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-09-15",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5-mini",
+    "contextTokens": 400000,
+    "displayName": "GPT-5 Mini",
+    "family": "gpt-mini",
+    "inputTokens": 272000,
+    "knowledge": "2024-05-30",
+    "last_updated": "2025-08-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-08-07",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5-nano",
+    "contextTokens": 400000,
+    "displayName": "GPT-5 Nano",
+    "family": "gpt-nano",
+    "inputTokens": 272000,
+    "knowledge": "2024-05-30",
+    "last_updated": "2025-08-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-08-07",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5-pro",
+    "contextTokens": 400000,
+    "displayName": "GPT-5 Pro",
+    "family": "gpt-pro",
+    "inputTokens": 272000,
+    "knowledge": "2024-09-30",
+    "last_updated": "2025-10-06",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 272000,
+    "reasoning": true,
+    "release_date": "2025-10-06",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.1",
+    "contextTokens": 400000,
+    "displayName": "GPT-5.1",
+    "family": "gpt",
+    "inputTokens": 272000,
+    "knowledge": "2024-09-30",
+    "last_updated": "2025-11-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-11-13",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.1-chat-latest",
+    "contextTokens": 128000,
+    "displayName": "GPT-5.1 Chat",
+    "family": "gpt-codex",
+    "knowledge": "2024-09-30",
+    "last_updated": "2025-11-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": true,
+    "release_date": "2025-11-13",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.1-codex",
+    "contextTokens": 400000,
+    "displayName": "GPT-5.1 Codex",
+    "family": "gpt-codex",
+    "inputTokens": 272000,
+    "knowledge": "2024-09-30",
+    "last_updated": "2025-11-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-11-13",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.1-codex-max",
+    "contextTokens": 400000,
+    "displayName": "GPT-5.1 Codex Max",
+    "family": "gpt-codex",
+    "inputTokens": 272000,
+    "knowledge": "2024-09-30",
+    "last_updated": "2025-11-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-11-13",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.1-codex-mini",
+    "contextTokens": 400000,
+    "displayName": "GPT-5.1 Codex mini",
+    "family": "gpt-codex",
+    "inputTokens": 272000,
+    "knowledge": "2024-09-30",
+    "last_updated": "2025-11-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-11-13",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.2",
+    "contextTokens": 400000,
+    "displayName": "GPT-5.2",
+    "family": "gpt",
+    "inputTokens": 272000,
+    "knowledge": "2025-08-31",
+    "last_updated": "2025-12-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-12-11",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.2-chat-latest",
+    "contextTokens": 128000,
+    "displayName": "GPT-5.2 Chat",
+    "family": "gpt-codex",
+    "knowledge": "2025-08-31",
+    "last_updated": "2025-12-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": true,
+    "release_date": "2025-12-11",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.2-codex",
+    "contextTokens": 400000,
+    "displayName": "GPT-5.2 Codex",
+    "family": "gpt-codex",
+    "inputTokens": 272000,
+    "knowledge": "2025-08-31",
+    "last_updated": "2025-12-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-12-11",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.2-pro",
+    "contextTokens": 400000,
+    "displayName": "GPT-5.2 Pro",
+    "family": "gpt-pro",
+    "inputTokens": 272000,
+    "knowledge": "2025-08-31",
+    "last_updated": "2025-12-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2025-12-11",
+    "structured_output": false,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.3-chat-latest",
+    "contextTokens": 128000,
+    "displayName": "GPT-5.3 Chat (latest)",
+    "family": "gpt",
+    "knowledge": "2025-08-31",
+    "last_updated": "2026-03-03",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": false,
+    "release_date": "2026-03-03",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.3-codex",
+    "contextTokens": 400000,
+    "displayName": "GPT-5.3 Codex",
+    "family": "gpt-codex",
+    "inputTokens": 272000,
+    "knowledge": "2025-08-31",
+    "last_updated": "2026-02-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-02-05",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.4",
+    "contextTokens": 1050000,
+    "displayName": "GPT-5.4",
+    "family": "gpt",
+    "inputTokens": 922000,
+    "knowledge": "2025-08-31",
+    "last_updated": "2026-03-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-03-05",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.4-mini",
+    "contextTokens": 400000,
+    "displayName": "GPT-5.4 mini",
+    "family": "gpt-mini",
+    "inputTokens": 272000,
+    "knowledge": "2025-08-31",
+    "last_updated": "2026-03-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-03-17",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.4-nano",
+    "contextTokens": 400000,
+    "displayName": "GPT-5.4 nano",
+    "family": "gpt-nano",
+    "inputTokens": 272000,
+    "knowledge": "2025-08-31",
+    "last_updated": "2026-03-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-03-17",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.4-pro",
+    "contextTokens": 1050000,
+    "displayName": "GPT-5.4 Pro",
+    "family": "gpt-pro",
+    "inputTokens": 922000,
+    "knowledge": "2025-08-31",
+    "last_updated": "2026-03-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-03-05",
+    "structured_output": false,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.5",
+    "contextTokens": 1050000,
+    "displayName": "GPT-5.5",
+    "family": "gpt",
+    "inputTokens": 922000,
+    "knowledge": "2025-12-01",
+    "last_updated": "2026-04-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-04-23",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.5-instant",
+    "contextTokens": 400000,
+    "displayName": "GPT-5.5 Instant",
+    "family": null,
+    "inputTokens": 400000,
+    "knowledge": "2025-12-01",
+    "last_updated": "2026-05-28",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-05-05",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.5-pro",
+    "contextTokens": 1050000,
+    "displayName": "GPT-5.5 Pro",
+    "family": "gpt-pro",
+    "inputTokens": 922000,
+    "knowledge": "2025-12-01",
+    "last_updated": "2026-04-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-04-23",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.6-luna",
+    "contextTokens": 1050000,
+    "displayName": "GPT-5.6 Luna",
+    "family": "gpt-luna",
+    "inputTokens": 922000,
+    "knowledge": "2026-02-16",
+    "last_updated": "2026-07-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-07-09",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.6-sol",
+    "contextTokens": 1050000,
+    "displayName": "GPT-5.6 Sol",
+    "family": "gpt-sol",
+    "inputTokens": 922000,
+    "knowledge": "2026-02-16",
+    "last_updated": "2026-07-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-07-09",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-5.6-terra",
+    "contextTokens": 1050000,
+    "displayName": "GPT-5.6 Terra",
+    "family": "gpt-terra",
+    "inputTokens": 922000,
+    "knowledge": "2026-02-16",
+    "last_updated": "2026-07-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-07-09",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-image-1",
+    "contextTokens": 0,
+    "displayName": "GPT-Image-1",
+    "family": "gpt-image",
+    "knowledge": null,
+    "last_updated": "2025-04-24",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "image"
+      ]
+    },
+    "outputTokens": 0,
+    "reasoning": false,
+    "release_date": "2025-04-24",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-image-1.5",
+    "contextTokens": 0,
+    "displayName": "GPT-Image-1.5",
+    "family": "gpt-image",
+    "knowledge": null,
+    "last_updated": "2025-11-25",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text",
+        "image"
+      ]
+    },
+    "outputTokens": 0,
+    "reasoning": false,
+    "release_date": "2025-11-25",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-image-2",
+    "contextTokens": 0,
+    "displayName": "GPT-Image-2",
+    "family": "gpt-image",
+    "knowledge": null,
+    "last_updated": "2026-04-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "image"
+      ]
+    },
+    "outputTokens": 0,
+    "reasoning": false,
+    "release_date": "2026-04-21",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "openai/gpt-oss-120b",
+    "contextTokens": 131072,
+    "displayName": "GPT OSS 120B",
+    "family": "gpt-oss",
+    "knowledge": null,
+    "last_updated": "2025-08-05",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2025-08-05",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "openai/gpt-oss-20b",
+    "contextTokens": 131072,
+    "displayName": "GPT OSS 20B",
+    "family": "gpt-oss",
+    "knowledge": null,
+    "last_updated": "2025-08-05",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2025-08-05",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "openai/gpt-oss-safeguard-120b",
+    "contextTokens": 131072,
+    "displayName": "GPT OSS Safeguard 120B",
+    "family": "gpt-oss",
+    "knowledge": null,
+    "last_updated": "2025-10-29",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2025-10-29",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-realtime-2.1",
+    "contextTokens": 128000,
+    "displayName": "GPT-Realtime-2.1",
+    "family": "gpt",
+    "inputTokens": 96000,
+    "knowledge": "2024-09-30",
+    "last_updated": "2026-07-06",
+    "modalities": {
+      "input": [
+        "text",
+        "audio",
+        "image"
+      ],
+      "output": [
+        "text",
+        "audio"
+      ]
+    },
+    "outputTokens": 32000,
+    "reasoning": true,
+    "release_date": "2026-07-06",
+    "structured_output": false,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "openai/gpt-realtime-whisper",
+    "contextTokens": 0,
+    "displayName": "GPT Realtime Whisper",
+    "family": "whisper",
+    "knowledge": null,
+    "last_updated": "2026-05-07",
+    "modalities": {
+      "input": [
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 0,
+    "reasoning": false,
+    "release_date": "2026-05-07",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/o1",
+    "contextTokens": 200000,
+    "displayName": "o1",
+    "family": "o",
+    "knowledge": "2023-09",
+    "last_updated": "2024-12-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 100000,
+    "reasoning": true,
+    "release_date": "2024-12-05",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/o1-pro",
+    "contextTokens": 200000,
+    "displayName": "o1-pro",
+    "family": "o-pro",
+    "knowledge": "2023-09",
+    "last_updated": "2025-03-19",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 100000,
+    "reasoning": true,
+    "release_date": "2025-03-19",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/o3",
+    "contextTokens": 200000,
+    "displayName": "o3",
+    "family": "o",
+    "knowledge": "2024-05",
+    "last_updated": "2025-04-16",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 100000,
+    "reasoning": true,
+    "release_date": "2025-04-16",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/o3-deep-research",
+    "contextTokens": 200000,
+    "displayName": "o3-deep-research",
+    "family": "o",
+    "knowledge": "2024-05",
+    "last_updated": "2024-06-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 100000,
+    "reasoning": true,
+    "release_date": "2024-06-26",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "openai/o3-mini",
+    "contextTokens": 200000,
+    "displayName": "o3-mini",
+    "family": "o-mini",
+    "knowledge": "2024-05",
+    "last_updated": "2025-01-29",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 100000,
+    "reasoning": true,
+    "release_date": "2024-12-20",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/o3-pro",
+    "contextTokens": 200000,
+    "displayName": "o3-pro",
+    "family": "o-pro",
+    "knowledge": "2024-05",
+    "last_updated": "2025-06-10",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 100000,
+    "reasoning": true,
+    "release_date": "2025-06-10",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/o4-mini",
+    "contextTokens": 200000,
+    "displayName": "o4-mini",
+    "family": "o-mini",
+    "knowledge": "2024-05",
+    "last_updated": "2025-04-16",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 100000,
+    "reasoning": true,
+    "release_date": "2025-04-16",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/o4-mini-deep-research",
+    "contextTokens": 200000,
+    "displayName": "o4-mini-deep-research",
+    "family": "o-mini",
+    "knowledge": "2024-05",
+    "last_updated": "2024-06-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 100000,
+    "reasoning": true,
+    "release_date": "2024-06-26",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "openai/whisper-large-v3",
+    "contextTokens": 448,
+    "displayName": "Whisper 3 Large",
+    "family": "whisper",
+    "knowledge": null,
+    "last_updated": "2024-10-01",
+    "modalities": {
+      "input": [
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": false,
+    "release_date": "2024-10-01",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "openai/whisper-large-v3-turbo",
+    "contextTokens": 448,
+    "displayName": "Whisper Large v3 Turbo",
+    "family": "whisper",
+    "knowledge": null,
+    "last_updated": "2024-10-01",
+    "modalities": {
+      "input": [
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 448,
+    "reasoning": false,
+    "release_date": "2024-10-01",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "perplexity/sonar",
+    "contextTokens": 128000,
+    "displayName": "Sonar",
+    "family": "sonar",
+    "knowledge": "2025-09-01",
+    "last_updated": "2025-09-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": false,
+    "release_date": "2024-01-01",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "perplexity/sonar-pro",
+    "contextTokens": 200000,
+    "displayName": "Sonar Pro",
+    "family": "sonar-pro",
+    "knowledge": "2025-09-01",
+    "last_updated": "2025-09-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 8192,
+    "reasoning": false,
+    "release_date": "2024-01-01",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "perplexity/sonar-reasoning-pro",
+    "contextTokens": 128000,
+    "displayName": "Sonar Reasoning Pro",
+    "family": "sonar-reasoning",
+    "knowledge": "2025-09-01",
+    "last_updated": "2025-09-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": true,
+    "release_date": "2024-01-01",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "poolside/laguna-m.1",
+    "contextTokens": 262144,
+    "displayName": "Laguna M.1",
+    "family": "laguna",
+    "knowledge": null,
+    "last_updated": "2026-06-13",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2026-04-28",
+    "structured_output": false,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "poolside/laguna-xs-2.1",
+    "contextTokens": 262144,
+    "displayName": "Laguna XS 2.1",
+    "family": "laguna",
+    "knowledge": null,
+    "last_updated": "2026-07-02",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2026-07-02",
+    "structured_output": false,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "poolside/laguna-xs.2",
+    "contextTokens": 262144,
+    "displayName": "Laguna XS.2",
+    "family": "laguna",
+    "knowledge": null,
+    "last_updated": "2026-06-13",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2026-04-28",
+    "structured_output": false,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "sakana/fugu",
+    "contextTokens": 1000000,
+    "displayName": "Fugu",
+    "family": "fugu",
+    "knowledge": null,
+    "last_updated": "2026-06-15",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "reasoning": true,
+    "release_date": "2026-06-15",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "sakana/fugu-ultra",
+    "contextTokens": 1000000,
+    "displayName": "Fugu Ultra",
+    "family": "fugu",
+    "knowledge": null,
+    "last_updated": "2026-06-15",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "reasoning": true,
+    "release_date": "2026-06-15",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "sarvam/sarvam-105b",
+    "contextTokens": 131072,
+    "displayName": "Sarvam 105B",
+    "family": "sarvam",
+    "knowledge": null,
+    "last_updated": "2025-09-01",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2025-09-01",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "sarvam/sarvam-30b",
+    "contextTokens": 128000,
+    "displayName": "Sarvam 30B",
+    "family": "sarvam",
+    "knowledge": null,
+    "last_updated": "2026-02-18",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-02-18",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "stepfun/step-3.5-flash",
+    "contextTokens": 256000,
+    "displayName": "Step 3.5 Flash",
+    "family": null,
+    "inputTokens": 256000,
+    "knowledge": "2025-01",
+    "last_updated": "2026-02-13",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 256000,
+    "reasoning": true,
+    "release_date": "2026-01-29",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "stepfun/step-3.5-flash-2603",
+    "contextTokens": 256000,
+    "displayName": "Step 3.5 Flash 2603",
+    "family": null,
+    "inputTokens": 256000,
+    "knowledge": "2025-01",
+    "last_updated": "2026-04-02",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 256000,
+    "reasoning": true,
+    "release_date": "2026-04-02",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "stepfun/step-3.7-flash",
+    "contextTokens": 256000,
+    "displayName": "Step 3.7 Flash",
+    "family": null,
+    "inputTokens": 256000,
+    "knowledge": "2026-03-01",
+    "last_updated": "2026-05-29",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 256000,
+    "reasoning": true,
+    "release_date": "2026-05-29",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "tencent/hy3-preview",
+    "contextTokens": 256000,
+    "displayName": "Hy3 preview",
+    "family": "Hy",
+    "knowledge": null,
+    "last_updated": "2026-04-20",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 64000,
+    "reasoning": true,
+    "release_date": "2026-04-20",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "thinkingmachines/inkling",
+    "contextTokens": 256000,
+    "displayName": "Inkling",
+    "family": "ling",
+    "knowledge": null,
+    "last_updated": "2026-07-15",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 256000,
+    "reasoning": true,
+    "release_date": "2026-07-15",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "xai/grok-4.20-0309-non-reasoning",
+    "contextTokens": 1000000,
+    "displayName": "Grok 4.20 (Non-Reasoning)",
+    "family": "grok",
+    "knowledge": null,
+    "last_updated": "2026-03-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 30000,
+    "reasoning": false,
+    "release_date": "2026-03-09",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "xai/grok-4.20-0309-reasoning",
+    "contextTokens": 1000000,
+    "displayName": "Grok 4.20 (Reasoning)",
+    "family": "grok",
+    "knowledge": null,
+    "last_updated": "2026-03-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 30000,
+    "reasoning": true,
+    "release_date": "2026-03-09",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "xai/grok-4.3",
+    "contextTokens": 1000000,
+    "displayName": "Grok 4.3",
+    "family": "grok",
+    "knowledge": null,
+    "last_updated": "2026-04-17",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 30000,
+    "reasoning": true,
+    "release_date": "2026-04-17",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "xai/grok-4.5",
+    "contextTokens": 500000,
+    "displayName": "Grok 4.5",
+    "family": "grok",
+    "knowledge": null,
+    "last_updated": "2026-07-08",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 500000,
+    "reasoning": true,
+    "release_date": "2026-07-08",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "xai/grok-build-0.1",
+    "contextTokens": 256000,
+    "displayName": "Grok Build 0.1",
+    "family": "grok-build",
+    "knowledge": null,
+    "last_updated": "2026-04-16",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 256000,
+    "reasoning": true,
+    "release_date": "2026-04-16",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "xiaomi/mimo-v2-flash",
+    "contextTokens": 262144,
+    "displayName": "MiMo-V2-Flash",
+    "family": "mimo",
+    "knowledge": "2024-12-01",
+    "last_updated": "2026-02-04",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 65536,
+    "reasoning": true,
+    "release_date": "2025-12-16",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "xiaomi/mimo-v2-omni",
+    "contextTokens": 262144,
+    "displayName": "MiMo-V2-Omni",
+    "family": "mimo",
+    "knowledge": "2024-12",
+    "last_updated": "2026-03-18",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-03-18",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "xiaomi/mimo-v2-pro",
+    "contextTokens": 1048576,
+    "displayName": "MiMo-V2-Pro",
+    "family": "mimo",
+    "knowledge": "2024-12",
+    "last_updated": "2026-03-18",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-03-18",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "xiaomi/mimo-v2.5",
+    "contextTokens": 1048576,
+    "displayName": "MiMo-V2.5",
+    "family": "mimo",
+    "knowledge": "2024-12",
+    "last_updated": "2026-04-22",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-04-22",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "xiaomi/mimo-v2.5-pro",
+    "contextTokens": 1048576,
+    "displayName": "MiMo-V2.5-Pro",
+    "family": "mimo",
+    "knowledge": "2024-12",
+    "last_updated": "2026-04-22",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-04-22",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "xiaomi/mimo-v2.5-pro-ultraspeed",
+    "contextTokens": 1048576,
+    "displayName": "MiMo-V2.5-Pro-UltraSpeed",
+    "family": "mimo",
+    "knowledge": "2024-12",
+    "last_updated": "2026-06-09",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-06-08",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "zhipuai/glm-4.5",
+    "contextTokens": 131072,
+    "displayName": "GLM-4.5",
+    "family": "glm",
+    "knowledge": "2025-04",
+    "last_updated": "2025-07-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 98304,
+    "reasoning": true,
+    "release_date": "2025-07-28",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "zhipuai/glm-4.5-air",
+    "contextTokens": 131072,
+    "displayName": "GLM-4.5-Air",
+    "family": "glm-air",
+    "knowledge": "2025-04",
+    "last_updated": "2025-07-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 98304,
+    "reasoning": true,
+    "release_date": "2025-07-28",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "zhipuai/glm-4.5-flash",
+    "contextTokens": 131072,
+    "displayName": "GLM-4.5-Flash",
+    "family": "glm-flash",
+    "knowledge": "2025-04",
+    "last_updated": "2025-07-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 98304,
+    "reasoning": true,
+    "release_date": "2025-07-28",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "zhipuai/glm-4.5v",
+    "contextTokens": 64000,
+    "displayName": "GLM-4.5V",
+    "family": "glm",
+    "knowledge": "2025-04",
+    "last_updated": "2025-08-11",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": true,
+    "release_date": "2025-08-11",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "zhipuai/glm-4.6",
+    "contextTokens": 204800,
+    "displayName": "GLM-4.6",
+    "family": "glm",
+    "knowledge": "2025-04",
+    "last_updated": "2025-09-30",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2025-09-30",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "zhipuai/glm-4.6v",
+    "contextTokens": 128000,
+    "displayName": "GLM-4.6V",
+    "family": "glm",
+    "knowledge": "2025-04",
+    "last_updated": "2025-12-08",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2025-12-08",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "zhipuai/glm-4.7",
+    "contextTokens": 204800,
+    "displayName": "GLM-4.7",
+    "family": "glm",
+    "knowledge": "2025-04",
+    "last_updated": "2025-12-22",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2025-12-22",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "zhipuai/glm-4.7-flash",
+    "contextTokens": 200000,
+    "displayName": "GLM-4.7-Flash",
+    "family": "glm-flash",
+    "knowledge": "2025-04",
+    "last_updated": "2026-01-19",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-01-19",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "zhipuai/glm-4.7-flashx",
+    "contextTokens": 200000,
+    "displayName": "GLM-4.7-FlashX",
+    "family": "glm-flash",
+    "knowledge": "2025-04",
+    "last_updated": "2026-01-19",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-01-19",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "zhipuai/glm-5",
+    "contextTokens": 204800,
+    "displayName": "GLM-5",
+    "family": "glm",
+    "knowledge": null,
+    "last_updated": "2026-02-12",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-02-12",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "zhipuai/glm-5-turbo",
+    "contextTokens": 200000,
+    "displayName": "GLM-5-Turbo",
+    "family": "glm",
+    "knowledge": null,
+    "last_updated": "2026-03-16",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-03-16",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "zhipuai/glm-5.1",
+    "contextTokens": 200000,
+    "displayName": "GLM-5.1",
+    "family": "glm",
+    "knowledge": null,
+    "last_updated": "2026-04-07",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-04-07",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "zhipuai/glm-5.2",
+    "contextTokens": 1000000,
+    "displayName": "GLM-5.2",
+    "family": "glm",
+    "knowledge": null,
+    "last_updated": "2026-06-13",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-06-13",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "zhipuai/glm-5v-turbo",
+    "contextTokens": 200000,
+    "displayName": "GLM-5V-Turbo",
+    "family": "glm",
+    "knowledge": null,
+    "last_updated": "2026-04-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 131072,
+    "reasoning": true,
+    "release_date": "2026-04-01",
+    "structured_output": null,
+    "tool_call": true
+  }
+]

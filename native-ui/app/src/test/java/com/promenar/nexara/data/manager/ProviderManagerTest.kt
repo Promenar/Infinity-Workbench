@@ -5,13 +5,15 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.model.catalog.BundledModelCatalog
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderResolution
 import com.promenar.nexara.data.remote.ProviderResolutionError
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
-import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.settings.persistVerifiedProviderConnection
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -19,6 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -157,52 +160,128 @@ class ProviderManagerTest {
     fun `旧版自动生成的 DeepSeek V4 Flash 指纹整体迁移到新规格`() {
         persistLegacyDeepSeekV4FlashFingerprint()
 
-        val reloaded = ProviderManager.createForTest(app, TestSecretStore())
-        val migrated = reloaded.providerModels.value.single {
-            it.id == "default::deepseek-v4-flash"
-        }
+        withBundledCatalog {
+            val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+            val migrated = reloaded.providerModels.value.single {
+                it.id == "default::deepseek-v4-flash"
+            }
 
-        assertThat(migrated.id).isEqualTo("default::deepseek-v4-flash")
-        assertThat(migrated.remoteModelId).isEqualTo("deepseek-v4-flash")
-        assertThat(migrated.providerId).isEqualTo("default")
-        assertThat(migrated.enabled).isTrue()
-        assertThat(migrated.name).isEqualTo("DeepSeek V4 Flash")
-        assertThat(migrated.type).isEqualTo("chat")
-        assertThat(migrated.contextLength).isEqualTo(1000000)
-        assertThat(migrated.capabilities)
-            .containsExactly("chat", "reasoning", "structuredoutput")
-        assertThat(migrated.maxOutputTokens).isEqualTo(384000)
-        assertThat(migrated.knowledgeCutoff).isNull()
+            assertThat(migrated.id).isEqualTo("default::deepseek-v4-flash")
+            assertThat(migrated.remoteModelId).isEqualTo("deepseek-v4-flash")
+            assertThat(migrated.providerId).isEqualTo("default")
+            assertThat(migrated.enabled).isTrue()
+            assertThat(migrated.name).isEqualTo("DeepSeek V4 Flash")
+            assertThat(migrated.type).isEqualTo("reasoning")
+            assertThat(migrated.contextLength).isEqualTo(1000000)
+            assertThat(migrated.capabilities)
+                .containsExactly("chat", "reasoning", "structuredoutput")
+            assertThat(migrated.maxOutputTokens).isEqualTo(384000)
+            assertThat(migrated.knowledgeCutoff).isEqualTo("2025-05")
+        }
     }
 
     @Test
-    fun `旧指纹名称被用户修改后不得迁移任何元数据`() {
+    fun `旧指纹名称被用户修改后只保护名称`() {
         persistLegacyDeepSeekV4FlashFingerprint(name = "我的 DeepSeek")
 
-        val reloaded = ProviderManager.createForTest(app, TestSecretStore())
-        val preserved = reloaded.providerModels.value.single {
-            it.id == "default::deepseek-v4-flash"
-        }
+        withBundledCatalog {
+            val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+            val preserved = reloaded.providerModels.value.single {
+                it.id == "default::deepseek-v4-flash"
+            }
 
-        assertThat(preserved.name).isEqualTo("我的 DeepSeek")
-        assertThat(preserved.contextLength).isEqualTo(64000)
-        assertThat(preserved.capabilities).containsExactly("chat")
-        assertThat(preserved.maxOutputTokens).isEqualTo(0)
+            assertThat(preserved.name).isEqualTo("我的 DeepSeek")
+            assertThat(preserved.type).isEqualTo("reasoning")
+            assertThat(preserved.contextLength).isEqualTo(1000000)
+            assertThat(preserved.capabilities)
+                .containsExactly("chat", "reasoning", "structuredoutput")
+            assertThat(preserved.maxOutputTokens).isEqualTo(384000)
+            assertThat(preserved.knowledgeCutoff).isEqualTo("2025-05")
+        }
     }
 
     @Test
-    fun `旧指纹上下文被用户修改后不得迁移任何元数据`() {
+    fun `旧指纹上下文被用户修改后只保护上下文`() {
         persistLegacyDeepSeekV4FlashFingerprint(contextLength = 131072)
 
-        val reloaded = ProviderManager.createForTest(app, TestSecretStore())
-        val preserved = reloaded.providerModels.value.single {
-            it.id == "default::deepseek-v4-flash"
-        }
+        withBundledCatalog {
+            val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+            val preserved = reloaded.providerModels.value.single {
+                it.id == "default::deepseek-v4-flash"
+            }
 
-        assertThat(preserved.name).isEqualTo("DeepSeek")
-        assertThat(preserved.contextLength).isEqualTo(131072)
-        assertThat(preserved.capabilities).containsExactly("chat")
-        assertThat(preserved.maxOutputTokens).isEqualTo(0)
+            assertThat(preserved.name).isEqualTo("DeepSeek V4 Flash")
+            assertThat(preserved.type).isEqualTo("reasoning")
+            assertThat(preserved.contextLength).isEqualTo(131072)
+            assertThat(preserved.capabilities)
+                .containsExactly("chat", "reasoning", "structuredoutput")
+            assertThat(preserved.maxOutputTokens).isEqualTo(384000)
+            assertThat(preserved.knowledgeCutoff).isEqualTo("2025-05")
+        }
+    }
+
+    @Test
+    fun `旧 fetched unknown empty 8192 由 SharedPreferences 加载后全部保持自动所有权`() {
+        persistLegacyModel(
+            remoteModelId = "future-model",
+            name = "future-model",
+            type = "unknown",
+            contextLength = 8192,
+            capabilities = emptySet(),
+            maxOutputTokens = 0,
+        )
+
+        val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+        val migrated = reloaded.providerModels.value.single { it.remoteModelId == "future-model" }
+
+        assertThat(migrated.userEditedFields).isEmpty()
+        assertThat(migrated.type).isEqualTo("unknown")
+        assertThat(migrated.contextLength).isEqualTo(0)
+        assertThat(migrated.capabilities).isEmpty()
+    }
+
+    @Test
+    fun `旧 configured chat chat 8192 由 SharedPreferences 加载后全部保持自动所有权`() {
+        persistLegacyModel(
+            remoteModelId = "future-model",
+            name = "future-model",
+            type = "chat",
+            contextLength = 8192,
+            capabilities = setOf("chat"),
+            maxOutputTokens = 0,
+        )
+
+        val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+        val migrated = reloaded.providerModels.value.single { it.remoteModelId == "future-model" }
+
+        assertThat(migrated.userEditedFields).isEmpty()
+        assertThat(migrated.type).isEqualTo("unknown")
+        assertThat(migrated.contextLength).isEqualTo(0)
+        assertThat(migrated.capabilities).isEmpty()
+    }
+
+    @Test
+    fun `Task4 精确 findModelSpec 形状由 SharedPreferences 加载后保持自动所有权`() {
+        persistLegacyModel(
+            remoteModelId = "deepseek-v4-flash",
+            name = "DeepSeek V4 Flash",
+            type = "reasoning",
+            contextLength = 1_000_000,
+            capabilities = setOf("chat", "reasoning", "structuredoutput"),
+            maxOutputTokens = 384_000,
+        )
+
+        withBundledCatalog {
+            val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+            val migrated = reloaded.providerModels.value.single {
+                it.remoteModelId == "deepseek-v4-flash"
+            }
+
+            assertThat(migrated.userEditedFields).isEmpty()
+            assertThat(migrated.name).isEqualTo("DeepSeek V4 Flash")
+            assertThat(migrated.contextLength).isEqualTo(1_000_000)
+            assertThat(migrated.maxOutputTokens).isEqualTo(384_000)
+        }
     }
 
     @Test
@@ -250,6 +329,46 @@ class ProviderManagerTest {
             .putString("${prefix}_remote_model_id", "deepseek-v4-flash")
             .putInt("${prefix}_maxoutput", 0)
             .commit()
+    }
+
+    private fun persistLegacyModel(
+        remoteModelId: String,
+        name: String,
+        type: String,
+        contextLength: Int,
+        capabilities: Set<String>,
+        maxOutputTokens: Int,
+    ) {
+        val id = "default::$remoteModelId"
+        val prefix = "model_info_$id"
+        app.getSharedPreferences("nexara_settings", 0).edit()
+            .clear()
+            .putStringSet("all_models", setOf(id))
+            .putStringSet("enabled_models", setOf(id))
+            .putString("all_models_order", id)
+            .putString("${prefix}_name", name)
+            .putString("${prefix}_type", type)
+            .putInt("${prefix}_context", contextLength)
+            .putStringSet("${prefix}_caps", capabilities)
+            .putString("${prefix}_provider", "同名提供商")
+            .putString("${prefix}_provider_id", "default")
+            .putString("${prefix}_remote_model_id", remoteModelId)
+            .putInt("${prefix}_maxoutput", maxOutputTokens)
+            .commit()
+    }
+
+    private fun <T> withBundledCatalog(block: () -> T): T {
+        val snapshot = listOf(
+            File("app/src/main/assets/model-catalog/models-dev.normalized.json"),
+            File("src/main/assets/model-catalog/models-dev.normalized.json"),
+            File("native-ui/app/src/main/assets/model-catalog/models-dev.normalized.json"),
+        ).firstOrNull(File::isFile)
+            ?: error("models-dev.normalized.json fixture is unavailable")
+        val catalog = BundledModelCatalog.fromJson(snapshot.readText())
+        return ModelCatalogRuntime.withTestResolver(
+            replacement = ModelCatalogRuntime.resolverFor(catalog),
+            block = block,
+        )
     }
 
     private fun model(providerId: String?, id: String) = ModelInfo(

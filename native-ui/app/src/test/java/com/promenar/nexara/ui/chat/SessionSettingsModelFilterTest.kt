@@ -1,7 +1,7 @@
 package com.promenar.nexara.ui.chat
 
 import com.google.common.truth.Truth.assertThat
-import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.data.model.ModelInfo
 import org.junit.Test
 
 class SessionSettingsModelFilterTest {

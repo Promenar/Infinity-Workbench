@@ -5,6 +5,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -12,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.MainActivity
 import com.promenar.nexara.NexaraApplication
@@ -240,15 +242,19 @@ class OnboardingAndroidEndToEndTest {
 
         rule.onNodeWithText(rule.activity.getString(R.string.nav_tab_settings)).performClick()
         rule.onNodeWithTag(UiTags.SETTINGS_ROOT).assertIsDisplayed()
-        rule.onNodeWithText(rule.activity.getString(R.string.settings_rag_config))
-            .performScrollTo()
+        val ragConfigLabel = rule.activity.getString(R.string.settings_rag_config)
+        rule.onNodeWithTag(UiTags.SETTINGS_APP_LIST)
+            .performScrollToNode(hasText(ragConfigLabel))
+        rule.onNodeWithText(ragConfigLabel)
             .performClick()
         rule.onNodeWithText(rule.activity.getString(R.string.rag_config_title)).assertIsDisplayed()
 
         rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }
         rule.onNodeWithTag(UiTags.SETTINGS_ROOT).assertIsDisplayed()
-        rule.onNodeWithText(rule.activity.getString(R.string.settings_advanced_retrieval))
-            .performScrollTo()
+        val advancedRetrievalLabel = rule.activity.getString(R.string.settings_advanced_retrieval)
+        rule.onNodeWithTag(UiTags.SETTINGS_APP_LIST)
+            .performScrollToNode(hasText(advancedRetrievalLabel))
+        rule.onNodeWithText(advancedRetrievalLabel)
             .performClick()
         rule.onNodeWithText(rule.activity.getString(R.string.retrieval_title)).assertIsDisplayed()
     }

@@ -10,7 +10,6 @@ import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.data.manager.ProviderManager
-import com.promenar.nexara.data.model.MODEL_SPECS
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.domain.usecase.IdGenerator
@@ -46,30 +45,11 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.io.FileOutputStream
-import com.promenar.nexara.data.remote.stableModelId
+import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.common.status.UiStatusNotice
+import com.promenar.nexara.ui.welcome.runOnboardingEndpointProbe
 import com.promenar.nexara.ui.welcome.verifyOnboardingModelCandidate
 import com.promenar.nexara.domain.generation.GenerationFailureCode
-
-data class ModelInfo(
-    val name: String,
-    /** 持久化与会话引用使用的稳定复合标识：providerId::remoteModelId。 */
-    val id: String,
-    val description: String,
-    val enabled: Boolean,
-    val type: String = "chat",
-    val contextLength: Int = 8192,
-    val capabilities: List<String> = emptyList(),
-    val providerName: String = "Cloud",
-    val providerId: String? = null,
-    /** 提交给远端协议的原始模型 ID，不得把复合标识发送给服务端。 */
-    val remoteModelId: String = id.substringAfter("::", id),
-    val testStatus: String? = null,
-    /** 最大输出 token 数，0=未指定 */
-    val maxOutputTokens: Int = 0,
-    /** 训练数据截止日期（YYYYMM），null=未知 */
-    val knowledgeCutoff: String? = null
-)
 
 /**
  * `listModels` 只有模型 ID，不能据此证明未知模型具备聊天能力。
@@ -486,53 +466,14 @@ class SettingsViewModel(
 
                 // 步骤 3: 合并模型（新增 + 更新元数据）
                 if (fetchedIds.isNotEmpty()) {
-                    val currentModels = pm.providerModels.value.toMutableList()
-                    val existingIds = currentModels.map { it.id }.toSet()
                     var newCount = 0
                     var updatedCount = 0
 
                     for (id in fetchedIds) {
-                        val compositeId = stableModelId(providerId, id)
-                        val spec = com.promenar.nexara.data.model.findModelSpec(id)
-                        val type = classifyFetchedModelType(id, spec?.type?.name)
-                        val caps = if (type in setOf("chat", "reasoning", "image", "embedding", "rerank")) {
-                            pm.buildModelCapabilities(type, spec)
-                        } else {
-                            emptyList()
-                        }
-
-                        if (compositeId in existingIds) {
-                            // 更新已存在模型的元数据
-                            val existing = currentModels.find { it.id == compositeId } ?: continue
-                            val refreshed = existing.copy(
-                                name = spec?.note ?: existing.name,
-                                type = type,
-                                contextLength = spec?.contextLength ?: existing.contextLength,
-                                capabilities = caps,
-                                providerId = providerId,
-                                remoteModelId = id,
-                                maxOutputTokens = spec?.maxOutputTokens ?: existing.maxOutputTokens,
-                                knowledgeCutoff = spec?.knowledgeCutoff ?: existing.knowledgeCutoff
-                            )
-                            if (refreshed != existing) {
-                                pm.updateModel(refreshed)
-                                updatedCount++
-                            }
-                        } else {
-                            // 新增模型
-                            pm.addModel(ModelInfo(
-                                name = spec?.note ?: id, id = compositeId,
-                                remoteModelId = id,
-                                description = spec?.note ?: "Fetched model",
-                                enabled = false, type = type,
-                                contextLength = spec?.contextLength ?: 8192,
-                                providerName = providerName,
-                                providerId = providerId,
-                                capabilities = caps,
-                                maxOutputTokens = spec?.maxOutputTokens ?: 0,
-                                knowledgeCutoff = spec?.knowledgeCutoff
-                            ))
-                            newCount++
+                        when (pm.syncModelMetadata(providerId, providerName, id)) {
+                            com.promenar.nexara.data.manager.ModelSyncResult.ADDED -> newCount++
+                            com.promenar.nexara.data.manager.ModelSyncResult.UPDATED -> updatedCount++
+                            com.promenar.nexara.data.manager.ModelSyncResult.UNCHANGED -> Unit
                         }
                     }
 
@@ -562,42 +503,39 @@ class SettingsViewModel(
         val verified = verifyOnboardingModelCandidate(model) { remoteModelId ->
             val config = pm.getProviderConfig(providerId) ?: return@verifyOnboardingModelCandidate false
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching {
-                    kotlinx.coroutines.withTimeout(15_000) {
-                        val provider = if (config.protocolType is ProtocolType.Local) {
-                            com.promenar.nexara.data.remote.provider.LlmProvider.local(
-                                app.localInferenceEngine,
-                                remoteModelId,
-                            )
-                        } else {
-                            com.promenar.nexara.data.remote.provider.LlmProvider.builder()
-                                .protocolType(config.protocolType)
-                                .baseUrl(config.baseUrl)
-                                .apiKey(config.apiKey)
-                                .serviceAccountJson(config.vertexServiceAccountJson)
-                                .model(remoteModelId)
-                                .build()
-                        }
-                        provider.sendPromptSync(
-                            com.promenar.nexara.data.remote.protocol.PromptRequest(
-                                messages = listOf(
-                                    com.promenar.nexara.data.remote.protocol.ProtocolMessage(
-                                        role = "user",
-                                        content = "Reply OK.",
-                                    )
-                                ),
-                                model = remoteModelId,
-                                maxTokens = 1,
-                                tools = null,
-                                stream = false,
-                            )
+                runOnboardingEndpointProbe {
+                    val provider = if (config.protocolType is ProtocolType.Local) {
+                        com.promenar.nexara.data.remote.provider.LlmProvider.local(
+                            app.localInferenceEngine,
+                            remoteModelId,
                         )
-                        true
+                    } else {
+                        com.promenar.nexara.data.remote.provider.LlmProvider.builder()
+                            .protocolType(config.protocolType)
+                            .baseUrl(config.baseUrl)
+                            .apiKey(config.apiKey)
+                            .serviceAccountJson(config.vertexServiceAccountJson)
+                            .model(remoteModelId)
+                            .build()
                     }
-                }.getOrDefault(false)
+                    provider.sendPromptSync(
+                        com.promenar.nexara.data.remote.protocol.PromptRequest(
+                            messages = listOf(
+                                com.promenar.nexara.data.remote.protocol.ProtocolMessage(
+                                    role = "user",
+                                    content = "Reply OK.",
+                                )
+                            ),
+                            model = remoteModelId,
+                            maxTokens = 1,
+                            tools = null,
+                            stream = false,
+                        )
+                    )
+                }
             }
         }
-        if (verified != null && verified != model) pm.updateModel(verified)
+        if (verified != null && verified != model) pm.replaceModelFromInternalFlow(verified)
         return verified
     }
 
@@ -799,7 +737,11 @@ class SettingsViewModel(
         pm.addProvider(item)
     }
 
-    fun updateModel(updatedModel: ModelInfo) = pm.updateModel(updatedModel)
+    fun updateModel(updatedModel: ModelInfo) {
+        pm.replaceModelFromInternalFlow(updatedModel)
+    }
+
+    fun updateUserModel(updatedModel: ModelInfo) = pm.applyUserModelUpdate(updatedModel)
 
     fun toggleModel(id: String) = pm.toggleModel(id)
 

@@ -11,6 +11,23 @@ import org.junit.Test
 
 class ChatRenderStateContractTest {
     @Test
+    fun `输入栏必须消费统一活动状态而不是把终态当作生成中`() {
+        val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val source = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/ChatScreen.kt",
+        ).readText()
+        val inputBar = source.substringAfter("fun ChatInputBar(")
+            .substringBefore("private fun GenerationStatusButton(")
+
+        assertThat(source).contains("isGenerating = uiState.isGenerating")
+        assertThat(inputBar).contains("isGenerating: Boolean")
+        assertThat(inputBar).contains("effectiveStatus")
+        assertThat(inputBar).doesNotContain("status != GenerationStatus.IDLE")
+    }
+
+    @Test
     fun `会话输入区使用语义化 M3 控件和实测高度`() {
         val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
             if (root.resolve("src/main").isDirectory) root else root.resolve("app")

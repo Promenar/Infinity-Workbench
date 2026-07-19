@@ -1,5 +1,11 @@
 package com.promenar.nexara.data.model
 
+import com.promenar.nexara.data.model.catalog.ModelCapability
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
+import com.promenar.nexara.data.model.catalog.ModelWorkload
+import com.promenar.nexara.data.model.catalog.ResolvedModelMetadata
+import com.promenar.nexara.data.model.catalog.SupportState
+
 enum class ModelType {
     CHAT, REASONING, IMAGE, EMBEDDING, RERANK
 }
@@ -1723,7 +1729,7 @@ val MODEL_SPECS: List<ModelSpec> = listOf(
 )
 
 fun findContextLength(modelId: String): Int? {
-    return findModelSpec(modelId)?.contextLength
+    return findModelSpec(modelId)?.contextLength?.takeIf { it > 0 }
 }
 
 fun extractContextLengthFromName(text: String): Int? {
@@ -1739,12 +1745,51 @@ fun extractContextLengthFromName(text: String): Int? {
     return null
 }
 
-fun findModelSpec(modelId: String): ModelSpec? {
-    return MODEL_SPECS
-        .mapNotNull { spec -> spec.pattern.rank(modelId)?.let { rank -> spec to rank } }
-        .maxByOrNull { (_, rank) -> rank }
-        ?.first
-}
+fun findModelSpec(modelId: String): ModelSpec? =
+    ModelCatalogRuntime.resolver.resolveExactOrNull(modelId)?.toLegacyModelSpec()
+
+private fun ResolvedModelMetadata.toLegacyModelSpec(): ModelSpec = ModelSpec(
+    pattern = ModelPattern.StringPattern(canonicalModelId ?: remoteModelId),
+    contextLength = contextTokens ?: 0,
+    type = when (workload) {
+        ModelWorkload.GENERATIVE_TEXT ->
+            if (capabilities[ModelCapability.REASONING] == SupportState.SUPPORTED) {
+                ModelType.REASONING
+            } else {
+                ModelType.CHAT
+            }
+        ModelWorkload.EMBEDDING -> ModelType.EMBEDDING
+        ModelWorkload.RERANK -> ModelType.RERANK
+        ModelWorkload.IMAGE_GENERATION -> ModelType.IMAGE
+        ModelWorkload.AUDIO,
+        ModelWorkload.VIDEO,
+        ModelWorkload.UNKNOWN,
+        -> null
+    },
+    capabilities = ModelCapabilities(
+        vision = capabilities[ModelCapability.VISION_INPUT] == SupportState.SUPPORTED,
+        internet = capabilities[ModelCapability.WEB_ACCESS] == SupportState.SUPPORTED,
+        reasoning = capabilities[ModelCapability.REASONING] == SupportState.SUPPORTED,
+        image = workload == ModelWorkload.IMAGE_GENERATION,
+        embedding = workload == ModelWorkload.EMBEDDING,
+        rerank = workload == ModelWorkload.RERANK,
+        audioInput = capabilities[ModelCapability.AUDIO_INPUT] == SupportState.SUPPORTED,
+        audioOutput = capabilities[ModelCapability.AUDIO_OUTPUT] == SupportState.SUPPORTED,
+        videoUnderstanding = capabilities[ModelCapability.VIDEO_INPUT] == SupportState.SUPPORTED,
+        structuredOutput = capabilities[ModelCapability.STRUCTURED_OUTPUT] == SupportState.SUPPORTED,
+        promptCaching = capabilities[ModelCapability.PROMPT_CACHING] == SupportState.SUPPORTED,
+        computerUse = capabilities[ModelCapability.COMPUTER_USE] == SupportState.SUPPORTED,
+    ),
+    forcedReasoning = capabilities[ModelCapability.REASONING] == SupportState.SUPPORTED,
+    icon = when (workload) {
+        ModelWorkload.EMBEDDING -> "embedding"
+        ModelWorkload.RERANK -> "rerank"
+        else -> null
+    },
+    note = displayName,
+    maxOutputTokens = outputTokens ?: 0,
+    knowledgeCutoff = knowledgeCutoff,
+)
 
 data class ModelPricing(
     val inputPerMillion: Double,

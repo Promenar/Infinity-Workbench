@@ -13,7 +13,10 @@ import com.promenar.nexara.domain.generation.StartGenerationResult
 import com.promenar.nexara.data.remote.ProviderResolution
 import com.promenar.nexara.data.remote.ProviderResolutionError
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
@@ -72,6 +75,55 @@ class DefaultGenerationCoordinatorTest {
         assertThat(results.count { it is StartGenerationResult.Started }).isEqualTo(1)
         assertThat(results.count { it is StartGenerationResult.Existing }).isEqualTo(7)
         assertThat(starts.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun `旧页面release不得在新任务启动窗口移除既有订阅flow`() = runTest {
+        val factoryEntered = CountDownLatch(1)
+        val allowFactory = CountDownLatch(1)
+        val coordinator = DefaultGenerationCoordinator(
+            applicationScope = backgroundScope,
+            runnerFactory = GenerationRunnerFactory { _, _ ->
+                factoryEntered.countDown()
+                check(allowFactory.await(5, TimeUnit.SECONDS))
+                GenerationRunner { _, _ -> awaitCancellation() }
+            },
+            taskIdFactory = { "new-task" },
+        )
+        val observed = coordinator.observe("same-session")
+
+        val starting = async(Dispatchers.Default) {
+            coordinator.start(request("same-session", "assistant"))
+        }
+        assertThat(factoryEntered.await(5, TimeUnit.SECONDS)).isTrue()
+        val releaseAttempted = CountDownLatch(1)
+        val releasing = async(Dispatchers.Default) {
+            releaseAttempted.countDown()
+            coordinator.release("same-session", discardTerminal = true)
+        }
+        assertThat(releaseAttempted.await(5, TimeUnit.SECONDS)).isTrue()
+        assertThat(releasing.isCompleted).isFalse()
+        allowFactory.countDown()
+        val started = starting.await() as StartGenerationResult.Started
+        releasing.await()
+
+        assertThat(coordinator.observe("same-session")).isSameInstanceAs(observed)
+        assertThat(observed.value?.taskId).isEqualTo(started.taskId)
+        assertThat(coordinator.cancel(started.taskId, CancellationReason.USER)).isTrue()
+    }
+
+    @Test
+    fun `新观察者先注册后旧页面release仍复用同一flow接收后续任务`() = runTest {
+        val coordinator = coordinator { _, _ -> awaitCancellation() }
+        val observed = coordinator.observe("reopened-session")
+
+        coordinator.release("reopened-session", discardTerminal = true)
+        val started = coordinator.start(request("reopened-session", "assistant")) as StartGenerationResult.Started
+        runCurrent()
+
+        assertThat(coordinator.observe("reopened-session")).isSameInstanceAs(observed)
+        assertThat(observed.value?.taskId).isEqualTo(started.taskId)
+        assertThat(coordinator.cancel(started.taskId, CancellationReason.USER)).isTrue()
     }
 
     @Test
@@ -138,6 +190,52 @@ class DefaultGenerationCoordinatorTest {
         assertThat(terminal.error?.cause).isInstanceOf(IllegalStateException::class.java)
         assertThat(failed.acknowledgeTerminal(terminal.taskId)).isTrue()
         assertThat(failed.observe("bad").value).isNull()
+    }
+
+    @Test
+    fun `runner异常终态同步结束展示层的生成状态`() = runTest {
+        val presentationStore = GenerationPresentationStore()
+        val coordinator = DefaultGenerationCoordinator(
+            applicationScope = backgroundScope,
+            presentationStore = presentationStore,
+            runnerFactory = GenerationRunnerFactory { _, _ ->
+                GenerationRunner { _, emit ->
+                    emit(GenerationEvent.PhaseChanged(GenerationPhase.THINKING))
+                    throw IllegalStateException("boom")
+                }
+            },
+            taskIdFactory = { "fallback-terminal" },
+        )
+
+        coordinator.start(request("stale-ui", "assistant"))
+        runCurrent()
+
+        val presentation = presentationStore.observe("stale-ui").value
+        assertThat(presentation?.phase).isEqualTo(GenerationPhase.FAILED)
+        assertThat(presentation?.generating).isFalse()
+        assertThat(presentation?.error?.technical).isEqualTo("boom")
+    }
+
+    @Test
+    fun `同会话确认首轮终态后原订阅必须收到第二轮状态`() = runTest {
+        val coordinator = coordinator { _, emit ->
+            emit(GenerationEvent.PhaseChanged(GenerationPhase.THINKING))
+            emit(GenerationEvent.PhaseChanged(GenerationPhase.COMPLETED))
+        }
+        val observed = coordinator.observe("repeat")
+
+        coordinator.start(request("repeat", "assistant-1"))
+        runCurrent()
+        val first = observed.value!!
+        assertThat(coordinator.acknowledgeTerminal(first.taskId)).isTrue()
+        assertThat(observed.value).isNull()
+
+        coordinator.start(request("repeat", "assistant-2"))
+        runCurrent()
+
+        assertThat(coordinator.observe("repeat")).isSameInstanceAs(observed)
+        assertThat(observed.value?.taskId).isNotEqualTo(first.taskId)
+        assertThat(observed.value?.phase).isEqualTo(GenerationPhase.COMPLETED)
     }
 
     @Test

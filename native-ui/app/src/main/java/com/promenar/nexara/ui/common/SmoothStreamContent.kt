@@ -11,7 +11,7 @@ import kotlinx.coroutines.delay
 
 enum class StreamSpeed(val cps: Int, val label: String) {
     FAST(6000, "快速"),      // ~100 字符/帧，接近实时
-    BALANCED(6000, "平衡"),   //  同上——AI 应用不人为延迟
+    BALANCED(6000, "平衡"),   // 普通 chunk 立即呈现，由绘制层负责短暂尾部淡入
     SMOOTH(60, "平滑")       //  1 字符/帧，打字机效果
 }
 

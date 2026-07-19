@@ -35,11 +35,11 @@ internal suspend fun createOnboardingAgentSession(
         )
         sessionCreationAttempted = true
         createSession(session)
-        chatStore.update { state -> state.copy(sessions = listOf(session) + state.sessions) }
+        chatStore.upsertSession(session)
         check(recordCheckpoint(createdAgentId, sessionId)) { "首次引导检查点写入失败" }
         return OnboardingAgentSession(createdAgentId, sessionId)
     } catch (error: Throwable) {
-        chatStore.update { state -> state.copy(sessions = state.sessions.filterNot { it.id == sessionId }) }
+        chatStore.removeSession(sessionId)
         if (sessionCreationAttempted) runCatching { deleteSession(sessionId) }
         agentId?.let { createdAgentId -> runCatching { deleteAgent(createdAgentId) } }
         throw error

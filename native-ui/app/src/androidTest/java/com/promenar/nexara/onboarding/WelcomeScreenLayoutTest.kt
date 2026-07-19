@@ -16,7 +16,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.welcome.WelcomeScreen
-import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.data.model.ModelInfo
 import org.junit.Rule
 import org.junit.Test
 

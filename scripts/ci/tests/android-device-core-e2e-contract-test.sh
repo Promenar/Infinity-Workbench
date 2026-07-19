@@ -10,6 +10,7 @@ ONBOARDING_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promena
 WELCOME_LAYOUT_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/nexara/onboarding/WelcomeScreenLayoutTest.kt"
 RESTORE_RELAY_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/nexara/data/backup/AndroidRestoreRelayEndToEndTest.kt"
 NOTIFICATION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/nexara/MainActivityNotificationE2eTest.kt"
+NEW_SESSION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/nexara/MainActivityNewSessionE2eTest.kt"
 TIMEOUT_HELPER="${REPO_ROOT}/scripts/ci/run-with-timeout.py"
 
 fail() {
@@ -95,6 +96,8 @@ assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.AdaptiveNavigationTes
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.onboarding.WelcomeScreenLayoutTest'
 assert_contains "${DEVICE_SCRIPT}" 'run_test document-parser-fixtures "${APP_RUNNER}"'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.rag.DocumentParserDeviceE2eTest'
+assert_contains "${DEVICE_SCRIPT}" 'run_test mainactivity-new-session "${MAIN_ACTIVITY_RUNNER}"'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.MainActivityNewSessionE2eTest'
 assert_contains "${DEVICE_SCRIPT}" 'restore_device_display_state'
 assert_contains "${DEVICE_SCRIPT}" 'if [[ "${DEVICE_E2E_SCOPE}" == "minimum" ]]'
 assert_contains "${DEVICE_SCRIPT}" 'restore-relay-stage-after-pids.txt'
@@ -112,6 +115,11 @@ assert_not_contains "${MAIN_ACTIVITY_E2E_BUILD}" 'testProguardFiles'
 assert_contains "${DEVICE_SCRIPT}" 'run-with-timeout.py'
 assert_contains "${DEVICE_SCRIPT}" 'INSTRUMENT_TIMEOUT_SECONDS'
 assert_contains "${DEVICE_SCRIPT}" 'python3 "${TIMEOUT_HELPER}"'
+assert_contains "${DEVICE_SCRIPT}" 'adb shell cmd package wait-for-handler --timeout 5000'
+assert_contains "${DEVICE_SCRIPT}" 'adb shell cmd package wait-for-background-handler --timeout 5000'
+assert_contains "${DEVICE_SCRIPT}" 'if (( API_LEVEL >= 33 )); then'
+assert_contains "${DEVICE_SCRIPT}" 'sleep 1'
+assert_count "${DEVICE_SCRIPT}" 'wait_for_package_manager_idle' 3
 assert_not_contains "${DEVICE_SCRIPT}" "\"${TIMEOUT_HELPER}\" adb"
 assert_not_contains "${DEVICE_SCRIPT}" "'${TIMEOUT_HELPER}' adb"
 assert_not_contains "${DEVICE_SCRIPT}" 'timeout "${INSTRUMENT_TIMEOUT_SECONDS}s"'
@@ -124,6 +132,11 @@ provider_snapshot_line="$(grep -n 'originalProviderSummary = ProviderManager.get
     fail "onboarding 设备夹具必须先等待启动 Ready，再读取 ProviderManager"
 assert_contains "${NOTIFICATION_E2E_TEST}" 'uiAutomation.windows'
 assert_contains "${NOTIFICATION_E2E_TEST}" 'FLAG_RETRIEVE_INTERACTIVE_WINDOWS'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'waitForChatReadySemantics()'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'runCatching {'
+[[ -f "${NEW_SESSION_E2E_TEST}" ]] || fail "缺少新会话真实导航 E2E"
+assert_contains "${NEW_SESSION_E2E_TEST}" 'LoopStatus.COMPLETED'
+assert_contains "${NEW_SESSION_E2E_TEST}" 'app.sessionRepository.getById(sessionId)'
 
 # 欢迎页压力测试必须在 Compose 内覆盖窗口/字体配置，不能旋转真实宿主 Activity。
 assert_contains "${WELCOME_LAYOUT_TEST}" 'createComposeRule()'

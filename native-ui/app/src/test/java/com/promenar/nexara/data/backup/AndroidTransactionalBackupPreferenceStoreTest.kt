@@ -44,6 +44,11 @@ class AndroidTransactionalBackupPreferenceStoreTest {
             .putInt("loop_limit", 9)
             .putFloat("default_temperature", 0.4f)
             .putStringSet("enabled_skills", setOf("z", "a"))
+            .putString("model_info_sample_family", "MiniMax M3")
+            .putString("model_info_sample_canonical_id", "minimax/minimax-m3")
+            .putString("model_info_sample_chat_endpoint", "SUPPORTED")
+            .putString("model_info_sample_auto_fingerprint", "catalog:v2")
+            .putStringSet("model_info_sample_user_edited_fields", setOf("name", "familyName"))
             .putInt("extra_providers_count", 3)
             .putString("extra_providers_ids", "provider-zero,provider-one")
             .putString("extra_provider_0_id", "provider-zero")
@@ -66,6 +71,11 @@ class AndroidTransactionalBackupPreferenceStoreTest {
                 ("settings" to "loop_limit") to entry("settings", "loop_limit", PreferenceValueType.INT, "9"),
                 ("settings" to "default_temperature") to entry("settings", "default_temperature", PreferenceValueType.FLOAT, "0.4"),
                 ("settings" to "enabled_skills") to entry("settings", "enabled_skills", PreferenceValueType.STRING_SET, "[\"a\",\"z\"]"),
+                ("settings" to "model_info_sample_family") to entry("settings", "model_info_sample_family", PreferenceValueType.STRING, "MiniMax M3"),
+                ("settings" to "model_info_sample_canonical_id") to entry("settings", "model_info_sample_canonical_id", PreferenceValueType.STRING, "minimax/minimax-m3"),
+                ("settings" to "model_info_sample_chat_endpoint") to entry("settings", "model_info_sample_chat_endpoint", PreferenceValueType.STRING, "SUPPORTED"),
+                ("settings" to "model_info_sample_auto_fingerprint") to entry("settings", "model_info_sample_auto_fingerprint", PreferenceValueType.STRING, "catalog:v2"),
+                ("settings" to "model_info_sample_user_edited_fields") to entry("settings", "model_info_sample_user_edited_fields", PreferenceValueType.STRING_SET, "[\"familyName\",\"name\"]"),
                 ("search" to "result_count") to entry("search", "result_count", PreferenceValueType.INT, "7"),
                 ("rag" to "hybrid_alpha") to entry("rag", "hybrid_alpha", PreferenceValueType.FLOAT, "0.65"),
                 ("ui" to "has_shown_welcome") to entry("ui", "has_shown_welcome", PreferenceValueType.BOOLEAN, "true"),

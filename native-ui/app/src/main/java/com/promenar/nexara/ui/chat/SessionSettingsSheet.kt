@@ -82,7 +82,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.common.*
-import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography

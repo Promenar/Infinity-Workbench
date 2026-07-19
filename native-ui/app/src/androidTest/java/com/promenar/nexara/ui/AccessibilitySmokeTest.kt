@@ -92,6 +92,7 @@ class AccessibilitySmokeTest {
                         onTextChange = {},
                         onSend = {},
                         status = status,
+                        isGenerating = true,
                     )
                     ChatApprovalLiveRegion { Text("approval") }
                 }

@@ -1323,4 +1323,5 @@
         <item quantity="one">Code block in %1$s, %2$d line</item>
         <item quantity="other">Code block in %1$s, %2$d lines</item>
     </plurals>
+    <string name="sessions_operation_failed">Could not update the conversation. Try again.</string>
 </resources>

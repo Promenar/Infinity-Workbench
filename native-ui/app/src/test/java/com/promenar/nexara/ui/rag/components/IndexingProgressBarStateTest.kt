@@ -28,6 +28,12 @@ class IndexingProgressBarStateTest {
     }
 
     @Test
+    fun `失败状态不再伪装成零进度任务`() {
+        assertThat(resolveIndexingProgressAccessibility(progress = 0f, isError = true).showProgress).isFalse()
+        assertThat(resolveIndexingProgressAccessibility(progress = 0f, isError = false).showProgress).isTrue()
+    }
+
+    @Test
     fun `进度状态不依赖自绘动画或固定微字号`() {
         assertThat(source).doesNotContain("animateFloatAsState")
         assertThat(source).doesNotContain("fontSize = 11.sp")

@@ -71,12 +71,18 @@ class WorkspaceRepository(
     }
 
     private suspend fun ensureSessionRootInternal(sessionId: String, physicalRootPath: String): FileEntry {
-        val physicalRoot = File(physicalRootPath.trim()).canonicalFile
+        val declaredRootPath = File(physicalRootPath.trim()).absoluteFile.toPath().normalize()
+        if (java.nio.file.Files.isSymbolicLink(declaredRootPath)) {
+            throw SecurityException("Session workspace root cannot be a symbolic link")
+        }
+        val physicalRoot = declaredRootPath.toFile().canonicalFile
         val before = dao.getSessionForRoot(sessionId)
             ?: throw NoSuchElementException("Session not found: $sessionId")
-        val beforeRoot = before.workspaceRootUuid?.let { dao.getByUuid(it, it) }
-        if (beforeRoot != null && File(beforeRoot.physicalRootPath).canonicalFile != physicalRoot) {
-            throw SecurityException("Session workspace root path cannot be changed")
+        val beforeRoot = before.workspaceRootUuid?.let { rootUuid ->
+            val claimed = dao.getByUuid(rootUuid, rootUuid)
+                ?: throw IllegalStateException("Session workspace root reference is invalid: $sessionId")
+            validateClaimedRoot(claimed, physicalRoot)
+            claimed
         }
         val action: suspend () -> FileEntry = action@{
         val session = dao.getSessionForRoot(sessionId)
@@ -84,7 +90,12 @@ class WorkspaceRepository(
         if (dao.countOtherSessionsForPhysicalRoot(physicalRoot.path, sessionId) != 0) {
             throw SecurityException("工作区物理根已被其他 Session 使用")
         }
-        val existingRoot = session.workspaceRootUuid?.let { rootUuid -> dao.getByUuid(rootUuid, rootUuid) }
+        val existingRoot = session.workspaceRootUuid?.let { rootUuid ->
+            val claimed = dao.getByUuid(rootUuid, rootUuid)
+                ?: throw IllegalStateException("Session workspace root reference is invalid: $sessionId")
+            validateClaimedRoot(claimed, physicalRoot)
+            claimed
+        }
         var parentPath: java.nio.file.Path? = null
         var parentIdentity: String? = null
         if (defaultWorkspaceParent != null && physicalRoot.parentFile == defaultWorkspaceParent.canonicalFile) {
@@ -99,10 +110,16 @@ class WorkspaceRepository(
             defaultParentIdentity = parentIdentity
         }
         val ensurePhysical: suspend () -> String = {
+            val legacyIdentityAdoption = existingRoot?.hash.isNullOrBlank() &&
+                session.workspaceRootUuid != null &&
+                isTrustedLegacyRoot(sessionId, declaredRootPath, physicalRoot)
+            if (existingRoot?.hash.isNullOrBlank() && session.workspaceRootUuid != null && !legacyIdentityAdoption) {
+                throw SecurityException("旧版工作区根不在应用私有目录内")
+            }
             fileOps.ensureRoot(
                 physicalRoot.toPath(),
-                initializeIdentity = session.workspaceRootUuid == null,
-                expectedIdentity = existingRoot?.hash,
+                initializeIdentity = session.workspaceRootUuid == null || legacyIdentityAdoption,
+                expectedIdentity = existingRoot?.hash?.takeIf { it.isNotBlank() },
             )
         }
         val rootIdentity = if (parentPath != null && parentIdentity != null) {
@@ -118,10 +135,14 @@ class WorkspaceRepository(
             if (dao.countOtherSessionsForRoot(existingUuid, sessionId) != 0) {
                 throw SecurityException("工作区根被多个 Session 共享")
             }
-            val existing = dao.getByUuid(existingUuid, existingUuid)
+            var existing = dao.getByUuid(existingUuid, existingUuid)
                 ?: throw IllegalStateException("Session workspace root reference is invalid: $sessionId")
             if (File(existing.physicalRootPath).canonicalFile != physicalRoot) {
                 throw SecurityException("Session workspace root path cannot be changed")
+            }
+            if (existing.hash.isBlank()) {
+                existing = existing.copy(hash = rootIdentity, updatedAt = clock())
+                dao.update(existing)
             }
             dao.canonicalizeSessionRootClaim(sessionId, existingUuid, physicalRoot.path, System.currentTimeMillis())
             return@action existing
@@ -150,11 +171,49 @@ class WorkspaceRepository(
             if (claimed.hash != rootIdentity) throw SecurityException("Concurrent workspace root identity mismatch")
         }
         }
-        return if (beforeRoot != null) {
+        return if (beforeRoot?.hash?.isNotBlank() == true) {
             WorkspaceMutationCoordinator.withBoundRoot(physicalRoot.toPath(), beforeRoot.hash, action)
         } else {
             WorkspaceMutationCoordinator.withRoot(physicalRoot.toPath(), action)
         }
+    }
+
+    private fun validateClaimedRoot(root: FileEntry, physicalRoot: File) {
+        if (
+            root.uuid != root.workspaceRootUuid ||
+            root.parentUuid != null ||
+            !root.isDirectory ||
+            root.materializedPath != "/"
+        ) {
+            throw SecurityException("Session workspace root record is invalid")
+        }
+        if (File(root.physicalRootPath).canonicalFile != physicalRoot) {
+            throw SecurityException("Session workspace root path cannot be changed")
+        }
+    }
+
+    private fun isTrustedLegacyRoot(
+        sessionId: String,
+        declaredRootPath: java.nio.file.Path,
+        root: File,
+    ): Boolean {
+        val sessionParent = defaultWorkspaceParent?.canonicalFile ?: return false
+        val appFilesDir = sessionParent.parentFile?.canonicalFile ?: return false
+        val expected = if (sessionId == LEGACY_RAG_SESSION_ID) {
+            File(appFilesDir, LEGACY_RAG_DIRECTORY)
+        } else {
+            File(sessionParent, Sha256Utils.hash(sessionId))
+        }
+        val expectedPath = expected.absoluteFile.toPath().normalize()
+        if (declaredRootPath != expectedPath || java.nio.file.Files.isSymbolicLink(declaredRootPath)) {
+            return false
+        }
+        return root == expected.canonicalFile
+    }
+
+    private companion object {
+        const val LEGACY_RAG_SESSION_ID = "__nexara_rag_workspace__"
+        const val LEGACY_RAG_DIRECTORY = "rag_workspace"
     }
 
     override fun observeRoots(workspaceRootUuid: String): Flow<List<FileEntry>> =

@@ -22,11 +22,11 @@ import com.promenar.nexara.data.model.ApprovalRequest
 import com.promenar.nexara.data.model.LoopStatus
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.remote.stableModelId
 import com.promenar.nexara.domain.generation.GenerationRuntimePolicy
 import com.promenar.nexara.ui.chat.ChatState
-import com.promenar.nexara.ui.settings.ModelInfo
 import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking

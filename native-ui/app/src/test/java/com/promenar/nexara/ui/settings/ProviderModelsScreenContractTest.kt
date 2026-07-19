@@ -38,7 +38,7 @@ class ProviderModelsScreenContractTest {
     }
 
     @Test
-    fun `模型卡使用单层Surface并按折叠展开渐进披露`() {
+    fun `模型使用连续透明列表行并按折叠展开渐进披露`() {
         val source = String(
             Files.readAllBytes(
                 Path.of("app/src/main/java/com/promenar/nexara/ui/settings/ProviderModelsScreen.kt"),
@@ -49,7 +49,8 @@ class ProviderModelsScreenContractTest {
             .substringBefore("private fun formatTokens")
 
         assertThat(modelCard).contains("var expanded by remember(model.id) { mutableStateOf(initiallyExpanded) }")
-        assertThat(modelCard).contains("Surface(")
+        assertThat(modelCard).doesNotContain("Surface(")
+        assertThat(modelCard).contains("modifier = modifier")
         assertThat(modelCard).contains("if (expanded) {")
         assertThat(modelCard).contains("OutlinedTextField(")
         assertThat(modelCard).contains("FlowRow(")
@@ -66,6 +67,22 @@ class ProviderModelsScreenContractTest {
         assertThat(modelCard).doesNotContain("BasicTextField(")
         assertThat(modelCard).doesNotContain("CompactSelectableChip(")
         assertThat(modelCard).doesNotContain(".width(112.dp)")
+    }
+
+    @Test
+    fun `模型列表使用零间距和内缩分隔线`() {
+        val source = String(
+            Files.readAllBytes(
+                Path.of("app/src/main/java/com/promenar/nexara/ui/settings/ProviderModelsScreen.kt"),
+            ),
+            Charsets.UTF_8,
+        )
+        val list = source.substringAfter("LazyColumn(")
+            .substringBefore("if (showDeleteAllDialog)")
+
+        assertThat(list).contains("verticalArrangement = Arrangement.spacedBy(0.dp)")
+        assertThat(list).contains("itemsIndexed(")
+        assertThat(list).contains("HorizontalDivider(")
     }
 
     @Test
@@ -109,6 +126,7 @@ class ProviderModelsScreenContractTest {
         assertThat(source).contains("providers.find { it.id == providerId }")
         assertThat(source).contains("models.filter { it.providerId == providerId }")
         assertThat(source).contains("onRefresh = { viewModel.refreshProviderModels(providerId) }")
+        assertThat(source).contains("onUpdate = { viewModel.updateUserModel(it) }")
         assertThat(source).contains("onAdd = { id, name -> viewModel.addCustomModel(providerId, id, name) }")
         assertThat(source).contains("onDisableAll = { viewModel.disableAllModels(providerId) }")
         assertThat(source).contains("onDeleteAll = { viewModel.deleteAllModels(providerId) }")
@@ -117,6 +135,7 @@ class ProviderModelsScreenContractTest {
         assertThat(source).contains("onCancelTest = { modelId -> viewModel.cancelModelTest(modelId) }")
         assertThat(source).contains("onDelete = { modelId -> viewModel.deleteModel(modelId) }")
         assertThat(source).contains("onClearNotice = { viewModel.clearSyncNotice() }")
+        assertThat(source).contains(".withRecordedUserEdits(model)")
     }
 
     @Test

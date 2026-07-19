@@ -1,23 +1,19 @@
 package com.promenar.nexara.ui.common
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import com.promenar.nexara.ui.theme.NexaraSpacing
@@ -35,7 +31,7 @@ fun NexaraSettingsItem(
     subtitle: String? = null,
     onClick: () -> Unit
 ) {
-    Surface(
+    ListItem(
         modifier = Modifier
             .fillMaxWidth()
             .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
@@ -43,49 +39,38 @@ fun NexaraSettingsItem(
                 role = Role.Button,
                 onClick = onClick,
             ),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = NexaraSpacing.Large,
-                    vertical = NexaraSpacing.Medium,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(NexaraSpacing.XLarge),
+                modifier = Modifier.size(NexaraSpacing.Large + NexaraSpacing.XSmall),
             )
-
-            Spacer(Modifier.width(NexaraSpacing.Large))
-
-            Column(modifier = Modifier.weight(1f)) {
+        },
+        headlineContent = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        },
+        supportingContent = subtitle?.let { supportingText ->
+            {
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    text = supportingText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (subtitle != null) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
-
-            Spacer(Modifier.width(NexaraSpacing.Medium))
-
+        },
+        trailingContent = {
             Icon(
                 imageVector = Icons.Rounded.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(NexaraSpacing.XLarge),
+                modifier = Modifier.size(NexaraSpacing.Large + NexaraSpacing.XSmall),
             )
-        }
-    }
+        },
+    )
 }

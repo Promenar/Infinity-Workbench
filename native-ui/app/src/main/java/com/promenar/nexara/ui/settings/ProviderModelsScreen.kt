@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.settings
 
+import com.promenar.nexara.data.model.ModelInfo
+import com.promenar.nexara.data.model.withRecordedUserEdits
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -21,7 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -190,7 +192,7 @@ fun ProviderModelsScreen(
         onAdd = { id, name -> viewModel.addCustomModel(providerId, id, name) },
         onDisableAll = { viewModel.disableAllModels(providerId) },
         onDeleteAll = { viewModel.deleteAllModels(providerId) },
-        onUpdate = { viewModel.updateModel(it) },
+        onUpdate = { viewModel.updateUserModel(it) },
         onToggle = { modelId -> viewModel.toggleModel(modelId) },
         onTest = { modelId -> viewModel.testModel(modelId) },
         onCancelTest = { modelId -> viewModel.cancelModelTest(modelId) },
@@ -268,7 +270,7 @@ internal fun ProviderModelsScreenContent(
         Spacer(modifier = Modifier.height(16.dp))
 
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
             contentPadding = PaddingValues(bottom = 40.dp),
             modifier = Modifier
                 .weight(1f)
@@ -313,10 +315,16 @@ internal fun ProviderModelsScreenContent(
                     )
                 }
 
-                ProviderModelsListState.Content -> items(
+                ProviderModelsListState.Content -> itemsIndexed(
                     filteredModels,
-                    key = { it.id },
-                ) { model ->
+                    key = { _, model -> model.id },
+                ) { index, model ->
+                    if (index > 0) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
+                    }
                     EnhancedModelCard(
                         model = model,
                         testState = state.modelTestStates[model.id] ?: ModelTestState.Idle,
@@ -617,7 +625,7 @@ internal fun EnhancedModelCard(
             capabilities = activeCaps.toList(),
         )
         if (updated != model) {
-            onUpdate(updated)
+            onUpdate(updated.withRecordedUserEdits(model))
         }
     }
 
@@ -644,10 +652,8 @@ internal fun EnhancedModelCard(
         if (expanded) R.string.common_state_expanded else R.string.common_state_collapsed,
     )
 
-    Surface(
+    Column(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.large,
     ) {
         Column(
             modifier = Modifier

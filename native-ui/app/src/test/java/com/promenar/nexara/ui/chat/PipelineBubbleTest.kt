@@ -10,6 +10,13 @@ import org.junit.jupiter.api.Test
 
 class PipelineBubbleTest {
 
+    private fun pipelineBubbleSource(): String {
+        val moduleRoot = java.io.File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        return moduleRoot.resolve("src/main/java/com/promenar/nexara/ui/chat/PipelineBubble.kt").readText()
+    }
+
     @Test
     fun `历史错误只按持久化信封映射且旧自然语言安全回落`() {
         val timeoutEnvelope = GenerationFailureCodec.encode(
@@ -102,12 +109,7 @@ class PipelineBubbleTest {
 
     @Test
     fun `会话表面使用 M3 语义角色并保留思考轨迹`() {
-        val moduleRoot = java.io.File(System.getProperty("user.dir") ?: ".").let { root ->
-            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
-        }
-        val source = moduleRoot.resolve(
-            "src/main/java/com/promenar/nexara/ui/chat/PipelineBubble.kt",
-        ).readText()
+        val source = pipelineBubbleSource()
 
         assertThat(source).contains("internal fun ThinkingTrace(")
         assertThat(source).contains("MaterialTheme.colorScheme.surfaceContainerLow")
@@ -126,34 +128,32 @@ class PipelineBubbleTest {
     }
 
     @Test
-    fun `模型 ID 左对齐占满剩余宽度且超长时省略`() {
-        val moduleRoot = java.io.File(System.getProperty("user.dir") ?: ".").let { root ->
-            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
-        }
-        val source = moduleRoot.resolve(
-            "src/main/java/com/promenar/nexara/ui/chat/PipelineBubble.kt",
-        ).readText()
-        val metadataRow = source
-            .substringAfter("// ── 元信息行（模型名 + 时间戳）──")
-            .substringBefore("// ── 错误信息 ──")
-        val modelText = metadataRow
-            .substringAfter("if (!lastMsg.modelId.isNullOrBlank())")
-            .substringBefore("text = timestamp")
+    fun `AI 元信息模型名与时间作为左对齐同组渲染`() {
+        val source = pipelineBubbleSource()
+        val signature = "private fun AssistantMetadataRow("
+        assertThat(source).contains(signature)
+        val metadataSignatureRemainder = source.substringAfter(signature)
+        val signatureTerminator = ")"
+        assertThat(metadataSignatureRemainder).contains(signatureTerminator)
+        val metadataParameters = metadataSignatureRemainder.substringBefore(signatureTerminator)
+        assertThat(metadataParameters).contains("modelDisplayName: String")
+        assertThat(metadataParameters).contains("timestamp: String")
 
-        assertThat(metadataRow).contains(".fillMaxWidth()")
-        assertThat(modelText).contains(".weight(1f)")
-        assertThat(modelText).contains("maxLines = 1")
-        assertThat(modelText).contains("overflow = TextOverflow.Ellipsis")
+        val metadata = metadataSignatureRemainder.substringAfter(signatureTerminator)
+            .substringBefore("private fun")
+        val compactMetadata = metadata.replace(Regex("\\s+"), "")
+
+        assertThat(metadata).contains("horizontalArrangement = Arrangement.spacedBy")
+        assertThat(metadata).contains("modelDisplayName")
+        assertThat(metadata).contains("timestamp")
+        assertThat(compactMetadata).contains(".weight(1f,fill=false)")
+        assertThat(compactMetadata).doesNotContainMatch("\\.weight\\(1f\\s*\\)")
+        assertThat(compactMetadata).doesNotContainMatch("\\.weight\\(1f\\s*,\\s*fill\\s*=\\s*true\\)")
     }
 
     @Test
     fun `助手短回答长按区保持最小触摸高度`() {
-        val moduleRoot = java.io.File(System.getProperty("user.dir") ?: ".").let { root ->
-            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
-        }
-        val source = moduleRoot.resolve(
-            "src/main/java/com/promenar/nexara/ui/chat/PipelineBubble.kt",
-        ).readText()
+        val source = pipelineBubbleSource()
         val contentSegment = source
             .substringAfter("private fun ContentSegment(")
             .substringBefore("//  PipelineConnector")

@@ -18,34 +18,21 @@ class SessionManager(
             loopStatus = if (session.loopStatus == LoopStatus.IDLE) LoopStatus.COMPLETED else session.loopStatus,
         )
 
-        try {
-            sessionRepository.create(enrichedSession)
-        } catch (_: Exception) {
-        }
+        sessionRepository.create(enrichedSession)
 
-        store.update { state ->
-            state.copy(sessions = listOf(enrichedSession) + state.sessions)
-        }
+        store.upsertSession(enrichedSession)
     }
 
     suspend fun updateSession(id: String, updates: Map<String, Any?>) {
-        try {
-            sessionRepository.updatePartial(id, updates)
-        } catch (_: Exception) {
-        }
+        sessionRepository.updatePartial(id, updates)
 
         store.updateSession(id) { s -> applyUpdatesToSession(s, updates) }
     }
 
     suspend fun deleteSession(id: String) {
-        try {
-            sessionRepository.delete(id)
-        } catch (_: Exception) {
-        }
+        sessionRepository.delete(id)
 
-        store.update { state ->
-            state.copy(sessions = state.sessions.filter { it.id != id })
-        }
+        store.removeSession(id)
     }
 
     fun getSession(id: String): Session? {
@@ -161,6 +148,7 @@ class SessionManager(
                 "activeMcpServerIds" -> result.copy(activeMcpServerIds = value as? List<String> ?: result.activeMcpServerIds)
                 "activeSkillIds" -> result.copy(activeSkillIds = value as? List<String> ?: result.activeSkillIds)
                 "workspacePath" -> result.copy(workspacePath = value as? String)
+                "workspaceRootUuid" -> result.copy(workspaceRootUuid = value as? String)
                 else -> result
             }
         }

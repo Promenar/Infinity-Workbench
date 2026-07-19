@@ -43,7 +43,10 @@ internal object BackupPreferencePolicy {
     private val dynamicAllowed = mapOf(
         "settings" to listOf(
             Regex("extra_provider_[0-9]+_(id|name|protocol|type|base_url|model|enabled)"),
-            Regex("model_info_.+_(name|type|context|provider|provider_id|remote_model_id|maxoutput|cutoff|caps)"),
+            Regex(
+                "model_info_.+_(name|type|context|provider|provider_id|remote_model_id|maxoutput|cutoff|caps|" +
+                    "family|canonical_id|chat_endpoint|auto_fingerprint|user_edited_fields)"
+            ),
         ),
         "provider" to listOf(
             Regex("provider_.+_(id|name|protocol|type|base_url|model|enabled)"),

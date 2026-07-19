@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 internal data class IndexingProgressAccessibility(
     val progress: Float,
     val assertive: Boolean,
+    val showProgress: Boolean,
 )
 
 internal fun resolveIndexingProgressAccessibility(
@@ -34,6 +35,7 @@ internal fun resolveIndexingProgressAccessibility(
 ): IndexingProgressAccessibility = IndexingProgressAccessibility(
     progress = progress.coerceIn(0f, 1f),
     assertive = isError,
+    showProgress = !isError,
 )
 
 @Composable
@@ -60,10 +62,12 @@ fun IndexingProgressBar(
                     LiveRegionMode.Polite
                 }
                 stateDescription = statusText
-                progressBarRangeInfo = ProgressBarRangeInfo(
-                    current = accessibility.progress,
-                    range = 0f..1f,
-                )
+                if (accessibility.showProgress) {
+                    progressBarRangeInfo = ProgressBarRangeInfo(
+                        current = accessibility.progress,
+                        range = 0f..1f,
+                    )
+                }
             },
         shape = MaterialTheme.shapes.medium,
         color = containerColor,
@@ -96,26 +100,30 @@ fun IndexingProgressBar(
                         )
                     }
                 }
-                Text(
-                    text = "${(accessibility.progress * 100).toInt()}%",
-                    modifier = Modifier.clearAndSetSemantics { },
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                    ),
-                    color = accentColor,
-                )
+                if (accessibility.showProgress) {
+                    Text(
+                        text = "${(accessibility.progress * 100).toInt()}%",
+                        modifier = Modifier.clearAndSetSemantics { },
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        color = accentColor,
+                    )
+                }
             }
 
-            LinearProgressIndicator(
-                progress = { accessibility.progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clearAndSetSemantics { },
-                color = accentColor,
-                trackColor = colors.surfaceContainerHighest,
-            )
+            if (accessibility.showProgress) {
+                LinearProgressIndicator(
+                    progress = { accessibility.progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clearAndSetSemantics { },
+                    color = accentColor,
+                    trackColor = colors.surfaceContainerHighest,
+                )
+            }
         }
     }
 }

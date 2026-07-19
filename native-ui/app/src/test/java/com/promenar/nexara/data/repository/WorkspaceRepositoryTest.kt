@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.NexaraDatabase
+import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.domain.repository.RenameResult
 import com.promenar.nexara.infra.util.Sha256Utils
@@ -101,6 +102,252 @@ class WorkspaceRepositoryTest {
         assertThat(root.materializedPath).isEqualTo("/")
         assertThat(db.sessionDao().getById("session-a")!!.workspaceRootUuid).isEqualTo(root.uuid)
         assertThat(repo.observeRoots(root.uuid).first()).containsExactly(root)
+    }
+
+    @Test
+    fun `覆盖安装会为应用私有目录中的旧版空 hash 根补建身份并保留认领`() = runBlocking<Unit> {
+        val trustedParent = File(rootA, "session_workspaces")
+        val legacyPhysicalRoot = File(trustedParent, Sha256Utils.hash("legacy-session")).apply { mkdirs() }
+        val existingUserFile = File(legacyPhysicalRoot, "legacy-note.txt").apply { writeText("keep me") }
+        insertSession("legacy-session", legacyPhysicalRoot.absolutePath)
+        val now = System.currentTimeMillis()
+        val legacyRoot = FileEntry(
+            uuid = "legacy-root",
+            workspaceRootUuid = "legacy-root",
+            parentUuid = null,
+            name = legacyPhysicalRoot.name,
+            hash = "",
+            isDirectory = true,
+            physicalRootPath = legacyPhysicalRoot.canonicalPath,
+            materializedPath = "/",
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.fileEntryDao().insert(legacyRoot)
+        db.sessionDao().update(
+            db.sessionDao().getById("legacy-session")!!.copy(workspaceRootUuid = legacyRoot.uuid),
+        )
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            trustedParent,
+            TestWorkspaceFileOps(),
+        )
+
+        val migrated = repo.ensureSessionRoot("legacy-session")
+
+        assertThat(migrated.uuid).isEqualTo(legacyRoot.uuid)
+        assertThat(migrated.hash).isNotEmpty()
+        assertThat(File(legacyPhysicalRoot, ".nexara_root_identity").isFile).isTrue()
+        assertThat(existingUserFile.readText()).isEqualTo("keep me")
+        assertThat(db.fileEntryDao().getByUuid(legacyRoot.uuid, legacyRoot.uuid)!!.hash)
+            .isEqualTo(migrated.hash)
+    }
+
+    @Test
+    fun `覆盖安装不得沿旧根符号链接在应用私有目录外补建身份`() = runBlocking<Unit> {
+        val trustedParent = File(rootA, "session_workspaces").apply { mkdirs() }
+        val externalRoot = File(rootB, "external-workspace").apply { mkdirs() }
+        val linkedRoot = File(trustedParent, Sha256Utils.hash("linked-session"))
+        Files.createSymbolicLink(linkedRoot.toPath(), externalRoot.toPath())
+        insertSession("linked-session", linkedRoot.absolutePath)
+        val now = System.currentTimeMillis()
+        val legacyRoot = FileEntry(
+            uuid = "linked-root",
+            workspaceRootUuid = "linked-root",
+            parentUuid = null,
+            name = linkedRoot.name,
+            hash = "",
+            isDirectory = true,
+            physicalRootPath = linkedRoot.absolutePath,
+            materializedPath = "/",
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.fileEntryDao().insert(legacyRoot)
+        db.sessionDao().update(
+            db.sessionDao().getById("linked-session")!!.copy(workspaceRootUuid = legacyRoot.uuid),
+        )
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            trustedParent,
+            TestWorkspaceFileOps(),
+        )
+
+        val failure = runCatching { repo.ensureSessionRoot("linked-session") }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(SecurityException::class.java)
+        assertThat(File(externalRoot, ".nexara_root_identity").exists()).isFalse()
+        assertThat(db.fileEntryDao().getByUuid(legacyRoot.uuid, legacyRoot.uuid)!!.hash).isEmpty()
+    }
+
+    @Test
+    fun `覆盖安装不得沿旧知识库根符号链接在应用私有目录外补建身份`() = runBlocking<Unit> {
+        val trustedParent = File(rootA, "session_workspaces").apply { mkdirs() }
+        val externalRoot = File(rootB, "external-rag-workspace").apply { mkdirs() }
+        val linkedRoot = File(rootA, "rag_workspace")
+        Files.createSymbolicLink(linkedRoot.toPath(), externalRoot.toPath())
+        insertSession("__nexara_rag_workspace__", linkedRoot.absolutePath)
+        val now = System.currentTimeMillis()
+        val legacyRoot = FileEntry(
+            uuid = "linked-rag-root",
+            workspaceRootUuid = "linked-rag-root",
+            parentUuid = null,
+            name = linkedRoot.name,
+            hash = "",
+            isDirectory = true,
+            physicalRootPath = linkedRoot.absolutePath,
+            materializedPath = "/",
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.fileEntryDao().insert(legacyRoot)
+        db.sessionDao().update(
+            db.sessionDao().getById("__nexara_rag_workspace__")!!.copy(workspaceRootUuid = legacyRoot.uuid),
+        )
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            trustedParent,
+            TestWorkspaceFileOps(),
+        )
+
+        val failure = runCatching { repo.ensureSessionRoot("__nexara_rag_workspace__") }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(SecurityException::class.java)
+        assertThat(File(externalRoot, ".nexara_root_identity").exists()).isFalse()
+        assertThat(db.fileEntryDao().getByUuid(legacyRoot.uuid, legacyRoot.uuid)!!.hash).isEmpty()
+    }
+
+    @Test
+    fun `覆盖安装会原位迁移精确的旧知识库根`() = runBlocking<Unit> {
+        val trustedParent = File(rootA, "session_workspaces")
+        val legacyPhysicalRoot = File(rootA, "rag_workspace").apply { mkdirs() }
+        val existingUserFile = File(legacyPhysicalRoot, "knowledge.txt").apply { writeText("knowledge") }
+        insertSession("__nexara_rag_workspace__", legacyPhysicalRoot.absolutePath)
+        val now = System.currentTimeMillis()
+        val legacyRoot = FileEntry(
+            uuid = "legacy-rag-root",
+            workspaceRootUuid = "legacy-rag-root",
+            parentUuid = null,
+            name = legacyPhysicalRoot.name,
+            hash = "",
+            isDirectory = true,
+            physicalRootPath = legacyPhysicalRoot.canonicalPath,
+            materializedPath = "/",
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.fileEntryDao().insert(legacyRoot)
+        db.sessionDao().update(
+            db.sessionDao().getById("__nexara_rag_workspace__")!!.copy(workspaceRootUuid = legacyRoot.uuid),
+        )
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            trustedParent,
+            TestWorkspaceFileOps(),
+        )
+
+        val migrated = repo.ensureSessionRoot("__nexara_rag_workspace__")
+
+        assertThat(migrated.uuid).isEqualTo(legacyRoot.uuid)
+        assertThat(migrated.hash).isNotEmpty()
+        assertThat(File(legacyPhysicalRoot, ".nexara_root_identity").isFile).isTrue()
+        assertThat(existingUserFile.readText()).isEqualTo("knowledge")
+    }
+
+    @Test
+    fun `悬空旧根引用不得在受信目录留下身份标记`() = runBlocking<Unit> {
+        val trustedParent = File(rootA, "session_workspaces")
+        val physicalRoot = File(trustedParent, Sha256Utils.hash("dangling-session")).apply { mkdirs() }
+        insertSession("dangling-session", physicalRoot.absolutePath)
+        db.sessionDao().update(
+            db.sessionDao().getById("dangling-session")!!.copy(workspaceRootUuid = "missing-root"),
+        )
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            trustedParent,
+            TestWorkspaceFileOps(),
+        )
+
+        val failure = runCatching { repo.ensureSessionRoot("dangling-session") }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(File(physicalRoot, ".nexara_root_identity").exists()).isFalse()
+    }
+
+    @Test
+    fun `非根旧记录不得在受信目录留下身份标记`() = runBlocking<Unit> {
+        val trustedParent = File(rootA, "session_workspaces")
+        val physicalRoot = File(trustedParent, Sha256Utils.hash("child-session")).apply { mkdirs() }
+        insertSession("child-session", physicalRoot.absolutePath)
+        val now = System.currentTimeMillis()
+        val invalidRoot = FileEntry(
+            uuid = "child-record",
+            workspaceRootUuid = "child-record",
+            parentUuid = "unexpected-parent",
+            name = physicalRoot.name,
+            hash = "",
+            isDirectory = true,
+            physicalRootPath = physicalRoot.canonicalPath,
+            materializedPath = "/nested",
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.fileEntryDao().insert(invalidRoot)
+        db.sessionDao().update(
+            db.sessionDao().getById("child-session")!!.copy(workspaceRootUuid = invalidRoot.uuid),
+        )
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            trustedParent,
+            TestWorkspaceFileOps(),
+        )
+
+        val failure = runCatching { repo.ensureSessionRoot("child-session") }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(SecurityException::class.java)
+        assertThat(File(physicalRoot, ".nexara_root_identity").exists()).isFalse()
+        assertThat(db.fileEntryDao().getByUuid(invalidRoot.uuid, invalidRoot.uuid)!!.hash).isEmpty()
+    }
+
+    @Test
+    fun `覆盖安装不得认领应用私有目录之外的旧版空 hash 根`() = runBlocking<Unit> {
+        val trustedParent = File(rootA, "session_workspaces")
+        insertSession("untrusted-session", rootB.absolutePath)
+        val now = System.currentTimeMillis()
+        val legacyRoot = FileEntry(
+            uuid = "untrusted-root",
+            workspaceRootUuid = "untrusted-root",
+            parentUuid = null,
+            name = rootB.name,
+            hash = "",
+            isDirectory = true,
+            physicalRootPath = rootB.canonicalPath,
+            materializedPath = "/",
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.fileEntryDao().insert(legacyRoot)
+        db.sessionDao().update(
+            db.sessionDao().getById("untrusted-session")!!.copy(workspaceRootUuid = legacyRoot.uuid),
+        )
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            trustedParent,
+            TestWorkspaceFileOps(),
+        )
+
+        val failure = runCatching { repo.ensureSessionRoot("untrusted-session") }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(SecurityException::class.java)
+        assertThat(File(rootB, ".nexara_root_identity").exists()).isFalse()
+        assertThat(db.fileEntryDao().getByUuid(legacyRoot.uuid, legacyRoot.uuid)!!.hash).isEmpty()
     }
 
     @Test

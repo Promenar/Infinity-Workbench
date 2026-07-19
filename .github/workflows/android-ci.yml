@@ -48,6 +48,13 @@ jobs:
         with:
           dependency-graph: disabled
 
+      - name: Validate bundled model catalog
+        run: >-
+          python3 scripts/model-catalog/update-model-catalog.py
+          --check
+          --input native-ui/app/src/main/assets/model-catalog/models-dev.normalized.json
+          --manifest native-ui/app/src/main/assets/model-catalog/manifest.json
+
       - name: 执行当前可用质量门禁
         working-directory: native-ui
         run: |

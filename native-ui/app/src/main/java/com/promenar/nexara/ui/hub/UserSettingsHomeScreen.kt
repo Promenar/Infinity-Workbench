@@ -33,11 +33,10 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Image
@@ -51,7 +50,6 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -82,7 +80,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -93,6 +93,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
@@ -360,7 +361,7 @@ fun UserSettingsHomeScreen(
  * 优先级：已加载模型的 name → ModelSpec.note → 原始 ID
  */
 private fun resolveModelName(
-    allModels: List<com.promenar.nexara.ui.settings.ModelInfo>,
+    allModels: List<com.promenar.nexara.data.model.ModelInfo>,
     id: String,
 ): String {
     if (id.isEmpty()) return ""
@@ -513,7 +514,7 @@ private fun AppSettingsContent(
             .fillMaxSize()
             .testTag(UiTags.SETTINGS_APP_LIST),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = NexaraSpacing.XLarge),
-        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XLarge),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large + NexaraSpacing.XSmall),
     ) {
         item {
             UserProfileHeader(
@@ -662,12 +663,7 @@ private fun SettingsGroup(
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
         )
-        Surface(
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-        ) {
-            Column(content = content)
-        }
+        Column(content = content)
     }
 }
 
@@ -675,7 +671,8 @@ private fun SettingsGroup(
 private fun SettingsGroupDivider() {
     HorizontalDivider(
         modifier = Modifier.padding(
-            start = NexaraSpacing.Large + NexaraSpacing.XLarge + NexaraSpacing.Large,
+            start = NexaraSpacing.Large + NexaraSpacing.Large +
+                NexaraSpacing.Large + NexaraSpacing.XSmall,
         ),
         color = MaterialTheme.colorScheme.outlineVariant,
     )
@@ -718,57 +715,31 @@ private fun ProviderSettingsContent(
     state: UserSettingsHomeScreenState,
     actions: UserSettingsHomeScreenActions,
 ) {
+    val compactHeightEmptyState = LocalConfiguration.current.screenHeightDp < 480
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .testTag(UiTags.SETTINGS_PROVIDER_LIST),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = NexaraSpacing.XLarge),
-        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         item {
             AddProviderButton(onClick = { actions.onNavigateToSecondary("provider_form") })
+            if (state.providers.isNotEmpty()) {
+                SettingsGroupDivider()
+            }
         }
 
         if (state.providers.isEmpty()) {
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = NexaraSpacing.XLarge,
-                            vertical = NexaraSpacing.XXLarge,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large),
-                    ) {
-                        Surface(
-                            modifier = Modifier.size(64.dp),
-                            shape = MaterialTheme.shapes.extraLarge,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Psychology,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    modifier = Modifier.size(NexaraSpacing.XXLarge),
-                                )
-                            }
-                        }
-                        Text(
-                            text = stringResource(R.string.settings_provider_empty),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
+                ProviderEmptyState(compactHeight = compactHeightEmptyState)
             }
         } else {
-            items(state.providers, key = { it.id }) { provider ->
+            itemsIndexed(state.providers, key = { _, provider -> provider.id }) { index, provider ->
+                if (index > 0) {
+                    SettingsGroupDivider()
+                }
                 ProviderCard(
                     provider = provider,
                     onClick = { actions.onNavigateToSecondary("provider_models/${provider.id}") },
@@ -776,6 +747,68 @@ private fun ProviderSettingsContent(
                     onDelete = { actions.onRequestDeleteProvider(provider.id) },
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ProviderEmptyState(compactHeight: Boolean) {
+    val emptyText = stringResource(R.string.settings_provider_empty)
+    if (compactHeight) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = NexaraSpacing.XLarge,
+                    vertical = NexaraSpacing.Small,
+                ),
+            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Large),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ProviderEmptyIcon(size = NexaraSpacing.MinimumTouchTarget)
+            Text(
+                text = emptyText,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = NexaraSpacing.XLarge,
+                    vertical = NexaraSpacing.XXLarge,
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large),
+        ) {
+            ProviderEmptyIcon(size = 64.dp)
+            Text(
+                text = emptyText,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProviderEmptyIcon(size: androidx.compose.ui.unit.Dp) {
+    Surface(
+        modifier = Modifier.size(size),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Rounded.Psychology,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(NexaraSpacing.XXLarge),
+            )
         }
     }
 }
@@ -791,7 +824,7 @@ private fun UserProfileHeader(
     val editNameDescription = stringResource(R.string.settings_edit_name)
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Row(
@@ -802,7 +835,7 @@ private fun UserProfileHeader(
         ) {
             Box(
                 modifier = Modifier
-                    .size(56.dp)
+                    .size(NexaraSpacing.MinimumTouchTarget)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primaryContainer)
                     .semantics { contentDescription = editAvatarDescription }
@@ -822,7 +855,7 @@ private fun UserProfileHeader(
                 } else {
                     Text(
                         text = userName.take(1).uppercase(),
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
@@ -833,7 +866,7 @@ private fun UserProfileHeader(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = userName,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -861,24 +894,29 @@ private fun UserProfileHeader(
 private fun AddProviderButton(
     onClick: () -> Unit,
 ) {
-    Button(
-        onClick = onClick,
+    ListItem(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(UiTags.SETTINGS_ADD_PROVIDER)
-            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget),
-    ) {
-        Icon(
-            imageVector = Icons.Rounded.Add,
-            contentDescription = null,
-            modifier = Modifier.size(NexaraSpacing.XLarge),
-        )
-        Spacer(modifier = Modifier.width(NexaraSpacing.Small))
-        Text(
-            text = stringResource(R.string.settings_add_provider),
-            style = MaterialTheme.typography.labelLarge,
-        )
-    }
+            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+            .clickable(role = Role.Button, onClick = onClick),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Rounded.Add,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(NexaraSpacing.XLarge),
+            )
+        },
+        headlineContent = {
+            Text(
+                text = stringResource(R.string.settings_add_provider),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        },
+    )
 }
 
 @Composable
@@ -890,6 +928,16 @@ private fun ProviderCard(
 ) {
     var menuExpanded by remember(provider.id) { mutableStateOf(false) }
     val useLargeTextLayout = LocalDensity.current.fontScale >= 1.5f
+    val titleStyle = if (useLargeTextLayout) {
+        MaterialTheme.typography.titleSmall
+    } else {
+        MaterialTheme.typography.titleMedium
+    }
+    val supportingStyle = if (useLargeTextLayout) {
+        MaterialTheme.typography.bodySmall
+    } else {
+        MaterialTheme.typography.bodyMedium
+    }
     val manageDescription = stringResource(R.string.settings_manage_models)
     val editDescription = stringResource(R.string.shared_btn_edit)
     val deleteDescription = stringResource(R.string.shared_btn_delete)
@@ -947,35 +995,36 @@ private fun ProviderCard(
         null
     } else {
         {
-            Surface(
-                modifier = Modifier.size(40.dp),
-                shape = MaterialTheme.shapes.medium,
-                color = iconContainerColor,
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(iconContainerColor),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    if (providerIcon != null) {
-                        Icon(
-                            painter = painterResource(id = providerIcon),
-                            contentDescription = null,
-                            tint = iconColor,
-                            modifier = Modifier.size(NexaraSpacing.XLarge),
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Rounded.Psychology,
-                            contentDescription = null,
-                            tint = iconColor,
-                            modifier = Modifier.size(NexaraSpacing.XLarge),
-                        )
-                    }
+                if (providerIcon != null) {
+                    Icon(
+                        painter = painterResource(id = providerIcon),
+                        contentDescription = null,
+                        tint = iconColor,
+                        modifier = Modifier.size(NexaraSpacing.XLarge),
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.Psychology,
+                        contentDescription = null,
+                        tint = iconColor,
+                        modifier = Modifier.size(NexaraSpacing.XLarge),
+                    )
                 }
             }
         }
     }
 
-    Surface(
+    ListItem(
         modifier = Modifier
             .fillMaxWidth()
+            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
             .testTag(UiTags.settingsProviderCard(provider.id))
             .semantics { stateDescription = providerStateDescription }
             .clickable(
@@ -983,132 +1032,117 @@ private fun ProviderCard(
                 onClickLabel = manageDescription,
                 onClick = onClick,
             ),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
-        ListItem(
-            modifier = Modifier.fillMaxWidth(),
-            colors = ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            ),
-            headlineContent = {
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        headlineContent = {
+            Text(
+                text = provider.name,
+                style = titleStyle,
+                color = if (provider.enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = if (useLargeTextLayout) 3 else 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        supportingContent = {
+            Column {
                 Text(
-                    text = provider.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (provider.enabled) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    text = localizedTypeName,
+                    style = supportingStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (useLargeTextLayout) 2 else 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-            },
-            supportingContent = {
-                Column {
-                    Text(
-                        text = localizedTypeName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = provider.baseUrl.removePrefix("https://").removePrefix("http://"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = providerStateDescription,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            },
-            leadingContent = leadingContent,
-            trailingContent = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+                Text(
+                    text = provider.baseUrl.removePrefix("https://").removePrefix("http://"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = providerStateDescription,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (useLargeTextLayout) 2 else 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
+        leadingContent = leadingContent,
+        trailingContent = {
+            Box {
+                IconButton(
+                    onClick = { menuExpanded = true },
+                    modifier = Modifier
+                        .testTag(UiTags.settingsProviderActions(provider.id))
+                        .sizeIn(
+                            minWidth = NexaraSpacing.MinimumTouchTarget,
+                            minHeight = NexaraSpacing.MinimumTouchTarget,
+                        ),
                 ) {
-                    if (!useLargeTextLayout) {
-                        Icon(
-                            imageVector = Icons.Rounded.ChevronRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(NexaraSpacing.XLarge),
-                        )
-                    }
-                    Box {
-                        IconButton(
-                            onClick = { menuExpanded = true },
-                            modifier = Modifier
-                                .testTag(UiTags.settingsProviderActions(provider.id))
-                                .sizeIn(
-                                    minWidth = NexaraSpacing.MinimumTouchTarget,
-                                    minHeight = NexaraSpacing.MinimumTouchTarget,
-                                ),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.MoreVert,
-                                contentDescription = actionsDescription,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = editDescription,
-                                        style = MaterialTheme.typography.labelLarge,
-                                    )
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    onEdit()
-                                },
-                                modifier = Modifier
-                                    .testTag("${UiTags.settingsProviderActions(provider.id)}:edit")
-                                    .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-                                    .semantics { role = Role.Button },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Edit,
-                                        contentDescription = null,
-                                    )
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = deleteDescription,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    onDelete()
-                                },
-                                modifier = Modifier
-                                    .testTag("${UiTags.settingsProviderActions(provider.id)}:delete")
-                                    .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-                                    .semantics { role = Role.Button },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Delete,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                    )
-                                },
-                            )
-                        }
-                    }
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = actionsDescription,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-            },
-        )
-    }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = editDescription,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onEdit()
+                        },
+                        modifier = Modifier
+                            .testTag("${UiTags.settingsProviderActions(provider.id)}:edit")
+                            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+                            .semantics { role = Role.Button },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Edit,
+                                contentDescription = null,
+                            )
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = deleteDescription,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        },
+                        modifier = Modifier
+                            .testTag("${UiTags.settingsProviderActions(provider.id)}:delete")
+                            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+                            .semantics { role = Role.Button },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                    )
+                }
+            }
+        },
+    )
 }
 
 @Composable

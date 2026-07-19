@@ -15,6 +15,8 @@ object UiTags {
     const val CHAT_STATE_APPROVAL = "chat_state_approval"
     const val CHAT_STATE_ERROR = "chat_state_error"
     const val CHAT_STATE_READY = "chat_state_ready"
+    const val CHAT_ASSISTANT_MODEL_METADATA = "chat_assistant_model_metadata"
+    const val CHAT_ASSISTANT_TIME_METADATA = "chat_assistant_time_metadata"
     const val CHAT_LOADING_SKELETON = "chat_loading_skeleton"
     const val CHAT_GENERATION_ACTION = "chat_generation_action"
     const val CHAT_COMPOSER = "chat_composer"

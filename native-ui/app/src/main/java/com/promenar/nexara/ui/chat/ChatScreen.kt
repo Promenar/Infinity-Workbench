@@ -121,7 +121,6 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PhaseStatus
-import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.NexaraSnackbarHost
@@ -160,6 +159,7 @@ data class ChatScreenState(
     val compressionState: ChatViewModel.CompressionState = ChatViewModel.CompressionState(),
     val postProcessTasks: List<PostProcessTask> = emptyList(),
     val selectedImageUris: List<android.net.Uri> = emptyList(),
+    val modelDisplayNames: Map<String, String> = emptyMap(),
 )
 
 data class ChatScreenActions(
@@ -433,6 +433,7 @@ fun ChatScreenContent(
                         status = uiState.status,
                         streamingContent = uiState.streamingContent,
                         fontSize = uiState.session?.options?.fontSize ?: 13,
+                        modelDisplayNames = state.modelDisplayNames,
                         onContentChange = { newContent ->
                             group.assistantMessages.lastOrNull()?.let { lastMsg ->
                                 actions.onContentChange(lastMsg.id, newContent)
@@ -514,11 +515,9 @@ fun ChatScreenContent(
                     ),
                     verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                 ) {
-                    val modelDisplayName = remember(uiState.session?.modelId) {
-                        uiState.session?.modelId?.let { id ->
-                            findModelSpec(id)?.note ?: id
-                        } ?: ""
-                    }
+                    val modelDisplayName = uiState.session?.modelId
+                        ?.let(state.modelDisplayNames::get)
+                        .orEmpty()
                     ChatInputTopBar(
                         modelName = modelDisplayName,
                         tokenState = tokenState,
@@ -579,6 +578,7 @@ fun ChatScreenContent(
                                 }
                             },
                             status = uiState.status,
+                            isGenerating = uiState.isGenerating,
                             onStop = actions.onStop,
                             isModelSelected = uiState.session?.modelId?.isNotBlank() == true,
                             onModelHint = { showModelHint = true },
@@ -1003,13 +1003,15 @@ fun ChatInputBar(
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
     status: GenerationStatus = GenerationStatus.IDLE,
+    isGenerating: Boolean = status == GenerationStatus.UPLOADING ||
+        status == GenerationStatus.THINKING || status == GenerationStatus.RECEIVING,
     onStop: () -> Unit = {},
     isModelSelected: Boolean = true,
     onModelHint: () -> Unit = {},
     onPickImage: () -> Unit = {},
     hasImages: Boolean = false
 ) {
-    val isGenerating = status != GenerationStatus.IDLE
+    val effectiveStatus = if (isGenerating) status else GenerationStatus.IDLE
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1073,7 +1075,7 @@ fun ChatInputBar(
             )
 
             GenerationStatusButton(
-                status = status,
+                status = effectiveStatus,
                 onSend = {
                     if (isModelSelected) onSend() else onModelHint()
                 },

@@ -182,17 +182,29 @@ force_stop_target() {
     return 1
 }
 
+wait_for_package_manager_idle() {
+    if (( API_LEVEL >= 33 )); then
+        adb shell cmd package wait-for-handler --timeout 5000 >/dev/null
+        adb shell cmd package wait-for-background-handler --timeout 5000 >/dev/null
+    else
+        # Android 12 尚未提供 wait-for-handler 子命令，给权限状态落盘留出稳定窗口。
+        sleep 1
+    fi
+}
+
 reset_target_with_notification_permission_revoked() {
     adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
     adb shell pm revoke "${TARGET_PACKAGE}" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
     adb shell pm clear-permission-flags \
         "${TARGET_PACKAGE}" android.permission.POST_NOTIFICATIONS user-set user-fixed \
         >/dev/null 2>&1 || true
+    wait_for_package_manager_idle
 }
 
 reset_target_with_notification_permission_granted() {
     adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
     adb shell pm grant "${TARGET_PACKAGE}" android.permission.POST_NOTIFICATIONS
+    wait_for_package_manager_idle
 }
 
 run_expected_relay_death() {
@@ -260,6 +272,10 @@ fi
 adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
 run_test mainactivity-chat-flow "${MAIN_ACTIVITY_RUNNER}" \
     -e class com.promenar.nexara.MainActivityChatFlowE2eTest
+
+adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
+run_test mainactivity-new-session "${MAIN_ACTIVITY_RUNNER}" \
+    -e class com.promenar.nexara.MainActivityNewSessionE2eTest
 
 adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
 run_test onboarding-full "${APP_RUNNER}" \

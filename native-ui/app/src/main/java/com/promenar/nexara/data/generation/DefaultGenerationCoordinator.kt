@@ -42,6 +42,7 @@ class DefaultGenerationCoordinator(
     )
 
     private val mutex = Mutex()
+    private val lifecycleLock = Any()
     private val mutableActive = MutableStateFlow<GenerationTaskSnapshot?>(null)
     private val sessionStates = ConcurrentHashMap<String, MutableStateFlow<GenerationTaskSnapshot?>>()
     private val terminalOrder = ArrayDeque<String>()
@@ -56,9 +57,10 @@ class DefaultGenerationCoordinator(
         sessionStates.getOrPut(sessionId) { MutableStateFlow(null) }
 
     override suspend fun start(request: GenerationRequest): StartGenerationResult = mutex.withLock {
+        synchronized(lifecycleLock) {
         running?.let { current ->
             val snapshot = mutableActive.value ?: snapshotOf(current.taskId, current.request)
-            return@withLock if (
+            return@synchronized if (
                 current.request.sessionId == request.sessionId &&
                 current.request.requestId == request.requestId
             ) {
@@ -75,7 +77,7 @@ class DefaultGenerationCoordinator(
             runnerFactory.create(request, taskId)
         } catch (failure: Throwable) {
             presentationStore.finish(request.sessionId, taskId)
-            return@withLock StartGenerationResult.Rejected(
+            return@synchronized StartGenerationResult.Rejected(
                 GenerationError(failure.failureOrUnknown()),
             )
         }
@@ -110,7 +112,7 @@ class DefaultGenerationCoordinator(
                     if (running?.taskId == taskId) {
                         if (task.terminalAcknowledged.get()) {
                             presentationStore.finish(request.sessionId, taskId)
-                            removeSessionState(request.sessionId, taskId)
+                            clearSessionState(request.sessionId, taskId)
                         } else {
                             retainTerminalState(request.sessionId, taskId)
                         }
@@ -131,9 +133,10 @@ class DefaultGenerationCoordinator(
             startedAt = startedAt,
         )
         mutableActive.value = initial
-        sessionState(request.sessionId).value = initial
+        publishSessionState(request.sessionId, initial)
         job.start()
         StartGenerationResult.Started(taskId)
+        }
     }
 
     override fun cancel(taskId: String, reason: CancellationReason): Boolean {
@@ -150,7 +153,7 @@ class DefaultGenerationCoordinator(
             if (snapshot?.taskId != taskId || !snapshot.phase.isTerminal()) return false
             current.terminalAcknowledged.set(true)
             presentationStore.finish(current.request.sessionId, taskId)
-            removeSessionState(current.request.sessionId, taskId)
+            clearSessionState(current.request.sessionId, taskId)
             if (mutableActive.value?.taskId == taskId) mutableActive.value = null
             return true
         }
@@ -158,17 +161,24 @@ class DefaultGenerationCoordinator(
             flow.value?.let { it.taskId == taskId && it.phase.isTerminal() } == true
         } ?: return false
         presentationStore.finish(entry.key, taskId)
-        removeSessionState(entry.key, taskId)
+        clearSessionState(entry.key, taskId)
         return true
     }
 
     override fun release(sessionId: String, discardTerminal: Boolean) {
-        val activeTaskId = running?.takeIf { it.request.sessionId == sessionId }?.taskId
-        val snapshot = sessionStates[sessionId]?.value
-        if (snapshot != null && snapshot.taskId == activeTaskId && snapshot.phase !in TERMINAL_PHASES) return
-        if (snapshot?.phase?.let { it in TERMINAL_PHASES } == true && !discardTerminal) return
-        snapshot?.taskId?.let { presentationStore.finish(sessionId, it) }
-        removeSessionState(sessionId, snapshot?.taskId)
+        synchronized(lifecycleLock) {
+            val activeTaskId = running?.takeIf { it.request.sessionId == sessionId }?.taskId
+            val snapshot = sessionStates[sessionId]?.value
+            if (snapshot != null && snapshot.taskId == activeTaskId && snapshot.phase !in TERMINAL_PHASES) {
+                return@synchronized
+            }
+            if (snapshot?.phase?.let { it in TERMINAL_PHASES } == true && !discardTerminal) {
+                return@synchronized
+            }
+            snapshot?.taskId?.let { presentationStore.finish(sessionId, it) }
+            presentationStore.release(sessionId)
+            releaseSessionState(sessionId, snapshot?.taskId)
+        }
     }
 
     private suspend fun handleEvent(
@@ -221,6 +231,12 @@ class DefaultGenerationCoordinator(
             ?: snapshotOf(taskId, request, startedAt)
         if (previous.phase == GenerationPhase.PERSISTENCE_FAILED) return
         val terminal = previous.copy(phase = phase, error = error)
+        presentationStore.publishTerminal(
+            sessionId = request.sessionId,
+            taskId = taskId,
+            phase = phase,
+            failure = error?.failure,
+        )
         sessionState(request.sessionId).value = terminal
         mutableActive.value = terminal
     }
@@ -241,11 +257,17 @@ class DefaultGenerationCoordinator(
     private fun sessionState(sessionId: String) =
         sessionStates.getOrPut(sessionId) { MutableStateFlow(null) }
 
+    private fun publishSessionState(sessionId: String, snapshot: GenerationTaskSnapshot) {
+        sessionStates.compute(sessionId) { _, existing ->
+            (existing ?: MutableStateFlow<GenerationTaskSnapshot?>(null)).also { it.value = snapshot }
+        }
+    }
+
     private fun retainTerminalState(sessionId: String, taskId: String) {
         val snapshot = sessionStates[sessionId]?.value
         if (snapshot?.taskId != taskId || !snapshot.phase.isTerminal()) {
             presentationStore.finish(sessionId, taskId)
-            removeSessionState(sessionId, taskId)
+            clearSessionState(sessionId, taskId)
             return
         }
         synchronized(terminalOrderLock) {
@@ -253,24 +275,44 @@ class DefaultGenerationCoordinator(
             terminalOrder.addLast(sessionId)
             while (terminalOrder.size > terminalRetentionLimit.coerceAtLeast(0)) {
                 val evictedSessionId = terminalOrder.removeFirst()
-                sessionStates.remove(evictedSessionId)?.let { flow ->
+                sessionStates[evictedSessionId]?.let { flow ->
                     flow.value?.taskId?.let { presentationStore.finish(evictedSessionId, it) }
+                    presentationStore.release(evictedSessionId)
                     flow.value = null
                 }
             }
         }
     }
 
-    private fun removeSessionState(sessionId: String, taskId: String?) {
+    private fun clearSessionState(sessionId: String, taskId: String?) {
         val flow = sessionStates[sessionId] ?: return
         val snapshot = flow.value
         if (taskId != null && snapshot != null && snapshot.taskId != taskId) return
         flow.value = null
-        sessionStates.remove(sessionId, flow)
         synchronized(terminalOrderLock) { terminalOrder.remove(sessionId) }
     }
 
-    internal fun retainedSessionStateCount(): Int = sessionStates.size
+    private fun releaseSessionState(sessionId: String, taskId: String?) {
+        var removed = false
+        sessionStates.computeIfPresent(sessionId) { _, flow ->
+            val snapshot = flow.value
+            val changedSinceRead = if (taskId == null) {
+                snapshot != null
+            } else {
+                snapshot != null && snapshot.taskId != taskId
+            }
+            if (changedSinceRead) {
+                flow
+            } else {
+                flow.value = null
+                removed = true
+                flow
+            }
+        }
+        if (removed) synchronized(terminalOrderLock) { terminalOrder.remove(sessionId) }
+    }
+
+    internal fun retainedSessionStateCount(): Int = sessionStates.values.count { it.value != null }
 
     private fun GenerationPhase.isTerminal(): Boolean = this in TERMINAL_PHASES
 

@@ -18,13 +18,16 @@ class ManagementMaterialContractTest {
     ).readText()
 
     @Test
-    fun `settings item is a flexible material surface with button semantics`() {
+    fun `settings item is a flexible transparent material list row with button semantics`() {
         val source = source("NexaraSettingsItem")
 
-        assertThat(source).contains("Surface(")
+        assertThat(source).contains("ListItem(")
+        assertThat(source).contains("ListItemDefaults.colors(")
+        assertThat(source).contains("containerColor = Color.Transparent")
+        assertThat(source).doesNotContain("Surface(")
         assertThat(source).doesNotContain("NexaraGlassCard(")
         assertThat(source).contains("NexaraSpacing.MinimumTouchTarget")
-        assertThat(source).contains(".weight(1f)")
+        assertThat(source).contains(".fillMaxWidth()")
         assertThat(source).contains("role = Role.Button")
         assertThat(source).contains("MaterialTheme.typography")
         assertThat(source).contains("MaterialTheme.colorScheme")

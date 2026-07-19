@@ -31,6 +31,7 @@ import com.promenar.nexara.background.generation.GenerationNotificationFactory
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.remote.stableModelId
 import com.promenar.nexara.domain.generation.GenerationPhase
@@ -38,7 +39,6 @@ import com.promenar.nexara.domain.generation.GenerationRuntimePolicy
 import com.promenar.nexara.domain.generation.GenerationTaskSnapshot
 import com.promenar.nexara.onboarding.OnboardingStep
 import com.promenar.nexara.ui.chat.ChatState
-import com.promenar.nexara.ui.settings.ModelInfo
 import com.promenar.nexara.ui.testing.UiTags
 import java.io.FileOutputStream
 import kotlinx.coroutines.delay
@@ -82,7 +82,7 @@ class MainActivityNotificationE2eTest {
         compose.waitUntil(15_000) {
             app.createdChatViewModel?.uiState?.value?.session?.id == currentSessionId
         }
-        compose.onNodeWithTag(UiTags.CHAT_STATE_READY).assertIsDisplayed()
+        waitForChatReadySemantics()
         Unit
     }
 
@@ -179,6 +179,11 @@ class MainActivityNotificationE2eTest {
             GenerationNotificationFactory(app, app.appIntentRouter).create(snapshot),
         )
 
+        compose.waitUntil(10_000) {
+            notificationManager.activeNotifications.any {
+                it.id == GenerationNotificationFactory.NOTIFICATION_ID
+            }
+        }
         val posted = notificationManager.activeNotifications.single {
             it.id == GenerationNotificationFactory.NOTIFICATION_ID
         }
@@ -197,6 +202,16 @@ class MainActivityNotificationE2eTest {
         compose.onNodeWithTag(UiTags.CHAT_INPUT).performTextInput("notification permission route")
         compose.onNodeWithTag(UiTags.CHAT_GENERATION_ACTION).performClick()
         compose.waitForIdle()
+    }
+
+    private fun waitForChatReadySemantics() {
+        compose.waitUntil(15_000) {
+            runCatching {
+                compose.onAllNodesWithTag(UiTags.CHAT_STATE_READY)
+                    .fetchSemanticsNodes().isNotEmpty()
+            }.getOrDefault(false)
+        }
+        compose.onNodeWithTag(UiTags.CHAT_STATE_READY).assertIsDisplayed()
     }
 
     private fun clickPermissionControllerButton(

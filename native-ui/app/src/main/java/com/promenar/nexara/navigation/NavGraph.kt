@@ -45,7 +45,7 @@ import com.promenar.nexara.ui.rag.AdvancedRetrievalScreen
 import com.promenar.nexara.ui.settings.BackupSettingsScreen
 import com.promenar.nexara.ui.settings.DeveloperScreen
 import com.promenar.nexara.ui.settings.LocalModelsScreen
-import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.settings.ProviderFormScreen
 import com.promenar.nexara.ui.settings.ProviderModelsScreen
 import com.promenar.nexara.ui.settings.SettingsViewModel
@@ -54,7 +54,7 @@ import com.promenar.nexara.ui.settings.SkillsScreen
 import com.promenar.nexara.ui.settings.ThemeScreen
 import com.promenar.nexara.ui.settings.TokenUsageScreen
 import com.promenar.nexara.ui.welcome.WelcomeScreen
-import com.promenar.nexara.ui.welcome.eligibleOnboardingModels
+import com.promenar.nexara.ui.welcome.onboardingModelCandidates
 import com.promenar.nexara.util.LocaleController
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -195,7 +195,7 @@ fun NexaraNavGraph(
             val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(app))
             val providerModels by viewModel.providerModels.collectAsState()
             val isFetchingModels by viewModel.isFetchingModels.collectAsState()
-            val models = eligibleOnboardingModels(
+            val models = onboardingModelCandidates(
                 onboardingModelsOverride ?: providerModels,
                 onboardingState.providerId,
             )

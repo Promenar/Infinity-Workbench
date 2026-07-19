@@ -42,7 +42,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.onboarding.OnboardingState
 import com.promenar.nexara.onboarding.OnboardingStep
 import com.promenar.nexara.ui.common.NexaraGlassCard
-import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography

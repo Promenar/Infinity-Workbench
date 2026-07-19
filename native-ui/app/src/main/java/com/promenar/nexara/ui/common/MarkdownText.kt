@@ -2,6 +2,8 @@ package com.promenar.nexara.ui.common
 
 import android.util.Log
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -34,7 +36,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -110,6 +117,71 @@ internal sealed class ContentSegment {
 internal class ParseCache {
     var text: String = ""
     var segments: List<ContentSegment> = emptyList()
+}
+
+internal const val STREAM_TAIL_FADE_DURATION_MS = 140
+
+internal fun streamTailFadeStartAlpha(
+    isStreaming: Boolean,
+    previousContent: String,
+    content: String,
+    currentAlpha: Float,
+): Float {
+    if (
+        !isStreaming ||
+        content.isEmpty() ||
+        content.length <= previousContent.length ||
+        !content.startsWith(previousContent)
+    ) {
+        return 1f
+    }
+    return if (previousContent.isEmpty()) 0.68f else maxOf(0.68f, currentAlpha - 0.12f)
+}
+
+@Composable
+private fun Modifier.streamingTailFade(
+    enabled: Boolean,
+    content: String,
+): Modifier {
+    if (!enabled) return this
+
+    val tailAlpha = remember { Animatable(1f) }
+    var previousContent by remember { mutableStateOf("") }
+    LaunchedEffect(enabled, content) {
+        val startAlpha = streamTailFadeStartAlpha(
+            isStreaming = enabled,
+            previousContent = previousContent,
+            content = content,
+            currentAlpha = tailAlpha.value,
+        )
+        previousContent = content
+        tailAlpha.snapTo(startAlpha)
+        if (startAlpha < 1f) {
+            tailAlpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = STREAM_TAIL_FADE_DURATION_MS,
+                    easing = FastOutSlowInEasing,
+                ),
+            )
+        }
+    }
+    return graphicsLayer {
+        compositingStrategy = CompositingStrategy.Offscreen
+    }.drawWithContent {
+        drawContent()
+        val fadeHeight = 28.dp.toPx().coerceAtMost(size.height)
+        if (fadeHeight > 0f && tailAlpha.value < 1f) {
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.White, Color.White.copy(alpha = tailAlpha.value)),
+                    startY = size.height - fadeHeight,
+                    endY = size.height,
+                ),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+    }
 }
 
 /** 仅接管 AST 已确认是“单个 CODE_SPAN 子节点”的顶层段落，不自行重写 CommonMark 分隔符规则。 */
@@ -408,7 +480,7 @@ fun MarkdownText(
             LocalImageTransformer provides Coil3ImageTransformerImpl
         ) {
             Column(modifier = modifier.fillMaxWidth()) {
-                for (segment in mergedSegments) {
+                for ((index, segment) in mergedSegments.withIndex()) {
                     when (segment) {
                         is ContentSegment.Markdown -> {
                             if (segment.content.isNotBlank()) {
@@ -419,7 +491,11 @@ fun MarkdownText(
                                     onContentChange = onContentChange,
                                     textColor = effectiveColor,
                                     fontStyle = fontStyle,
-                                    compactSpacing = compactSpacing
+                                    compactSpacing = compactSpacing,
+                                    modifier = Modifier.streamingTailFade(
+                                        enabled = isStreaming && index == mergedSegments.lastIndex,
+                                        content = segment.content,
+                                    ),
                                 )
                             }
                         }
@@ -535,7 +611,8 @@ private fun MarkdownSafe(
     onContentChange: ((String) -> Unit)?,
     textColor: Color = NexaraColors.OnBackground,
     fontStyle: androidx.compose.ui.text.font.FontStyle? = null,
-    compactSpacing: Boolean = false
+    compactSpacing: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     var renderError by remember(content) { mutableStateOf(false) }
     // 使用 rememberUpdatedState 避免回调变化导致 components 重建
@@ -545,7 +622,7 @@ private fun MarkdownSafe(
     if (renderError) {
         Text(
             text = content,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = modifier.fillMaxWidth(),
             style = LocalTextStyle.current
         )
         return
@@ -702,7 +779,7 @@ private fun MarkdownSafe(
         colors = nexaraMarkdownColors(textColor = textColor),
         typography = nexaraMarkdownTypography(fontSize, fontStyle = fontStyle),
         components = components,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         success = { state, resolvedComponents, successModifier ->
             Column(modifier = successModifier) {
                 state.node.children.forEach { node ->

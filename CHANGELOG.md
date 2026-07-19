@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 知识库、生成终态与设置流式体验修正（2026-07-19）
+
+- **空知识库不再显示幽灵失败**：启动恢复只归一化旧版 `document` 索引任务；缺少文件身份或已确认文件不存在的孤儿任务会连同派生向量/图谱数据清理，现代 `document_reference` 目标不受影响。错误提示不再伪造 `0%` 进度或进度语义。
+- **生成终态即时收口**：失败、异常与取消的兜底路径在协调器结束前先发布展示终态，聊天页不再概率性停留在“生成中/思考中”，无需退出会话再进入刷新。
+- **流式视觉缓和**：正常 chunk 仍即时显示，不引入人工打字队列；仅对正在流式输出的非空尾部应用 140ms Material 缓动淡入和 28dp 底部轻遮罩，避免整段内容反复离屏合成或持续变暗。
+- **设置密度统一**：设置首页与 Provider 管理改为连续、无逐项卡片的 Material 3 列表，使用单层分组和分隔线；常规、2.0x 字体和横屏空态采用自适应间距，同时保留 48dp 最小触摸目标和系统字体缩放。
+- **覆盖安装兼容与新会话稳定性**：仅对可精确识别的旧版空哈希工作区根执行受信迁移，保留原目录内容并拒绝越界、悬空、符号链接或子路径根；新会话从数据库真相恢复且初始循环状态归一化为已完成，避免创建后进入闪退；会话工作区可正常加载。列表刷新由数据库决定会话成员与顺序，但同 ID 会话保留 Store 中较新的流式消息和运行状态，避免迟到快照回滚界面。
+- **设备门禁补强**：备份恢复结果在列表滚动后仍自动回到可见状态；onboarding 的懒列表测试改用确定性节点滚动，通知发布 E2E 等待系统确认 active notification，消除 API 35/36 预取与通知服务异步差异。当前全量 JVM 1982 项（0 failure/error、14 skip）、Lint 0 Error/Fatal、62/62 截图及逐张 actual 复核、AndroidTest 编译、API 31 minimum 18 项、API 35/36 full 各 37 项、双 API 真实新会话入口 E2E 和四角色真实 Provider 均通过；每台设备各有 1 个设计内 checkpoint skip，未记为 PASS。
+- **当前签名候选**：从本轮源码新鲜构建稳定证书签名 R8 APK，18,214,452 bytes，SHA-256 `5b09ed2876e639d611b80d8d3b68f2f331f1720ecc8e9f3023521ff7b98eb9da`；fail-closed 验真、16 KiB zipalign 及 API 35/36 冷安装通过。独立终审为 Critical 0 / Important 0，保留 3 个不阻断 Minor。真机 TalkBack/核心业务人工验收、当前提交远端 CI、tag workflow 与 GitHub Release 尚未闭合，整体发行继续 NO-GO。
+
+### 分层模型元数据注册中心与会话尾注（2026-07-18）
+
+- **精确模型元数据解析**：模型身份改由 `ModelMetadataResolver.resolve(...)` 统一解析，按用户覆盖、Provider 精确元数据、Nexara 精确修正、models.dev 离线目录、家族展示和 fallback 逐字段合并；unknown 不再默认成 chat，推理能力与 Chat endpoint 兼容性分别记录。
+- **离线目录供应链**：内置 258 条 models.dev 规范化快照与 schema v2 manifest，固定来源、MIT 许可、源字节/SHA-256、目录 SHA-256、条数和未知字段计数；更新脚本、64 项 Python 契约、26 项 Kotlin 目录测试及 draft-only 刷新 workflow 共同阻止静默漂移和自动合并。
+- **用户覆盖与备份**：Provider 模型迁移保留用户编辑字段，刷新只更新自动元数据；family、canonical ID、chat endpoint、自动指纹和用户编辑字段进入偏好备份白名单，并以真实类型完成恢复。
+- **引导与会话显示一致性**：聊天探测成功只记录 Chat endpoint 兼容，不再改写主要工作负载；输入区和 AI 尾注复用同一友好名称解析，历史已删除模型仍优先使用持久化名称。AI 的“模型名 + 时间”在左侧并列，用户时间继续右对齐。
+- **真实 Provider 门禁**：四个受控内网模型均通过同一 Router 的新鲜流式请求，精确友好名称、推理能力三态、Chat endpoint 兼容性及流式终态符合冻结契约；凭据仅注入当前测试进程，未写入源码、报告或构建产物。
+- **可见模拟器与发行回归**：本轮 1945 个 JVM 测试（0 failure/error、14 skip）、61/61 截图、Lint 0 Error/Fatal、AndroidTest 编译以及 API 36 完整设备套件 36/36 通过。主控在可见 API 36 模拟器逐页检查常规/2.0x 字体、横竖屏、IME、长名称和中英文状态，修正知识图谱空态文字贴边，并稳定通知权限重置后的 Package Manager 等待；当前签名 R8 APK 在 API 35/36 冷安装、设备字节回读、启动和 crash/ANR 观察通过。真机 TalkBack/核心业务、当前提交远端 CI、tag workflow 与 GitHub Release 尚未闭合，整体发行继续 NO-GO。
+
+### Material 3 Agent 首页连续列表收口（2026-07-17）
+
+- **助手条目回归标准 Material 3**：主界面助手列表由逐项 Glass 描边卡片与冗余右箭头改为连续 `ListItem`；使用 40dp tonal 图标、Material 排版/颜色、从正文起始位对齐的分隔线，整行继续负责进入会话，尾部只保留置顶状态和 48dp 更多操作。
+- **滑动交互密度纠偏**：`SwipeableItem` 的动作宽度、触发阈值和最大位移统一由 dp 转换为真实像素，避免高密度设备上短距离手势误触删除；Agent 首页采用矩形连续行，其他调用点保留原有圆角默认值，装饰性滑动背景图标不再制造不可点击的 TalkBack 焦点。
+- **视觉与交互门禁**：新增普通/长标题/长描述/空描述/中文 2.0x 字体截图夹具，57/57 Screenshot validation 通过并逐图审阅；Pixel 7 API 36 上整行进入、菜单不误导航、置顶状态语义、短滑不误删与空态添加共 6/6 通过。全量 1919 个 JVM 测试（0 failure/error、14 个既有条件 skip）、Lint 0 Error/Fatal 与 Debug APK 构建通过。
+- **当前签名候选**：从本轮当前源码 clean 构建稳定证书签名 R8 APK，fail-closed 身份/签名/敏感内容/GGUF 扫描、16 KiB zipalign 及 API 35/36 冷安装、设备字节回读、前台启动和 crash/ANR 观察全部通过。APK 为 18,173,163 bytes，SHA-256 `45732833504658a7e84f4ef0efee83bccbbd0c1bb7e9486b1519607c474509db`；仍须用户真机完成 TalkBack/核心业务人工验收。
+
 ### Material 3 重设计第四阶段：DocEditor 可靠性与视觉迁移（2026-07-17）
 
 - **重命名与索引目标版本化**：DocEditor 重命名使用 persisted-title CAS 与单调 epoch；Room `document_reference` 任务以 `workspace + file + hash + epoch` 表达唯一当前目标，旧 worker、旧失败和旧清理不能覆盖或删除 newer target。

@@ -10,13 +10,17 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
+import com.promenar.nexara.data.model.Message
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ApprovalRequest
+import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Session
+import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
+import kotlin.math.abs
 import org.junit.Rule
 import org.junit.Test
 
@@ -33,7 +37,10 @@ class ChatScreenContentStateTest {
 
     @Test
     fun emptyState_rendersRealConversationSurfaceAndInput() {
-        render(ChatUiState(session = session))
+        render(
+            uiState = ChatUiState(session = session),
+            modelDisplayNames = mapOf("provider/model-e2e" to "Model E2E"),
+        )
 
         rule.onNodeWithTag(UiTags.CHAT_STATE_EMPTY)
             .assertIsDisplayed()
@@ -42,7 +49,7 @@ class ChatScreenContentStateTest {
         titles.assertCountEquals(2)
         titles[0].assertIsDisplayed()
         titles[1].assertIsDisplayed()
-        rule.onNodeWithText("provider/model-e2e").assertIsDisplayed()
+        rule.onNodeWithText("Model E2E").assertIsDisplayed()
         rule.onNodeWithText(resource(R.string.chat_input_placeholder_default)).assertIsDisplayed()
     }
 
@@ -113,14 +120,109 @@ class ChatScreenContentStateTest {
             .assertIsDisplayed()
     }
 
+    @Test
+    fun assistantMetadata_shortModelName_layout_keepsLeftToRightAndBottomAlignment() {
+        val displayName = "Nova Chat"
+        val modelId = "provider/model-e2e"
+        val createdAt = 1_700_000_000_000L
+
+        render(
+            uiState = ChatUiState(
+                session = session.copy(
+                    options = SessionOptions(fontSize = 13),
+                ),
+                messages = listOf(
+                    Message(
+                        id = "assistant-metadata-short",
+                        role = MessageRole.ASSISTANT,
+                        content = "这是一个短模型元信息场景。",
+                        modelId = modelId,
+                        createdAt = createdAt,
+                    ),
+                ),
+            ),
+            modelDisplayNames = mapOf(modelId to displayName),
+        )
+
+        val modelMetadata = rule.onNodeWithTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA)
+        val timeMetadata = rule.onNodeWithTag(UiTags.CHAT_ASSISTANT_TIME_METADATA)
+        val readyRoot = rule.onNodeWithTag(UiTags.CHAT_STATE_READY)
+
+        modelMetadata.assertIsDisplayed()
+        timeMetadata.assertIsDisplayed()
+
+        val modelBounds = modelMetadata.fetchSemanticsNode().boundsInRoot
+        val timeBounds = timeMetadata.fetchSemanticsNode().boundsInRoot
+        val readyBounds = readyRoot.fetchSemanticsNode().boundsInRoot
+
+        assertThat(modelBounds.left).isAtLeast(readyBounds.left)
+        assertThat(modelBounds.left).isLessThan(timeBounds.left)
+        assertThat(modelBounds.right).isAtMost(timeBounds.left)
+
+        val tolerancePx = with(rule.density) { 3.dp.toPx() }
+        assertThat(abs(modelBounds.bottom - timeBounds.bottom)).isAtMost(tolerancePx)
+
+        val centerX = readyBounds.left + (readyBounds.width / 2f)
+        assertThat(timeBounds.right).isLessThan(centerX)
+    }
+
+    @Test
+    fun assistantMetadata_longModelName_keepsTimeVisibleAndSingleLine() {
+        val modelId = "provider/model-e2e"
+        val displayName = "超长模型展示名称：用于边界回归的长名称场景，仍需保证时间戳可见且不换行"
+        val createdAt = 1_700_000_123_000L
+
+        render(
+            uiState = ChatUiState(
+                session = session.copy(
+                    options = SessionOptions(fontSize = 13),
+                ),
+                messages = listOf(
+                    Message(
+                        id = "assistant-metadata-long",
+                        role = MessageRole.ASSISTANT,
+                        content = "超长模型名场景用于验证单行元信息渲染。",
+                        modelId = modelId,
+                        createdAt = createdAt,
+                    ),
+                ),
+            ),
+            modelDisplayNames = mapOf(modelId to displayName),
+        )
+
+        val modelMetadata = rule.onNodeWithTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA)
+        val timeMetadata = rule.onNodeWithTag(UiTags.CHAT_ASSISTANT_TIME_METADATA)
+        val readyBounds = rule.onNodeWithTag(UiTags.CHAT_STATE_READY).fetchSemanticsNode().boundsInRoot
+
+        modelMetadata.assertIsDisplayed()
+        timeMetadata.assertIsDisplayed()
+
+        val modelBounds = modelMetadata.fetchSemanticsNode().boundsInRoot
+        val timeBounds = timeMetadata.fetchSemanticsNode().boundsInRoot
+
+        val tolerancePx = with(rule.density) { 3.dp.toPx() }
+
+        assertThat(modelBounds.width).isGreaterThan(0)
+        assertThat(modelBounds.right).isAtMost(timeBounds.left)
+        assertThat(abs(modelBounds.bottom - timeBounds.bottom)).isAtMost(tolerancePx)
+        assertThat(modelBounds.height).isAtMost(timeBounds.height + tolerancePx)
+
+        val centerX = readyBounds.left + (readyBounds.width / 2f)
+        assertThat(timeBounds.right).isLessThan(centerX)
+    }
+
     private fun render(
         uiState: ChatUiState,
         actions: ChatScreenActions = ChatScreenActions(),
+        modelDisplayNames: Map<String, String> = emptyMap(),
     ) {
         rule.setContent {
             NexaraTheme {
                 ChatScreenContent(
-                    state = ChatScreenState(uiState = uiState),
+                    state = ChatScreenState(
+                        uiState = uiState,
+                        modelDisplayNames = modelDisplayNames,
+                    ),
                     actions = actions,
                 )
             }

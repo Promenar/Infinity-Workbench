@@ -50,12 +50,22 @@ fun AgentSessionsScreen(
     val sessions by viewModel.sessions.collectAsState()
     val agentName by viewModel.agentName.collectAsState()
     val agentColor by viewModel.agentColor.collectAsState()
+    val operationFailed by viewModel.operationFailed.collectAsState()
     var sessionToDelete by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val operationFailedMessage = stringResource(R.string.sessions_operation_failed)
     val locale = LocalConfiguration.current.locales[0]
 
     LaunchedEffect(agentId) {
         viewModel.loadSessions(agentId)
+    }
+
+    LaunchedEffect(operationFailed) {
+        if (operationFailed) {
+            snackbarHostState.showSnackbar(operationFailedMessage)
+            viewModel.dismissOperationFailure()
+        }
     }
 
     val parsedAgentColor = try {
@@ -75,6 +85,7 @@ fun AgentSessionsScreen(
                 onSettings = onNavigateToAgentEdit
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {

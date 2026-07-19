@@ -232,7 +232,8 @@ internal class AndroidTransactionalBackupPreferenceStore(
     private fun expectedType(namespace: String, key: String): PreferenceValueType {
         if (namespace == "settings" && key.startsWith("model_info_")) {
             return when {
-                key.endsWith("_caps") -> PreferenceValueType.STRING_SET
+                key.endsWith("_caps") || key.endsWith("_user_edited_fields") ->
+                    PreferenceValueType.STRING_SET
                 key.endsWith("_context") || key.endsWith("_maxoutput") -> PreferenceValueType.INT
                 else -> PreferenceValueType.STRING
             }

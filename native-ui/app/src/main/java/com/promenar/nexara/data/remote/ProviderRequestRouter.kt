@@ -6,7 +6,7 @@ import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.remote.middleware.LlmMiddleware
 import com.promenar.nexara.data.remote.protocol.ProtocolType
-import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.data.model.ModelInfo
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive

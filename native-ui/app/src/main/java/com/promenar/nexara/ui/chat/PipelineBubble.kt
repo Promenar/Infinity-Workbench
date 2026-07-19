@@ -142,6 +142,7 @@ fun PipelineBubble(
     status: GenerationStatus = GenerationStatus.IDLE,
     streamingContent: String,
     fontSize: Int,
+    modelDisplayNames: Map<String, String> = emptyMap(),
     onContentChange: ((String) -> Unit)? = null,
     onCopy: ((String) -> Unit)? = null,
     onRegenerate: ((String) -> Unit)? = null,
@@ -251,33 +252,19 @@ fun PipelineBubble(
     group.assistantMessages.lastOrNull()?.let { lastMsg ->
         val timeFormat = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
         val timestamp = remember(lastMsg.createdAt) { timeFormat.format(java.util.Date(lastMsg.createdAt)) }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp)
-        ) {
-            val metaStyle = NexaraTypography.labelSmall.copy(
-                color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
-                fontSize = (fontSize - 2).coerceAtLeast(9).sp
-            )
-            if (!lastMsg.modelId.isNullOrBlank()) {
-                Text(
-                    text = lastMsg.modelId!!,
-                    style = metaStyle,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 8.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Text(
-                text = timestamp,
-                style = metaStyle,
-                maxLines = 1
-            )
+        val modelDisplayName = if (lastMsg.modelId.isNullOrBlank()) {
+            ""
+        } else {
+            modelDisplayNames[lastMsg.modelId]
+                ?.takeIf(String::isNotBlank)
+                ?: lastMsg.modelId?.substringAfter("::", lastMsg.modelId).orEmpty()
         }
+
+        AssistantMetadataRow(
+            modelDisplayName = modelDisplayName,
+            timestamp = timestamp,
+            fontSize = fontSize,
+        )
     }
 
     // ── 错误信息 ──
@@ -621,6 +608,46 @@ internal fun ThinkingTrace(
                     }
             )
         }
+    }
+}
+
+@Composable
+private fun AssistantMetadataRow(
+    modelDisplayName: String,
+    timestamp: String,
+    fontSize: Int,
+    modifier: Modifier = Modifier
+) {
+    val metaStyle = NexaraTypography.labelSmall.copy(
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+        fontSize = (fontSize - 2).coerceAtLeast(9).sp,
+    )
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth(0.5f)
+            .padding(top = 4.dp, start = 4.dp, end = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (modelDisplayName.isNotBlank()) {
+            Text(
+                text = modelDisplayName,
+                style = metaStyle,
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .testTag(UiTags.CHAT_ASSISTANT_MODEL_METADATA),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        Text(
+            text = timestamp,
+            style = metaStyle,
+            modifier = Modifier.testTag(UiTags.CHAT_ASSISTANT_TIME_METADATA),
+            maxLines = 1,
+        )
     }
 }
 

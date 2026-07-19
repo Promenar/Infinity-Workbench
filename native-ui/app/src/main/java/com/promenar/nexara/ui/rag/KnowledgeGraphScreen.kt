@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -166,8 +167,10 @@ fun KnowledgeGraphScreen(
                 ) {
                     Text(
                         stringResource(R.string.kg_empty_graph),
+                        modifier = Modifier.padding(horizontal = 16.dp),
                         style = NexaraTypography.bodyMedium,
-                        color = NexaraColors.OnSurfaceVariant
+                        color = NexaraColors.OnSurfaceVariant,
+                        textAlign = TextAlign.Center
                     )
                 }
             }

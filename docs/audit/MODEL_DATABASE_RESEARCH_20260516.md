@@ -147,3 +147,17 @@
 ---
 
 *文档结束*
+
+---
+
+## 2026-07-17 勘误（2026-07-18 实施核验）
+
+本勘误只修正 2026-05-16 时点的目录与维护策略结论，不删除或回写上文历史调研。
+
+1. “无可直接引用的开源 JSON 数据库”已不再成立。`https://models.dev/models.json` 提供可机器读取的 provider-agnostic 目录；Nexara 已冻结 258 条规范化离线快照，并以 MIT 归属、schema v2 manifest、源字节/SHA-256、目录 SHA-256、条数和未知字段计数进行校验。
+2. “手动维护 `ModelSpecs.kt`”不再是唯一策略。当前架构由 models.dev 广覆盖目录、Nexara 精确修正、调用方提供的 Provider 精确元数据和用户覆盖逐字段合并；厂商或 Provider 富元数据通过 `ModelMetadataOverride` 接口输入，但是否可获得仍需按具体 Provider 验证。
+3. 公共目录不是所有字段的单一权威。解析优先级为 `USER > PROVIDER > NEXARA_OVERRIDE > MODELS_DEV > FAMILY > FALLBACK`，只做精确 canonical ID/alias 匹配；家族规则只能补充展示信息。
+4. 工作负载、推理能力与 Chat endpoint 兼容性已拆分，能力使用 `SUPPORTED / UNSUPPORTED / UNKNOWN` 三态。unknown 不得自动解释为 chat 或 unsupported。
+5. 上文模型规格、价格和能力值保留为当时调研记录，不因本次架构迁移自动视为当前事实。实际运行值以已审阅离线快照、Nexara 修正、Provider 元数据和用户覆盖的逐字段来源为准。
+
+对应架构决策见 `docs/ADR/ADR-020-layered-model-metadata-registry.md`，第三方许可见 `docs/legal/THIRD_PARTY_NOTICES.md`。

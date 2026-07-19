@@ -41,19 +41,22 @@ class GenerationPresentationStore {
     fun observe(sessionId: String): StateFlow<GenerationPresentationState?> = entry(sessionId)
 
     fun begin(sessionId: String, taskId: String) {
-        entry(sessionId).value = GenerationPresentationState(taskId = taskId, sessionId = sessionId)
+        entries.compute(sessionId) { _, existing ->
+            (existing ?: MutableStateFlow<GenerationPresentationState?>(null)).also { flow ->
+                flow.value = GenerationPresentationState(taskId = taskId, sessionId = sessionId)
+            }
+        }
     }
 
     fun finish(sessionId: String, taskId: String) {
         val flow = entries[sessionId] ?: return
         if (flow.value?.taskId != taskId) return
         flow.value = null
-        entries.remove(sessionId, flow)
     }
 
     fun release(sessionId: String) {
-        val flow = entries[sessionId] ?: return
-        if (flow.value == null) entries.remove(sessionId, flow)
+        // 页面生命周期不得替换按会话订阅的 flow；终态内容由 finish 清空。
+        if (!entries.containsKey(sessionId)) return
     }
 
     fun port(sessionId: String, taskId: String): GenerationUiPort = SessionPort(sessionId, taskId)
@@ -90,15 +93,30 @@ class GenerationPresentationStore {
                 )
                 is GenerationEvent.Failed -> current.copy(
                     error = event.failure,
+                    generating = false,
+                    phase = GenerationPhase.FAILED,
                 )
             }
         }
     }
 
+    fun publishTerminal(
+        sessionId: String,
+        taskId: String,
+        phase: GenerationPhase,
+        failure: GenerationFailure?,
+    ) = update(sessionId, taskId) { current ->
+        current.copy(
+            phase = phase,
+            generating = false,
+            error = failure ?: current.error,
+        )
+    }
+
     private fun entry(sessionId: String): MutableStateFlow<GenerationPresentationState?> =
         entries.getOrPut(sessionId) { MutableStateFlow(null) }
 
-    internal fun retainedSessionStateCount(): Int = entries.size
+    internal fun retainedSessionStateCount(): Int = entries.values.count { it.value != null }
 
     private fun update(
         sessionId: String,

@@ -46,6 +46,24 @@ class AgentHubScreenContractTest {
     }
 
     @Test
+    fun `agent row uses Material3 list item without glass card or chevron`() {
+        val source = hubSource.readText()
+        val row = source.substringAfter("fun AgentCardItem(").substringBefore("private fun EmptyAgentState(")
+
+        assertThat(row).contains("ListItem")
+        assertThat(row).doesNotContain("NexaraGlassCard")
+        assertThat(row).doesNotContain("Icons.Rounded.ChevronRight")
+    }
+
+    @Test
+    fun `agent list is continuous instead of card spaced`() {
+        val source = hubSource.readText()
+        val lazyColumn = source.substringAfter("LazyColumn(").substringBefore("itemsIndexed")
+
+        assertThat(lazyColumn).doesNotContain("verticalArrangement = Arrangement.spacedBy(8.dp)")
+    }
+
+    @Test
     fun `hub exposes stable ui tags for root add search empty list card and actions`() {
         val source = uiTagsSource.readText()
         assertThat(source).contains("HUB_ROOT")
@@ -71,5 +89,23 @@ class AgentHubScreenContractTest {
         assertThat(source).doesNotContain("contentDescription = \"Delete\"")
         assertThat(source).doesNotContain("contentDescription = \"Edit\"")
         assertThat(source).doesNotContain("\"Unpin\"")
+    }
+
+    @Test
+    fun `swipeable item converts dp gesture metrics to pixels`() {
+        val source = swipeSource.readText()
+
+        assertThat(source).contains("LocalDensity.current")
+        assertThat(source).contains("80.dp.toPx()")
+        assertThat(source).contains("screenWidthDp.dp.toPx()")
+    }
+
+    @Test
+    fun `agent list uses rectangular swipe rows and exposes pinned state`() {
+        val source = hubSource.readText()
+        val row = source.substringAfter("fun AgentCardItem(").substringBefore("private fun EmptyAgentState(")
+
+        assertThat(row).contains("shape = RectangleShape")
+        assertThat(row).contains("stateDescription")
     }
 }

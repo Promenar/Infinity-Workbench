@@ -34,6 +34,7 @@ import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Session
+import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.data.backup.BackupExportOptions
 import com.promenar.nexara.data.backup.PendingRestoreMetadata
 import com.promenar.nexara.data.local.db.entity.FileEntry
@@ -100,7 +101,7 @@ import com.promenar.nexara.ui.rag.RagFolderScreenContent
 import com.promenar.nexara.ui.rag.RagFolderScreenState
 import com.promenar.nexara.ui.rag.RagStats
 import com.promenar.nexara.ui.settings.ModelSyncNotice
-import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.settings.ModelTestState
 import com.promenar.nexara.ui.settings.BackupOperations
 import com.promenar.nexara.ui.settings.BackupRestartRequester
@@ -424,6 +425,11 @@ fun providerFormLocalFailureReleasePreview() {
     }
 }
 
+private const val PREVIEW_METADATA_SHORT_NAME = "Nexara Chat"
+private const val PREVIEW_REASONING_MODEL_NAME = "DeepSeek V4 Flash"
+private const val PREVIEW_METADATA_LONG_NAME =
+    "超长模型展示名称：用于边界回归的长名称场景，仍需保持时间戳可见与布局稳定"
+
 @PreviewTest
 @Preview(
     name = "Empty chat English",
@@ -441,6 +447,7 @@ fun emptyChatReleasePreview() {
                     session = previewChatSession(),
                     agentName = "Nexara Assistant",
                 ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
             ),
             actions = ChatScreenActions(),
         )
@@ -477,6 +484,7 @@ fun streamingChatReleasePreview() {
                     status = GenerationStatus.RECEIVING,
                     streamingContent = "正在核对安全、备份、后台生成与视觉回归门禁……",
                 ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
             ),
             actions = ChatScreenActions(),
         )
@@ -514,6 +522,7 @@ fun chatErrorLargeFontReleasePreview() {
                     ),
                     status = GenerationStatus.ERROR,
                 ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
             ),
             actions = ChatScreenActions(),
         )
@@ -545,6 +554,148 @@ fun chatApprovalTabletReleasePreview() {
                         reason = "Writing a release artifact requires approval.",
                     ),
                 ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Chat ready with metadata",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatReadyReleasePreview() {
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    session = previewChatSession(),
+                    agentName = "Nexara Assistant",
+                    messages = listOf(
+                        previewMessage(
+                            id = "user-ready",
+                            role = MessageRole.USER,
+                            content = "Check the next release gate list.",
+                        ),
+                        previewMessage(
+                            id = "assistant-ready",
+                            role = MessageRole.ASSISTANT,
+                            content = "已就绪，我将继续沿用发布清单验证。\n时间与模型元信息将按优先级展示。",
+                            modelId = PREVIEW_CHAT_MODEL_ID,
+                        ),
+                    ),
+                ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Chat long model metadata",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatLongModelMetadataReleasePreview() {
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    session = previewChatSession(),
+                    agentName = "Nexara Assistant",
+                    messages = listOf(
+                        previewMessage(
+                            id = "assistant-long",
+                            role = MessageRole.ASSISTANT,
+                            content = "模型名较长时仍应保持时间戳可见。",
+                            modelId = PREVIEW_CHAT_MODEL_ID,
+                        ),
+                    ),
+                ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_LONG_NAME),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Chat reasoning metadata",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatReasoningModelReleasePreview() {
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    session = previewChatSession(),
+                    agentName = "Nexara Assistant",
+                    messages = listOf(
+                        previewMessage(
+                            id = "assistant-reasoning",
+                            role = MessageRole.ASSISTANT,
+                            content = "推理模型场景测试完成。",
+                            reasoning = "先核对安全与备份门禁，再验证后台生成和视觉回归。",
+                            modelId = PREVIEW_CHAT_MODEL_ID,
+                        ),
+                    ),
+                    isGenerating = true,
+                    status = GenerationStatus.RECEIVING,
+                    streamingContent = "先核对安全与备份门禁，再验证后台生成和视觉回归。",
+                ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_REASONING_MODEL_NAME),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Chat large font scale 2",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    session = previewChatSession().copy(
+                        options = SessionOptions(fontSize = 22),
+                    ),
+                    agentName = "Nexara Assistant",
+                    messages = listOf(
+                        previewMessage(
+                            id = "assistant-large-font",
+                            role = MessageRole.ASSISTANT,
+                            content = "2.0x 字号下仍需确认元信息与时间不重叠。",
+                            modelId = PREVIEW_CHAT_MODEL_ID,
+                        ),
+                    ),
+                    status = GenerationStatus.IDLE,
+                ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
             ),
             actions = ChatScreenActions(),
         )
@@ -623,6 +774,51 @@ fun agentHubReleasePreview() {
                         ),
                         title = "Nexara Assistant",
                         subtitle = "General AI assistant with streaming chat and knowledge retrieval",
+                    ),
+                ),
+            ),
+            actions = AgentHubScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Agent hub populated Chinese large font",
+    widthDp = 360,
+    heightDp = 640,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun agentHubPopulatedLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        AgentHubScreenContent(
+            state = AgentHubScreenState(
+                displayAgents = listOf(
+                    AgentDisplayItem(
+                        agent = Agent(
+                            id = "agent-long-title",
+                            name = "长名称代码架构与发布助手",
+                            description = "负责全栈开发、架构审查、测试与发布验收",
+                            icon = "A",
+                            color = "#5B8DEF",
+                            isPinned = true,
+                        ),
+                        title = "长名称代码架构与发布助手",
+                        subtitle = "负责全栈开发、架构审查、测试与发布验收",
+                    ),
+                    AgentDisplayItem(
+                        agent = Agent(
+                            id = "agent-no-subtitle",
+                            name = "破限助手",
+                            description = "",
+                            icon = "A",
+                            color = "#C0C1FF",
+                        ),
+                        title = "破限助手",
+                        subtitle = "",
                     ),
                 ),
             ),
@@ -1708,6 +1904,29 @@ fun userSettingsProviderEmptyChineseLargeFontReleasePreview() {
 
 @PreviewTest
 @Preview(
+    name = "User settings provider empty Chinese landscape large font",
+    widthDp = 800,
+    heightDp = 360,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun userSettingsProviderEmptyChineseLandscapeLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        UserSettingsHomeScreenContent(
+            state = UserSettingsHomeScreenState(
+                selectedTab = SettingsTab.PROVIDER,
+                providers = emptyList(),
+                localInferenceAvailable = false,
+            ),
+            actions = UserSettingsHomeScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
     name = "Empty chat English landscape",
     widthDp = LANDSCAPE_WIDTH_DP,
     heightDp = LANDSCAPE_HEIGHT_DP,
@@ -1723,6 +1942,7 @@ fun emptyChatEnglishLandscapeReleasePreview() {
                     session = previewChatSession(),
                     agentName = "Nexara Assistant",
                 ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
             ),
             actions = ChatScreenActions(),
         )
@@ -1751,7 +1971,6 @@ fun streamingChatChineseLandscapeReleasePreview() {
                             "assistant-1",
                             MessageRole.ASSISTANT,
                             "正在核对安全、备份、后台生成与视觉回归门禁……",
-                            reasoning = "先核对安全与备份门禁，再验证后台生成和视觉回归。",
                             modelId = PREVIEW_CHAT_MODEL_ID,
                         ),
                     ),
@@ -1759,6 +1978,7 @@ fun streamingChatChineseLandscapeReleasePreview() {
                     status = GenerationStatus.RECEIVING,
                     streamingContent = "正在核对安全、备份、后台生成与视觉回归门禁……",
                 ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
             ),
             actions = ChatScreenActions(),
         )

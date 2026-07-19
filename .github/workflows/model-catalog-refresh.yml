@@ -1,0 +1,99 @@
+name: Model Catalog Refresh
+
+on:
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: model-catalog-refresh-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: 刷新模型目录与提交提案
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 配置 Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.x"
+
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92
+
+      - name: 生成提案分支名
+        id: branch
+        run: |
+          date_prefix="$(date -u +%Y%m%d)"
+          echo "name=chore/model-catalog-refresh-${date_prefix}" >> "$GITHUB_OUTPUT"
+
+      - name: 更新模型快照并写入差异报告（runner temp）
+        run: |
+          mkdir -p "$RUNNER_TEMP/model-catalog"
+          updater_exit_code=0
+          python3 scripts/model-catalog/update-model-catalog.py \
+            --source-url https://models.dev/models.json \
+            --output native-ui/app/src/main/assets/model-catalog/models-dev.normalized.json \
+            --manifest native-ui/app/src/main/assets/model-catalog/manifest.json \
+            --diff-report "$RUNNER_TEMP/model-catalog/model-catalog-diff.md" \
+            --overrides-source native-ui/app/src/main/java/com/promenar/nexara/data/model/catalog/NexaraModelOverrides.kt || updater_exit_code=$?
+          if [ -f "$RUNNER_TEMP/model-catalog/model-catalog-diff.md" ]; then
+            echo "### 模型目录更新差异"
+            echo "### 模型目录更新差异" >> "$GITHUB_STEP_SUMMARY"
+            cat "$RUNNER_TEMP/model-catalog/model-catalog-diff.md"
+            cat "$RUNNER_TEMP/model-catalog/model-catalog-diff.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "未生成差异报告: $RUNNER_TEMP/model-catalog/model-catalog-diff.md"
+            echo "未生成差异报告" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "$updater_exit_code" -ne 0 ]; then
+            exit "$updater_exit_code"
+          fi
+
+      - name: Python 离线校验
+        run: |
+          python3 scripts/model-catalog/update-model-catalog.py \
+            --check \
+            --input native-ui/app/src/main/assets/model-catalog/models-dev.normalized.json \
+            --manifest native-ui/app/src/main/assets/model-catalog/manifest.json
+
+      - name: Python 脚本测试
+        run: |
+          python3 -m unittest scripts.tests.test_update_model_catalog
+
+      - name: Kotlin 目录目标测试
+        working-directory: native-ui
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest --tests 'com.promenar.nexara.data.model.catalog.*'
+
+      - name: 同步到 draft PR
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1
+        with:
+          commit-message: "chore(model-catalog): refresh snapshot"
+          title: "chore(model-catalog): refresh catalog snapshot"
+          body-path: ${{ runner.temp }}/model-catalog/model-catalog-diff.md
+          branch: ${{ steps.branch.outputs.name }}
+          base: ${{ github.event.repository.default_branch }}
+          draft: true
+          add-paths: |
+            native-ui/app/src/main/assets/model-catalog/models-dev.normalized.json
+            native-ui/app/src/main/assets/model-catalog/manifest.json
+            docs/legal/THIRD_PARTY_NOTICES.md
+          labels: |
+            chore
+            model-catalog

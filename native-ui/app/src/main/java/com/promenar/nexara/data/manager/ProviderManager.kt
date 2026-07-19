@@ -6,13 +6,19 @@ import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.model.ProviderSummary
+import com.promenar.nexara.data.model.ModelInfo
+import com.promenar.nexara.data.model.USER_EDITABLE_MODEL_FIELDS
+import com.promenar.nexara.data.model.mergeResolvedMetadata
+import com.promenar.nexara.data.model.migrateLegacyMetadata
+import com.promenar.nexara.data.model.toModelInfo
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
+import com.promenar.nexara.data.model.catalog.SupportState
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.stableModelId
 import com.promenar.nexara.data.security.AndroidKeystoreSecretStore
 import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
-import com.promenar.nexara.ui.settings.ModelInfo
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -20,6 +26,12 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+
+enum class ModelSyncResult {
+    ADDED,
+    UPDATED,
+    UNCHANGED,
+}
 
 /**
  * 统一提供商与模型管理单例 — 全站唯一数据源。
@@ -30,8 +42,12 @@ import kotlinx.coroutines.flow.update
 class ProviderManager private constructor(
     private val app: Application,
     private val secretStore: SecretStore,
+    private val beforeModelMetadataTransform: () -> Unit = {},
+    private val beforeModelPersistenceLock: () -> Unit = {},
+    private val beforeModelPersistenceApply: (List<ModelInfo>) -> Unit = {},
 ) {
     private val suppressedProviderModelsKey = "suppressed_provider_models"
+    private val modelPersistenceLock = Any()
 
     // ── SharedPreferences ────────────────────────────────────────────
     private val providerPrefs: SharedPreferences =
@@ -498,9 +514,9 @@ class ProviderManager private constructor(
         val models = idOrder.map { id ->
             val prefix = "model_info_$id"
             val storedName = settingsPrefs.getString("${prefix}_name", id) ?: id
-            val storedCaps = settingsPrefs.getStringSet("${prefix}_caps", emptySet()) ?: emptySet()
-            val type = settingsPrefs.getString("${prefix}_type", "chat") ?: "chat"
-            val contextLength = settingsPrefs.getInt("${prefix}_context", 8192)
+            val storedCaps = settingsPrefs.getStringSet("${prefix}_caps", emptySet())?.toSet() ?: emptySet()
+            val type = settingsPrefs.getString("${prefix}_type", "unknown") ?: "unknown"
+            val contextLength = settingsPrefs.getInt("${prefix}_context", 0)
             val providerName = settingsPrefs.getString("${prefix}_provider", "Cloud") ?: "Cloud"
             val storedProviderId = settingsPrefs.getString("${prefix}_provider_id", null)
             val remoteModelId = settingsPrefs.getString("${prefix}_remote_model_id", null)
@@ -508,6 +524,16 @@ class ProviderManager private constructor(
             val enabled = enabledSet.contains(id)
             val maxOutput = settingsPrefs.getInt("${prefix}_maxoutput", 0)
             val cutoff = settingsPrefs.getString("${prefix}_cutoff", null)
+            val familyName = settingsPrefs.getString("${prefix}_family", null)
+            val canonicalModelId = settingsPrefs.getString("${prefix}_canonical_id", null)
+            val chatEndpoint = settingsPrefs.getString("${prefix}_chat_endpoint", null)
+                ?.let { value -> runCatching { SupportState.valueOf(value) }.getOrNull() }
+                ?: SupportState.UNKNOWN
+            val autoFingerprint = settingsPrefs.getString("${prefix}_auto_fingerprint", null)
+            val userEditedFields = settingsPrefs
+                .getStringSet("${prefix}_user_edited_fields", emptySet())
+                ?.intersect(USER_EDITABLE_MODEL_FIELDS)
+                ?: emptySet()
 
             var model = ModelInfo(
                 name = storedName,
@@ -521,23 +547,28 @@ class ProviderManager private constructor(
                 providerId = storedProviderId,
                 remoteModelId = remoteModelId,
                 maxOutputTokens = maxOutput,
-                knowledgeCutoff = cutoff
+                knowledgeCutoff = cutoff,
+                familyName = familyName,
+                canonicalModelId = canonicalModelId,
+                chatEndpointCompatible = chatEndpoint,
+                autoMetadataFingerprint = autoFingerprint,
+                userEditedFields = userEditedFields,
             )
 
-            // 迁移逻辑：自动修复名称和能力
-            val hasStoredCaps = settingsPrefs.contains("${prefix}_caps")
-            val hasStoredContext = settingsPrefs.contains("${prefix}_context")
-            val hasStoredMaxOutput = settingsPrefs.contains("${prefix}_maxoutput")
-            val hasStoredCutoff = settingsPrefs.contains("${prefix}_cutoff")
-
-            var migratedModel = migrateModelIfNeeded(
-                model,
-                hasStoredCaps = hasStoredCaps,
-                hasStoredContext = hasStoredContext,
-                hasStoredMaxOutput = hasStoredMaxOutput,
-                hasStoredCutoff = hasStoredCutoff
-            )
-            if (migratedModel !== model) {
+            val resolved = ModelCatalogRuntime.resolver.resolve(remoteModelId, storedProviderId)
+            val storedFieldPresence = buildSet {
+                if (settingsPrefs.contains("${prefix}_name")) add("name")
+                if (settingsPrefs.contains("${prefix}_type")) add("type")
+                if (settingsPrefs.contains("${prefix}_caps")) add("capabilities")
+                if (settingsPrefs.contains("${prefix}_context")) add("contextLength")
+                if (settingsPrefs.contains("${prefix}_maxoutput")) add("maxOutputTokens")
+            }
+            val migratedModel = if (autoFingerprint != null || userEditedFields.isNotEmpty()) {
+                model.mergeResolvedMetadata(resolved)
+            } else {
+                model.migrateLegacyMetadata(resolved, storedFieldPresence)
+            }
+            if (migratedModel != model) {
                 migrated = true
             }
             // v0.2 不迁移旧裸 ID：旧版必须卸载。残留裸 ID 会由 Router typed fail，
@@ -553,154 +584,6 @@ class ProviderManager private constructor(
         }
     }
 
-    /**
-     * 检测并修复模型的元数据（名称和能力）。
-     * 针对旧版本中 name = id 或 capabilities 构建不全的问题。
-     */
-    private fun migrateModelIfNeeded(
-        model: ModelInfo,
-        hasStoredCaps: Boolean,
-        hasStoredContext: Boolean,
-        hasStoredMaxOutput: Boolean,
-        hasStoredCutoff: Boolean
-    ): ModelInfo {
-        val spec = com.promenar.nexara.data.model.findModelSpec(model.remoteModelId) ?: return model
-        migrateShadowedAutoMetadataFingerprint(
-            model = model,
-            resolvedSpec = spec,
-            hasStoredCaps = hasStoredCaps,
-            hasStoredContext = hasStoredContext,
-            hasStoredMaxOutput = hasStoredMaxOutput,
-            hasStoredCutoff = hasStoredCutoff,
-        )?.let { return it }
-        var changed = false
-
-        // 1. 修复名称：如果是原始 ID 且 Spec 中有更好的名字，则替换
-        val newName = if (model.name == model.id && spec.note?.isNotEmpty() == true) {
-            changed = true
-            spec.note!!
-        } else model.name
-
-        // 2. 修复能力：仅当 SharedPreferences 中没有存储过能力集时，才从 Spec 按需对齐初始化
-        val newCaps = if (!hasStoredCaps) {
-            val correctCaps = buildModelCapabilities(model.type, spec)
-            if (model.capabilities.toSet() != correctCaps.toSet()) {
-                changed = true
-                correctCaps
-            } else model.capabilities
-        } else model.capabilities
-
-        // 3. 修复上下文长度：仅当 SharedPreferences 中没有存储过上下文长度时，才从 Spec 按需对齐初始化
-        val newContext = if (!hasStoredContext && spec.contextLength > 0 && model.contextLength != spec.contextLength) {
-            changed = true
-            spec.contextLength
-        } else model.contextLength
-
-        // 4. 修复最大输出 token：仅当 SharedPreferences 中没有存储过最大输出时，才从 Spec 对齐初始化
-        val newMaxOutput = if (!hasStoredMaxOutput && spec.maxOutputTokens > 0 && model.maxOutputTokens == 0) {
-            changed = true
-            spec.maxOutputTokens
-        } else model.maxOutputTokens
-
-        // 5. 修复知识截止日期：仅当 SharedPreferences 中没有存储过截止日期时，才从 Spec 对齐初始化
-        val newCutoff = if (!hasStoredCutoff && spec.knowledgeCutoff != null && model.knowledgeCutoff == null) {
-            changed = true
-            spec.knowledgeCutoff
-        } else model.knowledgeCutoff
-
-        return if (changed) {
-            model.copy(
-                name = newName,
-                capabilities = newCaps,
-                contextLength = newContext,
-                maxOutputTokens = newMaxOutput,
-                knowledgeCutoff = newCutoff
-            )
-        } else model
-    }
-
-    /**
-     * 旧版按声明顺序取首个匹配项，可能把具体模型持久化为通用家族元数据。
-     * 只有全部持久化字段仍精确等于旧自动生成指纹时才整体迁移；任一字段被用户
-     * 修改都放弃迁移，避免把自定义名称、能力或上下文误当成旧数据覆盖。
-     */
-    private fun migrateShadowedAutoMetadataFingerprint(
-        model: ModelInfo,
-        resolvedSpec: com.promenar.nexara.data.model.ModelSpec,
-        hasStoredCaps: Boolean,
-        hasStoredContext: Boolean,
-        hasStoredMaxOutput: Boolean,
-        hasStoredCutoff: Boolean,
-    ): ModelInfo? {
-        val legacySpec = com.promenar.nexara.data.model.MODEL_SPECS
-            .firstOrNull { it.pattern.matches(model.remoteModelId) }
-            ?: return null
-        if (legacySpec === resolvedSpec) return null
-
-        val legacyType = legacySpec.type?.name?.lowercase() ?: "chat"
-        val legacyName = legacySpec.note ?: model.remoteModelId
-        val legacyCapabilities = buildModelCapabilities(legacyType, legacySpec)
-        val cutoffStorageMatches = if (legacySpec.knowledgeCutoff == null) {
-            !hasStoredCutoff && model.knowledgeCutoff == null
-        } else {
-            hasStoredCutoff && model.knowledgeCutoff == legacySpec.knowledgeCutoff
-        }
-        val isUntouchedLegacyFingerprint =
-            hasStoredCaps &&
-                hasStoredContext &&
-                hasStoredMaxOutput &&
-                cutoffStorageMatches &&
-                model.name == legacyName &&
-                model.type == legacyType &&
-                model.contextLength == legacySpec.contextLength &&
-                model.capabilities.toSet() == legacyCapabilities.toSet() &&
-                model.maxOutputTokens == legacySpec.maxOutputTokens
-        if (!isUntouchedLegacyFingerprint) return null
-
-        val resolvedType = resolvedSpec.type?.name?.lowercase() ?: legacyType
-        return model.copy(
-            name = resolvedSpec.note ?: model.remoteModelId,
-            type = resolvedType,
-            contextLength = resolvedSpec.contextLength,
-            capabilities = buildModelCapabilities(resolvedType, resolvedSpec),
-            maxOutputTokens = resolvedSpec.maxOutputTokens,
-            knowledgeCutoff = resolvedSpec.knowledgeCutoff,
-        )
-    }
-
-    /**
-     * 根据 ModelType 和 ModelSpec 构建完整的 capability 列表。
-     */
-    fun buildModelCapabilities(
-        type: String,
-        spec: com.promenar.nexara.data.model.ModelSpec?
-    ): List<String> = buildList {
-        // 根据 ModelType 推导基础 capability
-        when (type) {
-            "chat" -> add("chat")
-            "reasoning" -> { add("chat"); add("reasoning") }
-            "image" -> add("image")
-            "embedding" -> add("embedding")
-            "rerank" -> add("rerank")
-            else -> add("chat")
-        }
-        // 从 ModelSpec.capabilities 补充细粒度能力
-        spec?.capabilities?.let { caps ->
-            if (caps.vision && "vision" !in this) add("vision")
-            if (caps.internet && "internet" !in this) add("internet")
-            if (caps.reasoning && "reasoning" !in this) add("reasoning")
-            if (caps.image && "image" !in this) add("image")
-            if (caps.embedding && "embedding" !in this) add("embedding")
-            if (caps.rerank && "rerank" !in this) add("rerank")
-            if (caps.audioInput) add("audioinput")
-            if (caps.audioOutput) add("audiooutput")
-            if (caps.videoUnderstanding) add("videounderstanding")
-            if (caps.structuredOutput) add("structuredoutput")
-            if (caps.promptCaching) add("promptcaching")
-            if (caps.computerUse) add("computeruse")
-        }
-    }
-
     fun toggleModel(id: String) {
         _providerModels.update { models ->
             models.map { if (it.id == id) it.copy(enabled = !it.enabled) else it }
@@ -709,9 +592,12 @@ class ProviderManager private constructor(
     }
 
     fun addModel(model: ModelInfo) {
-        val normalized = model.providerId?.let { providerId ->
-            model.copy(id = stableModelId(providerId, model.remoteModelId))
-        } ?: model
+        val sanitized = model.copy(
+            userEditedFields = model.userEditedFields.intersect(USER_EDITABLE_MODEL_FIELDS),
+        )
+        val normalized = sanitized.providerId?.let { providerId ->
+            sanitized.copy(id = stableModelId(providerId, sanitized.remoteModelId))
+        } ?: sanitized
         _providerModels.update { models ->
             require(models.none { it.id == normalized.id }) { "模型 ID 已存在: ${normalized.id}" }
             models + normalized
@@ -727,25 +613,18 @@ class ProviderManager private constructor(
         if (remoteId.isEmpty()) return false
         val stableId = stableModelId(providerId, remoteId)
         if (_providerModels.value.any { it.id == stableId }) return false
-        val spec = com.promenar.nexara.data.model.findModelSpec(remoteId)
-        val type = spec?.type?.name?.lowercase() ?: "chat"
+        val resolved = ModelCatalogRuntime.resolver.resolve(remoteId, providerId)
         return runCatching {
-            addModel(
-                ModelInfo(
-                    name = displayName.trim().ifEmpty { spec?.note ?: remoteId },
-                    id = stableId,
-                    remoteModelId = remoteId,
-                    description = spec?.note ?: "Custom model",
-                    enabled = true,
-                    type = type,
-                    contextLength = spec?.contextLength ?: 8192,
-                    capabilities = buildModelCapabilities(type, spec),
-                    providerName = provider.name,
-                    providerId = providerId,
-                    maxOutputTokens = spec?.maxOutputTokens ?: 0,
-                    knowledgeCutoff = spec?.knowledgeCutoff,
-                ),
-            )
+            val customName = displayName.trim()
+            addModel(resolved.toModelInfo(
+                providerId = providerId,
+                providerName = provider.name,
+                enabled = true,
+                description = "Custom model",
+            ).copy(
+                name = customName.ifEmpty { resolved.displayName },
+                userEditedFields = if (customName.isEmpty()) emptySet() else setOf("name"),
+            ))
         }.isSuccess
     }
 
@@ -754,29 +633,88 @@ class ProviderManager private constructor(
         if (providerId in settingsPrefs.getStringSet(suppressedProviderModelsKey, emptySet()).orEmpty()) return
         val id = stableModelId(providerId, remoteModelId)
         if (_providerModels.value.any { it.id == id }) return
-        val spec = com.promenar.nexara.data.model.findModelSpec(remoteModelId)
-        val type = spec?.type?.name?.lowercase() ?: "chat"
-        addModel(
-            ModelInfo(
-                name = spec?.note ?: remoteModelId,
-                id = id,
-                remoteModelId = remoteModelId,
-                description = spec?.note ?: "Provider configured model",
-                enabled = true,
-                type = type,
-                contextLength = spec?.contextLength ?: 8192,
-                capabilities = buildModelCapabilities(type, spec),
-                providerName = providerName,
-                providerId = providerId,
-                maxOutputTokens = spec?.maxOutputTokens ?: 0,
-                knowledgeCutoff = spec?.knowledgeCutoff,
-            )
-        )
+        val resolved = ModelCatalogRuntime.resolver.resolve(remoteModelId, providerId)
+        addModel(resolved.toModelInfo(
+            providerId = providerId,
+            providerName = providerName,
+            enabled = true,
+            description = "Provider configured model",
+        ))
     }
 
-    fun updateModel(updated: ModelInfo) {
+    fun syncModelMetadata(
+        providerId: String,
+        providerName: String,
+        remoteModelId: String,
+    ): ModelSyncResult {
+        val resolved = ModelCatalogRuntime.resolver.resolve(remoteModelId, providerId)
+        val id = stableModelId(providerId, remoteModelId)
+        var result = ModelSyncResult.UNCHANGED
         _providerModels.update { models ->
-            models.map { if (it.id == updated.id) updated else it }
+            val existing = models.firstOrNull { it.id == id }
+            if (existing == null) {
+                result = ModelSyncResult.ADDED
+                models + resolved.toModelInfo(
+                    providerId = providerId,
+                    providerName = providerName,
+                    enabled = false,
+                    description = resolved.familyName ?: "Fetched model",
+                )
+            } else {
+                beforeModelMetadataTransform()
+                val merged = existing.mergeResolvedMetadata(resolved)
+                result = if (merged == existing) ModelSyncResult.UNCHANGED else ModelSyncResult.UPDATED
+                if (result == ModelSyncResult.UNCHANGED) models
+                else models.map { if (it.id == id) merged else it }
+            }
+        }
+        if (result != ModelSyncResult.UNCHANGED) {
+            clearProviderModelSuppression(providerId)
+            persistModels()
+        }
+        return result
+    }
+
+    fun applyUserModelUpdate(submitted: ModelInfo) {
+        val submittedFields = submitted.userEditedFields.intersect(USER_EDITABLE_MODEL_FIELDS)
+        var changed = false
+        _providerModels.update { models ->
+            models.map { current ->
+                if (current.id != submitted.id) return@map current
+                val updated = current.copy(
+                    name = if ("name" in submittedFields) submitted.name else current.name,
+                    type = if ("type" in submittedFields) submitted.type else current.type,
+                    capabilities = if ("capabilities" in submittedFields) {
+                        submitted.capabilities.toList()
+                    } else {
+                        current.capabilities
+                    },
+                    contextLength = if ("contextLength" in submittedFields) {
+                        submitted.contextLength
+                    } else {
+                        current.contextLength
+                    },
+                    maxOutputTokens = if ("maxOutputTokens" in submittedFields) {
+                        submitted.maxOutputTokens
+                    } else {
+                        current.maxOutputTokens
+                    },
+                    userEditedFields = current.userEditedFields.intersect(USER_EDITABLE_MODEL_FIELDS) +
+                        submittedFields,
+                )
+                if (updated != current) changed = true
+                updated
+            }
+        }
+        if (changed) persistModels()
+    }
+
+    internal fun replaceModelFromInternalFlow(updated: ModelInfo) {
+        val sanitized = updated.copy(
+            userEditedFields = updated.userEditedFields.intersect(USER_EDITABLE_MODEL_FIELDS),
+        )
+        _providerModels.update { models ->
+            models.map { if (it.id == sanitized.id) sanitized else it }
         }
         persistModels()
     }
@@ -805,31 +743,41 @@ class ProviderManager private constructor(
     }
 
     private fun persistModels() {
-        val models = _providerModels.value
-        val allIds = models.map { it.id }.toSet()
-        val enabled = models.filter { it.enabled }.map { it.id }.toSet()
-        settingsPrefs.edit()
-            .putStringSet("all_models", allIds)
-            .putStringSet("enabled_models", enabled)
-            .putString("all_models_order", models.joinToString(",") { it.id })
-            .apply()
-        models.forEach { model ->
-            val prefix = "model_info_${model.id}"
-            settingsPrefs.edit()
-                .putString("${prefix}_name", model.name)
-                .putString("${prefix}_type", model.type)
-                .putInt("${prefix}_context", model.contextLength)
-                .putStringSet("${prefix}_caps", model.capabilities.toSet())
-                .putString("${prefix}_provider", model.providerName)
-                .putString("${prefix}_provider_id", model.providerId)
-                .putString("${prefix}_remote_model_id", model.remoteModelId)
-                .putInt("${prefix}_maxoutput", model.maxOutputTokens)
-                .apply()
-            if (model.knowledgeCutoff != null) {
-                settingsPrefs.edit()
-                    .putString("${prefix}_cutoff", model.knowledgeCutoff)
-                    .apply()
+        beforeModelPersistenceLock()
+        synchronized(modelPersistenceLock) {
+            val models = _providerModels.value
+            val editor = settingsPrefs.edit()
+                .putStringSet("all_models", models.map { it.id }.toSet())
+                .putStringSet("enabled_models", models.filter { it.enabled }.map { it.id }.toSet())
+                .putString("all_models_order", models.joinToString(",") { it.id })
+            models.forEach { model ->
+                val prefix = "model_info_${model.id}"
+                editor.apply {
+                    putString("${prefix}_name", model.name)
+                    putString("${prefix}_type", model.type)
+                    putInt("${prefix}_context", model.contextLength)
+                    putStringSet("${prefix}_caps", LinkedHashSet(model.capabilities))
+                    putString("${prefix}_provider", model.providerName)
+                    putString("${prefix}_provider_id", model.providerId)
+                    putString("${prefix}_remote_model_id", model.remoteModelId)
+                    putInt("${prefix}_maxoutput", model.maxOutputTokens)
+                    putString("${prefix}_chat_endpoint", model.chatEndpointCompatible.name)
+                    putStringSet(
+                        "${prefix}_user_edited_fields",
+                        LinkedHashSet(model.userEditedFields.intersect(USER_EDITABLE_MODEL_FIELDS)),
+                    )
+                    if (model.knowledgeCutoff == null) remove("${prefix}_cutoff")
+                    else putString("${prefix}_cutoff", model.knowledgeCutoff)
+                    if (model.familyName == null) remove("${prefix}_family")
+                    else putString("${prefix}_family", model.familyName)
+                    if (model.canonicalModelId == null) remove("${prefix}_canonical_id")
+                    else putString("${prefix}_canonical_id", model.canonicalModelId)
+                    if (model.autoMetadataFingerprint == null) remove("${prefix}_auto_fingerprint")
+                    else putString("${prefix}_auto_fingerprint", model.autoMetadataFingerprint)
+                }
             }
+            beforeModelPersistenceApply(models)
+            editor.apply()
         }
     }
 
@@ -894,8 +842,19 @@ class ProviderManager private constructor(
             }
         }
 
-        internal fun createForTest(app: Application, secretStore: SecretStore): ProviderManager =
-            ProviderManager(app, secretStore)
+        internal fun createForTest(
+            app: Application,
+            secretStore: SecretStore,
+            beforeModelMetadataTransform: () -> Unit = {},
+            beforeModelPersistenceLock: () -> Unit = {},
+            beforeModelPersistenceApply: (List<ModelInfo>) -> Unit = {},
+        ): ProviderManager = ProviderManager(
+            app,
+            secretStore,
+            beforeModelMetadataTransform,
+            beforeModelPersistenceLock,
+            beforeModelPersistenceApply,
+        )
 
         fun getInstance(): ProviderManager {
             return INSTANCE ?: throw IllegalStateException(

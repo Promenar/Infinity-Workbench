@@ -812,7 +812,9 @@ class VectorizationQueue(
             )
 
             val tasks = interruptedTasks.map { it.toTask() }
-            val attention = vectorizationTaskDao.getAttentionTasks().map { it.toTask() }
+            val attention = normalizeAttentionTasks(
+                vectorizationTaskDao.getAttentionTasks(),
+            ).map { it.toTask() }
 
             synchronized(queueLock) {
                 retainedAttention.clear()
@@ -877,6 +879,27 @@ class VectorizationQueue(
                 updatedAt = System.currentTimeMillis(),
             ),
         )
+        null
+    }
+
+    private suspend fun normalizeAttentionTasks(
+        tasks: List<VectorizationTaskEntity>,
+    ): List<VectorizationTaskEntity> = tasks.mapNotNull { task ->
+        if (task.type != LEGACY_DOCUMENT_TASK_TYPE) return@mapNotNull task
+
+        val root = task.workspaceRootUuid
+        val docId = task.docId
+        val hasIdentity = root != null && docId != null
+        val hasCurrentFile = hasIdentity && (
+            fileEntryDao == null || fileEntryDao.getByUuid(root, docId) != null
+        )
+        if (hasCurrentFile) return@mapNotNull task
+
+        if (docId != null) {
+            vectorDao.deleteByDocId(docId)
+            graphExtractor?.clearPersistedGraphForDoc(docId)
+        }
+        vectorizationTaskDao.delete(task)
         null
     }
 
@@ -1249,6 +1272,7 @@ class VectorizationQueue(
     companion object {
         private const val MAX_RETRIES = 3
         const val TYPE_DOCUMENT_REFERENCE = "document_reference"
+        private const val LEGACY_DOCUMENT_TASK_TYPE = "document"
         private val PROCESSING_STATUSES = setOf(
             "processing", "extracting_source", "chunking", "vectorizing", "saving", "extracting",
         )

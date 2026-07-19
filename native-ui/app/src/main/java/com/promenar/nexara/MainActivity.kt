@@ -30,7 +30,7 @@ import com.promenar.nexara.navigation.AppIntentRouter
 import com.promenar.nexara.navigation.initialOnboardingDestination
 import com.promenar.nexara.onboarding.OnboardingState
 import com.promenar.nexara.onboarding.OnboardingStateStore
-import com.promenar.nexara.ui.settings.ModelInfo
+import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.chat.ChatRoute
 import com.promenar.nexara.ui.chat.ChatRouteDependencies
 import com.promenar.nexara.share.core.AndroidShareIndexScheduler

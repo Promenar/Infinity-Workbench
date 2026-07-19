@@ -71,6 +71,53 @@ class VectorizationQueueRoomTest {
     }
 
     @Test
+    fun `空库冷启动会清理已删除文档遗留的失败任务`() = runTest {
+        database.vectorizationTaskDao().insert(
+            VectorizationTaskEntity(
+                id = TASK,
+                type = "document",
+                status = "failed",
+                docTitle = source.name,
+                progress = 0.0,
+                error = "历史索引失败",
+                createdAt = 1,
+                updatedAt = 1,
+            ),
+        )
+        val queue = queue(StandardTestDispatcher(testScheduler))
+
+        assertThat(queue.resumeInterruptedTasks().isSuccess).isTrue()
+
+        assertThat(database.vectorizationTaskDao().getById(TASK)).isNull()
+        assertThat(queue.snapshotState().queue).isEmpty()
+        assertThat(queue.snapshotState().currentTask).isNull()
+        queue.shutdown()
+    }
+
+    @Test
+    fun `现代文件引用attention不会被legacy空库清理误删`() = runTest {
+        database.vectorizationTaskDao().insert(
+            VectorizationTaskEntity(
+                id = TASK,
+                type = VectorizationQueue.TYPE_DOCUMENT_REFERENCE,
+                status = "failed",
+                docTitle = source.name,
+                progress = 0.0,
+                error = "等待文件事件协调器处理",
+                createdAt = 1,
+                updatedAt = 1,
+            ),
+        )
+        val queue = queue(StandardTestDispatcher(testScheduler))
+
+        assertThat(queue.resumeInterruptedTasks().isSuccess).isTrue()
+
+        assertThat(database.vectorizationTaskDao().getById(TASK)).isNotNull()
+        assertThat(queue.snapshotState().queue.map { it.id }).contains(TASK)
+        queue.shutdown()
+    }
+
+    @Test
     fun `配置reset等待旧queue停止并把处理中任务交接给新queue恢复`() = runTest {
         seedFileAndTask("vectorizing")
         val holder = com.promenar.nexara.utils.SynchronizedResettableResource<VectorizationQueue>(

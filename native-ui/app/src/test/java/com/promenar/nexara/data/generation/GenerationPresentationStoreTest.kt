@@ -24,6 +24,9 @@ class GenerationPresentationStoreTest {
         store.accept("A", "task-A", GenerationEvent.Failed(failSnapshot))
 
         assertThat(store.observe("A").value?.error).isSameInstanceAs(failSnapshot)
+        assertThat(store.observe("A").value?.phase)
+            .isEqualTo(com.promenar.nexara.domain.generation.GenerationPhase.FAILED)
+        assertThat(store.observe("A").value?.generating).isFalse()
         assertThat(store.observe("A").value?.error?.code).isEqualTo(GenerationFailureCode.RATE_LIMIT)
         assertThat(store.observe("A").value?.error?.retryAfterSeconds).isEqualTo(37)
         assertThat(store.observe("A").value?.error?.cause).isSameInstanceAs(cause)
@@ -111,5 +114,35 @@ class GenerationPresentationStoreTest {
 
         assertThat(store.observe("A").value?.taskId).isEqualTo("new")
         assertThat(store.observe("A").value?.streamingContent).isEqualTo("fresh")
+    }
+
+    @Test
+    fun `同会话终态后再次生成必须复用原订阅flow`() = runTest {
+        val store = GenerationPresentationStore()
+        val observed = store.observe("A")
+
+        store.begin("A", "first")
+        store.finish("A", "first")
+        store.begin("A", "second")
+        store.port("A", "second").setStreamingContent("second turn")
+
+        assertThat(store.observe("A")).isSameInstanceAs(observed)
+        assertThat(observed.value?.taskId).isEqualTo("second")
+        assertThat(observed.value?.streamingContent).isEqualTo("second turn")
+    }
+
+    @Test
+    fun `旧页面基于空快照释放时不得移除并发开始的新任务`() = runTest {
+        val store = GenerationPresentationStore()
+        val observed = store.observe("A")
+        assertThat(observed.value).isNull()
+
+        store.release("A")
+        store.begin("A", "new-task")
+        store.port("A", "new-task").setStreamingContent("visible")
+
+        assertThat(store.observe("A")).isSameInstanceAs(observed)
+        assertThat(observed.value?.taskId).isEqualTo("new-task")
+        assertThat(observed.value?.streamingContent).isEqualTo("visible")
     }
 }

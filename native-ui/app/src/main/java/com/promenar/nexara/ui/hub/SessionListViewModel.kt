@@ -15,11 +15,15 @@ import com.promenar.nexara.ui.chat.manager.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class SessionListViewModel(
     private val store: ChatStore,
@@ -28,6 +32,7 @@ class SessionListViewModel(
 ) : ViewModel() {
 
     private val sessionManager = SessionManager(store, sessionRepository)
+    private val sessionMutationMutex = Mutex()
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery
@@ -39,6 +44,9 @@ class SessionListViewModel(
 
     private val _agentColor = MutableStateFlow("#C0C1FF")
     val agentColor: StateFlow<String> = _agentColor
+
+    private val _operationFailed = MutableStateFlow(false)
+    val operationFailed: StateFlow<Boolean> = _operationFailed.asStateFlow()
 
     val sessions: StateFlow<List<Session>> = combine(
         store.state,
@@ -74,9 +82,8 @@ class SessionListViewModel(
             } catch (_: Exception) {}
 
             try {
-                val all = sessionRepository.getAll()
-                store.update { state ->
-                    state.copy(sessions = all)
+                sessionMutationMutex.withLock {
+                    refreshSessionsFromRepository()
                 }
             } catch (_: Exception) {}
         }
@@ -84,6 +91,7 @@ class SessionListViewModel(
 
     fun createSession(agentId: String, onCreated: (String) -> Unit) {
         viewModelScope.launch {
+            _operationFailed.value = false
             val agent = try { agentRepository.observeById(agentId).first() } catch (_: Exception) { null }
             val defaultModelId = agent?.modelId
                 ?.takeIf { it.isNotBlank() }
@@ -103,14 +111,23 @@ class SessionListViewModel(
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
             )
-            sessionManager.addSession(session)
+            try {
+                sessionMutationMutex.withLock {
+                    sessionManager.addSession(session)
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                _operationFailed.value = true
+                return@launch
+            }
             onCreated(sessionId)
         }
     }
 
     fun deleteSession(id: String) {
         viewModelScope.launch {
-            sessionManager.deleteSession(id)
+            runSessionOperation { sessionManager.deleteSession(id) }
         }
     }
 
@@ -120,8 +137,12 @@ class SessionListViewModel(
 
     fun pinSession(id: String) {
         viewModelScope.launch {
-            sessionManager.toggleSessionPin(id)
+            runSessionOperation { sessionManager.toggleSessionPin(id) }
         }
+    }
+
+    fun dismissOperationFailure() {
+        _operationFailed.value = false
     }
 
     fun selectSession(sessionId: String) {
@@ -136,6 +157,25 @@ class SessionListViewModel(
             providerManager.summaryModelId.value.takeIf { it.isNotBlank() }
                 ?: providerManager.getMainConfiguredModelId()
         }.getOrNull()
+    }
+
+    private suspend fun runSessionOperation(operation: suspend () -> Unit) {
+        _operationFailed.value = false
+        try {
+            sessionMutationMutex.withLock { operation() }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            _operationFailed.value = true
+        }
+    }
+
+    private suspend fun refreshSessionsFromRepository() {
+        repeat(2) {
+            val expectedVersion = store.get().sessionCatalogVersion
+            val all = sessionRepository.getAll()
+            if (store.replaceSessionsIfCatalogUnchanged(expectedVersion, all)) return
+        }
     }
 
     companion object {

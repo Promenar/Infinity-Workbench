@@ -367,6 +367,52 @@ class VectorizationQueueReferenceTest {
     }
 
     @Test
+    fun `恢复会清理身份完整但文件已删除的legacy失败任务及其产物`() = runTest {
+        val taskDao = mockk<VectorizationTaskDao>()
+        val failed = VectorizationTaskEntity(
+            id = "legacy-deleted-file",
+            type = "document",
+            status = "failed",
+            docId = DOC,
+            workspaceRootUuid = ROOT,
+            docTitle = "deleted.txt",
+            error = "embedding unavailable",
+            createdAt = 1,
+            updatedAt = 1,
+        )
+        coEvery { taskDao.getCompletedDocumentReferenceTasks() } returns emptyList()
+        coJustRun { taskDao.deleteCompletedNonReferenceTasks() }
+        coJustRun { taskDao.markStaleAsInterrupted(any()) }
+        coEvery { taskDao.getRecoverableTasks() } returns emptyList()
+        coEvery { taskDao.getAttentionTasks() } returns listOf(failed)
+        coJustRun { taskDao.delete(failed) }
+        val fileDao = mockk<FileEntryDao>()
+        coEvery { fileDao.getByUuid(ROOT, DOC) } returns null
+        coEvery { fileDao.getUnvectorizedSupportedFiles(any()) } returns emptyList()
+        val vectorDao = mockk<VectorDao>()
+        coJustRun { vectorDao.deleteByDocId(DOC) }
+        val graphExtractor = mockk<GraphExtractor>()
+        coJustRun { graphExtractor.clearPersistedGraphForDoc(DOC) }
+        val queue = VectorizationQueue(
+            vectorStore = mockk(relaxed = true),
+            embeddingClient = mockk(relaxed = true),
+            graphExtractor = graphExtractor,
+            vectorDao = vectorDao,
+            vectorizationTaskDao = taskDao,
+            dispatcher = StandardTestDispatcher(testScheduler),
+            fileEntryDao = fileDao,
+        )
+
+        assertThat(queue.resumeInterruptedTasks().isSuccess).isTrue()
+
+        coVerify(exactly = 1) { vectorDao.deleteByDocId(DOC) }
+        coVerify(exactly = 1) { graphExtractor.clearPersistedGraphForDoc(DOC) }
+        coVerify(exactly = 1) { taskDao.delete(failed) }
+        assertThat(queue.snapshotState().queue).isEmpty()
+        queue.shutdown()
+    }
+
+    @Test
     fun `失败文件任务重新入队时Entity到内存模型保留target`() = runTest {
         val taskDao = mockk<VectorizationTaskDao>(relaxed = true)
         val existing = entity("target-retry").copy(

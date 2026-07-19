@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SmoothStreamContentTest {
@@ -73,6 +74,45 @@ class SmoothStreamContentTest {
         )
 
         assertThat(rendered).isEqualTo("首个")
+    }
+
+    @Test
+    fun `默认平衡模式不积压普通chunk而由绘制层负责尾部淡入`() {
+        val target = "这是一个需要平滑呈现的普通流式文本片段"
+
+        val rendered = reduceSmoothStreamContent(
+            displayed = "",
+            target = target,
+            isStreaming = true,
+            cps = StreamSpeed.BALANCED.cps,
+        )
+
+        assertThat(rendered).isEqualTo(target)
+    }
+
+    @Test
+    fun `尾部淡入只在流式正文非空时启用`() {
+        assertThat(streamTailFadeStartAlpha(true, "", "hello", 1f)).isLessThan(1f)
+        assertThat(streamTailFadeStartAlpha(false, "", "hello", 1f)).isEqualTo(1f)
+        assertThat(streamTailFadeStartAlpha(true, "hello", "other", 0.8f)).isEqualTo(1f)
+        assertThat(streamTailFadeStartAlpha(true, "hello", "hello world", 0.9f)).isGreaterThan(0.68f)
+        assertThat(STREAM_TAIL_FADE_DURATION_MS).isAtLeast(100)
+        assertThat(STREAM_TAIL_FADE_DURATION_MS).isAtMost(180)
+    }
+
+    @Test
+    fun `尾部淡入使用透明alpha遮罩且不覆盖整个富媒体容器`() {
+        val root = File(System.getProperty("user.dir") ?: ".").let {
+            if (it.resolve("src/main").isDirectory) it else it.resolve("app")
+        }
+        val source = root.resolve(
+            "src/main/java/com/promenar/nexara/ui/common/MarkdownText.kt",
+        ).readText()
+
+        assertThat(source).contains("BlendMode.DstIn")
+        assertThat(source).contains("CompositingStrategy.Offscreen")
+        assertThat(source).contains("index == mergedSegments.lastIndex")
+        assertThat(source).doesNotContain("veilColor")
     }
 
     @Test

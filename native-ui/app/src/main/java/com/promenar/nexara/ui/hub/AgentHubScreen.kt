@@ -15,15 +15,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.graphics.toColorInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
@@ -350,7 +351,6 @@ internal fun AgentHubScreenContent(
                     start = 20.dp, end = 20.dp,
                     top = 8.dp, bottom = 24.dp
                 ),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 stickyHeader {
                     Box(
@@ -368,7 +368,7 @@ internal fun AgentHubScreenContent(
                     }
                 }
 
-                itemsIndexed(state.displayAgents, key = { _, item -> item.agent.id }) { _, item ->
+                itemsIndexed(state.displayAgents, key = { _, item -> item.agent.id }) { index, item ->
                     val agent = item.agent
                     val parsedColor = try {
                         Color(agent.color.toColorInt())
@@ -385,6 +385,7 @@ internal fun AgentHubScreenContent(
                         subtitle = item.subtitle,
                         iconContainerColor = parsedColor,
                         isPinned = agent.isPinned,
+                        showDivider = index < state.displayAgents.lastIndex,
                         onPin = { actions.onTogglePin(agent.id) },
                         onDelete = { actions.onRequestDelete(agent.id) },
                         onEdit = { actions.onEdit(agent.id) },
@@ -408,134 +409,138 @@ fun AgentCardItem(
     subtitle: String,
     iconContainerColor: Color,
     isPinned: Boolean = false,
+    showDivider: Boolean = true,
     onPin: () -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
     onClick: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val pinnedStateDescription = stringResource(R.string.sessions_tag_pinned)
 
     SwipeableItem(
         onPin = onPin,
         onDelete = onDelete,
         onEdit = onEdit,
-        isPinned = isPinned
+        isPinned = isPinned,
+        shape = RectangleShape,
     ) {
-        NexaraGlassCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(UiTags.hubAgentCard(agentId)),
-            shape = RoundedCornerShape(12.dp),
-            onClick = onClick
-        ) {
-            Row(
+        Column(modifier = Modifier.fillMaxWidth()) {
+            ListItem(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(iconContainerColor),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
+                    .heightIn(min = 64.dp)
+                    .testTag(UiTags.hubAgentCard(agentId))
+                    .semantics {
+                        if (isPinned) stateDescription = pinnedStateDescription
+                    }
+                    .clickable(onClick = onClick),
+                colors = ListItemDefaults.colors(
+                    containerColor = Color.Transparent
+                ),
+                leadingContent = {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(iconContainerColor.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = iconContainerColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                },
+                headlineContent = {
                     Text(
                         text = title,
-                        style = NexaraTypography.headlineMedium.copy(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        color = NexaraColors.OnSurface,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (subtitle.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(2.dp))
+                },
+                supportingContent = if (subtitle.isNotBlank()) {
+                    {
                         Text(
                             text = subtitle,
-                            style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
-                            color = NexaraColors.OnSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                }
-
-                if (isPinned) {
-                    Icon(
-                        imageVector = Icons.Rounded.PushPin,
-                        contentDescription = null,
-                        tint = NexaraColors.Primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-
-                Box {
-                    IconButton(
-                        onClick = { menuExpanded = true },
-                        modifier = Modifier.testTag(UiTags.hubAgentActions(agentId))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.MoreVert,
-                            contentDescription = stringResource(R.string.hub_cd_agent_actions),
-                            tint = NexaraColors.OnSurfaceVariant
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    stringResource(
-                                        if (isPinned) R.string.common_cd_unpin else R.string.common_cd_pin
-                                    )
+                } else null,
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isPinned) {
+                            Icon(
+                                imageVector = Icons.Rounded.PushPin,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Box {
+                            IconButton(
+                                onClick = { menuExpanded = true },
+                                modifier = Modifier.testTag(UiTags.hubAgentActions(agentId))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MoreVert,
+                                    contentDescription = stringResource(R.string.hub_cd_agent_actions),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onPin()
-                            },
-                            modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_PIN)
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.shared_btn_edit)) },
-                            onClick = {
-                                menuExpanded = false
-                                onEdit()
-                            },
-                            modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_EDIT)
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.shared_btn_delete)) },
-                            onClick = {
-                                menuExpanded = false
-                                onDelete()
-                            },
-                            modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_DELETE)
-                        )
+                            }
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            stringResource(
+                                                if (isPinned) R.string.common_cd_unpin else R.string.common_cd_pin
+                                            )
+                                        )
+                                    },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onPin()
+                                    },
+                                    modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_PIN)
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.shared_btn_edit)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onEdit()
+                                    },
+                                    modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_EDIT)
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.shared_btn_delete)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onDelete()
+                                    },
+                                    modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_DELETE)
+                                )
+                            }
+                        }
                     }
                 }
-
-                Icon(
-                    imageVector = Icons.Rounded.ChevronRight,
-                    contentDescription = null,
-                    tint = NexaraColors.Outline,
-                    modifier = Modifier.size(20.dp)
+            )
+            if (showDivider) {
+                HorizontalDivider(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 72.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    thickness = 1.dp
                 )
             }
         }

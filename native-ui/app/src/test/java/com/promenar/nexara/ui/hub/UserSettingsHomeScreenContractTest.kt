@@ -68,6 +68,9 @@ class UserSettingsHomeScreenContractTest {
         assertThat(app).contains("settings_section_data")
         assertThat(app).contains("settings_section_about")
         assertThat(app).contains("MaterialTheme.typography.titleSmall")
+        val settingsGroup = app.substringAfter("private fun SettingsGroup(")
+            .substringBefore("private fun SettingsGroupDivider(")
+        assertThat(settingsGroup).doesNotContain("Surface(")
         assertThat(app).doesNotContain("SettingsSectionHeader")
         assertThat(app).doesNotContain("NexaraGlassCard")
         assertThat(app).doesNotContain("verticalArrangement = Arrangement.spacedBy(8.dp)")
@@ -118,12 +121,28 @@ class UserSettingsHomeScreenContractTest {
         assertThat(providerContent).doesNotContain("NexaraTypography")
         assertThat(providerContent).doesNotContain("NexaraColors")
 
-        assertThat(addAction).contains("Button(")
+        assertThat(addAction).contains("ListItem(")
+        assertThat(addAction).contains("containerColor = Color.Transparent")
+        assertThat(addAction).doesNotContain("Button(")
         assertThat(addAction).contains("UiTags.SETTINGS_ADD_PROVIDER")
         assertThat(addAction).contains("NexaraSpacing.MinimumTouchTarget")
         assertThat(addAction).contains("MaterialTheme.typography")
         assertThat(addAction).doesNotContain("NexaraGlassCard")
-        assertThat(addAction).doesNotContain(".clickable(")
+        assertThat(addAction).contains(".clickable(")
+    }
+
+    @Test
+    fun `provider empty state adapts to compact landscape height`() {
+        val providerContent = sourceBlock(
+            start = "private fun ProviderSettingsContent(",
+            end = "private fun UserProfileHeader(",
+        )
+
+        assertThat(providerContent).contains("LocalConfiguration.current.screenHeightDp")
+        assertThat(providerContent).contains("compactHeightEmptyState")
+        assertThat(providerContent).contains("ProviderEmptyState(")
+        assertThat(providerContent).contains("if (compactHeight) {")
+        assertThat(providerContent).contains("Row(")
     }
 
     @Test
@@ -133,9 +152,10 @@ class UserSettingsHomeScreenContractTest {
             end = "private fun NameEditDialog(",
         )
 
-        assertThat(providerRow).contains("Surface(")
         assertThat(providerRow).contains("ListItem(")
-        assertThat(providerRow).contains("Icons.Rounded.ChevronRight")
+        assertThat(providerRow).contains("containerColor = Color.Transparent")
+        assertThat(providerRow).doesNotContain("Surface(")
+        assertThat(providerRow).doesNotContain("Icons.Rounded.ChevronRight")
         assertThat(providerRow).contains("Icons.Rounded.MoreVert")
         assertThat(providerRow).contains("DropdownMenu(")
         assertThat(providerRow).contains("DropdownMenuItem(")
@@ -158,6 +178,9 @@ class UserSettingsHomeScreenContractTest {
         )
         assertThat(providerRow).contains("stateDescription = providerStateDescription")
         assertThat(providerRow).contains("MaterialTheme.typography.labelMedium")
+        assertThat(providerRow).contains("val titleStyle = if (useLargeTextLayout)")
+        assertThat(providerRow).contains("maxLines = if (useLargeTextLayout) 3 else 2")
+        assertThat(providerRow).contains("TextOverflow.Ellipsis")
         assertThat(providerRow).doesNotContain("provider.model")
         assertThat(providerRow).doesNotContain("connectionStatus")
         assertThat(providerRow).doesNotContain("modelCount")
@@ -167,6 +190,18 @@ class UserSettingsHomeScreenContractTest {
         assertThat(providerRow).doesNotContain("fontSize =")
         assertThat(providerRow.split("IconButton(").size - 1).isEqualTo(1)
         assertThat(providerRow.split("onClick = onClick").size - 1).isEqualTo(1)
+    }
+
+    @Test
+    fun `provider list is continuous and separates rows without card gaps`() {
+        val providerContent = sourceBlock(
+            start = "private fun ProviderSettingsContent(",
+            end = "private fun UserProfileHeader(",
+        )
+
+        assertThat(providerContent).contains("verticalArrangement = Arrangement.spacedBy(0.dp)")
+        assertThat(providerContent).contains("itemsIndexed(")
+        assertThat(providerContent).contains("SettingsGroupDivider()")
     }
 
     @Test
