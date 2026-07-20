@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,9 +23,13 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import com.android.tools.screenshot.PreviewTest
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ApprovalRequest
@@ -61,6 +66,7 @@ import com.promenar.nexara.ui.chat.ChatScreenActions
 import com.promenar.nexara.ui.chat.ChatScreenContent
 import com.promenar.nexara.ui.chat.ChatScreenState
 import com.promenar.nexara.ui.chat.ChatUiState
+import com.promenar.nexara.ui.chat.AttachmentActionMenu
 import com.promenar.nexara.ui.chat.GenerationStatus
 import com.promenar.nexara.ui.chat.ResourceExplorerSheetActions
 import com.promenar.nexara.ui.chat.ResourceExplorerSheetContent
@@ -864,6 +870,129 @@ fun chatFullContextDocumentsEnglishLargeFontReleasePreview() {
             ),
             actions = ChatScreenActions(),
         )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Attachment actions anchored",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun attachmentActionsAnchoredReleasePreview() {
+    AttachmentActionsReleaseScene()
+}
+
+@PreviewTest
+@Preview(
+    name = "Attachment actions font scale 2",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun attachmentActionsLargeFontReleasePreview() {
+    AttachmentActionsReleaseScene()
+}
+
+@PreviewTest
+@Preview(
+    name = "Attachment actions Chinese font scale 2",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun attachmentActionsChineseLargeFontReleasePreview() {
+    AttachmentActionsReleaseScene()
+}
+
+@PreviewTest
+@Preview(
+    name = "Attachment actions IME viewport",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = 520,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun attachmentActionsImeViewportReleasePreview() {
+    AttachmentActionsReleaseScene()
+}
+
+@PreviewTest
+@Preview(
+    name = "Attachment actions RTL",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "ar",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun attachmentActionsRtlReleasePreview() {
+    AttachmentActionsReleaseScene()
+}
+
+@Composable
+private fun AttachmentActionsReleaseScene() {
+    ReleasePreviewSurface {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            ChatScreenContent(
+                state = ChatScreenState(
+                    uiState = ChatUiState(
+                        session = previewChatSession(),
+                        agentName = "Nexara Assistant",
+                        messages = listOf(
+                            previewMessage(
+                                id = "attachment-preview",
+                                role = MessageRole.ASSISTANT,
+                                content = "Attachment actions stay connected to the composer without covering model controls.",
+                                modelId = PREVIEW_CHAT_MODEL_ID,
+                            )
+                        ),
+                    ),
+                    modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
+                ),
+                actions = ChatScreenActions(),
+                initialAttachmentMenuExpanded = true,
+            )
+
+            val density = LocalDensity.current
+            val layoutDirection = LocalLayoutDirection.current
+            val widthPx = with(density) { maxWidth.toPx() }
+            val heightPx = with(density) { maxHeight.toPx() }
+            val composerReserve = if (density.fontScale >= 1.8f) 176.dp else 136.dp
+            val maximumBottom = heightPx - with(density) { composerReserve.toPx() }
+            val anchorTop = heightPx - with(density) { 72.dp.toPx() }
+            val anchorWidth = with(density) { 48.dp.toPx() }
+            val margin = with(density) { 16.dp.toPx() }
+            val anchorLeft = if (layoutDirection == LayoutDirection.Ltr) {
+                margin
+            } else {
+                widthPx - margin - anchorWidth
+            }
+            AttachmentActionMenu(
+                expanded = true,
+                anchorBounds = Rect(
+                    left = anchorLeft,
+                    top = anchorTop,
+                    right = anchorLeft + anchorWidth,
+                    bottom = anchorTop + anchorWidth,
+                ),
+                maximumBottom = maximumBottom,
+                enabled = true,
+                onDismiss = {},
+                onPickImage = {},
+                onPickDocument = {},
+            )
+        }
     }
 }
 

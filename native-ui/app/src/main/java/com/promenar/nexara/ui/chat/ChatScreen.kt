@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -47,9 +48,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import com.promenar.nexara.ui.common.NexaraBackButton
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
@@ -104,6 +105,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -202,6 +205,7 @@ fun ChatScreenContent(
     actions: ChatScreenActions,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     snackbarData: NexaraSnackbarData? = null,
+    initialAttachmentMenuExpanded: Boolean = false,
     taskPanel: @Composable () -> Unit = {},
 ) {
     val uiState = state.uiState
@@ -213,12 +217,22 @@ fun ChatScreenContent(
     val draftDocuments = state.draftDocuments
     val listState = rememberLazyListState()
     var showModelHint by remember { mutableStateOf(false) }
+    var attachmentMenuExpanded by remember { mutableStateOf(initialAttachmentMenuExpanded) }
+    var chatRootBounds by remember { mutableStateOf(Rect.Zero) }
+    var composerTopInRoot by remember { mutableStateOf(0f) }
+    var attachmentAnchorInRoot by remember { mutableStateOf(Rect.Zero) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(showModelHint) {
         if (showModelHint) {
             delay(2500)
             showModelHint = false
+        }
+    }
+
+    LaunchedEffect(uiState.isGenerating, state.isImportingDocument) {
+        if (uiState.isGenerating || state.isImportingDocument) {
+            attachmentMenuExpanded = false
         }
     }
 
@@ -390,6 +404,7 @@ fun ChatScreenContent(
                 .fillMaxSize()
                 .padding(padding)
                 .imePadding()
+                .onGloballyPositioned { chatRootBounds = it.boundsInRoot() }
                 .testTag(UiTags.CHAT_ROOT),
         ) {
             val isLandscape = maxWidth > maxHeight
@@ -515,6 +530,7 @@ fun ChatScreenContent(
                     .widthIn(max = 960.dp)
                     .fillMaxWidth()
                     .onSizeChanged { composerHeightPx = it.height }
+                    .onGloballyPositioned { composerTopInRoot = it.boundsInRoot().top }
                     .testTag(UiTags.CHAT_COMPOSER),
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = NexaraElevation.Level0,
@@ -611,11 +627,12 @@ fun ChatScreenContent(
                             onStop = actions.onStop,
                             isModelSelected = uiState.session?.modelId?.isNotBlank() == true,
                             onModelHint = { showModelHint = true },
-                            onPickImage = actions.onPickImages,
-                            onPickDocument = actions.onPickDocuments,
                             hasImages = selectedImageUris.isNotEmpty(),
                             hasDocuments = draftDocuments.isNotEmpty(),
                             isImportingDocument = state.isImportingDocument,
+                            attachmentMenuExpanded = attachmentMenuExpanded,
+                            onAttachmentMenuExpandedChange = { attachmentMenuExpanded = it },
+                            onAttachmentAnchorBoundsChange = { attachmentAnchorInRoot = it },
                         )
 
                         // ── 模型未选择提示气泡 ──
@@ -673,6 +690,25 @@ fun ChatScreenContent(
                         modifier = Modifier.size(20.dp),
                     )
                 }
+            }
+
+            val attachmentPositionsReady = chatRootBounds != Rect.Zero &&
+                attachmentAnchorInRoot != Rect.Zero && composerTopInRoot > chatRootBounds.top
+            if (!attachmentMenuExpanded || attachmentPositionsReady) {
+                AttachmentActionMenu(
+                    expanded = attachmentMenuExpanded,
+                    anchorBounds = Rect(
+                        left = attachmentAnchorInRoot.left - chatRootBounds.left,
+                        top = attachmentAnchorInRoot.top - chatRootBounds.top,
+                        right = attachmentAnchorInRoot.right - chatRootBounds.left,
+                        bottom = attachmentAnchorInRoot.bottom - chatRootBounds.top,
+                    ),
+                    maximumBottom = composerTopInRoot - chatRootBounds.top,
+                    enabled = !uiState.isGenerating && !state.isImportingDocument,
+                    onDismiss = { attachmentMenuExpanded = false },
+                    onPickImage = actions.onPickImages,
+                    onPickDocument = actions.onPickDocuments,
+                )
             }
         }
     }
@@ -1109,18 +1145,29 @@ fun ChatInputBar(
     onStop: () -> Unit = {},
     isModelSelected: Boolean = true,
     onModelHint: () -> Unit = {},
-    onPickImage: () -> Unit = {},
-    onPickDocument: () -> Unit = {},
     hasImages: Boolean = false,
     hasDocuments: Boolean = false,
     isImportingDocument: Boolean = false,
+    attachmentMenuExpanded: Boolean = false,
+    onAttachmentMenuExpandedChange: (Boolean) -> Unit = {},
+    onAttachmentAnchorBoundsChange: (Rect) -> Unit = {},
 ) {
     val effectiveStatus = if (isGenerating || status == GenerationStatus.ERROR) {
         status
     } else {
         GenerationStatus.IDLE
     }
-    var showAttachmentMenu by remember { mutableStateOf(false) }
+    val attachmentIconRotation by animateFloatAsState(
+        targetValue = if (attachmentMenuExpanded) 45f else 0f,
+        animationSpec = tween(durationMillis = 180),
+        label = "attachment_menu_rotation",
+    )
+    val attachmentStateDescription = stringResource(
+        if (attachmentMenuExpanded) R.string.common_state_expanded else R.string.common_state_collapsed,
+    )
+    val attachmentContentDescription = stringResource(
+        if (attachmentMenuExpanded) R.string.common_dismiss else R.string.chat_cd_add_attachment,
+    )
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1135,55 +1182,37 @@ fun ChatInputBar(
                 .padding(start = 4.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box {
-                IconButton(
-                    onClick = { showAttachmentMenu = true },
-                    modifier = Modifier
-                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                        .testTag(UiTags.CHAT_ADD_ATTACHMENT),
-                    enabled = !isGenerating && !isImportingDocument,
-                ) {
-                    if (isImportingDocument) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .testTag(UiTags.CHAT_DOCUMENT_IMPORTING),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        Icon(
-                            Icons.Rounded.Add,
-                            stringResource(R.string.chat_cd_add_attachment),
-                            tint = if (hasImages || hasDocuments) {
-                                NexaraColors.Primary
-                            } else {
-                                NexaraColors.OnSurfaceVariant
-                            },
-                            modifier = Modifier.size(22.dp),
-                        )
+            IconButton(
+                onClick = { onAttachmentMenuExpandedChange(!attachmentMenuExpanded) },
+                modifier = Modifier
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .onGloballyPositioned { onAttachmentAnchorBoundsChange(it.boundsInRoot()) }
+                    .semantics {
+                        stateDescription = attachmentStateDescription
+                        contentDescription = attachmentContentDescription
                     }
-                }
-                DropdownMenu(
-                    expanded = showAttachmentMenu,
-                    onDismissRequest = { showAttachmentMenu = false },
-                ) {
-                    DropdownMenuItem(
-                        modifier = Modifier.testTag(UiTags.CHAT_ATTACH_MENU_IMAGE),
-                        text = { Text(stringResource(R.string.chat_menu_attach_image)) },
-                        leadingIcon = { Icon(Icons.Rounded.AddPhotoAlternate, null) },
-                        onClick = {
-                            showAttachmentMenu = false
-                            onPickImage()
-                        },
+                    .testTag(UiTags.CHAT_ADD_ATTACHMENT),
+                enabled = !isGenerating && !isImportingDocument,
+            ) {
+                if (isImportingDocument) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .testTag(UiTags.CHAT_DOCUMENT_IMPORTING),
+                        strokeWidth = 2.dp,
                     )
-                    DropdownMenuItem(
-                        modifier = Modifier.testTag(UiTags.CHAT_ATTACH_MENU_DOCUMENT),
-                        text = { Text(stringResource(R.string.chat_menu_attach_document)) },
-                        leadingIcon = { Icon(Icons.Rounded.Description, null) },
-                        onClick = {
-                            showAttachmentMenu = false
-                            onPickDocument()
+                } else {
+                    Icon(
+                        Icons.Rounded.Add,
+                        contentDescription = null,
+                        tint = if (hasImages || hasDocuments) {
+                            NexaraColors.Primary
+                        } else {
+                            NexaraColors.OnSurfaceVariant
                         },
+                        modifier = Modifier
+                            .size(22.dp)
+                            .rotate(attachmentIconRotation),
                     )
                 }
             }

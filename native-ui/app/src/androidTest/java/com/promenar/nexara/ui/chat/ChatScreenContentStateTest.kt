@@ -257,7 +257,9 @@ class ChatScreenContentStateTest {
         rule.runOnIdle { assertThat(removedId).isEqualTo(document.id) }
 
         rule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT).performClick()
+        rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_MENU).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CHAT_ATTACH_MENU_DOCUMENT).assertIsDisplayed().performClick()
+        rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_MENU).assertDoesNotExist()
         rule.runOnIdle { assertThat(pickedDocument).isTrue() }
 
         rule.onNodeWithText("Branch target message").performTouchInput { longClick() }

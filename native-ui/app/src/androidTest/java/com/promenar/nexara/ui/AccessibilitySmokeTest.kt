@@ -77,8 +77,26 @@ class AccessibilitySmokeTest {
             .assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithTag(UiTags.CHAT_INPUT)
             .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT)
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    InstrumentationRegistry.getInstrumentation().targetContext
+                        .getString(R.string.common_state_collapsed),
+                )
+            )
         composeRule.onNodeWithTag(UiTags.CHAT_COMPOSER)
             .assertIsDisplayed()
+
+        composeRule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT).performClick()
+        composeRule.onNodeWithTag(UiTags.CHAT_ATTACH_MENU_IMAGE)
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag(UiTags.CHAT_ATTACH_MENU_DOCUMENT)
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
     }
 
     @Test
