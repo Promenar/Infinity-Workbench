@@ -1,30 +1,28 @@
 package com.promenar.nexara.ui.rag
 
 import android.app.Application
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -33,21 +31,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.rag.RagConfiguration
-import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
-import com.promenar.nexara.ui.common.*
+import com.promenar.nexara.ui.common.ModelPicker
+import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.SettingsSectionHeader
+import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.ui.settings.SettingsViewModel
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
-import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.common.toModelSelectionUiModel
+import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,236 +64,236 @@ fun RagAdvancedScreen(
     )
     val allModels by settingsViewModel.providerModels.collectAsState()
 
+    RagAdvancedScreenContent(
+        state = RagAdvancedScreenState(config = config, allModels = allModels),
+        actions = RagAdvancedScreenActions(
+            onBack = onNavigateBack,
+            onNavigateToGraph = onNavigateToGraph,
+            onConfigChanged = { transform -> viewModel.updateConfig(transform) },
+        ),
+    )
+}
+
+internal data class RagAdvancedScreenState(
+    val config: RagConfiguration,
+    val allModels: List<ModelInfo>,
+)
+
+internal data class RagAdvancedScreenActions(
+    val onBack: () -> Unit = {},
+    val onNavigateToGraph: () -> Unit = {},
+    val onConfigChanged: (RagConfiguration.() -> RagConfiguration) -> Unit = {},
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun RagAdvancedScreenContent(
+    state: RagAdvancedScreenState,
+    actions: RagAdvancedScreenActions = RagAdvancedScreenActions(),
+) {
+    val config = state.config
+    val allModels = state.allModels
     var showPromptEditor by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
 
     NexaraPageLayout(
         title = stringResource(R.string.rag_advanced_title),
-        onBack = onNavigateBack
+        onBack = actions.onBack
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
             Text(
-                stringResource(R.string.rag_advanced_desc),
-                style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurfaceVariant
+                text = stringResource(R.string.rag_advanced_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // === 知识图谱（全局配置，会话级开关由聊天设置面板控制，默认关闭） ===
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-            NexaraGlassCard(
+            // === 知识图谱提取配置 ===
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                shape = NexaraShapes.large as RoundedCornerShape
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Column(
+                SettingsSectionHeader(stringResource(R.string.rag_advanced_extract_config))
+
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.rag_advanced_extract_model), style = MaterialTheme.typography.titleMedium) },
+                    supportingContent = {
+                        val selectedModelName = allModels.find { it.id == config.kgExtractionModel }?.name
+                        Text(
+                            selectedModelName ?: stringResource(R.string.rag_advanced_select_model_placeholder),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    trailingContent = {
+                        Icon(Icons.Rounded.ChevronRight, contentDescription = null)
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    SettingsSectionHeader(stringResource(R.string.rag_advanced_extract_config))
+                        .testTag("rag_advanced_model_row")
+                        .clickable { showModelPicker = true }
+                )
 
-                        NexaraGlassCard(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showModelPicker = true },
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(stringResource(R.string.rag_advanced_extract_model), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                                    val selectedModelName = allModels.find { it.id == config.kgExtractionModel }?.name
-                                    Text(
-                                        selectedModelName ?: stringResource(R.string.rag_advanced_select_model_placeholder),
-                                        style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
-                                        color = NexaraColors.OnSurfaceVariant
-                                    )
-                                }
-                                Icon(
-                                    Icons.Rounded.ChevronRight,
-                                    contentDescription = null,
-                                    tint = NexaraColors.Outline,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
+                ConfigSlider(
+                    label = stringResource(R.string.rag_advanced_kg_timeout),
+                    value = config.kgExtractionTimeoutSeconds.toFloat(),
+                    valueRange = 5f..120f,
+                    onValueChange = { v -> actions.onConfigChanged { copy(kgExtractionTimeoutSeconds = v.toInt()) } },
+                    sliderModifier = Modifier.testTag("rag_advanced_timeout_slider"),
+                )
+                Text(
+                    text = stringResource(R.string.rag_advanced_kg_timeout_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                        ConfigSlider(
-                            label = stringResource(R.string.rag_advanced_kg_timeout),
-                            value = config.kgExtractionTimeoutSeconds.toFloat(),
-                            valueRange = 5f..120f,
-                            onValueChange = { v -> viewModel.updateConfig { c -> c.copy(kgExtractionTimeoutSeconds = v.toInt()) } }
-                        )
-                        Text(
-                            stringResource(R.string.rag_advanced_kg_timeout_desc),
-                            style = NexaraTypography.labelSmall.copy(fontSize = 11.sp),
-                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.padding(start = 4.dp)
-                        )
+            // === JIT 提取 ===
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                SettingsSectionHeader(stringResource(R.string.rag_advanced_jit_section))
 
-                        SettingsSectionHeader(stringResource(R.string.rag_advanced_jit_section))
-                        SettingsToggle(
-                            title = stringResource(R.string.rag_advanced_jit_enable),
-                            description = stringResource(R.string.rag_advanced_jit_desc),
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.rag_advanced_jit_enable), style = MaterialTheme.typography.bodyLarge) },
+                    supportingContent = { Text(stringResource(R.string.rag_advanced_jit_desc), style = MaterialTheme.typography.bodyMedium) },
+                    trailingContent = {
+                        Switch(
                             checked = config.jitMaxChunks > 0,
                             onCheckedChange = { enabled ->
-                                viewModel.updateConfig { it.copy(jitMaxChunks = if (enabled) 128 else 0) }
+                                actions.onConfigChanged { copy(jitMaxChunks = if (enabled) 128 else 0) }
                             },
                             enabled = false
                         )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                        if (config.jitMaxChunks > 0) {
-                            ConfigSlider(
-                                label = stringResource(R.string.rag_advanced_jit_max_blocks),
-                                value = config.jitMaxChunks.toFloat(),
-                                valueRange = 16f..512f,
-                                onValueChange = { v -> viewModel.updateConfig { c -> c.copy(jitMaxChunks = v.toInt()) } }
-                            )
-                        }
+                if (config.jitMaxChunks > 0) {
+                    ConfigSlider(
+                        label = stringResource(R.string.rag_advanced_jit_max_blocks),
+                        value = config.jitMaxChunks.toFloat(),
+                        valueRange = 16f..512f,
+                        onValueChange = { v -> actions.onConfigChanged { copy(jitMaxChunks = v.toInt()) } }
+                    )
+                }
 
-                        SettingsToggle(
-                            title = stringResource(R.string.rag_advanced_jit_domain),
-                            description = stringResource(R.string.rag_advanced_jit_domain_desc),
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.rag_advanced_jit_domain), style = MaterialTheme.typography.bodyLarge) },
+                    supportingContent = { Text(stringResource(R.string.rag_advanced_jit_domain_desc), style = MaterialTheme.typography.bodyMedium) },
+                    trailingContent = {
+                        Switch(
                             checked = config.kgDomainAuto,
-                            onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(kgDomainAuto = enabled) } },
+                            onCheckedChange = { enabled -> actions.onConfigChanged { copy(kgDomainAuto = enabled) } },
                             enabled = false
                         )
-                    }
-                }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
-                NexaraGlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = NexaraShapes.large as RoundedCornerShape
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        SettingsSectionHeader(stringResource(R.string.rag_advanced_optimization_section))
-                        SettingsToggle(
-                            title = stringResource(R.string.rag_advanced_incremental_hash),
-                            description = stringResource(R.string.rag_advanced_incremental_hash_desc),
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // === 性能优化 ===
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                SettingsSectionHeader(stringResource(R.string.rag_advanced_optimization_section))
+
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.rag_advanced_incremental_hash), style = MaterialTheme.typography.bodyLarge) },
+                    supportingContent = { Text(stringResource(R.string.rag_advanced_incremental_hash_desc), style = MaterialTheme.typography.bodyMedium) },
+                    trailingContent = {
+                        Switch(
                             checked = config.enableIncrementalHash,
-                            onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableIncrementalHash = enabled) } },
+                            onCheckedChange = { enabled -> actions.onConfigChanged { copy(enableIncrementalHash = enabled) } },
                             enabled = false
                         )
-                        SettingsToggle(
-                            title = stringResource(R.string.rag_advanced_rule_prefilter),
-                            description = stringResource(R.string.rag_advanced_rule_prefilter_desc),
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.rag_advanced_rule_prefilter), style = MaterialTheme.typography.bodyLarge) },
+                    supportingContent = { Text(stringResource(R.string.rag_advanced_rule_prefilter_desc), style = MaterialTheme.typography.bodyMedium) },
+                    trailingContent = {
+                        Switch(
                             checked = config.enableLocalPreprocess,
-                            onCheckedChange = { enabled -> viewModel.updateConfig { c -> c.copy(enableLocalPreprocess = enabled) } },
+                            onCheckedChange = { enabled -> actions.onConfigChanged { copy(enableLocalPreprocess = enabled) } },
                             enabled = false
                         )
-                    }
-                }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
-                NexaraGlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = NexaraShapes.large as RoundedCornerShape
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        SettingsSectionHeader(stringResource(R.string.rag_advanced_prompt_section))
-                        NexaraGlassCard(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showPromptEditor = true },
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .background(NexaraColors.StatusSuccess, CircleShape)
-                                    )
-                                    Text(
-                                        stringResource(R.string.rag_advanced_active_prompt),
-                                        style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                                        color = NexaraColors.StatusSuccess
-                                    )
-                                }
-                                Text(
-                                    config.kgExtractionPrompt ?: stringResource(R.string.rag_advanced_default_prompt),
-                                    style = NexaraTypography.bodySmall.copy(fontSize = 12.sp),
-                                    color = NexaraColors.OnSurface,
-                                    maxLines = 4,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            Text(
-                                stringResource(R.string.rag_advanced_reset_default),
-                                style = NexaraTypography.labelMedium,
-                                color = NexaraColors.Error,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable {
-                                        viewModel.updateConfig { it.copy(kgExtractionPrompt = null) }
-                                    }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                            )
-                        }
-                    }
-                }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                NexaraGlassCard(
+            // === 提示词模板 ===
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                SettingsSectionHeader(stringResource(R.string.rag_advanced_prompt_section))
+
+                ListItem(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onNavigateToGraph() },
-                    shape = NexaraShapes.large as RoundedCornerShape
+                        .clickable { showPromptEditor = true },
+                    headlineContent = {
+                        Text(
+                            text = stringResource(R.string.rag_advanced_active_prompt),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = config.kgExtractionPrompt ?: stringResource(R.string.rag_advanced_default_prompt),
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    trailingContent = {
+                        Icon(Icons.Rounded.ChevronRight, contentDescription = null)
+                    }
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    TextButton(
+                        onClick = { actions.onConfigChanged { copy(kgExtractionPrompt = null) } },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .background(NexaraColors.SurfaceHigh, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Rounded.AccountTree, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(20.dp))
-                            }
-                            Text(stringResource(R.string.rag_advanced_view_graph), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                        }
-                        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = NexaraColors.Outline)
+                        Text(stringResource(R.string.rag_advanced_reset_default))
                     }
                 }
+            }
 
-            Spacer(modifier = Modifier.height(80.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // === 查看知识图谱 ===
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.rag_advanced_view_graph), style = MaterialTheme.typography.bodyLarge) },
+                leadingContent = {
+                    Icon(Icons.Rounded.AccountTree, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                },
+                trailingContent = {
+                    Icon(Icons.Rounded.ChevronRight, contentDescription = null)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("rag_advanced_graph_row")
+                    .clickable { actions.onNavigateToGraph() }
+            )
+
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 
@@ -309,7 +309,7 @@ fun RagAdvancedScreen(
         models = modelItems,
         currentModelId = config.kgExtractionModel ?: "",
         onSelect = { id, _ ->
-            viewModel.updateConfig { it.copy(kgExtractionModel = id) }
+            actions.onConfigChanged { copy(kgExtractionModel = id) }
             showModelPicker = false
         }
     )
@@ -321,7 +321,7 @@ fun RagAdvancedScreen(
         title = stringResource(R.string.rag_advanced_edit_prompt),
         onSave = { text ->
             runCatching {
-                viewModel.updateConfig { it.copy(kgExtractionPrompt = text.ifBlank { null }) }
+                actions.onConfigChanged { copy(kgExtractionPrompt = text.ifBlank { null }) }
             }
         },
         placeholder = stringResource(R.string.rag_advanced_extract_prompt_placeholder)
@@ -333,18 +333,28 @@ private fun ConfigSlider(
     label: String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit
+    onValueChange: (Float) -> Unit,
+    sliderModifier: Modifier = Modifier,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(label, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-            Text("${value.toInt()}", style = NexaraTypography.bodySmall, color = NexaraColors.Primary)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "${value.toInt()}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
         Spacer(modifier = Modifier.height(4.dp))
-        NexaraSlider(
+        Slider(
+            modifier = sliderModifier,
             value = value,
             onValueChange = onValueChange,
             valueRange = valueRange

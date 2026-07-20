@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -11,19 +12,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.alpha
 import com.promenar.nexara.data.manager.ProviderManager
+import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.*
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
-import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.common.NexaraPageLayout
 
 @Composable
 fun AgentAdvancedRetrievalScreen(
@@ -41,6 +40,45 @@ fun AgentAdvancedRetrievalScreen(
 
     val useInherited by viewModel.useInheritedConfig.collectAsState()
     val retrievalConfig by viewModel.retrievalConfig.collectAsState()
+
+    AgentAdvancedRetrievalScreenContent(
+        state = AgentAdvancedRetrievalScreenState(
+            scopeLabel = scopeLabel,
+            useInheritedConfig = useInherited,
+            retrievalConfig = retrievalConfig,
+            isRerankAvailable = isRerankAvailable,
+        ),
+        actions = AgentAdvancedRetrievalScreenActions(
+            onBack = onNavigateBack,
+            onRetrievalConfigChanged = { transform -> viewModel.updateRetrievalConfig(transform) },
+            onResetToGlobal = viewModel::resetToGlobal,
+        ),
+    )
+}
+
+internal data class AgentAdvancedRetrievalScreenState(
+    val scopeLabel: String,
+    val useInheritedConfig: Boolean,
+    val retrievalConfig: AgentRetrievalConfig,
+    val isRerankAvailable: Boolean,
+)
+
+internal data class AgentAdvancedRetrievalScreenActions(
+    val onBack: () -> Unit = {},
+    val onRetrievalConfigChanged: (AgentRetrievalConfig.() -> AgentRetrievalConfig) -> Unit = {},
+    val onResetToGlobal: () -> Unit = {},
+)
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun AgentAdvancedRetrievalScreenContent(
+    state: AgentAdvancedRetrievalScreenState,
+    actions: AgentAdvancedRetrievalScreenActions = AgentAdvancedRetrievalScreenActions(),
+) {
+    val scopeLabel = state.scopeLabel
+    val useInherited = state.useInheritedConfig
+    val retrievalConfig = state.retrievalConfig
+    val isRerankAvailable = state.isRerankAvailable
     var showResetConfirm by remember { mutableStateOf(false) }
 
     val memoryLimit = retrievalConfig.memoryLimit
@@ -57,23 +95,34 @@ fun AgentAdvancedRetrievalScreen(
     val hybridAlpha = retrievalConfig.hybridAlpha
     val hybridBM25Boost = retrievalConfig.hybridBM25Boost
 
-    ConfirmDialog(
-        show = showResetConfirm,
-        onDismiss = { showResetConfirm = false },
-        onConfirm = {
-            viewModel.resetToGlobal()
-            showResetConfirm = false
-        },
-        title = stringResource(R.string.agent_rag_reset_title),
-        description = stringResource(R.string.agent_rag_reset_message),
-        confirmLabel = stringResource(R.string.shared_btn_reset),
-        confirmColor = NexaraColors.StatusWarning,
-        destructive = true
-    )
+    if (showResetConfirm) {
+        AlertDialog(
+            modifier = Modifier.testTag("agent_retrieval_reset_dialog"),
+            onDismissRequest = { showResetConfirm = false },
+            title = { Text(stringResource(R.string.agent_rag_reset_title)) },
+            text = { Text(stringResource(R.string.agent_rag_reset_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        actions.onResetToGlobal()
+                        showResetConfirm = false
+                    },
+                    modifier = Modifier.testTag("agent_retrieval_reset_confirm"),
+                ) {
+                    Text(stringResource(R.string.shared_btn_reset), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirm = false }) {
+                    Text(stringResource(R.string.common_btn_cancel))
+                }
+            }
+        )
+    }
 
     NexaraPageLayout(
         title = stringResource(R.string.agent_retrieval_title),
-        onBack = onNavigateBack
+        onBack = actions.onBack
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(
@@ -84,365 +133,302 @@ fun AgentAdvancedRetrievalScreen(
                 Icon(
                     imageVector = Icons.Rounded.BookmarkAdded,
                     contentDescription = null,
-                    tint = NexaraColors.Primary,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
                 )
                 Text(
                     text = scopeLabel,
-                    style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = NexaraColors.Primary
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
 
-            NexaraGlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .background(
-                                    if (useInherited) NexaraColors.Primary.copy(alpha = 0.15f)
-                                    else NexaraColors.StatusWarning.copy(alpha = 0.15f)
-                                )
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = if (useInherited) stringResource(R.string.agent_rag_status_inherited) else stringResource(R.string.agent_rag_status_custom),
-                                style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                color = if (useInherited) NexaraColors.Primary else NexaraColors.StatusWarning
-                            )
-                        }
-                    }
+            ListItem(
+                headlineContent = {
+                    Text(
+                        text = if (useInherited) stringResource(R.string.agent_rag_status_inherited) else stringResource(R.string.agent_rag_status_custom),
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                },
+                trailingContent = {
                     if (!useInherited) {
-                        TextButton(onClick = { showResetConfirm = true }) {
+                        TextButton(
+                            onClick = { showResetConfirm = true },
+                            modifier = Modifier
+                                .sizeIn(minHeight = 48.dp)
+                                .testTag("agent_retrieval_reset_action"),
+                        ) {
                             Icon(
                                 imageVector = Icons.Rounded.RestartAlt,
                                 contentDescription = null,
-                                tint = NexaraColors.StatusWarning,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = stringResource(R.string.shared_btn_reset),
-                                style = NexaraTypography.labelMedium,
-                                color = NexaraColors.StatusWarning
+                                text = stringResource(R.string.shared_btn_reset)
                             )
                         }
                     }
-                }
-            }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
 
-            NexaraGlassCard(
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // === 记忆检索 ===
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.agent_retrieval_section_memory),
-                        style = NexaraTypography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = NexaraColors.OnSurface
-                    )
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(0.5.dp).background(NexaraColors.GlassBorder)
-                    )
-                    RetrievalParamSlider(
-                        label = stringResource(R.string.agent_retrieval_memory_limit),
-                        value = memoryLimit.toFloat(),
-                        valueRange = 3f..10f,
-                        step = 1f,
-                        displayValue = "${memoryLimit}",
-                        onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(memoryLimit = newVal.toInt()) } }
-                    )
-                    RetrievalParamSlider(
-                        label = stringResource(R.string.agent_retrieval_memory_threshold),
-                        value = memoryThreshold,
-                        valueRange = 0.5f..0.95f,
-                        step = 0.05f,
-                        displayValue = "${(memoryThreshold * 100).toInt()}%",
-                        onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(memoryThreshold = newVal) } }
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.agent_retrieval_section_memory),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                RetrievalParamSlider(
+                    label = stringResource(R.string.agent_retrieval_memory_limit),
+                    value = memoryLimit.toFloat(),
+                    valueRange = 3f..10f,
+                    step = 1f,
+                    displayValue = "${memoryLimit}",
+                    onValueChange = { newVal -> actions.onRetrievalConfigChanged { copy(memoryLimit = newVal.toInt()) } },
+                    sliderModifier = Modifier.testTag("agent_retrieval_memory_limit_slider"),
+                )
+                RetrievalParamSlider(
+                    label = stringResource(R.string.agent_retrieval_memory_threshold),
+                    value = memoryThreshold,
+                    valueRange = 0.5f..0.95f,
+                    step = 0.05f,
+                    displayValue = "${(memoryThreshold * 100).toInt()}%",
+                    onValueChange = { newVal -> actions.onRetrievalConfigChanged { copy(memoryThreshold = newVal) } }
+                )
             }
 
-            NexaraGlassCard(
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // === 文档检索 ===
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.agent_retrieval_section_document),
-                        style = NexaraTypography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = NexaraColors.OnSurface
-                    )
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(0.5.dp).background(NexaraColors.GlassBorder)
-                    )
-                    RetrievalParamSlider(
-                        label = stringResource(R.string.agent_retrieval_doc_limit),
-                        value = docLimit.toFloat(),
-                        valueRange = 5f..15f,
-                        step = 1f,
-                        displayValue = "${docLimit}",
-                        onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(docLimit = newVal.toInt()) } }
-                    )
-                    RetrievalParamSlider(
-                        label = stringResource(R.string.agent_retrieval_doc_threshold),
-                        value = docThreshold,
-                        valueRange = 0.3f..0.8f,
-                        step = 0.05f,
-                        displayValue = "${(docThreshold * 100).toInt()}%",
-                        onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(docThreshold = newVal) } }
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.agent_retrieval_section_document),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                RetrievalParamSlider(
+                    label = stringResource(R.string.agent_retrieval_doc_limit),
+                    value = docLimit.toFloat(),
+                    valueRange = 5f..15f,
+                    step = 1f,
+                    displayValue = "${docLimit}",
+                    onValueChange = { newVal -> actions.onRetrievalConfigChanged { copy(docLimit = newVal.toInt()) } }
+                )
+                RetrievalParamSlider(
+                    label = stringResource(R.string.agent_retrieval_doc_threshold),
+                    value = docThreshold,
+                    valueRange = 0.3f..0.8f,
+                    step = 0.05f,
+                    displayValue = "${(docThreshold * 100).toInt()}%",
+                    onValueChange = { newVal -> actions.onRetrievalConfigChanged { copy(docThreshold = newVal) } }
+                )
             }
 
-            NexaraGlassCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(if (!isRerankAvailable) Modifier.alpha(0.6f) else Modifier),
-                shape = RoundedCornerShape(12.dp)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // === 重排序 ===
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = stringResource(R.string.agent_retrieval_section_rerank),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    },
+                    supportingContent = if (!isRerankAvailable) {
+                        {
                             Text(
-                                text = stringResource(R.string.agent_retrieval_section_rerank),
-                                style = NexaraTypography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = NexaraColors.OnSurface
+                                text = stringResource(R.string.agent_retrieval_rerank_model_unavailable_message),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error
                             )
-                            if (!isRerankAvailable) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(NexaraColors.StatusWarning.copy(alpha = 0.15f))
-                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    Text(
-                                        stringResource(R.string.retrieval_rerank_model_unconfigured),
-                                        style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                        color = NexaraColors.StatusWarning
-                                    )
-                                }
-                            }
                         }
+                    } else null,
+                    trailingContent = {
                         Switch(
                             checked = isRerankAvailable && enableRerank,
                             enabled = isRerankAvailable,
-                            onCheckedChange = { checked ->
-                                viewModel.updateRetrievalConfig { it.copy(enableRerank = checked) }
+                            onCheckedChange = null,
+                            modifier = Modifier.testTag("agent_retrieval_rerank_switch"),
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("agent_retrieval_rerank_toggle")
+                        .toggleable(
+                            value = isRerankAvailable && enableRerank,
+                            enabled = isRerankAvailable,
+                            role = Role.Switch,
+                            onValueChange = { checked ->
+                                actions.onRetrievalConfigChanged { copy(enableRerank = checked) }
                             },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = NexaraColors.OnPrimary,
-                                checkedTrackColor = NexaraColors.Primary,
-                                uncheckedThumbColor = NexaraColors.Outline,
-                                uncheckedTrackColor = NexaraColors.SurfaceContainer
-                            )
                         )
-                    }
-                    if (!isRerankAvailable) {
-                        Text(
-                            text = stringResource(R.string.agent_retrieval_rerank_model_unavailable_message),
-                            style = NexaraTypography.bodySmall.copy(fontSize = 11.sp, lineHeight = 16.sp),
-                            color = NexaraColors.StatusWarning.copy(alpha = 0.9f)
-                        )
-                    }
-                    if (isRerankAvailable && enableRerank) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().height(0.5.dp).background(NexaraColors.GlassBorder)
-                        )
-                        RetrievalParamSlider(
-                            label = stringResource(R.string.agent_retrieval_recall_count),
-                            value = rerankTopK.toFloat(),
-                            valueRange = 10f..100f,
-                            step = 5f,
-                            displayValue = "${rerankTopK}",
-                            onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(rerankTopK = newVal.toInt()) } }
-                        )
-                        RetrievalParamSlider(
-                            label = stringResource(R.string.agent_retrieval_final_count),
-                            value = rerankFinalK.toFloat(),
-                            valueRange = 3f..20f,
-                            step = 1f,
-                            displayValue = "${rerankFinalK}",
-                            onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(rerankFinalK = newVal.toInt()) } }
-                        )
-                    }
+                )
+
+                if (isRerankAvailable && enableRerank) {
+                    RetrievalParamSlider(
+                        label = stringResource(R.string.agent_retrieval_recall_count),
+                        value = rerankTopK.toFloat(),
+                        valueRange = 10f..100f,
+                        step = 5f,
+                        displayValue = "${rerankTopK}",
+                        onValueChange = { newVal -> actions.onRetrievalConfigChanged { copy(rerankTopK = newVal.toInt()) } }
+                    )
+                    RetrievalParamSlider(
+                        label = stringResource(R.string.agent_retrieval_final_count),
+                        value = rerankFinalK.toFloat(),
+                        valueRange = 3f..20f,
+                        step = 1f,
+                        displayValue = "${rerankFinalK}",
+                        onValueChange = { newVal -> actions.onRetrievalConfigChanged { copy(rerankFinalK = newVal.toInt()) } }
+                    )
                 }
             }
 
-            NexaraGlassCard(
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // === 查询改写 ===
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                ListItem(
+                    headlineContent = {
                         Text(
                             text = stringResource(R.string.agent_retrieval_section_rewrite),
-                            style = NexaraTypography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = NexaraColors.OnSurface
-                    )
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    },
+                    trailingContent = {
                         Switch(
                             checked = enableQueryRewrite,
-                            onCheckedChange = { checked ->
-                                viewModel.updateRetrievalConfig { it.copy(enableQueryRewrite = checked) }
+                            onCheckedChange = null,
+                            modifier = Modifier.testTag("agent_retrieval_rewrite_switch"),
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("agent_retrieval_rewrite_toggle")
+                        .toggleable(
+                            value = enableQueryRewrite,
+                            role = Role.Switch,
+                            onValueChange = { checked ->
+                                actions.onRetrievalConfigChanged { copy(enableQueryRewrite = checked) }
                             },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = NexaraColors.OnPrimary,
-                                checkedTrackColor = NexaraColors.Primary,
-                                uncheckedThumbColor = NexaraColors.Outline,
-                                uncheckedTrackColor = NexaraColors.SurfaceContainer
-                            )
                         )
-                    }
-                    if (enableQueryRewrite) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().height(0.5.dp).background(NexaraColors.GlassBorder)
-                        )
-                        Text(
-                            text = stringResource(R.string.agent_retrieval_strategy_label),
-                            style = NexaraTypography.labelMedium,
-                            color = NexaraColors.OnSurfaceVariant
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            listOf(
-                                "hyde" to stringResource(R.string.agent_retrieval_strategy_hyde),
-                                "multi-query" to stringResource(R.string.agent_retrieval_strategy_multi),
-                                "expansion" to stringResource(R.string.agent_retrieval_strategy_expansion)
-                            ).forEach { (id, label) ->
-                                val isSelected = queryRewriteStrategy == id
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = {
-                                        viewModel.updateRetrievalConfig { it.copy(queryRewriteStrategy = id) }
-                                    },
-                                    label = {
-                                        Text(
-                                            text = label,
-                                            style = NexaraTypography.labelMedium.copy(fontSize = 11.sp)
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = NexaraColors.Primary.copy(alpha = 0.2f),
-                                        selectedLabelColor = NexaraColors.Primary
+                )
+
+                if (enableQueryRewrite) {
+                    Text(
+                        text = stringResource(R.string.agent_retrieval_strategy_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(
+                            "hyde" to stringResource(R.string.agent_retrieval_strategy_hyde),
+                            "multi-query" to stringResource(R.string.agent_retrieval_strategy_multi),
+                            "expansion" to stringResource(R.string.agent_retrieval_strategy_expansion)
+                        ).forEach { (id, label) ->
+                            val isSelected = queryRewriteStrategy == id
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    actions.onRetrievalConfigChanged { copy(queryRewriteStrategy = id) }
+                                },
+                                label = {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelMedium
                                     )
-                                )
-                            }
+                                }
+                            )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        RetrievalParamSlider(
-                            label = stringResource(R.string.agent_retrieval_variant_count),
-                            value = queryRewriteCount.toFloat(),
-                            valueRange = 2f..5f,
-                            step = 1f,
-                            displayValue = "${queryRewriteCount}",
-                            onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(queryRewriteCount = newVal.toInt()) } }
-                        )
                     }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    RetrievalParamSlider(
+                        label = stringResource(R.string.agent_retrieval_variant_count),
+                        value = queryRewriteCount.toFloat(),
+                        valueRange = 2f..5f,
+                        step = 1f,
+                        displayValue = "${queryRewriteCount}",
+                        onValueChange = { newVal -> actions.onRetrievalConfigChanged { copy(queryRewriteCount = newVal.toInt()) } }
+                    )
                 }
             }
 
-            NexaraGlassCard(
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // === 混合检索 ===
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                ListItem(
+                    headlineContent = {
                         Text(
                             text = stringResource(R.string.agent_retrieval_section_hybrid),
-                            style = NexaraTypography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = NexaraColors.OnSurface
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
                         )
+                    },
+                    trailingContent = {
                         Switch(
                             checked = enableHybridSearch,
-                            onCheckedChange = { checked ->
-                                viewModel.updateRetrievalConfig { it.copy(enableHybridSearch = checked) }
+                            onCheckedChange = null,
+                            modifier = Modifier.testTag("agent_retrieval_hybrid_switch"),
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("agent_retrieval_hybrid_toggle")
+                        .toggleable(
+                            value = enableHybridSearch,
+                            role = Role.Switch,
+                            onValueChange = { checked ->
+                                actions.onRetrievalConfigChanged { copy(enableHybridSearch = checked) }
                             },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = NexaraColors.OnPrimary,
-                                checkedTrackColor = NexaraColors.Primary,
-                                uncheckedThumbColor = NexaraColors.Outline,
-                                uncheckedTrackColor = NexaraColors.SurfaceContainer
-                            )
                         )
-                    }
-                    if (enableHybridSearch) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().height(0.5.dp).background(NexaraColors.GlassBorder)
-                        )
-                        RetrievalParamSlider(
-                            label = stringResource(R.string.agent_retrieval_vector_weight),
-                            value = hybridAlpha,
-                            valueRange = 0f..1f,
-                            step = 0.05f,
-                            displayValue = "${(hybridAlpha * 100).toInt()}%",
-                            onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(hybridAlpha = newVal) } }
-                        )
-                        RetrievalParamSlider(
-                            label = stringResource(R.string.agent_retrieval_bm25_boost),
-                            value = hybridBM25Boost,
-                            valueRange = 0.5f..2.0f,
-                            step = 0.1f,
-                            displayValue = String.format("%.1fx", hybridBM25Boost),
-                            onValueChange = { newVal -> viewModel.updateRetrievalConfig { it.copy(hybridBM25Boost = newVal) } }
-                        )
-                    }
+                )
+                if (enableHybridSearch) {
+                    RetrievalParamSlider(
+                        label = stringResource(R.string.agent_retrieval_vector_weight),
+                        value = hybridAlpha,
+                        valueRange = 0f..1f,
+                        step = 0.05f,
+                        displayValue = "${(hybridAlpha * 100).toInt()}%",
+                        onValueChange = { newVal -> actions.onRetrievalConfigChanged { copy(hybridAlpha = newVal) } }
+                    )
+                    RetrievalParamSlider(
+                        label = stringResource(R.string.agent_retrieval_bm25_boost),
+                        value = hybridBM25Boost,
+                        valueRange = 0.5f..2.0f,
+                        step = 0.1f,
+                        displayValue = String.format("%.1fx", hybridBM25Boost),
+                        onValueChange = { newVal -> actions.onRetrievalConfigChanged { copy(hybridBM25Boost = newVal) } }
+                    )
                 }
             }
         }
@@ -456,7 +442,8 @@ private fun RetrievalParamSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     step: Float,
     displayValue: String,
-    onValueChange: (Float) -> Unit
+    onValueChange: (Float) -> Unit,
+    sliderModifier: Modifier = Modifier,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -466,17 +453,21 @@ private fun RetrievalParamSlider(
         ) {
             Text(
                 text = label,
-                style = NexaraTypography.labelMedium,
-                color = NexaraColors.OnSurfaceVariant
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
             )
             Text(
                 text = displayValue,
-                style = NexaraTypography.bodySmall,
-                color = NexaraColors.Primary
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                modifier = Modifier.padding(start = 12.dp),
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
-        NexaraSlider(
+        Slider(
+            modifier = sliderModifier,
             value = value,
             onValueChange = onValueChange,
             valueRange = valueRange,

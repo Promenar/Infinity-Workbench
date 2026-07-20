@@ -106,6 +106,15 @@ import com.promenar.nexara.ui.rag.RagFolderContentState
 import com.promenar.nexara.ui.rag.RagFolderScreenActions
 import com.promenar.nexara.ui.rag.RagFolderScreenContent
 import com.promenar.nexara.ui.rag.RagFolderScreenState
+import com.promenar.nexara.ui.rag.AdvancedRetrievalScreenActions
+import com.promenar.nexara.ui.rag.AdvancedRetrievalScreenContent
+import com.promenar.nexara.ui.rag.AdvancedRetrievalScreenState
+import com.promenar.nexara.ui.rag.GlobalRagConfigScreenActions
+import com.promenar.nexara.ui.rag.GlobalRagConfigScreenContent
+import com.promenar.nexara.ui.rag.GlobalRagConfigScreenState
+import com.promenar.nexara.ui.rag.RagAdvancedScreenActions
+import com.promenar.nexara.ui.rag.RagAdvancedScreenContent
+import com.promenar.nexara.ui.rag.RagAdvancedScreenState
 import com.promenar.nexara.ui.rag.RagStats
 import com.promenar.nexara.ui.settings.ModelSyncNotice
 import com.promenar.nexara.data.model.ModelInfo
@@ -115,6 +124,9 @@ import com.promenar.nexara.data.model.catalog.SupportState
 import com.promenar.nexara.ui.common.ModelSelectionUiModel
 import com.promenar.nexara.ui.common.ModelPickerSheetContent
 import com.promenar.nexara.ui.settings.ModelTestState
+import com.promenar.nexara.ui.settings.SearchConfigScreenActions
+import com.promenar.nexara.ui.settings.SearchConfigScreenContent
+import com.promenar.nexara.ui.settings.SearchConfigState
 import com.promenar.nexara.ui.settings.BackupOperations
 import com.promenar.nexara.ui.settings.BackupRestartRequester
 import com.promenar.nexara.ui.settings.BackupSettingsScreen
@@ -139,6 +151,11 @@ import com.promenar.nexara.ui.theme.NexaraThemeMode
 import com.promenar.nexara.ui.theme.NexaraThemePreferences
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenActions
+import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenContent
+import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenState
+import com.promenar.nexara.data.agent.AgentRetrievalConfig
+import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.ui.welcome.WelcomeScreen
 import com.promenar.nexara.share.core.ShareImportItem
 import com.promenar.nexara.share.core.ShareImportStatus
@@ -3013,6 +3030,154 @@ private fun ModelPickerReleasePreview(
             ) {
                 content()
             }
+        }
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG global Chinese dark large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragGlobalChineseDarkLargeFontReleasePreview() {
+    RagSettingsPreviewSurface(dark = true) {
+        GlobalRagConfigScreenContent(
+            state = GlobalRagConfigScreenState(
+                config = RagConfiguration(
+                    currentPreset = "writing",
+                    docChunkSize = 1200,
+                    chunkOverlap = 180,
+                    summaryTemplate = "请先整理资料，再生成适合移动端阅读的简洁答案。",
+                ),
+            ),
+            actions = GlobalRagConfigScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Search settings English light landscape",
+    widthDp = LANDSCAPE_WIDTH_DP,
+    heightDp = LANDSCAPE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_NO,
+)
+@Composable
+fun searchSettingsEnglishLightLandscapeReleasePreview() {
+    RagSettingsPreviewSurface(dark = false) {
+        SearchConfigScreenContent(
+            state = SearchConfigState(
+                searchEngine = "searxng",
+                searXngUrl = "https://search.nexara.example/api",
+                resultCount = 12,
+                includeDomains = listOf("developer.android.com", "kotlinlang.org"),
+                excludeDomains = listOf("example.invalid"),
+            ),
+            actions = SearchConfigScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Advanced retrieval Chinese light",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_NO,
+)
+@Composable
+fun advancedRetrievalChineseLightReleasePreview() {
+    RagSettingsPreviewSurface(dark = false) {
+        AdvancedRetrievalScreenContent(
+            state = AdvancedRetrievalScreenState(
+                config = RagConfiguration(
+                    enableHybridSearch = true,
+                    enableQueryRewrite = true,
+                    memoryLimit = 12,
+                    docLimit = 16,
+                ),
+                isRerankAvailable = true,
+            ),
+            actions = AdvancedRetrievalScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Agent retrieval English light large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "en",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_NO,
+)
+@Composable
+fun agentRetrievalEnglishLightLargeFontReleasePreview() {
+    RagSettingsPreviewSurface(dark = false) {
+        AgentAdvancedRetrievalScreenContent(
+            state = AgentAdvancedRetrievalScreenState(
+                scopeLabel = "Release review assistant",
+                useInheritedConfig = false,
+                retrievalConfig = AgentRetrievalConfig(
+                    enableQueryRewrite = true,
+                    enableHybridSearch = true,
+                ),
+                isRerankAvailable = true,
+            ),
+            actions = AgentAdvancedRetrievalScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG advanced English dark",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragAdvancedEnglishDarkReleasePreview() {
+    RagSettingsPreviewSurface(dark = true) {
+        RagAdvancedScreenContent(
+            state = RagAdvancedScreenState(
+                config = RagConfiguration(
+                    kgExtractionTimeoutSeconds = 90,
+                    kgExtractionPrompt = "Extract entities, concepts, and relationships with source references.",
+                ),
+                allModels = emptyList(),
+            ),
+            actions = RagAdvancedScreenActions(),
+        )
+    }
+}
+
+@Composable
+private fun RagSettingsPreviewSurface(
+    dark: Boolean,
+    content: @Composable () -> Unit,
+) {
+    NexaraTheme(
+        preferences = NexaraThemePreferences(
+            mode = if (dark) NexaraThemeMode.DARK else NexaraThemeMode.LIGHT,
+            colorSource = NexaraColorSource.NEXARA,
+        ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+        ) {
+            content()
         }
     }
 }

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 总收敛：记忆、索引与检索设置（2026-07-21）
+
+- **五页统一设置语言**：全局 RAG、Web Search、高级检索、知识图谱高级配置和 Agent 检索页移除 Glass 与嵌套卡片，改为连续 `ListItem`、标准分段控件、Slider、Switch、RadioButton、分隔线和确认对话框。
+- **原子状态与密钥行为保持**：RAG 与 Agent 配置动作继续向各自 ViewModel 传递基于当前值的 transform；全局 RAG 的状态发布、持久化和运行时重建由同一串行临界区保护，避免并发字段更新互相覆盖或旧值后写；Tavily 密钥仍由 `SecretField` 完成掩码、短生命周期揭示、保存和清除。
+- **无障碍与禁用态修正**：整行开关/单选使用单一 `toggleable/selectable` 语义，子控件不再创建重复点击焦点；禁用控件只使用 Material 标准禁用颜色，不叠加页面透明度，域名动作补全规则类型与目标朗读。
+- **当前门禁**：全量 JVM 2106 项（0 failure/error、14 skip）、90/90 Screenshot、Lint 0 Error/Fatal、AndroidTest 编译通过；API 31/35/36 Task 9 设备测试各 6/6，5 张新增 actual 已人工检查，Terra/Sol 最终双复审 Critical/Important 清零。整体发行继续保持 NO-GO。
+
 ### Material 3 总收敛：设置首页与默认模型（2026-07-21）
 
 - **单一设置层级**：设置首页移除应用/Provider 双 Tab 与首页内嵌 Provider、四角色模型选择器，改为账户、通用、AI/模型、知识/检索、工具/数据、关于六个连续 Material 3 分组。

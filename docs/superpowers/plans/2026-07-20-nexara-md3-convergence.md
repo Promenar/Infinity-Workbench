@@ -795,9 +795,11 @@
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/rag/AdvancedRetrievalScreen.kt`
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/rag/RagAdvancedScreen.kt`
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/hub/AgentAdvancedRetrievalScreen.kt`
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/rag/RagViewModel.kt`
 - Modify: `native-ui/app/src/test/java/com/promenar/nexara/ui/settings/SearchConfigViewModelTest.kt`
 - Modify: `native-ui/app/src/test/java/com/promenar/nexara/domain/usecase/RagConfigPersistenceTest.kt`
 - Create: `native-ui/app/src/test/java/com/promenar/nexara/ui/rag/RagSettingsMaterialContractTest.kt`
+- Modify: `native-ui/app/src/test/java/com/promenar/nexara/ui/rag/RagViewModelTest.kt`
 - Create: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/rag/RagSettingsAccessibilityTest.kt`
 - Modify: `native-ui/app/src/screenshotTest/kotlin/com/promenar/nexara/ui/ReleasePreviewScreenshotTest.kt`
 
@@ -805,7 +807,7 @@
 - Consumes: existing RAG/Search ViewModels and persistence.
 - Produces: standard segmented preset, parameter sections, navigation rows and destructive footer actions.
 
-- [ ] **Step 1：写业务保持和视觉 RED**
+- [x] **Step 1：写业务保持和视觉 RED**
 
   Existing ViewModel/persistence tests lock each parameter. New contract test rejects `NexaraGlassCard`, `GlassBorder`, nested cards and hard-coded page colors in all five screens.
 
@@ -818,15 +820,15 @@
 
   Expected: RED in `RagSettingsMaterialContractTest` because the five target screens still contain Glass/card nesting.
 
-- [ ] **Step 2：迁移 GlobalRagConfigScreen**
+- [x] **Step 2：迁移 GlobalRagConfigScreen**
 
   Use standard single-choice segmented controls for presets; unframed slider sections; a summary-template navigation row; advanced/debug list rows; a bottom destructive text action with confirmation.
 
-- [ ] **Step 3：迁移 SearchConfigScreen 和高级检索页**
+- [x] **Step 3：迁移 SearchConfigScreen 和高级检索页**
 
   Use `ListItem + Switch`, radio/dropdown engine selection, slider rows and continuous domain lists. Reuse the same visual primitives across global, RAG and Agent scopes without merging their state owners.
 
-- [ ] **Step 4：验证参数、无障碍和主题**
+- [x] **Step 4：验证参数、无障碍和主题**
 
   ```bash
   ./gradlew :app:testDebugUnitTest \
@@ -839,7 +841,9 @@
 
   Verify slider values, preset changes, secret field behavior, domain add/remove, clear confirmation, 2.0x, landscape and both themes.
 
-- [ ] **Step 5：提交和推送**
+  2026-07-21 验证证据：五页旧视觉契约取得预期 RED；Sol 首轮质量复审进一步发现 `StateFlow.update` CAS 回调内持久化副作用及语义覆盖缺口，新增并发 JVM 契约同样先因缺少可控保存入口取得编译 RED。生产改为在同一临界区串行执行当前值变换、状态发布与持久化，Global/Advanced/Agent 的预设、RadioButton、Switch 角色、单一操作节点和自然遍历顺序均补齐设备断言。最终全量 JVM 2106 项（0 failure/error、14 skip）、Lint 0 Error/Fatal、Screenshot 90/90、AndroidTest Kotlin 编译通过；API 31/35/36 的 `RagSettingsAccessibilityTest` 各 6/6，5 张新增 actual 已逐张检查，Terra/Sol 最终独立复审均为 Critical 0、Important 0。
+
+- [x] **Step 5：提交和推送**
 
   ```bash
   git add native-ui/app/src/main/java/com/promenar/nexara/ui/rag/GlobalRagConfigScreen.kt \

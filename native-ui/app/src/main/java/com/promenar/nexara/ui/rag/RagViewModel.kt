@@ -75,6 +75,7 @@ class RagViewModel(
     injectedRequestFactory: ((Uri, String) -> ShareRequest)? = null,
     ragWorkspaceIoContext: CoroutineContext = kotlinx.coroutines.Dispatchers.IO,
     injectedPendingIndexCoordinator: PendingDocumentIndexCoordinator? = null,
+    injectedConfigSaver: ((RagConfiguration) -> Unit)? = null,
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
@@ -155,6 +156,8 @@ class RagViewModel(
     val config: StateFlow<RagConfiguration> = _config.asStateFlow()
 
     private val prefs = app.getSharedPreferences("rag_settings", 0)
+    private val configUpdateLock = Any()
+    private val configSaver = injectedConfigSaver ?: ::saveConfig
 
     private val _stats = MutableStateFlow(RagStats())
     val stats: StateFlow<RagStats> = _stats.asStateFlow()
@@ -1131,20 +1134,19 @@ class RagViewModel(
     }
 
     fun updateConfig(config: RagConfiguration) {
-        _config.update { config }
-        saveConfig(config)
+        updateConfig { config }
     }
 
     fun updateConfig(transform: (RagConfiguration) -> RagConfiguration) {
-        _config.update { current ->
-            val newConfig = transform(current)
-            saveConfig(newConfig)
-            newConfig
+        synchronized(configUpdateLock) {
+            val newConfig = transform(_config.value)
+            _config.value = newConfig
+            configSaver(newConfig)
         }
     }
 
     fun applyPreset(preset: String) {
-        _config.update { current ->
+        updateConfig { current ->
             when (preset.lowercase()) {
                 "balanced" -> current.copy(
                     currentPreset = "balanced",
@@ -1164,7 +1166,6 @@ class RagViewModel(
                 else -> current
             }
         }
-        saveConfig(_config.value)
     }
 
     private fun FileEntry.toFolder() = Folder(

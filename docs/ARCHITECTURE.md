@@ -36,6 +36,7 @@ graph TD
 - **NavGraph**: 基于 Compose Navigation 的集中式路由中心；设置首页通过稳定目的地进入 Provider 管理和默认模型二级页面，既有 Provider 表单与模型管理路由保持独立。
 - **ProviderListScreen**: 提供商管理列表页，展示状态摘要并提供 Overflow 编辑与删除入口。
 - **DefaultModelsScreen**: 四角色（摘要、图像、向量、重排）默认模型统一配置页面，直接触发持久化。
+- **RAG/Search 设置表面**: Global、Search、Advanced、KG 与 Agent 检索设置共用连续 Material 3 列表/参数区视觉，但保持 `RagViewModel`、`SearchConfigViewModel` 与 `AgentEditViewModel` 三个状态所有者；可测试 Content 层只接收 receiver transform，不持有或回写过期配置快照，`RagViewModel` 以串行临界区保证状态发布与最终持久化顺序一致。
 - **Domain 层**: `domain/model/`（6 文件）+ `domain/repository/`（9 接口）+ `domain/usecase/`（6 UseCase），零 Android 依赖。
 - **Repository 层**: 9 个数据仓库实现（Agent/Document/Folder/KG/Message/Provider/Session/TokenStats/Vector），覆盖率 100%。
 - **ContextBuilder**: 负责多源上下文（RAG/Web/KG/History）的异步调度、打分与 Prompt 合成，支持实时观测回调。所有子源均已接入 NexaraLogger 错误追踪。

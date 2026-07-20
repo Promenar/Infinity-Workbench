@@ -45,6 +45,9 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -269,6 +272,7 @@ class RagViewModelTest {
         importer: SharedFileImporter? = null,
         requestFactory: ((android.net.Uri, String) -> ShareRequest)? = null,
         pendingIndexCoordinator: PendingDocumentIndexCoordinator? = null,
+        configSaver: ((com.promenar.nexara.data.rag.RagConfiguration) -> Unit)? = null,
     ): RagViewModel {
         assertThat(app.vectorizationQueue).isSameInstanceAs(vectorizationQueue)
         val ragPrefs = mockk<android.content.SharedPreferences>(relaxed = true)
@@ -280,7 +284,56 @@ class RagViewModelTest {
             injectedRequestFactory = requestFactory,
             ragWorkspaceIoContext = testDispatcher,
             injectedPendingIndexCoordinator = pendingIndexCoordinator,
+            injectedConfigSaver = configSaver,
         )
+    }
+
+    @Test
+    fun `并发配置变换会串行持久化且最终落盘状态与内存一致`() {
+        val firstSaveEntered = CountDownLatch(1)
+        val releaseFirstSave = CountDownLatch(1)
+        val secondUpdateAttempted = CountDownLatch(1)
+        val secondTransformEntered = CountDownLatch(1)
+        val saved = Collections.synchronizedList(
+            mutableListOf<com.promenar.nexara.data.rag.RagConfiguration>(),
+        )
+        val vm = createViewModel { config ->
+            if (saved.isEmpty()) {
+                firstSaveEntered.countDown()
+                assertThat(releaseFirstSave.await(2, TimeUnit.SECONDS)).isTrue()
+            }
+            saved += config
+        }
+        val initialConfig = vm.config.value
+
+        val memoryUpdate = Thread {
+            vm.updateConfig { current -> current.copy(memoryLimit = 9) }
+        }
+        val documentUpdate = Thread {
+            secondUpdateAttempted.countDown()
+            vm.updateConfig { current ->
+                secondTransformEntered.countDown()
+                current.copy(docLimit = 14)
+            }
+        }
+
+        memoryUpdate.start()
+        assertThat(firstSaveEntered.await(2, TimeUnit.SECONDS)).isTrue()
+        documentUpdate.start()
+        assertThat(secondUpdateAttempted.await(2, TimeUnit.SECONDS)).isTrue()
+        assertThat(secondTransformEntered.await(200, TimeUnit.MILLISECONDS)).isFalse()
+        releaseFirstSave.countDown()
+        memoryUpdate.join(2_000)
+        documentUpdate.join(2_000)
+
+        assertThat(memoryUpdate.isAlive).isFalse()
+        assertThat(documentUpdate.isAlive).isFalse()
+        assertThat(vm.config.value.memoryLimit).isEqualTo(9)
+        assertThat(vm.config.value.docLimit).isEqualTo(14)
+        assertThat(saved).containsExactly(
+            initialConfig.copy(memoryLimit = 9),
+            vm.config.value,
+        ).inOrder()
     }
 
     @Test
