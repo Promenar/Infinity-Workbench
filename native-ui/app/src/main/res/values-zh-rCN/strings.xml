@@ -722,6 +722,7 @@
     <string name="provider_form_label_model">模型</string>
     <string name="provider_form_default_provider">设为默认</string>
     <string name="provider_form_btn_test">测试连接</string>
+    <string name="provider_form_testing">正在测试连接…</string>
     <string name="provider_form_btn_save">保存提供商</string>
     <string name="provider_form_cd_hide">隐藏</string>
     <string name="provider_form_cd_show">显示</string>

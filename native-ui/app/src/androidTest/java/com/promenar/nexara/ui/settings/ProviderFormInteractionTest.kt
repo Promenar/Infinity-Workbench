@@ -7,6 +7,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -62,13 +65,10 @@ class ProviderFormInteractionTest {
             .performTextReplacement("Renamed")
         rule.onNodeWithText(resources.getString(R.string.provider_form_label_url))
             .performTextReplacement("https://gateway.example/v1")
-        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(3)
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
-            .performScrollTo()
             .assertHeightIsAtLeast(48.dp)
             .performClick()
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
-            .performScrollTo()
             .assertHeightIsAtLeast(48.dp)
             .performClick()
 
@@ -92,15 +92,15 @@ class ProviderFormInteractionTest {
             }
         }
 
-        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(3)
+        val testing = resources.getString(R.string.provider_form_testing)
+        rule.onNodeWithText(testing)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, testing))
+            .assertIsNotEnabled()
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
-            .performScrollTo()
             .assertIsNotEnabled()
 
         rule.runOnIdle { state.value = validCloudState(isSaving = true) }
-        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(3)
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
-            .performScrollTo()
             .assertIsNotEnabled()
     }
 
@@ -126,11 +126,33 @@ class ProviderFormInteractionTest {
             .performScrollTo()
             .assertIsDisplayed()
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
-            .performScrollTo()
             .assertIsNotEnabled()
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
-            .performScrollTo()
             .assertIsNotEnabled()
+    }
+
+    @Test
+    fun failedConnectionStatusRemainsVisibleBesideReachableActions() {
+        rule.setContent {
+            NexaraTheme {
+                ProviderFormContent(
+                    state = validCloudState(
+                        connectionTestState = ProviderConnectionTestState.Error,
+                    ),
+                    actions = ProviderFormActions(),
+                )
+            }
+        }
+
+        val failed = resources.getString(R.string.common_cd_failed)
+        rule.onNodeWithText(failed)
+            .performScrollTo()
+            .assertIsDisplayed()
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, failed))
+            .assertIsEnabled()
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
+            .assertIsEnabled()
     }
 
     @Test
@@ -243,7 +265,36 @@ class ProviderFormInteractionTest {
                 .assertIsDisplayed()
         }
         rule.onNodeWithText("****").performScrollTo().assertIsDisplayed()
-        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(3)
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+    }
+
+    @Test
+    fun cloudActionsRemainReachableInLandscapeWithTwoXFontScale() {
+        rule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 2f)) {
+                NexaraTheme {
+                    Box(Modifier.requiredSize(width = 800.dp, height = 360.dp)) {
+                        ProviderFormContent(
+                            state = validCloudState(hasStoredCredential = true),
+                            actions = ProviderFormActions(),
+                        )
+                    }
+                }
+            }
+        }
+
+        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(2)
+        rule.onNodeWithText(resources.getString(R.string.provider_form_label_name))
+            .assertIsDisplayed()
+        rule.onNodeWithText(resources.getString(R.string.provider_form_label_api_key))
+            .performScrollTo()
+            .assertIsDisplayed()
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
             .assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)

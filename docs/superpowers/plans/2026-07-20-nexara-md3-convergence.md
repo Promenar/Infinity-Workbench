@@ -872,12 +872,15 @@
 - Modify: `native-ui/app/src/test/java/com/promenar/nexara/ui/settings/ProviderModelReleaseBlockersTest.kt`
 - Modify: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/settings/ProviderFormInteractionTest.kt`
 - Modify: `native-ui/app/src/screenshotTest/kotlin/com/promenar/nexara/ui/ReleasePreviewScreenshotTest.kt`
+- Modify: `native-ui/app/src/main/res/values/strings.xml`
+- Modify: `native-ui/app/src/main/res/values-zh-rCN/strings.xml`
+- Modify: affected Provider form screenshot references under `native-ui/app/src/screenshotTestDebug/reference/`
 
 **Interfaces:**
 - Consumes: existing Provider save/test/security actions.
 - Produces: unframed Material form sections and one primary save action.
 
-- [ ] **Step 1：写交互和视觉 RED**
+- [x] **Step 1：写交互和视觉 RED**
 
   Keep masked/reveal/timeout/focus/leave-page behavior, HTTPS validation, test cancellation, local Provider flow and save behavior. Add contract assertions rejecting the large configuration `Surface` and stacked full-width primary buttons.
 
@@ -887,15 +890,15 @@
 
   Expected: RED in the new Provider form layout assertions while existing security/behavior assertions remain GREEN.
 
-- [ ] **Step 2：重排表单**
+- [x] **Step 2：重排表单**
 
   Place fields directly in the LazyColumn under small section labels. Keep exposed dropdowns. Move test/save into a responsive bottom action area: test is outlined/tonal, save is the only filled action.
 
-- [ ] **Step 3：验证 IME、错误和横屏**
+- [x] **Step 3：验证 IME、错误和横屏**
 
   Execute `ProviderFormInteractionTest` on API 31/35/36 with add/edit/local, masked/reveal, invalid URL, failed test, 2.0x and landscape IME scenarios.
 
-- [ ] **Step 4：运行回归并提交**
+- [x] **Step 4：运行回归并提交**
 
   ```bash
   ./gradlew :app:testDebugUnitTest --tests '*ProviderModelReleaseBlockersTest'

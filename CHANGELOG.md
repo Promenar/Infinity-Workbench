@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 总收敛：Provider 表单与密钥交互（2026-07-21）
+
+- **连续标准表单**：云端与本地 Provider 配置移除大块配置卡片，文本输入统一使用 Material 3 `OutlinedTextField`，协议选择改为标准单选 `ListItem`，保持既有 HTTPS 校验、保存和本地模型流程。
+- **稳定底部动作**：测试与保存固定在表单底部的响应式动作区，测试使用描边层级，保存是唯一 filled 主动作；横屏、2.0x 字体和长状态文本下仍可达且等高。
+- **密钥与状态语义保持**：API Key 继续使用短生命周期掩码/揭示合同；测试中的禁用态以及成功、失败终态通过本地化 `stateDescription` 固定附着于测试按钮，不依赖滚动区状态行是否可见。
+- **当前门禁**：全量 JVM 2108 项（0 failure/error、14 skip）、90/90 Screenshot、Lint 0 Error/Fatal、AndroidTest 编译通过；API 31/35/36 Provider 与密钥组合各 20/20，三张受影响 actual 已人工检查，Terra/Sol 最终双复审 Critical/Important/Minor 清零。整体发行继续保持 NO-GO。
+
 ### Material 3 总收敛：记忆、索引与检索设置（2026-07-21）
 
 - **五页统一设置语言**：全局 RAG、Web Search、高级检索、知识图谱高级配置和 Agent 检索页移除 Glass 与嵌套卡片，改为连续 `ListItem`、标准分段控件、Slider、Switch、RadioButton、分隔线和确认对话框。

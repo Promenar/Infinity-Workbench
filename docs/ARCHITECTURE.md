@@ -35,6 +35,7 @@ graph TD
 - **ChatScreenContent / AttachmentActionMenu**: 附件菜单状态由聊天内容层提升，输入栏只报告展开意图与真实按钮坐标；单一菜单作为整个聊天 `Scaffold` 的后置覆盖层，统一处理外部/顶栏/Back 关闭、退出期触摸拦截、生成/导入禁用、RTL 与受限高度滚动。首轮坐标尚未回报时使用根容器内安全位置，随后切换到实测锚点。
 - **NavGraph**: 基于 Compose Navigation 的集中式路由中心；设置首页通过稳定目的地进入 Provider 管理和默认模型二级页面，既有 Provider 表单与模型管理路由保持独立。
 - **ProviderListScreen**: 提供商管理列表页，展示状态摘要并提供 Overflow 编辑与删除入口。
+- **ProviderFormScreen / SettingsInput / ProtocolSelector**: Provider 编辑使用无外层卡片的连续 Material 3 表单；协议以标准单选行表达，测试与保存固定在响应式底部动作区，保存是唯一 filled 主动作。密钥继续复用 `SecretField` 的掩码、短生命周期揭示和离页清理合同，测试终态语义固定在可达按钮上。
 - **DefaultModelsScreen**: 四角色（摘要、图像、向量、重排）默认模型统一配置页面，直接触发持久化。
 - **RAG/Search 设置表面**: Global、Search、Advanced、KG 与 Agent 检索设置共用连续 Material 3 列表/参数区视觉，但保持 `RagViewModel`、`SearchConfigViewModel` 与 `AgentEditViewModel` 三个状态所有者；可测试 Content 层只接收 receiver transform，不持有或回写过期配置快照，`RagViewModel` 以串行临界区保证状态发布与最终持久化顺序一致。
 - **Domain 层**: `domain/model/`（6 文件）+ `domain/repository/`（9 接口）+ `domain/usecase/`（6 UseCase），零 Android 依赖。

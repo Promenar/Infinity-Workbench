@@ -717,6 +717,7 @@
     <string name="provider_form_label_model">Model</string>
     <string name="provider_form_default_provider">Set as Default</string>
     <string name="provider_form_btn_test">Test Connection</string>
+    <string name="provider_form_testing">Testing connection…</string>
     <string name="provider_form_btn_save">Save Provider</string>
     <string name="provider_form_cd_hide">Hide</string>
     <string name="provider_form_cd_show">Show</string>

@@ -2,9 +2,13 @@ package com.promenar.nexara.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,7 +31,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +46,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -500,52 +504,73 @@ internal fun ProviderFormContent(
         imePadding = true,
         modifier = modifier,
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().testTag(PROVIDER_FORM_LIST_TAG),
-            state = listState,
-            contentPadding = PaddingValues(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            item {
-                Text(
-                    text = stringResource(R.string.provider_form_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (state.unavailableLocalConfiguration) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth().testTag(PROVIDER_FORM_LIST_TAG),
+                state = listState,
+                contentPadding = PaddingValues(bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
                 item {
-                    ProviderFormErrorText(stringResource(R.string.local_inference_release_unavailable))
+                    Text(
+                        text = stringResource(R.string.provider_form_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-            }
-            item {
-                ProviderPresetSelector(state = state, actions = actions)
-            }
-            if (state.selectedPreset.name == "Custom") {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = stringResource(R.string.provider_form_protocol_type),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        ProviderProtocolSelector(state = state, actions = actions)
+                if (state.unavailableLocalConfiguration) {
+                    item {
+                        ProviderFormErrorText(stringResource(R.string.local_inference_release_unavailable))
                     }
                 }
+                item {
+                    ProviderPresetSelector(state = state, actions = actions)
+                }
+                if (state.selectedPreset.name == "Custom") {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = stringResource(R.string.provider_form_protocol_type),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            ProviderProtocolSelector(state = state, actions = actions)
+                        }
+                    }
+                }
+                if (state.isLocal) {
+                    item {
+                        LocalProviderSection(state = state, actions = actions)
+                    }
+                } else {
+                    item {
+                        CloudProviderSection(state = state, actions = actions)
+                    }
+                    when (state.connectionTestState) {
+                        ProviderConnectionTestState.Success -> item {
+                            ProviderFormStatusText(
+                                stringResource(R.string.common_cd_success),
+                                success = true,
+                            )
+                        }
+                        ProviderConnectionTestState.Error -> item {
+                            ProviderFormStatusText(
+                                stringResource(R.string.common_cd_failed),
+                                success = false,
+                            )
+                        }
+                        else -> Unit
+                    }
+                }
+                if (state.saveFailed) {
+                    item { ProviderFormErrorText(stringResource(R.string.provider_form_save_failed)) }
+                }
             }
-            if (state.isLocal) {
-                item {
-                    LocalProviderSection(state = state, actions = actions)
-                }
-            } else {
-                item {
-                    CloudProviderSection(state = state, actions = actions)
-                }
-                item {
-                    ProviderFormActionsSection(state = state, actions = actions)
-                }
-            }
-            if (state.saveFailed) {
-                item { ProviderFormErrorText(stringResource(R.string.provider_form_save_failed)) }
+            if (!state.isLocal) {
+                ProviderFormActionsSection(
+                    state = state,
+                    actions = actions,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
             }
         }
     }
@@ -671,111 +696,118 @@ private fun ProviderPresetIcon(preset: ProviderPreset, selected: Boolean) {
 
 @Composable
 private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFormActions) {
-    Surface(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.large,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.provider_form_config_section),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            OutlinedTextField(
-                value = state.name,
-                onValueChange = actions.onNameChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.provider_form_label_name)) },
-                placeholder = { Text(stringResource(R.string.provider_form_placeholder_name)) },
-                singleLine = true,
-            )
-            OutlinedTextField(
-                value = state.baseUrl,
-                onValueChange = actions.onBaseUrlChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.provider_form_label_url)) },
-                placeholder = { Text(stringResource(R.string.provider_form_placeholder_url)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                singleLine = true,
-                isError = !state.endpointValid,
-                supportingText = if (!state.endpointValid) {
-                    { ProviderFormErrorText(stringResource(R.string.provider_form_https_required)) }
+        Text(
+            text = stringResource(R.string.provider_form_config_section),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = state.name,
+            onValueChange = actions.onNameChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.provider_form_label_name)) },
+            placeholder = { Text(stringResource(R.string.provider_form_placeholder_name)) },
+            singleLine = true,
+        )
+        OutlinedTextField(
+            value = state.baseUrl,
+            onValueChange = actions.onBaseUrlChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.provider_form_label_url)) },
+            placeholder = { Text(stringResource(R.string.provider_form_placeholder_url)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            singleLine = true,
+            isError = !state.endpointValid,
+            supportingText = if (!state.endpointValid) {
+                { ProviderFormErrorText(stringResource(R.string.provider_form_https_required)) }
+            } else {
+                null
+            },
+        )
+        SecretField(
+            value = state.secretInput,
+            onValueChange = actions.onSecretChange,
+            hasStoredSecret = state.hasStoredCredential,
+            onRevealRequest = actions.onRevealSecret,
+            onClear = actions.onClearSecret,
+            modifier = if (state.credentialKindMismatch) {
+                Modifier.semantics { liveRegion = LiveRegionMode.Assertive }
+            } else {
+                Modifier
+            },
+            placeholder = stringResource(
+                if (state.usesVertexCredential) {
+                    R.string.provider_form_paste_json
                 } else {
-                    null
+                    R.string.provider_form_placeholder_api_key
                 },
-            )
-            SecretField(
-                value = state.secretInput,
-                onValueChange = actions.onSecretChange,
-                hasStoredSecret = state.hasStoredCredential,
-                onRevealRequest = actions.onRevealSecret,
-                onClear = actions.onClearSecret,
-                modifier = if (state.credentialKindMismatch) {
-                    Modifier.semantics { liveRegion = LiveRegionMode.Assertive }
+            ),
+            label = stringResource(
+                if (state.usesVertexCredential) {
+                    R.string.provider_form_label_sa
                 } else {
-                    Modifier
+                    R.string.provider_form_label_api_key
                 },
-                placeholder = stringResource(
-                    if (state.usesVertexCredential) {
-                        R.string.provider_form_paste_json
-                    } else {
-                        R.string.provider_form_placeholder_api_key
-                    },
-                ),
-                label = stringResource(
-                    if (state.usesVertexCredential) {
-                        R.string.provider_form_label_sa
-                    } else {
-                        R.string.provider_form_label_api_key
-                    },
-                ),
-                supportingText = stringResource(
-                    if (state.credentialKindMismatch) {
-                        R.string.provider_form_credential_kind_changed
-                    } else {
-                        R.string.provider_form_secure_storage
-                    },
-                ),
-                isError = state.credentialKindMismatch,
-            )
-        }
+            ),
+            supportingText = stringResource(
+                if (state.credentialKindMismatch) {
+                    R.string.provider_form_credential_kind_changed
+                } else {
+                    R.string.provider_form_secure_storage
+                },
+            ),
+            isError = state.credentialKindMismatch,
+        )
     }
 }
 
 @Composable
-private fun ProviderFormActionsSection(state: ProviderFormUiState, actions: ProviderFormActions) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun ProviderFormActionsSection(
+    state: ProviderFormUiState,
+    actions: ProviderFormActions,
+    modifier: Modifier = Modifier,
+) {
+    val testing = state.connectionTestState == ProviderConnectionTestState.Testing
+    val connectionStatusDescription = when (state.connectionTestState) {
+        ProviderConnectionTestState.Idle -> null
+        ProviderConnectionTestState.Testing -> stringResource(R.string.provider_form_testing)
+        ProviderConnectionTestState.Success -> stringResource(R.string.common_cd_success)
+        ProviderConnectionTestState.Error -> stringResource(R.string.common_cd_failed)
+    }
+    Row(
+        modifier = modifier.fillMaxWidth().height(IntrinsicSize.Max),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         OutlinedButton(
             onClick = actions.onTestConnection,
-            enabled = state.connectionTestState != ProviderConnectionTestState.Testing &&
-                !state.isSaving && state.endpointValid && !state.credentialKindMismatch,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            enabled = !testing && !state.isSaving && state.endpointValid && !state.credentialKindMismatch,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .heightIn(min = 48.dp)
+                .semantics {
+                    connectionStatusDescription?.let { stateDescription = it }
+                },
         ) {
-            if (state.connectionTestState == ProviderConnectionTestState.Testing) {
+            if (testing) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            } else {
-                Text(stringResource(R.string.provider_form_btn_test))
             }
-        }
-        when (state.connectionTestState) {
-            ProviderConnectionTestState.Success -> ProviderFormStatusText(
-                stringResource(R.string.common_cd_success),
-                success = true,
+            Text(
+                text = stringResource(
+                    if (testing) R.string.provider_form_testing else R.string.provider_form_btn_test,
+                ),
+                modifier = if (testing) Modifier.padding(start = 8.dp) else Modifier,
             )
-            ProviderConnectionTestState.Error -> ProviderFormStatusText(
-                stringResource(R.string.common_cd_failed),
-                success = false,
-            )
-            else -> Unit
         }
         Button(
             onClick = actions.onSave,
             enabled = state.endpointValid && !state.credentialKindMismatch && !state.isSaving &&
                 state.connectionTestState != ProviderConnectionTestState.Testing,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp),
         ) {
             if (state.isSaving) {
                 CircularProgressIndicator(
@@ -798,20 +830,31 @@ private fun ProviderFormActionsSection(state: ProviderFormUiState, actions: Prov
 
 @Composable
 private fun LocalProviderSection(state: ProviderFormUiState, actions: ProviderFormActions) {
-    Surface(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.large,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.local_models_desc),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Text(
+            text = stringResource(R.string.local_models_desc),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (state.localConnectionFailed) {
+            OutlinedButton(
+                onClick = actions.onLocalPrimaryAction,
+                enabled = !state.isSaving,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Text(stringResource(R.string.provider_form_btn_test))
+            }
+            ProviderFormErrorText(stringResource(R.string.onboarding_local_model_unavailable))
+            Button(
+                onClick = actions.onOpenLocalModels,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Text(stringResource(R.string.local_models_title))
+            }
+        } else {
             Button(
                 onClick = actions.onLocalPrimaryAction,
                 enabled = !state.isSaving,
@@ -826,15 +869,6 @@ private fun LocalProviderSection(state: ProviderFormUiState, actions: ProviderFo
                         },
                     ),
                 )
-            }
-            if (state.localConnectionFailed) {
-                ProviderFormErrorText(stringResource(R.string.onboarding_local_model_unavailable))
-                OutlinedButton(
-                    onClick = actions.onOpenLocalModels,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) {
-                    Text(stringResource(R.string.local_models_title))
-                }
             }
         }
     }

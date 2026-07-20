@@ -25,6 +25,8 @@ import io.ktor.http.headersOf
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +47,48 @@ import org.junit.jupiter.api.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ProviderModelReleaseBlockersTest {
+
+    private fun source(relative: String): String = String(
+        Files.readAllBytes(Path.of("app/src/main/java/com/promenar/nexara/$relative")),
+        Charsets.UTF_8,
+    )
+
+    @Test
+    fun `provider form uses unframed sections and one filled save action`() {
+        val form = source("ui/settings/ProviderFormScreen.kt")
+        val cloudSection = form.substringAfter("private fun CloudProviderSection")
+            .substringBefore("private fun ProviderFormActionsSection")
+        val actionsSection = form.substringAfter("private fun ProviderFormActionsSection")
+            .substringBefore("private fun LocalProviderSection")
+        val localSection = form.substringAfter("private fun LocalProviderSection")
+            .substringBefore("private fun ProviderFormErrorText")
+
+        assertThat(cloudSection).doesNotContain("Surface(")
+        assertThat(localSection).doesNotContain("Surface(")
+        assertThat(actionsSection).contains("Row(")
+        assertThat(actionsSection).contains("OutlinedButton(")
+        assertThat(actionsSection).contains("Button(")
+        assertThat(actionsSection).doesNotContain("Column(")
+    }
+
+    @Test
+    fun `shared settings fields and protocol choices use standard Material 3 controls`() {
+        val input = source("ui/common/SettingsInput.kt")
+        val selector = source("ui/common/ProtocolSelector.kt")
+
+        assertThat(input).contains("OutlinedTextField(")
+        assertThat(input).contains("MaterialTheme.typography")
+        assertThat(input).doesNotContain("NexaraGlassCard")
+        assertThat(input).doesNotContain("NexaraColors.")
+        assertThat(input).doesNotContain("BasicTextField(")
+
+        assertThat(selector).contains("ListItem(")
+        assertThat(selector).contains("RadioButton(")
+        assertThat(selector).contains("selectable(")
+        assertThat(selector).contains("Role.RadioButton")
+        assertThat(selector).doesNotContain("NexaraColors.")
+        assertThat(selector).doesNotContain(".border(")
+    }
 
     @Test
     fun `built in fallback can never be presented as green success`() {
