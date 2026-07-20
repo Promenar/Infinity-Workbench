@@ -14,7 +14,7 @@ internal object BackupPreferencePolicy {
             "embedding_base_url", "embedding_model",
         ),
         "settings" to setOf(
-            "language", "theme_mode", "haptic_enabled", "loop_limit", "user_name", "user_avatar",
+            "language", "theme_mode", "theme_color_source", "haptic_enabled", "loop_limit", "user_name", "user_avatar",
             "extra_providers_count", "extra_providers_ids", "all_models", "enabled_models", "all_models_order",
             "preset_summary_model", "preset_image_model", "preset_embedding_model", "preset_rerank_model",
             "preset_skills_migrated_v3",
@@ -36,7 +36,10 @@ internal object BackupPreferencePolicy {
             "show_retrieval_details", "track_retrieval_metrics", "embed_dimension",
             "max_embed_tokens_per_call", "embedding_base_url", "embedding_model", "rerank_base_url",
         ),
-        "ui" to setOf("has_shown_welcome", "language", "theme_mode", "haptic_enabled", "loop_limit", "user_name"),
+        "ui" to setOf(
+            "has_shown_welcome", "language", "theme_mode", "theme_color_source", "haptic_enabled",
+            "loop_limit", "user_name",
+        ),
         "backup" to setOf("webdav_enabled", "auto_backup", "webdav_url", "webdav_user", "last_backup_time"),
     )
 

@@ -32,6 +32,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -50,6 +53,8 @@ import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.welcome.runOnboardingEndpointProbe
 import com.promenar.nexara.ui.welcome.verifyOnboardingModelCandidate
 import com.promenar.nexara.domain.generation.GenerationFailureCode
+import com.promenar.nexara.ui.theme.NexaraColorSource
+import com.promenar.nexara.ui.theme.NexaraThemeMode
 
 /**
  * `listModels` 只有模型 ID，不能据此证明未知模型具备聊天能力。
@@ -304,8 +309,13 @@ class SettingsViewModel(
     private val _language = MutableStateFlow("zh")
     val language: StateFlow<String> = _language.asStateFlow()
 
-    private val _themeMode = MutableStateFlow("dark")
-    val themeMode: StateFlow<String> = _themeMode.asStateFlow()
+    val themeMode: StateFlow<String> = app.themePreferenceStore.state
+        .map { it.mode.name.lowercase() }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            app.themePreferenceStore.state.value.mode.name.lowercase(),
+        )
 
     private val _hapticEnabled = MutableStateFlow(true)
     val hapticEnabled: StateFlow<Boolean> = _hapticEnabled.asStateFlow()
@@ -415,7 +425,6 @@ class SettingsViewModel(
 
     private fun loadPreferences() {
         _language.value = prefs.getString("language", "zh") ?: "zh"
-        _themeMode.value = prefs.getString("theme_mode", "dark") ?: "dark"
         _hapticEnabled.value = prefs.getBoolean("haptic_enabled", true)
         _loopLimit.value = prefs.getInt("loop_limit", 50)
     }
@@ -717,8 +726,14 @@ class SettingsViewModel(
     }
 
     fun setThemeMode(mode: String) {
-        _themeMode.value = mode
-        prefs.edit().putString("theme_mode", mode).apply()
+        val resolvedMode = NexaraThemeMode.values().firstOrNull {
+            it.name.equals(mode, ignoreCase = true)
+        } ?: NexaraThemeMode.DARK
+        app.themePreferenceStore.setMode(resolvedMode)
+    }
+
+    fun setThemeColorSource(source: NexaraColorSource) {
+        app.themePreferenceStore.setColorSource(source)
     }
 
     fun setHaptic(enabled: Boolean) {

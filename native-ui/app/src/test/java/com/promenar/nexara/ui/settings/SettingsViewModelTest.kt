@@ -11,6 +11,10 @@ import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.remote.mcp.McpClient
 import com.promenar.nexara.data.remote.mcp.McpTool
 import com.promenar.nexara.ui.chat.manager.registry.McpSkillRegistry
+import com.promenar.nexara.ui.theme.NexaraColorSource
+import com.promenar.nexara.ui.theme.NexaraThemePreferences
+import com.promenar.nexara.ui.theme.NexaraThemeMode
+import com.promenar.nexara.ui.theme.ThemePreferenceStore
 import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
 import com.promenar.nexara.domain.repository.TokenUsageAggregate
@@ -24,6 +28,7 @@ import io.mockk.unmockkConstructor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -44,6 +49,8 @@ class SettingsViewModelTest {
     private lateinit var mockApp: NexaraApplication
     private lateinit var prefs: SharedPreferences
     private lateinit var skillRepo: ISkillRepository
+    private lateinit var themePreferenceState: MutableStateFlow<NexaraThemePreferences>
+    private lateinit var themePreferenceStore: ThemePreferenceStore
 
     @BeforeEach
     fun setup() {
@@ -67,8 +74,13 @@ class SettingsViewModelTest {
         }
         mockApp = mockk(relaxed = true)
         skillRepo = mockk()
+        themePreferenceState = MutableStateFlow(NexaraThemePreferences())
+        themePreferenceStore = mockk(relaxed = true) {
+            every { state } returns themePreferenceState
+        }
 
         every { mockApp.getSharedPreferences("nexara_settings", 0) } returns prefs
+        every { mockApp.themePreferenceStore } returns themePreferenceStore
         every { mockApp.skillRepository } returns skillRepo
         every { skillRepo.getAllCustomSkills() } returns emptyFlow()
         every { skillRepo.getAllMcpServers() } returns emptyFlow()
@@ -199,6 +211,22 @@ class SettingsViewModelTest {
             mockEditor.putBoolean("preset_skills_migrated_v3", true)
             mockEditor.apply()
         }
+    }
+
+    @Test
+    fun `settings view model 主题兼容层委托给统一 ThemePreferenceStore`() = runTest {
+        themePreferenceState.value = NexaraThemePreferences(
+            mode = NexaraThemeMode.SYSTEM,
+            colorSource = NexaraColorSource.NEXARA,
+        )
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+        assertThat(vm.themeMode.value).isEqualTo("system")
+
+        vm.setThemeMode("light")
+        vm.setThemeColorSource(NexaraColorSource.DYNAMIC)
+
+        verify { themePreferenceStore.setMode(NexaraThemeMode.LIGHT) }
+        verify { themePreferenceStore.setColorSource(NexaraColorSource.DYNAMIC) }
     }
 
     private class MemorySecretStore : SecretStore {

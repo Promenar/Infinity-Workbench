@@ -88,6 +88,7 @@ import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.data.repository.TokenStatsRepository
 import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.util.LocaleHelper
+import com.promenar.nexara.ui.theme.ThemePreferenceStore
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -123,6 +124,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     open val secretStore: SecretStore by lazy { AndroidKeystoreSecretStore(this) }
+    val themePreferenceStore: ThemePreferenceStore by lazy { ThemePreferenceStore(this) }
 
     /** 生产默认依赖保持不变；instrumentation 可通过 Application 子类注入可验证端口。 */
     open fun createChatRouteDependencies(): ChatRouteDependencies =

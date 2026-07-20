@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.theme
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 
 object NexaraColors {
     val CanvasBackground = Color(0xFF131315)
@@ -98,4 +99,42 @@ internal val NexaraDarkColorScheme = darkColorScheme(
     surfaceTint = NexaraColors.SurfaceTint,
     inverseSurface = NexaraColors.InverseSurface,
     inverseOnSurface = NexaraColors.InverseOnSurface,
+)
+
+internal val NexaraLightColorScheme = lightColorScheme(
+    primary = Color(0xFF4548C7),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFDEE0FF),
+    onPrimaryContainer = Color(0xFF00006E),
+    inversePrimary = Color(0xFFC0C1FF),
+    secondary = Color(0xFF5D5D67),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFE2E1EC),
+    onSecondaryContainer = Color(0xFF1A1A22),
+    tertiary = Color(0xFF8E4E00),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFFDCC5),
+    onTertiaryContainer = Color(0xFF2E1500),
+    background = Color(0xFFFBF8FB),
+    onBackground = Color(0xFF1B1B1E),
+    surface = Color(0xFFFBF8FB),
+    onSurface = Color(0xFF1B1B1E),
+    surfaceDim = Color(0xFFDBD9DC),
+    surfaceBright = Color(0xFFFBF8FB),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF5F2F5),
+    surfaceContainer = Color(0xFFEFECEF),
+    surfaceContainerHigh = Color(0xFFE9E7E9),
+    surfaceContainerHighest = Color(0xFFE3E1E3),
+    surfaceVariant = Color(0xFFE4E1EB),
+    onSurfaceVariant = Color(0xFF46464F),
+    outline = Color(0xFF767680),
+    outlineVariant = Color(0xFFC6C5D0),
+    error = Color(0xFFBA1A1A),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF410002),
+    surfaceTint = Color(0xFF4548C7),
+    inverseSurface = Color(0xFF303033),
+    inverseOnSurface = Color(0xFFF3F0F3),
 )

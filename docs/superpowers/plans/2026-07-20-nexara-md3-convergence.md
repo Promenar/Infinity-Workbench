@@ -206,7 +206,7 @@
 - Consumes: application SharedPreferences and `isSystemInDarkTheme()`.
 - Produces: `NexaraThemeMode`, `NexaraColorSource`, `NexaraThemePreferences`, `ThemePreferenceStore.state`, `NexaraLightColorScheme`, `NexaraDarkColorScheme`.
 
-- [ ] **Step 1：写主题持久化 RED**
+- [x] **Step 1：写主题持久化 RED**
 
   Add tests that directly assert:
 
@@ -230,7 +230,7 @@
 
   Expected: RED because the new types/store and `theme_color_source` whitelist do not exist.
 
-- [ ] **Step 2：实现冻结接口**
+- [x] **Step 2：实现冻结接口**
 
   Implement exactly:
 
@@ -246,7 +246,7 @@
 
   `ThemePreferenceStore` exposes `StateFlow<NexaraThemePreferences>` and synchronous `setMode` / `setColorSource`; persisted keys are exactly `theme_mode` and `theme_color_source`. It registers a SharedPreferences change listener for the application-owned lifetime so transactional backup restore updates the StateFlow immediately.
 
-- [ ] **Step 3：接入应用根主题**
+- [x] **Step 3：接入应用根主题**
 
   Add one application-owned `ThemePreferenceStore`; collect it with lifecycle in `MainActivity`; call:
 
@@ -269,11 +269,11 @@
 
   Replace `SettingsViewModel`'s independent `_themeMode` and direct SharedPreferences writer with a temporary compatibility projection/delegation to the application Store. There must be only one mutable owner of both theme keys.
 
-- [ ] **Step 4：补齐浅色语义角色和系统栏**
+- [x] **Step 4：补齐浅色语义角色和系统栏**
 
   Define complete light/dark surface container roles. Derive status/navigation/icon colors from `MaterialTheme.colorScheme`; set system bar icon appearance from resolved light/dark mode, not a hard-coded `false`.
 
-- [ ] **Step 5：运行 GREEN 和编译**
+- [x] **Step 5：运行 GREEN 和编译**
 
   ```bash
   ./gradlew :app:testDebugUnitTest \
@@ -286,7 +286,7 @@
 
   Expected: all selected tests PASS and no existing backup key is removed.
 
-- [ ] **Step 6：独立复审、提交和推送**
+- [x] **Step 6：独立复审、提交和推送**
 
   Review migration defaults, corrupted values, process restart and backup whitelist. Then:
 

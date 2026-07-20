@@ -66,4 +66,17 @@ class NexaraThemeTokenTest {
         assertThat(NexaraDarkColorScheme.secondaryContainer).isEqualTo(NexaraColors.SecondaryContainer)
         assertThat(NexaraDarkColorScheme.onSecondaryContainer).isEqualTo(NexaraColors.OnSecondaryContainer)
     }
+
+    @Test
+    fun `浅色主题完整映射 tonal surface 层级`() {
+        assertThat(NexaraLightColorScheme.background).isNotEqualTo(Color.Unspecified)
+        assertThat(NexaraLightColorScheme.surfaceDim).isNotEqualTo(Color.Unspecified)
+        assertThat(NexaraLightColorScheme.surfaceBright).isNotEqualTo(Color.Unspecified)
+        assertThat(NexaraLightColorScheme.surfaceContainerLowest).isNotEqualTo(Color.Unspecified)
+        assertThat(NexaraLightColorScheme.surfaceContainerLow).isNotEqualTo(Color.Unspecified)
+        assertThat(NexaraLightColorScheme.surfaceContainer).isNotEqualTo(Color.Unspecified)
+        assertThat(NexaraLightColorScheme.surfaceContainerHigh).isNotEqualTo(Color.Unspecified)
+        assertThat(NexaraLightColorScheme.surfaceContainerHighest).isNotEqualTo(Color.Unspecified)
+        assertThat(NexaraLightColorScheme.background).isNotEqualTo(NexaraDarkColorScheme.background)
+    }
 }

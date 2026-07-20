@@ -128,7 +128,8 @@ open class MainActivity : ComponentActivity() {
         routeOpenGenerationIntent(intent)
         val app = application as NexaraApplication
         setContent {
-            NexaraTheme {
+            val themePreferences by app.themePreferenceStore.state.collectAsStateWithLifecycle()
+            NexaraTheme(preferences = themePreferences) {
                 val chatRouteDependencies = remember(app) {
                     provideChatRouteDependencies(app)
                 }

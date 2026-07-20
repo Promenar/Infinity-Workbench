@@ -15,14 +15,28 @@ import androidx.core.view.WindowCompat
 fun NexaraTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,
+    preferences: NexaraThemePreferences? = null,
     content: @Composable () -> Unit
 ) {
+    val useDarkTheme = when (preferences?.mode) {
+        NexaraThemeMode.SYSTEM -> darkTheme
+        NexaraThemeMode.LIGHT -> false
+        NexaraThemeMode.DARK -> true
+        null -> true
+    }
+    val useDynamicColor = preferences?.colorSource == NexaraColorSource.DYNAMIC ||
+        (preferences == null && dynamicColor)
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && useDarkTheme -> {
             val context = LocalContext.current
             dynamicDarkColorScheme(context)
         }
-        else -> NexaraDarkColorScheme
+        useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val context = LocalContext.current
+            androidx.compose.material3.dynamicLightColorScheme(context)
+        }
+        useDarkTheme -> NexaraDarkColorScheme
+        else -> NexaraLightColorScheme
     }
 
     val view = LocalView.current
@@ -32,11 +46,9 @@ fun NexaraTheme(
             window.statusBarColor = android.graphics.Color.TRANSPARENT
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
             
-            // Since the app currently only uses a dark color scheme, we should always 
-            // use light icons (isAppearanceLightStatusBars = false).
             val insetsController = WindowCompat.getInsetsController(window, view)
-            insetsController.isAppearanceLightStatusBars = false
-            insetsController.isAppearanceLightNavigationBars = false
+            insetsController.isAppearanceLightStatusBars = !useDarkTheme
+            insetsController.isAppearanceLightNavigationBars = !useDarkTheme
             
             WindowCompat.setDecorFitsSystemWindows(window, false)
         }

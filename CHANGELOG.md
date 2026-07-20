@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 总收敛：自适应主题状态基础（2026-07-20）
+
+- **唯一主题状态源**：新增 Application 级 `ThemePreferenceStore`，统一持久化系统跟随、浅色、深色以及 Nexara 配色、Android 动态色选择；偏好恢复和外部备份恢复会即时更新应用主题状态。
+- **完整双配色与系统栏**：补齐浅色 Material 3 语义角色，应用根主题按解析后的明暗模式选择静态或动态 `ColorScheme`，状态栏和导航栏图标同步适配明暗背景。
+- **备份契约同步**：`theme_mode` 与 `theme_color_source` 同时进入实际设置命名空间和兼容 UI 命名空间的备份白名单，异常持久化值安全回退到深色 Nexara 配色。
+- **阶段边界**：本轮只建立主题数据、持久化和根主题基础；主题设置页面、全站浅色迁移及浅色/动态色 actual 仍属于后续任务，当前发行仍保持 NO-GO。
+
 ### 会话完整文档上下文、导出与消息分支（2026-07-20）
 
 - **TXT/Markdown 完整上下文**：输入栏添加菜单支持一次选择多个 TXT/MD；正文以 SHA-256 绑定边界随用户消息持久化并完整进入统一协议，不走 RAG、不依赖 Provider 专有文件接口，重试与后台生成复用同一快照。

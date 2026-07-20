@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.backup
 
 import com.google.common.truth.Truth.assertWithMessage
+import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import java.nio.file.Files
 import java.nio.file.Path
@@ -24,6 +25,7 @@ class BackupPreferenceInventoryTest {
             "domain/usecase/RagConfigPersistence.kt#prefs" to "rag_settings",
             "ui/settings/BackupViewModel.kt#prefs" to "nexara_backup_settings",
             "ui/settings/SettingsViewModel.kt#prefs" to "nexara_settings",
+            "ui/theme/ThemePreferenceStore.kt#preferences" to "nexara_settings",
             "ui/settings/LocalModelsViewModel.kt#prefs" to "nexara_settings",
             "ui/settings/SearchConfigViewModel.kt#prefs" to "nexara_search",
             "ui/rag/RagViewModel.kt#prefs" to "rag_settings",
@@ -221,5 +223,15 @@ class BackupPreferenceInventoryTest {
             .that(BackupPreferencePolicy.isKnown("provider", "last_local_model")).isTrue()
         assertWithMessage("旧 provider namespace 中的本地模型路径不得恢复")
             .that(BackupPreferencePolicy.isAllowed("provider", "last_local_model")).isFalse()
+    }
+
+    @Test
+    fun `UI 白名单应覆盖主题偏好键`() {
+        listOf("ui", "nexara_settings").forEach { namespace ->
+            assertThat(BackupPreferencePolicy.isKnown(namespace, "theme_mode")).isTrue()
+            assertThat(BackupPreferencePolicy.isAllowed(namespace, "theme_mode")).isTrue()
+            assertThat(BackupPreferencePolicy.isKnown(namespace, "theme_color_source")).isTrue()
+            assertThat(BackupPreferencePolicy.isAllowed(namespace, "theme_color_source")).isTrue()
+        }
     }
 }
