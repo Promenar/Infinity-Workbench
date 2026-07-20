@@ -1,0 +1,6 @@
+NexaraGlassCard|GlassSurface|GlassBorder
+drawBehind|setShadowLayer
+NexaraColors\.
+Color\(0x[0-9A-Fa-f]+
+Color\.(Black|White|Gray|DarkGray|LightGray)
+#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?

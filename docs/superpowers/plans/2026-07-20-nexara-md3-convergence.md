@@ -87,7 +87,7 @@
 - Consumes: current HEAD, current screenshot references and existing test suite.
 - Produces: a measured baseline for Tasks 2–14; no future production symbol is introduced.
 
-- [ ] **Step 1：确认工作树和保护区**
+- [x] **Step 1：确认工作树和保护区**
 
   Run:
 
@@ -107,7 +107,7 @@
 
   Expected: branch is `codex/md3-redesign`; only known `artifacts/` and `.nexara-workspace-*` may remain untracked; no secret or generated workspace is staged.
 
-- [ ] **Step 2：运行施工前 JVM、截图、Lint 和 AndroidTest 编译基线**
+- [x] **Step 2：运行施工前 JVM、截图、Lint 和 AndroidTest 编译基线**
 
   Run:
 
@@ -121,7 +121,7 @@
 
   Expected: record exact test/failure/error/skip counts; skip is recorded as skip, not PASS. Any failure is triaged before Task 2 and is not hidden with disabled tests.
 
-- [ ] **Step 3：冻结遗留视觉扫描**
+- [x] **Step 3：冻结遗留视觉扫描**
 
   Create `native-ui/app/src/test/resources/md3-theme-surface-patterns.txt` as the single scan-rule source with these regex lines:
 
@@ -160,7 +160,7 @@
 
   Expected: save counts and the complete `ui/**` file list, including `welcome/` and all explicit renderer/theme call sites, in the committed manifest; do not bulk-edit from this scan. Tasks 2–12 may not introduce a matched static token in a new production UI file; the Task 13 full-tree contract enforces this.
 
-- [ ] **Step 4：人工检查当前管理 actual**
+- [x] **Step 4：人工检查当前管理 actual**
 
   Inspect every rendered settings, Provider, model, RAG and navigation screenshot under:
 
@@ -170,7 +170,7 @@
 
   Expected: classify each screen as `keep`, `migrate-list`, `migrate-form`, `theme-blocked` or `missing-baseline`; passing screenshot validation alone is not visual approval.
 
-- [ ] **Step 5：提交和推送基线记录（仅在文档真实变化时）**
+- [x] **Step 5：提交和推送基线记录（仅在文档真实变化时）**
 
   ```bash
   git add native-ui/app/src/test/resources/md3-theme-surface-patterns.txt \
