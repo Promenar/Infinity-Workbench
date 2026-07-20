@@ -302,4 +302,57 @@ class SessionListViewModelTest {
 
         assertThat(vm.searchQuery.value).isEqualTo("test")
     }
+
+    @Test
+    fun `searchSessions filters current agent sessions by title or preview`() = runTest {
+        val titleMatch = Session(
+            id = "title-match",
+            agentId = "a1",
+            title = "Release checklist",
+            lastMessage = "No preview match",
+        )
+        val previewMatch = Session(
+            id = "preview-match",
+            agentId = "a1",
+            title = "General chat",
+            lastMessage = "Review the release candidate",
+        )
+        val otherAgent = Session(
+            id = "other-agent",
+            agentId = "a2",
+            title = "Release notes",
+        )
+        store.update {
+            it.copy(sessions = listOf(titleMatch, previewMatch, otherAgent))
+        }
+        every { agentRepo.observeById("a1") } returns flowOf(null)
+        coEvery { sessionRepo.getAll() } returns listOf(titleMatch, previewMatch, otherAgent)
+        val vm = SessionListViewModel(store, sessionRepo, agentRepo)
+
+        vm.loadSessions("a1")
+        vm.searchSessions("release")
+
+        assertThat(vm.sessions.value.map { it.id })
+            .containsExactly("title-match", "preview-match")
+    }
+
+    @Test
+    fun `clearing search restores all sessions for current agent`() = runTest {
+        val sessions = listOf(
+            Session(id = "s1", agentId = "a1", title = "Alpha"),
+            Session(id = "s2", agentId = "a1", title = "Beta"),
+        )
+        store.update { it.copy(sessions = sessions) }
+        every { agentRepo.observeById("a1") } returns flowOf(null)
+        coEvery { sessionRepo.getAll() } returns sessions
+        val vm = SessionListViewModel(store, sessionRepo, agentRepo)
+
+        vm.loadSessions("a1")
+        vm.searchSessions("Alpha")
+        assertThat(vm.sessions.value.map { it.id }).containsExactly("s1")
+
+        vm.searchSessions("")
+
+        assertThat(vm.sessions.value.map { it.id }).containsExactly("s1", "s2")
+    }
 }

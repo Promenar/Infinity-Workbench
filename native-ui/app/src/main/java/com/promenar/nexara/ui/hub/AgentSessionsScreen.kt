@@ -1,66 +1,103 @@
 package com.promenar.nexara.ui.hub
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.*
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraBackButton
-import com.promenar.nexara.ui.common.NexaraGlassCard
-import com.promenar.nexara.ui.common.NexaraSearchBar
-import com.promenar.nexara.ui.common.SwipeableItem
+import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.ui.common.ConfirmDialog
+import com.promenar.nexara.ui.common.NexaraSearchTopBar
+import com.promenar.nexara.ui.common.SwipeableItem
 import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
-import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import java.text.SimpleDateFormat
 import java.util.Date
 
+// Route 持有 ViewModel 与瞬时 UI 状态，Content 只消费显式 state/actions。
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun AgentSessionsScreen(
     agentId: String,
     onNavigateBack: () -> Unit,
     onNavigateToChat: (String) -> Unit,
-    onNavigateToAgentEdit: () -> Unit
+    onNavigateToAgentEdit: () -> Unit,
 ) {
     val context = LocalContext.current
-    val viewModel: SessionListViewModel = viewModel(factory = SessionListViewModel.factory(context.applicationContext as android.app.Application))
+    val viewModel: SessionListViewModel = viewModel(
+        factory = SessionListViewModel.factory(context.applicationContext as android.app.Application),
+    )
     val sessions by viewModel.sessions.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
     val agentName by viewModel.agentName.collectAsState()
     val agentColor by viewModel.agentColor.collectAsState()
     val operationFailed by viewModel.operationFailed.collectAsState()
-    var sessionToDelete by remember { mutableStateOf<String?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
+    var pendingDeleteSessionId by remember { mutableStateOf<String?>(null) }
+    var searchActive by rememberSaveable { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val operationFailedMessage = stringResource(R.string.sessions_operation_failed)
-    val locale = LocalConfiguration.current.locales[0]
 
     LaunchedEffect(agentId) {
         viewModel.loadSessions(agentId)
     }
-
     LaunchedEffect(operationFailed) {
         if (operationFailed) {
             snackbarHostState.showSnackbar(operationFailedMessage)
@@ -68,226 +105,189 @@ fun AgentSessionsScreen(
         }
     }
 
-    val parsedAgentColor = try {
+    val parsedAgentColor = runCatching {
         Color(android.graphics.Color.parseColor(agentColor))
-    } catch (e: Exception) {
-        NexaraColors.Primary
-    }
+    }.getOrDefault(NexaraColors.Primary)
 
+    AgentSessionsScreenContent(
+        state = AgentSessionsScreenState(
+            sessions = sessions,
+            agentName = agentName,
+            agentColor = parsedAgentColor,
+            searchQuery = searchQuery,
+            searchActive = searchActive,
+            pendingDeleteSessionId = pendingDeleteSessionId,
+        ),
+        actions = AgentSessionsScreenActions(
+            onSearch = viewModel::searchSessions,
+            onSearchActiveChange = { searchActive = it },
+            onNavigateBack = onNavigateBack,
+            onNavigateToAgentEdit = onNavigateToAgentEdit,
+            onCreateSession = {
+                viewModel.createSession(agentId, onNavigateToChat)
+            },
+            onOpenSession = { sessionId ->
+                viewModel.selectSession(sessionId)
+                onNavigateToChat(sessionId)
+            },
+            onPinSession = viewModel::pinSession,
+            onRequestDelete = { pendingDeleteSessionId = it },
+            onCancelDelete = { pendingDeleteSessionId = null },
+            onConfirmDelete = { sessionId ->
+                viewModel.deleteSession(sessionId)
+                pendingDeleteSessionId = null
+            },
+        ),
+        snackbarHostState = snackbarHostState,
+    )
+}
+
+internal data class AgentSessionsScreenState(
+    val sessions: List<Session> = emptyList(),
+    val agentName: String = "",
+    val agentColor: Color = NexaraColors.Primary,
+    val searchQuery: String = "",
+    val searchActive: Boolean = false,
+    val pendingDeleteSessionId: String? = null,
+)
+
+internal data class AgentSessionsScreenActions(
+    val onSearch: (String) -> Unit = {},
+    val onSearchActiveChange: (Boolean) -> Unit = {},
+    val onNavigateBack: () -> Unit = {},
+    val onNavigateToAgentEdit: () -> Unit = {},
+    val onCreateSession: () -> Unit = {},
+    val onOpenSession: (String) -> Unit = {},
+    val onPinSession: (String) -> Unit = {},
+    val onRequestDelete: (String) -> Unit = {},
+    val onCancelDelete: () -> Unit = {},
+    val onConfirmDelete: (String) -> Unit = {},
+)
+
+private data class SessionSearchScrollAnchor(
+    val sessionId: String?,
+    val fallbackIndex: Int,
+    val offset: Int,
+    val originalItemCount: Int,
+)
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@Composable
+internal fun AgentSessionsScreenContent(
+    state: AgentSessionsScreenState,
+    actions: AgentSessionsScreenActions,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+) {
+    val listState = rememberLazyListState()
+    var searchScrollAnchor by remember { mutableStateOf<SessionSearchScrollAnchor?>(null) }
+    LaunchedEffect(state.searchActive, state.searchQuery, state.sessions.size) {
+        if (state.searchActive && searchScrollAnchor == null) {
+            val index = listState.firstVisibleItemIndex
+            searchScrollAnchor = SessionSearchScrollAnchor(
+                sessionId = state.sessions.getOrNull(index)?.id,
+                fallbackIndex = index,
+                offset = listState.firstVisibleItemScrollOffset,
+                originalItemCount = state.sessions.size,
+            )
+        } else if (!state.searchActive && state.searchQuery.isBlank()) {
+            val anchor = searchScrollAnchor ?: return@LaunchedEffect
+            if (state.sessions.isNotEmpty()) {
+                val stableIndex = anchor.sessionId
+                    ?.let { id -> state.sessions.indexOfFirst { it.id == id } }
+                    ?.takeIf { it >= 0 }
+                val targetIndex = stableIndex
+                    ?: anchor.fallbackIndex.coerceIn(0, state.sessions.lastIndex)
+                listState.scrollToItem(targetIndex, anchor.offset)
+                searchScrollAnchor = null
+            } else if (anchor.originalItemCount == 0) {
+                searchScrollAnchor = null
+            }
+        }
+    }
     Scaffold(
-        containerColor = NexaraColors.CanvasBackground,
-        contentWindowInsets = WindowInsets.systemBars,
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
-            AgentSessionHeader(
-                agentName = agentName,
-                sessionCount = sessions.size,
-                onBack = onNavigateBack,
-                onSettings = onNavigateToAgentEdit
+            NexaraSearchTopBar(
+                title = state.agentName,
+                query = state.searchQuery,
+                searchActive = state.searchActive,
+                onQueryChange = actions.onSearch,
+                onSearchActiveChange = { active ->
+                    if (!active) actions.onSearch("")
+                    actions.onSearchActiveChange(active)
+                },
+                onBack = actions.onNavigateBack,
+                actions = {
+                    IconButton(
+                        onClick = actions.onNavigateToAgentEdit,
+                        modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = stringResource(R.string.sessions_cd_settings),
+                        )
+                    }
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = {
-                    viewModel.createSession(agentId) { sessionId ->
-                        onNavigateToChat(sessionId)
-                    }
-                },
-                containerColor = parsedAgentColor,
-                contentColor = Color.White,
+                onClick = actions.onCreateSession,
+                containerColor = state.agentColor,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = CircleShape,
-                modifier = Modifier.size(56.dp)
+                modifier = Modifier.size(56.dp),
             ) {
-                Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.sessions_cd_new), modifier = Modifier.size(28.dp))
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = stringResource(R.string.sessions_cd_new),
+                )
             }
-        }
+        },
     ) { paddingValues ->
         ConfirmDialog(
-            show = sessionToDelete != null,
-            onDismiss = { sessionToDelete = null },
+            show = state.pendingDeleteSessionId != null,
+            onDismiss = actions.onCancelDelete,
             onConfirm = {
-                sessionToDelete?.let { viewModel.deleteSession(it) }
-                sessionToDelete = null
+                state.pendingDeleteSessionId?.let(actions.onConfirmDelete)
             },
             title = stringResource(R.string.session_settings_delete_title),
             description = stringResource(R.string.session_settings_delete_message),
             confirmLabel = stringResource(R.string.shared_btn_delete),
-            destructive = true
+            destructive = true,
         )
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            if (sessions.isEmpty() && searchQuery.isEmpty()) {
+        when {
+            state.sessions.isEmpty() && state.searchQuery.isNotBlank() -> {
+                SearchEmptyState(modifier = Modifier.padding(paddingValues))
+            }
+
+            state.sessions.isEmpty() -> {
                 EmptySessionsState(
-                    onCreateSession = {
-                        viewModel.createSession(agentId) { sessionId ->
-                            onNavigateToChat(sessionId)
-                        }
-                    },
-                    modifier = Modifier.weight(1f)
+                    onCreateSession = actions.onCreateSession,
+                    modifier = Modifier.padding(paddingValues),
                 )
-            } else {
+            }
+
+            else -> {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
                     contentPadding = PaddingValues(
-                        start = 20.dp, end = 20.dp,
-                        top = 8.dp, bottom = 120.dp
+                        start = NexaraSpacing.ScreenHorizontal,
+                        end = NexaraSpacing.ScreenHorizontal,
+                        top = NexaraSpacing.Small,
+                        bottom = 96.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    stickyHeader {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(NexaraColors.CanvasBackground.copy(alpha = 0.9f))
-                                .padding(bottom = 12.dp)
-                        ) {
-                            NexaraSearchBar(
-                                value = searchQuery,
-                                onValueChange = {
-                                    searchQuery = it
-                                    viewModel.searchSessions(it)
-                                },
-                                placeholder = stringResource(R.string.sessions_search_placeholder)
-                            )
-                        }
-                    }
-
-                    itemsIndexed(sessions, key = { _, s -> s.id }) { _, session ->
-                        val formatter = SimpleDateFormat("MMM dd, HH:mm", locale)
-                        val timeString = formatter.format(Date(session.updatedAt))
-
-                        SwipeableItem(
-                            onPin = { viewModel.pinSession(session.id) },
-                            onDelete = { sessionToDelete = session.id },
-                            isPinned = session.isPinned
-                        ) {
-                            SessionCard(
-                                title = session.title,
-                                time = timeString,
-                                preview = session.lastMessage,
-                                isPinned = session.isPinned,
-                                onClick = {
-                                    viewModel.selectSession(session.id)
-                                    onNavigateToChat(session.id)
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AgentSessionHeader(
-    agentName: String,
-    sessionCount: Int,
-    onBack: () -> Unit,
-    onSettings: () -> Unit
-) {
-    TopAppBar(
-        title = {
-            Column {
-                Text(
-                    text = agentName,
-                    style = NexaraTypography.titleMedium,
-                    color = NexaraColors.OnSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = stringResource(R.string.sessions_count_format, sessionCount),
-                    style = NexaraTypography.labelSmall,
-                    color = NexaraColors.OnSurfaceVariant
-                )
-            }
-        },
-        navigationIcon = {
-            NexaraBackButton(onClick = onBack)
-        },
-        actions = {
-            IconButton(onClick = onSettings) {
-                Icon(
-                    imageVector = Icons.Rounded.Settings,
-                    contentDescription = stringResource(R.string.sessions_cd_settings),
-                    tint = NexaraColors.OnSurface
-                )
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-    )
-}
-
-@Composable
-private fun SessionCard(
-    title: String,
-    time: String,
-    preview: String?,
-    isPinned: Boolean = false,
-    onClick: () -> Unit
-) {
-    NexaraGlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        onClick = onClick
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Text(
-                    text = title,
-                    style = NexaraTypography.headlineMedium.copy(
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = NexaraColors.OnSurface,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = time,
-                    style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                    color = NexaraColors.OnSurfaceVariant
-                )
-            }
-
-            if (!preview.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = preview,
-                    style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
-                    color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.8f),
-                    maxLines = 1
-                )
-            }
-
-            if (isPinned) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(NexaraColors.GlassSurface)
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.sessions_tag_pinned),
-                            style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                            color = NexaraColors.Primary
+                    itemsIndexed(state.sessions, key = { _, session -> session.id }) { index, session ->
+                        SessionListItem(
+                            session = session,
+                            showDivider = index < state.sessions.lastIndex,
+                            actions = actions,
                         )
                     }
                 }
@@ -297,46 +297,170 @@ private fun SessionCard(
 }
 
 @Composable
-private fun EmptySessionsState(
-    onCreateSession: () -> Unit,
-    modifier: Modifier = Modifier
+private fun SessionListItem(
+    session: Session,
+    showDivider: Boolean,
+    actions: AgentSessionsScreenActions,
 ) {
+    val configuration = LocalConfiguration.current
+    val locale = configuration.locales[0]
+    val largeFont = configuration.fontScale >= 1.5f
+    val formattedTime = remember(session.updatedAt, locale) {
+        SimpleDateFormat("MMM d\nHH:mm", locale).format(Date(session.updatedAt))
+    }
+    val pinnedStateDescription = stringResource(R.string.sessions_tag_pinned)
+    val pinActionLabel = stringResource(
+        if (session.isPinned) R.string.common_cd_unpin else R.string.common_cd_pin,
+    )
+    val deleteActionLabel = stringResource(R.string.common_cd_delete)
+
+    SwipeableItem(
+        onPin = { actions.onPinSession(session.id) },
+        onDelete = { actions.onRequestDelete(session.id) },
+        isPinned = session.isPinned,
+        shape = RectangleShape,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            ListItem(
+                modifier = Modifier.clickable(
+                    onClick = { actions.onOpenSession(session.id) },
+                )
+                    .fillMaxWidth()
+                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                    .semantics(mergeDescendants = true) {
+                        if (session.isPinned) stateDescription = pinnedStateDescription
+                        customActions = listOf(
+                            CustomAccessibilityAction(pinActionLabel) {
+                                actions.onPinSession(session.id)
+                                true
+                            },
+                            CustomAccessibilityAction(deleteActionLabel) {
+                                actions.onRequestDelete(session.id)
+                                true
+                            },
+                        )
+                    },
+                colors = ListItemDefaults.colors(
+                    containerColor = Color.Transparent,
+                ),
+                headlineContent = {
+                    Text(
+                        text = session.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = if (largeFont) 4 else 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                supportingContent = if (session.lastMessage.isNullOrBlank()) {
+                    null
+                } else {
+                    {
+                        Text(
+                            text = session.lastMessage.orEmpty(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = if (largeFont) 4 else 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                },
+                trailingContent = {
+                    Column(
+                        modifier = Modifier.widthIn(max = 96.dp),
+                        horizontalAlignment = Alignment.End,
+                    ) {
+                        if (session.isPinned) {
+                            Icon(
+                                imageVector = Icons.Rounded.PushPin,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        Text(
+                            text = formattedTime,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.End,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                },
+            )
+            if (showDivider) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = NexaraSpacing.ScreenHorizontal),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchEmptyState(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(32.dp)
+            modifier = Modifier.padding(NexaraSpacing.XXLarge),
         ) {
-            Text(text = "💬", fontSize = 48.sp)
-            Spacer(modifier = Modifier.height(16.dp))
+            Icon(
+                imageVector = Icons.Rounded.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(48.dp),
+            )
+            Spacer(modifier = Modifier.height(NexaraSpacing.Large))
+            Text(
+                text = stringResource(R.string.common_search_no_results),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptySessionsState(
+    onCreateSession: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(NexaraSpacing.XXLarge),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Forum,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(48.dp),
+            )
+            Spacer(modifier = Modifier.height(NexaraSpacing.Large))
             Text(
                 text = stringResource(R.string.sessions_empty_title),
-                style = NexaraTypography.headlineMedium,
-                color = NexaraColors.OnSurface
+                style = MaterialTheme.typography.headlineSmall,
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(NexaraSpacing.Small))
             Text(
                 text = stringResource(R.string.sessions_empty_subtitle),
-                style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurfaceVariant
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(NexaraSpacing.XLarge))
             FilledTonalButton(
                 onClick = onCreateSession,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = NexaraColors.Primary.copy(alpha = 0.15f),
-                    contentColor = NexaraColors.Primary
-                ),
-                shape = RoundedCornerShape(12.dp)
+                colors = ButtonDefaults.filledTonalButtonColors(),
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+                Icon(imageVector = Icons.Rounded.Add, contentDescription = null)
+                Spacer(modifier = Modifier.width(NexaraSpacing.Small))
                 Text(stringResource(R.string.sessions_btn_new))
             }
         }

@@ -37,6 +37,7 @@
 
     <!-- SearchBar -->
     <string name="common_search_placeholder">Search…</string>
+    <string name="common_search_no_results">No matching results</string>
 
     <!-- Content Descriptions (无障碍) -->
     <string name="common_cd_back">Back</string>

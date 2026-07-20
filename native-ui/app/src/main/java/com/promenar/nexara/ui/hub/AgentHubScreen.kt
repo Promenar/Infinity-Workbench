@@ -6,11 +6,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -61,15 +64,18 @@ fun AgentHubScreen(
 
     var showAddDialog by remember { mutableStateOf(false) }
     var agentToDelete by remember { mutableStateOf<String?>(null) }
+    var searchActive by rememberSaveable { mutableStateOf(false) }
 
     val state = AgentHubScreenState(
         displayAgents = visibleAgents,
         searchQuery = searchQuery,
+        searchActive = searchActive,
         showAddDialog = showAddDialog,
         pendingDeleteAgentId = agentToDelete,
     )
     val actions = AgentHubScreenActions(
         onSearch = viewModel::updateSearchQuery,
+        onSearchActiveChange = { searchActive = it },
         onRequestAdd = { showAddDialog = true },
         onCancelAdd = { showAddDialog = false },
         onCreateAgent = { name, desc, model, systemPrompt ->
@@ -270,12 +276,14 @@ private fun AddAgentDialog(
 internal data class AgentHubScreenState(
     val displayAgents: List<AgentDisplayItem> = emptyList(),
     val searchQuery: String = "",
+    val searchActive: Boolean = false,
     val showAddDialog: Boolean = false,
     val pendingDeleteAgentId: String? = null,
 )
 
 internal data class AgentHubScreenActions(
     val onSearch: (String) -> Unit = {},
+    val onSearchActiveChange: (Boolean) -> Unit = {},
     val onRequestAdd: () -> Unit = {},
     val onCancelAdd: () -> Unit = {},
     val onCreateAgent: (String, String, String, String) -> Unit = { _, _, _, _ -> },
@@ -287,41 +295,79 @@ internal data class AgentHubScreenActions(
     val onOpenSession: (String) -> Unit = {},
 )
 
+private data class HubSearchScrollAnchor(
+    val agentId: String?,
+    val fallbackIndex: Int,
+    val offset: Int,
+    val originalItemCount: Int,
+)
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 internal fun AgentHubScreenContent(
     state: AgentHubScreenState,
     actions: AgentHubScreenActions,
 ) {
+    val listState = rememberLazyListState()
+    var searchScrollAnchor by remember { mutableStateOf<HubSearchScrollAnchor?>(null) }
+    LaunchedEffect(state.searchActive, state.searchQuery, state.displayAgents.size) {
+        if (state.searchActive && searchScrollAnchor == null) {
+            val index = listState.firstVisibleItemIndex
+            searchScrollAnchor = HubSearchScrollAnchor(
+                agentId = state.displayAgents.getOrNull(index)?.agent?.id,
+                fallbackIndex = index,
+                offset = listState.firstVisibleItemScrollOffset,
+                originalItemCount = state.displayAgents.size,
+            )
+        } else if (!state.searchActive && state.searchQuery.isBlank()) {
+            val anchor = searchScrollAnchor ?: return@LaunchedEffect
+            if (state.displayAgents.isNotEmpty()) {
+                val stableIndex = anchor.agentId
+                    ?.let { id -> state.displayAgents.indexOfFirst { it.agent.id == id } }
+                    ?.takeIf { it >= 0 }
+                val targetIndex = stableIndex
+                    ?: anchor.fallbackIndex.coerceIn(0, state.displayAgents.lastIndex)
+                listState.scrollToItem(targetIndex, anchor.offset)
+                searchScrollAnchor = null
+            } else if (anchor.originalItemCount == 0) {
+                searchScrollAnchor = null
+            }
+        }
+    }
     Scaffold(
         modifier = Modifier.testTag(UiTags.HUB_ROOT),
         containerColor = NexaraColors.CanvasBackground,
         contentWindowInsets = WindowInsets.statusBars,
         topBar = {
-            TopAppBar(
-                title = {
-                    Box(modifier = Modifier.padding(start = 4.dp)) {
-                        Text(stringResource(R.string.hub_title), style = NexaraTypography.headlineLarge)
+            Box(
+                modifier = Modifier
+                    .testTag(UiTags.HUB_SEARCH)
+                    .semantics(mergeDescendants = true) {},
+            ) {
+                NexaraSearchTopBar(
+                    title = stringResource(R.string.hub_title),
+                    query = state.searchQuery,
+                    searchActive = state.searchActive,
+                    onQueryChange = actions.onSearch,
+                    onSearchActiveChange = { active ->
+                        if (!active) actions.onSearch("")
+                        actions.onSearchActiveChange(active)
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = actions.onRequestAdd,
+                            modifier = Modifier.testTag(UiTags.HUB_ADD_AGENT)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Add,
+                                contentDescription = stringResource(R.string.hub_btn_add_agent),
+                                tint = NexaraColors.OnSurface,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
                     }
-                },
-                actions = {
-                    IconButton(
-                        onClick = actions.onRequestAdd,
-                        modifier = Modifier.testTag(UiTags.HUB_ADD_AGENT)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Add,
-                            contentDescription = stringResource(R.string.hub_btn_add_agent),
-                            tint = NexaraColors.OnSurface,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f),
-                    titleContentColor = NexaraColors.OnSurface
                 )
-            )
+            }
         }
     ) { paddingValues ->
         ConfirmDialog(
@@ -336,13 +382,19 @@ internal fun AgentHubScreenContent(
             destructive = true
         )
 
-        if (state.displayAgents.isEmpty() && state.searchQuery.isEmpty()) {
-            EmptyAgentState(
+        when {
+            state.displayAgents.isEmpty() && state.searchQuery.isBlank() -> EmptyAgentState(
                 onCreateAgent = actions.onRequestAdd,
-                modifier = Modifier.padding(paddingValues)
+                modifier = Modifier.padding(paddingValues),
             )
-        } else {
+
+            state.displayAgents.isEmpty() -> HubSearchEmptyState(
+                modifier = Modifier.padding(paddingValues),
+            )
+
+            else -> {
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .testTag(UiTags.HUB_AGENT_LIST)
@@ -352,22 +404,6 @@ internal fun AgentHubScreenContent(
                     top = 8.dp, bottom = 24.dp
                 ),
             ) {
-                stickyHeader {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(NexaraColors.CanvasBackground.copy(alpha = 0.9f))
-                            .padding(bottom = 12.dp)
-                    ) {
-                        NexaraSearchBar(
-                            value = state.searchQuery,
-                            onValueChange = actions.onSearch,
-                            modifier = Modifier.testTag(UiTags.HUB_SEARCH),
-                            placeholder = stringResource(R.string.hub_search_placeholder)
-                        )
-                    }
-                }
-
                 itemsIndexed(state.displayAgents, key = { _, item -> item.agent.id }) { index, item ->
                     val agent = item.agent
                     val parsedColor = try {
@@ -393,6 +429,33 @@ internal fun AgentHubScreenContent(
                     )
                 }
             }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HubSearchEmptyState(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(48.dp),
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = stringResource(R.string.common_search_no_results),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -417,6 +480,7 @@ fun AgentCardItem(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val pinnedStateDescription = stringResource(R.string.sessions_tag_pinned)
+    val largeFont = LocalConfiguration.current.fontScale >= 1.5f
 
     SwipeableItem(
         onPin = onPin,
@@ -459,7 +523,7 @@ fun AgentCardItem(
                         text = title,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
+                        maxLines = if (largeFont) 4 else 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
@@ -469,7 +533,7 @@ fun AgentCardItem(
                             text = subtitle,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
+                            maxLines = if (largeFont) 4 else 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }

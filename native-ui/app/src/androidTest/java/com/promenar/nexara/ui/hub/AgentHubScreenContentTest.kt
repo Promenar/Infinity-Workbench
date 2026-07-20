@@ -1,14 +1,23 @@
 package com.promenar.nexara.ui.hub
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.test.platform.app.InstrumentationRegistry
@@ -27,6 +36,79 @@ class AgentHubScreenContentTest {
 
     private val resources
         get() = InstrumentationRegistry.getInstrumentation().targetContext.resources
+
+    @Test
+    fun topBarSearchClearAndBackRestoreHubState() {
+        var query by mutableStateOf("")
+        var searchActive by mutableStateOf(false)
+        rule.setContent {
+            NexaraTheme {
+                AgentHubScreenContent(
+                    state = AgentHubScreenState(
+                        searchQuery = query,
+                        searchActive = searchActive,
+                    ),
+                    actions = AgentHubScreenActions(
+                        onSearch = { query = it },
+                        onSearchActiveChange = { searchActive = it },
+                    ),
+                )
+            }
+        }
+
+        val search = resources.getString(R.string.common_search_placeholder)
+        rule.onNodeWithContentDescription(search).performClick()
+        rule.onNodeWithContentDescription(search).performTextInput("missing")
+        rule.onNodeWithContentDescription(resources.getString(R.string.common_cd_clear)).performClick()
+        assertThat(query).isEmpty()
+        rule.onNodeWithContentDescription(search).performTextInput("missing-again")
+        rule.onNodeWithContentDescription(resources.getString(R.string.common_cd_back)).performClick()
+
+        assertThat(searchActive).isFalse()
+        assertThat(query).isEmpty()
+    }
+
+    @Test
+    fun searchNoResultsBackRestoresHubScrollPosition() {
+        var query by mutableStateOf("")
+        var searchActive by mutableStateOf(false)
+        val agents = (0 until 24).map { index ->
+            AgentDisplayItem(
+                agent = previewAgent(
+                    id = "agent-$index",
+                    name = "Agent $index",
+                    description = "Description $index",
+                ),
+                title = "Agent $index",
+                subtitle = "Description $index",
+            )
+        }
+        rule.setContent {
+            NexaraTheme {
+                AgentHubScreenContent(
+                    state = AgentHubScreenState(
+                        displayAgents = if (query.isBlank()) agents else listOf(agents.first()),
+                        searchQuery = query,
+                        searchActive = searchActive,
+                    ),
+                    actions = AgentHubScreenActions(
+                        onSearch = { query = it },
+                        onSearchActiveChange = { searchActive = it },
+                    ),
+                )
+            }
+        }
+
+        rule.onNode(hasScrollAction()).performScrollToNode(hasText("Agent 18"))
+        rule.onNodeWithText("Agent 18").assertIsDisplayed()
+        val search = resources.getString(R.string.common_search_placeholder)
+        rule.onNodeWithContentDescription(search).performClick()
+        rule.onNodeWithContentDescription(search).performTextInput("missing")
+        rule.onNodeWithContentDescription(resources.getString(R.string.common_cd_back)).performClick()
+        rule.waitForIdle()
+
+        rule.onNodeWithText("Agent 18").assertIsDisplayed()
+    }
 
     private fun previewAgent(
         id: String,

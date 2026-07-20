@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 总收敛：助手会话与顶栏搜索（2026-07-20）
+
+- **统一顶栏搜索**：助手首页与会话列表移除常驻搜索框，在页面顶栏进入上下文搜索；退出搜索会清空 query，并按稳定条目 ID、原始索引和像素偏移恢复搜索前位置。
+- **连续 Material 列表**：会话行改为透明连续 `ListItem`，保留整行进入、时间、预览、滑动置顶/删除和删除确认；无会话与无匹配结果均使用明确空态，不再复用玻璃卡片。
+- **无障碍与大字体**：会话行提供 TalkBack 置顶/取消置顶与删除自定义动作，常规触控目标保持至少 48dp；2.0x 字体下标题和预览放宽至四行，长标题、长预览不与操作区重叠。
+- **当前门禁**：全量 JVM 2046 项（0 failure/error、14 skip）、79/79 Screenshot、Lint 0 Error/Fatal（406 warning）、AndroidTest 编译以及 API 31/35/36 定向设备测试各 15/15 通过；Task 6 受影响 actual 已逐张人工检查，Terra/Sol Critical、Important 均清零。整体发行继续保持 NO-GO。
+
 ### Material 3 总收敛：流体胶囊手机导航（2026-07-20）
 
 - **更矮的全胶囊导航坞**：手机底部导航改为 64dp tonal 全胶囊 Surface，选中项使用一枚 48dp 高的移动胶囊承载图标与标签，未选中项保持图标模式；600dp 及以上继续使用既有 `NavigationRail`。

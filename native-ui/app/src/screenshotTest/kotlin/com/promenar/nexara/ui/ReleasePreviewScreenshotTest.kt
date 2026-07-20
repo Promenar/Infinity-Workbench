@@ -80,6 +80,9 @@ import com.promenar.nexara.ui.hub.AgentDisplayItem
 import com.promenar.nexara.ui.hub.AgentHubScreenActions
 import com.promenar.nexara.ui.hub.AgentHubScreenContent
 import com.promenar.nexara.ui.hub.AgentHubScreenState
+import com.promenar.nexara.ui.hub.AgentSessionsScreenActions
+import com.promenar.nexara.ui.hub.AgentSessionsScreenContent
+import com.promenar.nexara.ui.hub.AgentSessionsScreenState
 import com.promenar.nexara.ui.hub.SettingsTab
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenActions
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenContent
@@ -1138,6 +1141,125 @@ fun agentHubEmptyLargeFontReleasePreview() {
         AgentHubScreenContent(
             state = AgentHubScreenState(displayAgents = emptyList()),
             actions = AgentHubScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Agent sessions long titles English",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun agentSessionsLongTitlesReleasePreview() {
+    ReleasePreviewSurface {
+        AgentSessionsScreenContent(
+            state = AgentSessionsScreenState(
+                agentName = "Release and architecture assistant with a long display name",
+                sessions = listOf(
+                    Session(
+                        id = "session-long-title",
+                        agentId = "agent-preview",
+                        title = "A very long conversation title that must remain readable without covering its timestamp",
+                        lastMessage = "The list remains continuous while retaining preview content and pin state.",
+                        isPinned = true,
+                        updatedAt = PREVIEW_RAG_NOW_MILLIS,
+                    ),
+                    Session(
+                        id = "session-second-title",
+                        agentId = "agent-preview",
+                        title = "Second long session title for the Material list layout",
+                        lastMessage = "Preview text wraps conservatively and never changes row navigation.",
+                        updatedAt = PREVIEW_RAG_NOW_MILLIS - 3_600_000L,
+                    ),
+                ),
+            ),
+            actions = AgentSessionsScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Agent sessions Chinese font scale 2",
+    widthDp = 360,
+    heightDp = 640,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun agentSessionsLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        AgentSessionsScreenContent(
+            state = AgentSessionsScreenState(
+                agentName = "超长名称发布与架构验收助手",
+                sessions = listOf(
+                    Session(
+                        id = "session-large-font",
+                        agentId = "agent-preview",
+                        title = "长名称会话在大字体下仍应完整保持可点击和可读",
+                        lastMessage = "预览文本不应遮挡时间或置顶状态。",
+                        isPinned = true,
+                        updatedAt = PREVIEW_RAG_NOW_MILLIS,
+                    ),
+                    Session(
+                        id = "session-large-font-second",
+                        agentId = "agent-preview",
+                        title = "第二个会话",
+                        lastMessage = "用于验证连续列表的分隔线和间距。",
+                        updatedAt = PREVIEW_RAG_NOW_MILLIS - 3_600_000L,
+                    ),
+                ),
+            ),
+            actions = AgentSessionsScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Agent sessions search active",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun agentSessionsSearchActiveReleasePreview() {
+    ReleasePreviewSurface {
+        AgentSessionsScreenContent(
+            state = AgentSessionsScreenState(
+                agentName = "Preview agent",
+                sessions = emptyList(),
+                searchQuery = "release candidate",
+                searchActive = true,
+            ),
+            actions = AgentSessionsScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Agent sessions empty Chinese",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun agentSessionsEmptyReleasePreview() {
+    ReleasePreviewSurface {
+        AgentSessionsScreenContent(
+            state = AgentSessionsScreenState(
+                agentName = "发布与架构助手",
+                sessions = emptyList(),
+            ),
+            actions = AgentSessionsScreenActions(),
         )
     }
 }

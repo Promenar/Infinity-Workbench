@@ -545,7 +545,10 @@
 **Files:**
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/hub/AgentSessionsScreen.kt`
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/hub/AgentHubScreen.kt`
+- Modify: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/hub/AgentHubScreenContentTest.kt`
 - Modify: `native-ui/app/src/test/java/com/promenar/nexara/ui/hub/SessionListViewModelTest.kt`
+- Modify: `native-ui/app/src/main/res/values/strings.xml`
+- Modify: `native-ui/app/src/main/res/values-zh-rCN/strings.xml`
 - Create: `native-ui/app/src/test/java/com/promenar/nexara/ui/hub/AgentSessionsMaterialContractTest.kt`
 - Create: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/hub/AgentSessionsMaterialTest.kt`
 - Modify: `native-ui/app/src/screenshotTest/kotlin/com/promenar/nexara/ui/ReleasePreviewScreenshotTest.kt`
@@ -554,9 +557,9 @@
 - Consumes: `NexaraSearchTopBar`, existing session filtering and swipe actions.
 - Produces: contextual search state and continuous session/Agent rows.
 
-- [ ] **Step 1：写状态与 UI RED**
+- [x] **Step 1：写状态与 UI RED**
 
-  Lock query filtering, back precedence, scroll preservation, empty search state, whole-row navigation, independent pin/delete/menu semantics and no `NexaraGlassCard` in session rows.
+  Lock query filtering, back precedence, stable-ID + pixel-offset scroll preservation, empty search state, whole-row navigation, independent pin/delete/menu semantics, TalkBack pin/delete custom actions and no `NexaraGlassCard` in session rows.
 
   ```bash
   ./gradlew :app:testDebugUnitTest \
@@ -566,15 +569,15 @@
 
   Expected: RED because the screen still contains fixed `NexaraSearchBar` and Glass session rows.
 
-- [ ] **Step 2：迁移 AgentSessionsScreen**
+- [x] **Step 2：迁移 AgentSessionsScreen**
 
   Replace sticky fixed search and `SessionCard` with top-bar search mode and transparent `ListItem` rows. Keep `SwipeableItem`, pin/delete confirmation, timestamps and last-message preview.
 
-- [ ] **Step 3：迁移 AgentHubScreen 的低频搜索入口**
+- [x] **Step 3：迁移 AgentHubScreen 的低频搜索入口**
 
   Keep existing continuous Agent list and actions; move fixed search to the same top-bar mode without altering Agent creation or navigation.
 
-- [ ] **Step 4：运行 GREEN 与截图**
+- [x] **Step 4：运行 GREEN 与截图**
 
   ```bash
   ./gradlew :app:testDebugUnitTest --tests '*SessionListViewModelTest' --tests '*AgentSessionsMaterialContractTest'
@@ -582,14 +585,17 @@
   ./gradlew :app:validateDebugScreenshotTest
   ```
 
-  Execute the new device test on API 31/35/36 and visually inspect empty, two-session, long-title, 2.0x and search-active actual.
+  Execute the new device tests on API 31/35/36, including a non-empty short-result search followed by list restoration, and visually inspect empty, two-session, long-title, 2.0x and search-active actual.
 
-- [ ] **Step 5：提交和推送**
+- [x] **Step 5：提交和推送**
 
   ```bash
   git add native-ui/app/src/main/java/com/promenar/nexara/ui/hub/AgentSessionsScreen.kt \
     native-ui/app/src/main/java/com/promenar/nexara/ui/hub/AgentHubScreen.kt \
+    native-ui/app/src/androidTest/java/com/promenar/nexara/ui/hub/AgentHubScreenContentTest.kt \
     native-ui/app/src/test/java/com/promenar/nexara/ui/hub/SessionListViewModelTest.kt \
+    native-ui/app/src/main/res/values/strings.xml \
+    native-ui/app/src/main/res/values-zh-rCN/strings.xml \
     native-ui/app/src/test/java/com/promenar/nexara/ui/hub/AgentSessionsMaterialContractTest.kt \
     native-ui/app/src/androidTest/java/com/promenar/nexara/ui/hub/AgentSessionsMaterialTest.kt \
     native-ui/app/src/screenshotTest/kotlin/com/promenar/nexara/ui/ReleasePreviewScreenshotTest.kt
