@@ -178,11 +178,12 @@ Backup、Skills、Token Usage、Local Models、Developer 和 Theme 使用同一�
 
 ### 8.1 手机
 
-- 使用官方 `NavigationBarItem`；
-- 外层允许一个低层级浮动 `Surface` 作为 Nexara 特征；
+- 2026-07-20 实机反馈后，手机导航改为 Material 语义上的 Nexara 流体导航坞：保留 `Role.Tab`、选中态、48dp 触控目标、主题角色与系统 Insets，不再受官方 `NavigationBarItem` 的高纵向布局约束；
+- 外层使用完整 `CircleShape` 的低层级浮动 `Surface`，视觉高度保持 64dp，形成更矮、更饱满的立体大胶囊；
 - 容器距屏幕左右和系统手势区保留稳定间距；
-- 选中态使用标准 active indicator，不使用发光和自绘阴影圆；
-- 三个目的地保持图标和标签，触控与语义由 Material 组件提供；
+- 当前目的地使用一个完整 `CircleShape` 的流体指示块并显示“图标 + 标签”，未选目的地只显示图标但必须保留完整可访问名称；
+- 切换目的地时，唯一流体指示块横向滑动，并在运动中短暂拉长、压扁后回到 1:1；不得使用 glow、无限循环、粒子或自绘发光阴影；
+- 动效必须服从系统 Animator duration scale。比例为 0 时立即到达终态，快速连续点击不得留下重复指示块或错误选中态；
 - 页面内容可以延伸到导航 Surface 后方，但最后一项必须可滚动到不被遮挡的位置。
 
 ### 8.2 平板和大屏

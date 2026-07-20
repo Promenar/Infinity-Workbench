@@ -438,6 +438,52 @@
   git push origin codex/md3-redesign
   ```
 
+## Task 4.1：按实机反馈返修手机流体胶囊导航坞
+
+> 执行时点：Task 5 完成后、Task 6 开始前。此项是用户对 Task 4 实机观感的明确修订，不回写或否定 Task 4 当时的验证事实。
+
+**Files:**
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/MainTabScaffold.kt`
+- Create: `native-ui/app/src/test/java/com/promenar/nexara/ui/FluidNavigationMotionTest.kt`
+- Modify: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/AdaptiveNavigationTest.kt`
+- Modify: `native-ui/app/src/screenshotTest/kotlin/com/promenar/nexara/ui/ReleasePreviewScreenshotTest.kt`
+
+**Interfaces:**
+- Consumes: `AppTab`, Material theme, system Animator duration scale and existing adaptive rail breakpoint.
+- Produces: 64dp full-pill phone dock, one moving fluid indicator, selected inline label, accessible icon-only inactive destinations; `>= 600dp` remains `NavigationRail`.
+
+- [x] **Step 1：写流体几何与可访问性 RED**
+
+  Freeze neutral endpoints, midpoint stretch/squash, clamped progress, stable destination indices, one indicator, 48dp targets and 64dp dock geometry.
+
+  ```bash
+  ./gradlew :app:testDebugUnitTest --tests '*FluidNavigationMotionTest' \
+    :app:compileDebugAndroidTestKotlin
+  ```
+
+  Expected: RED because the fluid geometry helpers and phone dock indicator do not exist yet.
+
+- [x] **Step 2：实现矮胶囊与水滴挤压切换**
+
+  Replace the tall phone `NavigationBarItem` layout with a full-pill tonal `Surface`. Move one indicator between three equal destinations with spring translation and bounded stretch/squash relaxation. Keep `Role.Tab`, selected semantics, content descriptions, minimum targets, navigation Insets and Scaffold content clearance.
+
+- [x] **Step 3：验证减少动态、快速切换和自适应边界**
+
+  ```bash
+  ./gradlew :app:testDebugUnitTest --tests '*FluidNavigationMotionTest' \
+    :app:compileDebugAndroidTestKotlin
+  ANDROID_SERIAL=<serial> ./gradlew :app:connectedDebugAndroidTest \
+    -Pandroid.testInstrumentationRunnerArguments.class=com.promenar.nexara.ui.AdaptiveNavigationTest
+  ```
+
+- [x] **Step 4：更新深浅截图并逐张视觉检查**
+
+  Update only the phone navigation dark/light goldens, inspect actual images at phone, 2.0x and compact landscape, then run full screenshot validation. Tablet rail references must remain visually unchanged.
+
+- [x] **Step 5：独立复审、DIA/HLG、提交和推送**
+
+  Close all Critical/Important findings, append a new handover record, rebuild the index, commit only Task 4.1 files and push `codex/md3-redesign`. Rebuild the signed APK only after the source and visual gates pass.
+
 ## Task 5：实现锚定式附件动作簇
 
 **Files:**
@@ -1242,7 +1288,7 @@
 
 ## Completion Definition
 
-- [ ] 手机主导航使用 `NavigationBarItem`，大屏使用同目的地 `NavigationRail`，无 glow 和自绘选中圆。
+- [ ] 手机主导航使用 64dp 全胶囊流体导航坞与单一移动指示器，大屏使用同目的地 `NavigationRail`；两端均保留 Tab 语义、48dp 目标、系统 Insets 和内容避让，无 glow 或静态自绘选中圆。
 - [ ] 附件动作锚定 `+` 展开，支持关闭、返回、外部 dismiss、减少动效和 48dp/TalkBack。
 - [ ] Agent 会话列表和 Agent 首页低频搜索使用顶栏搜索模式，列表为连续 `ListItem`。
 - [ ] Model Picker 和会话设置使用同一连续模型选择行，不改变元数据三态、友好名称或 endpoint 契约。

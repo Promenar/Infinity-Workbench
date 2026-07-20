@@ -241,6 +241,37 @@ fun mainNavigationPhoneLightReleasePreview() {
 
 @PreviewTest
 @Preview(
+    name = "Main navigation phone large font",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+    fontScale = 2f,
+)
+@Composable
+fun mainNavigationPhoneLargeFontReleasePreview() {
+    NavigationReleasePreview(
+        expanded = false,
+        dark = true,
+        selectedTab = AppTab.SETTINGS,
+    )
+}
+
+@PreviewTest
+@Preview(
+    name = "Main navigation phone landscape",
+    widthDp = 599,
+    heightDp = 360,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_NO,
+)
+@Composable
+fun mainNavigationPhoneLandscapeReleasePreview() {
+    NavigationReleasePreview(expanded = false, dark = false)
+}
+
+@PreviewTest
+@Preview(
     name = "Main navigation tablet dark",
     widthDp = 840,
     heightDp = 900,
@@ -266,7 +297,11 @@ fun mainNavigationTabletLightReleasePreview() {
 }
 
 @Composable
-private fun NavigationReleasePreview(expanded: Boolean, dark: Boolean) {
+private fun NavigationReleasePreview(
+    expanded: Boolean,
+    dark: Boolean,
+    selectedTab: AppTab = AppTab.LIBRARY,
+) {
     NexaraTheme(
         preferences = NexaraThemePreferences(
             mode = if (dark) NexaraThemeMode.DARK else NexaraThemeMode.LIGHT,
@@ -275,7 +310,7 @@ private fun NavigationReleasePreview(expanded: Boolean, dark: Boolean) {
     ) {
         AdaptiveNavigationSurface(
             expanded = expanded,
-            selectedTab = AppTab.LIBRARY,
+            selectedTab = selectedTab,
             onTabSelected = {},
         ) {
             Box(
