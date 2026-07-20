@@ -762,6 +762,13 @@
     <string name="provider_models_tokens_unit">词元</string>
     <string name="provider_models_output_tokens">输出：%1$s</string>
     <string name="provider_models_knowledge_cutoff">知识截止：%1$s</string>
+    <string name="provider_models_editor_title">编辑模型</string>
+    <string name="provider_models_editor_identity">模型身份</string>
+    <string name="provider_models_editor_canonical_id">规范 ID：%1$s</string>
+    <string name="provider_models_editor_type">类型</string>
+    <string name="provider_models_editor_capabilities">能力</string>
+    <string name="provider_models_editor_output_limit">输出上限</string>
+    <string name="provider_models_editor_user_overrides">用户手动修改：%1$s</string>
 
     <!-- SearchConfigScreen -->
     <string name="search_config_title">Web 搜索</string>

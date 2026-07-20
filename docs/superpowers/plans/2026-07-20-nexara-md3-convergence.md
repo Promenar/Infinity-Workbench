@@ -928,12 +928,16 @@
 - Modify: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/settings/ProviderModelsAccessibilityTest.kt`
 - Create: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/settings/ProviderModelsPerformanceTest.kt`
 - Modify: `native-ui/app/src/screenshotTest/kotlin/com/promenar/nexara/ui/ReleasePreviewScreenshotTest.kt`
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/testing/UiTags.kt`
+- Modify: `native-ui/app/src/main/res/values/strings.xml`
+- Modify: `native-ui/app/src/main/res/values-zh-rCN/strings.xml`
+- Modify: affected Provider Models screenshot references under `native-ui/app/src/screenshotTestDebug/reference/`
 
 **Interfaces:**
 - Consumes: existing `ModelInfo`, update/toggle/test/delete actions and metadata source tracking.
 - Produces: summary model row and `ModelEditorSheet` with the existing edit contract.
 
-- [ ] **Step 1：写摘要/编辑分离 RED**
+- [x] **Step 1：写摘要/编辑分离 RED**
 
   Contract requires no expanded full form inside list rows, persistent search, sync in top actions, add as primary, destructive bulk actions in overflow, stable keys and unchanged user-edit source recording.
 
@@ -945,19 +949,19 @@
 
   Expected: RED because the current list still embeds the full editor and exposes actions at one hierarchy.
 
-- [ ] **Step 2：实现摘要列表**
+- [x] **Step 2：实现摘要列表**
 
   Each row shows friendly name, exact remote model ID, at most two capabilities, remaining count and Switch. Row click opens editor; Switch does not also open the row.
 
-- [ ] **Step 3：移动编辑字段到 ModelEditorSheet**
+- [x] **Step 3：移动编辑字段到 ModelEditorSheet**
 
   Move type, capabilities, display name, context, test, delete and source details from `EnhancedModelCard` into the Sheet. Preserve test cancellation, error notice and user-edit recording.
 
-- [ ] **Step 4：实现 500 模型性能夹具**
+- [x] **Step 4：实现 500 模型性能夹具**
 
   Reuse the project `FrameMetricsAggregator` pattern: 3 warm-up rounds, 5 measured rounds, deterministic 500-model fixture, repeated search/scroll/toggle/open/close. Gate total frame p95 `<= 50ms`, max `<= 150ms`, stable PSS increase `<= 64MiB`; fixture variance `> 20%` is a fixture failure, not permission to relax thresholds.
 
-- [ ] **Step 5：运行回归、性能和 actual**
+- [x] **Step 5：运行回归、性能和 actual**
 
   ```bash
   ./gradlew :app:testDebugUnitTest \
@@ -970,7 +974,9 @@
   ./gradlew :app:validateDebugScreenshotTest
   ```
 
-- [ ] **Step 6：独立复审、提交和推送**
+  最终固定 API 36 结果：p95 `23,22,22,23,22ms`，max `50,51,75,68,51ms`，PSS 增量 `333KiB`，去极值方差低于 20%。`FrameMetricsAggregator` 注册于 Activity Window，打开/关闭 Sheet 的功能路径在同一夹具内执行，但独立 Modal Window 的动画帧不冒充 Activity 帧证据；真实 modal 外观由 API 36 设备截图单独验收。
+
+- [x] **Step 6：独立复审、提交和推送**
 
   ```bash
   git add native-ui/app/src/main/java/com/promenar/nexara/ui/settings/ModelEditorSheet.kt \

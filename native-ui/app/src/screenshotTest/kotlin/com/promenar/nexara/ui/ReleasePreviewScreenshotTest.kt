@@ -117,6 +117,7 @@ import com.promenar.nexara.ui.rag.RagAdvancedScreenContent
 import com.promenar.nexara.ui.rag.RagAdvancedScreenState
 import com.promenar.nexara.ui.rag.RagStats
 import com.promenar.nexara.ui.settings.ModelSyncNotice
+import com.promenar.nexara.ui.settings.ModelEditorSheet
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.model.catalog.ModelCapability
 import com.promenar.nexara.data.model.catalog.ModelWorkload
@@ -1474,9 +1475,46 @@ fun providerModelsReleasePreviewChineseLargeFont() {
                 onClearNotice = {},
             ),
             onNavigateBack = {},
-            initiallyExpandedModelIds = setOf(
-                "provider-preview-beta::qwen3-235b-long-name-with-capabilities",
+        )
+    }
+}
+
+@Preview(
+    name = "Provider model editor Chinese large font",
+    widthDp = 840,
+    heightDp = 900,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+@PreviewTest
+fun providerModelEditorReleasePreviewChineseLargeFont() {
+    ReleasePreviewSurface {
+        ModelEditorSheet(
+            model = ModelInfo(
+                name = "超长模型名称示例：多模态推理与结构化输出协同增强版",
+                id = "provider-preview-beta::qwen3-235b-long-name-with-capabilities",
+                description = "preview",
+                enabled = true,
+                type = "chat",
+                contextLength = 131072,
+                capabilities = listOf("chat", "structuredoutput", "computeruse", "audioinput", "audiooutput"),
+                providerId = "provider-preview-beta",
+                providerName = "Cloud Beta",
+                remoteModelId = "qwen3-235b-long-name-with-capabilities",
+                maxOutputTokens = 12000,
+                knowledgeCutoff = "20240201",
+                canonicalModelId = "qwen/qwen3-235b",
+                userEditedFields = setOf("name", "capabilities"),
             ),
+            testState = ModelTestState.Success(298),
+            onDismissRequest = {},
+            onUpdate = {},
+            onTest = {},
+            onCancel = {},
+            onDelete = {},
+            renderAsModal = false,
         )
     }
 }

@@ -1,6 +1,6 @@
 package com.promenar.nexara.ui.settings
 
-import com.promenar.nexara.data.model.ModelInfo
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
@@ -21,20 +21,25 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
+import com.promenar.nexara.data.model.ModelInfo
+import com.promenar.nexara.domain.generation.GenerationFailureCode
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import java.util.concurrent.atomic.AtomicInteger
@@ -44,7 +49,7 @@ import org.junit.Test
 
 class ProviderModelsAccessibilityTest {
     @get:Rule
-    val rule = createComposeRule()
+    val rule = createAndroidComposeRule<ComponentActivity>()
 
     private val resources
         get() = InstrumentationRegistry.getInstrumentation().targetContext.resources
@@ -64,13 +69,12 @@ class ProviderModelsAccessibilityTest {
         val message = resources.getString(R.string.provider_models_sync_failed)
         rule.onNode(
             SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, message),
+        ).assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.LiveRegion,
+                LiveRegionMode.Assertive,
+            ),
         )
-            .assert(
-                SemanticsMatcher.expectValue(
-                    SemanticsProperties.LiveRegion,
-                    LiveRegionMode.Assertive,
-                ),
-            )
         rule.onNodeWithTag(UiTags.PROVIDER_MODELS_NOTICE_DISMISS)
             .assertWidthIsAtLeast(48.dp)
             .assertHeightIsAtLeast(48.dp)
@@ -101,73 +105,62 @@ class ProviderModelsAccessibilityTest {
     }
 
     @Test
-    fun modelRowProgressivelyDisclosesResponsiveAdvancedControlsAt360DpWithTwoXFontScale() {
+    fun modelSummaryRowShowsCompactInfoAndNoExpandedInlineControlsAt2xFontScale() {
         val modelId = "provider-alpha::model-a"
         val remoteModelId = "vendor/model-a-with-a-very-long-remote-identifier"
         rule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 2f)) {
                 NexaraTheme {
                     Box(Modifier.width(360.dp)) {
-                        EnhancedModelCard(
-                            model = ModelInfo(
-                                name = "Model A",
-                                id = modelId,
-                                remoteModelId = remoteModelId,
-                                description = "desc",
-                                enabled = true,
-                                type = "chat",
-                                contextLength = 65_536,
-                                capabilities = listOf("chat", "vision"),
+                        ProviderModelsScreenContent(
+                            state = ProviderModelsScreenState(
+                                providerName = "Provider",
                                 providerId = "provider-alpha",
+                                isFetching = false,
+                                syncNotice = null,
+                                models = listOf(
+                                    ModelInfo(
+                                        name = "Model A",
+                                        id = modelId,
+                                        remoteModelId = remoteModelId,
+                                        description = "desc",
+                                        enabled = true,
+                                        type = "chat",
+                                        contextLength = 65_536,
+                                        capabilities = listOf("chat", "vision"),
+                                        providerId = "provider-alpha",
+                                    ),
+                                ),
+                                modelTestStates = mapOf(modelId to ModelTestState.Idle),
                             ),
-                            testState = ModelTestState.Idle,
-                            onUpdate = {},
-                            onToggle = {},
-                            onTest = {},
-                            onDelete = {},
+                            actions = idleActions(),
+                            onNavigateBack = {},
                         )
                     }
                 }
             }
         }
 
-        rule.onNodeWithTag(modelRemoteIdTag(modelId))
-            .assertIsDisplayed()
-            .assert(
-                SemanticsMatcher.expectValue(
-                    SemanticsProperties.ContentDescription,
-                    listOf(remoteModelId),
-                ),
-            )
+        rule.onNodeWithTag(
+            UiTags.providerModelsRemoteId(modelId),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        rule.onNodeWithText("Model A").assertIsDisplayed()
         rule.onNodeWithTag(UiTags.providerModelsToggleAction(modelId))
             .assertIsDisplayed()
+            .assert(hasClickAction())
             .assertHeightIsAtLeast(48.dp)
-        rule.onNodeWithTag(modelExpandTag(modelId))
-            .assertIsDisplayed()
-            .assertWidthIsAtLeast(48.dp)
-            .assertHeightIsAtLeast(48.dp)
+
         rule.onNodeWithTag(UiTags.providerModelsTypeAction(modelId, "chat")).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.providerModelsCapabilityAction(modelId, "vision")).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.providerModelsContextField(modelId)).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.providerModelsTestAction(modelId)).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.providerModelsDeleteAction(modelId)).assertDoesNotExist()
-        rule.onNodeWithTag(modelNameFieldTag(modelId)).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.providerModelsNameField(modelId)).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.providerModelsDetails(modelId)).assertDoesNotExist()
 
-        rule.onNodeWithTag(modelExpandTag(modelId)).performClick()
-        rule.onNodeWithTag(modelDetailsTag(modelId)).assertExists()
-        rule.onNodeWithTag(UiTags.providerModelsTypeAction(modelId, "chat"))
-            .assertHeightIsAtLeast(48.dp)
-        rule.onNodeWithTag(UiTags.providerModelsCapabilityAction(modelId, "vision"))
-            .assertHeightIsAtLeast(48.dp)
-        val contextBounds = rule.onNodeWithTag(UiTags.providerModelsContextField(modelId))
-            .assertHeightIsAtLeast(48.dp)
-            .fetchSemanticsNode().boundsInRoot
-        assertThat(contextBounds.left).isAtLeast(0f)
-        assertThat(contextBounds.right).isAtMost(360f)
-
-        rule.onNodeWithTag(modelExpandTag(modelId)).performClick()
-        rule.onNodeWithTag(modelDetailsTag(modelId)).assertDoesNotExist()
-        rule.onNodeWithTag(UiTags.providerModelsContextField(modelId)).assertDoesNotExist()
+        onModelCard(modelId).performClick()
+        rule.onNodeWithTag(editorSheetTag(modelId)).assertExists()
     }
 
     @Test
@@ -276,9 +269,6 @@ class ProviderModelsAccessibilityTest {
         val addCount = AtomicInteger()
         val disableAllCount = AtomicInteger()
         val deleteCount = AtomicInteger()
-        val toggleCount = AtomicInteger()
-        val testCount = AtomicInteger()
-        val deleteAllConfirmCount = AtomicInteger()
         val submittedId = AtomicReference<String?>(null)
 
         rule.setContent {
@@ -313,12 +303,12 @@ class ProviderModelsAccessibilityTest {
                             true
                         },
                         onDisableAll = { disableAllCount.incrementAndGet() },
-                        onDeleteAll = { deleteAllConfirmCount.incrementAndGet() },
+                        onDeleteAll = { deleteCount.incrementAndGet() },
                         onUpdate = {},
-                        onToggle = { toggleCount.incrementAndGet() },
-                        onTest = { testCount.incrementAndGet() },
+                        onToggle = {},
+                        onTest = {},
                         onCancelTest = {},
-                        onDelete = { deleteCount.incrementAndGet() },
+                        onDelete = {},
                         onClearNotice = {},
                     ),
                     onNavigateBack = {},
@@ -345,34 +335,17 @@ class ProviderModelsAccessibilityTest {
         rule.onNodeWithTag(UiTags.PROVIDER_MODELS_ACTION_OVERFLOW).performClick()
         rule.onNodeWithTag(UiTags.PROVIDER_MODELS_ACTION_DELETE_ALL).performClick()
         rule.onNodeWithTag(UiTags.PROVIDER_MODELS_DELETE_ALL_CONFIRM_DIALOG).assertExists()
-        assertThat(deleteAllConfirmCount.get()).isEqualTo(0)
+        assertThat(deleteCount.get()).isEqualTo(0)
         rule.onNodeWithText(resources.getString(R.string.common_btn_cancel)).performClick()
-        assertThat(deleteAllConfirmCount.get()).isEqualTo(0)
+        assertThat(deleteCount.get()).isEqualTo(0)
         rule.onNodeWithTag(UiTags.PROVIDER_MODELS_ACTION_OVERFLOW).performClick()
         rule.onNodeWithTag(UiTags.PROVIDER_MODELS_ACTION_DELETE_ALL).performClick()
         rule.onNodeWithTag(UiTags.PROVIDER_MODELS_DELETE_ALL_CONFIRM_BUTTON).performClick()
-        assertThat(deleteAllConfirmCount.get()).isEqualTo(1)
+        assertThat(deleteCount.get()).isEqualTo(1)
 
         rule.onNodeWithTag(UiTags.providerModelsModelCard("provider-alpha::model-a")).performScrollTo()
-        rule.onNodeWithTag(modelExpandTag("provider-alpha::model-a")).performClick()
-        rule.onNodeWithTag(UiTags.providerModelsTestAction("provider-alpha::model-a"))
-            .performScrollTo()
-            .performClick()
-        assertThat(testCount.get()).isEqualTo(1)
-        rule.onNodeWithTag(UiTags.providerModelsDeleteAction("provider-alpha::model-a"))
-            .performScrollTo()
-            .performClick()
-        rule.onNodeWithTag(modelDeleteConfirmDialogTag("provider-alpha::model-a")).assertExists()
-        assertThat(deleteCount.get()).isEqualTo(0)
-        rule.onNodeWithText(resources.getString(R.string.common_btn_cancel)).performClick()
-        assertThat(deleteCount.get()).isEqualTo(0)
-        rule.onNodeWithTag(UiTags.providerModelsDeleteAction("provider-alpha::model-a")).performClick()
-        rule.onNodeWithTag(modelDeleteConfirmButtonTag("provider-alpha::model-a")).performClick()
-        assertThat(deleteCount.get()).isEqualTo(1)
-        rule.onNodeWithTag(UiTags.providerModelsToggleAction("provider-alpha::model-a"))
-            .performScrollTo()
-            .performClick()
-        assertThat(toggleCount.get()).isEqualTo(1)
+        onModelCard("provider-alpha::model-a").performClick()
+        rule.onNodeWithTag(editorSheetTag("provider-alpha::model-a")).assertExists()
     }
 
     @Test
@@ -496,9 +469,9 @@ class ProviderModelsAccessibilityTest {
             }
         }
 
-        inputInTaggedSearch(UiTags.PROVIDER_MODELS_SEARCH_FIELD, "alpha-real-id")
-        rule.onNodeWithTag(UiTags.providerModelsModelCard("p::opaque-a")).assertExists()
-        rule.onNodeWithTag(UiTags.providerModelsModelCard("p::opaque-b")).assertDoesNotExist()
+        inputInTaggedSearch(UiTags.PROVIDER_MODELS_SEARCH_FIELD, "vendor/alpha-real-id")
+        onModelCard("p::opaque-a").assertExists()
+        onModelCard("p::opaque-b").assertDoesNotExist()
 
         val searchField = rule.onNode(
             matcher = hasSetTextAction() and hasAnyAncestor(hasTestTag(UiTags.PROVIDER_MODELS_SEARCH_FIELD)),
@@ -506,8 +479,8 @@ class ProviderModelsAccessibilityTest {
         )
         searchField.performTextClearance()
         searchField.performTextInput("Beta Display")
-        rule.onNodeWithTag(UiTags.providerModelsModelCard("p::opaque-a")).assertDoesNotExist()
-        rule.onNodeWithTag(UiTags.providerModelsModelCard("p::opaque-b")).assertExists()
+        onModelCard("p::opaque-a").assertDoesNotExist()
+        onModelCard("p::opaque-b").assertExists()
 
         searchField.performTextClearance()
         searchField.performTextInput("no-such-model")
@@ -523,6 +496,259 @@ class ProviderModelsAccessibilityTest {
             resources.getString(R.string.provider_models_search) +
                 " · " + resources.getString(R.string.common_model_picker_empty),
         ).assertExists()
+    }
+
+    @Test
+    fun providerModelsSummaryRefreshKeepsDraftedRowSummaryByModelId() {
+        val modelState = mutableStateOf(
+            ModelInfo(
+                name = "Initial Model",
+                id = "provider-alpha::stable-id",
+                description = "desc",
+                enabled = true,
+                type = "chat",
+                providerId = "provider-alpha",
+                contextLength = 8_192,
+                capabilities = listOf("chat"),
+            ),
+        )
+
+        rule.setContent {
+            NexaraTheme {
+                ProviderModelsScreenContent(
+                    state = ProviderModelsScreenState(
+                        providerName = "Provider",
+                        providerId = "provider-alpha",
+                        isFetching = false,
+                        syncNotice = null,
+                        models = listOf(modelState.value),
+                        modelTestStates = mapOf(modelState.value.id to ModelTestState.Idle),
+                    ),
+                    actions = idleActions(),
+                    onNavigateBack = {},
+                )
+            }
+        }
+
+        rule.onNodeWithText("Initial Model").assertExists()
+        rule.onNodeWithTag(
+            UiTags.providerModelsRemoteId("provider-alpha::stable-id"),
+            useUnmergedTree = true,
+        ).performScrollTo().assertIsDisplayed()
+        onModelCard("provider-alpha::stable-id").performClick()
+        rule.onNodeWithTag(editorSheetTag("provider-alpha::stable-id")).assertExists()
+
+        rule.runOnIdle {
+            modelState.value = modelState.value.copy(
+                name = "Refreshed Model",
+                type = "reasoning",
+                contextLength = 262_144,
+                capabilities = listOf("reasoning", "vision"),
+            )
+        }
+
+        rule.onNode(
+            matcher = hasSetTextAction() and
+                (hasTestTag(UiTags.providerModelsNameField("provider-alpha::stable-id")) or
+                    hasAnyAncestor(
+                        hasTestTag(UiTags.providerModelsNameField("provider-alpha::stable-id")),
+                    )),
+            useUnmergedTree = true,
+        ).assertTextContains("Refreshed Model")
+        rule.onNodeWithTag(
+            UiTags.providerModelsEditorCloseAction("provider-alpha::stable-id"),
+        ).performClick()
+        rule.onNodeWithText("Refreshed Model").assertExists()
+        rule.onNodeWithTag(
+            UiTags.providerModelsRemoteId("provider-alpha::stable-id"),
+            useUnmergedTree = true,
+        ).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun providerModelsSheetPreservesTypeCapabilityContextAndTestCallbacks() {
+        val modelId = "provider-alpha::editable"
+        val latestType = AtomicReference<String?>(null)
+        val latestCapability = AtomicReference<List<String>?>(null)
+        val latestContext = AtomicReference<Int?>(null)
+        val testCount = AtomicInteger()
+
+        rule.setContent {
+            NexaraTheme {
+                ProviderModelsScreenContent(
+                    state = ProviderModelsScreenState(
+                        providerName = "Provider",
+                        providerId = "provider-alpha",
+                        isFetching = false,
+                        syncNotice = null,
+                        models = listOf(
+                            ModelInfo(
+                                name = "Editable",
+                                id = modelId,
+                                description = "desc",
+                                enabled = true,
+                                type = "chat",
+                                contextLength = 8_192,
+                                capabilities = listOf("chat", "vision"),
+                                providerId = "provider-alpha",
+                                maxOutputTokens = 4_096,
+                                knowledgeCutoff = "202501",
+                            ),
+                        ),
+                        modelTestStates = mapOf(modelId to ModelTestState.Idle),
+                    ),
+                    actions = ProviderModelsScreenActions(
+                        onRefresh = {},
+                        onAdd = { _, _ -> true },
+                        onDisableAll = {},
+                        onDeleteAll = {},
+                        onUpdate = {
+                            latestType.set(it.type)
+                            latestCapability.set(it.capabilities)
+                            latestContext.set(it.contextLength)
+                        },
+                        onToggle = {},
+                        onTest = { testCount.incrementAndGet() },
+                        onCancelTest = {},
+                        onDelete = {},
+                        onClearNotice = {},
+                    ),
+                    onNavigateBack = {},
+                )
+            }
+        }
+
+        onModelCard(modelId).performClick()
+        rule.onNodeWithTag(editorSheetTag(modelId)).assertExists()
+        rule.onNodeWithTag(UiTags.providerModelsTypeAction(modelId, "reasoning")).performScrollTo().performClick()
+        rule.onNodeWithTag(UiTags.providerModelsCapabilityAction(modelId, "internet")).performClick()
+        val contextField = rule.onNode(
+            matcher = hasSetTextAction() and
+                (hasTestTag(UiTags.providerModelsContextField(modelId)) or
+                    hasAnyAncestor(hasTestTag(UiTags.providerModelsContextField(modelId)))),
+            useUnmergedTree = true,
+        )
+        contextField.performTextClearance()
+        contextField.performTextInput("32768")
+        rule.onNodeWithTag(UiTags.providerModelsEditorList(modelId))
+            .performScrollToNode(hasTestTag(editorTestActionTag(modelId)))
+        rule.onNodeWithTag(editorTestActionTag(modelId)).performClick()
+
+        rule.waitForIdle()
+        assertThat(latestType.get()).isEqualTo("reasoning")
+        assertThat(latestCapability.get()).contains("internet")
+        assertThat(latestContext.get()).isEqualTo(32_768)
+        assertThat(testCount.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun editorSheetExposesUserOverrideSourceAndTestErrorSemantics() {
+        val modelId = "provider-alpha::error-source"
+        val errorMessage = resources.getString(R.string.generation_failure_auth)
+        rule.setContent {
+            NexaraTheme {
+                ProviderModelsScreenContent(
+                    state = ProviderModelsScreenState(
+                        providerName = "Provider",
+                        providerId = "provider-alpha",
+                        isFetching = false,
+                        syncNotice = null,
+                        models = listOf(
+                            ModelInfo(
+                                name = "Edited model",
+                                id = modelId,
+                                description = "desc",
+                                enabled = true,
+                                type = "chat",
+                                contextLength = 8_192,
+                                capabilities = listOf("chat"),
+                                providerId = "provider-alpha",
+                                userEditedFields = setOf("name", "contextLength"),
+                            ),
+                        ),
+                        modelTestStates = mapOf(
+                            modelId to ModelTestState.Error(GenerationFailureCode.AUTH),
+                        ),
+                    ),
+                    actions = idleActions(),
+                    onNavigateBack = {},
+                )
+            }
+        }
+
+        onModelCard(modelId).performClick()
+        rule.onNode(
+            hasTestTag(editorSourceTag(modelId)) and hasText(
+                resources.getString(R.string.provider_models_field_display_name),
+                substring = true,
+            ),
+        ).assertExists()
+        rule.onNodeWithTag(UiTags.providerModelsEditorList(modelId))
+            .performScrollToNode(hasText(errorMessage))
+        rule.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, errorMessage),
+        ).assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.LiveRegion,
+                LiveRegionMode.Polite,
+            ),
+        )
+    }
+
+    @Test
+    fun singleModelDeleteRequiresCancelOrExplicitConfirmationInEditorSheet() {
+        val modelId = "provider-alpha::delete-me"
+        val deleteCount = AtomicInteger()
+
+        rule.setContent {
+            NexaraTheme {
+                ProviderModelsScreenContent(
+                    state = ProviderModelsScreenState(
+                        providerName = "Provider",
+                        providerId = "provider-alpha",
+                        isFetching = false,
+                        syncNotice = null,
+                        models = listOf(
+                            ModelInfo(
+                                name = "Delete Me",
+                                id = modelId,
+                                description = "desc",
+                                enabled = true,
+                                providerId = "provider-alpha",
+                            ),
+                        ),
+                        modelTestStates = emptyMap(),
+                    ),
+                    actions = ProviderModelsScreenActions(
+                        onRefresh = {},
+                        onAdd = { _, _ -> true },
+                        onDisableAll = {},
+                        onDeleteAll = {},
+                        onUpdate = {},
+                        onToggle = {},
+                        onTest = {},
+                        onCancelTest = {},
+                        onDelete = { deleteCount.incrementAndGet() },
+                        onClearNotice = {},
+                    ),
+                    onNavigateBack = {},
+                )
+            }
+        }
+
+        onModelCard(modelId).performClick()
+        rule.onNodeWithTag(editorSheetTag(modelId)).assertExists()
+        rule.onNodeWithTag(editorDeleteTag(modelId)).performClick()
+        rule.onNodeWithTag(editorDeleteConfirmDialogTag(modelId)).assertExists()
+        assertThat(deleteCount.get()).isEqualTo(0)
+        rule.onNodeWithText(resources.getString(R.string.common_btn_cancel)).performClick()
+        assertThat(deleteCount.get()).isEqualTo(0)
+        rule.onNodeWithTag(editorDeleteConfirmDialogTag(modelId)).assertDoesNotExist()
+
+        rule.onNodeWithTag(editorDeleteTag(modelId)).performClick()
+        rule.onNodeWithTag(editorDeleteConfirmButtonTag(modelId)).performClick()
+        assertThat(deleteCount.get()).isEqualTo(1)
+        rule.onNodeWithTag(editorDeleteConfirmDialogTag(modelId)).assertDoesNotExist()
     }
 
     @Test
@@ -569,162 +795,11 @@ class ProviderModelsAccessibilityTest {
             .assertExists()
             .performScrollTo()
         rule.onNodeWithTag(UiTags.providerModelsTestAction(modelId)).assertDoesNotExist()
-        rule.onNodeWithTag(modelExpandTag(modelId)).performClick()
-        rule.onNodeWithTag(UiTags.providerModelsTestAction(modelId))
-            .assertExists()
-            .performScrollTo()
-            .performClick()
+        onModelCard(modelId).performClick()
+        rule.onNodeWithTag(editorSheetTag(modelId)).assertExists()
+        rule.onNodeWithTag(editorTestActionTag(modelId)).assertExists()
+        rule.onNodeWithTag(editorTestActionTag(modelId)).performClick()
         assertThat(cancelTestCount.get()).isEqualTo(1)
-        rule.onNodeWithTag(UiTags.providerModelsDeleteAction(modelId)).assertExists()
-        rule.onNodeWithTag(UiTags.providerModelsToggleAction(modelId)).assertExists()
-    }
-
-    @Test
-    fun enhancedModelCardSynchronizesDraftWhenSameModelIdIsRefreshed() {
-        val modelState = mutableStateOf(
-            ModelInfo(
-                name = "Initial Model",
-                id = "provider-alpha::stable-id",
-                description = "desc",
-                enabled = true,
-                type = "chat",
-                providerId = "p",
-                contextLength = 8_192,
-                capabilities = listOf("chat"),
-            ),
-        )
-        rule.setContent {
-            NexaraTheme {
-                EnhancedModelCard(
-                    model = modelState.value,
-                    testState = ModelTestState.Idle,
-                    onUpdate = {},
-                    onToggle = {},
-                    onTest = {},
-                    onDelete = {},
-                    initiallyExpanded = true,
-                )
-            }
-        }
-
-        rule.onNodeWithTag(modelNameFieldTag("provider-alpha::stable-id"))
-            .assertTextContains("Initial Model")
-        rule.runOnIdle {
-            modelState.value = modelState.value.copy(
-                name = "Refreshed Model",
-                type = "reasoning",
-                contextLength = 262_144,
-                capabilities = listOf("reasoning", "vision"),
-            )
-        }
-
-        rule.onNodeWithTag(modelNameFieldTag("provider-alpha::stable-id"))
-            .assertTextContains("Refreshed Model")
-        rule.onNodeWithTag(UiTags.providerModelsTypeAction("provider-alpha::stable-id", "reasoning"))
-            .assertExists()
-    }
-
-    @Test
-    fun expandedModelRowPreservesTypeCapabilityContextAndTestCallbacks() {
-        val modelId = "provider-alpha::editable"
-        val latestUpdate = AtomicReference<ModelInfo?>(null)
-        val updates = mutableListOf<ModelInfo>()
-        val testCount = AtomicInteger()
-        rule.setContent {
-            NexaraTheme {
-                EnhancedModelCard(
-                    model = ModelInfo(
-                        name = "Editable",
-                        id = modelId,
-                        description = "desc",
-                        enabled = true,
-                        type = "chat",
-                        contextLength = 8_192,
-                        capabilities = listOf("chat", "vision"),
-                        providerId = "provider-alpha",
-                        maxOutputTokens = 4_096,
-                        knowledgeCutoff = "202501",
-                    ),
-                    testState = ModelTestState.Idle,
-                    onUpdate = {
-                        latestUpdate.set(it)
-                        updates += it
-                    },
-                    onToggle = {},
-                    onTest = { testCount.incrementAndGet() },
-                    onDelete = {},
-                    initiallyExpanded = true,
-                )
-            }
-        }
-
-        rule.onNodeWithTag(UiTags.providerModelsTypeAction(modelId, "reasoning")).performClick()
-        rule.waitForIdle()
-        assertThat(latestUpdate.get()?.type).isEqualTo("reasoning")
-        assertThat(latestUpdate.get()?.capabilities).contains("reasoning")
-        assertThat(latestUpdate.get()?.capabilities).contains("chat")
-        assertThat(latestUpdate.get()?.capabilities).contains("vision")
-        assertThat(latestUpdate.get()?.maxOutputTokens).isEqualTo(4_096)
-        assertThat(latestUpdate.get()?.knowledgeCutoff).isEqualTo("202501")
-        assertThat(updates.filter { it.type == "reasoning" }).isNotEmpty()
-        assertThat(updates.filter { it.type == "reasoning" }.all {
-            "chat" in it.capabilities && "reasoning" in it.capabilities && "vision" in it.capabilities
-        }).isTrue()
-
-        rule.onNodeWithTag(UiTags.providerModelsCapabilityAction(modelId, "internet")).performClick()
-        rule.waitForIdle()
-        assertThat(latestUpdate.get()?.capabilities).contains("internet")
-
-        val contextField = rule.onNode(
-            matcher = hasSetTextAction() and
-                (hasTestTag(UiTags.providerModelsContextField(modelId)) or
-                    hasAnyAncestor(hasTestTag(UiTags.providerModelsContextField(modelId)))),
-            useUnmergedTree = true,
-        )
-        contextField.performTextClearance()
-        contextField.performTextInput("32768")
-        rule.waitForIdle()
-        assertThat(latestUpdate.get()?.contextLength).isEqualTo(32_768)
-
-        rule.onNodeWithTag(UiTags.providerModelsTestAction(modelId)).performClick()
-        assertThat(testCount.get()).isEqualTo(1)
-    }
-
-    @Test
-    fun singleModelDeleteRequiresCancelOrExplicitConfirmation() {
-        val modelId = "provider-alpha::delete-me"
-        val deleteCount = AtomicInteger()
-        rule.setContent {
-            NexaraTheme {
-                EnhancedModelCard(
-                    model = ModelInfo(
-                        name = "Delete Me",
-                        id = modelId,
-                        description = "desc",
-                        enabled = true,
-                        providerId = "provider-alpha",
-                    ),
-                    testState = ModelTestState.Idle,
-                    onUpdate = {},
-                    onToggle = {},
-                    onTest = {},
-                    onDelete = { deleteCount.incrementAndGet() },
-                    initiallyExpanded = true,
-                )
-            }
-        }
-
-        rule.onNodeWithTag(UiTags.providerModelsDeleteAction(modelId)).performClick()
-        rule.onNodeWithTag(modelDeleteConfirmDialogTag(modelId)).assertExists()
-        assertThat(deleteCount.get()).isEqualTo(0)
-        rule.onNodeWithText(resources.getString(R.string.common_btn_cancel)).performClick()
-        assertThat(deleteCount.get()).isEqualTo(0)
-        rule.onNodeWithTag(modelDeleteConfirmDialogTag(modelId)).assertDoesNotExist()
-
-        rule.onNodeWithTag(UiTags.providerModelsDeleteAction(modelId)).performClick()
-        rule.onNodeWithTag(modelDeleteConfirmButtonTag(modelId)).performClick()
-        assertThat(deleteCount.get()).isEqualTo(1)
-        rule.onNodeWithTag(modelDeleteConfirmDialogTag(modelId)).assertDoesNotExist()
     }
 
     @Test
@@ -761,12 +836,80 @@ class ProviderModelsAccessibilityTest {
         rule.onNodeWithTag(UiTags.PROVIDER_MODELS_SEARCH_FIELD).assertExists()
     }
 
+    @Test
+    fun modelToggleActionDoesNotOpenEditorSheet() {
+        val modelId = "provider-alpha::model-toggle"
+        var toggleCount = 0
+
+        rule.setContent {
+            NexaraTheme {
+                ProviderModelsScreenContent(
+                    state = ProviderModelsScreenState(
+                        providerName = "Provider",
+                        providerId = "provider-alpha",
+                        isFetching = false,
+                        syncNotice = null,
+                        models = listOf(
+                            ModelInfo(
+                                name = "Toggle Model",
+                                id = modelId,
+                                description = "desc",
+                                enabled = false,
+                                type = "chat",
+                                providerId = "provider-alpha",
+                            ),
+                        ),
+                        modelTestStates = emptyMap(),
+                    ),
+                    actions = ProviderModelsScreenActions(
+                        onRefresh = {},
+                        onAdd = { _, _ -> true },
+                        onDisableAll = {},
+                        onDeleteAll = {},
+                        onUpdate = {},
+                        onToggle = { toggleCount++ },
+                        onTest = {},
+                        onCancelTest = {},
+                        onDelete = {},
+                        onClearNotice = {},
+                    ),
+                    onNavigateBack = {},
+                )
+            }
+        }
+
+        onModelCard(modelId).assert(hasClickAction())
+        rule.onNodeWithTag(UiTags.providerModelsToggleAction(modelId)).performClick()
+        assertThat(toggleCount).isEqualTo(1)
+        rule.onNodeWithTag(editorSheetTag(modelId)).assertDoesNotExist()
+    }
+
     private fun inputInTaggedSearch(tag: String, value: String) {
         rule.onNode(
-            matcher = hasSetTextAction() and (hasTestTag(tag) or hasAnyAncestor(hasTestTag(tag))),
+            matcher = hasSetTextAction() and
+                (hasTestTag(tag) or hasAnyAncestor(hasTestTag(tag))),
             useUnmergedTree = true,
         ).performTextInput(value)
     }
+
+    private fun onModelCard(modelId: String) =
+        rule.onNodeWithTag(UiTags.providerModelsModelCard(modelId))
+
+    private fun editorSheetTag(modelId: String) = "provider_models_editor_sheet:$modelId"
+
+    private fun editorTestActionTag(modelId: String) = "provider_models_editor_test:$modelId"
+
+    private fun editorCancelActionTag(modelId: String) = "provider_models_editor_cancel:$modelId"
+
+    private fun editorSourceTag(modelId: String) = "provider_models_editor_source:$modelId"
+
+    private fun editorDeleteTag(modelId: String) = "provider_models_editor_delete:$modelId"
+
+    private fun editorDeleteConfirmDialogTag(modelId: String) =
+        "provider_models_editor_delete_confirm_dialog:$modelId"
+
+    private fun editorDeleteConfirmButtonTag(modelId: String) =
+        "provider_models_editor_delete_confirm:$modelId"
 
     private fun idleActions() = ProviderModelsScreenActions(
         onRefresh = {},
@@ -780,11 +923,4 @@ class ProviderModelsAccessibilityTest {
         onDelete = {},
         onClearNotice = {},
     )
-
-    private fun modelExpandTag(modelId: String) = "provider_models_expand:$modelId"
-    private fun modelDetailsTag(modelId: String) = "provider_models_details:$modelId"
-    private fun modelRemoteIdTag(modelId: String) = "provider_models_remote_id:$modelId"
-    private fun modelNameFieldTag(modelId: String) = "provider_models_name:$modelId"
-    private fun modelDeleteConfirmDialogTag(modelId: String) = "provider_models_delete_confirm_dialog:$modelId"
-    private fun modelDeleteConfirmButtonTag(modelId: String) = "provider_models_delete_confirm:$modelId"
 }

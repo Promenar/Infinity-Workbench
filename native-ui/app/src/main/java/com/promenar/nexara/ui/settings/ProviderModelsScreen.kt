@@ -1,14 +1,12 @@
 package com.promenar.nexara.ui.settings
 
 import com.promenar.nexara.data.model.ModelInfo
-import com.promenar.nexara.data.model.withRecordedUserEdits
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,26 +22,19 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Block
-import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,9 +44,7 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,20 +52,20 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -88,7 +77,6 @@ import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
 
 private val ModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
 private val ModelTypeLabelResources = listOf(
@@ -102,32 +90,18 @@ private val ModelTypeLabelResources = listOf(
 private data class CapabilityTag(
     val key: String,
     @param:StringRes val labelRes: Int,
-    val icon: String,
-    val color: Color,
 )
 
 private val CapabilityTags = listOf(
-    CapabilityTag("vision", R.string.provider_models_capability_vision, "visibility", NexaraColors.StatusError.copy(alpha = 0.8f)),
-    CapabilityTag("internet", R.string.provider_models_capability_internet, "public", NexaraColors.StatusInfo),
-    CapabilityTag("audioinput", R.string.provider_models_capability_audio_input, "mic", NexaraColors.StatusSuccess),
-    CapabilityTag("audiooutput", R.string.provider_models_capability_audio_output, "volume_up", NexaraColors.StatusSuccess),
-    CapabilityTag("videounderstanding", R.string.provider_models_capability_video, "videocam", NexaraColors.Tertiary),
-    CapabilityTag("structuredoutput", R.string.provider_models_capability_structured_output, "data_object", NexaraColors.Primary),
-    CapabilityTag("promptcaching", R.string.provider_models_capability_prompt_caching, "cached", NexaraColors.StatusWarning),
-    CapabilityTag("computeruse", R.string.provider_models_capability_computer_use, "computer", NexaraColors.Secondary),
+    CapabilityTag("vision", R.string.provider_models_capability_vision),
+    CapabilityTag("internet", R.string.provider_models_capability_internet),
+    CapabilityTag("audioinput", R.string.provider_models_capability_audio_input),
+    CapabilityTag("audiooutput", R.string.provider_models_capability_audio_output),
+    CapabilityTag("videounderstanding", R.string.provider_models_capability_video),
+    CapabilityTag("structuredoutput", R.string.provider_models_capability_structured_output),
+    CapabilityTag("promptcaching", R.string.provider_models_capability_prompt_caching),
+    CapabilityTag("computeruse", R.string.provider_models_capability_computer_use),
 )
-
-/** type → 基础能力推导表。当用户在 UI 中切换 type 时联动刷新 capabilities。 */
-private val TypeToBaseCaps = mapOf(
-    "chat"      to setOf("chat"),
-    "reasoning" to setOf("chat", "reasoning"),
-    "image"     to setOf("image"),
-    "embedding" to setOf("embedding"),
-    "rerank"    to setOf("rerank"),
-)
-
-/** 所有由 type 决定的基础能力键（用于剥离旧基础能力） */
-private val AllBaseCapKeys = TypeToBaseCaps.values.flatten().toSet()
 
 internal data class ProviderModelsScreenState(
     val providerName: String,
@@ -212,11 +186,19 @@ internal fun ProviderModelsScreenContent(
     state: ProviderModelsScreenState,
     actions: ProviderModelsScreenActions,
     onNavigateBack: () -> Unit,
-    initiallyExpandedModelIds: Set<String> = emptySet(),
 ) {
-    var searchQuery by remember { mutableStateOf("") }
+    var searchQuery by rememberSaveable(state.providerId) { mutableStateOf("") }
+    var selectedModelId by rememberSaveable(state.providerId) { mutableStateOf<String?>(null) }
     var showDeleteAllDialog by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
+
+    // 选中项始终从最新同步结果派生，删除或同步移除后不会继续编辑旧快照。
+    val selectedModel = state.models.firstOrNull { it.id == selectedModelId }
+    LaunchedEffect(selectedModelId, selectedModel) {
+        if (selectedModelId != null && selectedModel == null) {
+            selectedModelId = null
+        }
+    }
 
     val filteredModels = remember(state.models, searchQuery) {
         if (searchQuery.isBlank()) state.models
@@ -325,21 +307,10 @@ internal fun ProviderModelsScreenContent(
                             color = MaterialTheme.colorScheme.outlineVariant,
                         )
                     }
-                    EnhancedModelCard(
+                    ProviderModelsModelRow(
                         model = model,
-                        testState = state.modelTestStates[model.id] ?: ModelTestState.Idle,
-                        onUpdate = { actions.onUpdate(it) },
+                        onRowClick = { selectedModelId = model.id },
                         onToggle = { actions.onToggle(model.id) },
-                        onTest = {
-                            if (state.modelTestStates[model.id] == ModelTestState.Testing) {
-                                actions.onCancelTest(model.id)
-                            } else {
-                                actions.onTest(model.id)
-                            }
-                        },
-                        onDelete = { actions.onDelete(model.id) },
-                        initiallyExpanded = model.id in initiallyExpandedModelIds,
-                        modifier = Modifier.testTag(UiTags.providerModelsModelCard(model.id)),
                     )
                 }
             }
@@ -376,6 +347,21 @@ internal fun ProviderModelsScreenContent(
                 added
             },
             onAdded = { showAddDialog = false },
+        )
+    }
+
+    selectedModel?.let { model ->
+        ModelEditorSheet(
+            model = model,
+            testState = state.modelTestStates[model.id] ?: ModelTestState.Idle,
+            onDismissRequest = { selectedModelId = null },
+            onUpdate = actions.onUpdate,
+            onTest = { actions.onTest(model.id) },
+            onCancel = { actions.onCancelTest(model.id) },
+            onDelete = {
+                actions.onDelete(model.id)
+                selectedModelId = null
+            },
         )
     }
 }
@@ -585,349 +571,87 @@ internal fun ProviderModelsTopActions(
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun EnhancedModelCard(
+internal fun ProviderModelsModelRow(
     model: ModelInfo,
-    testState: ModelTestState,
-    onUpdate: (ModelInfo) -> Unit,
+    onRowClick: () -> Unit,
     onToggle: () -> Unit,
-    onTest: () -> Unit,
-    onDelete: () -> Unit,
     modifier: Modifier = Modifier,
-    initiallyExpanded: Boolean = false,
 ) {
-    val isTesting = testState == ModelTestState.Testing
     val remoteModelId = model.remoteModelId.ifBlank { model.id.substringAfter("::", model.id) }
-    var expanded by remember(model.id) { mutableStateOf(initiallyExpanded) }
-    var showDeleteConfirmation by remember(model.id) { mutableStateOf(false) }
-    var selectedType by remember(model.id) { mutableStateOf(model.type) }
-    var editName by remember(model.id) { mutableStateOf(model.name) }
-    var editContext by remember(model.id) { mutableStateOf(model.contextLength.toString()) }
-    var activeCaps by remember(model.id) { mutableStateOf(model.capabilities.toSet()) }
-
-    LaunchedEffect(
-        model.id,
-        model.type,
-        model.name,
-        model.contextLength,
-        model.capabilities,
-    ) {
-        selectedType = model.type
-        editName = model.name
-        editContext = model.contextLength.toString()
-        activeCaps = model.capabilities.toSet()
-    }
-
-    LaunchedEffect(selectedType, editName, editContext, activeCaps) {
-        val updated = model.copy(
-            type = selectedType,
-            name = editName,
-            contextLength = editContext.toIntOrNull() ?: model.contextLength,
-            capabilities = activeCaps.toList(),
-        )
-        if (updated != model) {
-            onUpdate(updated.withRecordedUserEdits(model))
-        }
-    }
-
-    val resultColor = when (testState) {
-        is ModelTestState.Success -> MaterialTheme.colorScheme.tertiary
-        is ModelTestState.Error -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.primary
-    }
-    val testStatusMessage = when (testState) {
-        ModelTestState.Testing -> stringResource(R.string.shared_loading)
-        is ModelTestState.Success -> stringResource(
-            R.string.provider_models_test_success,
-            "${testState.latencyMs}ms",
-        )
-        is ModelTestState.Error -> modelTestErrorMessage(testState)
-        else -> null
-    }
-    val summaryCapabilities = activeCaps
+    val summaryCapabilities = model.capabilities
         .filterNot { it == "chat" }
-        .ifEmpty { listOf(selectedType) }
+        .ifEmpty { listOf(model.type) }
         .distinct()
     val remainingCapabilityCount = (summaryCapabilities.size - 2).coerceAtLeast(0)
-    val expansionStateDescription = stringResource(
-        if (expanded) R.string.common_state_expanded else R.string.common_state_collapsed,
-    )
 
     Column(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onRowClick)
+            .testTag(UiTags.providerModelsModelCard(model.id))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
+        Text(
+            text = model.name,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = remoteModelId,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .testTag(UiTags.providerModelsRemoteId(model.id))
+                .semantics { contentDescription = remoteModelId },
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
+            androidx.compose.foundation.layout.FlowRow(
+                modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        text = model.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = remoteModelId,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .testTag(UiTags.providerModelsRemoteId(model.id))
-                            .semantics { contentDescription = remoteModelId },
-                    )
-                }
-                IconButton(
-                    onClick = { expanded = !expanded },
-                    modifier = Modifier
-                        .size(48.dp)
-                        .testTag(UiTags.providerModelsExpandAction(model.id))
-                        .semantics {
-                            stateDescription = expansionStateDescription
-                        },
-                ) {
-                    Icon(
-                        imageVector = if (expanded) {
-                            Icons.Rounded.ExpandLess
-                        } else {
-                            Icons.Rounded.ExpandMore
-                        },
-                        contentDescription = stringResource(
-                            if (expanded) R.string.common_cd_collapse else R.string.common_cd_expand,
-                        ),
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                androidx.compose.foundation.layout.FlowRow(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    summaryCapabilities.take(2).forEach { capability ->
-                        val labelRes = capabilityLabelResource(capability)
-                        AssistChip(
-                            onClick = { expanded = true },
-                            label = {
-                                Text(
-                                    text = labelRes?.let { stringResource(it) } ?: capability,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            },
-                            modifier = Modifier.sizeIn(minHeight = 48.dp),
-                        )
-                    }
-                    if (remainingCapabilityCount > 0) {
+                summaryCapabilities.take(2).forEach { capability ->
+                    val labelRes = capabilityLabelResource(capability)
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ) {
                         Text(
-                            text = "+$remainingCapabilityCount",
+                            text = labelRes?.let { stringResource(it) } ?: capability,
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         )
                     }
                 }
-                Switch(
-                    checked = model.enabled,
-                    onCheckedChange = { onToggle() },
-                    modifier = Modifier
-                        .minimumInteractiveComponentSize()
-                        .size(48.dp)
-                        .testTag(UiTags.providerModelsToggleAction(model.id)),
-                )
-            }
-
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(UiTags.providerModelsDetails(model.id)),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                    OutlinedTextField(
-                        value = editName,
-                        onValueChange = { editName = it },
-                        label = { Text(stringResource(R.string.provider_models_field_display_name)) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(UiTags.providerModelsNameField(model.id)),
-                        maxLines = 2,
+                if (remainingCapabilityCount > 0) {
+                    Text(
+                        text = "+$remainingCapabilityCount",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
                     )
-
-                    androidx.compose.foundation.layout.FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        ModelTypeLabelResources.forEachIndexed { index, labelRes ->
-                            val type = ModelTypes[index]
-                            FilterChip(
-                                selected = selectedType == type,
-                                onClick = {
-                                    val newBase = TypeToBaseCaps[type] ?: setOf("chat")
-                                    activeCaps = (activeCaps - AllBaseCapKeys) + newBase
-                                    selectedType = type
-                                },
-                                label = { Text(stringResource(labelRes)) },
-                                modifier = Modifier.testTag(
-                                    UiTags.providerModelsTypeAction(model.id, type),
-                                ).sizeIn(minHeight = 48.dp),
-                            )
-                        }
-                    }
-
-                    androidx.compose.foundation.layout.FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        CapabilityTags.forEach { capability ->
-                            val selected = capability.key in activeCaps
-                            FilterChip(
-                                selected = selected,
-                                onClick = {
-                                    activeCaps = if (selected) {
-                                        activeCaps - capability.key
-                                    } else {
-                                        activeCaps + capability.key
-                                    }
-                                },
-                                label = { Text(stringResource(capability.labelRes)) },
-                                modifier = Modifier.testTag(
-                                    UiTags.providerModelsCapabilityAction(model.id, capability.key),
-                                ).sizeIn(minHeight = 48.dp),
-                            )
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = editContext,
-                        onValueChange = { value ->
-                            if (value.all(Char::isDigit)) {
-                                editContext = value
-                            }
-                        },
-                        label = { Text(stringResource(R.string.provider_models_context_label)) },
-                        suffix = { Text(stringResource(R.string.provider_models_tokens_unit)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(UiTags.providerModelsContextField(model.id)),
-                    )
-
-                    if (model.maxOutputTokens > 0) {
-                        Text(
-                            text = stringResource(
-                                R.string.provider_models_output_tokens,
-                                formatTokens(model.maxOutputTokens),
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    model.knowledgeCutoff?.let { cutoff ->
-                        Text(
-                            text = stringResource(R.string.provider_models_knowledge_cutoff, cutoff),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    testStatusMessage?.let { status ->
-                        Text(
-                            text = status,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = resultColor,
-                            modifier = Modifier.semantics {
-                                liveRegion = LiveRegionMode.Polite
-                                stateDescription = status
-                            },
-                        )
-                    }
-
-                    FilledTonalButton(
-                        onClick = onTest,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .sizeIn(minHeight = 48.dp)
-                            .testTag(UiTags.providerModelsTestAction(model.id)),
-                    ) {
-                        if (isTesting) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
-                            Icon(Icons.Rounded.Bolt, contentDescription = null)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            stringResource(
-                                if (isTesting) R.string.settings_btn_cancel else R.string.provider_models_cd_test,
-                            ),
-                        )
-                    }
-                    TextButton(
-                        onClick = { showDeleteConfirmation = true },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .sizeIn(minHeight = 48.dp)
-                            .testTag(UiTags.providerModelsDeleteAction(model.id)),
-                    ) {
-                        Icon(
-                            Icons.Rounded.Delete,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.shared_btn_delete),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
                 }
             }
-        }
-    }
-
-    if (showDeleteConfirmation) {
-        androidx.compose.ui.window.Dialog(
-            onDismissRequest = { showDeleteConfirmation = false },
-        ) {
-            Box(modifier = Modifier.testTag(UiTags.providerModelsDeleteConfirmDialog(model.id))) {
-                NexaraConfirmDialog(
-                    title = stringResource(R.string.shared_btn_delete),
-                    message = model.name,
-                    confirmText = stringResource(R.string.shared_btn_delete),
-                    confirmButtonModifier = Modifier.testTag(
-                        UiTags.providerModelsDeleteConfirmButton(model.id),
-                    ),
-                    isDestructive = true,
-                    onConfirm = {
-                        showDeleteConfirmation = false
-                        onDelete()
-                    },
-                    onCancel = { showDeleteConfirmation = false },
-                )
-            }
+            Switch(
+                checked = model.enabled,
+                onCheckedChange = { onToggle() },
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .size(48.dp)
+                    .testTag(UiTags.providerModelsToggleAction(model.id)),
+            )
         }
     }
 }
@@ -939,33 +663,6 @@ private fun capabilityLabelResource(capability: String): Int? {
     } else {
         CapabilityTags.firstOrNull { it.key == capability }?.labelRes
     }
-}
-
-private fun formatTokens(tokens: Int): String = when {
-    tokens >= 128000 -> "${tokens / 1000}K"
-    tokens >= 1000 -> "${"%.1f".format(tokens / 1000.0)}k"
-    else -> "$tokens"
-}
-
-@Composable
-private fun modelTestErrorMessage(error: ModelTestState.Error): String = when (error.code) {
-    com.promenar.nexara.domain.generation.GenerationFailureCode.NETWORK ->
-        stringResource(R.string.generation_failure_network)
-    com.promenar.nexara.domain.generation.GenerationFailureCode.AUTH ->
-        stringResource(R.string.generation_failure_auth)
-    com.promenar.nexara.domain.generation.GenerationFailureCode.RATE_LIMIT ->
-        error.retryAfterSeconds?.takeIf { it > 0 }?.let {
-            stringResource(R.string.generation_failure_rate_limit_retry, it)
-        } ?: stringResource(R.string.generation_failure_rate_limit)
-    com.promenar.nexara.domain.generation.GenerationFailureCode.QUOTA ->
-        stringResource(R.string.generation_failure_quota)
-    com.promenar.nexara.domain.generation.GenerationFailureCode.TIMEOUT ->
-        stringResource(R.string.generation_failure_timeout)
-    com.promenar.nexara.domain.generation.GenerationFailureCode.INVALID_REQUEST ->
-        stringResource(R.string.generation_failure_invalid_request)
-    com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER ->
-        stringResource(R.string.generation_failure_server)
-    else -> stringResource(R.string.generation_failure_unknown)
 }
 
 @Composable

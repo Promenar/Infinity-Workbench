@@ -757,6 +757,13 @@
     <string name="provider_models_tokens_unit">tokens</string>
     <string name="provider_models_output_tokens">Output: %1$s</string>
     <string name="provider_models_knowledge_cutoff">Knowledge cutoff: %1$s</string>
+    <string name="provider_models_editor_title">Edit model</string>
+    <string name="provider_models_editor_identity">Model identity</string>
+    <string name="provider_models_editor_canonical_id">Canonical ID: %1$s</string>
+    <string name="provider_models_editor_type">Type</string>
+    <string name="provider_models_editor_capabilities">Capabilities</string>
+    <string name="provider_models_editor_output_limit">Output limit</string>
+    <string name="provider_models_editor_user_overrides">User overrides: %1$s</string>
 
     <!-- SearchConfigScreen -->
     <string name="search_config_title">Web Search</string>

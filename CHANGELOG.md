@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 总收敛：Provider 模型摘要与独立编辑（2026-07-21）
+
+- **摘要列表与渐进编辑**：Provider Models 列表只展示友好名称、精确远端 ID、最多两个能力摘要和独立启用开关；整行进入独立 Material 3 编辑 Sheet，避免 500 模型场景在列表内同时维护完整表单。
+- **编辑与来源合同保持**：名称、类型、能力、上下文、测试/取消、错误状态、删除确认和用户覆盖来源迁入 Sheet；同步刷新继续按稳定模型 ID 派生当前项，用户修改字段仍通过既有来源记录链路保存。
+- **性能与可访问性**：固定 API 36 的 500 模型夹具执行 3 轮预热、5 轮测量，每轮 10 次搜索/滚动/切换/打开关闭；最终 p95 为 22–23ms、最大帧 75ms、PSS 增量 333KiB。API 31/35/36 的摘要、编辑、错误语义和删除流程各 16/16。
+- **当前门禁**：全量 JVM 2109 项（0 failure/error、14 skip）、91/91 Screenshot、Lint 0 Error/Fatal、AndroidTest 编译通过；列表四张 reference 与 API 36 真实 modal 设备截图已人工及多模态复审，Terra/Sol/Luna 最终 Critical/Important 清零。整体发行继续保持 NO-GO。
+
 ### Material 3 总收敛：Provider 表单与密钥交互（2026-07-21）
 
 - **连续标准表单**：云端与本地 Provider 配置移除大块配置卡片，文本输入统一使用 Material 3 `OutlinedTextField`，协议选择改为标准单选 `ListItem`，保持既有 HTTPS 校验、保存和本地模型流程。

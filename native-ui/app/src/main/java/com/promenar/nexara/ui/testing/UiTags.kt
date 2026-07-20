@@ -139,6 +139,16 @@ object UiTags {
     private const val PROVIDER_MODELS_CAPABILITY_PREFIX = "provider_models_capability:"
     private const val PROVIDER_MODELS_CAPABILITY_VISUAL_PREFIX = "provider_models_capability_visual:"
     private const val PROVIDER_MODELS_CONTEXT_PREFIX = "provider_models_context:"
+    private const val PROVIDER_MODELS_EDITOR_SHEET_PREFIX = "provider_models_editor_sheet:"
+    private const val PROVIDER_MODELS_EDITOR_LIST_PREFIX = "provider_models_editor_list:"
+    private const val PROVIDER_MODELS_EDITOR_CLOSE_PREFIX = "provider_models_editor_close:"
+    private const val PROVIDER_MODELS_EDITOR_TEST_PREFIX = "provider_models_editor_test:"
+    private const val PROVIDER_MODELS_EDITOR_CANCEL_PREFIX = "provider_models_editor_cancel:"
+    private const val PROVIDER_MODELS_EDITOR_SOURCE_PREFIX = "provider_models_editor_source:"
+    private const val PROVIDER_MODELS_EDITOR_DELETE_PREFIX = "provider_models_editor_delete:"
+    private const val PROVIDER_MODELS_EDITOR_DELETE_CONFIRM_DIALOG_PREFIX =
+        "provider_models_editor_delete_confirm_dialog:"
+    private const val PROVIDER_MODELS_EDITOR_DELETE_CONFIRM_PREFIX = "provider_models_editor_delete_confirm:"
 
     fun providerModelsModelCard(modelId: String): String = "$PROVIDER_MODELS_MODEL_CARD_PREFIX$modelId"
     fun providerModelsTestAction(modelId: String): String = "$PROVIDER_MODELS_MODEL_TEST_PREFIX$modelId"
@@ -161,6 +171,17 @@ object UiTags {
     fun providerModelsCapabilityVisual(modelId: String, capability: String): String =
         "$PROVIDER_MODELS_CAPABILITY_VISUAL_PREFIX$modelId:$capability"
     fun providerModelsContextField(modelId: String): String = "$PROVIDER_MODELS_CONTEXT_PREFIX$modelId"
+    fun providerModelsEditorSheet(modelId: String): String = "$PROVIDER_MODELS_EDITOR_SHEET_PREFIX$modelId"
+    fun providerModelsEditorList(modelId: String): String = "$PROVIDER_MODELS_EDITOR_LIST_PREFIX$modelId"
+    fun providerModelsEditorCloseAction(modelId: String): String = "$PROVIDER_MODELS_EDITOR_CLOSE_PREFIX$modelId"
+    fun providerModelsEditorTestAction(modelId: String): String = "$PROVIDER_MODELS_EDITOR_TEST_PREFIX$modelId"
+    fun providerModelsEditorCancelAction(modelId: String): String = "$PROVIDER_MODELS_EDITOR_CANCEL_PREFIX$modelId"
+    fun providerModelsEditorSource(modelId: String): String = "$PROVIDER_MODELS_EDITOR_SOURCE_PREFIX$modelId"
+    fun providerModelsEditorDeleteAction(modelId: String): String = "$PROVIDER_MODELS_EDITOR_DELETE_PREFIX$modelId"
+    fun providerModelsEditorDeleteConfirmDialog(modelId: String): String =
+        "$PROVIDER_MODELS_EDITOR_DELETE_CONFIRM_DIALOG_PREFIX$modelId"
+    fun providerModelsEditorDeleteConfirmButton(modelId: String): String =
+        "$PROVIDER_MODELS_EDITOR_DELETE_CONFIRM_PREFIX$modelId"
 
     // ============ RAG Home ==========
     const val RAG_HOME_ROOT = "RAG_HOME_ROOT"
