@@ -48,6 +48,9 @@ import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.NexaraSearchTopBar
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.settings.ProviderListScreenActions
+import com.promenar.nexara.ui.settings.ProviderListScreenContent
+import com.promenar.nexara.ui.settings.ProviderListScreenState
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.testing.UiTags
 import org.junit.Rule
@@ -77,17 +80,17 @@ class UserSettingsAccessibilityTest {
         get() = InstrumentationRegistry.getInstrumentation().targetContext.resources
 
     @Test
-    fun settingsTabsExposeRoleSelectionAnd48DpTouchTarget() {
+    fun settingsTabsShouldNotExistOnNewHomeScreen() {
         rule.setContent {
             NexaraTheme {
-                TabBar(selectedTab = SettingsTab.APP, onTabSelected = {})
+                UserSettingsHomeScreenContent(
+                    state = UserSettingsHomeScreenState(),
+                    actions = UserSettingsHomeScreenActions()
+                )
             }
         }
-
-        rule.onNodeWithText(resources.getString(R.string.settings_tab_app))
-            .assertIsSelected()
-            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
-            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag(UiTags.SETTINGS_TAB_APP).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.SETTINGS_TAB_PROVIDER).assertDoesNotExist()
     }
 
     @Test
@@ -313,30 +316,23 @@ class UserSettingsAccessibilityTest {
     }
 
     @Test
-    fun contentTabClickReallySwitchesSelectedTabViaCallback() {
-        var selectedTab by mutableStateOf(SettingsTab.APP)
-
+    fun defaultModelsItemClickTriggersSecondaryNavigation() {
+        var navigatedRoute: String? = null
         rule.setContent {
             NexaraTheme {
                 UserSettingsHomeScreenContent(
-                    state = UserSettingsHomeScreenState(
-                        selectedTab = selectedTab,
-                    ),
+                    state = UserSettingsHomeScreenState(),
                     actions = UserSettingsHomeScreenActions(
-                        onTabSelected = { selectedTab = it },
-                    ),
+                        onNavigateToSecondary = { navigatedRoute = it }
+                    )
                 )
             }
         }
 
-        rule.onNodeWithTag(UiTags.SETTINGS_TAB_PROVIDER)
-            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
+        rule.onNodeWithText(resources.getString(R.string.settings_default_models))
             .performClick()
 
-        rule.onNodeWithTag(UiTags.SETTINGS_TAB_PROVIDER)
-            .assertIsSelected()
-        com.google.common.truth.Truth.assertThat(selectedTab)
-            .isEqualTo(SettingsTab.PROVIDER)
+        com.google.common.truth.Truth.assertThat(navigatedRoute).isEqualTo("default_models")
     }
 
     @Test
@@ -346,7 +342,7 @@ class UserSettingsAccessibilityTest {
         rule.setContent {
             NexaraTheme {
                 UserSettingsHomeScreenContent(
-                    state = UserSettingsHomeScreenState(selectedTab = SettingsTab.APP),
+                    state = UserSettingsHomeScreenState(),
                     actions = UserSettingsHomeScreenActions(
                         onShowLanguageDialog = { opened.set(true) },
                     ),
@@ -390,7 +386,7 @@ class UserSettingsAccessibilityTest {
 
     @Test
     fun appSettingsLongSubtitleReflowsAt2xAndAboutRemainsReachable() {
-        val longModelName =
+        val longVersionName =
             "MiniMax-M3 multimodal reasoning and tool-calling production model with extended context"
         val aboutOpened = AtomicBoolean(false)
 
@@ -405,14 +401,7 @@ class UserSettingsAccessibilityTest {
                 NexaraTheme {
                     Box(modifier = androidx.compose.ui.Modifier.width(360.dp)) {
                         UserSettingsHomeScreenContent(
-                            state = UserSettingsHomeScreenState(
-                                selectedTab = SettingsTab.APP,
-                                summaryModelName = longModelName,
-                                imageModelName = "FLUX.1 Schnell",
-                                embeddingModelName = "BAAI/bge-m3",
-                                rerankModelName = "Cohere Rerank v3",
-                                versionName = "ACCESSIBILITY-ABOUT-DESTINATION",
-                            ),
+                            state = UserSettingsHomeScreenState(versionName = longVersionName),
                             actions = UserSettingsHomeScreenActions(
                                 onAboutClick = { aboutOpened.set(true) },
                             ),
@@ -422,16 +411,14 @@ class UserSettingsAccessibilityTest {
             }
         }
 
-        rule.onNodeWithText(longModelName)
-            .assertHeightIsAtLeast(96.dp)
-
         rule.onNodeWithTag(UiTags.SETTINGS_APP_LIST)
             .performScrollToNode(
-                hasText("ACCESSIBILITY-ABOUT-DESTINATION", substring = true),
+                hasText(longVersionName, substring = true),
             )
 
-        rule.onNodeWithText("ACCESSIBILITY-ABOUT-DESTINATION", substring = true)
+        rule.onNodeWithText(longVersionName, substring = true)
             .assertIsDisplayed()
+            .assertHeightIsAtLeast(96.dp)
             .assertHasClickAction()
             .performClick()
 
@@ -445,13 +432,9 @@ class UserSettingsAccessibilityTest {
 
         rule.setContent {
             NexaraTheme {
-                UserSettingsHomeScreenContent(
-                    state = UserSettingsHomeScreenState(selectedTab = SettingsTab.PROVIDER),
-                    actions = UserSettingsHomeScreenActions(
-                        onNavigateToSecondary = { route ->
-                            navigated.set(route == "provider_form")
-                        },
-                    ),
+                ProviderListScreenContent(
+                    state = ProviderListScreenState(),
+                    actions = ProviderListScreenActions(onAddProvider = { navigated.set(true) }),
                 )
             }
         }
@@ -473,7 +456,6 @@ class UserSettingsAccessibilityTest {
             NexaraTheme {
                 UserSettingsHomeScreenContent(
                     state = UserSettingsHomeScreenState(
-                        selectedTab = SettingsTab.APP,
                         localInferenceAvailable = false,
                     ),
                     actions = UserSettingsHomeScreenActions(),
@@ -519,12 +501,9 @@ class UserSettingsAccessibilityTest {
 
         rule.setContent {
             NexaraTheme {
-                UserSettingsHomeScreenContent(
-                    state = UserSettingsHomeScreenState(
-                        selectedTab = SettingsTab.PROVIDER,
-                        providers = providers,
-                    ),
-                    actions = UserSettingsHomeScreenActions(),
+                ProviderListScreenContent(
+                    state = ProviderListScreenState(providers = providers),
+                    actions = ProviderListScreenActions(),
                 )
             }
         }
@@ -597,9 +576,8 @@ class UserSettingsAccessibilityTest {
             ) {
                 NexaraTheme {
                     Box(modifier = androidx.compose.ui.Modifier.width(360.dp)) {
-                        UserSettingsHomeScreenContent(
-                            state = UserSettingsHomeScreenState(
-                                selectedTab = SettingsTab.PROVIDER,
+                        ProviderListScreenContent(
+                            state = ProviderListScreenState(
                                 providers = listOf(
                                     ProviderListItem(
                                         id = "provider-vertex-configured",
@@ -621,7 +599,7 @@ class UserSettingsAccessibilityTest {
                                     ),
                                 ),
                             ),
-                            actions = UserSettingsHomeScreenActions(),
+                            actions = ProviderListScreenActions(),
                         )
                     }
                 }
@@ -664,9 +642,8 @@ class UserSettingsAccessibilityTest {
 
         rule.setContent {
             NexaraTheme {
-                UserSettingsHomeScreenContent(
-                    state = UserSettingsHomeScreenState(
-                        selectedTab = SettingsTab.PROVIDER,
+                ProviderListScreenContent(
+                    state = ProviderListScreenState(
                         providers = listOf(
                             ProviderListItem(
                                 id = "provider-local",
@@ -679,7 +656,7 @@ class UserSettingsAccessibilityTest {
                             ),
                         ),
                     ),
-                    actions = UserSettingsHomeScreenActions(),
+                    actions = ProviderListScreenActions(),
                 )
             }
         }
@@ -707,9 +684,8 @@ class UserSettingsAccessibilityTest {
 
         rule.setContent {
             NexaraTheme {
-                UserSettingsHomeScreenContent(
-                    state = UserSettingsHomeScreenState(
-                        selectedTab = SettingsTab.PROVIDER,
+                ProviderListScreenContent(
+                    state = ProviderListScreenState(
                         providers = listOf(
                             ProviderListItem(
                                 id = providerId,
@@ -719,8 +695,9 @@ class UserSettingsAccessibilityTest {
                             ),
                         ),
                     ),
-                    actions = UserSettingsHomeScreenActions(
-                        onNavigateToSecondary = lastRoute::set,
+                    actions = ProviderListScreenActions(
+                        onProviderModels = { id -> lastRoute.set("provider_models/$id") },
+                        onEditProvider = { id -> lastRoute.set("provider_form?providerId=$id") },
                     ),
                 )
             }
@@ -755,9 +732,8 @@ class UserSettingsAccessibilityTest {
 
         rule.setContent {
             NexaraTheme {
-                UserSettingsHomeScreenContent(
-                    state = UserSettingsHomeScreenState(
-                        selectedTab = SettingsTab.PROVIDER,
+                ProviderListScreenContent(
+                    state = ProviderListScreenState(
                         providers = listOf(
                             ProviderListItem(
                                 id = providerId,
@@ -767,7 +743,7 @@ class UserSettingsAccessibilityTest {
                             ),
                         ),
                     ),
-                    actions = UserSettingsHomeScreenActions(
+                    actions = ProviderListScreenActions(
                         onRequestDeleteProvider = deletedProvider::set,
                     ),
                 )
@@ -800,9 +776,8 @@ class UserSettingsAccessibilityTest {
             ) {
                 NexaraTheme {
                     Box(modifier = androidx.compose.ui.Modifier.width(360.dp)) {
-                        UserSettingsHomeScreenContent(
-                            state = UserSettingsHomeScreenState(
-                                selectedTab = SettingsTab.PROVIDER,
+                        ProviderListScreenContent(
+                            state = ProviderListScreenState(
                                 providers = listOf(
                                     ProviderListItem(
                                         id = "provider-long-name",
@@ -812,7 +787,7 @@ class UserSettingsAccessibilityTest {
                                     ),
                                 ),
                             ),
-                            actions = UserSettingsHomeScreenActions(),
+                            actions = ProviderListScreenActions(),
                         )
                     }
                 }
@@ -821,19 +796,16 @@ class UserSettingsAccessibilityTest {
 
         rule.onNodeWithText(longName, useUnmergedTree = true)
             .assertWidthIsAtLeast(220.dp)
-            .assertHeightIsAtLeast(120.dp)
+            .assertHeightIsAtLeast(96.dp)
     }
 
     @Test
     fun providerEmptyStateKeepsOneAddAction() {
         rule.setContent {
             NexaraTheme {
-                UserSettingsHomeScreenContent(
-                    state = UserSettingsHomeScreenState(
-                        selectedTab = SettingsTab.PROVIDER,
-                        providers = emptyList(),
-                    ),
-                    actions = UserSettingsHomeScreenActions(),
+                ProviderListScreenContent(
+                    state = ProviderListScreenState(),
+                    actions = ProviderListScreenActions(),
                 )
             }
         }

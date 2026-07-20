@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
@@ -98,6 +99,7 @@ internal fun ModelPickerSheetContent(
 ) {
     Column(
         modifier = modifier
+            .testTag("model_picker_sheet")
             .padding(horizontal = 24.dp)
             .padding(bottom = 32.dp),
     ) {
@@ -148,7 +150,9 @@ internal fun ModelPickerSheetContent(
                         model = model,
                         selected = isSelected,
                         onClick = { onSelect(model.selectionId, model.displayName) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("model_picker_item:${model.selectionId}"),
                     )
 
                     if (index < models.lastIndex) {

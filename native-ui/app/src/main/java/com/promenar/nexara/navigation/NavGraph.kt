@@ -49,6 +49,8 @@ import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.settings.ProviderFormScreen
 import com.promenar.nexara.ui.settings.ProviderModelsScreen
 import com.promenar.nexara.ui.settings.SettingsViewModel
+import com.promenar.nexara.ui.settings.ProviderListScreen
+import com.promenar.nexara.ui.settings.DefaultModelsScreen
 import com.promenar.nexara.ui.settings.SearchConfigScreen
 import com.promenar.nexara.ui.settings.SkillsScreen
 import com.promenar.nexara.ui.settings.ThemeScreen
@@ -84,6 +86,8 @@ object NavDestinations {
     const val BACKUP_SETTINGS = "backup_settings"
     const val LOCAL_MODELS = "local_models"
     const val DEVELOPER_PANEL = "developer_panel"
+    const val PROVIDER_LIST = "provider_list"
+    const val DEFAULT_MODELS = "default_models"
 
     fun sessionList(agentId: String) = "session_list/$agentId"
     fun chatHero(sessionId: String) = "chat_hero/$sessionId"
@@ -606,6 +610,19 @@ fun NexaraNavGraph(
 
         composable(NavDestinations.THEME_CONFIG) {
             ThemeScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(NavDestinations.PROVIDER_LIST) {
+            ProviderListScreen(
+                onNavigateToSecondary = { route -> navController.navigate(route) },
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(NavDestinations.DEFAULT_MODELS) {
+            DefaultModelsScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

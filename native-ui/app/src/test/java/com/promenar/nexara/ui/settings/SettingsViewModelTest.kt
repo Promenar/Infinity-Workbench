@@ -188,13 +188,7 @@ class SettingsViewModelTest {
         assertThat(vm.loopLimit.value).isEqualTo(50)
     }
 
-    @Test
-    fun `settings tab index is clamped to available tabs`() {
-        assertThat(normalizeSettingsTabIndex(-1)).isEqualTo(0)
-        assertThat(normalizeSettingsTabIndex(0)).isEqualTo(0)
-        assertThat(normalizeSettingsTabIndex(1)).isEqualTo(1)
-        assertThat(normalizeSettingsTabIndex(2)).isEqualTo(1)
-    }
+
 
     @Test
     fun `preset_skills_migrated_v3 updates SharedPreferences and enables all preset skills`() = runTest {
@@ -214,19 +208,18 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `settings view model 主题兼容层委托给统一 ThemePreferenceStore`() = runTest {
-        themePreferenceState.value = NexaraThemePreferences(
-            mode = NexaraThemeMode.SYSTEM,
-            colorSource = NexaraColorSource.NEXARA,
-        )
-        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
-        assertThat(vm.themeMode.value).isEqualTo("system")
+    fun `settings view model 必须暴露 typed themePreferences StateFlow 且不保留旧属性和 direct theme writer`() {
+        val vmSource = java.nio.file.Files.readAllBytes(
+            java.nio.file.Path.of("app/src/main/java/com/promenar/nexara/ui/settings/SettingsViewModel.kt"),
+        ).toString(Charsets.UTF_8)
 
-        vm.setThemeMode("light")
-        vm.setThemeColorSource(NexaraColorSource.DYNAMIC)
-
-        verify { themePreferenceStore.setMode(NexaraThemeMode.LIGHT) }
-        verify { themePreferenceStore.setColorSource(NexaraColorSource.DYNAMIC) }
+        assertThat(vmSource).contains("val themePreferences:")
+        assertThat(vmSource).contains("StateFlow<NexaraThemePreferences>")
+        assertThat(vmSource).doesNotContain("val themeMode:")
+        assertThat(vmSource).doesNotContain("val selectedSettingsTab:")
+        assertThat(vmSource).doesNotContain("fun setThemeMode(")
+        assertThat(vmSource).doesNotContain("fun setThemeColorSource(")
+        assertThat(vmSource).doesNotContain("fun setSelectedSettingsTab(")
     }
 
     private class MemorySecretStore : SecretStore {

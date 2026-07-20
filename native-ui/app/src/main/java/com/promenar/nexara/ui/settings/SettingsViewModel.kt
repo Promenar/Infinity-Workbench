@@ -33,8 +33,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -53,8 +51,7 @@ import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.welcome.runOnboardingEndpointProbe
 import com.promenar.nexara.ui.welcome.verifyOnboardingModelCandidate
 import com.promenar.nexara.domain.generation.GenerationFailureCode
-import com.promenar.nexara.ui.theme.NexaraColorSource
-import com.promenar.nexara.ui.theme.NexaraThemeMode
+import com.promenar.nexara.ui.theme.NexaraThemePreferences
 
 /**
  * `listModels` 只有模型 ID，不能据此证明未知模型具备聊天能力。
@@ -110,8 +107,6 @@ data class SkillInfo(
     val description: String,
     val enabled: Boolean
 )
-
-internal fun normalizeSettingsTabIndex(index: Int): Int = index.coerceIn(0, 1)
 
 internal fun UiStatusNotice.withFallbackWarning(usedFallback: Boolean): UiStatusNotice =
     if (usedFallback) {
@@ -309,25 +304,12 @@ class SettingsViewModel(
     private val _language = MutableStateFlow("zh")
     val language: StateFlow<String> = _language.asStateFlow()
 
-    val themeMode: StateFlow<String> = app.themePreferenceStore.state
-        .map { it.mode.name.lowercase() }
-        .stateIn(
-            viewModelScope,
-            SharingStarted.Eagerly,
-            app.themePreferenceStore.state.value.mode.name.lowercase(),
-        )
+    val themePreferences: StateFlow<NexaraThemePreferences> = app.themePreferenceStore.state
 
     private val _hapticEnabled = MutableStateFlow(true)
     val hapticEnabled: StateFlow<Boolean> = _hapticEnabled.asStateFlow()
 
     val providers: StateFlow<List<ProviderListItem>> = pm.providers
-
-    private val _selectedSettingsTab = MutableStateFlow(0) // 0: App, 1: Provider
-    val selectedSettingsTab: StateFlow<Int> = _selectedSettingsTab.asStateFlow()
-
-    fun setSelectedSettingsTab(index: Int) {
-        _selectedSettingsTab.value = normalizeSettingsTabIndex(index)
-    }
 
     val currentModelSummary: StateFlow<String> = pm.currentModelSummary
 
@@ -427,10 +409,6 @@ class SettingsViewModel(
         _language.value = prefs.getString("language", "zh") ?: "zh"
         _hapticEnabled.value = prefs.getBoolean("haptic_enabled", true)
         _loopLimit.value = prefs.getInt("loop_limit", 50)
-    }
-
-    fun refreshProviders() {
-        pm.refreshAll()
     }
 
     /** 刷新模型列表（远程获取 + ModelSpecs 数据库回退 + 元数据更新） */
@@ -723,17 +701,6 @@ class SettingsViewModel(
         if (com.promenar.nexara.util.LocaleController.setApplicationLanguage(app, lang)) {
             _language.value = lang
         }
-    }
-
-    fun setThemeMode(mode: String) {
-        val resolvedMode = NexaraThemeMode.values().firstOrNull {
-            it.name.equals(mode, ignoreCase = true)
-        } ?: NexaraThemeMode.DARK
-        app.themePreferenceStore.setMode(resolvedMode)
-    }
-
-    fun setThemeColorSource(source: NexaraColorSource) {
-        app.themePreferenceStore.setColorSource(source)
     }
 
     fun setHaptic(enabled: Boolean) {

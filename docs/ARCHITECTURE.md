@@ -33,7 +33,9 @@ graph TD
 - **AgentHubScreen / AgentSessionsScreen**: 助手与会话列表共用顶栏上下文搜索和透明连续 `ListItem` 契约；退出搜索按稳定条目 ID、原始索引和像素偏移恢复列表位置。会话行保留滑动置顶/删除及确认流程，并通过自定义无障碍动作向 TalkBack 暴露等价操作。
 - **MainTabScaffold / AdaptiveNavigationSurface**: 主导航按 600dp 断点切换手机 `Surface + NavigationBar + NavigationBarItem` 浮动坞与大屏 `NavigationRail`；Scaffold 内边距保证业务内容和滚动末项不进入手机导航区域，导航颜色、选中指示和标签均由 MaterialTheme 提供。
 - **ChatScreenContent / AttachmentActionMenu**: 附件菜单状态由聊天内容层提升，输入栏只报告展开意图与真实按钮坐标；单一菜单作为整个聊天 `Scaffold` 的后置覆盖层，统一处理外部/顶栏/Back 关闭、退出期触摸拦截、生成/导入禁用、RTL 与受限高度滚动。首轮坐标尚未回报时使用根容器内安全位置，随后切换到实测锚点。
-- **NavGraph**: 基于 Compose Navigation 的路由中心（27 条路由）。
+- **NavGraph**: 基于 Compose Navigation 的集中式路由中心；设置首页通过稳定目的地进入 Provider 管理和默认模型二级页面，既有 Provider 表单与模型管理路由保持独立。
+- **ProviderListScreen**: 提供商管理列表页，展示状态摘要并提供 Overflow 编辑与删除入口。
+- **DefaultModelsScreen**: 四角色（摘要、图像、向量、重排）默认模型统一配置页面，直接触发持久化。
 - **Domain 层**: `domain/model/`（6 文件）+ `domain/repository/`（9 接口）+ `domain/usecase/`（6 UseCase），零 Android 依赖。
 - **Repository 层**: 9 个数据仓库实现（Agent/Document/Folder/KG/Message/Provider/Session/TokenStats/Vector），覆盖率 100%。
 - **ContextBuilder**: 负责多源上下文（RAG/Web/KG/History）的异步调度、打分与 Prompt 合成，支持实时观测回调。所有子源均已接入 NexaraLogger 错误追踪。

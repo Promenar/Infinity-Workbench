@@ -1,127 +1,80 @@
 package com.promenar.nexara.ui.hub
 
 import android.app.Activity
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Key
-import androidx.compose.material.icons.rounded.Link
-import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Psychology
-import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil3.compose.AsyncImage
+import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.toModelSelectionUiModel
-import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
-import com.promenar.nexara.ui.common.ModelPicker
-import com.promenar.nexara.ui.common.NexaraConfirmDialog
+import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.ui.common.NexaraSettingsItem
-import com.promenar.nexara.ui.common.SettingsToggle
-import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraSpacing
-import com.promenar.nexara.ui.theme.NexaraTypography
-import com.promenar.nexara.ui.theme.Manrope
+import com.promenar.nexara.ui.theme.NexaraThemePreferences
 import com.yalantis.ucrop.UCrop
-import android.net.Uri
-import androidx.compose.ui.res.painterResource
-import coil3.compose.AsyncImage
-import com.promenar.nexara.data.remote.protocol.ProtocolType
-import com.promenar.nexara.BuildConfig
 import java.io.File
-
-internal enum class SettingsTab(val labelRes: Int) {
-    APP(R.string.settings_tab_app),
-    PROVIDER(R.string.settings_tab_provider)
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -129,22 +82,22 @@ fun UserSettingsHomeScreen(
     onNavigateToSecondary: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
+    val viewModel = viewModel<SettingsViewModel>(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
     val userName by viewModel.userName.collectAsState()
     val userAvatar by viewModel.userAvatar.collectAsState()
     val tokenCost by viewModel.tokenCostThisMonth.collectAsState()
     val language by viewModel.language.collectAsState()
-    val themeMode by viewModel.themeMode.collectAsState()
-    val haptic by viewModel.hapticEnabled.collectAsState()
+    val themePreferences by viewModel.themePreferences.collectAsState()
     val providers by viewModel.providers.collectAsState()
 
-    val selectedSettingsTab by viewModel.selectedSettingsTab.collectAsState()
-    val selectedTab = remember(selectedSettingsTab) { SettingsTab.entries[selectedSettingsTab] }
+    val summaryModelId by viewModel.summaryModelId.collectAsState()
+    val imageModelId by viewModel.imageModelId.collectAsState()
+    val embeddingModelId by viewModel.embeddingModelId.collectAsState()
+    val rerankModelId by viewModel.rerankModelId.collectAsState()
+
     var showNameEditor by remember { mutableStateOf(false) }
     var editingName by remember { mutableStateOf(userName) }
-    var showDeleteDialog by remember { mutableStateOf<String?>(null) }
     var showLanguageDialog by remember { mutableStateOf(false) }
-    var showModelPickerType by remember { mutableStateOf<String?>(null) }
     val editAvatarTitle = stringResource(R.string.settings_edit_avatar)
 
     val cropLauncher = rememberLauncherForActivityResult(
@@ -162,15 +115,14 @@ fun UserSettingsHomeScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
-            // 启动 UCrop 裁切
             val destinationUri = Uri.fromFile(File(context.cacheDir, "temp_crop_${System.currentTimeMillis()}.jpg"))
             val options = UCrop.Options().apply {
-                setCircleDimmedLayer(true) // 显示圆形遮罩
+                setCircleDimmedLayer(true)
                 setShowCropFrame(false)
                 setShowCropGrid(false)
                 setToolbarColor(android.graphics.Color.BLACK)
                 setStatusBarColor(android.graphics.Color.BLACK)
-                setActiveControlsWidgetColor(android.graphics.Color.parseColor("#888DFF")) // Primary color
+                setActiveControlsWidgetColor(android.graphics.Color.parseColor("#888DFF"))
                 setToolbarTitle(editAvatarTitle)
             }
             
@@ -184,123 +136,53 @@ fun UserSettingsHomeScreen(
         }
     }
 
-    LaunchedEffect(selectedTab) {
-        if (selectedTab == SettingsTab.PROVIDER) {
-            viewModel.refreshProviders()
-        }
+    val configuredDefaultModelsCount = remember(summaryModelId, imageModelId, embeddingModelId, rerankModelId) {
+        listOf(summaryModelId, imageModelId, embeddingModelId, rerankModelId).count { it.isNotEmpty() }
     }
 
-    val allModels by viewModel.providerModels.collectAsState()
-    val summaryModelId by viewModel.summaryModelId.collectAsState()
-    val imageModelId by viewModel.imageModelId.collectAsState()
-    val embeddingModelId by viewModel.embeddingModelId.collectAsState()
-    val rerankModelId by viewModel.rerankModelId.collectAsState()
-
-    val state = remember(
-        selectedTab, userName, userAvatar, tokenCost, language, themeMode, haptic,
-        allModels, summaryModelId, imageModelId, embeddingModelId, rerankModelId,
-        providers, showModelPickerType,
-    ) {
+    val state = remember(userName, userAvatar, tokenCost, language, themePreferences, providers, configuredDefaultModelsCount) {
         UserSettingsHomeScreenState(
-            selectedTab = selectedTab,
             userName = userName,
             userAvatar = userAvatar,
             tokenCost = tokenCost,
             language = language,
-            themeMode = themeMode,
-            hapticEnabled = haptic,
-            summaryModelName = resolveModelName(allModels, summaryModelId),
-            imageModelName = resolveModelName(allModels, imageModelId),
-            embeddingModelName = resolveModelName(allModels, embeddingModelId),
-            rerankModelName = resolveModelName(allModels, rerankModelId),
-            providers = providers,
+            themePreferences = themePreferences,
+            providerCount = providers.size,
+            configuredDefaultModelsCount = configuredDefaultModelsCount,
             versionName = BuildConfig.VERSION_NAME,
-            localInferenceAvailable = BuildConfig.LOCAL_INFERENCE_AVAILABLE,
+            localInferenceAvailable = BuildConfig.LOCAL_INFERENCE_AVAILABLE
         )
     }
+
     val actions = UserSettingsHomeScreenActions(
-        onTabSelected = { viewModel.setSelectedSettingsTab(it.ordinal) },
-        onChangeAvatar = {
-            photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
-        },
-        onEditName = {
-            editingName = userName
-            showNameEditor = true
-        },
-        onShowLanguageDialog = { showLanguageDialog = true },
-        onShowModelPicker = { type ->
-            viewModel.refreshProviders()
-            showModelPickerType = type
-        },
-        onNavigateToSecondary = onNavigateToSecondary,
-        onAboutClick = {
-            context.startActivity(
-                android.content.Intent(
-                    android.content.Intent.ACTION_VIEW,
-                    android.net.Uri.parse("https://github.com/Promenar/Nexara"),
-                ),
-            )
-        },
-        onOpenGithub = {
-            context.startActivity(
-                android.content.Intent(
-                    android.content.Intent.ACTION_VIEW,
-                    android.net.Uri.parse("https://github.com/promenar/nexara"),
-                ),
-            )
-        },
-        onRequestDeleteProvider = { providerId -> showDeleteDialog = providerId },
-    )
-
-    UserSettingsHomeScreenContent(state = state, actions = actions)
-
-    val resolver = remember { ModelMetadataResolver() }
-    val modelItems by remember {
-        derivedStateOf {
-            allModels
-                .filter { it.enabled }
-                .map { model -> model.toModelSelectionUiModel(resolver) }
-        }
-    }
-
-    if (showModelPickerType != null) {
-        val type = showModelPickerType!!
-        val currentId = when (type) {
-            "summary" -> summaryModelId
-            "image" -> imageModelId
-            "embedding" -> embeddingModelId
-            "rerank" -> rerankModelId
-            else -> ""
-        }
-
-        val filter = when (type) {
-            "summary" -> "chat"
-            "image" -> "image"
-            "embedding" -> "embedding"
-            "rerank" -> "rerank"
-            else -> null
-        }
-        val title = when (type) {
-            "summary" -> stringResource(R.string.settings_model_summary)
-            "image" -> stringResource(R.string.settings_model_image)
-            "embedding" -> stringResource(R.string.settings_model_embedding)
-            "rerank" -> stringResource(R.string.settings_model_rerank)
-            else -> ""
-        }
-
-        ModelPicker(
-            show = true,
-            title = title,
-            filterTag = filter,
-            currentModelId = currentId,
-            models = modelItems,
-            onDismiss = { showModelPickerType = null },
-            onSelect = { id, _ ->
-                viewModel.setPresetModel(type, id)
-                showModelPickerType = null
+            onChangeAvatar = {
+                photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+            },
+            onEditName = {
+                editingName = userName
+                showNameEditor = true
+            },
+            onShowLanguageDialog = { showLanguageDialog = true },
+            onNavigateToSecondary = onNavigateToSecondary,
+            onAboutClick = {
+                context.startActivity(
+                    android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://github.com/Promenar/Nexara"),
+                    ),
+                )
+            },
+            onOpenGithub = {
+                context.startActivity(
+                    android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://github.com/promenar/nexara"),
+                    ),
+                )
             }
         )
-    }
+
+    UserSettingsHomeScreenContent(state = state, actions = actions)
 
     if (showNameEditor) {
         NameEditDialog(
@@ -311,22 +193,6 @@ fun UserSettingsHomeScreen(
                 showNameEditor = false
             }
         )
-    }
-
-    if (showDeleteDialog != null) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { showDeleteDialog = null }) {
-            NexaraConfirmDialog(
-                title = stringResource(R.string.settings_delete_provider_title),
-                message = stringResource(R.string.settings_delete_provider_message),
-                confirmText = stringResource(R.string.settings_btn_delete),
-                isDestructive = true,
-                onConfirm = {
-                    showDeleteDialog?.let { viewModel.deleteProvider(it) }
-                    showDeleteDialog = null
-                },
-                onCancel = { showDeleteDialog = null }
-            )
-        }
     }
 
     if (showLanguageDialog) {
@@ -343,54 +209,25 @@ fun UserSettingsHomeScreen(
     }
 }
 
-/**
- * 将模型 ID 解析为友好的显示名称。
- * 优先级：已加载模型的 name → ModelSpec.note → 原始 ID
- */
-private fun resolveModelName(
-    allModels: List<com.promenar.nexara.data.model.ModelInfo>,
-    id: String,
-): String {
-    if (id.isEmpty()) return ""
-    val loaded = allModels.find { it.id == id }
-    if (loaded != null && loaded.name.isNotEmpty() && loaded.name != id) {
-        return loaded.name
-    }
-    val spec = com.promenar.nexara.data.model.findModelSpec(id)
-    return spec?.note ?: id
-}
-
-// =====================================================================================
-// 状态提升 seam —— Content 只消费显式 state/actions，不触碰 ViewModel / Context / Intent
-// =====================================================================================
-
 internal data class UserSettingsHomeScreenState(
-    val selectedTab: SettingsTab = SettingsTab.APP,
     val userName: String = "",
     val userAvatar: String? = null,
     val tokenCost: String = "",
     val language: String = "en",
-    val themeMode: String = "system",
-    val hapticEnabled: Boolean = true,
-    val summaryModelName: String = "",
-    val imageModelName: String = "",
-    val embeddingModelName: String = "",
-    val rerankModelName: String = "",
-    val providers: List<ProviderListItem> = emptyList(),
+    val themePreferences: NexaraThemePreferences = NexaraThemePreferences(),
+    val providerCount: Int = 0,
+    val configuredDefaultModelsCount: Int = 0,
     val versionName: String = "",
     val localInferenceAvailable: Boolean = false,
 )
 
 internal data class UserSettingsHomeScreenActions(
-    val onTabSelected: (SettingsTab) -> Unit = {},
     val onChangeAvatar: () -> Unit = {},
     val onEditName: () -> Unit = {},
     val onShowLanguageDialog: () -> Unit = {},
-    val onShowModelPicker: (String) -> Unit = {},
     val onNavigateToSecondary: (String) -> Unit = {},
     val onAboutClick: () -> Unit = {},
     val onOpenGithub: () -> Unit = {},
-    val onRequestDeleteProvider: (String) -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -418,250 +255,201 @@ internal fun UserSettingsHomeScreenContent(
             )
         },
     ) { paddingValues ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = NexaraSpacing.ScreenHorizontal),
+                .padding(horizontal = NexaraSpacing.ScreenHorizontal)
+                .testTag(UiTags.SETTINGS_APP_LIST),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = NexaraSpacing.XLarge),
         ) {
-            TabBar(
-                selectedTab = state.selectedTab,
-                onTabSelected = actions.onTabSelected,
-            )
-
-            Spacer(modifier = Modifier.height(NexaraSpacing.Large))
-
-            Crossfade(
-                targetState = state.selectedTab,
-                animationSpec = tween(300),
-                label = "settingsTab",
-            ) { tab ->
-                when (tab) {
-                    SettingsTab.APP -> AppSettingsContent(state = state, actions = actions)
-                    SettingsTab.PROVIDER -> ProviderSettingsContent(state = state, actions = actions)
+            item {
+                NexaraSettingsSection(title = stringResource(R.string.settings_section_account)) {
+                    UserProfileListItem(
+                        userName = state.userName,
+                        avatarUri = state.userAvatar,
+                        onEditName = actions.onEditName,
+                        onChangeAvatar = actions.onChangeAvatar,
+                    )
                 }
             }
-        }
-    }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun TabBar(
-    selectedTab: SettingsTab,
-    onTabSelected: (SettingsTab) -> Unit,
-) {
-    PrimaryTabRow(
-        selectedTabIndex = selectedTab.ordinal,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = NexaraSpacing.Small),
-        containerColor = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.primary,
-        divider = {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        },
-    ) {
-        SettingsTab.entries.forEach { tab ->
-            val isSelected = selectedTab == tab
-            Tab(
-                selected = isSelected,
-                onClick = { onTabSelected(tab) },
-                modifier = Modifier
-                    .testTag(
-                        when (tab) {
-                            SettingsTab.APP -> UiTags.SETTINGS_TAB_APP
-                            SettingsTab.PROVIDER -> UiTags.SETTINGS_TAB_PROVIDER
+            item {
+                NexaraSettingsSection(title = stringResource(R.string.settings_section_general)) {
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Key,
+                        title = stringResource(R.string.settings_language),
+                        subtitle = if (state.language == "zh") {
+                            stringResource(R.string.settings_language_zh)
+                        } else {
+                            stringResource(R.string.settings_language_en)
                         },
+                        onClick = actions.onShowLanguageDialog,
                     )
-                    .sizeIn(
-                        minWidth = NexaraSpacing.MinimumTouchTarget,
-                        minHeight = NexaraSpacing.MinimumTouchTarget,
-                    ),
-                text = {
-                    Text(
-                        text = stringResource(tab.labelRes),
-                        style = MaterialTheme.typography.titleSmall,
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Palette,
+                        title = stringResource(R.string.settings_appearance),
+                        subtitle = when (state.themePreferences.mode) {
+                            com.promenar.nexara.ui.theme.NexaraThemeMode.SYSTEM -> stringResource(R.string.settings_theme_system)
+                            com.promenar.nexara.ui.theme.NexaraThemeMode.LIGHT -> stringResource(R.string.settings_theme_light)
+                            com.promenar.nexara.ui.theme.NexaraThemeMode.DARK -> stringResource(R.string.settings_theme_dark)
+                        },
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.THEME_CONFIG) }
                     )
-                },
-            )
-        }
-    }
-}
-
-@Composable
-private fun AppSettingsContent(
-    state: UserSettingsHomeScreenState,
-    actions: UserSettingsHomeScreenActions,
-) {
-    val notSet = stringResource(R.string.settings_not_set)
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag(UiTags.SETTINGS_APP_LIST),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = NexaraSpacing.XLarge),
-        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large + NexaraSpacing.XSmall),
-    ) {
-        item {
-            UserProfileHeader(
-                userName = state.userName,
-                avatarUri = state.userAvatar,
-                onEditName = actions.onEditName,
-                onChangeAvatar = actions.onChangeAvatar,
-            )
-        }
-
-        item {
-            SettingsGroup(title = stringResource(R.string.settings_section_general)) {
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Key,
-                    title = stringResource(R.string.settings_language),
-                    subtitle = if (state.language == "zh") {
-                        stringResource(R.string.settings_language_zh)
-                    } else {
-                        stringResource(R.string.settings_language_en)
-                    },
-                    onClick = actions.onShowLanguageDialog,
-                )
+                }
             }
-        }
 
-        item {
-            SettingsGroup(title = stringResource(R.string.settings_section_model_presets)) {
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Psychology,
-                    title = stringResource(R.string.settings_model_summary),
-                    subtitle = state.summaryModelName.ifEmpty { notSet },
-                    onClick = { actions.onShowModelPicker("summary") },
-                )
-                SettingsGroupDivider()
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Image,
-                    title = stringResource(R.string.settings_model_image),
-                    subtitle = state.imageModelName.ifEmpty { notSet },
-                    onClick = { actions.onShowModelPicker("image") },
-                )
-                SettingsGroupDivider()
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Link,
-                    title = stringResource(R.string.settings_model_embedding),
-                    subtitle = state.embeddingModelName.ifEmpty { notSet },
-                    onClick = { actions.onShowModelPicker("embedding") },
-                )
-                SettingsGroupDivider()
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Route,
-                    title = stringResource(R.string.settings_model_rerank),
-                    subtitle = state.rerankModelName.ifEmpty { notSet },
-                    onClick = { actions.onShowModelPicker("rerank") },
-                )
-            }
-        }
-
-        item {
-            SettingsGroup(title = stringResource(R.string.settings_section_knowledge)) {
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Settings,
-                    title = stringResource(R.string.settings_rag_config),
-                    subtitle = stringResource(R.string.settings_rag_desc),
-                    onClick = { actions.onNavigateToSecondary("rag_global_config") },
-                )
-                SettingsGroupDivider()
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Tune,
-                    title = stringResource(R.string.settings_advanced_retrieval),
-                    subtitle = stringResource(R.string.settings_retrieval_desc),
-                    onClick = { actions.onNavigateToSecondary("rag_advanced") },
-                )
-            }
-        }
-
-        item {
-            SettingsGroup(title = stringResource(R.string.settings_section_tools)) {
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Edit,
-                    title = stringResource(R.string.settings_token_usage),
-                    subtitle = stringResource(R.string.settings_token_cost_month, state.tokenCost),
-                    onClick = { actions.onNavigateToSecondary("token_usage") },
-                )
-                SettingsGroupDivider()
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Tune,
-                    title = stringResource(R.string.settings_skills),
-                    subtitle = stringResource(R.string.settings_skills_desc),
-                    onClick = { actions.onNavigateToSecondary("skills_config") },
-                )
-                if (state.localInferenceAvailable) {
-                    SettingsGroupDivider()
-                    Box(modifier = Modifier.testTag(UiTags.SETTINGS_LOCAL_INFERENCE_ENTRY)) {
-                        NexaraSettingsItem(
-                            icon = Icons.Rounded.Edit,
-                            title = stringResource(R.string.settings_local_models),
-                            subtitle = stringResource(R.string.settings_local_models_desc),
-                            onClick = { actions.onNavigateToSecondary("local_models") },
-                        )
+            item {
+                NexaraSettingsSection(title = stringResource(R.string.settings_section_ai_models)) {
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Settings,
+                        title = stringResource(R.string.settings_provider_management),
+                        subtitle = stringResource(R.string.settings_provider_count_summary, state.providerCount),
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.PROVIDER_LIST) },
+                        modifier = Modifier.testTag(UiTags.SETTINGS_PROVIDER_ENTRY),
+                    )
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Psychology,
+                        title = stringResource(R.string.settings_default_models),
+                        subtitle = stringResource(R.string.settings_default_models_count_summary, state.configuredDefaultModelsCount),
+                        onClick = { actions.onNavigateToSecondary(NavDestinations.DEFAULT_MODELS) },
+                        modifier = Modifier.testTag(UiTags.SETTINGS_DEFAULT_MODELS_ENTRY),
+                    )
+                    if (state.localInferenceAvailable) {
+                        Box(modifier = Modifier.testTag(UiTags.SETTINGS_LOCAL_INFERENCE_ENTRY)) {
+                            NexaraSettingsItem(
+                                icon = Icons.Rounded.Tune,
+                                title = stringResource(R.string.settings_local_models),
+                                subtitle = stringResource(R.string.settings_local_models_desc),
+                                onClick = { actions.onNavigateToSecondary("local_models") }
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        item {
-            SettingsGroup(title = stringResource(R.string.settings_section_data)) {
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Settings,
-                    title = stringResource(R.string.settings_backup),
-                    subtitle = stringResource(R.string.settings_backup_desc),
-                    onClick = { actions.onNavigateToSecondary("backup_settings") },
-                )
+            item {
+                NexaraSettingsSection(title = stringResource(R.string.settings_section_knowledge_retrieval)) {
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Settings,
+                        title = stringResource(R.string.settings_rag_config),
+                        subtitle = stringResource(R.string.settings_rag_desc),
+                        onClick = { actions.onNavigateToSecondary("rag_global_config") },
+                    )
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Tune,
+                        title = stringResource(R.string.settings_advanced_retrieval),
+                        subtitle = stringResource(R.string.settings_retrieval_desc),
+                        onClick = { actions.onNavigateToSecondary("rag_advanced") },
+                    )
+                }
             }
-        }
 
-        item {
-            SettingsGroup(title = stringResource(R.string.settings_section_about)) {
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Tune,
-                    title = stringResource(R.string.settings_about_nexara),
-                    subtitle = stringResource(R.string.settings_version, state.versionName),
-                    onClick = actions.onAboutClick,
-                )
+            item {
+                NexaraSettingsSection(title = stringResource(R.string.settings_section_tools_data)) {
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Tune,
+                        title = stringResource(R.string.settings_skills),
+                        subtitle = stringResource(R.string.settings_skills_desc),
+                        onClick = { actions.onNavigateToSecondary("skills_config") },
+                    )
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Edit,
+                        title = stringResource(R.string.settings_token_usage),
+                        subtitle = stringResource(R.string.settings_token_cost_month, state.tokenCost),
+                        onClick = { actions.onNavigateToSecondary("token_usage") },
+                    )
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Settings,
+                        title = stringResource(R.string.settings_backup),
+                        subtitle = stringResource(R.string.settings_backup_desc),
+                        onClick = { actions.onNavigateToSecondary("backup_settings") },
+                    )
+                }
             }
-        }
 
-        item {
-            GitHubProjectFooter(onOpen = actions.onOpenGithub)
+            item {
+                NexaraSettingsSection(title = stringResource(R.string.settings_section_about)) {
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Info,
+                        title = stringResource(R.string.settings_about_nexara),
+                        subtitle = stringResource(R.string.settings_version, state.versionName),
+                        onClick = actions.onAboutClick,
+                    )
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.size(NexaraSpacing.Large))
+                GitHubProjectFooter(onOpen = actions.onOpenGithub)
+            }
         }
     }
 }
 
 @Composable
-private fun SettingsGroup(
-    title: String,
-    content: @Composable ColumnScope.() -> Unit,
+private fun UserProfileListItem(
+    userName: String,
+    avatarUri: String?,
+    onEditName: () -> Unit,
+    onChangeAvatar: () -> Unit
 ) {
-    Column {
-        Text(
-            text = title,
-            modifier = Modifier.padding(
-                start = NexaraSpacing.Large,
-                end = NexaraSpacing.Large,
-                bottom = NexaraSpacing.Small,
-            ),
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Column(content = content)
-    }
-}
+    val editAvatarDescription = stringResource(R.string.settings_edit_avatar)
+    val editNameDescription = stringResource(R.string.settings_edit_name)
 
-@Composable
-private fun SettingsGroupDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(
-            start = NexaraSpacing.Large + NexaraSpacing.Large +
-                NexaraSpacing.Large + NexaraSpacing.XSmall,
-        ),
-        color = MaterialTheme.colorScheme.outlineVariant,
+    ListItem(
+        modifier = Modifier
+            .fillMaxWidth()
+            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+            .clickable(
+                role = Role.Button,
+                onClickLabel = editAvatarDescription,
+                onClick = onChangeAvatar
+            ),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = {
+            Box(
+                modifier = Modifier
+                    .size(NexaraSpacing.MinimumTouchTarget)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                if (avatarUri != null) {
+                    AsyncImage(
+                        model = avatarUri,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        text = userName.take(1).uppercase(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            }
+        },
+        headlineContent = {
+            Text(
+                text = userName,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        },
+        trailingContent = {
+            IconButton(
+                onClick = onEditName,
+                modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Edit,
+                    contentDescription = editNameDescription,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     )
 }
 
@@ -682,7 +470,7 @@ internal fun GitHubProjectFooter(onOpen: () -> Unit) {
                 onClick = onOpen,
             ),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
     ) {
         Text(
             text = "Nexara AI • Project Narcis",
@@ -698,441 +486,6 @@ internal fun GitHubProjectFooter(onOpen: () -> Unit) {
 }
 
 @Composable
-private fun ProviderSettingsContent(
-    state: UserSettingsHomeScreenState,
-    actions: UserSettingsHomeScreenActions,
-) {
-    val compactHeightEmptyState = LocalConfiguration.current.screenHeightDp < 480
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag(UiTags.SETTINGS_PROVIDER_LIST),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = NexaraSpacing.XLarge),
-        verticalArrangement = Arrangement.spacedBy(0.dp),
-    ) {
-        item {
-            AddProviderButton(onClick = { actions.onNavigateToSecondary("provider_form") })
-            if (state.providers.isNotEmpty()) {
-                SettingsGroupDivider()
-            }
-        }
-
-        if (state.providers.isEmpty()) {
-            item {
-                ProviderEmptyState(compactHeight = compactHeightEmptyState)
-            }
-        } else {
-            itemsIndexed(state.providers, key = { _, provider -> provider.id }) { index, provider ->
-                if (index > 0) {
-                    SettingsGroupDivider()
-                }
-                ProviderCard(
-                    provider = provider,
-                    onClick = { actions.onNavigateToSecondary("provider_models/${provider.id}") },
-                    onEdit = { actions.onNavigateToSecondary("provider_form?providerId=${provider.id}") },
-                    onDelete = { actions.onRequestDeleteProvider(provider.id) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProviderEmptyState(compactHeight: Boolean) {
-    val emptyText = stringResource(R.string.settings_provider_empty)
-    if (compactHeight) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = NexaraSpacing.XLarge,
-                    vertical = NexaraSpacing.Small,
-                ),
-            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Large),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ProviderEmptyIcon(size = NexaraSpacing.MinimumTouchTarget)
-            Text(
-                text = emptyText,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    } else {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = NexaraSpacing.XLarge,
-                    vertical = NexaraSpacing.XXLarge,
-                ),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Large),
-        ) {
-            ProviderEmptyIcon(size = 64.dp)
-            Text(
-                text = emptyText,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ProviderEmptyIcon(size: androidx.compose.ui.unit.Dp) {
-    Surface(
-        modifier = Modifier.size(size),
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = Icons.Rounded.Psychology,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(NexaraSpacing.XXLarge),
-            )
-        }
-    }
-}
-
-@Composable
-private fun UserProfileHeader(
-    userName: String,
-    avatarUri: String?,
-    onEditName: () -> Unit,
-    onChangeAvatar: () -> Unit
-) {
-    val editAvatarDescription = stringResource(R.string.settings_edit_avatar)
-    val editNameDescription = stringResource(R.string.settings_edit_name)
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(NexaraSpacing.Large),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(NexaraSpacing.MinimumTouchTarget)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer)
-                    .semantics { contentDescription = editAvatarDescription }
-                    .clickable(
-                        role = Role.Button,
-                        onClickLabel = editAvatarDescription,
-                    ) { onChangeAvatar() },
-                contentAlignment = Alignment.Center
-            ) {
-                if (avatarUri != null) {
-                    AsyncImage(
-                        model = avatarUri,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                    )
-                } else {
-                    Text(
-                        text = userName.take(1).uppercase(),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(NexaraSpacing.Large))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = userName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-
-            IconButton(
-                onClick = onEditName,
-                modifier = Modifier
-                    .sizeIn(
-                        minWidth = NexaraSpacing.MinimumTouchTarget,
-                        minHeight = NexaraSpacing.MinimumTouchTarget,
-                    )
-                    .minimumInteractiveComponentSize(),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Edit,
-                    contentDescription = editNameDescription,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AddProviderButton(
-    onClick: () -> Unit,
-) {
-    ListItem(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(UiTags.SETTINGS_ADD_PROVIDER)
-            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-            .clickable(role = Role.Button, onClick = onClick),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        leadingContent = {
-            Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(NexaraSpacing.XLarge),
-            )
-        },
-        headlineContent = {
-            Text(
-                text = stringResource(R.string.settings_add_provider),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        },
-    )
-}
-
-@Composable
-private fun ProviderCard(
-    provider: ProviderListItem,
-    onClick: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    var menuExpanded by remember(provider.id) { mutableStateOf(false) }
-    val useLargeTextLayout = LocalDensity.current.fontScale >= 1.5f
-    val titleStyle = if (useLargeTextLayout) {
-        MaterialTheme.typography.titleSmall
-    } else {
-        MaterialTheme.typography.titleMedium
-    }
-    val supportingStyle = if (useLargeTextLayout) {
-        MaterialTheme.typography.bodySmall
-    } else {
-        MaterialTheme.typography.bodyMedium
-    }
-    val manageDescription = stringResource(R.string.settings_manage_models)
-    val editDescription = stringResource(R.string.shared_btn_edit)
-    val deleteDescription = stringResource(R.string.shared_btn_delete)
-    val actionsDescription = "${provider.name}: $editDescription / $deleteDescription"
-    val enabledStatus = stringResource(
-        if (provider.enabled) {
-            R.string.settings_provider_state_enabled
-        } else {
-            R.string.settings_provider_state_disabled
-        },
-    )
-    val credentialStatus = when (provider.protocolType) {
-        ProtocolType.Google_VertexAI -> stringResource(
-            if (provider.hasVertexCredentials) {
-                R.string.settings_provider_vertex_credentials_configured
-            } else {
-                R.string.settings_provider_vertex_credentials_not_configured
-            },
-        )
-        ProtocolType.Local -> stringResource(R.string.settings_provider_credentials_not_required)
-        else -> stringResource(
-            if (provider.hasApiKey) {
-                R.string.settings_provider_api_key_configured
-            } else {
-                R.string.settings_provider_api_key_not_configured
-            },
-        )
-    }
-    val providerStateDescription = stringResource(
-        R.string.settings_provider_status_summary,
-        enabledStatus,
-        credentialStatus,
-    )
-    val localizedTypeName = when (provider.typeName) {
-        ProtocolType.Generic_OpenAI_Compat.displayName ->
-            stringResource(R.string.settings_provider_type_generic_openai)
-        ProtocolType.Local.displayName ->
-            stringResource(R.string.settings_provider_type_local)
-        else -> provider.typeName
-    }
-    val providerIcon = remember(provider.typeName) {
-        ProtocolType.entries.find { it.displayName == provider.typeName }?.iconRes
-    }
-    val iconContainerColor = if (provider.enabled) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    }
-    val iconColor = if (provider.enabled) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val leadingContent: (@Composable () -> Unit)? = if (useLargeTextLayout) {
-        null
-    } else {
-        {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(iconContainerColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (providerIcon != null) {
-                    Icon(
-                        painter = painterResource(id = providerIcon),
-                        contentDescription = null,
-                        tint = iconColor,
-                        modifier = Modifier.size(NexaraSpacing.XLarge),
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Rounded.Psychology,
-                        contentDescription = null,
-                        tint = iconColor,
-                        modifier = Modifier.size(NexaraSpacing.XLarge),
-                    )
-                }
-            }
-        }
-    }
-
-    ListItem(
-        modifier = Modifier
-            .fillMaxWidth()
-            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-            .testTag(UiTags.settingsProviderCard(provider.id))
-            .semantics { stateDescription = providerStateDescription }
-            .clickable(
-                role = Role.Button,
-                onClickLabel = manageDescription,
-                onClick = onClick,
-            ),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        headlineContent = {
-            Text(
-                text = provider.name,
-                style = titleStyle,
-                color = if (provider.enabled) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                maxLines = if (useLargeTextLayout) 3 else 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        supportingContent = {
-            Column {
-                Text(
-                    text = localizedTypeName,
-                    style = supportingStyle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = if (useLargeTextLayout) 2 else 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = provider.baseUrl.removePrefix("https://").removePrefix("http://"),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = providerStateDescription,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = if (useLargeTextLayout) 2 else 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        },
-        leadingContent = leadingContent,
-        trailingContent = {
-            Box {
-                IconButton(
-                    onClick = { menuExpanded = true },
-                    modifier = Modifier
-                        .testTag(UiTags.settingsProviderActions(provider.id))
-                        .sizeIn(
-                            minWidth = NexaraSpacing.MinimumTouchTarget,
-                            minHeight = NexaraSpacing.MinimumTouchTarget,
-                        ),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.MoreVert,
-                        contentDescription = actionsDescription,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = editDescription,
-                                style = MaterialTheme.typography.labelLarge,
-                            )
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onEdit()
-                        },
-                        modifier = Modifier
-                            .testTag("${UiTags.settingsProviderActions(provider.id)}:edit")
-                            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-                            .semantics { role = Role.Button },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Rounded.Edit,
-                                contentDescription = null,
-                            )
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = deleteDescription,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onDelete()
-                        },
-                        modifier = Modifier
-                            .testTag("${UiTags.settingsProviderActions(provider.id)}:delete")
-                            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-                            .semantics { role = Role.Button },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Rounded.Delete,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                        },
-                    )
-                }
-            }
-        },
-    )
-}
-
-@Composable
 private fun NameEditDialog(
     currentName: String,
     onDismiss: () -> Unit,
@@ -1142,14 +495,14 @@ private fun NameEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = NexaraColors.SurfaceContainer,
-        title = { Text(stringResource(R.string.settings_edit_name), style = NexaraTypography.headlineMedium) },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        title = { Text(stringResource(R.string.settings_edit_name), style = MaterialTheme.typography.titleMedium) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
                 modifier = Modifier.fillMaxWidth(),
-                textStyle = NexaraTypography.bodyLarge,
+                textStyle = MaterialTheme.typography.bodyLarge,
                 singleLine = true
             )
         },
@@ -1174,10 +527,10 @@ private fun LanguageSelectorDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = NexaraColors.SurfaceContainer,
-        title = { Text(stringResource(R.string.settings_language), style = NexaraTypography.headlineMedium) },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        title = { Text(stringResource(R.string.settings_language), style = MaterialTheme.typography.titleMedium) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
                 LanguageOption(
                     label = stringResource(R.string.settings_language_zh),
                     isSelected = currentLanguage == "zh",
@@ -1203,15 +556,14 @@ internal fun LanguageOption(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
             .selectable(
                 selected = isSelected,
-                role = Role.RadioButton,
                 onClick = onSelect,
+                role = Role.RadioButton,
             )
-            .padding(horizontal = NexaraSpacing.Small),
+            .padding(horizontal = NexaraSpacing.Small, vertical = NexaraSpacing.Medium),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
         RadioButton(
             selected = isSelected,

@@ -85,7 +85,6 @@ import com.promenar.nexara.ui.hub.AgentHubScreenState
 import com.promenar.nexara.ui.hub.AgentSessionsScreenActions
 import com.promenar.nexara.ui.hub.AgentSessionsScreenContent
 import com.promenar.nexara.ui.hub.AgentSessionsScreenState
-import com.promenar.nexara.ui.hub.SettingsTab
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenActions
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenContent
 import com.promenar.nexara.ui.hub.UserSettingsHomeScreenState
@@ -124,6 +123,12 @@ import com.promenar.nexara.ui.settings.BackupViewModel
 import com.promenar.nexara.ui.settings.ProviderModelsScreenActions
 import com.promenar.nexara.ui.settings.ProviderModelsScreenContent
 import com.promenar.nexara.ui.settings.ProviderModelsScreenState
+import com.promenar.nexara.ui.settings.ProviderListScreenActions
+import com.promenar.nexara.ui.settings.ProviderListScreenContent
+import com.promenar.nexara.ui.settings.ProviderListScreenState
+import com.promenar.nexara.ui.settings.DefaultModelsScreenActions
+import com.promenar.nexara.ui.settings.DefaultModelsScreenContent
+import com.promenar.nexara.ui.settings.DefaultModelsScreenState
 import com.promenar.nexara.ui.settings.PROVIDER_PRESETS
 import com.promenar.nexara.ui.settings.ProviderFormActions
 import com.promenar.nexara.ui.settings.ProviderFormContent
@@ -2292,14 +2297,11 @@ fun userSettingsAppChineseTabletReleasePreview() {
     ReleasePreviewSurface {
         UserSettingsHomeScreenContent(
             state = UserSettingsHomeScreenState(
-                selectedTab = SettingsTab.APP,
                 userName = "黎明",
                 tokenCost = "¥12.46",
                 language = "zh",
-                summaryModelName = "MiniMax-M3",
-                imageModelName = "FLUX.1 Schnell",
-                embeddingModelName = "bge-m3",
-                rerankModelName = "Cohere Rerank v3",
+                providerCount = 2,
+                configuredDefaultModelsCount = 4,
                 versionName = "0.2-beta",
                 localInferenceAvailable = false,
             ),
@@ -2322,14 +2324,11 @@ fun userSettingsAppChineseCompactLargeFontReleasePreview() {
     ReleasePreviewSurface {
         UserSettingsHomeScreenContent(
             state = UserSettingsHomeScreenState(
-                selectedTab = SettingsTab.APP,
                 userName = "黎明",
                 tokenCost = "¥12.46",
                 language = "zh",
-                summaryModelName = "MiniMax-M3 多模态推理与工具调用增强版",
-                imageModelName = "FLUX.1 Schnell",
-                embeddingModelName = "BAAI/bge-m3",
-                rerankModelName = "Cohere Rerank v3",
+                providerCount = 12,
+                configuredDefaultModelsCount = 4,
                 versionName = "0.2-beta",
                 localInferenceAvailable = false,
             ),
@@ -2350,9 +2349,8 @@ fun userSettingsAppChineseCompactLargeFontReleasePreview() {
 @Composable
 fun userSettingsProviderLargeFontReleasePreview() {
     ReleasePreviewSurface {
-        UserSettingsHomeScreenContent(
-            state = UserSettingsHomeScreenState(
-                selectedTab = SettingsTab.PROVIDER,
+        ProviderListScreenContent(
+            state = ProviderListScreenState(
                 providers = listOf(
                     ProviderListItem(
                         id = "provider-openai-internal",
@@ -2373,9 +2371,8 @@ fun userSettingsProviderLargeFontReleasePreview() {
                         enabled = false,
                     ),
                 ),
-                localInferenceAvailable = false,
             ),
-            actions = UserSettingsHomeScreenActions(),
+            actions = ProviderListScreenActions(),
         )
     }
 }
@@ -2392,13 +2389,11 @@ fun userSettingsProviderLargeFontReleasePreview() {
 @Composable
 fun userSettingsProviderEmptyChineseLargeFontReleasePreview() {
     ReleasePreviewSurface {
-        UserSettingsHomeScreenContent(
-            state = UserSettingsHomeScreenState(
-                selectedTab = SettingsTab.PROVIDER,
+        ProviderListScreenContent(
+            state = ProviderListScreenState(
                 providers = emptyList(),
-                localInferenceAvailable = false,
             ),
-            actions = UserSettingsHomeScreenActions(),
+            actions = ProviderListScreenActions(),
         )
     }
 }
@@ -2415,16 +2410,94 @@ fun userSettingsProviderEmptyChineseLargeFontReleasePreview() {
 @Composable
 fun userSettingsProviderEmptyChineseLandscapeLargeFontReleasePreview() {
     ReleasePreviewSurface {
-        UserSettingsHomeScreenContent(
-            state = UserSettingsHomeScreenState(
-                selectedTab = SettingsTab.PROVIDER,
+        ProviderListScreenContent(
+            state = ProviderListScreenState(
                 providers = emptyList(),
-                localInferenceAvailable = false,
             ),
-            actions = UserSettingsHomeScreenActions(),
+            actions = ProviderListScreenActions(),
         )
     }
 }
+
+@PreviewTest
+@Preview(
+    name = "Default models Chinese phone",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun defaultModelsChinesePhoneReleasePreview() {
+    ReleasePreviewSurface {
+        DefaultModelsScreenContent(
+            state = previewDefaultModelsState(),
+            actions = DefaultModelsScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Default models Chinese large font",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun defaultModelsChineseLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        DefaultModelsScreenContent(
+            state = previewDefaultModelsState(),
+            actions = DefaultModelsScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Default models English landscape",
+    widthDp = LANDSCAPE_WIDTH_DP,
+    heightDp = LANDSCAPE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun defaultModelsEnglishLandscapeReleasePreview() {
+    ReleasePreviewSurface {
+        DefaultModelsScreenContent(
+            state = previewDefaultModelsState(),
+            actions = DefaultModelsScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Default models Chinese tablet",
+    widthDp = 840,
+    heightDp = 900,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun defaultModelsChineseTabletReleasePreview() {
+    ReleasePreviewSurface {
+        DefaultModelsScreenContent(
+            state = previewDefaultModelsState(),
+            actions = DefaultModelsScreenActions(),
+        )
+    }
+}
+
+private fun previewDefaultModelsState() = DefaultModelsScreenState(
+    summaryModelName = "Gemini 3.5 Flash",
+    imageModelName = "Gemini 3.1 Flash Lite Image",
+    embeddingModelName = "BAAI/bge-m3",
+    rerankModelName = "BAAI/bge-reranker-v2-m3",
+)
 
 @PreviewTest
 @Preview(

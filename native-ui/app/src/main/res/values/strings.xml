@@ -305,6 +305,16 @@
     <string name="settings_tab_app">App</string>
     <string name="settings_tab_provider">Providers</string>
     <string name="settings_section_general">General</string>
+    <string name="settings_section_account">Account</string>
+    <string name="settings_section_knowledge_retrieval">Knowledge &amp; retrieval</string>
+    <string name="settings_section_tools_data">Tools &amp; data</string>
+    <string name="settings_default_models">Default Models</string>
+    <string name="settings_default_models_desc">Configure default models for different tasks</string>
+    <string name="settings_provider_management">Provider Management</string>
+    <string name="settings_provider_management_desc">Manage external API providers</string>
+    <string name="settings_section_ai_models">AI &amp; Models</string>
+    <string name="settings_provider_count_summary">%1$d provider(s)</string>
+    <string name="settings_default_models_count_summary">%1$d model(s)</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_zh">Chinese</string>
     <string name="settings_language_en">English</string>

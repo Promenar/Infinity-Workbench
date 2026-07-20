@@ -315,12 +315,30 @@ class ProviderManager private constructor(
 
     @Synchronized
     fun deleteProvider(providerId: String) {
+        if (providerId == "default") return
+
+        val removedModelIds = _providerModels.value
+            .filter { model -> model.providerId == providerId }
+            .mapTo(mutableSetOf()) { model -> model.id }
         secretStore.remove(SecretCatalog.providerApiKey(providerId))
         secretStore.remove(SecretCatalog.vertexServiceAccount(providerId))
         _providers.update { it.filter { p -> p.id != providerId } }
+        if (removedModelIds.isNotEmpty()) {
+            _providerModels.update { models -> models.filterNot { it.id in removedModelIds } }
+            removePersistedModelMetadata(removedModelIds)
+            persistModels()
+            clearPresetReferences(removedModelIds)
+        }
         persistExtraProviders()
         clearProviderModelSuppression(providerId)
         _configurationChanges.tryEmit(Unit)
+    }
+
+    private fun clearPresetReferences(removedModelIds: Set<String>) {
+        if (_summaryModelId.value in removedModelIds) setPresetModel("summary", "")
+        if (_imageModelId.value in removedModelIds) setPresetModel("image", "")
+        if (_embeddingModelId.value in removedModelIds) setPresetModel("embedding", "")
+        if (_rerankModelId.value in removedModelIds) setPresetModel("rerank", "")
     }
 
     private fun clearProviderModelSuppression(providerId: String) {
@@ -721,7 +739,9 @@ class ProviderManager private constructor(
 
     fun deleteModel(id: String) {
         _providerModels.update { it.filter { m -> m.id != id } }
+        removePersistedModelMetadata(setOf(id))
         persistModels()
+        clearPresetReferences(setOf(id))
     }
 
     fun disableAllModels(providerId: String) {
@@ -734,12 +754,29 @@ class ProviderManager private constructor(
     }
 
     fun deleteAllModels(providerId: String) {
-        _providerModels.update { models -> models.filterNot { it.providerId == providerId } }
+        val removedModelIds = _providerModels.value
+            .filter { model -> model.providerId == providerId }
+            .mapTo(mutableSetOf()) { model -> model.id }
+        _providerModels.update { models -> models.filterNot { it.id in removedModelIds } }
+        removePersistedModelMetadata(removedModelIds)
         persistModels()
+        clearPresetReferences(removedModelIds)
         val suppressed = settingsPrefs.getStringSet(suppressedProviderModelsKey, emptySet()).orEmpty()
         settingsPrefs.edit()
             .putStringSet(suppressedProviderModelsKey, suppressed + providerId)
             .apply()
+    }
+
+    private fun removePersistedModelMetadata(modelIds: Set<String>) {
+        if (modelIds.isEmpty()) return
+        val prefixes = modelIds.map { id -> "model_info_${id}_" }
+        val staleKeys = settingsPrefs.all.keys.filter { key ->
+            prefixes.any(key::startsWith)
+        }
+        if (staleKeys.isEmpty()) return
+        settingsPrefs.edit().apply {
+            staleKeys.forEach(::remove)
+        }.apply()
     }
 
     private fun persistModels() {

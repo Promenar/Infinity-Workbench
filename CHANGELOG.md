@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 总收敛：设置首页与默认模型（2026-07-21）
+
+- **单一设置层级**：设置首页移除应用/Provider 双 Tab 与首页内嵌 Provider、四角色模型选择器，改为账户、通用、AI/模型、知识/检索、工具/数据、关于六个连续 Material 3 分组。
+- **独立 Provider 管理**：新增 Provider 二级列表，整行进入模型管理，顶栏新增，溢出菜单编辑/删除；默认 Provider 在 UI 与生产层均不可删除，删除额外 Provider 会同步清理其模型和四个预设引用。
+- **单一默认模型页**：摘要、图像、嵌入、重排四角色共用统一模型选择器，选择后立即持久化，返回不产生二次保存；行与 Picker 共用 `ModelMetadataResolver` 投影后的精确友好名称。
+- **当前门禁**：全量 JVM 2100 项（0 failure/error、14 skip）、85/85 Screenshot、Lint 0 Error/Fatal、AndroidTest 编译通过；API 31/35/36 设置组合各 22/22，9 张受影响 actual 已人工检查，Terra/Sol Critical、Important 均清零。整体发行继续保持 NO-GO。
+
 ### Material 3 总收敛：统一模型选择器（2026-07-21）
 
 - **统一元数据投影**：所有模型选择入口改用 `ModelMetadataResolver.resolve(...)` 生成冻结的 `ModelSelectionUiModel`，精确名称、Provider、上下文长度、工作负载、三态能力与 Chat endpoint 兼容性不再由 UI 自行猜测。

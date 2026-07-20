@@ -311,6 +311,16 @@
     <string name="settings_tab_app">应用</string>
     <string name="settings_tab_provider">提供商</string>
     <string name="settings_section_general">通用</string>
+    <string name="settings_section_account">账户</string>
+    <string name="settings_section_knowledge_retrieval">知识与检索</string>
+    <string name="settings_section_tools_data">工具与数据</string>
+    <string name="settings_default_models">默认模型</string>
+    <string name="settings_default_models_desc">配置各项任务的默认模型</string>
+    <string name="settings_provider_management">提供商管理</string>
+    <string name="settings_provider_management_desc">管理外部 API 提供商</string>
+    <string name="settings_section_ai_models">AI 与模型</string>
+    <string name="settings_provider_count_summary">%1$d 个提供商</string>
+    <string name="settings_default_models_count_summary">%1$d 个默认模型</string>
     <string name="settings_language">语言</string>
     <string name="settings_language_zh">中文</string>
     <string name="settings_language_en">English</string>

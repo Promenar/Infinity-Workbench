@@ -29,10 +29,11 @@ fun NexaraSettingsItem(
     icon: ImageVector,
     title: String,
     subtitle: String? = null,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     ListItem(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
             .clickable(

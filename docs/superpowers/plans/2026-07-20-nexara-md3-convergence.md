@@ -715,7 +715,7 @@
 - Consumes: existing SettingsViewModel state/actions and Provider routes.
 - Produces: one settings hierarchy and a dedicated Provider list route.
 
-- [ ] **Step 1：写 IA RED**
+- [x] **Step 1：写 IA RED**
 
   Contract tests require no `PrimaryTabRow`, no embedded Provider tab, one appearance route, one Provider management route, one default-model route, and ordered section labels from the design spec. `DefaultModelsScreenContractTest` requires exactly four roles (`summary`, `image`, `embedding`, `rerank`), the shared model picker, immediate `setPresetModel(type, modelId)` persistence and no second save-on-return state. `DefaultModelsInteractionTest` selects each role, verifies immediate row update and picker dismissal, leaves/re-enters and recreates the Activity to verify persistence, then asserts Back causes no second write.
 
@@ -731,23 +731,23 @@
 
   Expected: unit contracts and the API 36 interaction test are RED because the dedicated Provider/default-model routes and `DefaultModelsScreen` do not exist.
 
-- [ ] **Step 2：抽取 ProviderListScreen**
+- [x] **Step 2：抽取 ProviderListScreen**
 
   Reuse existing Provider state/actions; render add in Top App Bar, continuous Provider `ListItem`, status subtitle and overflow edit/delete. Preserve whole-row model navigation and delete confirmation.
 
-- [ ] **Step 3：重建设置首页**
+- [x] **Step 3：重建设置首页**
 
   Render account, general, AI/model, knowledge/retrieval, tools/data and about sections. Profile becomes an ordinary row. Remove the Provider tab and four inline model picker rows; add destination rows with concise current-value summaries. Replace the temporary raw-string `themeMode` compatibility property with a typed projection from `ThemePreferenceStore`; no independent theme state or direct theme preference writer remains in `SettingsViewModel`.
 
-- [ ] **Step 4：实现单一默认模型页面**
+- [x] **Step 4：实现单一默认模型页面**
 
   `DefaultModelsScreen` renders four continuous summary rows for summary/image/embedding/rerank. Selecting a row opens the shared Task 7 model picker with the existing role filter; choosing a model immediately calls `setPresetModel(type, modelId)`, updates the row and dismisses the picker. Back only navigates away and does not own a draft or second save action.
 
-- [ ] **Step 5：补齐导航与双语**
+- [x] **Step 5：补齐导航与双语**
 
   Add stable route constants and navigation tests. Do not change existing Provider Form/Models routes; the new list route composes them.
 
-- [ ] **Step 6：运行 GREEN、设备和 actual**
+- [x] **Step 6：运行 GREEN、设备和 actual**
 
   ```bash
   ./gradlew :app:testDebugUnitTest \
@@ -761,7 +761,9 @@
 
   Execute `DefaultModelsInteractionTest` and normal/2.0x/landscape/tablet settings navigation on API 31/35/36. Inspect that density improves without shrinking typography.
 
-- [ ] **Step 7：提交和推送**
+  2026-07-21 验证证据：IA/导航/默认模型契约先在旧实现取得真实 RED；独立复审先后补充 Provider 删除一致性，以及禁止首页同步全量刷新/删除模型清理持久化键两组测试，各取得 2/2 预期 RED，生产修正后转为 GREEN。最终全量 JVM 2100 项（0 failure/error、14 skip）、Lint 0 Error/Fatal、Screenshot 85/85、AndroidTest Kotlin 编译通过；API 31/35/36 的 `UserSettingsAccessibilityTest,DefaultModelsInteractionTest` 各 22/22，0 failure/error/skip。主控已逐张检查 9 张设置首页/Provider/默认模型受影响 actual；Terra/Sol 最终独立复审均为 Critical 0、Important 0。
+
+- [x] **Step 7：提交和推送**
 
   ```bash
   git add native-ui/app/src/main/java/com/promenar/nexara/ui/hub/UserSettingsHomeScreen.kt \

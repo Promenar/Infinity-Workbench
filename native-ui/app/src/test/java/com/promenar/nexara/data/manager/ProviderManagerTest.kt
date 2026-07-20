@@ -140,6 +140,54 @@ class ProviderManagerTest {
     }
 
     @Test
+    fun `default provider cannot be deleted or lose its credential`() {
+        manager.deleteProvider("default")
+
+        assertThat(manager.providers.value.map { it.id }).contains("default")
+        assertThat(manager.getMainProviderConfig()?.apiKey).isEqualTo("test-key")
+        assertThat(manager.providerModels.value.map { it.id }).contains("default::remote-model")
+    }
+
+    @Test
+    fun `deleting extra provider cascades models and preset references`() {
+        addExtraProviderWithModel()
+        val extraModelId = "extra-a::extra-model"
+        listOf("summary", "image", "embedding", "rerank").forEach { type ->
+            manager.setPresetModel(type, extraModelId)
+        }
+
+        manager.deleteProvider("extra-a")
+
+        assertThat(manager.providers.value.map { it.id }).doesNotContain("extra-a")
+        assertThat(manager.providerModels.value.map { it.id }).doesNotContain(extraModelId)
+        assertThat(manager.summaryModelId.value).isEmpty()
+        assertThat(manager.imageModelId.value).isEmpty()
+        assertThat(manager.embeddingModelId.value).isEmpty()
+        assertThat(manager.rerankModelId.value).isEmpty()
+
+        val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+        assertThat(reloaded.providers.value.map { it.id }).doesNotContain("extra-a")
+        assertThat(reloaded.providerModels.value.map { it.id }).doesNotContain(extraModelId)
+        assertThat(reloaded.summaryModelId.value).isEmpty()
+        assertThat(reloaded.imageModelId.value).isEmpty()
+        assertThat(reloaded.embeddingModelId.value).isEmpty()
+        assertThat(reloaded.rerankModelId.value).isEmpty()
+    }
+
+    @Test
+    fun `deleting model removes all persisted metadata keys`() {
+        addExtraProviderWithModel()
+        val modelId = "extra-a::extra-model"
+        val prefs = app.getSharedPreferences("nexara_settings", 0)
+        assertThat(prefs.all.keys.any { it.startsWith("model_info_${modelId}_") }).isTrue()
+
+        manager.deleteModel(modelId)
+
+        assertThat(prefs.all.keys.any { it.startsWith("model_info_${modelId}_") }).isFalse()
+        assertThat(prefs.getStringSet("all_models", emptySet())).doesNotContain(modelId)
+    }
+
+    @Test
     fun `custom model uses requested provider stable id display name and persists`() {
         addExtraProviderWithModel()
 
