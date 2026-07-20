@@ -453,7 +453,7 @@
 - Consumes: `onPickImage`, `onPickDocument`, generation/importing state.
 - Produces: `AttachmentActionMenu` with explicit expanded state and anchored actions.
 
-- [ ] **Step 1：写交互 RED**
+- [x] **Step 1：写交互 RED**
 
   Tests cover open, close, outside/back dismissal, selecting each action, generation/import disable, 48dp targets, state description, complete visibility outside the clipped composer background, IME/2.0x/window-edge placement and no action overlap with send/model/token controls.
 
@@ -465,19 +465,19 @@
 
   Expected: RED because the anchored menu tags/behavior do not exist.
 
-- [ ] **Step 2：实现稳定 Compose 动效**
+- [x] **Step 2：实现稳定 Compose 动效**
 
   Move the action cluster and a full-parent transparent dismiss layer into the parent overlay above `ChatInputBar`; clip only the composer background. Use `AnimatedVisibility`, `animateFloatAsState`, `scaleIn/out`, `fadeIn/out` and measured vertical placement anchored to the button. Do not use `DropdownMenu`, Popup offset guesses or alpha Material APIs.
 
-- [ ] **Step 3：处理状态和减少动效**
+- [x] **Step 3：处理状态和减少动效**
 
   Close the menu when generation/import starts. `+` rotates to close semantics while expanded. Compose transitions must respect the system duration scale; at scale 0 no custom timer may delay visibility, semantics or action availability.
 
-- [ ] **Step 4：设备和 actual 验收**
+- [x] **Step 4：设备和 actual 验收**
 
   Run the attachment and existing chat tests on API 31/35/36; inspect normal, 2.0x and IME-open screenshots. Menu must visually grow from the `+` control and not cover model/token metadata.
 
-- [ ] **Step 5：提交和推送**
+- [x] **Step 5：提交和推送**
 
   ```bash
   git add native-ui/app/src/main/java/com/promenar/nexara/ui/chat/AttachmentActionMenu.kt \

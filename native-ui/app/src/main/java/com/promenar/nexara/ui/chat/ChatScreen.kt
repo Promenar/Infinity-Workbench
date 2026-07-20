@@ -86,6 +86,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -112,6 +113,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -122,6 +124,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.Message
@@ -205,7 +208,7 @@ fun ChatScreenContent(
     actions: ChatScreenActions,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     snackbarData: NexaraSnackbarData? = null,
-    initialAttachmentMenuExpanded: Boolean = false,
+    attachmentMenuExpandedState: MutableState<Boolean> = remember { mutableStateOf(false) },
     taskPanel: @Composable () -> Unit = {},
 ) {
     val uiState = state.uiState
@@ -217,7 +220,7 @@ fun ChatScreenContent(
     val draftDocuments = state.draftDocuments
     val listState = rememberLazyListState()
     var showModelHint by remember { mutableStateOf(false) }
-    var attachmentMenuExpanded by remember { mutableStateOf(initialAttachmentMenuExpanded) }
+    var attachmentMenuExpanded by attachmentMenuExpandedState
     var chatRootBounds by remember { mutableStateOf(Rect.Zero) }
     var composerTopInRoot by remember { mutableStateOf(0f) }
     var attachmentAnchorInRoot by remember { mutableStateOf(Rect.Zero) }
@@ -372,41 +375,65 @@ fun ChatScreenContent(
         }
     }
 
-    Scaffold(
-        containerColor = NexaraColors.CanvasBackground,
-        topBar = {
-            ChatTopBar(
-                title = sessionTitle,
-                subtitle = if (uiState.isGenerating) stringResource(R.string.chat_status_thinking) else agentName.ifBlank { sessionTitle },
-                onBack = actions.onNavigateBack,
-                onWorkspace = actions.onOpenWorkspace,
-                onSettings = actions.onOpenSettings,
-                onSessionPrompt = actions.onOpenPromptEditor,
-                onClearHistory = actions.onOpenClearDialog,
-                onRename = actions.onOpenRenameDialog,
-                onDeleteSession = actions.onOpenDeleteDialog,
-            )
-        },
-        snackbarHost = {
-            Box(modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive }) {
-                NexaraSnackbarHost(
-                    hostState = snackbarHostState,
-                    snackbarData = snackbarData,
-                    onAction = {
-                        actions.onSnackbarAction()
-                    }
-                )
-            }
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { chatRootBounds = it.boundsInRoot() }
+            .testTag(UiTags.CHAT_ROOT),
+    ) {
+        val rootWidthPx = with(density) { maxWidth.toPx() }
+        val rootHeightPx = with(density) { maxHeight.toPx() }
+        val fallbackAnchorWidth = with(density) { 48.dp.toPx() }
+        val fallbackMargin = with(density) { 16.dp.toPx() }
+        val fallbackAnchorTop = rootHeightPx - with(density) { 72.dp.toPx() }
+        // 状态恢复或静态预览可能先于首轮布局展开菜单；实测坐标到达前先约束在根布局内。
+        val fallbackAnchorLeft = if (LocalLayoutDirection.current == LayoutDirection.Ltr) {
+            fallbackMargin
+        } else {
+            rootWidthPx - fallbackMargin - fallbackAnchorWidth
         }
-    ) { padding ->
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .imePadding()
-                .onGloballyPositioned { chatRootBounds = it.boundsInRoot() }
-                .testTag(UiTags.CHAT_ROOT),
-        ) {
+        val fallbackAnchorBounds = Rect(
+            left = fallbackAnchorLeft,
+            top = fallbackAnchorTop,
+            right = fallbackAnchorLeft + fallbackAnchorWidth,
+            bottom = fallbackAnchorTop + fallbackAnchorWidth,
+        )
+        val fallbackComposerReserve = if (density.fontScale >= 1.8f) 176.dp else 136.dp
+        val fallbackMaximumBottom = rootHeightPx - with(density) { fallbackComposerReserve.toPx() }
+
+        Scaffold(
+            containerColor = NexaraColors.CanvasBackground,
+            topBar = {
+                ChatTopBar(
+                    title = sessionTitle,
+                    subtitle = if (uiState.isGenerating) stringResource(R.string.chat_status_thinking) else agentName.ifBlank { sessionTitle },
+                    onBack = actions.onNavigateBack,
+                    onWorkspace = actions.onOpenWorkspace,
+                    onSettings = actions.onOpenSettings,
+                    onSessionPrompt = actions.onOpenPromptEditor,
+                    onClearHistory = actions.onOpenClearDialog,
+                    onRename = actions.onOpenRenameDialog,
+                    onDeleteSession = actions.onOpenDeleteDialog,
+                )
+            },
+            snackbarHost = {
+                Box(modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive }) {
+                    NexaraSnackbarHost(
+                        hostState = snackbarHostState,
+                        snackbarData = snackbarData,
+                        onAction = {
+                            actions.onSnackbarAction()
+                        }
+                    )
+                }
+            }
+        ) { padding ->
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .imePadding(),
+            ) {
             val isLandscape = maxWidth > maxHeight
             val renderStateTag = chatRenderStateTag(uiState)
             LazyColumn(
@@ -692,25 +719,34 @@ fun ChatScreenContent(
                 }
             }
 
-            val attachmentPositionsReady = chatRootBounds != Rect.Zero &&
-                attachmentAnchorInRoot != Rect.Zero && composerTopInRoot > chatRootBounds.top
-            if (!attachmentMenuExpanded || attachmentPositionsReady) {
-                AttachmentActionMenu(
-                    expanded = attachmentMenuExpanded,
-                    anchorBounds = Rect(
-                        left = attachmentAnchorInRoot.left - chatRootBounds.left,
-                        top = attachmentAnchorInRoot.top - chatRootBounds.top,
-                        right = attachmentAnchorInRoot.right - chatRootBounds.left,
-                        bottom = attachmentAnchorInRoot.bottom - chatRootBounds.top,
-                    ),
-                    maximumBottom = composerTopInRoot - chatRootBounds.top,
-                    enabled = !uiState.isGenerating && !state.isImportingDocument,
-                    onDismiss = { attachmentMenuExpanded = false },
-                    onPickImage = actions.onPickImages,
-                    onPickDocument = actions.onPickDocuments,
-                )
             }
         }
+
+        val attachmentPositionsReady = chatRootBounds != Rect.Zero &&
+            attachmentAnchorInRoot != Rect.Zero && composerTopInRoot > chatRootBounds.top
+        val attachmentAnchorBounds = if (attachmentPositionsReady) {
+            Rect(
+                left = attachmentAnchorInRoot.left - chatRootBounds.left,
+                top = attachmentAnchorInRoot.top - chatRootBounds.top,
+                right = attachmentAnchorInRoot.right - chatRootBounds.left,
+                bottom = attachmentAnchorInRoot.bottom - chatRootBounds.top,
+            )
+        } else {
+            fallbackAnchorBounds
+        }
+        AttachmentActionMenu(
+            expanded = attachmentMenuExpanded,
+            anchorBounds = attachmentAnchorBounds,
+            maximumBottom = if (attachmentPositionsReady) {
+                composerTopInRoot - chatRootBounds.top
+            } else {
+                fallbackMaximumBottom
+            },
+            enabled = !uiState.isGenerating && !state.isImportingDocument,
+            onDismiss = { attachmentMenuExpanded = false },
+            onPickImage = actions.onPickImages,
+            onPickDocument = actions.onPickDocuments,
+        )
     }
 }
 

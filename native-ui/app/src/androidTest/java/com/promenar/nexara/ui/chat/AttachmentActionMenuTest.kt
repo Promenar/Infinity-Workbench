@@ -6,9 +6,11 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +29,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -34,6 +37,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso
@@ -136,6 +140,21 @@ class AttachmentActionMenuTest {
     }
 
     @Test
+    fun topBarTap_dismissesMenuWithoutInvokingUnderlyingAction() {
+        var workspaceOpens = 0
+        render(onOpenWorkspace = { workspaceOpens += 1 })
+
+        rule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT).performClick()
+        val workspace = rule.onNodeWithContentDescription(resource(R.string.chat_cd_workspace))
+        workspace.performTouchInput { click() }
+        rule.runOnIdle { assertThat(workspaceOpens).isEqualTo(0) }
+        rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_MENU).assertDoesNotExist()
+
+        workspace.performTouchInput { click() }
+        rule.runOnIdle { assertThat(workspaceOpens).isEqualTo(1) }
+    }
+
+    @Test
     fun selectingEachActionClosesMenuAndInvokesOnlyThatAction() {
         var imagePicks = 0
         var documentPicks = 0
@@ -185,6 +204,45 @@ class AttachmentActionMenuTest {
             importing = true
         }
         rule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT).assertIsNotEnabled()
+    }
+
+    @Test
+    fun disabledMenuActions_doNotInvokeCallbacks() {
+        var imagePicks = 0
+        var documentPicks = 0
+        rule.setContent {
+            NexaraTheme {
+                val density = LocalDensity.current
+                AttachmentActionMenu(
+                    expanded = true,
+                    anchorBounds = Rect(
+                        left = with(density) { 16.dp.toPx() },
+                        top = with(density) { 280.dp.toPx() },
+                        right = with(density) { 64.dp.toPx() },
+                        bottom = with(density) { 304.dp.toPx() },
+                    ),
+                    maximumBottom = with(density) { 272.dp.toPx() },
+                    enabled = false,
+                    onDismiss = {},
+                    onPickImage = { imagePicks += 1 },
+                    onPickDocument = { documentPicks += 1 },
+                    modifier = Modifier
+                        .width(320.dp)
+                        .height(320.dp),
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.CHAT_ATTACH_MENU_IMAGE)
+            .assertIsNotEnabled()
+            .performClick()
+        rule.onNodeWithTag(UiTags.CHAT_ATTACH_MENU_DOCUMENT)
+            .assertIsNotEnabled()
+            .performClick()
+        rule.runOnIdle {
+            assertThat(imagePicks).isEqualTo(0)
+            assertThat(documentPicks).isEqualTo(0)
+        }
     }
 
     @Test
@@ -314,6 +372,24 @@ class AttachmentActionMenuTest {
     }
 
     @Test
+    fun shortChatWindowAtLargeFont_keepsIntegratedMenuVisible() {
+        render(fontScale = 2f, viewportHeight = 320.dp)
+
+        rule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT).performClick()
+        val root = rule.onNodeWithTag(UiTags.CHAT_ROOT).fetchSemanticsNode().boundsInRoot
+        val composer = rule.onNodeWithTag(UiTags.CHAT_COMPOSER).fetchSemanticsNode().boundsInRoot
+        val menu = rule.onNodeWithTag(UiTags.CHAT_ATTACHMENT_MENU)
+            .assertIsDisplayed()
+            .fetchSemanticsNode().boundsInRoot
+        val tolerance = with(rule.density) { 2.dp.toPx() }
+
+        assertThat(menu.top).isAtLeast(root.top - tolerance)
+        assertThat(menu.bottom).isAtMost(composer.top + tolerance)
+        rule.onNodeWithTag(UiTags.CHAT_ATTACH_MENU_IMAGE).assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag(UiTags.CHAT_ATTACH_MENU_DOCUMENT).assertHeightIsAtLeast(48.dp)
+    }
+
+    @Test
     fun rtlMenu_anchorsToTriggerRightEdgeAndStaysAboveComposer() {
         render(layoutDirection = LayoutDirection.Rtl)
 
@@ -338,6 +414,8 @@ class AttachmentActionMenuTest {
         isImporting: () -> Boolean = { false },
         onPickImage: () -> Unit = {},
         onPickDocument: () -> Unit = {},
+        onOpenWorkspace: () -> Unit = {},
+        viewportHeight: Dp? = null,
     ) {
         rule.setContent {
             val density = LocalDensity.current
@@ -348,26 +426,40 @@ class AttachmentActionMenuTest {
             ) {
                 NexaraTheme {
                     val generating = isGenerating()
-                    ChatScreenContent(
-                        state = ChatScreenState(
-                            uiState = ChatUiState(
-                                session = session,
-                                isGenerating = generating,
-                                status = if (generating) {
-                                    GenerationStatus.RECEIVING
-                                } else {
-                                    GenerationStatus.IDLE
-                                },
+                    val content = @Composable {
+                        ChatScreenContent(
+                            state = ChatScreenState(
+                                uiState = ChatUiState(
+                                    session = session,
+                                    isGenerating = generating,
+                                    status = if (generating) {
+                                        GenerationStatus.RECEIVING
+                                    } else {
+                                        GenerationStatus.IDLE
+                                    },
+                                ),
+                                inputText = input,
+                                isImportingDocument = isImporting(),
                             ),
-                            inputText = input,
-                            isImportingDocument = isImporting(),
-                        ),
-                        actions = ChatScreenActions(
-                            onTextChange = { input = it },
-                            onPickImages = onPickImage,
-                            onPickDocuments = onPickDocument,
-                        ),
-                    )
+                            actions = ChatScreenActions(
+                                onTextChange = { input = it },
+                                onPickImages = onPickImage,
+                                onPickDocuments = onPickDocument,
+                                onOpenWorkspace = onOpenWorkspace,
+                            ),
+                        )
+                    }
+                    if (viewportHeight == null) {
+                        content()
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(viewportHeight),
+                        ) {
+                            content()
+                        }
+                    }
                 }
             }
         }
