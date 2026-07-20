@@ -7,6 +7,7 @@ import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.ToolCall
+import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
@@ -15,6 +16,94 @@ import io.mockk.mockk
 import org.junit.Test
 
 class ChatGenerationContentStrategyTest {
+    @Test
+    fun `文本文档只作为完整用户内容进入协议历史`() {
+        val document = MessageDocumentAttachment(
+            id = "doc-1",
+            name = "history.md",
+            mimeType = "text/markdown",
+            content = "# 旧会话\n完整内容",
+            sizeBytes = 22,
+            sha256 = "abc",
+            estimatedTokens = 5,
+        )
+        val session = Session(
+            id = "s1",
+            agentId = "agent",
+            messages = listOf(
+                Message(
+                    id = "u1",
+                    role = MessageRole.USER,
+                    content = "继续分析",
+                    userDocuments = listOf(document),
+                ),
+            ),
+        )
+
+        val prompt = strategy().buildProtocolMessages(session, "system contract")
+
+        assertThat(prompt).hasSize(2)
+        assertThat(prompt[0].content).isEqualTo("system contract")
+        assertThat(prompt[0].content).doesNotContain(document.content)
+        assertThat(prompt[1].content).contains("继续分析")
+        assertThat(prompt[1].content).contains(document.content)
+        assertThat(prompt[1].content).contains("<<<NEXARA_DOCUMENT_BEGIN abc>>>")
+    }
+
+    @Test
+    fun `当前完整文档用户消息即使超出活动窗口仍被固定进Prompt`() {
+        val document = MessageDocumentAttachment(
+            "doc", "reference.txt", "text/plain", "must remain", 11, "hash", 11,
+        )
+        val messages = buildList {
+            add(Message("pinned", MessageRole.USER, "analyze", userDocuments = listOf(document)))
+            repeat(8) { index ->
+                add(Message("u-$index", MessageRole.USER, "question-$index"))
+                add(Message("a-$index", MessageRole.ASSISTANT, "answer-$index"))
+            }
+        }
+        val session = Session(
+            id = "s1",
+            agentId = "agent",
+            inferenceParams = InferenceParams(activeContextWindow = 4),
+            messages = messages,
+        )
+
+        val prompt = strategy().buildProtocolMessages(session, "system", "pinned")
+
+        val pinned = prompt.first { it.content.contains("must remain") }
+        assertThat(pinned.content).contains("analyze")
+        assertThat(pinned.content).contains("<<<NEXARA_DOCUMENT_BEGIN hash>>>")
+        assertThat(prompt.takeLast(4).map { it.content })
+            .containsExactly("question-6", "answer-6", "question-7", "answer-7").inOrder()
+    }
+
+    @Test
+    fun `重试时旧助手回复不进入新Prompt且不占活动窗口`() {
+        val session = Session(
+            id = "s1",
+            agentId = "agent",
+            inferenceParams = InferenceParams(activeContextWindow = 2),
+            messages = listOf(
+                Message("u1", MessageRole.USER, "question"),
+                Message("old", MessageRole.ASSISTANT, "old answer"),
+                Message("new", MessageRole.ASSISTANT, ""),
+            ),
+        )
+
+        val prompt = strategy().buildProtocolMessages(
+            session,
+            "system",
+            pinnedUserMessageId = "u1",
+            excludedMessageIds = setOf("old"),
+        )
+
+        assertThat(prompt.map { it.content })
+            .containsExactly("system", "question", "")
+            .inOrder()
+        assertThat(prompt.map { it.content }).doesNotContain("old answer")
+    }
+
     @Test
     fun `多轮工具消息构造Prompt时不丢assistant与tool配对`() {
         val strategy = strategy()

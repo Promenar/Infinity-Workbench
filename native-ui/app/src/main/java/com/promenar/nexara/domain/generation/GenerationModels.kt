@@ -23,6 +23,8 @@ data class GenerationRequest(
     val userContent: String,
     val imageDataUrls: List<String>,
     val runtimePolicy: GenerationRuntimePolicy,
+    val rollbackUserOnPreparationFailure: Boolean = false,
+    val assistantMessageIdToReplace: String? = null,
     val requestId: String = assistantMessageId,
 )
 

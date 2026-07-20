@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.status.UiStatusNotice
@@ -147,6 +148,7 @@ fun PipelineBubble(
     onCopy: ((String) -> Unit)? = null,
     onRegenerate: ((String) -> Unit)? = null,
     onDelete: ((String) -> Unit)? = null,
+    onBranch: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (group.isUser) {
@@ -157,7 +159,8 @@ fun PipelineBubble(
             fontSize = fontSize,
             onDelete = { onDelete?.invoke(msg.id) },
             onCopy = messageCopyOverride(onCopy, msg.content),
-            onRegenerate = { onRegenerate?.invoke(msg.id) }
+            onRegenerate = { onRegenerate?.invoke(msg.id) },
+            onBranch = { onBranch?.invoke(msg.id) },
         )
         return
     }
@@ -223,7 +226,8 @@ fun PipelineBubble(
                             onContentChange = onContentChange,
                             onCopy = messageCopyOverride(onCopy, copySource),
                             onRegenerate = { lastMsg?.let { onRegenerate?.invoke(it.id) } },
-                            onDelete = { lastMsg?.let { onDelete?.invoke(it.id) } }
+                            onDelete = { lastMsg?.let { onDelete?.invoke(it.id) } },
+                            onBranch = { lastMsg?.let { onBranch?.invoke(it.id) } },
                         )
                     }
                 }
@@ -837,7 +841,8 @@ private fun ContentSegment(
     onContentChange: ((String) -> Unit)?,
     onCopy: (() -> Unit)? = null,
     onRegenerate: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    onBranch: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -878,6 +883,7 @@ private fun ContentSegment(
                 showMenu = false
             },
             onRegenerate = onRegenerate,
+            onBranch = onBranch,
             onDelete = {
                 onDelete?.invoke()
                 showMenu = false
@@ -958,7 +964,8 @@ fun UserMessageBubble(
     modifier: Modifier = Modifier,
     onDelete: (() -> Unit)? = null,
     onCopy: (() -> Unit)? = null,
-    onRegenerate: (() -> Unit)? = null
+    onRegenerate: (() -> Unit)? = null,
+    onBranch: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -985,6 +992,9 @@ fun UserMessageBubble(
                     )
             ) {
                 Column {
+                    if (!message.userDocuments.isNullOrEmpty()) {
+                        MessageDocumentSummary(message.userDocuments.orEmpty())
+                    }
                     if (!message.userImages.isNullOrEmpty()) {
                         Column(
                             modifier = Modifier.padding(
@@ -1029,6 +1039,7 @@ fun UserMessageBubble(
                     showMenu = false
                 },
                 onRegenerate = onRegenerate,
+                onBranch = onBranch,
                 onDelete = {
                     onDelete?.invoke()
                     showMenu = false
@@ -1046,6 +1057,53 @@ fun UserMessageBubble(
             modifier = Modifier.padding(top = 4.dp, end = 4.dp)
         )
     }
+}
+
+@Composable
+private fun MessageDocumentSummary(documents: List<MessageDocumentAttachment>) {
+    Column(
+        modifier = Modifier
+            .padding(
+                start = NexaraSpacing.Large,
+                end = NexaraSpacing.Large,
+                top = NexaraSpacing.Medium,
+            )
+            .testTag(UiTags.CHAT_MESSAGE_DOCUMENTS),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+    ) {
+        documents.forEach { document ->
+            Row(
+                modifier = Modifier.heightIn(min = 32.dp),
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Rounded.Description,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Column(modifier = Modifier.widthIn(max = 240.dp)) {
+                    Text(
+                        text = document.name,
+                        style = NexaraTypography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = formatMessageDocumentBytes(document.sizeBytes),
+                        style = NexaraTypography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatMessageDocumentBytes(bytes: Long): String = when {
+    bytes < 1024 -> "$bytes B"
+    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+    else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1090,6 +1148,7 @@ fun MessageContextMenu(
     onDismiss: () -> Unit,
     onCopy: () -> Unit,
     onRegenerate: (() -> Unit)? = null,
+    onBranch: (() -> Unit)? = null,
     onDelete: () -> Unit,
     isUser: Boolean = false,
     offset: DpOffset = DpOffset.Zero
@@ -1124,6 +1183,23 @@ fun MessageContextMenu(
                     onRegenerate()
                     onDismiss()
                 }
+            )
+        }
+
+        if (onBranch != null) {
+            DropdownMenuItem(
+                modifier = Modifier.testTag(UiTags.CHAT_MESSAGE_BRANCH),
+                text = {
+                    Text(
+                        stringResource(R.string.chat_action_branch),
+                        style = NexaraTypography.labelMedium,
+                        color = NexaraColors.OnSurface,
+                    )
+                },
+                onClick = {
+                    onBranch()
+                    onDismiss()
+                },
             )
         }
 

@@ -10,6 +10,7 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.model.ApprovalRequest
 import com.promenar.nexara.data.model.InferenceParams
 import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PostProcessStatus
 import com.promenar.nexara.data.model.PostProcessTask
@@ -25,6 +26,9 @@ import com.promenar.nexara.data.model.RagMetadata
 import com.promenar.nexara.data.model.RagPhase
 import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.manager.ProviderManager
+import com.promenar.nexara.data.document.DocumentReadRejectReason
+import com.promenar.nexara.data.document.DocumentReadResult
+import com.promenar.nexara.data.document.FullContextDocumentReader
 import com.promenar.nexara.utils.NexaraLogger
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.findModelSpec
@@ -48,6 +52,8 @@ import com.promenar.nexara.data.generation.ChatGenerationRunner
 import com.promenar.nexara.data.generation.ChatGenerationRuntime
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
+import com.promenar.nexara.data.session.BranchSessionResult
+import com.promenar.nexara.data.session.BranchSessionUseCase
 import com.promenar.nexara.domain.repository.IAgentRepository
 import com.promenar.nexara.ui.chat.manager.ApprovalManager
 import com.promenar.nexara.ui.chat.manager.ContextBuilder
@@ -163,12 +169,23 @@ internal data class PendingPermissionTurn(
     val sessionId: String,
     val text: String,
     val imageDataUrls: List<String>,
+    val documents: List<MessageDocumentAttachment>,
     val assistantMessageIdToReplace: String? = null,
+    val reuseUserMessageId: String? = null,
 )
 
 internal fun ContextBuilderResult.hasPersistableRagContext(): Boolean =
     ragContext.isNotBlank() || ragReferences.isNotEmpty() || citations.isNotEmpty() ||
         kgPaths.isNotEmpty() || ragUsage != null
+
+private fun DocumentReadRejectReason.userMessage(resolve: (Int) -> String): String = when (this) {
+    DocumentReadRejectReason.UnsupportedDocument -> resolve(R.string.chat_document_error_unsupported)
+    DocumentReadRejectReason.EmptyDocument -> resolve(R.string.chat_document_error_empty)
+    DocumentReadRejectReason.DocumentTooLarge -> resolve(R.string.chat_document_error_too_large)
+    DocumentReadRejectReason.BinaryContent -> resolve(R.string.chat_document_error_binary)
+    DocumentReadRejectReason.InvalidTextEncoding -> resolve(R.string.chat_document_error_encoding)
+    DocumentReadRejectReason.ReadFailed -> resolve(R.string.chat_document_error_read)
+}
 
 internal fun ContextBuilderResult.toMessageRagUpdateOptions(): UpdateMessageOptions? {
     if (ragReferences.isEmpty() && citations.isEmpty() && kgPaths.isEmpty()) return null
@@ -206,6 +223,9 @@ class ChatViewModel(
     private val kgProvider: KgProvider? = null,
     private val skillRegistry: com.promenar.nexara.ui.chat.manager.registry.SkillRegistry? = null,
     private val exportSessionUseCase: ExportSessionUseCase? = null,
+    private val fullContextDocumentReader: FullContextDocumentReader =
+        FullContextDocumentReader(application.contentResolver),
+    private val branchSessionUseCase: BranchSessionUseCase? = null,
     generationCoordinatorOverride: com.promenar.nexara.domain.generation.GenerationCoordinator? = null,
     generationPresentationStoreOverride: com.promenar.nexara.data.generation.GenerationPresentationStore? = null,
     generationForegroundControllerOverride:
@@ -245,6 +265,12 @@ class ChatViewModel(
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText
+    private val _draftDocuments = MutableStateFlow<List<MessageDocumentAttachment>>(emptyList())
+    val draftDocuments: StateFlow<List<MessageDocumentAttachment>> = _draftDocuments
+    private val _draftConsumptionEpoch = MutableStateFlow(0L)
+    val draftConsumptionEpoch: StateFlow<Long> = _draftConsumptionEpoch
+    private val _isImportingDocument = MutableStateFlow(false)
+    val isImportingDocument: StateFlow<Boolean> = _isImportingDocument
 
     private val _currentSessionId = MutableStateFlow<String?>(null)
     private val _agentName = MutableStateFlow("")
@@ -261,6 +287,7 @@ class ChatViewModel(
     val notificationPermissionRequests: StateFlow<NotificationPermissionRequest?> =
         mutableNotificationPermissionRequest
     private var pendingPermissionTurn: PendingPermissionTurn? = null
+    private var pendingDraftClearTaskId: String? = null
     private val _providerResolutionFailure = MutableStateFlow<ProviderResolution.Failure?>(null)
     val providerResolutionFailure: StateFlow<ProviderResolution.Failure?> = _providerResolutionFailure
     private val _isGenerating = MutableStateFlow(false)
@@ -375,6 +402,7 @@ class ChatViewModel(
                 try {
                     generationPresentationStore.observe(sessionId).collect { presentation ->
                         if (presentation == null) {
+                            pendingDraftClearTaskId = null
                             _streamingContent.value = ""
                             _postProcessTasks.value = emptyList()
                             _ragPhases.value = emptyList()
@@ -388,6 +416,17 @@ class ChatViewModel(
                         }
                         _ragPhases.value = presentation.ragPhases
                         _streamingContent.value = presentation.streamingContent
+                        if (
+                            pendingDraftClearTaskId != null &&
+                            (
+                                pendingDraftClearTaskId == DRAFT_PENDING_START ||
+                                    presentation.taskId == pendingDraftClearTaskId
+                                ) &&
+                            presentation.promptAccepted
+                        ) {
+                            pendingDraftClearTaskId = null
+                            consumeAcceptedDraft(sessionId)
+                        }
                         _generationNotice.value = presentation.error?.let(GenerationFailureNotice::from)
                         _providerResolutionFailure.value = presentation.providerFailure
                         _isGenerating.value = presentation.generating
@@ -431,7 +470,14 @@ class ChatViewModel(
                                 clearNotificationPermissionRequestForTask(it)
                             }
                             observedTaskId = null
-                            if (_generationStatus.value == GenerationStatus.COMPLETED) {
+                            if (
+                                _generationStatus.value == GenerationStatus.COMPLETED ||
+                                (
+                                    _generationStatus.value == GenerationStatus.ERROR &&
+                                        _generationNotice.value == null &&
+                                        _error.value == null
+                                    )
+                            ) {
                                 _generationStatus.value = GenerationStatus.IDLE
                             }
                             return@collect
@@ -524,10 +570,48 @@ class ChatViewModel(
         _inputText.update { text }
     }
 
+    fun importFullContextDocument(uri: Uri) = importFullContextDocuments(listOf(uri))
+
+    fun importFullContextDocuments(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        _isImportingDocument.value = true
+        viewModelScope.launch {
+            try {
+                val imported = buildList {
+                    uris.forEach { uri ->
+                        when (val result = fullContextDocumentReader.read(uri)) {
+                            is DocumentReadResult.Success -> add(result.attachment)
+                            is DocumentReadResult.Rejected ->
+                                _error.value = result.reason.userMessage(stringResourceResolver)
+                        }
+                    }
+                }
+                if (imported.isNotEmpty()) {
+                    _draftDocuments.update { current ->
+                        val importedHashes = imported.mapTo(mutableSetOf()) { it.sha256 }
+                        current.filterNot { it.sha256 in importedHashes } + imported.distinctBy { it.sha256 }
+                    }
+                    if (imported.size == uris.size) _error.value = null
+                }
+            } finally {
+                _isImportingDocument.value = false
+            }
+        }
+    }
+
+    fun removeDraftDocument(documentId: String) {
+        _draftDocuments.update { documents -> documents.filterNot { it.id == documentId } }
+    }
+
     fun sendMessage(text: String, imageUris: List<Uri> = emptyList()) {
         val sessionId = _currentSessionId.value
         if (sessionId == null) return
-        if (text.isBlank() && imageUris.isEmpty()) return
+        if (_isImportingDocument.value) {
+            _error.value = stringResourceResolver(R.string.chat_document_import_in_progress)
+            return
+        }
+        val documents = _draftDocuments.value
+        if (text.isBlank() && imageUris.isEmpty() && documents.isEmpty()) return
 
         val session = store.getSession(sessionId) ?: return
 
@@ -557,7 +641,7 @@ class ChatViewModel(
                     emptyList()
                 }
 
-                applyBackgroundPolicyGate(sessionId, session, text, imageDataUrls)
+                applyBackgroundPolicyGate(sessionId, session, text, imageDataUrls, documents)
             }
         }
     }
@@ -577,7 +661,9 @@ class ChatViewModel(
         session: Session,
         text: String,
         imageDataUrls: List<String>,
+        documents: List<MessageDocumentAttachment>,
         assistantMessageIdToReplace: String? = null,
+        reuseUserMessageId: String? = null,
     ) {
         when (
             com.promenar.nexara.background.generation.resolveBackgroundGenerationPolicy(
@@ -590,8 +676,10 @@ class ChatViewModel(
                     session,
                     text,
                     imageDataUrls,
+                    documents,
                     backgroundAllowed = true,
                     assistantMessageIdToReplace = assistantMessageIdToReplace,
+                    reuseUserMessageId = reuseUserMessageId,
                 )
             com.promenar.nexara.background.generation.BackgroundGenerationPolicy.FOREGROUND_ONLY ->
                 enqueuePreparedUserTurnAfterReplacement(
@@ -599,8 +687,10 @@ class ChatViewModel(
                     session,
                     text,
                     imageDataUrls,
+                    documents,
                     backgroundAllowed = false,
                     assistantMessageIdToReplace = assistantMessageIdToReplace,
+                    reuseUserMessageId = reuseUserMessageId,
                 )
             com.promenar.nexara.background.generation.BackgroundGenerationPolicy.REQUIRES_PERMISSION -> {
                 val token = IdGenerator.message("perm")
@@ -609,7 +699,9 @@ class ChatViewModel(
                     sessionId,
                     text,
                     imageDataUrls,
+                    documents,
                     assistantMessageIdToReplace,
+                    reuseUserMessageId,
                 )
                 mutableNotificationPermissionRequest.value = NotificationPermissionRequest(token)
                 _isGenerating.value = false
@@ -644,8 +736,10 @@ class ChatViewModel(
                         session,
                         pending.text,
                         pending.imageDataUrls,
+                        pending.documents,
                         backgroundAllowed = granted,
                         assistantMessageIdToReplace = pending.assistantMessageIdToReplace,
+                        reuseUserMessageId = pending.reuseUserMessageId,
                     )
                 } catch (_: Exception) {
                     _error.update { "无法安全删除旧回复，已取消重试。" }
@@ -661,11 +755,75 @@ class ChatViewModel(
         session: Session,
         text: String,
         imageDataUrls: List<String>,
+        documents: List<MessageDocumentAttachment>,
         backgroundAllowed: Boolean,
         assistantMessageIdToReplace: String?,
+        reuseUserMessageId: String?,
     ) {
-        assistantMessageIdToReplace?.let { messageManager.deleteMessage(sessionId, it) }
-        enqueuePreparedUserTurn(sessionId, session, text, imageDataUrls, backgroundAllowed)
+        if (reuseUserMessageId != null) {
+            enqueuePreparedAssistantRetry(
+                sessionId,
+                session,
+                reuseUserMessageId,
+                text,
+                backgroundAllowed,
+                assistantMessageIdToReplace,
+            )
+        } else {
+            enqueuePreparedUserTurn(sessionId, session, text, imageDataUrls, documents, backgroundAllowed)
+        }
+    }
+
+    private suspend fun enqueuePreparedAssistantRetry(
+        sessionId: String,
+        session: Session,
+        userMessageId: String,
+        text: String,
+        backgroundAllowed: Boolean,
+        assistantMessageIdToReplace: String?,
+    ): Boolean {
+        val assistantMessageId = IdGenerator.message("ai")
+        messageManager.addMessage(
+            sessionId,
+            Message(
+                id = assistantMessageId,
+                role = MessageRole.ASSISTANT,
+                content = "",
+                modelId = session.modelId,
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+        val start = try {
+            generateMessage(
+                sessionId = sessionId,
+                interventionContent = "",
+                isResumption = false,
+                existingAssistantMsgId = assistantMessageId,
+                userMsgId = userMessageId,
+                userContent = text,
+                backgroundAllowed = backgroundAllowed,
+                rollbackUserOnPreparationFailure = false,
+                assistantMessageIdToReplace = assistantMessageIdToReplace,
+            )
+        } catch (failure: Throwable) {
+            withContext(NonCancellable) {
+                runCatching {
+                    messageManager.discardPreparedMessages(sessionId, listOf(assistantMessageId))
+                }.exceptionOrNull()?.let(failure::addSuppressed)
+            }
+            throw failure
+        }
+        if (
+            start is com.promenar.nexara.domain.generation.StartGenerationResult.Busy ||
+            start is com.promenar.nexara.domain.generation.StartGenerationResult.Rejected ||
+            start == null
+        ) {
+            messageManager.discardPreparedMessages(sessionId, listOf(assistantMessageId))
+            _isGenerating.value = false
+            _generationStatus.value = GenerationStatus.ERROR
+            return false
+        }
+        return true
     }
 
     private fun uriToDataUrl(uri: Uri): String? {
@@ -683,6 +841,7 @@ class ChatViewModel(
         session: Session,
         text: String,
         imageDataUrls: List<String>,
+        documents: List<MessageDocumentAttachment>,
         backgroundAllowed: Boolean,
     ) {
         val userMsgId = IdGenerator.message("user")
@@ -694,6 +853,7 @@ class ChatViewModel(
                 role = MessageRole.USER,
                 content = text,
                 userImages = imageDataUrls.ifEmpty { null },
+                userDocuments = documents.ifEmpty { null },
                 createdAt = System.currentTimeMillis()
             )
             messageManager.addMessage(sessionId, userMessage)
@@ -707,11 +867,30 @@ class ChatViewModel(
             )
             messageManager.addMessage(sessionId, assistantMessage)
 
-            when (val start = generateMessage(sessionId, "", false, assistantMsgId, userMsgId, text, backgroundAllowed)) {
+            when (
+                val start = generateMessage(
+                    sessionId,
+                    "",
+                    false,
+                    assistantMsgId,
+                    userMsgId,
+                    text,
+                    backgroundAllowed,
+                    rollbackUserOnPreparationFailure = true,
+                    clearDraftOnConnecting = true,
+                )
+            ) {
                 is com.promenar.nexara.domain.generation.StartGenerationResult.Started,
                 is com.promenar.nexara.domain.generation.StartGenerationResult.Existing -> {
-                    _inputText.value = ""
-                    sessionManager.updateSessionDraft(sessionId, null)
+                    if (
+                        pendingDraftClearTaskId != null &&
+                        generationPresentationStore.observe(sessionId).value == null &&
+                        generationCoordinator.observe(sessionId).value == null &&
+                        messageRepository.getById(userMsgId) != null
+                    ) {
+                        pendingDraftClearTaskId = null
+                        consumeAcceptedDraft(sessionId)
+                    }
                 }
                 is com.promenar.nexara.domain.generation.StartGenerationResult.Busy,
                 is com.promenar.nexara.domain.generation.StartGenerationResult.Rejected,
@@ -721,6 +900,7 @@ class ChatViewModel(
                         listOf(assistantMsgId, userMsgId),
                     )
                     _inputText.value = text
+                    pendingDraftClearTaskId = null
                     sessionManager.updateSessionDraft(sessionId, text)
                     _isGenerating.value = false
                     _generationStatus.value = GenerationStatus.ERROR
@@ -767,6 +947,9 @@ class ChatViewModel(
         userMsgId: String? = null,
         userContent: String? = null,
         backgroundAllowed: Boolean = currentBackgroundAllowed(),
+        rollbackUserOnPreparationFailure: Boolean = false,
+        clearDraftOnConnecting: Boolean = false,
+        assistantMessageIdToReplace: String? = null,
     ): com.promenar.nexara.domain.generation.StartGenerationResult? {
         val session = store.getSession(sessionId) ?: return null
         val assistantMsgId = existingAssistantMsgId
@@ -787,9 +970,32 @@ class ChatViewModel(
             } else {
                 com.promenar.nexara.domain.generation.GenerationRuntimePolicy.FOREGROUND_ONLY
             },
+            rollbackUserOnPreparationFailure = rollbackUserOnPreparationFailure,
+            assistantMessageIdToReplace = assistantMessageIdToReplace,
             requestId = IdGenerator.message("generation"),
         )
+        if (clearDraftOnConnecting) {
+            pendingDraftClearTaskId = DRAFT_PENDING_START
+        }
         return generationCoordinator.start(request).also { result ->
+            if (clearDraftOnConnecting) {
+                if (pendingDraftClearTaskId == DRAFT_PENDING_START) {
+                    pendingDraftClearTaskId = when (result) {
+                        is com.promenar.nexara.domain.generation.StartGenerationResult.Started -> result.taskId
+                        is com.promenar.nexara.domain.generation.StartGenerationResult.Existing ->
+                            result.snapshot.taskId
+                        else -> null
+                    }
+                }
+                val presentation = generationPresentationStore.observe(sessionId).value
+                if (
+                    presentation?.taskId == pendingDraftClearTaskId &&
+                    presentation?.promptAccepted == true
+                ) {
+                    pendingDraftClearTaskId = null
+                    consumeAcceptedDraft(sessionId)
+                }
+            }
             when (result) {
             is com.promenar.nexara.domain.generation.StartGenerationResult.Started -> {
                 if (backgroundAllowed) {
@@ -968,6 +1174,7 @@ class ChatViewModel(
         _backgroundWarning.value = null
         foregroundTrackedTaskId = null
         pendingPermissionTurn = null
+        pendingDraftClearTaskId = null
         mutableNotificationPermissionRequest.value = null
         _providerResolutionFailure.value = null
         _generationStatus.value = GenerationStatus.IDLE
@@ -1101,7 +1308,9 @@ class ChatViewModel(
                     session,
                     lastUserMsg.content,
                     lastUserMsg.userImages.orEmpty(),
+                    lastUserMsg.userDocuments.orEmpty(),
                     assistantMessageIdToReplace = lastAssistantMsg?.id,
+                    reuseUserMessageId = lastUserMsg.id,
                 )
             } catch (_: Exception) {
                 _error.update { "无法安全删除旧回复，已取消重试。" }
@@ -1141,6 +1350,12 @@ class ChatViewModel(
         }
         _error.update { null }
         _providerResolutionFailure.value = null
+        if (
+            _generationStatus.value == GenerationStatus.ERROR &&
+            _currentSessionId.value?.let { generationCoordinator.observe(it).value } == null
+        ) {
+            _generationStatus.value = GenerationStatus.IDLE
+        }
     }
 
     fun regenerateLastMessage() {
@@ -1533,6 +1748,25 @@ class ChatViewModel(
         return useCase.export(sessionId, format)
     }
 
+    suspend fun branchFromMessage(messageId: String): BranchSessionResult {
+        val sessionId = _currentSessionId.value
+            ?: return BranchSessionResult.Rejected(
+                com.promenar.nexara.data.session.BranchSessionRejectReason.SourceNotFound,
+            )
+        val useCase = branchSessionUseCase
+            ?: return BranchSessionResult.Rejected(
+                com.promenar.nexara.data.session.BranchSessionRejectReason.SourceNotFound,
+            )
+        return useCase.branch(sessionId, messageId)
+    }
+
+    private suspend fun consumeAcceptedDraft(sessionId: String) {
+        _inputText.value = ""
+        _draftDocuments.value = emptyList()
+        _draftConsumptionEpoch.value += 1
+        sessionManager.updateSessionDraft(sessionId, null)
+    }
+
     companion object {
         private val TERMINAL_GENERATION_PHASES = setOf(
             com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED,
@@ -1542,6 +1776,7 @@ class ChatViewModel(
         )
         private val FOREGROUND_STOPPING_PHASES = TERMINAL_GENERATION_PHASES +
             com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL
+        private const val DRAFT_PENDING_START = "__pending_generation_start__"
 
         fun factory(
             application: Application,
@@ -1573,6 +1808,12 @@ class ChatViewModel(
                         exportSessionUseCase = ExportSessionUseCase(
                             app.messageRepository as com.promenar.nexara.domain.repository.IMessageRepository,
                             app.sessionRepository as com.promenar.nexara.domain.repository.ISessionRepository
+                        ),
+                        branchSessionUseCase = BranchSessionUseCase(
+                            app.database,
+                            branchTitle = { title ->
+                                application.getString(R.string.chat_branch_title, title)
+                            },
                         ),
                         generationCoordinatorOverride = generationCoordinatorOverride,
                         notificationPermissionGateway = {

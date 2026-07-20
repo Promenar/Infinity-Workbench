@@ -2,6 +2,7 @@ package com.promenar.nexara.data.generation
 
 import android.content.SharedPreferences
 import com.promenar.nexara.data.model.ExecutionStep
+import com.promenar.nexara.data.model.FullContextDocumentFormatter
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Session
@@ -28,7 +29,12 @@ data class GenerationContentNormalization(
 )
 
 interface ChatGenerationContentStrategy {
-    fun buildProtocolMessages(session: Session, systemPrompt: String): List<ProtocolMessage>
+    fun buildProtocolMessages(
+        session: Session,
+        systemPrompt: String,
+        pinnedUserMessageId: String? = null,
+        excludedMessageIds: Set<String> = emptySet(),
+    ): List<ProtocolMessage>
     fun buildTools(session: Session): List<ProtocolTool>
     fun safeActiveWindow(messages: List<Message>, windowSize: Int): List<Message>
     fun normalize(content: String, toolCalls: List<ToolCall>): GenerationContentNormalization
@@ -46,15 +52,33 @@ class DefaultChatGenerationContentStrategy(
     @Volatile
     private var knownToolNames: Set<String>? = null
 
-    override fun buildProtocolMessages(session: Session, systemPrompt: String): List<ProtocolMessage> = buildList {
+    override fun buildProtocolMessages(
+        session: Session,
+        systemPrompt: String,
+        pinnedUserMessageId: String?,
+        excludedMessageIds: Set<String>,
+    ): List<ProtocolMessage> = buildList {
         if (systemPrompt.isNotBlank()) add(ProtocolMessage(role = "system", content = systemPrompt))
         val windowSize = session.inferenceParams?.activeContextWindow ?: 10
-        safeActiveWindow(session.messages, windowSize).forEach { message ->
+        val eligibleMessages = session.messages.filterNot { it.id in excludedMessageIds }
+        val activeMessages = safeActiveWindow(eligibleMessages, windowSize)
+        val pinnedMessage = pinnedUserMessageId?.let { id ->
+            eligibleMessages.firstOrNull { it.id == id && it.role == MessageRole.USER }
+        }
+        val protocolMessages = if (pinnedMessage != null && activeMessages.none { it.id == pinnedMessage.id }) {
+            listOf(pinnedMessage) + activeMessages
+        } else {
+            activeMessages
+        }
+        protocolMessages.forEach { message ->
             add(
                 when (message.role) {
                     MessageRole.USER -> ProtocolMessage(
                         role = "user",
-                        content = message.content,
+                        content = FullContextDocumentFormatter.appendToUserContent(
+                            message.content,
+                            message.userDocuments.orEmpty(),
+                        ),
                         imageUrls = message.userImages?.map { dataUrl ->
                             val base64Index = dataUrl.indexOf("base64,")
                             val mimeEnd = dataUrl.indexOf(';')

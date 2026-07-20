@@ -14,6 +14,7 @@
 ## 主要能力
 
 - **多服务商 BYOK 对话**：支持 OpenAI、Anthropic、Google Vertex AI、DeepSeek、GLM、Kimi 及 OpenAI-compatible 接口，包含 SSE 流式响应、多模态输入、Markdown/LaTeX/Mermaid/ECharts 渲染和会话内模型切换。
+- **完整文档上下文与会话分支**：输入栏可把 TXT/Markdown 全文作为当前消息上下文发送，超出最终路由模型预算时在网络请求前阻止；会话可导出为可回传的 Markdown/TXT，并可从稳定消息创建独立分支。
 - **RAG 与知识图谱**：导入 TXT、Markdown、PDF、Word、HTML 文档，提供向量检索、FTS5、Rerank、查询重写、引用追踪和知识图谱可视化。
 - **Agent 与工具调用**：内置联网搜索、计算、受限脚本、文件操作、图像生成和任务规划等工具，支持审批、幂等执行账本和工具结果回传。
 - **会话工作区**：按 Session 隔离文件根目录，覆盖导入、原子写入、版本、回收站、恢复和路径逃逸防护；文档索引使用版本化目标与失败重试，进程重启后按当前文件版本和 KG 配置补建缺失任务。

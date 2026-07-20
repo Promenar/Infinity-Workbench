@@ -2,6 +2,7 @@ package com.promenar.nexara.data.generation
 
 import android.content.SharedPreferences
 import com.promenar.nexara.data.manager.ProviderManager
+import com.promenar.nexara.data.document.ContextBudgetDecision
 import com.promenar.nexara.data.model.ApprovalRequest
 import com.promenar.nexara.data.model.InferenceParams
 import com.promenar.nexara.data.model.MessageRole
@@ -125,12 +126,17 @@ internal class DefaultChatGenerationRuntime(
     private var preparedTools: List<ProtocolTool> = emptyList()
     private var toolRounds = 0
     private var currentAssistantMessageId: String? = null
+    private var rollbackBaselineMessageIds: Set<String> = emptySet()
 
     override suspend fun prepare(request: GenerationRequest) {
+        val session = requireNotNull(store.getSession(request.sessionId)) { "生成会话不存在" }
         currentAssistantMessageId = request.assistantMessageId
-        require(store.getSession(request.sessionId)?.messages?.any {
+        rollbackBaselineMessageIds = session.messages.mapTo(mutableSetOf()) { it.id }.apply {
+            remove(request.assistantMessageId)
+        }
+        require(session.messages.any {
             it.id == assistantMessageId(request) && it.role == MessageRole.ASSISTANT
-        } == true) { "生成目标消息不存在" }
+        }) { "生成目标消息不存在" }
         ui.setGenerating(true)
     }
 
@@ -202,8 +208,13 @@ internal class DefaultChatGenerationRuntime(
         preparedRoute = route
         preparedContext = context
         preparedTools = tools
-        preparedPrompt = PromptRequest(
-            messages = contentStrategy.buildProtocolMessages(session, context.finalSystemPrompt),
+        val prompt = PromptRequest(
+            messages = contentStrategy.buildProtocolMessages(
+                session,
+                context.finalSystemPrompt,
+                request.userMessageId,
+                setOfNotNull(request.assistantMessageIdToReplace),
+            ),
             model = requireNotNull(route.remoteModelId),
             temperature = inference.temperature,
             topP = inference.topP,
@@ -218,6 +229,32 @@ internal class DefaultChatGenerationRuntime(
             stream = true,
             streamTimeout = (inference.streamTimeout ?: 120).toLong() * 1000,
         )
+        val hasFullContextDocuments = request.userMessageId
+            ?.let { id -> session.messages.firstOrNull { it.id == id } }
+            ?.userDocuments
+            .isNullOrEmpty()
+            .not()
+        val budgetDecision = PreparedPromptBudgetGate.evaluate(
+            session,
+            prompt,
+            settings,
+            hasFullContextDocuments,
+            route.modelId,
+        )
+        if (budgetDecision is ContextBudgetDecision.Blocked) {
+            val failure = GenerationFailure(
+                code = GenerationFailureCode.CONTEXT_LIMIT,
+                formatArgs = mapOf(
+                    GenerationFailure.KEY_REQUIRED_TOKENS to budgetDecision.requiredTokens.toString(),
+                    GenerationFailure.KEY_AVAILABLE_TOKENS to budgetDecision.availableTokens.toString(),
+                ),
+                technical = "full-context budget blocked: reason=${budgetDecision.reason}, " +
+                    "required=${budgetDecision.requiredTokens}, available=${budgetDecision.availableTokens}",
+            )
+            handleDocumentBudgetFailure(request, failure)
+            return GenerationPreparationOutcome.Handled(failure)
+        }
+        preparedPrompt = prompt
         return GenerationPreparationOutcome.Ready
     }
 
@@ -467,6 +504,16 @@ internal class DefaultChatGenerationRuntime(
                 )
             } else null,
         )
+        request.assistantMessageIdToReplace?.let { replacedId ->
+            if (status == GenerationTerminalStatus.SUCCESS) {
+                messageManager.deleteMessage(request.sessionId, replacedId)
+            } else {
+                messageManager.discardPreparedMessages(
+                    request.sessionId,
+                    messagesCreatedSincePrepare(request),
+                )
+            }
+        }
     }
 
     override suspend fun flush(request: GenerationRequest) =
@@ -477,6 +524,13 @@ internal class DefaultChatGenerationRuntime(
     private fun assistantMessageId(request: GenerationRequest): String =
         currentAssistantMessageId ?: request.assistantMessageId
 
+    private fun messagesCreatedSincePrepare(request: GenerationRequest): List<String> {
+        val currentIds = store.getSession(request.sessionId)?.messages.orEmpty()
+            .map { it.id }
+            .filterNot { it in rollbackBaselineMessageIds }
+        return (listOf(request.assistantMessageId) + currentIds + assistantMessageId(request)).distinct()
+    }
+
     private suspend fun handlePreparationFailure(
         request: GenerationRequest,
         generationFailure: GenerationFailure,
@@ -486,13 +540,42 @@ internal class DefaultChatGenerationRuntime(
         ui.setProviderFailure(failure)
         ui.setGenerating(false)
         ui.onHandledFailure()
-        messageManager.markGenerationTerminal(
-            request.sessionId,
-            assistantMessageId(request),
-            "",
-            "error",
-            GenerationFailureCodec.encode(generationFailure),
-        )
+        if (request.assistantMessageIdToReplace != null) {
+            messageManager.discardPreparedMessages(
+                request.sessionId,
+                messagesCreatedSincePrepare(request),
+            )
+        } else {
+            messageManager.markGenerationTerminal(
+                request.sessionId,
+                assistantMessageId(request),
+                "",
+                "error",
+                GenerationFailureCodec.encode(generationFailure),
+            )
+        }
+    }
+
+    private suspend fun handleDocumentBudgetFailure(
+        request: GenerationRequest,
+        generationFailure: GenerationFailure,
+    ) {
+        ui.setError(generationFailure)
+        ui.setProviderFailure(null)
+        ui.setGenerating(false)
+        ui.onHandledFailure()
+        if (request.assistantMessageIdToReplace != null) {
+            messageManager.discardPreparedMessages(
+                request.sessionId,
+                messagesCreatedSincePrepare(request),
+            )
+        } else if (toolRounds == 0) {
+            val preparedIds = listOfNotNull(
+                assistantMessageId(request),
+                request.userMessageId.takeIf { request.rollbackUserOnPreparationFailure },
+            )
+            messageManager.discardPreparedMessages(request.sessionId, preparedIds)
+        }
     }
 
     private suspend fun archiveMessages(

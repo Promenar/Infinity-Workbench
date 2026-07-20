@@ -9,6 +9,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.data.model.Message
 import androidx.test.platform.app.InstrumentationRegistry
@@ -16,6 +19,7 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ApprovalRequest
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.ui.testing.UiTags
@@ -211,10 +215,61 @@ class ChatScreenContentStateTest {
         assertThat(timeBounds.right).isLessThan(centerX)
     }
 
+    @Test
+    fun documentAttachments_renderRemovePickAndBranchActions() {
+        val document = MessageDocumentAttachment(
+            id = "document-e2e",
+            name = "very-long-reference-document-name-for-layout-validation.markdown",
+            mimeType = "text/markdown",
+            content = "full context",
+            sizeBytes = 12_345L,
+            sha256 = "document-hash",
+            estimatedTokens = 4,
+        )
+        var removedId: String? = null
+        var pickedDocument = false
+        var branchedMessageId: String? = null
+        render(
+            uiState = ChatUiState(
+                session = session,
+                messages = listOf(
+                    Message(
+                        id = "branch-target",
+                        role = MessageRole.USER,
+                        content = "Branch target message",
+                        userDocuments = listOf(document),
+                        createdAt = 1_700_000_000_000L,
+                    ),
+                ),
+            ),
+            draftDocuments = listOf(document),
+            actions = ChatScreenActions(
+                onRemoveDocument = { removedId = it },
+                onPickDocuments = { pickedDocument = true },
+                onBranchMessage = { branchedMessageId = it },
+            ),
+        )
+
+        rule.onNodeWithTag(UiTags.CHAT_MESSAGE_DOCUMENTS, useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.chatDocumentChip(document.id)).assertIsDisplayed().performClick()
+        rule.runOnIdle { assertThat(removedId).isEqualTo(document.id) }
+
+        rule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT).performClick()
+        rule.onNodeWithTag(UiTags.CHAT_ATTACH_MENU_DOCUMENT).assertIsDisplayed().performClick()
+        rule.runOnIdle { assertThat(pickedDocument).isTrue() }
+
+        rule.onNodeWithText("Branch target message").performTouchInput { longClick() }
+        rule.onNodeWithTag(UiTags.CHAT_MESSAGE_BRANCH).assertIsDisplayed().performClick()
+        rule.runOnIdle { assertThat(branchedMessageId).isEqualTo("branch-target") }
+    }
+
     private fun render(
         uiState: ChatUiState,
         actions: ChatScreenActions = ChatScreenActions(),
         modelDisplayNames: Map<String, String> = emptyMap(),
+        draftDocuments: List<MessageDocumentAttachment> = emptyList(),
     ) {
         rule.setContent {
             NexaraTheme {
@@ -222,6 +277,7 @@ class ChatScreenContentStateTest {
                     state = ChatScreenState(
                         uiState = uiState,
                         modelDisplayNames = modelDisplayNames,
+                        draftDocuments = draftDocuments,
                     ),
                     actions = actions,
                 )

@@ -99,7 +99,11 @@ object NavDestinations {
     fun ragFolder(folderId: String) = "rag_folder/$folderId"
 }
 
-typealias ChatDestination = @Composable (sessionId: String, onNavigateBack: () -> Unit) -> Unit
+typealias ChatDestination = @Composable (
+    sessionId: String,
+    onNavigateBack: () -> Unit,
+    onNavigateToSession: (String) -> Unit,
+) -> Unit
 
 @Composable
 fun NexaraNavGraph(
@@ -110,8 +114,12 @@ fun NexaraNavGraph(
     forceLocalProbeFailureForTesting: Boolean = false,
     openGenerationRequest: OpenGenerationRequest? = null,
     onOpenGenerationConsumed: (String) -> Boolean = { false },
-    chatDestination: ChatDestination = { sessionId, onNavigateBack ->
-        ChatRoute(sessionId = sessionId, onNavigateBack = onNavigateBack)
+    chatDestination: ChatDestination = { sessionId, onNavigateBack, onNavigateToSession ->
+        ChatRoute(
+            sessionId = sessionId,
+            onNavigateBack = onNavigateBack,
+            onNavigateToSession = onNavigateToSession,
+        )
     },
 ) {
     val context = LocalContext.current
@@ -330,7 +338,17 @@ fun NexaraNavGraph(
             arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: ""
-            chatDestination(sessionId) { navController.popBackStack() }
+            chatDestination(
+                sessionId,
+                { navController.popBackStack() },
+                { branchedSessionId ->
+                    if (branchedSessionId != sessionId) {
+                        navController.navigate(NavDestinations.chatHero(branchedSessionId)) {
+                            launchSingleTop = true
+                        }
+                    }
+                },
+            )
         }
 
         composable(

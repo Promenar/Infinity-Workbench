@@ -14,6 +14,7 @@ enum class GenerationFailureCode {
     QUOTA,
     TIMEOUT,
     INVALID_REQUEST,
+    CONTEXT_LIMIT,
     SERVER,
     BUSY,
     PERSISTENCE,
@@ -53,6 +54,8 @@ data class GenerationFailure(
 
     companion object {
         const val KEY_RETRY_AFTER_SECONDS = "retryAfterSeconds"
+        const val KEY_REQUIRED_TOKENS = "requiredTokens"
+        const val KEY_AVAILABLE_TOKENS = "availableTokens"
 
         fun of(
             code: GenerationFailureCode,

@@ -13,6 +13,7 @@ internal data class ChatProviderRoute(
     val remoteModelId: String?,
     val failure: ProviderResolution.Failure?,
     val useLocalProvider: Boolean = false,
+    val modelId: String? = null,
 )
 
 internal sealed interface ChatRoutePreparation<out T> {
@@ -36,6 +37,7 @@ internal class ChatProviderRouteGate(
                 remoteModelId = resolved.remoteModelId,
                 failure = null,
                 useLocalProvider = local,
+                modelId = resolved.modelId,
             )
         }
     }

@@ -51,8 +51,24 @@ class ChatRouteContractTest {
         val source = navSource.readText()
 
         assertThat(source).contains("chatDestination: ChatDestination")
-        assertThat(source).contains("chatDestination(sessionId")
+        assertThat(source).contains("chatDestination(")
+        assertThat(source).contains("onNavigateToSession")
         assertThat(source).doesNotContain("ChatDestinationRegistry")
+    }
+
+    @Test
+    fun `文档选择与消息分支通过 route 显式接线`() {
+        val route = routeSource.readText()
+        val screen = chatSource.readText()
+        val pipeline = pipelineSource.readText()
+
+        assertThat(route).contains("ActivityResultContracts.OpenMultipleDocuments()")
+        assertThat(route).contains("chatViewModel.importFullContextDocuments(uris)")
+        assertThat(route).contains("onBranchMessage = { messageId ->")
+        assertThat(screen).contains("DocumentDraftStrip(")
+        assertThat(screen).contains("onPickDocument = actions.onPickDocuments")
+        assertThat(pipeline).contains("MessageDocumentSummary(message.userDocuments.orEmpty())")
+        assertThat(pipeline).contains("stringResource(R.string.chat_action_branch)")
     }
 
     @Test
@@ -74,6 +90,10 @@ class ChatRouteContractTest {
         assertThat(source).contains("activeOverlayToken by rememberSaveable")
         assertThat(source).contains("queuedOverlayToken by rememberSaveable")
         assertThat(source).doesNotContain("selectedImageUris by rememberSaveable")
+        assertThat(source).contains("draftConsumptionEpoch by chatViewModel.draftConsumptionEpoch")
+        val sendBlock = source.substringAfter("onSend = { text, images ->")
+            .substringBefore("onStop =")
+        assertThat(sendBlock).doesNotContain("selectedImageUriStrings = emptyList()")
     }
 
     @Test

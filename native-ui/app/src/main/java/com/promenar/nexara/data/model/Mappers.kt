@@ -19,6 +19,16 @@ private inline fun <reified T> encodeToJson(value: T): String =
 private inline fun <reified T> decodeFromJson(text: String): T =
     json.decodeFromString(serializer<T>(), text)
 
+internal fun decodeTextDocumentAttachmentsOrNull(text: String): List<MessageDocumentAttachment>? = try {
+    decodeFromJson<MessageDocumentEnvelope>(text)
+        .takeIf { it.schema == MessageDocumentEnvelope.SCHEMA }
+        ?.documents
+} catch (_: SerializationException) {
+    null
+} catch (_: IllegalArgumentException) {
+    null
+}
+
 internal fun decodeKgPathsOrNull(
     text: String,
     decoder: (String) -> List<KgPath> = { decodeFromJson<List<KgPath>>(it) },
@@ -102,39 +112,43 @@ fun Session.toEntity(): SessionEntity = SessionEntity(
     updatedAt = updatedAt
 )
 
-fun MessageEntity.toDomain(): Message = Message(
-    id = id,
-    role = MessageRole.fromSerializedName(role),
-    content = content,
-    modelId = modelId,
-    status = status,
-    reasoning = reasoning,
-    thoughtSignature = thoughtSignature,
-    images = images,
-    files = files,
-    userImages = userImages?.let { decodeFromJson<List<String>>(it) },
-    tokens = tokens?.let { decodeFromJson<TokenUsage>(it) },
-    citations = citations?.let { decodeFromJson<List<Citation>>(it) },
-    ragReferences = ragReferences?.let { decodeFromJson<List<RagReference>>(it) },
-    kgPaths = kgPaths?.let(::decodeKgPathsOrNull),
-    ragProgress = ragProgress?.let { decodeFromJson<RagProgress>(it) },
-    ragMetadata = ragMetadata?.let { decodeFromJson<RagMetadata>(it) },
-    ragReferencesLoading = ragReferencesLoading == 1,
-    executionSteps = executionSteps?.let { decodeFromJson<List<ExecutionStep>>(it) },
-    toolCalls = toolCalls?.let { decodeFromJson<List<ToolCall>>(it) },
-    pendingApprovalToolIds = pendingApprovalToolIds?.let { decodeFromJson<List<String>>(it) },
-    toolCallId = toolCallId,
-    parentMessageId = parentMessageId,
-    name = name,
-    planningTask = planningTask?.let { decodeFromJson<TaskState>(it) },
-    isArchived = isArchived == 1,
-    vectorizationStatus = vectorizationStatus,
-    layoutHeight = layoutHeight,
-    toolResults = toolResults?.let { decodeFromJson<List<ToolResultArtifact>>(it) },
-    isError = isError == 1,
-    errorMessage = errorMessage,
-    createdAt = createdAt
-)
+fun MessageEntity.toDomain(): Message {
+    val decodedDocuments = files?.let(::decodeTextDocumentAttachmentsOrNull)
+    return Message(
+        id = id,
+        role = MessageRole.fromSerializedName(role),
+        content = content,
+        modelId = modelId,
+        status = status,
+        reasoning = reasoning,
+        thoughtSignature = thoughtSignature,
+        images = images,
+        userDocuments = decodedDocuments,
+        legacyFilesPayload = files?.takeIf { decodedDocuments == null },
+        userImages = userImages?.let { decodeFromJson<List<String>>(it) },
+        tokens = tokens?.let { decodeFromJson<TokenUsage>(it) },
+        citations = citations?.let { decodeFromJson<List<Citation>>(it) },
+        ragReferences = ragReferences?.let { decodeFromJson<List<RagReference>>(it) },
+        kgPaths = kgPaths?.let(::decodeKgPathsOrNull),
+        ragProgress = ragProgress?.let { decodeFromJson<RagProgress>(it) },
+        ragMetadata = ragMetadata?.let { decodeFromJson<RagMetadata>(it) },
+        ragReferencesLoading = ragReferencesLoading == 1,
+        executionSteps = executionSteps?.let { decodeFromJson<List<ExecutionStep>>(it) },
+        toolCalls = toolCalls?.let { decodeFromJson<List<ToolCall>>(it) },
+        pendingApprovalToolIds = pendingApprovalToolIds?.let { decodeFromJson<List<String>>(it) },
+        toolCallId = toolCallId,
+        parentMessageId = parentMessageId,
+        name = name,
+        planningTask = planningTask?.let { decodeFromJson<TaskState>(it) },
+        isArchived = isArchived == 1,
+        vectorizationStatus = vectorizationStatus,
+        layoutHeight = layoutHeight,
+        toolResults = toolResults?.let { decodeFromJson<List<ToolResultArtifact>>(it) },
+        isError = isError == 1,
+        errorMessage = errorMessage,
+        createdAt = createdAt,
+    )
+}
 
 fun Message.toEntity(sessionId: String): MessageEntity = MessageEntity(
     id = id,
@@ -146,7 +160,8 @@ fun Message.toEntity(sessionId: String): MessageEntity = MessageEntity(
     reasoning = reasoning,
     thoughtSignature = thoughtSignature,
     images = images,
-    files = files,
+    files = userDocuments?.let { encodeToJson(MessageDocumentEnvelope(documents = it)) }
+        ?: legacyFilesPayload,
     userImages = userImages?.let { encodeToJson(it) },
     tokens = tokens?.let { encodeToJson(it) },
     citations = citations?.let { encodeToJson(it) },

@@ -1,6 +1,6 @@
 # Nexara Architecture 全景
 
-> **最后更新**: 2026-07-18
+> **最后更新**: 2026-07-20
 > **注意**: 本文档为快速参考。完整架构设计见 [ARCHITECTURE_DESIGN.md](./ARCHITECTURE_DESIGN.md)（理想架构 + 技术路线择优），实现进度与差距分析见 [IMPLEMENTATION_ANALYSIS.md](./IMPLEMENTATION_ANALYSIS.md)。
 
 ## 核心架构
@@ -38,6 +38,7 @@ graph TD
 - **DocEditorContentAccess / DocEditorViewModel**: 文档内容访问使用 `Editable / PerformanceProtected / MetadataOnly` 单一事实。文件大小严格超过 1 MiB 时不读取全文；已读取内容严格超过 32K 个 UTF-16 代码单元、2,000 行或单行 16K 个 UTF-16 代码单元时，仅向 Markdown 提供最多 16K 个 UTF-16 代码单元的快照，不构建全文 `BasicTextField`。完整 `content/persistedContent` 仍是复制、dirty、expected-hash CAS 保存与冲突处理的唯一数据源，预览 snippet 不得进入持久化路径。
 - **SharedFileImporter / DurableShareInbox**: SAF 与系统分享共用的逐项导入管线；支持去重、容量重试、部分失败、崩溃恢复及索引回执。
 - **GenerationCoordinator / ChatGenerationRunner**: 应用级唯一生成任务源。初版全局只允许一个活动任务；统一处理 Provider 路由、RAG/工具循环、流式增量持久化、取消与结构化错误终态。成功、失败与取消路径必须先把终态发布到 `GenerationPresentationStore`，再结束协调器活动状态，避免 UI 因事件顺序停留在生成中。
+- **MessageDocumentAttachment / PreparedPromptBudgetGate / BranchSessionUseCase**: 输入栏 TXT/Markdown 以版本化消息快照进入完整用户上下文，与知识库检索分离；最终路由 Prompt 在 Provider 网络前按稳定模型覆盖和远端目录容量执行 fail-closed 门禁。重试只在新回复成功后替换旧回复；导出可回传，稳定消息分支重映射历史并清空运行态与工作区身份。
 - **GenerationForegroundService**: 观察 Coordinator 的同一任务状态，通过 `dataSync` 前台服务在切后台、锁屏、旋转或 Activity 重建后继续当前生成；通知可返回准确会话或停止任务。设备重启续传、多会话并行和定时任务不在 `v0.2-beta` 范围。
 - **SecretStore / SecretCatalog**: Android Keystore 生成不可导出的 AES-GCM 主密钥；普通偏好只保存密文、IV 与格式版本。Provider、Vertex、搜索、Embedding 和 WebDAV 凭据由稳定 SecretId 管理，UI 只持有存在性和短生命周期 reveal 内容。
 - **BackupRepository / BackupPackageCodec**: 核心数据采用清单、逐项 SHA-256 和事务恢复；密钥默认排除，显式包含时使用备份密码派生的 AES-256-GCM 密钥加密。恢复先验证再写入，错误密码、损坏包和越界内容不得产生部分写入。
@@ -69,6 +70,7 @@ graph TD
 - **ADR-017 (2026-05-18)**: **知识图谱可视化 176+ 大数据量防崩溃与性能优化** — 彻底根治 ECharts 大数据量下悬挂边（Dangling Edges）导致的 JS 解析致命崩溃、无初始布局（`initLayout`）导致的坐标重叠斥力爆炸（NaN），以及 category 索引越界和连线模板解析异常。在 `kg_template.html` 中引入前置悬挂边安全过滤映射表、显式圆周初始布局（`circular`）、精细化的力导向参数调优（手机端 `repulsion: 120`）、安全类别降级映射与 Formatter 回调，并配合全局 try-catch 和红色报错卡片展示，实现 100% 可视化防崩溃与 3 倍以上的渲染收敛性能。✅ 已实施。
 - **ADR-019 (2026-07-13)**: **工作区文件、派生索引与删除恢复采用事务候选切换** — 重索引失败保留旧结果；永久删除统一清理派生数据；稳定 tombstone 与持久队列覆盖进程死亡恢复。✅ 已实施，详见 [ADR-019](./ADR/ADR-019-transactional-workspace-indexing.md)。
 - **ADR-020 (2026-07-18)**: **分层模型元数据注册中心** — 采用逐字段来源优先级、精确 ID、离线目录、三态能力与用户覆盖迁移；推理能力和 Chat endpoint 兼容性保持独立。✅ 已实施，当前候选真实 Provider 复验仍为 PENDING，详见 [ADR-020](./ADR/ADR-020-layered-model-metadata-registry.md)。
+- **ADR-021 (2026-07-20)**: **会话完整文档上下文与消息分支** — TXT/Markdown 以持久快照完整进入 Prompt，路由后执行预算硬门禁；导出可回传，重试不丢旧回复，稳定消息可创建独立分支。✅ 已实施，详见 [ADR-021](./ADR/ADR-021-chat-full-context-documents-and-branching.md)。
 
 ### 新增关键组件 (2026-05-18 移植 & 调试桥落地)
 - **UnifiedLlmClient**: 统一 LLM 调用入口，整合中间件链 + ToolCallLifecycleHandler，自动路由 Protocol。

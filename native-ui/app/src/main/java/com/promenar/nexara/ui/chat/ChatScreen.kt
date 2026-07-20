@@ -48,6 +48,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import com.promenar.nexara.ui.common.NexaraBackButton
 import androidx.compose.material.icons.rounded.ArrowDownward
@@ -55,6 +56,7 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.Memory
@@ -64,6 +66,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -119,6 +122,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.PostProcessTask
@@ -159,6 +163,8 @@ data class ChatScreenState(
     val compressionState: ChatViewModel.CompressionState = ChatViewModel.CompressionState(),
     val postProcessTasks: List<PostProcessTask> = emptyList(),
     val selectedImageUris: List<android.net.Uri> = emptyList(),
+    val draftDocuments: List<MessageDocumentAttachment> = emptyList(),
+    val isImportingDocument: Boolean = false,
     val modelDisplayNames: Map<String, String> = emptyMap(),
 )
 
@@ -174,6 +180,7 @@ data class ChatScreenActions(
     val onCopy: (String) -> Unit = {},
     val onDeleteMessage: (String) -> Unit = {},
     val onRegenerateMessage: (String) -> Unit = {},
+    val onBranchMessage: (String) -> Unit = {},
     val onApprove: () -> Unit = {},
     val onDecline: () -> Unit = {},
     val onRemovePostProcessTask: (String) -> Unit = {},
@@ -182,7 +189,9 @@ data class ChatScreenActions(
     val onSend: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
     val onStop: () -> Unit = {},
     val onPickImages: () -> Unit = {},
+    val onPickDocuments: () -> Unit = {},
     val onRemoveImage: (Int) -> Unit = {},
+    val onRemoveDocument: (String) -> Unit = {},
     val onSnackbarAction: () -> Unit = {},
 )
 
@@ -201,6 +210,7 @@ fun ChatScreenContent(
     val ragPhases = state.ragPhases
     val compressionState = state.compressionState
     val selectedImageUris = state.selectedImageUris
+    val draftDocuments = state.draftDocuments
     val listState = rememberLazyListState()
     var showModelHint by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -246,6 +256,7 @@ fun ChatScreenContent(
     }
 
     val describeImagePrompt = stringResource(R.string.chat_image_only_prompt)
+    val documentOnlyPrompt = stringResource(R.string.chat_document_only_prompt)
     val approvalArgumentsLabel = stringResource(R.string.chat_approval_arguments)
     val approvalFallback = stringResource(R.string.chat_approval_fallback)
 
@@ -444,6 +455,7 @@ fun ChatScreenContent(
                         },
                         onDelete = actions.onDeleteMessage,
                         onRegenerate = actions.onRegenerateMessage,
+                        onBranch = actions.onBranchMessage,
                     )
                 }
 
@@ -559,6 +571,14 @@ fun ChatScreenContent(
                         }
                     }
 
+                    if (draftDocuments.isNotEmpty() || state.isImportingDocument) {
+                        DocumentDraftStrip(
+                            documents = draftDocuments,
+                            isImporting = state.isImportingDocument,
+                            onRemove = actions.onRemoveDocument,
+                        )
+                    }
+
                     // 任务浮动面板
                     taskPanel()
 
@@ -572,8 +592,17 @@ fun ChatScreenContent(
                             },
                             onTextChange = actions.onTextChange,
                             onSend = {
-                                if (inputText.isNotBlank() || selectedImageUris.isNotEmpty()) {
-                                    val textToSend = inputText.ifBlank { describeImagePrompt }
+                                if (
+                                    inputText.isNotBlank() ||
+                                    selectedImageUris.isNotEmpty() ||
+                                    draftDocuments.isNotEmpty()
+                                ) {
+                                    val fallback = if (draftDocuments.isNotEmpty()) {
+                                        documentOnlyPrompt
+                                    } else {
+                                        describeImagePrompt
+                                    }
+                                    val textToSend = inputText.ifBlank { fallback }
                                     actions.onSend(textToSend, selectedImageUris)
                                 }
                             },
@@ -583,7 +612,10 @@ fun ChatScreenContent(
                             isModelSelected = uiState.session?.modelId?.isNotBlank() == true,
                             onModelHint = { showModelHint = true },
                             onPickImage = actions.onPickImages,
+                            onPickDocument = actions.onPickDocuments,
                             hasImages = selectedImageUris.isNotEmpty(),
+                            hasDocuments = draftDocuments.isNotEmpty(),
+                            isImportingDocument = state.isImportingDocument,
                         )
 
                         // ── 模型未选择提示气泡 ──
@@ -993,8 +1025,77 @@ fun RenameDialog(
     )
 }
 
+@Composable
+private fun DocumentDraftStrip(
+    documents: List<MessageDocumentAttachment>,
+    isImporting: Boolean,
+    onRemove: (String) -> Unit,
+) {
+    val removeDescription = stringResource(R.string.chat_cd_remove_document)
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(UiTags.CHAT_DOCUMENT_CHIPS),
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+    ) {
+        items(documents, key = MessageDocumentAttachment::id) { document ->
+            AssistChip(
+                modifier = Modifier
+                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                    .testTag(UiTags.chatDocumentChip(document.id)),
+                onClick = { onRemove(document.id) },
+                label = {
+                    Column(modifier = Modifier.widthIn(max = 220.dp)) {
+                        Text(
+                            text = document.name,
+                            style = NexaraTypography.labelMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = formatDocumentBytes(document.sizeBytes),
+                            style = NexaraTypography.labelSmall,
+                            color = NexaraColors.OnSurfaceVariant,
+                        )
+                    }
+                },
+                leadingIcon = { Icon(Icons.Rounded.Description, null, Modifier.size(18.dp)) },
+                trailingIcon = {
+                    Icon(
+                        Icons.Rounded.Close,
+                        removeDescription,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .testTag(UiTags.chatDocumentRemove(document.id)),
+                    )
+                },
+            )
+        }
+        if (isImporting) {
+            item(key = "document_importing") {
+                Row(
+                    modifier = Modifier
+                        .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                        .testTag(UiTags.CHAT_DOCUMENT_IMPORTING),
+                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text(
+                        stringResource(R.string.chat_document_importing),
+                        style = NexaraTypography.labelMedium,
+                    )
+                }
+            }
+        }
+    }
+}
 
-
+private fun formatDocumentBytes(bytes: Long): String = when {
+    bytes < 1024 -> "$bytes B"
+    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+    else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+}
 
 @Composable
 fun ChatInputBar(
@@ -1009,9 +1110,17 @@ fun ChatInputBar(
     isModelSelected: Boolean = true,
     onModelHint: () -> Unit = {},
     onPickImage: () -> Unit = {},
-    hasImages: Boolean = false
+    onPickDocument: () -> Unit = {},
+    hasImages: Boolean = false,
+    hasDocuments: Boolean = false,
+    isImportingDocument: Boolean = false,
 ) {
-    val effectiveStatus = if (isGenerating) status else GenerationStatus.IDLE
+    val effectiveStatus = if (isGenerating || status == GenerationStatus.ERROR) {
+        status
+    } else {
+        GenerationStatus.IDLE
+    }
+    var showAttachmentMenu by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1026,17 +1135,57 @@ fun ChatInputBar(
                 .padding(start = 4.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
-                onClick = onPickImage,
-                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                enabled = !isGenerating
-            ) {
-                Icon(
-                    Icons.Rounded.AddPhotoAlternate,
-                    stringResource(R.string.chat_cd_add_image),
-                    tint = if (hasImages) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
-                    modifier = Modifier.size(22.dp)
-                )
+            Box {
+                IconButton(
+                    onClick = { showAttachmentMenu = true },
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .testTag(UiTags.CHAT_ADD_ATTACHMENT),
+                    enabled = !isGenerating && !isImportingDocument,
+                ) {
+                    if (isImportingDocument) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .testTag(UiTags.CHAT_DOCUMENT_IMPORTING),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(
+                            Icons.Rounded.Add,
+                            stringResource(R.string.chat_cd_add_attachment),
+                            tint = if (hasImages || hasDocuments) {
+                                NexaraColors.Primary
+                            } else {
+                                NexaraColors.OnSurfaceVariant
+                            },
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                }
+                DropdownMenu(
+                    expanded = showAttachmentMenu,
+                    onDismissRequest = { showAttachmentMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        modifier = Modifier.testTag(UiTags.CHAT_ATTACH_MENU_IMAGE),
+                        text = { Text(stringResource(R.string.chat_menu_attach_image)) },
+                        leadingIcon = { Icon(Icons.Rounded.AddPhotoAlternate, null) },
+                        onClick = {
+                            showAttachmentMenu = false
+                            onPickImage()
+                        },
+                    )
+                    DropdownMenuItem(
+                        modifier = Modifier.testTag(UiTags.CHAT_ATTACH_MENU_DOCUMENT),
+                        text = { Text(stringResource(R.string.chat_menu_attach_document)) },
+                        leadingIcon = { Icon(Icons.Rounded.Description, null) },
+                        onClick = {
+                            showAttachmentMenu = false
+                            onPickDocument()
+                        },
+                    )
+                }
             }
 
             BasicTextField(
@@ -1080,7 +1229,7 @@ fun ChatInputBar(
                     if (isModelSelected) onSend() else onModelHint()
                 },
                 onStop = onStop,
-                enabled = text.isNotBlank() || hasImages,
+                enabled = (text.isNotBlank() || hasImages || hasDocuments) && !isImportingDocument,
                 isModelSelected = isModelSelected
             )
         }

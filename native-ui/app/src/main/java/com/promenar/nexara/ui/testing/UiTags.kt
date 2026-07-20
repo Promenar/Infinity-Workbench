@@ -30,6 +30,18 @@ object UiTags {
     const val CHAT_OPTIONS = "chat_options"
     const val CHAT_SESSION_SETTINGS = "chat_session_settings"
     const val CHAT_INPUT = "chat_input"
+    const val CHAT_ADD_ATTACHMENT = "chat_add_attachment"
+    const val CHAT_ATTACH_MENU_IMAGE = "chat_attach_menu_image"
+    const val CHAT_ATTACH_MENU_DOCUMENT = "chat_attach_menu_document"
+    const val CHAT_DOCUMENT_CHIPS = "chat_document_chips"
+    const val CHAT_DOCUMENT_IMPORTING = "chat_document_importing"
+    const val CHAT_MESSAGE_DOCUMENTS = "chat_message_documents"
+    const val CHAT_MESSAGE_BRANCH = "chat_message_branch"
+    private const val CHAT_DOCUMENT_CHIP_PREFIX = "chat_document_chip:"
+    private const val CHAT_DOCUMENT_REMOVE_PREFIX = "chat_document_remove:"
+
+    fun chatDocumentChip(documentId: String): String = CHAT_DOCUMENT_CHIP_PREFIX + documentId
+    fun chatDocumentRemove(documentId: String): String = CHAT_DOCUMENT_REMOVE_PREFIX + documentId
     const val PROMPT_EDITOR_INPUT = "prompt_editor_input"
     const val CHAT_MODEL_SELECTOR = "chat_model_selector"
     const val CHAT_MODEL_SELECTOR_VISUAL = "chat_model_selector_visual"

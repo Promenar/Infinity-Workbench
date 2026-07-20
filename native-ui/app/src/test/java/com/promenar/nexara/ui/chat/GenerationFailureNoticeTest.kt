@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test
 class GenerationFailureNoticeTest {
 
     @Test
-    fun `十个稳定失败码只映射对应资源`() {
+    fun `稳定失败码只映射对应资源`() {
         val expected = mapOf(
             GenerationFailureCode.NETWORK to R.string.generation_failure_network,
             GenerationFailureCode.AUTH to R.string.generation_failure_auth,
@@ -20,6 +20,7 @@ class GenerationFailureNoticeTest {
             GenerationFailureCode.QUOTA to R.string.generation_failure_quota,
             GenerationFailureCode.TIMEOUT to R.string.generation_failure_timeout,
             GenerationFailureCode.INVALID_REQUEST to R.string.generation_failure_invalid_request,
+            GenerationFailureCode.CONTEXT_LIMIT to R.string.chat_document_error_invalid_estimate,
             GenerationFailureCode.SERVER to R.string.generation_failure_server,
             GenerationFailureCode.BUSY to R.string.generation_failure_busy,
             GenerationFailureCode.PERSISTENCE to R.string.generation_failure_persistence,
@@ -33,6 +34,24 @@ class GenerationFailureNoticeTest {
         }
 
         assertThat(actual).containsExactlyEntriesIn(expected)
+    }
+
+    @Test
+    fun `上下文超限只接受完整的数值参数`() {
+        val resolved = GenerationFailureNotice.template(
+            GenerationFailureNotice.from(
+                GenerationFailure(
+                    GenerationFailureCode.CONTEXT_LIMIT,
+                    mapOf(
+                        GenerationFailure.KEY_REQUIRED_TOKENS to "9000",
+                        GenerationFailure.KEY_AVAILABLE_TOKENS to "8000",
+                    ),
+                ),
+            ),
+        )
+
+        assertThat(resolved.resourceId).isEqualTo(R.string.chat_document_error_over_capacity)
+        assertThat(resolved.args).containsExactly(9000L, 8000L).inOrder()
     }
 
     @Test

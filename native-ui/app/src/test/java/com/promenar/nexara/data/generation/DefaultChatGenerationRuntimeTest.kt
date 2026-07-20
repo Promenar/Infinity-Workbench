@@ -11,6 +11,7 @@ import com.promenar.nexara.data.model.InferenceParams
 import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.PostProcessStatus
 import com.promenar.nexara.data.model.UpdateMessageOptions
+import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderResolution
@@ -33,6 +34,7 @@ import com.promenar.nexara.domain.generation.GenerationFailure
 import com.promenar.nexara.domain.generation.GenerationFailureCode
 import com.promenar.nexara.domain.generation.GenerationFailureCodec
 import com.promenar.nexara.domain.generation.GenerationRuntimePolicy
+import com.promenar.nexara.domain.generation.GenerationPreparationOutcome
 import com.promenar.nexara.domain.generation.GenerationSnapshot
 import com.promenar.nexara.domain.generation.GenerationTerminalStatus
 import com.promenar.nexara.domain.generation.GenerationToolCall
@@ -63,6 +65,151 @@ import kotlinx.coroutines.CancellationException
 import org.junit.Test
 
 class DefaultChatGenerationRuntimeTest {
+    @Test
+    fun `初始完整文档最终门禁失败回滚本轮消息且不进入Provider`() = runTest {
+        val fixture = documentBudgetFixture(toolRounds = 0)
+        val request = fixture.request.copy(rollbackUserOnPreparationFailure = true)
+
+        fixture.runtime.prepare(request)
+        val outcome = fixture.runtime.buildContext(request)
+
+        assertThat(outcome).isInstanceOf(GenerationPreparationOutcome.Handled::class.java)
+        assertThat((outcome as GenerationPreparationOutcome.Handled).failure.code)
+            .isEqualTo(GenerationFailureCode.CONTEXT_LIMIT)
+        coVerify(exactly = 1) {
+            fixture.messageManager.discardPreparedMessages("budget-session", listOf("assistant", "user"))
+        }
+        assertThat(fixture.providerEntered()).isFalse()
+    }
+
+    @Test
+    fun `工具续轮最终门禁失败不删除既有用户或工具历史`() = runTest {
+        val fixture = documentBudgetFixture(toolRounds = 1)
+
+        fixture.runtime.prepare(fixture.request)
+        val outcome = fixture.runtime.buildContext(fixture.request)
+
+        assertThat(outcome).isInstanceOf(GenerationPreparationOutcome.Handled::class.java)
+        coVerify(exactly = 0) { fixture.messageManager.discardPreparedMessages(any(), any()) }
+        assertThat(fixture.providerEntered()).isFalse()
+    }
+
+    private data class DocumentBudgetFixture(
+        val runtime: DefaultChatGenerationRuntime,
+        val request: GenerationRequest,
+        val messageManager: MessageManager,
+        val providerEntered: () -> Boolean,
+    )
+
+    private fun kotlinx.coroutines.test.TestScope.documentBudgetFixture(
+        toolRounds: Int,
+    ): DocumentBudgetFixture {
+        val settings = mockk<SharedPreferences>()
+        every { settings.getInt(any(), any()) } returns 100
+        every { settings.getStringSet(any(), any()) } returns emptySet()
+        every { settings.getString(any(), any()) } returns ""
+        every { settings.getFloat(any(), any()) } answers { secondArg() }
+        val document = MessageDocumentAttachment(
+            "doc", "large.txt", "text/plain", "中".repeat(100), 300, "hash", 300,
+        )
+        val store = ChatStore().apply {
+            update {
+                ChatState(
+                    sessions = listOf(
+                        Session(
+                            id = "budget-session",
+                            agentId = "agent",
+                            modelId = "local::model",
+                            inferenceParams = InferenceParams(maxTokens = 16),
+                            messages = listOf(
+                                Message("user", MessageRole.USER, "question", userDocuments = listOf(document)),
+                                Message("assistant", MessageRole.ASSISTANT, ""),
+                            ),
+                        ),
+                    ),
+                )
+            }
+        }
+        var providerEntered = false
+        val protocol = object : LlmProtocol {
+            override val protocolType = ProtocolType.Local
+            override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> {
+                providerEntered = true
+                return flow { emit(StreamChunk.Done) }
+            }
+            override suspend fun sendPromptSync(request: PromptRequest) = PromptResponse("")
+            override fun cancel() = Unit
+        }
+        val provider = LlmProvider(protocol)
+        val router = object : ProviderRequestRouter {
+            override fun resolve(modelId: String): ProviderResolution = ProviderResolution.Success(
+                ResolvedProviderModel(
+                    modelId,
+                    "model",
+                    "local",
+                    "Local",
+                    UnifiedProviderConfig(ProtocolType.Local, "", "", "model"),
+                ),
+            )
+            override fun createClient(resolved: ResolvedProviderModel): UnifiedLlmClient = error("local")
+        }
+        val contextBuilder = mockk<ContextBuilder>()
+        coEvery { contextBuilder.buildContext(any()) } returns ContextBuilderResult(
+            searchContext = "",
+            ragContext = "",
+            citations = emptyList(),
+            ragReferences = emptyList(),
+            ragUsage = null,
+            finalSystemPrompt = "system",
+        )
+        val contentStrategy = mockk<ChatGenerationContentStrategy>()
+        every { contentStrategy.buildTools(any()) } returns emptyList()
+        every { contentStrategy.buildProtocolMessages(any(), any(), any(), any()) } returns listOf(
+            com.promenar.nexara.data.remote.protocol.ProtocolMessage(
+                role = "user",
+                content = "中".repeat(100),
+            ),
+        )
+        val messageManager = mockk<MessageManager>(relaxed = true)
+        val runtime = DefaultChatGenerationRuntime(
+            settings = settings,
+            applicationScope = this,
+            store = store,
+            agentRepository = mockk<IAgentRepository> { coEvery { getById(any()) } returns null },
+            configResolver = AgentConfigResolver(settings),
+            routeGate = ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)),
+            contextBuilder = contextBuilder,
+            messageManager = messageManager,
+            localProviderFactory = { provider },
+            provider = provider,
+            toolLedger = mockk(relaxed = true),
+            toolExecutor = mockk(relaxed = true),
+            postProcessor = mockk(relaxed = true),
+            memoryManager = null,
+            summaryManager = mockk(relaxed = true),
+            sessionManager = mockk(relaxed = true),
+            contentStrategy = contentStrategy,
+            ui = mockk(relaxed = true),
+        )
+        DefaultChatGenerationRuntime::class.java.getDeclaredField("toolRounds").apply {
+            isAccessible = true
+            setInt(runtime, toolRounds)
+        }
+        return DocumentBudgetFixture(
+            runtime,
+            GenerationRequest(
+                "budget-session",
+                "assistant",
+                "user",
+                "question",
+                emptyList(),
+                GenerationRuntimePolicy.BACKGROUND_ALLOWED,
+            ),
+            messageManager,
+            { providerEntered },
+        )
+    }
+
     @Test
     fun `postProcess updateStats取消必须传播`() = runTest {
         val fixture = postProcessFixture()
@@ -167,12 +314,71 @@ class DefaultChatGenerationRuntimeTest {
         assertThat(detail.captured).isNull()
     }
 
+    @Test
+    fun `重试多轮工具调用失败会回滚本轮创建的全部消息`() = runTest {
+        val fixture = postProcessFixture()
+        val request = fixture.request.copy(assistantMessageIdToReplace = "old-assistant")
+        fixture.store.update {
+            ChatState(
+                sessions = listOf(
+                    Session(
+                        id = "session",
+                        agentId = "agent",
+                        modelId = "model",
+                        messages = listOf(
+                            Message("user", MessageRole.USER, "question"),
+                            Message("old-assistant", MessageRole.ASSISTANT, "old answer"),
+                            Message("assistant", MessageRole.ASSISTANT, ""),
+                        ),
+                    ),
+                ),
+            )
+        }
+        fixture.runtime.prepare(request)
+        fixture.store.update { state ->
+            state.copy(
+                sessions = state.sessions.map { session ->
+                    session.copy(
+                        messages = session.messages + listOf(
+                            Message("assistant-round-2", MessageRole.ASSISTANT, "tool call 1"),
+                            Message("tool-result-1", MessageRole.TOOL, "result 1"),
+                            Message("assistant-round-3", MessageRole.ASSISTANT, "tool call 2"),
+                            Message("tool-result-2", MessageRole.TOOL, "result 2"),
+                        ),
+                    )
+                },
+            )
+        }
+
+        fixture.runtime.markTerminal(
+            request,
+            GenerationTerminalStatus.ERROR,
+            GenerationSnapshot(content = "partial"),
+            IllegalStateException("failed"),
+        )
+
+        val rolledBackIds = slot<List<String>>()
+        coVerify(exactly = 1) {
+            fixture.messageManager.discardPreparedMessages("session", capture(rolledBackIds))
+        }
+        assertThat(rolledBackIds.captured).containsExactly(
+            "assistant",
+            "assistant-round-2",
+            "tool-result-1",
+            "assistant-round-3",
+            "tool-result-2",
+        )
+        assertThat(rolledBackIds.captured).doesNotContain("old-assistant")
+    }
+
     private data class PostProcessFixture(
         val runtime: DefaultChatGenerationRuntime,
         val request: GenerationRequest,
         val postProcessor: PostProcessor,
         val summaryManager: SummaryManager,
         val ui: GenerationUiPort,
+        val store: ChatStore,
+        val messageManager: MessageManager,
     )
 
     private fun postProcessFixture(
@@ -207,6 +413,7 @@ class DefaultChatGenerationRuntimeTest {
         val postProcessor = mockk<PostProcessor>()
         val summaryManager = mockk<SummaryManager>()
         val ui = mockk<GenerationUiPort>(relaxed = true)
+        val messageManager = mockk<MessageManager>(relaxed = true)
         every { ui.addPostProcessTask(any(), any()) } returns "task"
         val contentStrategy = mockk<ChatGenerationContentStrategy>()
         every { contentStrategy.safeActiveWindow(any(), any()) } answers {
@@ -220,7 +427,7 @@ class DefaultChatGenerationRuntimeTest {
             configResolver = mockk(),
             routeGate = mockk(),
             contextBuilder = mockk(),
-            messageManager = mockk(relaxed = true),
+            messageManager = messageManager,
             localProviderFactory = { mockk() },
             provider = mockk(relaxed = true),
             toolLedger = mockk(),
@@ -255,6 +462,8 @@ class DefaultChatGenerationRuntimeTest {
             postProcessor,
             summaryManager,
             ui,
+            store,
+            messageManager,
         )
     }
     @Test

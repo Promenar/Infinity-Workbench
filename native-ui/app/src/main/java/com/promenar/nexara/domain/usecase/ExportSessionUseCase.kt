@@ -48,12 +48,13 @@ class ExportSessionUseCase(
                 appendLine("(No messages)")
             } else {
                 messages.forEach { msg ->
-                    appendLine("## ${msg.role.name}")
+                    appendLine("## ${messageHeading(msg)}")
                     appendLine(msg.content)
                     if (msg.thinking != null) {
                         appendLine("--- Thinking ---")
                         appendLine(msg.thinking)
                     }
+                    appendTextAttachments(msg)
                     appendLine()
                 }
             }
@@ -69,7 +70,7 @@ class ExportSessionUseCase(
                 appendLine("*(No messages)*")
             } else {
                 messages.forEach { msg ->
-                    appendLine("### ${msg.role.name}")
+                    appendLine("### ${messageHeading(msg)}")
                     appendLine()
                     appendLine(msg.content)
                     appendLine()
@@ -78,10 +79,47 @@ class ExportSessionUseCase(
                         appendLine("> ${msg.thinking.replace("\n", "\n> ")}")
                         appendLine()
                     }
+                    appendMarkdownAttachments(msg)
                 }
             }
         }
     }
+
+    private fun messageHeading(message: Message): String = buildString {
+        append(message.role.name)
+        append(" · ")
+        append(formatTimestamp(message.timestamp))
+        message.modelId?.takeIf(String::isNotBlank)?.let { modelId ->
+            append(" · Model: ")
+            append(modelId)
+        }
+    }
+
+    private fun StringBuilder.appendTextAttachments(message: Message) {
+        message.documents.forEach { document ->
+            appendLine()
+            appendLine("--- Attachment: ${document.name} (${document.mimeType}) ---")
+            append(document.content)
+            if (!document.content.endsWith('\n')) appendLine()
+            appendLine("--- End Attachment ---")
+        }
+    }
+
+    private fun StringBuilder.appendMarkdownAttachments(message: Message) {
+        message.documents.forEach { document ->
+            appendLine("<!-- nexara-attachment name=\"${document.name.escapeHtmlAttribute()}\" mime=\"${document.mimeType.escapeHtmlAttribute()}\" -->")
+            append(document.content)
+            if (!document.content.endsWith('\n')) appendLine()
+            appendLine("<!-- /nexara-attachment -->")
+            appendLine()
+        }
+    }
+
+    private fun String.escapeHtmlAttribute(): String = this
+        .replace("&", "&amp;")
+        .replace("\"", "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
 
     private fun formatTimestamp(ts: Long): String =
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(ts))

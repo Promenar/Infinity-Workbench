@@ -35,10 +35,10 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE id = :messageId")
     suspend fun getById(messageId: String): MessageEntity?
 
-    @Query("SELECT * FROM messages WHERE session_id = :sessionId ORDER BY created_at ASC")
+    @Query("SELECT * FROM messages WHERE session_id = :sessionId ORDER BY created_at ASC, rowid ASC")
     fun observeBySession(sessionId: String): Flow<List<MessageEntity>>
 
-    @Query("SELECT * FROM messages WHERE session_id = :sessionId ORDER BY created_at ASC")
+    @Query("SELECT * FROM messages WHERE session_id = :sessionId ORDER BY created_at ASC, rowid ASC")
     suspend fun getBySession(sessionId: String): List<MessageEntity>
 
     @Query("SELECT COUNT(*) FROM messages WHERE session_id = :sessionId")
@@ -77,7 +77,7 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE session_id = :sessionId AND created_at >= :timestamp")
     suspend fun deleteBySessionIdAndTimestampAfter(sessionId: String, timestamp: Long)
 
-    @Query("SELECT * FROM messages WHERE session_id = :sessionId AND created_at < :timestamp ORDER BY created_at ASC")
+    @Query("SELECT * FROM messages WHERE session_id = :sessionId AND created_at < :timestamp ORDER BY created_at ASC, rowid ASC")
     suspend fun getBySessionBeforeTimestamp(sessionId: String, timestamp: Long): List<MessageEntity>
 
     @Query("UPDATE messages SET vectorization_status = :status, is_archived = :isArchived WHERE id = :messageId")

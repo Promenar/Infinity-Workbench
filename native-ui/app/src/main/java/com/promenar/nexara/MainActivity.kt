@@ -178,10 +178,11 @@ open class MainActivity : ComponentActivity() {
                                     false,
                                 ),
                             ),
-                            chatDestination = { sessionId, onNavigateBack ->
+                            chatDestination = { sessionId, onNavigateBack, onNavigateToSession ->
                                 ChatRoute(
                                     sessionId = sessionId,
                                     onNavigateBack = onNavigateBack,
+                                    onNavigateToSession = onNavigateToSession,
                                     dependencies = chatRouteDependencies,
                                 )
                             },

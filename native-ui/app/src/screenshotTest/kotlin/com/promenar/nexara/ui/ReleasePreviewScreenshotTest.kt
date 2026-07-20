@@ -32,6 +32,7 @@ import com.promenar.nexara.data.model.KgEdge
 import com.promenar.nexara.data.model.KgNode
 import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.SessionOptions
@@ -694,6 +695,85 @@ fun chatLargeFontReleasePreview() {
                         ),
                     ),
                     status = GenerationStatus.IDLE,
+                ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Chat full context documents Chinese",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatFullContextDocumentsChineseReleasePreview() {
+    val sentDocument = previewDocument("sent", "项目背景与历史会话.md", 28_640L)
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    session = previewChatSession(),
+                    agentName = "Nexara 助手",
+                    messages = listOf(
+                        previewMessage(
+                            id = "user-document",
+                            role = MessageRole.USER,
+                            content = "请完整阅读附件并整理后续行动。",
+                            userDocuments = listOf(sentDocument),
+                        ),
+                    ),
+                ),
+                draftDocuments = listOf(
+                    previewDocument("draft-1", "补充说明.txt", 2_048L),
+                    previewDocument("draft-2", "这是一个用于验证超长文件名不会挤压输入栏的参考资料.markdown", 96_420L),
+                ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Chat full context documents English large font",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatFullContextDocumentsEnglishLargeFontReleasePreview() {
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    session = previewChatSession().copy(options = SessionOptions(fontSize = 22)),
+                    agentName = "Nexara Assistant",
+                    messages = listOf(
+                        previewMessage(
+                            id = "user-document-large",
+                            role = MessageRole.USER,
+                            content = "Use the complete document as context.",
+                            userDocuments = listOf(
+                                previewDocument("sent-large", "complete-session-export.md", 128_000L),
+                            ),
+                        ),
+                    ),
+                ),
+                draftDocuments = listOf(
+                    previewDocument(
+                        "draft-large",
+                        "very-long-reference-document-name-for-accessibility-layout-validation.markdown",
+                        64_000L,
+                    ),
                 ),
                 modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
             ),
@@ -2099,6 +2179,7 @@ private fun previewMessage(
     modelId: String? = null,
     isError: Boolean = false,
     errorMessage: String? = null,
+    userDocuments: List<MessageDocumentAttachment>? = null,
 ) = Message(
     id = id,
     role = role,
@@ -2107,8 +2188,20 @@ private fun previewMessage(
     modelId = modelId,
     isError = isError,
     errorMessage = errorMessage,
+    userDocuments = userDocuments,
     createdAt = PREVIEW_LOCAL_TIME.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
 )
+
+private fun previewDocument(id: String, name: String, sizeBytes: Long) =
+    MessageDocumentAttachment(
+        id = id,
+        name = name,
+        mimeType = if (name.endsWith(".txt")) "text/plain" else "text/markdown",
+        content = "Preview full-context content",
+        sizeBytes = sizeBytes,
+        sha256 = "preview-$id",
+        estimatedTokens = 8,
+    )
 
 private fun previewChatSession() = Session(
     id = "preview-chat",

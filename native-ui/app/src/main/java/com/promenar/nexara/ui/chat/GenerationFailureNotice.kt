@@ -22,6 +22,7 @@ object GenerationFailureNotice {
     private const val CODE_QUOTA = "generation.failure.quota"
     private const val CODE_TIMEOUT = "generation.failure.timeout"
     private const val CODE_INVALID_REQUEST = "generation.failure.invalid_request"
+    private const val CODE_CONTEXT_LIMIT = "generation.failure.context_limit"
     private const val CODE_SERVER = "generation.failure.server"
     private const val CODE_BUSY = "generation.failure.busy"
     private const val CODE_PERSISTENCE = "generation.failure.persistence"
@@ -37,6 +38,7 @@ object GenerationFailureNotice {
             GenerationFailureCode.QUOTA -> CODE_QUOTA
             GenerationFailureCode.TIMEOUT -> CODE_TIMEOUT
             GenerationFailureCode.INVALID_REQUEST -> CODE_INVALID_REQUEST
+            GenerationFailureCode.CONTEXT_LIMIT -> CODE_CONTEXT_LIMIT
             GenerationFailureCode.SERVER -> CODE_SERVER
             GenerationFailureCode.BUSY -> CODE_BUSY
             GenerationFailureCode.PERSISTENCE -> CODE_PERSISTENCE
@@ -45,7 +47,14 @@ object GenerationFailureNotice {
         return UiStatusNotice(
             severity = NoticeSeverity.Error,
             code = code,
-            formatArgs = retryAfterSeconds?.let(::listOf).orEmpty(),
+            formatArgs = when (failure.code) {
+                GenerationFailureCode.RATE_LIMIT -> retryAfterSeconds?.let(::listOf).orEmpty()
+                GenerationFailureCode.CONTEXT_LIMIT -> listOfNotNull(
+                    failure.formatArgs[GenerationFailure.KEY_REQUIRED_TOKENS]?.toLongOrNull(),
+                    failure.formatArgs[GenerationFailure.KEY_AVAILABLE_TOKENS]?.toLongOrNull(),
+                ).takeIf { it.size == 2 }.orEmpty()
+                else -> emptyList()
+            },
             technical = failure.technical,
         )
     }
@@ -72,6 +81,11 @@ object GenerationFailureNotice {
         CODE_QUOTA -> ResolvedStatus(R.string.generation_failure_quota)
         CODE_TIMEOUT -> ResolvedStatus(R.string.generation_failure_timeout)
         CODE_INVALID_REQUEST -> ResolvedStatus(R.string.generation_failure_invalid_request)
+        CODE_CONTEXT_LIMIT -> if (notice.formatArgs.size == 2) {
+            ResolvedStatus(R.string.chat_document_error_over_capacity, notice.formatArgs)
+        } else {
+            ResolvedStatus(R.string.chat_document_error_invalid_estimate)
+        }
         CODE_SERVER -> ResolvedStatus(R.string.generation_failure_server)
         CODE_BUSY -> ResolvedStatus(R.string.generation_failure_busy)
         CODE_PERSISTENCE -> ResolvedStatus(R.string.generation_failure_persistence)

@@ -24,6 +24,7 @@ data class GenerationPresentationState(
     val generating: Boolean = false,
     val handledFailure: Boolean = false,
     val phase: GenerationPhase? = null,
+    val promptAccepted: Boolean = false,
     val postProcessTasks: List<PostProcessTask> = emptyList(),
 ) {
     override fun toString(): String =
@@ -31,6 +32,7 @@ data class GenerationPresentationState(
             "ragPhaseCount=${ragPhases.size}, streamingContentLength=${streamingContent.length}, " +
             "errorCode=${error?.code}, providerFailureReason=${providerFailure?.reason}, " +
             "generating=$generating, handledFailure=$handledFailure, phase=$phase, " +
+            "promptAccepted=$promptAccepted, " +
             "postProcessTaskCount=${postProcessTasks.size})"
 }
 
@@ -66,6 +68,8 @@ class GenerationPresentationStore {
             when (event) {
                 is GenerationEvent.PhaseChanged -> current.copy(
                     phase = event.phase,
+                    promptAccepted = current.promptAccepted ||
+                        event.phase == GenerationPhase.CONNECTING,
                     generating = event.phase !in setOf(
                         GenerationPhase.COMPLETED,
                         GenerationPhase.FAILED,

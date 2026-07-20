@@ -157,6 +157,14 @@ open class MessageRepository(
             sessionId = sessionId,
             role = com.promenar.nexara.domain.model.MessageRole.valueOf(role.name),
             content = content,
+            modelId = modelId,
+            documents = userDocuments.orEmpty().map { document ->
+                com.promenar.nexara.domain.model.MessageDocumentAttachment(
+                    name = document.name,
+                    mimeType = document.mimeType,
+                    content = document.content,
+                )
+            },
             thinking = reasoning,
             toolCalls = toolCalls?.map { it.toDomainToolCall() },
             ragReferences = ragReferences?.map { it.toDomainRagReference() },

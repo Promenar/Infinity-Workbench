@@ -299,6 +299,26 @@ enum class LoopStatus {
 }
 
 @Serializable
+data class MessageDocumentAttachment(
+    val id: String,
+    val name: String,
+    val mimeType: String,
+    val content: String,
+    val sizeBytes: Long,
+    val sha256: String,
+    val estimatedTokens: Int,
+)
+
+@Serializable
+data class MessageDocumentEnvelope(
+    val schema: String = SCHEMA,
+    val documents: List<MessageDocumentAttachment>,
+) {
+    companion object {
+        const val SCHEMA = "nexara-full-context-documents-v1"
+    }
+}
+
 enum class MessageRole {
     USER, ASSISTANT, SYSTEM, TOOL;
 
@@ -320,7 +340,8 @@ data class Message(
     val reasoning: String? = null,
     val thoughtSignature: String? = null,
     val images: String? = null,
-    val files: String? = null,
+    val userDocuments: List<MessageDocumentAttachment>? = null,
+    val legacyFilesPayload: String? = null,
     val userImages: List<String>? = null,
     val tokens: TokenUsage? = null,
     val citations: List<Citation>? = null,

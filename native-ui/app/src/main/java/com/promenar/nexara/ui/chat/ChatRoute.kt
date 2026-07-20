@@ -177,6 +177,7 @@ private fun copyTextToClipboard(context: Context, text: String) {
 fun ChatRoute(
     sessionId: String,
     onNavigateBack: () -> Unit = {},
+    onNavigateToSession: (String) -> Unit = {},
     dependencies: ChatRouteDependencies? = null,
 ) {
     val context = LocalContext.current
@@ -191,6 +192,9 @@ fun ChatRoute(
     val ragPhases by chatViewModel.ragPhases.collectAsStateWithLifecycle()
     val compressionState by chatViewModel.compressionState.collectAsStateWithLifecycle()
     val postProcessTasks by chatViewModel.postProcessTasks.collectAsStateWithLifecycle()
+    val draftDocuments by chatViewModel.draftDocuments.collectAsStateWithLifecycle()
+    val isImportingDocument by chatViewModel.isImportingDocument.collectAsStateWithLifecycle()
+    val draftConsumptionEpoch by chatViewModel.draftConsumptionEpoch.collectAsStateWithLifecycle()
     val providerModels by ProviderManager.getInstance().providerModels.collectAsStateWithLifecycle()
     val modelDisplayNames = remember(providerModels, uiState.session?.modelId, uiState.messages) {
         resolveModelDisplayNames(
@@ -238,6 +242,12 @@ fun ChatRoute(
     val imagePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetMultipleContents(),
     ) { uris -> selectedImageUriStrings = uris.map(Uri::toString) }
+    val documentPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> chatViewModel.importFullContextDocuments(uris) }
+    LaunchedEffect(draftConsumptionEpoch) {
+        if (draftConsumptionEpoch > 0L) selectedImageUriStrings = emptyList()
+    }
     val requestOverlay: (ChatOverlay) -> Unit = { requested ->
         val next = enqueueChatOverlay(
             state = ChatOverlayQueueState(
@@ -327,6 +337,8 @@ fun ChatRoute(
 
     val dismissLabel = stringResource(R.string.common_dismiss)
     val copiedLabel = stringResource(R.string.chat_copy_success)
+    val branchFailedLabel = stringResource(R.string.chat_branch_failed)
+    val branchUnstableLabel = stringResource(R.string.chat_branch_failed_unstable)
     val generationErrorMessage = uiState.generationNotice
         ?.let(GenerationFailureNotice::template)
         ?.let { resolved -> stringResource(resolved.resourceId, *resolved.args.toTypedArray()) }
@@ -382,6 +394,8 @@ fun ChatRoute(
             compressionState = compressionState,
             postProcessTasks = postProcessTasks,
             selectedImageUris = selectedImageUris,
+            draftDocuments = draftDocuments,
+            isImportingDocument = isImportingDocument,
             modelDisplayNames = modelDisplayNames,
         ),
         actions = ChatScreenActions(
@@ -404,6 +418,25 @@ fun ChatRoute(
             },
             onDeleteMessage = chatViewModel::deleteMessage,
             onRegenerateMessage = { requestOverlay(ChatOverlay.Truncate(it)) },
+            onBranchMessage = { messageId ->
+                scope.launch {
+                    when (val result = chatViewModel.branchFromMessage(messageId)) {
+                        is com.promenar.nexara.data.session.BranchSessionResult.Success ->
+                            onNavigateToSession(result.sessionId)
+                        is com.promenar.nexara.data.session.BranchSessionResult.Rejected -> {
+                            val message = if (
+                                result.reason == com.promenar.nexara.data.session.BranchSessionRejectReason.TargetNotStable
+                            ) branchUnstableLabel else branchFailedLabel
+                            snackbarData = NexaraSnackbarData(message, SnackbarType.ERROR)
+                            snackbarHostState.currentSnackbarData?.dismiss()
+                            snackbarHostState.showSnackbar(
+                                message = message,
+                                duration = SnackbarDuration.Long,
+                            )
+                        }
+                    }
+                }
+            },
             onApprove = chatViewModel::approveRequest,
             onDecline = chatViewModel::rejectRequest,
             onRemovePostProcessTask = chatViewModel::removePostProcessTask,
@@ -411,10 +444,15 @@ fun ChatRoute(
             onTextChange = chatViewModel::updateInputText,
             onSend = { text, images ->
                 chatViewModel.sendMessage(text, images)
-                selectedImageUriStrings = emptyList()
             },
             onStop = chatViewModel::stopGeneration,
             onPickImages = { imagePickerLauncher.launch("image/*") },
+            onPickDocuments = {
+                documentPickerLauncher.launch(
+                    arrayOf("text/plain", "text/markdown", "text/x-markdown", "application/octet-stream"),
+                )
+            },
+            onRemoveDocument = chatViewModel::removeDraftDocument,
             onRemoveImage = { index ->
                 selectedImageUriStrings = selectedImageUriStrings.toMutableList().apply {
                     if (index in indices) removeAt(index)

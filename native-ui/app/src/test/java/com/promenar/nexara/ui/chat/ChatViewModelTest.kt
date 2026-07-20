@@ -21,6 +21,8 @@ import com.promenar.nexara.data.backup.BackupRuntime
 import com.promenar.nexara.data.backup.BackupSnapshot
 import com.promenar.nexara.data.backup.ValidatedBackup
 import com.promenar.nexara.data.generation.ChatProviderRouteGate
+import com.promenar.nexara.data.document.DocumentReadResult
+import com.promenar.nexara.data.document.FullContextDocumentReader
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.repository.IAgentRepository
 import com.promenar.nexara.domain.usecase.AgentConfigResolver
@@ -32,12 +34,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -309,6 +313,7 @@ class ChatViewModelTest {
 
     private var fakeStreamChunks: List<StreamChunk> = emptyList()
     private var protocolRequestCount = 0
+    private var lastPromptRequest: PromptRequest? = null
     private var holdStreamOpen = false
     private var providerCancelled = false
     private var forcedProviderFailure: ProviderResolution.Failure? = null
@@ -317,6 +322,7 @@ class ChatViewModelTest {
         override val protocolType = ProtocolType.OpenAI_ChatCompletions
         override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> {
             protocolRequestCount += 1
+            lastPromptRequest = request
             return flow {
                 for (chunk in fakeStreamChunks) {
                     emit(chunk)
@@ -387,6 +393,7 @@ class ChatViewModelTest {
         failSessionUpdate = null
         afterInsert = { _, _ -> }
         protocolRequestCount = 0
+        lastPromptRequest = null
         holdStreamOpen = false
         providerCancelled = false
         foregroundTrackedTasks.clear()
@@ -452,6 +459,7 @@ class ChatViewModelTest {
             presentationStore = presentationStore,
         )
 
+        val documentReader = io.mockk.mockk<FullContextDocumentReader>()
         viewModel = ChatViewModel(
             application = app,
             sessionRepository = stubSessionRepo,
@@ -462,6 +470,7 @@ class ChatViewModelTest {
             providerResolutionDispatcher = testDispatcher,
             localLlmProviderFactory = { fakeLlmProvider },
             configResolver = configResolver,
+            fullContextDocumentReader = documentReader,
             generationCoordinatorOverride = generationCoordinator,
             generationPresentationStoreOverride = presentationStore,
             generationForegroundControllerOverride =
@@ -483,11 +492,26 @@ class ChatViewModelTest {
                         NOTIFICATIONS_UNAVAILABLE_MESSAGE
                     com.promenar.nexara.R.string.generation_background_service_stopped ->
                         BACKGROUND_SERVICE_STOPPED_MESSAGE
+                    com.promenar.nexara.R.string.chat_document_error_unsupported -> "unsupported document"
+                    com.promenar.nexara.R.string.chat_document_error_empty -> "empty document"
+                    com.promenar.nexara.R.string.chat_document_error_too_large -> "document too large"
+                    com.promenar.nexara.R.string.chat_document_error_binary -> "binary document"
+                    com.promenar.nexara.R.string.chat_document_error_encoding -> "invalid encoding"
+                    com.promenar.nexara.R.string.chat_document_error_read -> "document read failed"
+                    com.promenar.nexara.R.string.chat_document_import_in_progress ->
+                        "document import in progress"
+                    com.promenar.nexara.R.string.chat_document_error_unknown_capacity -> "unknown capacity"
+                    com.promenar.nexara.R.string.chat_document_error_invalid_estimate -> "invalid estimate"
+                    com.promenar.nexara.R.string.chat_document_error_over_capacity ->
+                        "requires %1\$d tokens, %2\$d available"
                     else -> error("unexpected string resource: $resourceId")
                 }
             },
         )
+        this.documentReader = documentReader
     }
+
+    private lateinit var documentReader: FullContextDocumentReader
 
     @After
     fun tearDown() {
@@ -607,6 +631,136 @@ class ChatViewModelTest {
         assertThat(savedMessages[0].first.role).isEqualTo(MessageRole.USER)
         assertThat(savedMessages[0].second).isEqualTo("s1")
         
+    }
+
+    @Test
+    fun `完整文档随用户消息持久化并进入最终协议正文`() = runTest {
+        val document = MessageDocumentAttachment(
+            id = "doc-1",
+            name = "history.md",
+            mimeType = "text/markdown",
+            content = "# 历史\n完整正文",
+            sizeBytes = 20,
+            sha256 = "hash",
+            estimatedTokens = 5,
+        )
+        io.mockk.coEvery { documentReader.read(any()) } returns DocumentReadResult.Success(document)
+        ApplicationProvider.getApplicationContext<TestNexaraApplication>()
+            .getSharedPreferences("nexara_settings", 0)
+            .edit()
+            .putInt("model_info_gpt-4o_context", 128_000)
+            .commit()
+        seedSession()
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.Done)
+
+        viewModel.importFullContextDocument(android.net.Uri.parse("content://test/history"))
+        advanceUntilIdle()
+        viewModel.sendMessage("继续分析")
+        advanceUntilIdle()
+
+        assertThat(savedMessages.first().first.userDocuments).containsExactly(document)
+        val userProtocol = lastPromptRequest!!.messages.last { it.role == "user" }
+        assertThat(userProtocol.content).contains("继续分析")
+        assertThat(userProtocol.content).contains(document.content)
+        assertThat(viewModel.draftDocuments.value).isEmpty()
+        assertThat(viewModel.draftConsumptionEpoch.value).isEqualTo(1L)
+    }
+
+    @Test
+    fun `多文档按选择顺序读取且全部结束前保持导入状态`() = runTest {
+        val firstUri = android.net.Uri.parse("content://test/first")
+        val secondUri = android.net.Uri.parse("content://test/second")
+        val firstGate = CompletableDeferred<Unit>()
+        val secondGate = CompletableDeferred<Unit>()
+        val first = MessageDocumentAttachment(
+            "first", "first.txt", "text/plain", "one", 3L, "hash-1", 1,
+        )
+        val second = MessageDocumentAttachment(
+            "second", "second.md", "text/markdown", "two", 3L, "hash-2", 1,
+        )
+        io.mockk.coEvery { documentReader.read(firstUri) } coAnswers {
+            firstGate.await()
+            DocumentReadResult.Success(first)
+        }
+        io.mockk.coEvery { documentReader.read(secondUri) } coAnswers {
+            secondGate.await()
+            DocumentReadResult.Success(second)
+        }
+
+        viewModel.importFullContextDocuments(listOf(firstUri, secondUri))
+        runCurrent()
+        assertThat(viewModel.isImportingDocument.value).isTrue()
+
+        firstGate.complete(Unit)
+        runCurrent()
+        assertThat(viewModel.isImportingDocument.value).isTrue()
+
+        secondGate.complete(Unit)
+        advanceUntilIdle()
+        assertThat(viewModel.isImportingDocument.value).isFalse()
+        assertThat(viewModel.draftDocuments.value).containsExactly(first, second).inOrder()
+    }
+
+    @Test
+    fun `文档读取期间发送被阻止且不持久化消息`() = runTest {
+        val uri = android.net.Uri.parse("content://test/pending")
+        val gate = CompletableDeferred<Unit>()
+        io.mockk.coEvery { documentReader.read(uri) } coAnswers {
+            gate.await()
+            DocumentReadResult.Rejected(
+                com.promenar.nexara.data.document.DocumentReadRejectReason.ReadFailed,
+            )
+        }
+        seedSession()
+        advanceUntilIdle()
+
+        viewModel.importFullContextDocuments(listOf(uri))
+        runCurrent()
+        viewModel.sendMessage("不能抢跑")
+        runCurrent()
+
+        assertThat(savedMessages).isEmpty()
+        assertThat(protocolRequestCount).isEqualTo(0)
+        assertThat(viewModel.uiState.value.error).isEqualTo("document import in progress")
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `完整文档超预算时不持久化且不调用Provider`() = runTest {
+        val document = MessageDocumentAttachment(
+            id = "doc-large",
+            name = "large.txt",
+            mimeType = "text/plain",
+            content = "中".repeat(200_000),
+            sizeBytes = 600_000,
+            sha256 = "large-hash",
+            estimatedTokens = 200_000,
+        )
+        io.mockk.coEvery { documentReader.read(any()) } returns DocumentReadResult.Success(document)
+        ApplicationProvider.getApplicationContext<TestNexaraApplication>()
+            .getSharedPreferences("nexara_settings", 0)
+            .edit()
+            .putInt("model_info_gpt-4o_context", 128_000)
+            .commit()
+        seedSession()
+        advanceUntilIdle()
+
+        viewModel.importFullContextDocument(android.net.Uri.parse("content://test/large"))
+        advanceUntilIdle()
+        viewModel.sendMessage("请分析")
+        advanceUntilIdle()
+
+        assertThat(savedMessages).isEmpty()
+        assertThat(protocolRequestCount).isEqualTo(0)
+        assertThat(viewModel.uiState.value.generationNotice?.code)
+            .isEqualTo("generation.failure.context_limit")
+        assertThat(viewModel.draftDocuments.value).containsExactly(document)
+        assertThat(viewModel.draftConsumptionEpoch.value).isEqualTo(0L)
+
+        viewModel.clearError()
+        assertThat(viewModel.uiState.value.status).isEqualTo(GenerationStatus.IDLE)
     }
 
     @Test
@@ -1102,8 +1256,76 @@ class ChatViewModelTest {
         val messages = viewModel.uiState.value.messages
         val assistantMessages = messages.filter { it.role == MessageRole.ASSISTANT }
         assertThat(assistantMessages.any { it.content == "retry response" }).isTrue()
+        assertThat(savedMessages.count { it.first.role == MessageRole.USER }).isEqualTo(1)
+        assertThat(savedMessages.count { it.first.role == MessageRole.ASSISTANT }).isEqualTo(1)
         assertThat(foregroundTrackedTasks).hasSize(2)
         
+    }
+
+    @Test
+    fun `重试遇到全局Busy时恢复旧回复且不留下新占位`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession("retry-target")
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("existing reply"), StreamChunk.Done)
+        viewModel.sendMessage("hello")
+        advanceUntilIdle()
+
+        seedSession("active")
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("active partial"))
+        holdStreamOpen = true
+        viewModel.sendMessage("keep running")
+        advanceUntilIdle()
+
+        viewModel.loadSession("retry-target")
+        advanceUntilIdle()
+        val requestsBeforeRetry = protocolRequestCount
+        viewModel.retryLastMessage()
+        advanceUntilIdle()
+
+        val retryMessages = savedMessages
+            .filter { it.second == "retry-target" }
+            .map { it.first }
+        assertThat(protocolRequestCount).isEqualTo(requestsBeforeRetry)
+        assertThat(retryMessages.map { it.content })
+            .containsExactly("hello", "existing reply")
+            .inOrder()
+        assertThat(retryMessages.count { it.role == MessageRole.ASSISTANT }).isEqualTo(1)
+        assertThat(viewModel.uiState.value.generationNotice?.code)
+            .isEqualTo("generation.failure.busy")
+
+        viewModel.loadSession("active")
+        advanceUntilIdle()
+        viewModel.stopGeneration()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `重试启动后路由失败仍保留旧回复并清理新占位`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession("retry-route")
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("existing reply"), StreamChunk.Done)
+        viewModel.sendMessage("hello")
+        advanceUntilIdle()
+
+        forcedProviderFailure = ProviderResolution.Failure(
+            ProviderResolutionError.PROVIDER_DISABLED,
+            "gpt-4o",
+        )
+        viewModel.retryLastMessage()
+        advanceUntilIdle()
+
+        val retryMessages = savedMessages
+            .filter { it.second == "retry-route" }
+            .map { it.first }
+        assertThat(retryMessages.map { it.content })
+            .containsExactly("hello", "existing reply")
+            .inOrder()
+        assertThat(retryMessages.count { it.role == MessageRole.ASSISTANT }).isEqualTo(1)
+        assertThat(viewModel.uiState.value.generationNotice?.code)
+            .isEqualTo("generation.failure.invalid_request")
     }
 
     @Test
@@ -1138,7 +1360,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun retryDeletionFailureDoesNotStartAnotherProtocolRequest() = runTest {
+    fun `重试成功后删除旧回复失败时旧回复仍保留`() = runTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession(); advanceUntilIdle()
         fakeStreamChunks = listOf(StreamChunk.TextDelta("first response"), StreamChunk.Done)
@@ -1148,8 +1370,7 @@ class ChatViewModelTest {
 
         viewModel.retryLastMessage(); advanceUntilIdle()
 
-        assertThat(protocolRequestCount).isEqualTo(requestsBeforeRetry)
-        assertThat(viewModel.uiState.value.error).contains("取消重试")
+        assertThat(protocolRequestCount).isEqualTo(requestsBeforeRetry + 1)
         assertThat(viewModel.uiState.value.messages.any { it.content == "first response" }).isTrue()
     }
 

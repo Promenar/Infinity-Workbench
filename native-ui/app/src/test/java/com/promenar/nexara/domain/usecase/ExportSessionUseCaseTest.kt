@@ -1,6 +1,7 @@
 package com.promenar.nexara.domain.usecase
 
 import com.promenar.nexara.domain.model.Message
+import com.promenar.nexara.domain.model.MessageDocumentAttachment
 import com.promenar.nexara.domain.model.MessageRole
 import com.promenar.nexara.domain.model.Session
 import com.promenar.nexara.domain.repository.IMessageRepository
@@ -196,5 +197,39 @@ class ExportSessionUseCaseTest {
         val result = useCase.export("sess_1", ExportSessionUseCase.Format.MARKDOWN)
 
         assertTrue(result.content.contains("> Line 1\n> Line 2\n> Line 3"))
+    }
+
+    @Test
+    fun `export preserves full document context and per-message metadata`() = runTest {
+        val messages = listOf(
+            Message(
+                id = "msg-doc",
+                sessionId = "sess_1",
+                role = MessageRole.USER,
+                content = "请根据附件继续",
+                modelId = "gemini-3.5-flash",
+                documents = listOf(
+                    MessageDocumentAttachment(
+                        name = "history.md",
+                        mimeType = "text/markdown",
+                        content = "# 历史会话\n\n完整正文",
+                    ),
+                ),
+                timestamp = 1700000003000L,
+            ),
+        )
+        coEvery { sessionRepository.observeById("sess_1") } returns flowOf(testSession)
+        coEvery { messageRepository.observeBySession("sess_1") } returns flowOf(messages)
+
+        val text = useCase.export("sess_1", ExportSessionUseCase.Format.TXT).content
+        val markdown = useCase.export("sess_1", ExportSessionUseCase.Format.MARKDOWN).content
+
+        listOf(text, markdown).forEach { exported ->
+            assertTrue(exported.contains("history.md"))
+            assertTrue(exported.contains("text/markdown"))
+            assertTrue(exported.contains("# 历史会话\n\n完整正文"))
+            assertTrue(exported.contains("gemini-3.5-flash"))
+            assertTrue(exported.contains("2023"))
+        }
     }
 }

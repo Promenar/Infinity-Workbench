@@ -34,6 +34,7 @@ class BackupPreferenceInventoryTest {
                 "generation_notification_permission",
             "ui/chat/ChatViewModel.kt#prefs" to "nexara_settings",
             "data/generation/DefaultChatGenerationRuntime.kt#settings" to "nexara_settings",
+            "data/generation/PreparedPromptBudgetGate.kt#settings" to "nexara_settings",
             "data/generation/ChatGenerationContentStrategy.kt#settings" to "nexara_settings",
             "onboarding/OnboardingStateStore.kt#preferences" to "nexara_onboarding",
             "MainActivity.kt#prefs" to "nexara_prefs",
