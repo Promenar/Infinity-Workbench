@@ -666,7 +666,7 @@
 
   Inspect 100+ model list, long names, unknown capability, 2.0x and light/dark actual.
 
-- [ ] **Step 5：提交和推送**
+- [x] **Step 5：提交和推送**
 
   ```bash
   git add native-ui/app/src/main/java/com/promenar/nexara/ui/common/ModelSelectionListItem.kt \
