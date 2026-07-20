@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 总收敛：自适应标准导航（2026-07-20）
+
+- **手机浮动导航坞**：底部三个目的地改为单层 tonal `Surface` 内的标准 `NavigationBarItem`，保留克制外边距和系统导航栏 Insets；移除自绘 glow、阴影、无涟漪缩放反馈及固定 10sp 标签。
+- **大屏标准 Rail**：600dp 及以上继续使用 `NavigationRailItem`，深浅主题统一消费 Material `colorScheme`；三项均提供 Tab 角色、选中态与至少 48dp 目标。
+- **内容避让与视觉门禁**：API 36 实际滚动 50 项列表到末项，末项底边保持在导航坞之上；手机/平板深浅色四张 actual 已逐张检查，未发现裁切、低对比或 iOS 化结构。
+- **阶段边界**：本轮只收敛主导航及其自适应行为；附件动作簇、业务搜索和设置树继续按后续任务迁移，发行保持 NO-GO。
+
 ### Material 3 总收敛：管理页面共享原语（2026-07-20）
 
 - **连续设置分组**：新增 `NexaraSettingsSection`，以透明连续列表、Material 语义分组标题和从正文起点对齐的分隔线替代玻璃卡/逐项 Surface 组合；既有分组标题移除 10sp、指定字体和静态颜色。

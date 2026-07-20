@@ -30,6 +30,7 @@ graph TD
 - **NexaraApplication**: 全局上下文管理与服务初始化（嵌入/重排/图像生成客户端均在此懒加载）；`onCreate()` 自动创建 `WorkSpace` 物理目录；同时持有唯一 Application 级 `ThemePreferenceStore`。
 - **ThemePreferenceStore / NexaraTheme**: `ThemePreferenceStore` 是 `theme_mode` 与 `theme_color_source` 的唯一可变事实源，监听备份恢复产生的偏好变化并通过 `StateFlow` 发布；`MainActivity` 按生命周期收集后交给根 `NexaraTheme`，统一解析系统明暗、Nexara 双配色、Android 12+ 动态色及系统栏图标外观。
 - **NexaraPageLayout / NexaraSettingsSection / NexaraSearchTopBar**: 管理页面共享 Material 3 骨架。页面根统一持有 system bars 与可选 IME insets；设置区使用透明连续列表和正文对齐分隔线；搜索由调用方持有 query/active 状态，Top App Bar 只负责焦点、IME、清除、返回优先级和 reduced-motion 兼容过渡。
+- **MainTabScaffold / AdaptiveNavigationSurface**: 主导航按 600dp 断点切换手机 `Surface + NavigationBar + NavigationBarItem` 浮动坞与大屏 `NavigationRail`；Scaffold 内边距保证业务内容和滚动末项不进入手机导航区域，导航颜色、选中指示和标签均由 MaterialTheme 提供。
 - **NavGraph**: 基于 Compose Navigation 的路由中心（27 条路由）。
 - **Domain 层**: `domain/model/`（6 文件）+ `domain/repository/`（9 接口）+ `domain/usecase/`（6 UseCase），零 Android 依赖。
 - **Repository 层**: 9 个数据仓库实现（Agent/Document/Folder/KG/Message/Provider/Session/TokenStats/Vector），覆盖率 100%。

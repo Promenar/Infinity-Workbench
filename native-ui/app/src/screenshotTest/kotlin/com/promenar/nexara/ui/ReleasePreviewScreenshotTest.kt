@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateListOf
@@ -117,6 +118,9 @@ import com.promenar.nexara.ui.settings.ProviderFormActions
 import com.promenar.nexara.ui.settings.ProviderFormContent
 import com.promenar.nexara.ui.settings.ProviderFormUiState
 import com.promenar.nexara.ui.theme.NexaraColors
+import com.promenar.nexara.ui.theme.NexaraColorSource
+import com.promenar.nexara.ui.theme.NexaraThemeMode
+import com.promenar.nexara.ui.theme.NexaraThemePreferences
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.welcome.WelcomeScreen
@@ -207,6 +211,87 @@ private val PREVIEW_MEMORY_VECTORS = listOf(
         createdAt = 1_724_900_000_000,
     ),
 )
+
+@PreviewTest
+@Preview(
+    name = "Main navigation phone dark",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun mainNavigationPhoneDarkReleasePreview() {
+    NavigationReleasePreview(expanded = false, dark = true)
+}
+
+@PreviewTest
+@Preview(
+    name = "Main navigation phone light",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_NO,
+)
+@Composable
+fun mainNavigationPhoneLightReleasePreview() {
+    NavigationReleasePreview(expanded = false, dark = false)
+}
+
+@PreviewTest
+@Preview(
+    name = "Main navigation tablet dark",
+    widthDp = 840,
+    heightDp = 900,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun mainNavigationTabletDarkReleasePreview() {
+    NavigationReleasePreview(expanded = true, dark = true)
+}
+
+@PreviewTest
+@Preview(
+    name = "Main navigation tablet light",
+    widthDp = 840,
+    heightDp = 900,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_NO,
+)
+@Composable
+fun mainNavigationTabletLightReleasePreview() {
+    NavigationReleasePreview(expanded = true, dark = false)
+}
+
+@Composable
+private fun NavigationReleasePreview(expanded: Boolean, dark: Boolean) {
+    NexaraTheme(
+        preferences = NexaraThemePreferences(
+            mode = if (dark) NexaraThemeMode.DARK else NexaraThemeMode.LIGHT,
+            colorSource = NexaraColorSource.NEXARA,
+        ),
+    ) {
+        AdaptiveNavigationSurface(
+            expanded = expanded,
+            selectedTab = AppTab.LIBRARY,
+            onTabSelected = {},
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Nexara workspace",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+        }
+    }
+}
 
 @PreviewTest
 @Preview(

@@ -396,7 +396,7 @@
 - Consumes: `AppTab`, `shouldUseNavigationRail(width)` and Material theme.
 - Produces: phone `Surface + NavigationBar + NavigationBarItem`; existing `NavigationRail` remains for `>= 600dp`.
 
-- [ ] **Step 1：写导航 RED**
+- [x] **Step 1：写导航 RED**
 
   Add assertions for three semantic tabs, selected state, minimum targets, phone navigation tag, tablet rail, and content bottom clearance. Add dark/light screenshot previews.
 
@@ -407,11 +407,11 @@
 
   Expected: test sources compile, then screenshot validation is RED because the new dark/light navigation goldens do not exist or differ from the current custom Row.
 
-- [ ] **Step 2：替换自绘 Row**
+- [x] **Step 2：替换自绘 Row**
 
   Remove `drawBehind`, `setShadowLayer`, glow and custom scale-only feedback. Wrap transparent `NavigationBar` in one tonal `Surface`, and render each destination with `NavigationBarItem`.
 
-- [ ] **Step 3：验证 phone/rail 和系统手势区**
+- [x] **Step 3：验证 phone/rail 和系统手势区**
 
   ```bash
   ./gradlew :app:compileDebugAndroidTestKotlin
@@ -421,11 +421,11 @@
 
   Expected: compact width shows exactly one navigation bar; expanded width shows exactly one rail; content remains reachable above gesture navigation.
 
-- [ ] **Step 4：逐张审阅截图后更新基线**
+- [x] **Step 4：逐张审阅截图后更新基线**
 
   Run `:app:updateDebugScreenshotTest`, inspect dark/light phone and tablet actual, then run `:app:validateDebugScreenshotTest`. Do not bulk accept without visual review.
 
-- [ ] **Step 5：提交和推送**
+- [x] **Step 5：提交和推送**
 
   ```bash
   git add native-ui/app/src/main/java/com/promenar/nexara/ui/MainTabScaffold.kt \
