@@ -37,8 +37,8 @@ class ChatProviderSwitchSurfaceTest {
         rule.onNodeWithTag(UiTags.CHAT_MODEL_LIST).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.chatModelOption(first.id)).assertIsSelected()
         rule.onNodeWithTag(UiTags.chatModelOption(second.id)).assertIsNotSelected()
-        rule.onNodeWithText("Provider A • 8K Context").assertIsDisplayed()
-        rule.onNodeWithText("Provider B • 8K Context").assertIsDisplayed()
+        rule.onNodeWithText("Provider A · 8K context").assertIsDisplayed()
+        rule.onNodeWithText("Provider B · 8K context").assertIsDisplayed()
         rule.onNodeWithTag(UiTags.chatModelOption(second.id)).performClick()
         rule.runOnIdle { assertThat(selected).isEqualTo(second.id) }
     }

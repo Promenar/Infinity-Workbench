@@ -6,6 +6,7 @@
     <string name="common_model_picker_search">Search models…</string>
     <string name="common_model_picker_empty">No models available</string>
     <string name="common_model_picker_k_context">K context</string>
+    <string name="common_model_picker_m_context">M context</string>
     <string name="common_model_picker_selected">Selected</string>
 
     <!-- FloatingTextEditor -->

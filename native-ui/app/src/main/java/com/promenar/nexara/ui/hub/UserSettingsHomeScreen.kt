@@ -97,8 +97,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.ModelItem
-import com.promenar.nexara.ui.common.ModelCapability
+import com.promenar.nexara.ui.common.toModelSelectionUiModel
+import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
 import com.promenar.nexara.ui.common.ModelPicker
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSettingsItem
@@ -254,25 +254,12 @@ fun UserSettingsHomeScreen(
 
     UserSettingsHomeScreenContent(state = state, actions = actions)
 
+    val resolver = remember { ModelMetadataResolver() }
     val modelItems by remember {
         derivedStateOf {
             allModels
                 .filter { it.enabled }
-                .map { model ->
-                    ModelItem(
-                        id = model.id,
-                        name = model.name.ifEmpty { model.id },
-                        providerName = model.providerName,
-                        capabilities = model.capabilities.mapNotNull { cap ->
-                            try {
-                                ModelCapability.valueOf(cap.uppercase())
-                            } catch (_: Exception) {
-                                null
-                            }
-                        },
-                        contextLength = model.contextLength
-                    )
-                }
+                .map { model -> model.toModelSelectionUiModel(resolver) }
         }
     }
 

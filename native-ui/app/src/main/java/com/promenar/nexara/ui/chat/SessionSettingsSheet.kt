@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,10 +26,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.Storage
-import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.School
@@ -48,6 +45,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.MaterialTheme
+import com.promenar.nexara.ui.common.ModelSelectionUiModel
+import com.promenar.nexara.ui.common.toModelSelectionUiModel
+import com.promenar.nexara.ui.common.ModelSelectionListItem
+import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -71,8 +74,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -120,15 +121,6 @@ private fun thinkingLevelDesc(id: String): String = when (id) {
     else -> ""
 }
 
-private val capabilityColorMap: Map<ModelCapability, Pair<Color, Color>> = mapOf(
-    ModelCapability.REASONING to (Color(0xFFA78BFA) to Color(0xFF1E1B4B)),
-    ModelCapability.VISION to (Color(0xFFF472B6) to Color(0xFF4A1942)),
-    ModelCapability.INTERNET to (Color(0xFF38BDF8) to Color(0xFF0C2D48)),
-    ModelCapability.CHAT to (Color(0xFF34D399) to Color(0xFF022C22)),
-    ModelCapability.RERANK to (Color(0xFFFB923C) to Color(0xFF431407)),
-    ModelCapability.EMBEDDING to (Color(0xFF22D3EE) to Color(0xFF083344)),
-    ModelCapability.IMAGE to (Color(0xFFFCD34D) to Color(0xFF451A03))
-)
 
 internal fun filterLocalInferenceModels(
     models: List<ModelInfo>,
@@ -279,7 +271,6 @@ fun SessionSettingsSheet(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ModelPanel(
     selectedModelId: String,
@@ -287,35 +278,15 @@ internal fun ModelPanel(
     allModels: List<ModelInfo>,
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    val resolver = remember { ModelMetadataResolver() }
 
-    val modelItems = allModels.filter { 
-        it.enabled && (it.type in listOf("chat", "reasoning", "image") || it.capabilities.any { cap -> cap.lowercase() in listOf("chat", "reasoning", "vision") })
-    }.map { info ->
-        val mappedCaps = mutableSetOf<ModelCapability>()
-        when (info.type) {
-            "chat" -> mappedCaps.add(ModelCapability.CHAT)
-            "reasoning" -> mappedCaps.add(ModelCapability.REASONING)
-            "image" -> mappedCaps.add(ModelCapability.IMAGE)
-        }
-        info.capabilities.forEach { capStr ->
-            when (capStr.lowercase()) {
-                "vision" -> mappedCaps.add(ModelCapability.VISION)
-                "internet", "web" -> mappedCaps.add(ModelCapability.INTERNET)
-                "reasoning" -> mappedCaps.add(ModelCapability.REASONING)
-                "image" -> mappedCaps.add(ModelCapability.IMAGE)
-                "embedding" -> mappedCaps.add(ModelCapability.EMBEDDING)
-                "rerank" -> mappedCaps.add(ModelCapability.RERANK)
-                "chat" -> mappedCaps.add(ModelCapability.CHAT)
-            }
-        }
-        if (mappedCaps.isEmpty()) mappedCaps.add(ModelCapability.CHAT)
-
-        ModelItem(
-            id = info.id,
-            name = info.name,
-            providerName = info.providerName,
-            capabilities = mappedCaps.toList(),
-            contextLength = info.contextLength
+    val projectedModels = remember(allModels) {
+        allModels.filter { it.enabled }.map { it.toModelSelectionUiModel(resolver) }
+    }
+    val modelItems = remember(projectedModels, selectedModelId) {
+        filterSessionSelectionModels(
+            models = projectedModels,
+            selectedModelId = selectedModelId,
         )
     }
 
@@ -333,97 +304,45 @@ internal fun ModelPanel(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        val filtered = if (searchQuery.isBlank()) modelItems else modelItems.filter {
-            it.name.contains(searchQuery, true)
+        val filtered = remember(searchQuery, modelItems) {
+            if (searchQuery.isBlank()) modelItems else modelItems.filter {
+                it.displayName.contains(searchQuery, true)
+            }
         }
 
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .testTag(UiTags.CHAT_MODEL_LIST)
         ) {
-            items(filtered) { model ->
-                val isSelected = model.id == selectedModelId
-                NexaraGlassCard(
+            itemsIndexed(filtered, key = { _, it -> it.selectionId }) { index, model ->
+                val isSelected = model.selectionId == selectedModelId
+                ModelSelectionListItem(
+                    model = model,
+                    selected = isSelected,
+                    onClick = { onSelect(model.selectionId) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag(UiTags.chatModelOption(model.id))
-                        .semantics { selected = isSelected }
-                        .then(
-                            if (isSelected) Modifier.border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                            else Modifier
-                        )
-                        .clickable { onSelect(model.id) },
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (isSelected) NexaraColors.Primary.copy(alpha = 0.1f)
-                                    else NexaraColors.SurfaceHigh
-                                )
-                                .then(
-                                    if (isSelected) Modifier.border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.2f), CircleShape)
-                                    else Modifier
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Rounded.Memory, null, tint = NexaraColors.Primary, modifier = Modifier.size(16.dp))
-                        }
+                        .testTag(UiTags.chatModelOption(model.selectionId))
+                )
 
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(model.name, style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold), color = NexaraColors.OnSurface)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Storage, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(10.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    "${model.providerName} • ${(model.contextLength ?: 0) / 1000}K Context",
-                                    style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                                    color = NexaraColors.OnSurfaceVariant
-                                )
-                            }
-                            if (model.capabilities.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                    model.capabilities.forEach { cap ->
-                                        val colors = capabilityColorMap[cap] ?: (Color.Gray to Color.DarkGray)
-                                        val (fg, bg) = colors
-                                        Box(
-                                            modifier = Modifier
-                                                .background(bg, RoundedCornerShape(50))
-                                                .border(0.5.dp, fg.copy(alpha = 0.3f), RoundedCornerShape(50))
-                                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                                        ) {
-                                            Text(
-                                                cap.name.lowercase().replaceFirstChar { it.uppercase() },
-                                                style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                                color = fg
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (isSelected) {
-                            Icon(Icons.Rounded.Check, null, tint = NexaraColors.Primary, modifier = Modifier.size(20.dp))
-                        }
-                    }
+                if (index < filtered.lastIndex) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
                 }
             }
         }
     }
+}
+
+internal fun filterSessionSelectionModels(
+    models: List<ModelSelectionUiModel>,
+    selectedModelId: String,
+): List<ModelSelectionUiModel> = models.filter { model ->
+    model.selectionId == selectedModelId ||
+        model.isChatSelectionCandidate()
 }
 
 @Composable

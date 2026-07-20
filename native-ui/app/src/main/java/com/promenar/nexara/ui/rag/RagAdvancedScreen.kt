@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.rag.RagConfiguration
+import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraColors
@@ -296,18 +297,9 @@ fun RagAdvancedScreen(
         }
     }
 
+    val resolver = remember { ModelMetadataResolver() }
     val modelItems = remember(allModels) {
-        allModels.map { info ->
-            ModelItem(
-                id = info.id,
-                name = info.name,
-                providerName = info.providerName,
-                capabilities = info.capabilities.mapNotNull { capStr ->
-                    try { ModelCapability.valueOf(capStr.uppercase()) } catch (_: Exception) { null }
-                },
-                contextLength = info.contextLength
-            )
-        }
+        allModels.map { it.toModelSelectionUiModel(resolver) }
     }
 
     ModelPicker(

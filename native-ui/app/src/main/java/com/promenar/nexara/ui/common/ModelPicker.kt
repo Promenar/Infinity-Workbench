@@ -1,32 +1,21 @@
 package com.promenar.nexara.ui.common
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DeveloperBoard
-import androidx.compose.material.icons.rounded.Memory
-import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -38,54 +27,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.data.model.catalog.ModelCapability
+import com.promenar.nexara.data.model.catalog.ModelWorkload
+import com.promenar.nexara.data.model.catalog.SupportState
 import kotlinx.coroutines.delay
 
-enum class ModelCapability {
-    REASONING, VISION, INTERNET, RERANK, EMBEDDING, CHAT, IMAGE,
-    AUDIOINPUT, AUDIOOUTPUT, VIDEOUNDERSTANDING, STRUCTUREDOUTPUT, PROMPTCACHING, COMPUTERUSE
-}
-
-data class ModelItem(
-    val id: String,
-    val name: String,
-    val providerName: String,
-    val capabilities: List<ModelCapability>,
-    val contextLength: Int? = null
-)
-
-private val capabilityColors: Map<ModelCapability, Pair<Color, Color>> = mapOf(
-    ModelCapability.REASONING to (Color(0xFFA78BFA) to Color(0xFF1E1B4B)),
-    ModelCapability.VISION to (Color(0xFFF472B6) to Color(0xFF4A1942)),
-    ModelCapability.INTERNET to (Color(0xFF38BDF8) to Color(0xFF0C2D48)),
-    ModelCapability.RERANK to (Color(0xFFFB923C) to Color(0xFF431407)),
-    ModelCapability.EMBEDDING to (Color(0xFF22D3EE) to Color(0xFF083344)),
-    ModelCapability.CHAT to (Color(0xFF34D399) to Color(0xFF022C22)),
-    ModelCapability.IMAGE to (Color(0xFFFCD34D) to Color(0xFF451A03)),
-    ModelCapability.AUDIOINPUT to (Color(0xFF38BDF8) to Color(0xFF0C2D48)),
-    ModelCapability.AUDIOOUTPUT to (Color(0xFF818CF8) to Color(0xFF1E1B4B)),
-    ModelCapability.VIDEOUNDERSTANDING to (Color(0xFFFB7185) to Color(0xFF4A0514)),
-    ModelCapability.STRUCTUREDOUTPUT to (Color(0xFF34D399) to Color(0xFF022C22)),
-    ModelCapability.PROMPTCACHING to (Color(0xFFA3E635) to Color(0xFF1A2E05)),
-    ModelCapability.COMPUTERUSE to (Color(0xFFFBBF24) to Color(0xFF451A03))
-)
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModelPicker(
     show: Boolean,
     onDismiss: () -> Unit,
     onSelect: (modelId: String, modelName: String) -> Unit,
     currentModelId: String = "",
-    models: List<ModelItem> = emptyList(),
+    models: List<ModelSelectionUiModel> = emptyList(),
     title: String? = null,
     filterTag: String? = null
 ) {
@@ -101,185 +58,123 @@ fun ModelPicker(
 
     val filteredModels = remember(debouncedQuery, models, filterTag) {
         val baseList = if (filterTag == null) models
-        else models.filter { item ->
-            when (filterTag) {
-                "chat" -> item.capabilities.contains(ModelCapability.CHAT) || item.capabilities.contains(ModelCapability.REASONING)
-                "multimodal" -> item.capabilities.contains(ModelCapability.CHAT) || item.capabilities.contains(ModelCapability.REASONING) || item.capabilities.contains(ModelCapability.VISION)
-                "reasoning" -> item.capabilities.contains(ModelCapability.REASONING)
-                "image" -> item.capabilities.contains(ModelCapability.IMAGE)
-                "embedding" -> item.capabilities.contains(ModelCapability.EMBEDDING)
-                "rerank" -> item.capabilities.contains(ModelCapability.RERANK)
-                "audio" -> item.capabilities.contains(ModelCapability.AUDIOINPUT) || item.capabilities.contains(ModelCapability.AUDIOOUTPUT)
-                "video" -> item.capabilities.contains(ModelCapability.VIDEOUNDERSTANDING)
-                "vision" -> item.capabilities.contains(ModelCapability.VISION)
-                else -> true
-            }
-        }
+        else models.filter { item -> item.matchesModelPickerFilter(filterTag) }
 
         if (debouncedQuery.isBlank()) baseList
         else baseList.filter {
-            it.name.contains(debouncedQuery, ignoreCase = true) ||
+            it.displayName.contains(debouncedQuery, ignoreCase = true) ||
                     it.providerName.contains(debouncedQuery, ignoreCase = true)
         }
     }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = NexaraColors.SurfaceContainer,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
-        Column(
+        ModelPickerSheetContent(
+            title = title ?: stringResource(R.string.common_model_picker_title),
+            searchQuery = searchQuery,
+            onSearchQueryChange = { searchQuery = it },
+            models = filteredModels,
+            currentModelId = currentModelId,
+            onSelect = onSelect,
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.7f)
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp)
-        ) {
-            Text(
-                text = title ?: stringResource(R.string.common_model_picker_title),
-                style = NexaraTypography.headlineMedium,
-                color = NexaraColors.OnSurface
-            )
+                .fillMaxHeight(0.9f),
+        )
+    }
+}
 
-            Spacer(modifier = Modifier.height(16.dp))
+@Composable
+internal fun ModelPickerSheetContent(
+    title: String,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    models: List<ModelSelectionUiModel>,
+    currentModelId: String,
+    onSelect: (modelId: String, modelName: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 32.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
 
-            NexaraSearchBar(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = stringResource(R.string.common_model_picker_search)
-            )
+        Spacer(modifier = Modifier.height(16.dp))
 
-            Spacer(modifier = Modifier.height(12.dp))
+        NexaraSearchBar(
+            value = searchQuery,
+            onValueChange = onSearchQueryChange,
+            placeholder = stringResource(R.string.common_model_picker_search),
+        )
 
-            if (filteredModels.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Rounded.DeveloperBoard,
-                            contentDescription = null,
-                            tint = NexaraColors.Outline,
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = stringResource(R.string.common_model_picker_empty),
-                            style = NexaraTypography.bodyMedium,
-                            color = NexaraColors.OnSurfaceVariant
-                        )
-                    }
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (models.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Rounded.DeveloperBoard,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(48.dp),
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = stringResource(R.string.common_model_picker_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(filteredModels, key = { it.id }) { model ->
-                        val isSelected = model.id == currentModelId
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                itemsIndexed(models, key = { _, model -> model.selectionId }) { index, model ->
+                    val isSelected = model.selectionId == currentModelId
 
-                        NexaraGlassCard(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelect(model.id, model.name) },
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Memory,
-                                    contentDescription = null,
-                                    tint = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(16.dp)
-                                )
+                    ModelSelectionListItem(
+                        model = model,
+                        selected = isSelected,
+                        onClick = { onSelect(model.selectionId, model.displayName) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
 
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = model.name,
-                                        style = NexaraTypography.bodyMedium.copy(
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                        ),
-                                        color = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurface
-                                    )
-
-                                    Spacer(modifier = Modifier.height(2.dp))
-
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Storage,
-                                            contentDescription = null,
-                                            tint = NexaraColors.OnSurfaceVariant,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = model.providerName,
-                                            style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                                            color = NexaraColors.OnSurfaceVariant
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(6.dp))
-
-                                    FlowRow(
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        model.capabilities.forEach { cap ->
-                                            val (textCol, bgCol) = capabilityColors[cap] ?: (Color.Gray to Color.DarkGray)
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(4.dp))
-                                                    .background(bgCol)
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                            ) {
-                                                Text(
-                                                    text = cap.name,
-                                                    style = NexaraTypography.labelMedium.copy(fontSize = 9.sp),
-                                                    color = textCol
-                                                )
-                                            }
-                                        }
-                                        
-                                        model.contextLength?.let {
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(4.dp))
-                                                    .background(NexaraColors.SurfaceHigh)
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                            ) {
-                                                Text(
-                                                    text = if (it >= 1024) "${it / 1024}k" else "$it",
-                                                    style = NexaraTypography.labelMedium.copy(fontSize = 9.sp),
-                                                    color = NexaraColors.OnSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Check,
-                                        contentDescription = null,
-                                        tint = NexaraColors.Primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        }
+                    if (index < models.lastIndex) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
                     }
                 }
             }
         }
     }
+}
+
+internal fun ModelSelectionUiModel.matchesModelPickerFilter(filterTag: String): Boolean = when (filterTag) {
+    "chat" -> isChatSelectionCandidate()
+    "multimodal" -> capabilityStates[ModelCapability.VISION_INPUT] == SupportState.SUPPORTED
+    "reasoning" -> capabilityStates[ModelCapability.REASONING] == SupportState.SUPPORTED
+    "image" -> workload == ModelWorkload.IMAGE_GENERATION
+    "embedding" -> workload == ModelWorkload.EMBEDDING
+    "rerank" -> workload == ModelWorkload.RERANK
+    "audio" -> workload == ModelWorkload.AUDIO ||
+        capabilityStates[ModelCapability.AUDIO_INPUT] == SupportState.SUPPORTED ||
+        capabilityStates[ModelCapability.AUDIO_OUTPUT] == SupportState.SUPPORTED
+    "video" -> workload == ModelWorkload.VIDEO ||
+        capabilityStates[ModelCapability.VIDEO_INPUT] == SupportState.SUPPORTED
+    "vision" -> capabilityStates[ModelCapability.VISION_INPUT] == SupportState.SUPPORTED
+    else -> true
 }

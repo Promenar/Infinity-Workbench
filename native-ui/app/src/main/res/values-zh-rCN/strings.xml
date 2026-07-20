@@ -6,6 +6,7 @@
     <string name="common_model_picker_search">搜索模型…</string>
     <string name="common_model_picker_empty">暂无可用模型</string>
     <string name="common_model_picker_k_context">K 上下文</string>
+    <string name="common_model_picker_m_context">M 上下文</string>
     <string name="common_model_picker_selected">已选中</string>
 
     <!-- FloatingTextEditor -->

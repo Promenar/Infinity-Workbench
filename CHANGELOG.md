@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 总收敛：统一模型选择器（2026-07-21）
+
+- **统一元数据投影**：所有模型选择入口改用 `ModelMetadataResolver.resolve(...)` 生成冻结的 `ModelSelectionUiModel`，精确名称、Provider、上下文长度、工作负载、三态能力与 Chat endpoint 兼容性不再由 UI 自行猜测。
+- **标准连续列表**：通用模型面板与会话设置共用 Material 3 `ListItem`，选中行使用 tonal 容器与单一 RadioButton 语义；移除旧能力胶囊、硬编码颜色和 UI 专用 `ModelItem`/`ModelCapability` 兼容层。
+- **过滤与可访问性**：显式不支持 Chat endpoint 的模型不会因生成式工作负载被重新放行，未知端点只在生成式工作负载时作为候选；当前已选旧模型仍可显示。行高至少 48dp，长名称、2.0x 字体、未知能力与 120 模型目录均有覆盖。
+- **当前门禁**：全量 JVM 2085 项（0 failure/error、14 skip）、81/81 Screenshot、Lint 0 Error/Fatal、AndroidTest 编译通过；API 31/35/36 定向设备测试各 2/2，Terra/Sol Critical、Important 均清零。当前签名 R8 APK 已完成验真及 API 35/36 同哈希冷安装；整体发行仍保持 NO-GO。
+
 ### Material 3 总收敛：助手会话与顶栏搜索（2026-07-20）
 
 - **统一顶栏搜索**：助手首页与会话列表移除常驻搜索框，在页面顶栏进入上下文搜索；退出搜索会清空 query，并按稳定条目 ID、原始索引和像素偏移恢复搜索前位置。

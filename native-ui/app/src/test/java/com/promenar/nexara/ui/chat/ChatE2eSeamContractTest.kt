@@ -26,7 +26,7 @@ class ChatE2eSeamContractTest {
         assertThat(screen).contains("UiTags.CHAT_SESSION_SETTINGS")
         assertThat(screen).contains("UiTags.CHAT_INPUT")
         assertThat(settings).contains("UiTags.CHAT_MODEL_LIST")
-        assertThat(settings).contains("UiTags.chatModelOption(model.id)")
+        assertThat(settings).contains("UiTags.chatModelOption(model.selectionId)")
         assertThat(route).contains("fun withGenerationCoordinator(")
         assertThat(route).contains("generationCoordinatorOverride = generationCoordinator")
         assertThat(route).doesNotContain("Registry")

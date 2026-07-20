@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -108,6 +110,11 @@ import com.promenar.nexara.ui.rag.RagFolderScreenState
 import com.promenar.nexara.ui.rag.RagStats
 import com.promenar.nexara.ui.settings.ModelSyncNotice
 import com.promenar.nexara.data.model.ModelInfo
+import com.promenar.nexara.data.model.catalog.ModelCapability
+import com.promenar.nexara.data.model.catalog.ModelWorkload
+import com.promenar.nexara.data.model.catalog.SupportState
+import com.promenar.nexara.ui.common.ModelSelectionUiModel
+import com.promenar.nexara.ui.common.ModelPickerSheetContent
 import com.promenar.nexara.ui.settings.ModelTestState
 import com.promenar.nexara.ui.settings.BackupOperations
 import com.promenar.nexara.ui.settings.BackupRestartRequester
@@ -143,6 +150,35 @@ private const val LANDSCAPE_WIDTH_DP = 892
 private const val LANDSCAPE_HEIGHT_DP = 412
 private const val PREVIEW_CHAT_MODEL_ID = "default::deepseek-v4-flash"
 private const val PREVIEW_MEMORY_ID = "preview-memory-1"
+
+private val PREVIEW_MODEL_SELECTIONS = List(120) { index ->
+    ModelSelectionUiModel(
+        selectionId = "provider-preview::model-$index",
+        remoteModelId = "model-$index",
+        displayName = if (index == 0) {
+            "Extremely Long Official Multimodal Reasoning Model Name With Stable Version Suffix 2026-07"
+        } else if (index == 1) {
+            "Unknown capability model"
+        } else {
+            "Model ${index.toString().padStart(3, '0')}"
+        },
+        providerName = if (index % 2 == 0) "Nexara Preview Provider" else "OpenAI Compatible",
+        contextTokens = if (index == 0) 1_048_576 else 128_000,
+        workload = ModelWorkload.GENERATIVE_TEXT,
+        capabilityStates = mapOf(
+            ModelCapability.REASONING to if (index % 3 == 0) {
+                SupportState.SUPPORTED
+            } else SupportState.UNKNOWN,
+            ModelCapability.VISION_INPUT to if (index % 4 == 0) {
+                SupportState.SUPPORTED
+            } else SupportState.UNKNOWN,
+            ModelCapability.TOOL_CALLING to SupportState.UNKNOWN,
+        ),
+        chatEndpointCompatible = if (index % 2 == 0) {
+            SupportState.SUPPORTED
+        } else SupportState.UNKNOWN,
+    )
+}
 
 private val PREVIEW_RAG_DETAILS_REFERENCES = listOf(
     RagReference(
@@ -1260,6 +1296,53 @@ fun agentSessionsEmptyReleasePreview() {
                 sessions = emptyList(),
             ),
             actions = AgentSessionsScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Model picker 120 models dark",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun modelPickerLargeCatalogDarkReleasePreview() {
+    ModelPickerReleasePreview(dark = true) {
+        ModelPickerSheetContent(
+            title = stringResource(R.string.common_model_picker_title),
+            searchQuery = "",
+            onSearchQueryChange = {},
+            currentModelId = PREVIEW_MODEL_SELECTIONS.first().selectionId,
+            models = PREVIEW_MODEL_SELECTIONS,
+            onSelect = { _, _ -> },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Model picker long names light large font",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_NO,
+    fontScale = 2f,
+)
+@Composable
+fun modelPickerLongNamesLightLargeFontReleasePreview() {
+    ModelPickerReleasePreview(dark = false) {
+        ModelPickerSheetContent(
+            title = stringResource(R.string.common_model_picker_title),
+            searchQuery = "",
+            onSearchQueryChange = {},
+            currentModelId = PREVIEW_MODEL_SELECTIONS.first().selectionId,
+            models = PREVIEW_MODEL_SELECTIONS.take(8),
+            onSelect = { _, _ -> },
+            modifier = Modifier.fillMaxSize(),
         )
     }
 }
@@ -2825,6 +2908,36 @@ private fun ResourceExplorerReleasePreviewContainer(content: @Composable () -> U
             )
             Spacer(modifier = Modifier.size(16.dp))
             Box(modifier = Modifier.fillMaxSize()) {
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelPickerReleasePreview(
+    dark: Boolean,
+    content: @Composable () -> Unit,
+) {
+    NexaraTheme(
+        preferences = NexaraThemePreferences(
+            mode = if (dark) NexaraThemeMode.DARK else NexaraThemeMode.LIGHT,
+            colorSource = NexaraColorSource.NEXARA,
+        ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f)),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f),
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
                 content()
             }
         }

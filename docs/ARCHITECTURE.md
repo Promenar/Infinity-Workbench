@@ -1,6 +1,6 @@
 # Nexara Architecture 全景
 
-> **最后更新**: 2026-07-20
+> **最后更新**: 2026-07-21
 > **注意**: 本文档为快速参考。完整架构设计见 [ARCHITECTURE_DESIGN.md](./ARCHITECTURE_DESIGN.md)（理想架构 + 技术路线择优），实现进度与差距分析见 [IMPLEMENTATION_ANALYSIS.md](./IMPLEMENTATION_ANALYSIS.md)。
 
 ## 核心架构
@@ -48,6 +48,7 @@ graph TD
 - **SecretStore / SecretCatalog**: Android Keystore 生成不可导出的 AES-GCM 主密钥；普通偏好只保存密文、IV 与格式版本。Provider、Vertex、搜索、Embedding 和 WebDAV 凭据由稳定 SecretId 管理，UI 只持有存在性和短生命周期 reveal 内容。
 - **BackupRepository / BackupPackageCodec**: 核心数据采用清单、逐项 SHA-256 和事务恢复；密钥默认排除，显式包含时使用备份密码派生的 AES-256-GCM 密钥加密。恢复先验证再写入，错误密码、损坏包和越界内容不得产生部分写入。
 - **ModelMetadataResolver / ModelCatalogRuntime**: 模型元数据唯一领域入口。运行时只读取仓库内固定的 models.dev 离线快照和 Nexara 精确修正，再按字段叠加 Provider 元数据与用户覆盖；精确名称、工作负载、三态能力、token 限制和来源可追踪，家族规则不得覆盖精确字段。
+- **ModelSelectionUiModel / ModelSelectionListItem**: 模型选择 UI 的统一投影与渲染契约。`ModelInfo` 先把 Provider 数据和 `userEditedFields` 转换为分层 override，再调用 `ModelMetadataResolver.resolve(...)`；所有选择入口消费同一冻结投影与连续 Material 3 `ListItem`。`CHAT_ENDPOINT` 不混入一般能力集合，显式不兼容优先于生成式工作负载，未知能力不得被 UI 制造为支持。
 - **MicroGraphExtractor/GraphExtractor**: 知识图谱提取引擎（JIT 缓存 + 全量提取双模式），全链路接入日志。
 - **ImageGenClient**: OpenAI-compatible 图像生成 API 客户端，支持 url/b64_json 响应格式。
 - **ImageGenerationSkill**: `generate_image` 工具实现，LLM 可调用生成图片并内联展示在对话气泡中。

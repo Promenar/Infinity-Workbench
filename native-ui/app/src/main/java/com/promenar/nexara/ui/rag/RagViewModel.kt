@@ -34,8 +34,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
-import com.promenar.nexara.ui.common.ModelItem
-import com.promenar.nexara.ui.common.ModelCapability
+
 import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
@@ -155,11 +154,7 @@ class RagViewModel(
     private val _config = MutableStateFlow(RagConfiguration())
     val config: StateFlow<RagConfiguration> = _config.asStateFlow()
 
-    private val _availableModels = MutableStateFlow<List<ModelItem>>(emptyList())
-    val availableModels: StateFlow<List<ModelItem>> = _availableModels.asStateFlow()
-
     private val prefs = app.getSharedPreferences("rag_settings", 0)
-    private val settingsPrefs = app.getSharedPreferences("nexara_settings", 0)
 
     private val _stats = MutableStateFlow(RagStats())
     val stats: StateFlow<RagStats> = _stats.asStateFlow()
@@ -169,7 +164,6 @@ class RagViewModel(
 
     init {
         loadConfig()
-        loadAvailableModels()
         loadStats()
         startDataObservation()
         observeQueue()
@@ -536,43 +530,6 @@ class RagViewModel(
         // P0: 用户修改配置后立即重建 MemoryManager，使新参数即时生效
         app.rebuildMemoryManager()
     }
-
-    private fun loadAvailableModels() {
-        val allIds = settingsPrefs.getStringSet("all_models", null) ?: emptySet()
-        val models = allIds.map { id ->
-            val name = settingsPrefs.getString("model_info_${id}_name", id) ?: id
-            val type = settingsPrefs.getString("model_info_${id}_type", "chat") ?: "chat"
-            val provider = settingsPrefs.getString("model_info_${id}_provider", "Cloud") ?: "Cloud"
-            val contextLength = settingsPrefs.getInt("model_info_${id}_context", 8192)
-            val caps = settingsPrefs.getStringSet("model_info_${id}_caps", emptySet()) ?: emptySet()
-            
-            ModelItem(
-                id = id,
-                name = name,
-                providerName = provider,
-                contextLength = contextLength,
-                capabilities = buildList {
-                    when (type) {
-                        "chat" -> add(ModelCapability.CHAT)
-                        "reasoning" -> add(ModelCapability.REASONING)
-                        "vision" -> add(ModelCapability.VISION)
-                        "internet" -> add(ModelCapability.INTERNET)
-                        "embedding" -> add(ModelCapability.EMBEDDING)
-                        "rerank" -> add(ModelCapability.RERANK)
-                        "image" -> add(ModelCapability.IMAGE)
-                    }
-                    caps.forEach { capStr ->
-                        try { add(ModelCapability.valueOf(capStr.uppercase())) } catch (_: Exception) {}
-                    }
-                    if (contains(ModelCapability.REASONING) && !contains(ModelCapability.CHAT)) {
-                        add(ModelCapability.CHAT)
-                    }
-                }.distinct()
-            )
-        }.sortedBy { it.name }
-        _availableModels.value = models
-    }
-
     /** 暴露工作区仓库供 UI 层 FilesPanel 使用 */
     fun getWorkspaceRepo(): IWorkspaceRepository = workspaceRepository
 

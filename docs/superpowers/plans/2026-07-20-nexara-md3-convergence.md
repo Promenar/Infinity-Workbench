@@ -613,18 +613,25 @@
 - Create: `native-ui/app/src/main/java/com/promenar/nexara/ui/common/ModelSelectionListItem.kt`
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/common/ModelPicker.kt`
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/chat/SessionSettingsSheet.kt`
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/hub/AgentHubScreen.kt`
 - Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/hub/UserSettingsHomeScreen.kt` only for temporary callers; final IA is Task 8.
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/rag/RagAdvancedScreen.kt`
+- Modify: `native-ui/app/src/main/java/com/promenar/nexara/ui/rag/RagViewModel.kt`
 - Create: `native-ui/app/src/test/java/com/promenar/nexara/ui/common/ModelPickerMaterialContractTest.kt`
 - Create: `native-ui/app/src/test/java/com/promenar/nexara/ui/common/ModelSelectionUiModelTest.kt`
 - Modify: `native-ui/app/src/test/java/com/promenar/nexara/ui/chat/SessionSettingsModelFilterTest.kt`
+- Modify: `native-ui/app/src/test/java/com/promenar/nexara/ui/chat/ChatE2eSeamContractTest.kt`
 - Create: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/common/ModelPickerAccessibilityTest.kt`
+- Modify: `native-ui/app/src/androidTest/java/com/promenar/nexara/ui/chat/ChatProviderSwitchSurfaceTest.kt`
+- Modify: `native-ui/app/src/main/res/values/strings.xml`
+- Modify: `native-ui/app/src/main/res/values-zh-rCN/strings.xml`
 - Modify: `native-ui/app/src/screenshotTest/kotlin/com/promenar/nexara/ui/ReleasePreviewScreenshotTest.kt`
 
 **Interfaces:**
 - Consumes: `ModelInfo`, `ModelMetadataResolver.resolve(remoteModelId, providerId)` and selected stable model ID.
-- Produces: frozen `ModelSelectionUiModel`, shared `ModelSelectionListItem` and one visual selection contract; removes the old UI-only `ModelItem` / `ModelCapability` contract.
+- Produces: frozen `ModelSelectionUiModel`, shared `ModelSelectionListItem` and one visual selection contract; migrates every current producer/caller and removes the old UI-only `ModelItem` / `ModelCapability` contract without a compatibility shell.
 
-- [ ] **Step 1：写模型列表 RED**
+- [x] **Step 1：写模型列表 RED**
 
   Assert continuous `ListItem`, stable key, selected semantics, selected tonal color, exact friendly name, real provider/context, at most two summary capabilities, no `NexaraGlassCard`, no hard-coded capability colors and no unknown-to-chat coercion. Projection tests cover supported/unsupported/unknown; user-edited name, type, capabilities, context and output override conversion; `CHAT_ENDPOINT` exclusion from `capabilityStates`; and `chatEndpointCompatible` remaining independent from workload/reasoning.
 
@@ -637,15 +644,15 @@
 
   Expected: RED because `ModelSelectionUiModel` does not exist and the current empty-capability fallback manufactures `CHAT`.
 
-- [ ] **Step 2：实现共享模型行**
+- [x] **Step 2：实现共享模型行**
 
   Implement the exact projection frozen by the design spec. Keep search/debounce and filtering behavior. Use title/supporting/trailing slots, a divider aligned with the row text and a check icon for selected state. Preserve capability unknown and endpoint compatibility separation.
 
-- [ ] **Step 3：替换两个消费端**
+- [x] **Step 3：替换两个消费端**
 
-  `ModelPicker` and `SessionSettingsSheet` must render the same shared row. Delete the local empty-capability-to-`CHAT` fallback. Do not create a top-level metadata facade; use `ModelMetadataResolver.resolve(...)` through the frozen projection factory.
+  `ModelPicker` and `SessionSettingsSheet` must render the same shared row. Migrate the current Agent Hub, settings and RAG producers to `ModelSelectionUiModel`, then delete the old UI-only `ModelItem` / `ModelCapability` types and the local empty-capability-to-`CHAT` fallback. Do not retain a compatibility shell or create a top-level metadata facade; use `ModelMetadataResolver.resolve(...)` through the frozen projection factory.
 
-- [ ] **Step 4：运行测试和视觉门禁**
+- [x] **Step 4：运行测试和视觉门禁**
 
   ```bash
   ./gradlew :app:testDebugUnitTest \
@@ -666,11 +673,18 @@
     native-ui/app/src/main/java/com/promenar/nexara/ui/common/ModelSelectionUiModel.kt \
     native-ui/app/src/main/java/com/promenar/nexara/ui/common/ModelPicker.kt \
     native-ui/app/src/main/java/com/promenar/nexara/ui/chat/SessionSettingsSheet.kt \
+    native-ui/app/src/main/java/com/promenar/nexara/ui/hub/AgentHubScreen.kt \
     native-ui/app/src/main/java/com/promenar/nexara/ui/hub/UserSettingsHomeScreen.kt \
+    native-ui/app/src/main/java/com/promenar/nexara/ui/rag/RagAdvancedScreen.kt \
+    native-ui/app/src/main/java/com/promenar/nexara/ui/rag/RagViewModel.kt \
     native-ui/app/src/test/java/com/promenar/nexara/ui/common/ModelPickerMaterialContractTest.kt \
     native-ui/app/src/test/java/com/promenar/nexara/ui/common/ModelSelectionUiModelTest.kt \
     native-ui/app/src/test/java/com/promenar/nexara/ui/chat/SessionSettingsModelFilterTest.kt \
+    native-ui/app/src/test/java/com/promenar/nexara/ui/chat/ChatE2eSeamContractTest.kt \
     native-ui/app/src/androidTest/java/com/promenar/nexara/ui/common/ModelPickerAccessibilityTest.kt \
+    native-ui/app/src/androidTest/java/com/promenar/nexara/ui/chat/ChatProviderSwitchSurfaceTest.kt \
+    native-ui/app/src/main/res/values/strings.xml \
+    native-ui/app/src/main/res/values-zh-rCN/strings.xml \
     native-ui/app/src/screenshotTest/kotlin/com/promenar/nexara/ui/ReleasePreviewScreenshotTest.kt
   git ls-files --modified --deleted --others --exclude-standard -- native-ui/app/src/screenshotTestDebug/reference > /tmp/nexara-md3-task7-goldens.txt
   cat /tmp/nexara-md3-task7-goldens.txt
