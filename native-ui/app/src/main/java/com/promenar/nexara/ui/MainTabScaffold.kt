@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.LocalLibrary
@@ -323,6 +324,7 @@ private fun FluidNavigationContent(
                         .weight(1f)
                         .fillMaxHeight()
                         .minimumInteractiveComponentSize()
+                        .clip(CircleShape)
                         .selectable(
                             selected = selected,
                             onClick = { onTabSelected(tab) },

@@ -182,6 +182,7 @@ Backup、Skills、Token Usage、Local Models、Developer 和 Theme 使用同一�
 - 外层使用完整 `CircleShape` 的低层级浮动 `Surface`，视觉高度保持 64dp，形成更矮、更饱满的立体大胶囊；
 - 容器距屏幕左右和系统手势区保留稳定间距；
 - 当前目的地使用一个完整 `CircleShape` 的流体指示块并显示“图标 + 标签”，未选目的地只显示图标但必须保留完整可访问名称；
+- 每个目的地继续使用 Material bounded ripple，但交互层必须以 `CircleShape` 裁剪到完整胶囊边界；按压反馈不得露出矩形或圆角矩形槽位；
 - 切换目的地时，唯一流体指示块横向滑动，并在运动中短暂拉长、压扁后回到 1:1；不得使用 glow、无限循环、粒子或自绘发光阴影；
 - 动效必须服从系统 Animator duration scale。比例为 0 时立即到达终态，快速连续点击不得留下重复指示块或错误选中态；
 - 页面内容可以延伸到导航 Surface 后方，但最后一项必须可滚动到不被遮挡的位置。

@@ -465,7 +465,7 @@
 
 - [x] **Step 2：实现矮胶囊与水滴挤压切换**
 
-  Replace the tall phone `NavigationBarItem` layout with a full-pill tonal `Surface`. Move one indicator between three equal destinations with spring translation and bounded stretch/squash relaxation. Keep `Role.Tab`, selected semantics, content descriptions, minimum targets, navigation Insets and Scaffold content clearance.
+  Replace the tall phone `NavigationBarItem` layout with a full-pill tonal `Surface`. Move one indicator between three equal destinations with spring translation and bounded stretch/squash relaxation. Keep Material bounded ripple, but clip every destination interaction layer with `CircleShape` so press feedback never exposes a rectangular slot. Keep `Role.Tab`, selected semantics, content descriptions, minimum targets, navigation Insets and Scaffold content clearance.
 
 - [x] **Step 3：验证减少动态、快速切换和自适应边界**
 
