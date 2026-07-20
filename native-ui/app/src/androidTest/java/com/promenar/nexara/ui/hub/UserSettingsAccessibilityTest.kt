@@ -1,9 +1,13 @@
 package com.promenar.nexara.ui.hub
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -13,6 +17,8 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.hasSetTextAction
@@ -28,25 +34,44 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.espresso.Espresso
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.common.NexaraSearchBar
+import com.promenar.nexara.ui.common.NexaraSearchTopBar
+import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.testing.UiTags
 import org.junit.Rule
+import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 class UserSettingsAccessibilityTest {
+    private class TestMotionDurationScale : MotionDurationScale {
+        var value = 1f
+        override val scaleFactor: Float
+            get() = value
+    }
+
+    private val motionDurationScale = TestMotionDurationScale()
+
     @get:Rule
-    val rule = createComposeRule()
+    val rule = createComposeRule(effectContext = motionDurationScale)
+
+    @Before
+    fun resetMotionDurationScale() {
+        motionDurationScale.value = 1f
+    }
 
     private val resources
         get() = InstrumentationRegistry.getInstrumentation().targetContext.resources
@@ -152,6 +177,139 @@ class UserSettingsAccessibilityTest {
 
         rule.waitForIdle()
         com.google.common.truth.Truth.assertThat(query).isEmpty()
+    }
+
+    @Test
+    fun sharedSearchTopBarSupportsFocusImeSystemBackAndReducedMotionAt2xScale() {
+        val longTitle = "A deliberately long management page title"
+        val actionDescription = "Additional settings action"
+        var query by mutableStateOf("")
+        var searchActive by mutableStateOf(false)
+        val backPressed = AtomicBoolean(false)
+        val actionClicked = AtomicBoolean(false)
+        motionDurationScale.value = 0f
+        rule.setContent {
+            val currentDensity = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(
+                    density = currentDensity.density,
+                    fontScale = 2f,
+                ),
+            ) {
+                NexaraTheme {
+                    NexaraSearchTopBar(
+                        title = longTitle,
+                        query = query,
+                        searchActive = searchActive,
+                        onQueryChange = { query = it },
+                        onSearchActiveChange = { searchActive = it },
+                        onBack = { backPressed.set(true) },
+                        actions = {
+                            IconButton(
+                                onClick = { actionClicked.set(true) },
+                                modifier = androidx.compose.ui.Modifier.size(48.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Settings,
+                                    contentDescription = actionDescription,
+                                )
+                            }
+                        },
+                    )
+                }
+            }
+        }
+
+        val clearDescription = resources.getString(R.string.common_cd_clear)
+        val placeholderDescription = resources.getString(R.string.common_search_placeholder)
+
+        rule.onNodeWithText(longTitle)
+            .assertIsDisplayed()
+        rule.onNodeWithContentDescription(actionDescription)
+            .assertHasClickAction()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        com.google.common.truth.Truth.assertThat(actionClicked.get()).isTrue()
+
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithContentDescription(placeholderDescription)
+            .assertHasClickAction()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        rule.mainClock.advanceTimeByFrame()
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText(longTitle).assertDoesNotExist()
+        rule.onNodeWithContentDescription(actionDescription).assertDoesNotExist()
+        rule.mainClock.autoAdvance = true
+
+        val searchField = rule.onNodeWithContentDescription(placeholderDescription)
+        searchField
+            .assert(hasSetTextAction())
+            .assertIsFocused()
+            .assertHeightIsAtLeast(48.dp)
+            .performTextInput("DeepSeek")
+        searchField.performImeAction()
+        searchField.assertIsNotFocused()
+
+        rule.onNodeWithContentDescription(clearDescription)
+            .assertHasClickAction()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        rule.waitForIdle()
+        com.google.common.truth.Truth.assertThat(query).isEmpty()
+
+        Espresso.pressBack()
+        rule.waitForIdle()
+        com.google.common.truth.Truth.assertThat(searchActive).isFalse()
+        com.google.common.truth.Truth.assertThat(backPressed.get()).isFalse()
+
+        Espresso.pressBack()
+        rule.waitForIdle()
+        com.google.common.truth.Truth.assertThat(backPressed.get()).isTrue()
+    }
+
+    @Test
+    fun settingsSectionDividerAlignsWithRowTextAt2xScale() {
+        val rowTitle = "Aligned settings row"
+        rule.setContent {
+            val currentDensity = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(currentDensity.density, fontScale = 2f),
+            ) {
+                NexaraTheme {
+                    Box(modifier = androidx.compose.ui.Modifier.width(360.dp)) {
+                        NexaraSettingsSection(title = "Accessible section") {
+                            NexaraSettingsItem(
+                                icon = Icons.Rounded.Settings,
+                                title = rowTitle,
+                                onClick = {},
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        rule.onNodeWithText("Accessible section").assertIsDisplayed()
+        rule.onNodeWithText(rowTitle)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+
+        val rowTextLeft = rule.onNodeWithText(rowTitle, useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .left
+        val dividerLeft = rule.onNodeWithTag("nexara_settings_section_divider")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .left
+        com.google.common.truth.Truth.assertThat(dividerLeft)
+            .isWithin(1f)
+            .of(rowTextLeft)
     }
 
     @Test

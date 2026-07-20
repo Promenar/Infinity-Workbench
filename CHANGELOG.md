@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 总收敛：管理页面共享原语（2026-07-20）
+
+- **连续设置分组**：新增 `NexaraSettingsSection`，以透明连续列表、Material 语义分组标题和从正文起点对齐的分隔线替代玻璃卡/逐项 Surface 组合；既有分组标题移除 10sp、指定字体和静态颜色。
+- **顶栏搜索模式**：新增受控 `NexaraSearchTopBar`，正常态保留页面标题和 actions，搜索态在同一 Top App Bar 内完成焦点、IME Search、清除及返回优先级；淡入过渡遵循系统动画时长缩放。
+- **无障碍与视觉门禁**：API 36 实测 2.0x 长标题、48dp、actions、自动焦点、IME、系统 Back、0x reduced-motion 和分隔线 bounds；Backup Settings 唯一预期截图变化已人工对照并更新。
+- **阶段边界**：本轮提供共享原语并修正既有分组标题，具体设置树、会话列表及其他搜索页面仍在后续任务逐页迁移；发行继续 NO-GO。
+
 ### Material 3 总收敛：自适应主题状态基础（2026-07-20）
 
 - **唯一主题状态源**：新增 Application 级 `ThemePreferenceStore`，统一持久化系统跟随、浅色、深色以及 Nexara 配色、Android 动态色选择；偏好恢复和外部备份恢复会即时更新应用主题状态。

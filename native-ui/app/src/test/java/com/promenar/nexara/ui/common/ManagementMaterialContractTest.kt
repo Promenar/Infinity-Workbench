@@ -17,6 +17,10 @@ class ManagementMaterialContractTest {
         "src/main/java/com/promenar/nexara/ui/common/$name.kt",
     ).readText()
 
+    private fun sourceFile(name: String) = projectRoot.resolve(
+        "src/main/java/com/promenar/nexara/ui/common/$name.kt",
+    )
+
     @Test
     fun `settings item is a flexible transparent material list row with button semantics`() {
         val source = source("NexaraSettingsItem")
@@ -34,13 +38,21 @@ class ManagementMaterialContractTest {
     }
 
     @Test
-    fun `search clear action uses material icon button and a 48dp token target`() {
-        val source = source("NexaraSearchBar")
+    fun `search top bar contract exists and exposes state plus actions`() {
+        val searchTopBarSourceFile = sourceFile("NexaraSearchTopBar")
+        assertThat(searchTopBarSourceFile.exists()).isTrue()
+
+        val source = searchTopBarSourceFile.readText()
 
         assertThat(source).contains("IconButton(")
+        assertThat(source).contains("fun NexaraSearchTopBar(")
+        assertThat(source).contains("onSearchActiveChange: (Boolean) -> Unit")
+        assertThat(source).contains("onQueryChange: (String) -> Unit")
+        assertThat(source).contains("searchActive: Boolean")
+        assertThat(source).contains("actions: @Composable RowScope.() -> Unit")
         assertThat(source).contains("NexaraSpacing.MinimumTouchTarget")
         assertThat(source).doesNotContain("Modifier.size(24.dp)")
-        assertThat(source).doesNotContain("NexaraGlassCard(")
+        assertThat(source).doesNotContain("NexaraSearchBar(")
         assertThat(source).contains("MaterialTheme.colorScheme")
     }
 
@@ -56,5 +68,18 @@ class ManagementMaterialContractTest {
         assertThat(source).doesNotContain("NexaraTypography.headlineLarge")
         assertThat(source).doesNotContain("CanvasBackground.copy(alpha = 0.8f)")
         assertThat(source).doesNotContain("padding(horizontal = 20.dp, vertical = 24.dp)")
+    }
+
+    @Test
+    fun `settings section primitive should not regress to glass card or per-row surface`() {
+        val sectionSourceFile = sourceFile("NexaraSettingsSection")
+        assertThat(sectionSourceFile.exists()).isTrue()
+
+        val source = sectionSourceFile.readText()
+        assertThat(source).contains("fun NexaraSettingsSection")
+        assertThat(source).contains("HorizontalDivider(")
+        assertThat(source).contains("MaterialTheme.typography")
+        assertThat(source).doesNotContain("NexaraGlassCard(")
+        assertThat(source).doesNotContain("Surface(")
     }
 }

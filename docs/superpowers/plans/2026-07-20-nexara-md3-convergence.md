@@ -323,7 +323,7 @@
 - Consumes: `MaterialTheme`, `NexaraSpacing`, existing page routes.
 - Produces: `NexaraSettingsSection`, `NexaraSearchTopBar`, transparent settings rows and a standard page action slot.
 
-- [ ] **Step 1：写共享组件 RED**
+- [x] **Step 1：写共享组件 RED**
 
   Contract tests assert:
 
@@ -342,7 +342,7 @@
 
   Expected: RED for missing `NexaraSettingsSection` / `NexaraSearchTopBar`.
 
-- [ ] **Step 2：实现最小共享原语**
+- [x] **Step 2：实现最小共享原语**
 
   `NexaraSettingsSection` accepts `title` and content, uses a small semantic section label and a divider aligned with the row text. `NexaraSearchTopBar` accepts:
 
@@ -361,7 +361,7 @@
 
   It handles focus, IME Search, clear, back precedence and reduced-motion state without owning business filtering.
 
-- [ ] **Step 3：验证语义和 2.0x 布局**
+- [x] **Step 3：验证语义和 2.0x 布局**
 
   Extend `UserSettingsAccessibilityTest` with 48dp, unique click targets, search traversal and long-title assertions.
 
@@ -370,7 +370,7 @@
   ./gradlew :app:compileDebugAndroidTestKotlin
   ```
 
-- [ ] **Step 4：复审、提交和推送**
+- [x] **Step 4：复审、提交和推送**
 
   ```bash
   git add native-ui/app/src/main/java/com/promenar/nexara/ui/common/NexaraPageLayout.kt \

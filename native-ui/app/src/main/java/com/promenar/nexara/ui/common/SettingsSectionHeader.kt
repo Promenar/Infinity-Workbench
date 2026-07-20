@@ -1,25 +1,26 @@
 package com.promenar.nexara.ui.common
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.promenar.nexara.ui.theme.Manrope
-import com.promenar.nexara.ui.theme.NexaraColors
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import com.promenar.nexara.ui.theme.NexaraSpacing
 
 @Composable
 fun SettingsSectionHeader(
     title: String,
     actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
+    onAction: (() -> Unit)? = null,
+    titleStyle: TextStyle? = null,
 ) {
     Row(
         modifier = Modifier
@@ -27,25 +28,26 @@ fun SettingsSectionHeader(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = title.uppercase(),
-            fontFamily = Manrope,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.1.sp,
-            color = NexaraColors.Outline
+            text = title,
+            style = titleStyle ?: MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { heading() },
         )
 
         Spacer(modifier = Modifier.weight(1f))
 
         if (actionLabel != null && onAction != null) {
-            Text(
-                text = actionLabel,
-                fontFamily = Manrope,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = NexaraColors.Primary,
-                modifier = Modifier.clickable { onAction() }
-            )
+            TextButton(
+                onClick = onAction,
+                modifier = Modifier.defaultMinSize(
+                    minHeight = NexaraSpacing.MinimumTouchTarget,
+                ),
+            ) {
+                Text(
+                    text = actionLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
         }
     }
 }
