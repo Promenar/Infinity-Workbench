@@ -151,6 +151,7 @@ class MainActivityNotificationE2eTest {
                 screenshotName = "notification-permission-deny-dialog.png",
             ),
         ).isTrue()
+        assertNotificationPermission(granted = false)
 
         compose.waitUntil(10_000) { app.recordingCoordinator.requests.size == 1 }
         assertThat(app.recordingCoordinator.requests.single().runtimePolicy)
@@ -325,11 +326,19 @@ class MainActivityNotificationE2eTest {
         enableInteractiveWindowRetrieval(uiAutomation)
         val deadline = SystemClock.elapsedRealtime() + 10_000
         do {
+            if (handleBlockingQuickstepAnr(uiAutomation)) {
+                SystemClock.sleep(500)
+                continue
+            }
             val button = findPermissionControllerButton(uiAutomation, resourceId)
             if (button != null && button.isEnabled) {
-                SystemClock.sleep(500)
                 captureDeviceScreenshot(screenshotName)
-                return button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                val refreshedButton = findPermissionControllerButton(uiAutomation, resourceId)
+                if (refreshedButton?.isEnabled == true &&
+                    refreshedButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                ) {
+                    return true
+                }
             }
             SystemClock.sleep(50)
         } while (SystemClock.elapsedRealtime() < deadline)
@@ -344,6 +353,19 @@ class MainActivityNotificationE2eTest {
         permissionControllerRoots(uiAutomation).firstNotNullOfOrNull { root ->
             root.findAccessibilityNodeInfosByViewId(resourceId)?.firstOrNull { it.isEnabled }
         }
+
+    private fun handleBlockingQuickstepAnr(uiAutomation: UiAutomation): Boolean {
+        val blockingRoot = permissionControllerRoots(uiAutomation).firstOrNull { root ->
+            root.packageName == SYSTEM_PACKAGE &&
+                root.findAccessibilityNodeInfosByViewId(SYSTEM_ALERT_TITLE)?.any { title ->
+                    title.text?.contains(QUICKSTEP_APP_NAME, ignoreCase = true) == true
+                } == true
+        } ?: return false
+        val waitButton = blockingRoot.findAccessibilityNodeInfosByViewId(SYSTEM_ANR_WAIT_BUTTON)
+            ?.firstOrNull { it.isEnabled }
+        waitButton?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        return true
+    }
 
     private fun permissionControllerRoots(uiAutomation: UiAutomation): List<AccessibilityNodeInfo> {
         val roots = uiAutomation.windows.orEmpty().mapNotNull { it.root }.toMutableList()
@@ -680,6 +702,10 @@ class MainActivityNotificationE2eTest {
             "$PERMISSION_CONTROLLER_PACKAGE:id/permission_allow_button"
         private const val PERMISSION_DENY_BUTTON =
             "$PERMISSION_CONTROLLER_PACKAGE:id/permission_deny_button"
+        private const val SYSTEM_ALERT_TITLE = "android:id/alertTitle"
+        private const val SYSTEM_ANR_WAIT_BUTTON = "android:id/aerr_wait"
+        private const val SYSTEM_PACKAGE = "android"
+        private const val QUICKSTEP_APP_NAME = "Quickstep"
 
         internal fun isPermissionControllerPackage(packageName: CharSequence?): Boolean =
             packageName?.endsWith("permissioncontroller") == true
