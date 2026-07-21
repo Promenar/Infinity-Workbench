@@ -1229,7 +1229,7 @@
   done
   ```
 
-  当前候选闭合集合在 API 31/35/36 各 101/101，均 0 failure/error/skip；同源 broader harness 分别执行 39/41/41 个显式测试并各保留 1 个设计内 phase checkpoint skip，三档 `exit-code.txt` 均为 0。API 31 仍执行通知打开会话与前台服务，只跳过 Android 13+ 通知权限三项。
+  当前候选闭合集合在 API 31/35/36 各 101/101，均 0 failure/error/skip；同源 broader harness 分别执行 39/41/41 个显式测试并各保留 1 个设计内 phase checkpoint skip，三档 `exit-code.txt` 均为 0。API 31 仍执行通知打开会话与前台服务，只跳过 Android 13+ 的通知权限拒绝/授予两项。
 
 - [x] **Step 3：人工检查全部 actual**
 

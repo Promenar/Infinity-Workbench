@@ -42,6 +42,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.then
@@ -53,7 +54,6 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import org.junit.After
 import org.junit.Rule
@@ -707,20 +707,59 @@ class DocEditorInteractionTest {
 
     @Test
     fun titleInputNormalizesPastedAndEnteredLineBreaksWithoutDiscardingText() {
-        val changedTitle = AtomicReference<String>()
+        var screenState by mutableStateOf(
+            DocEditorScreenState(
+                editorState = readyEditorState(dirty = true),
+            ),
+        )
         rule.setContent {
             TestContent(
-                screenState = DocEditorScreenState(
-                    editorState = readyEditorState(dirty = true),
+                screenState = screenState,
+                actions = DocEditorScreenActions(
+                    onTitleChange = { newTitle ->
+                        screenState = screenState.copy(
+                            editorState = screenState.editorState.copy(title = newTitle),
+                        )
+                    },
                 ),
-                actions = DocEditorScreenActions(onTitleChange = changedTitle::set),
             )
         }
 
         rule.onNodeWithTag(UiTags.DOC_EDITOR_TITLE_INPUT)
             .performTextReplacement("release\r\nnotes\nfinal\rend")
 
-        assertThat(changedTitle.get()).isEqualTo("release notes final end")
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_TITLE_INPUT)
+            .assertTextContains("release notes final end")
+    }
+
+    @Test
+    fun titleInputImeActionClosesIme() {
+        var screenState by mutableStateOf(
+            DocEditorScreenState(
+                editorState = readyEditorState(dirty = true),
+            ),
+        )
+        rule.setContent {
+            TestContent(
+                screenState = screenState,
+                actions = DocEditorScreenActions(
+                    onTitleChange = { newTitle ->
+                        screenState = screenState.copy(
+                            editorState = screenState.editorState.copy(title = newTitle),
+                        )
+                    },
+                ),
+            )
+        }
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_TITLE_INPUT).performClick()
+        val imeHeight = awaitImeOpened()
+        assertThat(imeHeight).isGreaterThan(0)
+        assertThat(imeVisible()).isTrue()
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_TITLE_INPUT).performImeAction()
+
+        assertThat(awaitImeClosed()).isTrue()
     }
 
     @Test

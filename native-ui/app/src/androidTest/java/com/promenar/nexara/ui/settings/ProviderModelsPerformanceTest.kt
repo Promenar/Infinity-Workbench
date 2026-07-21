@@ -107,6 +107,10 @@ class ProviderModelsPerformanceTest {
         val finalPssKiB = stablePssKiB()
         val pssDeltaKiB = (finalPssKiB - baselinePssKiB).coerceAtLeast(0L)
 
+        snapshots.forEach { snapshot ->
+            snapshot.metricsByIndex.filterNotNull().forEach { it.logRawHistogram() }
+        }
+
         val report = buildString {
             append("PROVIDER_MODELS_PERF")
             append(" device=").append(Build.MODEL)
@@ -225,27 +229,37 @@ class ProviderModelsPerformanceTest {
             metricsByIndex = FRAME_METRIC_NAMES.indices.map { index ->
                 this?.getOrNull(index)
                     ?.takeIf { it.size() > 0 }
-                    ?.toRoundMetrics(round)
+                    ?.toRoundMetrics(round, FRAME_METRIC_NAMES[index])
             },
         )
 
-    private fun SparseIntArray.toRoundMetrics(round: Int): RoundMetrics {
-        val frameCount = (0 until size()).sumOf { valueAt(it) }
+    private fun SparseIntArray.toRoundMetrics(round: Int, metricName: String): RoundMetrics {
+        val bucketList = ArrayList<Pair<Int, Int>>(size())
+        var frameCount = 0
+        for (i in 0 until size()) {
+            val durationMs = keyAt(i)
+            val count = valueAt(i)
+            bucketList.add(durationMs to count)
+            frameCount += count
+        }
         val p95Target = ceil(frameCount * 0.95).toInt().coerceAtLeast(1)
         var cumulative = 0
         var p95Millis = 0
-        for (index in 0 until size()) {
-            cumulative += valueAt(index)
+        for ((durationMs, count) in bucketList) {
+            cumulative += count
             if (cumulative >= p95Target) {
-                p95Millis = keyAt(index)
+                p95Millis = durationMs
                 break
             }
         }
+        val maxMillis = bucketList.lastOrNull()?.first ?: 0
         return RoundMetrics(
             round = round,
+            metricName = metricName,
             frameCount = frameCount,
             p95Millis = p95Millis,
-            maxMillis = keyAt(size() - 1),
+            maxMillis = maxMillis,
+            buckets = bucketList,
         )
     }
 
@@ -282,6 +296,27 @@ class ProviderModelsPerformanceTest {
         return if (average == 0.0) 0.0 else (core.last() - core.first()) / average
     }
 
+    private fun RoundMetrics.logRawHistogram() {
+        val parts = buckets.chunked(RAW_BUCKETS_PER_LOG_LINE)
+        parts.forEachIndexed { index, part ->
+            Log.i(
+                LOG_TAG,
+                buildString {
+                    append("PROVIDER_MODELS_PERF_RAW")
+                    append(" round=").append(round)
+                    append(" metric=").append(metricName)
+                    append(" part=").append(index + 1).append('/').append(parts.size)
+                    append(" frameCount=").append(frameCount)
+                    append(" p95Ms=").append(p95Millis)
+                    append(" maxMs=").append(maxMillis)
+                    append(" buckets=").append(part.joinToString(",") { (durationMs, count) ->
+                        "$durationMs:$count"
+                    })
+                },
+            )
+        }
+    }
+
     private fun idleActions(onToggle: (String) -> Unit) = ProviderModelsScreenActions(
         onRefresh = {},
         onAdd = { _, _ -> true },
@@ -297,9 +332,11 @@ class ProviderModelsPerformanceTest {
 
     private data class RoundMetrics(
         val round: Int,
+        val metricName: String,
         val frameCount: Int,
         val p95Millis: Int,
         val maxMillis: Int,
+        val buckets: List<Pair<Int, Int>>,
     )
 
     private data class FrameMetricsSnapshot(
@@ -333,6 +370,7 @@ class ProviderModelsPerformanceTest {
         const val ROUND_SETTLE_MILLIS = 120L
         const val PSS_SAMPLE_INTERVAL_MILLIS = 100L
         const val PSS_SAMPLES = 3
+        const val RAW_BUCKETS_PER_LOG_LINE = 64
         // Gradle 安装后 Play Store AVD 会延迟处理 PACKAGE_ADDED；不要把安装器/GMS 工作计入产品帧。
         const val GUEST_BACKGROUND_SETTLE_MILLIS = 10_000L
         val FRAME_METRIC_NAMES = listOf(

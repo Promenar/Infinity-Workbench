@@ -1,11 +1,14 @@
 package com.promenar.nexara.background.generation
 
+import android.Manifest
 import android.app.ActivityManager
 import android.app.Application
 import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.test.core.app.ApplicationProvider
@@ -36,6 +39,26 @@ class GenerationForegroundServiceDeviceTest {
             app.startupState.value == BackupStartupState.Ready
         }
         assertThat(runtimeReady).isTrue()
+
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(
+                context.packageName,
+                Manifest.permission.POST_NOTIFICATIONS,
+            )
+        }
+
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        notificationManager.cancel(GenerationNotificationFactory.NOTIFICATION_ID)
+        val cleared = waitUntil(timeoutMillis = 5_000) {
+            notificationManager.activeNotifications.none {
+                it.id == GenerationNotificationFactory.NOTIFICATION_ID
+            }
+        }
+        assertThat(cleared).isTrue()
     }
 
     @After
@@ -45,7 +68,15 @@ class GenerationForegroundServiceDeviceTest {
             mutableSessionState().value = null
             app.generationCoordinator.release(sessionId, discardTerminal = true)
         }
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        notificationManager.cancel(GenerationNotificationFactory.NOTIFICATION_ID)
         waitUntil(timeoutMillis = 5_000) { !isServiceRunning() }
+        val cleared = waitUntil(timeoutMillis = 5_000) {
+            notificationManager.activeNotifications.none {
+                it.id == GenerationNotificationFactory.NOTIFICATION_ID
+            }
+        }
+        assertThat(cleared).isTrue()
     }
 
     @Test
