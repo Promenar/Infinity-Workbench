@@ -36,11 +36,19 @@ expect_failure nexara_assert_normal_instrumentation_output "${TMP_DIR}/normal-ok
 
 printf '%s\n' \
     'INSTRUMENTATION_STATUS: class=com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest' \
+    'INSTRUMENTATION_STATUS: test=relayPhase' \
     'INSTRUMENTATION_RESULT: shortMsg=Process crashed.' \
     'INSTRUMENTATION_CODE: 0' > "${TMP_DIR}/expected-death.txt"
 expect_success nexara_assert_expected_process_death_output "${TMP_DIR}/expected-death.txt" 0
 expect_failure nexara_assert_expected_process_death_output "${TMP_DIR}/expected-death.txt" 124
 expect_failure nexara_assert_expected_process_death_output "${TMP_DIR}/normal-ok.txt" 0
+
+printf '%s\n' \
+    'INSTRUMENTATION_STATUS: class=com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest' \
+    'INSTRUMENTATION_STATUS: test=relayPhase' \
+    'INSTRUMENTATION_RESULT: shortMsg=Process crashed.' \
+    'INSTRUMENTATION_CODE: 1' > "${TMP_DIR}/wrong-crash-code.txt"
+expect_failure nexara_assert_expected_process_death_output "${TMP_DIR}/wrong-crash-code.txt" 0
 
 printf '%s\n' 'adb: device offline' > "${TMP_DIR}/empty-failure.txt"
 expect_failure nexara_assert_expected_process_death_output "${TMP_DIR}/empty-failure.txt" 1

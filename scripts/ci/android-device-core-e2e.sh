@@ -228,6 +228,12 @@ run_notification_open_session_contract() {
         -e class com.promenar.nexara.MainActivityNotificationE2eTest#postedNotificationOpenPendingIntentReturnsToExactSession
 }
 
+run_notification_background_lifecycle_contract() {
+    prepare_target_for_foreground_notification
+    run_test notification-background-lifecycle "${MAIN_ACTIVITY_RUNNER}" \
+        -e class com.promenar.nexara.MainActivityNotificationE2eTest#backgroundGenerationSurvivesRealLockWakeRotationAndRepeatedStopDoesNotRevive
+}
+
 prepare_target_for_foreground_notification() {
     if (( API_LEVEL >= 33 )); then
         reset_target_with_notification_permission_granted
@@ -238,19 +244,28 @@ prepare_target_for_foreground_notification() {
 }
 
 run_expected_relay_death() {
-    local output_file="${ARTIFACT_DIR}/restore-relay-stage-expected-death.txt"
-    local after_pids_file="${ARTIFACT_DIR}/restore-relay-stage-after-pids.txt"
+    local phase="${1:-stage}"
+    local output_file="${ARTIFACT_DIR}/restore-relay-${phase}-expected-death.txt"
+    local relay_log_file="${ARTIFACT_DIR}/restore-relay-${phase}-relay-logcat.txt"
+    local after_pids_file="${ARTIFACT_DIR}/restore-relay-${phase}-after-pids.txt"
     local status
-    echo "运行预期杀进程阶段：restore-relay-stage"
+    echo "运行预期杀进程阶段：restore-relay-${phase}"
+    # 只清理 relay 证据所在的 main buffer，保留此前测试的 crash buffer 供最终门禁审计。
+    adb logcat -b main -c
     set +e
     python3 "${TIMEOUT_HELPER}" "${INSTRUMENT_TIMEOUT_SECONDS}" adb shell am instrument -w -r \
         -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
-        -e restoreRelayPhase stage \
+        -e restoreRelayPhase "${phase}" \
         "${APP_RUNNER}" 2>&1 | tee "${output_file}"
     status="${PIPESTATUS[0]}"
     set -e
 
     nexara_assert_expected_process_death_output "${output_file}" "${status}"
+    adb logcat -b main -d -v threadtime -s NexaraLogger:D '*:S' > "${relay_log_file}" 2>&1
+    if ! grep -Eq '\[NexaraRestoreRelay\] relay_pid=[0-9]+ main_pid=[0-9]+ payload=none' "${relay_log_file}"; then
+        echo "预期进程死亡阶段缺少 RestoreRelayActivity 专属执行证据：${relay_log_file}" >&2
+        return 1
+    fi
     if [[ "$(adb get-state 2>/dev/null)" != "device" ]]; then
         echo "relay 阶段后 ADB 设备不可用，不能判定为预期进程死亡" >&2
         return 1
@@ -292,6 +307,7 @@ if [[ "${DEVICE_E2E_SCOPE}" == "full" ]]; then
         echo "API ${API_LEVEL} 无运行时通知权限，跳过 Android 13+ 权限弹窗 E2E。"
     fi
     run_notification_open_session_contract
+    run_notification_background_lifecycle_contract
 fi
 
 adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
@@ -337,11 +353,25 @@ run_test backup-process-commit "${APP_RUNNER}" \
     -e backupPhase commit
 
 adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
+run_test restore-relay-export-no-key "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
+    -e restoreRelayPhase exportNoKey
+force_stop_target
+run_expected_relay_death stageNoKey
+run_test restore-relay-verify-no-key "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
+    -e restoreRelayPhase verifyNoKey
+force_stop_target
+run_test restore-relay-no-replay-no-key "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
+    -e restoreRelayPhase noReplayNoKey
+
+adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
 run_test restore-relay-export "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
     -e restoreRelayPhase export
 force_stop_target
-run_expected_relay_death
+run_expected_relay_death stage
 run_test restore-relay-verify "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
     -e restoreRelayPhase verify
