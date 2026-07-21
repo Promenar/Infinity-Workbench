@@ -28,7 +28,8 @@ class GenerationNotificationFactory(
             applicationContext,
             snapshot.taskId.hashCode(),
             stopIntent(snapshot.taskId),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE or
+                PendingIntent.FLAG_ONE_SHOT,
         )
         val openPendingIntent = PendingIntent.getActivity(
             applicationContext,

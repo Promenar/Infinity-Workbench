@@ -5,6 +5,7 @@ import android.app.ActivityManager
 import android.app.Application
 import android.app.Notification
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -110,11 +111,20 @@ class GenerationForegroundServiceDeviceTest {
         assertThat(notification.flags and Notification.FLAG_ONGOING_EVENT).isNotEqualTo(0)
         assertThat(notification.actions).hasLength(1)
 
-        notification.actions.single().actionIntent.send()
+        val staleStopAction = notification.actions.single().actionIntent
+        staleStopAction.send()
 
         assertThat(waitUntil(timeoutMillis = 10_000) { !isServiceRunning() }).isTrue()
         assertThat(waitUntil(timeoutMillis = 10_000) {
             notificationManager.activeNotifications
+                .none { it.id == GenerationNotificationFactory.NOTIFICATION_ID }
+        }).isTrue()
+
+        val replayFailure = runCatching { staleStopAction.send() }.exceptionOrNull()
+        assertThat(replayFailure).isInstanceOf(PendingIntent.CanceledException::class.java)
+
+        assertThat(remainsQuiet(durationMillis = 1_500) {
+            !isServiceRunning() && notificationManager.activeNotifications
                 .none { it.id == GenerationNotificationFactory.NOTIFICATION_ID }
         }).isTrue()
     }
@@ -139,6 +149,16 @@ class GenerationForegroundServiceDeviceTest {
         do {
             InstrumentationRegistry.getInstrumentation().waitForIdleSync()
             if (predicate()) return true
+            SystemClock.sleep(50)
+        } while (SystemClock.elapsedRealtime() < deadline)
+        return predicate()
+    }
+
+    private fun remainsQuiet(durationMillis: Long, predicate: () -> Boolean): Boolean {
+        val deadline = SystemClock.elapsedRealtime() + durationMillis
+        do {
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            if (!predicate()) return false
             SystemClock.sleep(50)
         } while (SystemClock.elapsedRealtime() < deadline)
         return predicate()

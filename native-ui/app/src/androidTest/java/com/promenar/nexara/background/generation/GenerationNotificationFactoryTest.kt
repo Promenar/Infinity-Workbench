@@ -39,7 +39,11 @@ class GenerationNotificationFactoryTest {
         assertThat(notification.actions).hasLength(1)
         assertThat(factory.openIntent(snapshot).component?.className)
             .isEqualTo(MainActivity::class.java.name)
-        assertThat(factory.stopIntent(snapshot.taskId).component?.className)
+        val stopIntent = factory.stopIntent(snapshot.taskId)
+        val stopAction = notification.actions.single().actionIntent
+        assertThat(stopAction.isService).isTrue()
+        assertThat(stopAction.isBroadcast).isFalse()
+        assertThat(stopIntent.component?.className)
             .isEqualTo(GenerationForegroundService::class.java.name)
     }
 

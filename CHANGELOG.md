@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 后台生成通知停止动作防重放（2026-07-22）
+
+- **一次性停止能力**：后台生成通知继续使用显式、不可变的私有 Service `PendingIntent`，并增加 `FLAG_ONE_SHOT`；首次停止后旧通知动作由系统取消，重复触发不会瞬时重建前台服务或通知。
+- **设备回归**：API 35 完整设备链覆盖通知权限、真实锁屏/唤醒/旋转、通知返回准确会话、首次停止、重复停止拒绝和静默窗口；冷启动 stop/track、备份恢复、文档解析与其余核心 E2E 同轮通过。
+- **发行边界**：生产字节发生变化，上一签名 APK（SHA-256 `cc3934f506c3e307d6666195e0abed6f3271cc2f358d601bc9f285142c1fda3e`）降级为历史证据；新签名候选、API 35/36 同哈希冷安装、当前提交远端矩阵、真机 TalkBack/核心业务与发布外部门禁闭合前继续 NO-GO。
+
 ### Material 3 总收敛：Task 14 本地设备、视觉与性能门禁（2026-07-21）
 
 - **三档设备闭环**：当前集成工作树在 API 31/35/36 的冻结类集合各 101/101；同源 broader harness 分别完成 39/41/41 个显式测试并保留各 1 个设计内 phase checkpoint skip，三档均无 failure/error 且脚本退出 0。API 31 仍执行通知打开会话与前台服务，只跳过 Android 13+ 通知权限路径。

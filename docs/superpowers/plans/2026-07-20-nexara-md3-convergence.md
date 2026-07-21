@@ -1362,7 +1362,7 @@
 
   当前源码已按 headless + raw-evidence 合同取得两轮有效结果：run 1 与 run 4 均为 `VALID_PASS`，各保留 45 条 raw histogram、单一 START/END 标记且测量窗口污染为 0；独立复算帧数、p95 与 max 全部匹配。较差有效样本为 p95 35ms、max 51ms、稳定 PSS +2763KiB，原阈值 50ms/150ms/64MiB 未放宽。run 2 与 run 3 指标虽在阈值内，但窗口内各捕获一条约 180 秒周期的 `BackgroundInstallControlService` 包事件，均按合同保留并分类为 `FIXTURE_INVALID`，未替换、删除或冒充有效样本。完整证据位于 `native-ui/app/build/reports/provider-models-performance-task14-final-20260721-191942/`。
 
-- [x] **Step 5：构建当前 release APK 并检查签名链**
+- [ ] **Step 5：构建当前 release APK 并检查签名链**
 
   Rebuild from current source, then verify R8 output, zipalign, package identity, signing certificate and SHA-256. Sensitive signing material is used only by the main controller and never written to logs, reports or Agent prompts.
 
@@ -1386,7 +1386,7 @@
 
   Expected: every command exits 0; mapping and checksum files are non-empty; verifier reports one expected signer and no sensitive-pattern finding.
 
-  **完成（2026-07-22）**：主控在安全运行时完成当前应用候选的稳定证书签名构建。`nexara-v0.2-beta.apk` 为 18,367,648 bytes，SHA-256 `cc3934f506c3e307d6666195e0abed6f3271cc2f358d601bc9f285142c1fda3e`；R8 mapping/seeds/usage/configuration 均非空，包身份、唯一签名者、登记证书、敏感/GGUF 扫描、16 KiB zipalign 和 checksum 全部通过。签名材料未写入源码、报告、Agent 提示词或日志。
+  **历史完成、当前重新打开（2026-07-22）**：历史候选 `nexara-v0.2-beta.apk` 为 18,367,648 bytes，SHA-256 `cc3934f506c3e307d6666195e0abed6f3271cc2f358d601bc9f285142c1fda3e`，当时 R8、签名、敏感扫描、16 KiB zipalign 和 checksum 全部通过。当前新增通知 stop `FLAG_ONE_SHOT` 生产字节后，该 APK 仅保留为历史证据；须重新构建并验真当前候选。
 
 - [ ] **Step 6：冷安装和真机边界**
 
@@ -1449,7 +1449,7 @@
 - [x] 系统、浅色、深色和 Android 12+ 动态色真实生效、持久恢复、备份恢复后立即生效。
 - [x] UI、Markdown、Mermaid、ECharts、LaTeX、PlantUML、HTML 和表格在深浅色下可读。
 - [x] 全量 JVM 0 failure/error；skip 独立记录；Lint 0 Error/Fatal；全部截图 PASS 并逐张人工审阅。
-- [x] API 31/35/36 相关设备矩阵通过；当前 release APK 完成 R8/zipalign/签名/checksum 和 API 35/36 同哈希冷安装。
+- [ ] API 31/35/36 相关设备矩阵通过；当前 release APK 完成 R8/zipalign/签名/checksum 和 API 35/36 同哈希冷安装。历史哈希已闭合，但当前 `FLAG_ONE_SHOT` 生产修复须重建候选并取得新远端矩阵。
 - [ ] 非调试签名 APK 的完整业务黑盒、物理真机 TalkBack 与核心业务人工验收完成。
 - [x] 真机 TalkBack、核心业务人工验收、远端 CI、tag workflow 和 GitHub Release 未闭合时，发行继续 NO-GO。
-- [ ] 本轮新增设备 harness 的生产/设备提交已由 run `29864872637` 通过 quality、API 31、API 35、API 36，但文档后继 run `29867832809` 再次暴露两处 `VectorizationQueueRoomTest` 测试同步假设；确定性门闩修复已在本地取得精确用例、完整类多轮和全量 JVM 2118 项 GREEN，等待新提交、推送及远端 CI readback 后重新关闭。保护目录和敏感材料保持未触碰。
+- [ ] 确定性门闩提交 `6fd0227b` 的 run `29870166426` 已通过 quality、API 31，且 API 36 attempt 2 全绿；API 35 attempt 1 真实暴露已消费 stop action 可重放，现以显式私有 Service `PendingIntent` + `FLAG_ONE_SHOT` 修复。本机 API 35 full、JVM 2119、Lint 0 Error/Fatal、Screenshot 96/96 已 GREEN，等待当前补丁提交、推送、API 31/35/36 远端 readback、新签名 APK 与同哈希冷安装后关闭。保护目录和敏感材料保持未触碰。

@@ -10,6 +10,9 @@ class GenerationForegroundServiceContractTest {
     private val service = read(
         "app/src/main/java/com/promenar/nexara/background/generation/GenerationForegroundService.kt",
     )
+    private val notificationFactory = read(
+        "app/src/main/java/com/promenar/nexara/background/generation/GenerationNotificationFactory.kt",
+    )
 
     @Test
     fun `Manifest声明通知与dataSync权限且Service不导出`() {
@@ -77,6 +80,25 @@ class GenerationForegroundServiceContractTest {
         assertThat(guard).isAtLeast(0)
         assertThat(stop.indexOf("coordinator?.cancel")).isGreaterThan(guard)
         assertThat(stop.indexOf("stopTracking(taskId)")).isGreaterThan(guard)
+    }
+
+    @Test
+    fun `通知停止动作使用一次性显式Service PendingIntent`() {
+        val stopPendingIntent = notificationFactory
+            .substringAfter("val stopPendingIntent =")
+            .substringBefore("val openPendingIntent =")
+        assertThat(stopPendingIntent).contains("PendingIntent.getService(")
+        assertThat(stopPendingIntent).doesNotContain("PendingIntent.getBroadcast(")
+        assertThat(stopPendingIntent).contains("PendingIntent.FLAG_IMMUTABLE")
+        assertThat(stopPendingIntent).contains("PendingIntent.FLAG_ONE_SHOT")
+
+        val stopIntent = notificationFactory
+            .substringAfter("internal fun stopIntent(taskId: String)")
+            .substringBefore("private fun ensureChannel()")
+        assertThat(stopIntent).contains(
+            "Intent(applicationContext, GenerationForegroundService::class.java)",
+        )
+        assertThat(stopIntent).contains("action = GenerationForegroundService.ACTION_STOP")
     }
 
     @Test

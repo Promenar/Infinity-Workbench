@@ -293,8 +293,9 @@ class MainActivityNotificationE2eTest {
             !isGenerationServiceRunning() && generationNotifications().isEmpty()
         }
 
-        // PendingIntent 可能由 System UI 重放；陈旧 stop 不能重新创建服务或通知。
-        sendAndAwaitPendingIntent(stopAction)
+        // 一次性 stop 已被消费；重放必须由系统拒绝，且不能重新创建服务或通知。
+        val replayFailure = runCatching { sendAndAwaitPendingIntent(stopAction) }.exceptionOrNull()
+        assertThat(replayFailure).isInstanceOf(PendingIntent.CanceledException::class.java)
         requireDeviceConditionRemains("重复停止动作重新创建了服务或通知") {
             !isGenerationServiceRunning() && generationNotifications().isEmpty()
         }
