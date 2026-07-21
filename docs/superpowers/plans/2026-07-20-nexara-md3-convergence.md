@@ -1452,4 +1452,4 @@
 - [x] API 31/35/36 相关设备矩阵通过；当前 release APK 完成 R8/zipalign/签名/checksum 和 API 35/36 同哈希冷安装。
 - [ ] 非调试签名 APK 的完整业务黑盒、物理真机 TalkBack 与核心业务人工验收完成。
 - [x] 真机 TalkBack、核心业务人工验收、远端 CI、tag workflow 和 GitHub Release 未闭合时，发行继续 NO-GO。
-- [ ] 本轮新增设备 harness 完成 DIA/HLG、提交、推送与远端 CI readback；在动作真实完成前不得提前勾选。保护目录和敏感材料继续保持未触碰。
+- [x] 本轮新增设备 harness 已完成 DIA/HLG、提交、推送与远端 CI readback：首轮 run `29862967856` 暴露并定位测试调度竞态，独立修复提交 `52d038a6` 的 run `29864872637` 已通过 quality、API 31、API 35、API 36；远端产物回读为 JVM 2118 项 0 failure/error、14 skip，Screenshot 96/96，Lint 0 Error/Fatal，三档设备 exit 0 且 crash 日志为空。保护目录和敏感材料保持未触碰。
