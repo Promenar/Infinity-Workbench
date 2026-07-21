@@ -101,6 +101,14 @@ class SmoothStreamContentTest {
     }
 
     @Test
+    fun `截图检查模式关闭尾部淡入而真实流式界面保持动画`() {
+        assertThat(shouldAnimateStreamingTail(isStreaming = true, inspectionMode = false)).isTrue()
+        assertThat(shouldAnimateStreamingTail(isStreaming = true, inspectionMode = true)).isFalse()
+        assertThat(shouldAnimateStreamingTail(isStreaming = false, inspectionMode = false)).isFalse()
+        assertThat(shouldAnimateStreamingTail(isStreaming = false, inspectionMode = true)).isFalse()
+    }
+
+    @Test
     fun `尾部淡入使用透明alpha遮罩且不覆盖整个富媒体容器`() {
         val root = File(System.getProperty("user.dir") ?: ".").let {
             if (it.resolve("src/main").isDirectory) it else it.resolve("app")

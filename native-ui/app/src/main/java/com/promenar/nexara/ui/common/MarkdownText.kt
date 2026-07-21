@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -119,6 +120,11 @@ internal class ParseCache {
 }
 
 internal const val STREAM_TAIL_FADE_DURATION_MS = 140
+
+internal fun shouldAnimateStreamingTail(
+    isStreaming: Boolean,
+    inspectionMode: Boolean,
+): Boolean = isStreaming && !inspectionMode
 
 internal fun streamTailFadeStartAlpha(
     isStreaming: Boolean,
@@ -344,6 +350,10 @@ fun MarkdownText(
     fontStyle: androidx.compose.ui.text.font.FontStyle? = null,
     compactSpacing: Boolean = false
 ) {
+    val animateStreamingTail = shouldAnimateStreamingTail(
+        isStreaming = isStreaming,
+        inspectionMode = LocalInspectionMode.current,
+    )
     val processed = remember(markdown, isStreaming) {
         val normalized = normalizeLatexDelimiters(markdown)
         val raw = if (isStreaming) sanitizeStreamingMarkdown(normalized) else normalized
@@ -493,7 +503,7 @@ fun MarkdownText(
                                     fontStyle = fontStyle,
                                     compactSpacing = compactSpacing,
                                     modifier = Modifier.streamingTailFade(
-                                        enabled = isStreaming && index == mergedSegments.lastIndex,
+                                        enabled = animateStreamingTail && index == mergedSegments.lastIndex,
                                         content = segment.content,
                                     ),
                                 )
