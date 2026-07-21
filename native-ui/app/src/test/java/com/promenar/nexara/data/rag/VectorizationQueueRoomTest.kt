@@ -136,17 +136,12 @@ class VectorizationQueueRoomTest {
         holder.completeReset(handle)
         val replacement = holder.getOrCreate { queue(StandardTestDispatcher(testScheduler)) }
         assertThat(replacement.resumeInterruptedTasks().isSuccess).isTrue()
+        runCurrent()
 
-        val restoredStatus = database.vectorizationTaskDao().getById(TASK)?.status
-        if (restoredStatus == null) {
-            assertThat(replacement.snapshotState().queue).isEmpty()
-        } else {
-            assertThat(restoredStatus).isIn(
-                listOf("interrupted", "extracting_source", "chunking", "vectorizing", "saving", "extracting", "completed"),
-            )
-            assertThat(replacement.snapshotState().queue.map { it.id }).containsExactly(TASK)
-        }
+        assertThat(database.vectorizationTaskDao().getById(TASK)).isNull()
+        assertThat(replacement.snapshotState().queue).isEmpty()
         assertThat(replacement).isNotSameInstanceAs(old)
+        replacement.shutdown()
     }
 
     @Test
