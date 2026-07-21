@@ -58,6 +58,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -186,6 +188,8 @@ internal fun ProviderModelsScreenContent(
     actions: ProviderModelsScreenActions,
     onNavigateBack: () -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     var searchQuery by rememberSaveable(state.providerId) { mutableStateOf("") }
     var selectedModelId by rememberSaveable(state.providerId) { mutableStateOf<String?>(null) }
     var showDeleteAllDialog by remember { mutableStateOf(false) }
@@ -310,7 +314,11 @@ internal fun ProviderModelsScreenContent(
                     }
                     ProviderModelsModelRow(
                         model = model,
-                        onRowClick = { selectedModelId = model.id },
+                        onRowClick = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
+                            selectedModelId = model.id
+                        },
                         onToggle = { actions.onToggle(model.id) },
                     )
                 }

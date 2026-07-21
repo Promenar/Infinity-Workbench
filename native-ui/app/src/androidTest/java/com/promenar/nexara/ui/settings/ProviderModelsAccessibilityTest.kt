@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.settings
 
+import android.os.SystemClock
+import android.view.WindowInsets as AndroidWindowInsets
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
@@ -16,6 +18,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsAtLeast
@@ -36,6 +39,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.test.espresso.Espresso
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ModelInfo
@@ -44,6 +48,7 @@ import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 
@@ -53,6 +58,14 @@ class ProviderModelsAccessibilityTest {
 
     private val resources
         get() = InstrumentationRegistry.getInstrumentation().targetContext.resources
+
+    @After
+    fun closeImeAfterTest() {
+        if (imeVisible()) {
+            Espresso.pressBack()
+            awaitImeClosed()
+        }
+    }
 
     @Test
     fun syncNoticeIsAssertiveAndDismissTargetIsAtLeast48Dp() {
@@ -837,6 +850,52 @@ class ProviderModelsAccessibilityTest {
     }
 
     @Test
+    fun openingModelEditorClearsSearchFocus() {
+        val modelId = "provider-alpha::model-focus"
+        rule.setContent {
+            NexaraTheme {
+                ProviderModelsScreenContent(
+                    state = ProviderModelsScreenState(
+                        providerName = "Provider",
+                        providerId = "provider-alpha",
+                        isFetching = false,
+                        syncNotice = null,
+                        models = listOf(
+                            ModelInfo(
+                                name = "Focus Model",
+                                id = modelId,
+                                remoteModelId = "model-focus",
+                                description = "focus fixture",
+                                enabled = true,
+                                type = "chat",
+                                providerId = "provider-alpha",
+                            ),
+                        ),
+                        modelTestStates = emptyMap(),
+                    ),
+                    actions = idleActions(),
+                    onNavigateBack = {},
+                )
+            }
+        }
+
+        val searchInput = rule.onNode(
+            matcher = hasSetTextAction() and
+                (hasTestTag(UiTags.PROVIDER_MODELS_SEARCH_FIELD) or
+                    hasAnyAncestor(hasTestTag(UiTags.PROVIDER_MODELS_SEARCH_FIELD))),
+            useUnmergedTree = true,
+        )
+        searchInput.performClick().assertIsFocused()
+        assertThat(awaitImeOpened()).isGreaterThan(0)
+        inputInTaggedSearch(UiTags.PROVIDER_MODELS_SEARCH_FIELD, "Focus")
+        onModelCard(modelId).performClick()
+
+        rule.onNodeWithTag(editorSheetTag(modelId)).assertExists()
+        searchInput.assertIsNotFocused()
+        assertThat(awaitImeClosed()).isTrue()
+    }
+
+    @Test
     fun modelToggleActionDoesNotOpenEditorSheet() {
         val modelId = "provider-alpha::model-toggle"
         var toggleCount = 0
@@ -890,6 +949,41 @@ class ProviderModelsAccessibilityTest {
                 (hasTestTag(tag) or hasAnyAncestor(hasTestTag(tag))),
             useUnmergedTree = true,
         ).performTextInput(value)
+    }
+
+    private fun awaitImeOpened(timeoutMs: Long = 8_000): Int {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        var last = imeBottomInset()
+        var stableMs = 0L
+        while (SystemClock.elapsedRealtime() < deadline) {
+            SystemClock.sleep(100)
+            val current = imeBottomInset()
+            stableMs = if (current > 0 && current == last) stableMs + 100 else 0L
+            last = current
+            if (current > 0 && stableMs >= 200) return current
+        }
+        return last
+    }
+
+    private fun awaitImeClosed(timeoutMs: Long = 6_000): Boolean {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        var stableMs = 0L
+        while (SystemClock.elapsedRealtime() < deadline) {
+            SystemClock.sleep(100)
+            stableMs = if (!imeVisible() && imeBottomInset() == 0) stableMs + 100 else 0L
+            if (stableMs >= 200) return true
+        }
+        return !imeVisible() && imeBottomInset() == 0
+    }
+
+    private fun imeVisible(): Boolean = rule.runOnUiThread {
+        val insets = rule.activity.window.decorView.rootWindowInsets
+        insets != null && insets.isVisible(AndroidWindowInsets.Type.ime())
+    }
+
+    private fun imeBottomInset(): Int = rule.runOnUiThread {
+        rule.activity.window.decorView.rootWindowInsets
+            ?.getInsets(AndroidWindowInsets.Type.ime())?.bottom ?: 0
     }
 
     private fun onModelCard(modelId: String) =

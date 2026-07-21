@@ -7,9 +7,9 @@ All notable changes to this project will be documented in this file.
 ### Material 3 总收敛：Task 14 本地设备、视觉与性能门禁（2026-07-21）
 
 - **三档设备闭环**：当前集成工作树在 API 31/35/36 的冻结类集合各 101/101；同源 broader harness 分别完成 39/41/41 个显式测试并保留各 1 个设计内 phase checkpoint skip，三档均无 failure/error 且脚本退出 0。API 31 仍执行通知打开会话与前台服务，只跳过 Android 13+ 通知权限路径。
-- **竞态与布局收口**：后台通知断言改为有界等待真实 active notification，引导底部导航使用稳定语义标签；文档标题在 2.0x 下最多两行显示且换行输入归一为空格，API 36 文档编辑交互 32/32。
-- **性能与视觉证据**：固定 API 36、headless `-gpu host`、动画缩放 0 的 500 模型性能双跑均通过，较差有效样本 p95 35ms、max 68ms、PSS +455KiB；96 张 actual 已逐张检查，5 张文档编辑 reference 经定向复核后更新，Screenshot 96/96。
-- **当前质量门禁**：JVM 2117 项（0 failure/error、14 skip）、Lint 0 Error/Fatal（420 warning、25 hint）、AndroidTest Kotlin 编译与设备脚本契约通过；release-equivalent `minifiedTest` R8 新鲜构建成功。当前进程缺少真实 Provider 与签名环境变量，未重建签名 APK、未执行当前包冷安装，历史 PASS 不替代本轮，发行继续 NO-GO。
+- **竞态与布局收口**：后台通知断言改为有界等待真实 active notification，引导底部导航使用稳定语义标签；文档标题在 2.0x 下最多两行显示且换行输入归一为空格，API 36 文档编辑交互 32/32。Provider Models 从搜索结果进入编辑 Sheet 时会先清除搜索焦点并收起 IME，避免键盘残留挤压编辑面板。
+- **性能与视觉证据**：固定 API 36、`-no-window -no-snapshot -gpu host`、动画缩放 0 的 500 模型性能双跑均通过；两轮各保留 45 条可复算 raw histogram，较差有效样本 p95 35ms、max 51ms、PSS +2763KiB。两次命中系统周期包事件的批次明确标为 `FIXTURE_INVALID` 并保留，未替换慢样本；96 张 actual 已逐张检查，5 张文档编辑 reference 经定向复核后更新，Screenshot 96/96。
+- **当前质量门禁**：JVM 2117 项（0 failure/error、14 skip）、Lint 0 Error/Fatal（420 warning、25 hint）、AndroidTest Kotlin 编译与设备脚本契约通过；release-equivalent `minifiedTest` R8 新鲜构建成功。API 36 完整 Provider Models 设备回归 17/17，并用真实 Insets 断言确认编辑 Sheet 打开后 IME 已收起；Terra 最终复审 0/0/0，Sol 为 0/0/2 且两项不阻断 Minor 已记录，Task 14 本地返修 GO。当前进程缺少真实 Provider 与签名环境变量，未重建签名 APK、未执行当前包冷安装，历史 PASS 不替代本轮，发行继续 NO-GO。
 
 ### Material 3 总收敛：全站自适应语义色与富文本主题（2026-07-21）
 

@@ -1250,26 +1250,117 @@
 
 - [x] **Step 4：复跑 500 模型性能**
 
-  Run `ProviderModelsPerformanceTest` twice on the fixed API 36 AVD. Before each formal batch, keep API 36 as the only running AVD, use the historical headless `-gpu host` Apple Silicon/Metal configuration, set all three system animation scales to `0`, allow the Play Store image's delayed package-install work to settle for 10 seconds, and do not run screenshot processing, builds, other emulator matrices or other controller workloads concurrently. The test must fail fast and print the animation scales when this fixture contract drifts. All raw samples remain in separate logs; use the worse valid run. Do not replace or discard slow samples. A batch whose recorded preconditions were broken remains diagnostic evidence and must not be relabeled as a valid product sample.
+  Run `ProviderModelsPerformanceTest` twice on the fixed API 36 AVD. Keep API 36 as the only running AVD and launch it with the historical Apple Silicon/Metal configuration including the literal `-no-window -no-snapshot -gpu host`; a windowed Play Store emulator polls `dumpsys package com.google.android.gms` about every 10 seconds and is not a valid performance fixture. Build and install the test APK once before both runs, set all three system animation scales to `0`, then require a 30-second event-driven quiet window. Any `artd GetBestInfo`, `dex2oat`/`dexopt`, `PackageInstaller`, `PACKAGE_ADDED`/`PACKAGE_REPLACED`, `BackgroundInstallControlService` package event, or ART/PackageManager job event resets the quiet window; abort as `FIXTURE_INVALID` after five minutes rather than starting a contaminated run. Do not run PackageManager queries, screenshot processing, builds, other emulator matrices or controller workloads concurrently with measurement.
+
+  Pass a unique `nexaraPerfFixtureId` to each direct instrumentation run and retain the AVD name, fingerprint, API/ABI, emulator command, APK SHA-256, source HEAD/file hash, instrumentation output, complete epoch logcat, measurement-window log, raw histograms and exit status. After the run, audit only the explicit `PROVIDER_MODELS_PERF_WINDOW_START/END` interval for the same contamination events. Classify each attempt as `VALID_PASS`, `VALID_FAIL`, or `FIXTURE_INVALID`; all attempts remain in separate files and cannot be overwritten or discarded. Two uncontaminated valid runs are required, and the worse valid result is authoritative. The test must fail fast and print animation scales when its in-process contract drifts. Do not relax thresholds or replace slow samples.
 
   ```bash
-  mkdir -p native-ui/app/build/reports/provider-models-performance
-  for run in 1 2; do
-    (
-      cd native-ui
-      set -o pipefail
-      adb -s emulator-5572 logcat -c
-      ANDROID_SERIAL=emulator-5572 ./gradlew :app:connectedDebugAndroidTest \
-        -Pandroid.testInstrumentationRunnerArguments.class=com.promenar.nexara.ui.settings.ProviderModelsPerformanceTest \
-        | tee "app/build/reports/provider-models-performance/run-$run.log"
-      adb -s emulator-5572 logcat -d -v threadtime -s ProviderModelsPerf:I '*:S' \
-        > "app/build/reports/provider-models-performance/run-$run-metrics.log"
-      test "$(grep -c 'PROVIDER_MODELS_PERF' "app/build/reports/provider-models-performance/run-$run-metrics.log")" = 1
-    )
+  set -euo pipefail
+  SERIAL="${ANDROID_SERIAL:?set the only running API 36 emulator serial}"
+  REPORT_DIR="native-ui/app/build/reports/provider-models-performance-$(date +%Y%m%d-%H%M%S)"
+  PATTERN='artd.*GetBestInfo|dex2oat|dexopt|PackageInstaller|PACKAGE_(ADDED|REPLACED)|BackgroundDexoptJobService|BackgroundInstallControlService.*Package event received'
+  mkdir -p "$REPORT_DIR"
+
+  test "$(adb devices | awk 'NR>1 && $2=="device"{count++} END{print count+0}')" = 1
+  test "$(adb -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')" = 36
+  test "$(adb -s "$SERIAL" emu avd name | head -n 1 | tr -d '\r')" = Pixel_7
+  adb -s "$SERIAL" emu avd name | head -n 1 | tr -d '\r' > "$REPORT_DIR/avd-name.txt"
+  adb -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r' > "$REPORT_DIR/device-api.txt"
+  adb -s "$SERIAL" shell getprop ro.product.cpu.abi | tr -d '\r' > "$REPORT_DIR/device-abi.txt"
+  adb -s "$SERIAL" shell getprop ro.build.fingerprint | tr -d '\r' > "$REPORT_DIR/device-fingerprint.txt"
+  emulator_command="$(ps -axo command= | grep '[e]mulator.*-avd Pixel_7')"
+  test "$(printf '%s\n' "$emulator_command" | wc -l | tr -d ' ')" = 1
+  for required_flag in -no-window -no-snapshot '-gpu host'; do
+    printf '%s\n' "$emulator_command" | grep -F -- "$required_flag" >/dev/null
+  done
+  printf '%s\n' "$emulator_command" > "$REPORT_DIR/emulator-command.txt"
+
+  (cd native-ui && ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest)
+  adb -s "$SERIAL" install -r -t native-ui/app/build/outputs/apk/debug/app-debug.apk \
+    > "$REPORT_DIR/install-app.txt"
+  adb -s "$SERIAL" install -r -t native-ui/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk \
+    > "$REPORT_DIR/install-test.txt"
+  git rev-parse HEAD > "$REPORT_DIR/source-head.txt"
+  shasum -a 256 native-ui/app/build/outputs/apk/debug/app-debug.apk \
+    native-ui/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk \
+    > "$REPORT_DIR/apk.sha256"
+  shasum -a 256 \
+    native-ui/app/src/androidTest/java/com/promenar/nexara/ui/settings/ProviderModelsPerformanceTest.kt \
+    native-ui/app/src/main/java/com/promenar/nexara/ui/settings/ProviderModelsScreen.kt \
+    > "$REPORT_DIR/source-files.sha256"
+  adb -s "$SERIAL" shell settings put global window_animation_scale 0
+  adb -s "$SERIAL" shell settings put global transition_animation_scale 0
+  adb -s "$SERIAL" shell settings put global animator_duration_scale 0
+  for scale in window_animation_scale transition_animation_scale animator_duration_scale; do
+    value="$(adb -s "$SERIAL" shell settings get global "$scale" | tr -d '\r')"
+    test "$value" = 0
+    printf '%s=%s\n' "$scale" "$value"
+  done > "$REPORT_DIR/animation-scales.txt"
+
+  valid_runs=0
+  attempt=0
+  deadline=$(( $(date +%s) + 300 ))
+  while [ "$valid_runs" -lt 2 ]; do
+    attempt=$((attempt + 1))
+    quiet=false
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+      preflight="$REPORT_DIR/preflight-attempt-$attempt-$(date +%s).log"
+      adb -s "$SERIAL" logcat -c
+      sleep 30
+      adb -s "$SERIAL" logcat -d -v epoch > "$preflight"
+      if ! grep -E -i "$PATTERN" "$preflight" \
+        > "${preflight%.log}-contamination.log"; then
+        quiet=true
+        break
+      fi
+    done
+    if [ "$quiet" != true ]; then
+      printf '%s\n' FIXTURE_INVALID > "$REPORT_DIR/preflight-classification.txt"
+      exit 2
+    fi
+
+    fixture_id="task14-attempt-$attempt-$(date +%s)"
+    adb -s "$SERIAL" logcat -c
+    set +e
+    adb -s "$SERIAL" shell am instrument -w -r \
+      -e class com.promenar.nexara.ui.settings.ProviderModelsPerformanceTest \
+      -e nexaraPerfFixtureId "$fixture_id" \
+      com.promenar.nexara.native.debug.test/androidx.test.runner.AndroidJUnitRunner \
+      > "$REPORT_DIR/run-$attempt-instrumentation.txt" 2>&1
+    command_exit=$?
+    set -e
+    printf '%s\n' "$command_exit" > "$REPORT_DIR/run-$attempt-command-exit-code.txt"
+    adb -s "$SERIAL" logcat -d -v epoch > "$REPORT_DIR/run-$attempt-system.log"
+    grep 'ProviderModelsPerf.*PROVIDER_MODELS_PERF' "$REPORT_DIR/run-$attempt-system.log" \
+      > "$REPORT_DIR/run-$attempt-metrics.log" || true
+    awk -v id="$fixture_id" \
+      'index($0,"PROVIDER_MODELS_PERF_WINDOW_START fixtureId=" id){inside=1} inside{print} index($0,"PROVIDER_MODELS_PERF_WINDOW_END fixtureId=" id){exit}' \
+      "$REPORT_DIR/run-$attempt-system.log" > "$REPORT_DIR/run-$attempt-measurement-window.log"
+    grep -E -i "$PATTERN" "$REPORT_DIR/run-$attempt-measurement-window.log" \
+      > "$REPORT_DIR/run-$attempt-contamination.log" || true
+
+    start_count="$(grep -c "PROVIDER_MODELS_PERF_WINDOW_START fixtureId=$fixture_id" "$REPORT_DIR/run-$attempt-system.log" || true)"
+    end_count="$(grep -c "PROVIDER_MODELS_PERF_WINDOW_END fixtureId=$fixture_id" "$REPORT_DIR/run-$attempt-system.log" || true)"
+    raw_count="$(grep -c "PROVIDER_MODELS_PERF_RAW fixtureId=$fixture_id" "$REPORT_DIR/run-$attempt-metrics.log" || true)"
+    summary_count="$(grep -c "PROVIDER_MODELS_PERF fixtureId=$fixture_id" "$REPORT_DIR/run-$attempt-metrics.log" || true)"
+    contamination_count="$(wc -l < "$REPORT_DIR/run-$attempt-contamination.log" | tr -d ' ')"
+    if [ "$start_count" != 1 ] || [ "$end_count" != 1 ] || \
+       [ "$raw_count" -lt 45 ] || [ "$summary_count" != 1 ] || \
+       [ "$contamination_count" != 0 ]; then
+      classification=FIXTURE_INVALID
+    elif [ "$command_exit" = 0 ] && \
+         grep -q '^OK (1 test)' "$REPORT_DIR/run-$attempt-instrumentation.txt"; then
+      classification=VALID_PASS
+      valid_runs=$((valid_runs + 1))
+    else
+      classification=VALID_FAIL
+    fi
+    printf '%s\n' "$classification" > "$REPORT_DIR/run-$attempt-classification.txt"
+    [ "$classification" != VALID_FAIL ] || exit 1
   done
   ```
 
-  固定 API 36 有效双跑均通过；较差有效样本 p95 35ms、max 68ms、稳定 PSS +455KiB，原阈值 50ms/150ms/64MiB 未放宽。前提被并发截图处理或系统动画漂移破坏的批次仅保留为无效诊断证据。
+  当前源码已按 headless + raw-evidence 合同取得两轮有效结果：run 1 与 run 4 均为 `VALID_PASS`，各保留 45 条 raw histogram、单一 START/END 标记且测量窗口污染为 0；独立复算帧数、p95 与 max 全部匹配。较差有效样本为 p95 35ms、max 51ms、稳定 PSS +2763KiB，原阈值 50ms/150ms/64MiB 未放宽。run 2 与 run 3 指标虽在阈值内，但窗口内各捕获一条约 180 秒周期的 `BackgroundInstallControlService` 包事件，均按合同保留并分类为 `FIXTURE_INVALID`，未替换、删除或冒充有效样本。完整证据位于 `native-ui/app/build/reports/provider-models-performance-task14-final-20260721-191942/`。
 
 - [ ] **Step 5：构建当前 release APK 并检查签名链**
 
@@ -1329,9 +1420,11 @@
 
   已同步 CHANGELOG、发行说明、验证账本和本计划；追加 `2026-07-21T15:06:15+08:00` 阶段恢复记录并使用 HLG Skill 重建索引。最终双复审仍在 Step 8 保持未完成。
 
-- [ ] **Step 8：最终双复审**
+- [x] **Step 8：最终双复审**
 
   One independent specification reviewer checks every completion item; one code-quality/visual reviewer checks diff, tests, performance and actual. Critical/Important and P0/P1 must be zero; Minor/P2 is recorded, not silently dropped.
+
+  2026-07-21 最终返修复审已闭合：Terra 为 Critical 0 / Important 0 / Minor 0，Sol 为 Critical 0 / Important 0 / Minor 2，二者均判定 Task 14 GO。两项不阻断 Minor 已显式保留：性能 runner 示例只检查 raw 行数，尚未自动复算五轮九指标唯一性、分片连续性与 bucket；JVM 源码字符串合同对格式调整较敏感。当前两轮有效性能原始数据已独立复算，真实 API 36 Insets/IME 设备测试 17/17 且证据文件绑定当前测试源码和 APK 哈希，因此不降低既定完成标准。此 GO 仅覆盖 Task 14 本地返修，不改变真实 Provider、签名 release、冷安装、真机与远端发行门禁。
 
 - [ ] **Step 9：提交和推送阶段收口**
 
@@ -1344,16 +1437,16 @@
 
 ## Completion Definition
 
-- [ ] 手机主导航使用 64dp 全胶囊流体导航坞与单一移动指示器，大屏使用同目的地 `NavigationRail`；两端均保留 Tab 语义、48dp 目标、系统 Insets 和内容避让，无 glow 或静态自绘选中圆。
-- [ ] 附件动作锚定 `+` 展开，支持关闭、返回、外部 dismiss、减少动效和 48dp/TalkBack。
-- [ ] Agent 会话列表和 Agent 首页低频搜索使用顶栏搜索模式，列表为连续 `ListItem`。
-- [ ] Model Picker 和会话设置使用同一连续模型选择行，不改变元数据三态、友好名称或 endpoint 契约。
-- [ ] 设置首页取消双 Tab；Provider、默认模型、记忆、检索等进入清晰二级层级。
-- [ ] 记忆、检索、Provider 表单、Provider Models 和全部正式设置页清除 Glass、卡套卡和无规则描边。
-- [ ] Provider Models 以摘要列表 + 独立编辑 Sheet 工作，500 模型性能达到 p95/max/PSS 门禁。
-- [ ] 系统、浅色、深色和 Android 12+ 动态色真实生效、持久恢复、备份恢复后立即生效。
-- [ ] UI、Markdown、Mermaid、ECharts、LaTeX、PlantUML、HTML 和表格在深浅色下可读。
-- [ ] 全量 JVM 0 failure/error；skip 独立记录；Lint 0 Error/Fatal；全部截图 PASS 并逐张人工审阅。
+- [x] 手机主导航使用 64dp 全胶囊流体导航坞与单一移动指示器，大屏使用同目的地 `NavigationRail`；两端均保留 Tab 语义、48dp 目标、系统 Insets 和内容避让，无 glow 或静态自绘选中圆。
+- [x] 附件动作锚定 `+` 展开，支持关闭、返回、外部 dismiss、减少动效和 48dp/TalkBack。
+- [x] Agent 会话列表和 Agent 首页低频搜索使用顶栏搜索模式，列表为连续 `ListItem`。
+- [x] Model Picker 和会话设置使用同一连续模型选择行，不改变元数据三态、友好名称或 endpoint 契约。
+- [x] 设置首页取消双 Tab；Provider、默认模型、记忆、检索等进入清晰二级层级。
+- [x] 记忆、检索、Provider 表单、Provider Models 和全部正式设置页清除 Glass、卡套卡和无规则描边。
+- [x] Provider Models 以摘要列表 + 独立编辑 Sheet 工作，500 模型性能达到 p95/max/PSS 门禁。
+- [x] 系统、浅色、深色和 Android 12+ 动态色真实生效、持久恢复、备份恢复后立即生效。
+- [x] UI、Markdown、Mermaid、ECharts、LaTeX、PlantUML、HTML 和表格在深浅色下可读。
+- [x] 全量 JVM 0 failure/error；skip 独立记录；Lint 0 Error/Fatal；全部截图 PASS 并逐张人工审阅。
 - [ ] API 31/35/36 相关设备矩阵通过；当前 release APK 完成 R8/zipalign/签名/checksum 和 API 35/36 冷安装。
-- [ ] 真机 TalkBack、核心业务人工验收、远端 CI、tag workflow 和 GitHub Release 未闭合时，发行继续 NO-GO。
+- [x] 真机 TalkBack、核心业务人工验收、远端 CI、tag workflow 和 GitHub Release 未闭合时，发行继续 NO-GO。
 - [ ] DIA、HLG、registry、release validation 与当前实现同步；每个完成任务已提交并推送，未触碰保护目录和敏感材料。

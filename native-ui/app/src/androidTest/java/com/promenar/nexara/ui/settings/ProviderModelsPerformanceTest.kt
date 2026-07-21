@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.settings
 
 import android.os.Build
 import android.os.Debug
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.util.SparseIntArray
@@ -22,13 +23,13 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.core.app.FrameMetricsAggregator
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
+import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import kotlin.math.ceil
 import org.junit.Assert.assertTrue
 import org.junit.Rule
-import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -38,14 +39,14 @@ class ProviderModelsPerformanceTest {
     @get:Rule
     val rule = createAndroidComposeRule<ComponentActivity>()
 
-    @Before
-    fun settleGuestBackgroundWork() {
-        Thread.sleep(GUEST_BACKGROUND_SETTLE_MILLIS)
-    }
-
     @Test
     fun `500模型列表在搜索滚动切换和编辑场景下保持性能门禁`() {
         assertTrue("性能门禁仅允许固定 API 36 AVD", Build.VERSION.SDK_INT == 36)
+        val fixtureId = InstrumentationRegistry.getArguments()
+            .getString(FIXTURE_ID_ARGUMENT)
+            ?.takeIf(String::isNotBlank)
+        assertTrue("PERF_FIXTURE_INVALID: 缺少 $FIXTURE_ID_ARGUMENT", fixtureId != null)
+        fixtureId ?: return
         val animationScales = animationScales()
         assertTrue(
             "PERF_FIXTURE_INVALID: 三项系统动画倍率必须全部为 0，实际为 $animationScales",
@@ -99,6 +100,12 @@ class ProviderModelsPerformanceTest {
 
         warmUpFrameMetrics(exercise)
 
+        val measurementStartNanos = SystemClock.elapsedRealtimeNanos()
+        Log.i(
+            LOG_TAG,
+            "PROVIDER_MODELS_PERF_WINDOW_START fixtureId=$fixtureId " +
+                "elapsedRealtimeNanos=$measurementStartNanos fingerprint=${Build.FINGERPRINT}",
+        )
         val baselinePssKiB = stablePssKiB()
         val snapshots = List(MEASURED_ROUNDS) { index ->
             collectRound(index + 1, exercise)
@@ -106,13 +113,22 @@ class ProviderModelsPerformanceTest {
         val rounds = snapshots.map(FrameMetricsSnapshot::total)
         val finalPssKiB = stablePssKiB()
         val pssDeltaKiB = (finalPssKiB - baselinePssKiB).coerceAtLeast(0L)
+        val measurementEndNanos = SystemClock.elapsedRealtimeNanos()
+        Log.i(
+            LOG_TAG,
+            "PROVIDER_MODELS_PERF_WINDOW_END fixtureId=$fixtureId " +
+                "elapsedRealtimeNanos=$measurementEndNanos " +
+                "durationNanos=${measurementEndNanos - measurementStartNanos}",
+        )
 
         snapshots.forEach { snapshot ->
-            snapshot.metricsByIndex.filterNotNull().forEach { it.logRawHistogram() }
+            snapshot.metricsByIndex.filterNotNull().forEach { it.logRawHistogram(fixtureId) }
         }
 
         val report = buildString {
             append("PROVIDER_MODELS_PERF")
+            append(" fixtureId=").append(fixtureId)
+            append(" fingerprint=").append(Build.FINGERPRINT)
             append(" device=").append(Build.MODEL)
             append(" api=").append(Build.VERSION.SDK_INT)
             append(" animationScales=").append(
@@ -296,13 +312,14 @@ class ProviderModelsPerformanceTest {
         return if (average == 0.0) 0.0 else (core.last() - core.first()) / average
     }
 
-    private fun RoundMetrics.logRawHistogram() {
+    private fun RoundMetrics.logRawHistogram(fixtureId: String) {
         val parts = buckets.chunked(RAW_BUCKETS_PER_LOG_LINE)
         parts.forEachIndexed { index, part ->
             Log.i(
                 LOG_TAG,
                 buildString {
                     append("PROVIDER_MODELS_PERF_RAW")
+                    append(" fixtureId=").append(fixtureId)
                     append(" round=").append(round)
                     append(" metric=").append(metricName)
                     append(" part=").append(index + 1).append('/').append(parts.size)
@@ -357,6 +374,7 @@ class ProviderModelsPerformanceTest {
 
     private companion object {
         const val LOG_TAG = "ProviderModelsPerf"
+        const val FIXTURE_ID_ARGUMENT = "nexaraPerfFixtureId"
         const val PROVIDER_ID = "provider-performance"
         const val DEEP_LIST_INDEX = 440
         const val WARMUP_ROUNDS = 3
@@ -371,8 +389,6 @@ class ProviderModelsPerformanceTest {
         const val PSS_SAMPLE_INTERVAL_MILLIS = 100L
         const val PSS_SAMPLES = 3
         const val RAW_BUCKETS_PER_LOG_LINE = 64
-        // Gradle 安装后 Play Store AVD 会延迟处理 PACKAGE_ADDED；不要把安装器/GMS 工作计入产品帧。
-        const val GUEST_BACKGROUND_SETTLE_MILLIS = 10_000L
         val FRAME_METRIC_NAMES = listOf(
             "total",
             "input",

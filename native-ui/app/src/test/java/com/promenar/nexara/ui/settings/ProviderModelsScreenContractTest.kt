@@ -72,7 +72,14 @@ class ProviderModelsScreenContractTest {
         assertThat(content).contains("var selectedModelId by rememberSaveable")
         assertThat(content).contains("state.models.firstOrNull { it.id == selectedModelId }")
         assertThat(content).contains("ProviderModelsModelRow(")
-        assertThat(content).contains("onRowClick = { selectedModelId = model.id }")
+        val rowClick = extractBetween(
+            content,
+            "onRowClick = {",
+            "onToggle = { actions.onToggle(model.id) }",
+        )
+        assertThat(rowClick).contains("focusManager.clearFocus()")
+        assertThat(rowClick).contains("keyboardController?.hide()")
+        assertThat(rowClick).contains("selectedModelId = model.id")
         assertThat(content).contains("onToggle = { actions.onToggle(model.id) }")
         assertThat(content).contains("ModelEditorSheet(")
         assertThat(content).contains("onDismissRequest = { selectedModelId = null }")
