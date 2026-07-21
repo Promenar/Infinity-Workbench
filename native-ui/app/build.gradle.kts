@@ -1,3 +1,6 @@
+import com.android.compose.screenshot.tasks.PreviewScreenshotUpdateTask
+import com.android.compose.screenshot.tasks.PreviewScreenshotValidationTask
+
 val realLlmEnvironmentNames = listOf(
     "NEXARA_TEST_LLM_BASE_URL",
     "NEXARA_TEST_LLM_API_KEY",
@@ -205,6 +208,14 @@ android {
         }
     }
 
+}
+
+tasks.withType<PreviewScreenshotValidationTask>().configureEach {
+    systemProperty("user.timezone", "Asia/Shanghai")
+}
+
+tasks.withType<PreviewScreenshotUpdateTask>().configureEach {
+    systemProperty("user.timezone", "Asia/Shanghai")
 }
 
 gradle.taskGraph.whenReady {
