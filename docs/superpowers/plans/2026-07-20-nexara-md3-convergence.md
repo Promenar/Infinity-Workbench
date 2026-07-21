@@ -1016,7 +1016,7 @@
 - Consumes: `ThemePreferenceStore`, existing settings state/actions.
 - Produces: functional appearance screen and one settings visual language across remaining pages.
 
-- [ ] **Step 1：写 ThemeViewModel RED**
+- [x] **Step 1：写 ThemeViewModel RED**
 
   Tests assert immediate persistence, process recreation, dynamic-color availability state and root `StateFlow` propagation. Theme screen must not use local `remember` as source of truth.
 
@@ -1026,15 +1026,15 @@
 
   Expected: RED because `ThemeViewModel` does not exist and the current Theme screen owns local fake state.
 
-- [ ] **Step 2：实现外观页面**
+- [x] **Step 2：实现外观页面**
 
   Use standard single-choice rows for System/Light/Dark and a Switch/ListItem for dynamic color. Remove the nonfunctional accent preset palette. Unsupported dynamic color is visibly disabled with localized supporting text; Android 12+ enabled and pre-12 disabled states are both covered.
 
-- [ ] **Step 3：逐页清除普通设置卡片化**
+- [x] **Step 3：逐页清除普通设置卡片化**
 
   For Backup, Skills, Token, Local Models and Developer: keep only genuinely independent tool cards; convert ordinary options to settings sections/ListItems; remove nested cards and static dark colors. Do not alter backup encryption, Skill enablement, usage accounting or local inference behavior.
 
-- [ ] **Step 4：运行业务、无障碍和截图回归**
+- [x] **Step 4：运行业务、无障碍和截图回归**
 
   ```bash
   ./gradlew :app:testDebugUnitTest \
@@ -1046,7 +1046,7 @@
 
   Run `BackupSettingsScreenTest` and `ThemeSettingsInteractionTest` on API 31/35/36 and inspect every migrated page in dark/light, English/Chinese and 2.0x.
 
-- [ ] **Step 5：提交和推送**
+- [x] **Step 5：提交和推送**
 
   ```bash
   git add native-ui/app/src/main/java/com/promenar/nexara/ui/settings/ThemeScreen.kt \

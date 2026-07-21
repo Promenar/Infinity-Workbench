@@ -57,12 +57,7 @@ class BackupContentUiContractTest {
         assertThat(source).contains("if (accepted) tempWebdavPass = \"\"")
         assertThat(source).contains("viewModel.resetWebDavAuth()")
         assertThat(source).doesNotContain("if (accepted) showWebdavSheet = false")
-        assertThat(source).contains(
-            "                            }\n" +
-                "                        }\n" +
-                "                        ActionButton(\n" +
-                "                            label = stringResource(R.string.backup_config_webdav)",
-        )
+        assertThat(source).contains("Text(stringResource(R.string.backup_save_config))")
         val resetSection = source.substring(
             source.indexOf("val blockedCode ="),
             source.indexOf("private fun ExportButton"),

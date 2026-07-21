@@ -128,6 +128,8 @@ import com.promenar.nexara.ui.settings.ModelTestState
 import com.promenar.nexara.ui.settings.SearchConfigScreenActions
 import com.promenar.nexara.ui.settings.SearchConfigScreenContent
 import com.promenar.nexara.ui.settings.SearchConfigState
+import com.promenar.nexara.ui.settings.ThemeScreenContent
+import com.promenar.nexara.ui.settings.ThemeUiState
 import com.promenar.nexara.ui.settings.BackupOperations
 import com.promenar.nexara.ui.settings.BackupRestartRequester
 import com.promenar.nexara.ui.settings.BackupSettingsScreen
@@ -1082,6 +1084,83 @@ fun backupSettingsReleasePreview() {
     }
     ReleasePreviewSurface {
         BackupSettingsScreen(onNavigateBack = {}, viewModel = viewModel)
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Theme settings English dark",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun themeSettingsEnglishDarkReleasePreview() {
+    ThemeSettingsReleasePreview(dark = true)
+}
+
+@PreviewTest
+@Preview(
+    name = "Theme settings Chinese light",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_NO,
+)
+@Composable
+fun themeSettingsChineseLightReleasePreview() {
+    ThemeSettingsReleasePreview(dark = false)
+}
+
+@PreviewTest
+@Preview(
+    name = "Theme settings Chinese dark 2x",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+    fontScale = 2f,
+)
+@Composable
+fun themeSettingsChineseDarkLargeTextReleasePreview() {
+    ThemeSettingsReleasePreview(dark = true)
+}
+
+@PreviewTest
+@Preview(
+    name = "Theme settings English light 2x",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_NO,
+    fontScale = 2f,
+)
+@Composable
+fun themeSettingsEnglishLightLargeTextReleasePreview() {
+    ThemeSettingsReleasePreview(dark = false)
+}
+
+@Composable
+private fun ThemeSettingsReleasePreview(dark: Boolean) {
+    NexaraTheme(
+        preferences = NexaraThemePreferences(
+            mode = if (dark) NexaraThemeMode.DARK else NexaraThemeMode.LIGHT,
+            colorSource = NexaraColorSource.NEXARA,
+        ),
+    ) {
+        ThemeScreenContent(
+            state = ThemeUiState(
+                preferences = NexaraThemePreferences(
+                    mode = if (dark) NexaraThemeMode.DARK else NexaraThemeMode.LIGHT,
+                    colorSource = NexaraColorSource.NEXARA,
+                ),
+                dynamicColorAvailable = true,
+            ),
+            onModeSelect = {},
+            onColorSourceSelect = {},
+            onNavigateBack = {},
+        )
     }
 }
 

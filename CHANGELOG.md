@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 总收敛：外观与其余设置表面（2026-07-21）
+
+- **真实外观状态**：外观页使用 Application 级 `ThemePreferenceStore` 和 `ThemeViewModel`，系统跟随、浅色、深色与 Android 12+ 动态色会立即持久化并在进程重建后恢复；单选行与动态色开关提供标准 Material 语义。
+- **连续设置表面**：备份、工具、Token 用量、本地模型和开发者页移除普通选项卡片化，改用连续 `ListItem`、分隔线和标准动作层级；WebDAV 异步保存/测试、安全重置、备份加密、技能开关、用量统计与本地推理行为保持不变。
+- **双语与大字体**：开发者页残留中文硬编码已资源化；技能内部 ID 使用单行省略，本地模型插槽在手机宽度下纵向排列，设备信息在 2.0x 字号下上下布局。
+- **当前门禁**：全量 JVM 2115 项（0 failure/error、14 skip）、95/95 Screenshot、Lint 0 Error/Fatal、AndroidTest 编译通过；API 31/35/36 主题/备份组合各 6/6，API 36 生成并人工检查 24 张深浅色、双语、2.0x actual。Task 13 全站浅色语义色迁移与最终发行门禁尚未完成，整体发行继续保持 NO-GO。
+
 ### Material 3 总收敛：Provider 模型摘要与独立编辑（2026-07-21）
 
 - **摘要列表与渐进编辑**：Provider Models 列表只展示友好名称、精确远端 ID、最多两个能力摘要和独立启用开关；整行进入独立 Material 3 编辑 Sheet，避免 500 模型场景在列表内同时维护完整表单。

@@ -683,6 +683,8 @@
     <string name="local_models_engine_subtitle">Required to run downloaded GGUF models</string>
     <string name="local_models_import_title">Import GGUF File</string>
     <string name="local_models_import_subtitle">Select a .gguf file from device</string>
+    <string name="local_models_importing">Importing…</string>
+    <string name="local_models_please_wait">Please wait</string>
     <string name="local_models_active_slots">Active Slots</string>
     <string name="local_models_imported">Imported Models</string>
     <string name="local_models_engine_status">Engine Status</string>
@@ -697,6 +699,7 @@
     <string name="local_models_loaded">Loaded</string>
     <string name="local_models_load">Load</string>
     <string name="local_models_cd_delete">Delete</string>
+    <string name="local_models_none_imported">No models imported yet</string>
 
 
     <!-- ProviderFormScreen -->
@@ -860,6 +863,21 @@
     <string name="theme_preview">Preview</string>
     <string name="theme_primary_btn">Primary Button</string>
     <string name="theme_secondary_btn">Secondary Button</string>
+    <string name="theme_dynamic_color">Dynamic Color</string>
+    <string name="theme_dynamic_color_desc">Use colors generated from your wallpaper (Android 12+)</string>
+    <string name="theme_dynamic_color_unavailable">Dynamic color is not supported on this Android version</string>
+    <string name="developer_title">Developer panel</string>
+    <string name="developer_diagnostics_section">Diagnostics and debugging</string>
+    <string name="developer_export_logs">Export runtime logs</string>
+    <string name="developer_export_logs_desc">Share nexara_logs.txt for troubleshooting</string>
+    <string name="developer_share_logs_chooser">Share log file</string>
+    <string name="developer_clear_logs">Clear runtime logs</string>
+    <string name="developer_clear_logs_desc">Reset the log file size</string>
+    <string name="developer_device_section">Device information</string>
+    <string name="developer_os_version">OS version</string>
+    <string name="developer_model">Model</string>
+    <string name="developer_manufacturer">Manufacturer</string>
+
 
     <!-- TokenUsageScreen -->
     <string name="token_title">Usage Management</string>

@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
@@ -35,25 +35,32 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -69,17 +76,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.text.font.FontWeight
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.*
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
-import com.promenar.nexara.ui.theme.NexaraTypography
-import com.promenar.nexara.ui.settings.SearchConfigViewModel
-import com.promenar.nexara.ui.settings.SearchConfigState
+import com.promenar.nexara.ui.common.NexaraPageLayout
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,7 +91,7 @@ fun SkillsScreen(
 ) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
-    
+
     val skillIcons = remember {
         mapOf(
             "web_search" to Icons.Rounded.Search,
@@ -135,70 +138,52 @@ fun SkillsScreen(
         scrollable = true
     ) {
         Column(modifier = Modifier.padding(bottom = 32.dp)) {
-            NexaraGlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = NexaraShapes.large as RoundedCornerShape
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+
+            ListItem(
+                headlineContent = {
+                    Text(stringResource(R.string.skills_loop_limit), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                },
+                supportingContent = {
+                    Text(stringResource(R.string.skills_loop_limit_desc), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                },
+                trailingContent = {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Column {
-                            Text(stringResource(R.string.skills_loop_limit), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                            Text(stringResource(R.string.skills_loop_limit_desc), style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp), color = NexaraColors.OnSurfaceVariant)
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(NexaraColors.SurfaceContainer)
-                                .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
-                                .clickable { viewModel.updateLoopLimit((loopLimit - 1).coerceAtLeast(1)) },
-                            contentAlignment = Alignment.Center
+                        IconButton(
+                            onClick = { viewModel.updateLoopLimit((loopLimit - 1).coerceAtLeast(1)) },
+                            modifier = Modifier.size(48.dp)
                         ) {
-                            Icon(Icons.Rounded.Remove, contentDescription = stringResource(R.string.common_cd_decrease), tint = NexaraColors.OnSurface, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Rounded.Remove, contentDescription = stringResource(R.string.common_cd_decrease))
                         }
                         Text(
-                            if (loopLimit >= 100) stringResource(R.string.skills_unlimited) else "$loopLimit",
-                            style = NexaraTypography.headlineMedium.copy(fontFamily = FontFamily.Monospace),
-                            color = NexaraColors.Primary
+                            text = if (loopLimit >= 100) stringResource(R.string.skills_unlimited) else "$loopLimit",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary
                         )
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(NexaraColors.SurfaceContainer)
-                                .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
-                                .clickable { viewModel.updateLoopLimit((loopLimit + 1).coerceAtMost(100)) },
-                            contentAlignment = Alignment.Center
+                        IconButton(
+                            onClick = { viewModel.updateLoopLimit((loopLimit + 1).coerceAtMost(100)) },
+                            modifier = Modifier.size(48.dp)
                         ) {
-                            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_cd_increase), tint = NexaraColors.OnSurface, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_cd_increase))
                         }
                     }
-                }
-            }
+                },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             Spacer(modifier = Modifier.height(20.dp))
 
             TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = Color.Transparent,
-                contentColor = NexaraColors.OnSurface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
                 divider = {
                     HorizontalDivider(
-                        thickness = 0.5.dp,
-                        color = NexaraColors.GlassBorder
+                        thickness = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant
                     )
                 },
                 indicator = { tabPositions ->
@@ -210,7 +195,7 @@ fun SkillsScreen(
                                 .padding(horizontal = 48.dp)
                                 .height(3.dp)
                                 .clip(RoundedCornerShape(3.dp))
-                                .background(NexaraColors.Primary)
+                                .background(MaterialTheme.colorScheme.primary)
                         )
                     }
                 }
@@ -222,14 +207,12 @@ fun SkillsScreen(
                         text = {
                             Text(
                                 title,
-                                style = NexaraTypography.labelMedium.copy(
+                                style = MaterialTheme.typography.labelMedium.copy(
                                     fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
                                 ),
-                                color = if (selectedTab == index) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
+                                color = if (selectedTab == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        },
-                        selectedContentColor = NexaraColors.Primary,
-                        unselectedContentColor = NexaraColors.OnSurfaceVariant
+                        }
                     )
                 }
             }
@@ -238,9 +221,8 @@ fun SkillsScreen(
 
             when (selectedTab) {
                 0 -> {
-                    // Preset skills
                     presetSkills.forEach { skill ->
-                        SkillCard(
+                        SkillItem(
                             skill = skill,
                             icon = skillIcons[skill.id] ?: Icons.Rounded.Code,
                             onToggle = { viewModel.toggleSkill(skill.id) },
@@ -248,13 +230,12 @@ fun SkillsScreen(
                                 { showSearchConfig = skill.id }
                             } else null
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
                 }
                 1 -> {
-                    // User skills
                     userSkills.forEach { skill ->
-                        UserSkillCard(
+                        UserSkillItem(
                             id = skill.id,
                             name = skill.name,
                             description = skill.description,
@@ -267,9 +248,9 @@ fun SkillsScreen(
                             },
                             onDelete = { viewModel.deleteCustomSkill(skill.id) }
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
-                    
+
                     if (userSkills.isEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
@@ -277,54 +258,34 @@ fun SkillsScreen(
                         ) {
                             Text(
                                 stringResource(R.string.skills_user_empty),
-                                style = NexaraTypography.bodyMedium,
-                                color = NexaraColors.OnSurfaceVariant
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(NexaraShapes.medium)
-                            .background(NexaraColors.Primary.copy(alpha = 0.1f))
-                            .border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.2f), NexaraShapes.medium)
-                            .clickable { 
-                                selectedSkillForEdit = null
-                                showCreateSkill = true 
-                            }
-                            .padding(vertical = 12.dp),
-                        contentAlignment = Alignment.Center
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            selectedSkillForEdit = null
+                            showCreateSkill = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.Add, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
-                            Text(stringResource(R.string.skills_add_custom), style = NexaraTypography.labelMedium, color = NexaraColors.Primary)
-                        }
+                        Icon(Icons.Rounded.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.skills_add_custom))
                     }
                 }
                 2 -> {
-                    // MCP servers
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(NexaraColors.Primary.copy(alpha = 0.08f))
-                                .border(0.5.dp, NexaraColors.Primary.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                                .clickable { showAddMcp = true }
-                                .padding(vertical = 14.dp),
-                            contentAlignment = Alignment.Center
+                        Button(
+                            onClick = { showAddMcp = true },
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Rounded.Add, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(20.dp))
-                                Text(stringResource(R.string.skills_add_mcp), style = NexaraTypography.labelMedium, color = NexaraColors.Primary)
-                            }
+                            Icon(Icons.Rounded.Add, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.skills_add_mcp))
                         }
 
                         if (mcpServers.isEmpty()) {
@@ -334,14 +295,14 @@ fun SkillsScreen(
                             ) {
                                 Text(
                                     stringResource(R.string.skills_mcp_empty),
-                                    style = NexaraTypography.bodyMedium,
-                                    color = NexaraColors.OnSurfaceVariant
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
 
                         mcpServers.forEach { server ->
-                            McpServerCard(
+                            McpServerItem(
                                 server = server,
                                 isExpanded = expandedServerId == server.id,
                                 onToggleExpand = { expandedServerId = if (expandedServerId == server.id) null else server.id },
@@ -350,6 +311,7 @@ fun SkillsScreen(
                                 onSync = { viewModel.syncMcpServer(server.id) },
                                 onUpdateDefault = { isDefault -> viewModel.updateMcpServerDefault(server.id, isDefault) }
                             )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
                     }
                 }
@@ -365,7 +327,7 @@ fun SkillsScreen(
         var mcpType by remember { mutableStateOf("http") }
         ModalBottomSheet(
             onDismissRequest = { showAddMcp = false },
-            containerColor = NexaraColors.SurfaceLow,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
         ) {
             Column(
@@ -375,31 +337,22 @@ fun SkillsScreen(
                     .padding(bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(stringResource(R.string.skills_add_mcp), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
-                NexaraGlassCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
-                    BasicTextField(
-                        value = mcpName,
-                        onValueChange = { mcpName = it },
-                        textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        decorationBox = { inner ->
-                            if (mcpName.isEmpty()) Text(stringResource(R.string.skills_mcp_name_placeholder), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
-                            inner()
-                        }
-                    )
-                }
-                NexaraGlassCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
-                    BasicTextField(
-                        value = mcpUrl,
-                        onValueChange = { mcpUrl = it },
-                        textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        decorationBox = { inner ->
-                            if (mcpUrl.isEmpty()) Text(stringResource(R.string.skills_mcp_url_placeholder), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
-                            inner()
-                        }
-                    )
-                }
+                Text(stringResource(R.string.skills_add_mcp), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+
+                OutlinedTextField(
+                    value = mcpName,
+                    onValueChange = { mcpName = it },
+                    label = { Text(stringResource(R.string.skills_mcp_name_placeholder)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = mcpUrl,
+                    onValueChange = { mcpUrl = it },
+                    label = { Text(stringResource(R.string.skills_mcp_url_placeholder)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -410,31 +363,35 @@ fun SkillsScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(if (selected) NexaraColors.Primary.copy(alpha = 0.1f) else NexaraColors.SurfaceContainer)
-                                .border(0.5.dp, if (selected) NexaraColors.Primary.copy(alpha = 0.3f) else NexaraColors.GlassBorder, RoundedCornerShape(10.dp))
+                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+                                .border(
+                                    width = 1.dp,
+                                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                    shape = RoundedCornerShape(10.dp)
+                                )
                                 .clickable { mcpType = value }
                                 .padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(label, style = NexaraTypography.labelMedium, color = if (selected) NexaraColors.Primary else NexaraColors.OnSurface)
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
                 }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(NexaraColors.Primary)
-                        .clickable {
-                            if (mcpName.isNotBlank() && mcpUrl.isNotBlank()) {
-                                viewModel.addMcpServer(mcpName, mcpUrl, mcpType)
-                                showAddMcp = false
-                            }
+
+                Button(
+                    onClick = {
+                        if (mcpName.isNotBlank() && mcpUrl.isNotBlank()) {
+                            viewModel.addMcpServer(mcpName, mcpUrl, mcpType)
+                            showAddMcp = false
                         }
-                        .padding(vertical = 14.dp),
-                    contentAlignment = Alignment.Center
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(R.string.skills_mcp_add_btn), style = NexaraTypography.labelMedium, color = NexaraColors.OnPrimary)
+                    Text(stringResource(R.string.skills_mcp_add_btn))
                 }
             }
         }
@@ -445,10 +402,10 @@ fun SkillsScreen(
         var skillName by remember { mutableStateOf(skillToEdit?.name ?: "") }
         var skillDesc by remember { mutableStateOf(skillToEdit?.description ?: "") }
         var skillCode by remember { mutableStateOf(skillToEdit?.code ?: "") }
-        
+
         ModalBottomSheet(
             onDismissRequest = { showCreateSkill = false },
-            containerColor = NexaraColors.SurfaceLow,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
         ) {
             Column(
@@ -459,78 +416,54 @@ fun SkillsScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
-                    if (selectedSkillForEdit == null) stringResource(R.string.skills_add_custom) 
-                    else stringResource(R.string.skills_edit_custom), 
-                    style = NexaraTypography.headlineMedium, 
-                    color = NexaraColors.OnSurface
+                    text = if (selectedSkillForEdit == null) stringResource(R.string.skills_add_custom)
+                           else stringResource(R.string.skills_edit_custom),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                
-                Text(stringResource(R.string.skills_metadata), style = NexaraTypography.labelSmall, color = NexaraColors.Primary)
-                
-                NexaraGlassCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
-                    BasicTextField(
-                        value = skillName,
-                        onValueChange = { skillName = it },
-                        textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        decorationBox = { inner ->
-                            if (skillName.isEmpty()) Text(stringResource(R.string.skills_tool_name_hint), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
-                            inner()
+
+                Text(stringResource(R.string.skills_metadata), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+
+                OutlinedTextField(
+                    value = skillName,
+                    onValueChange = { skillName = it },
+                    label = { Text(stringResource(R.string.skills_tool_name_hint)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = skillDesc,
+                    onValueChange = { skillDesc = it },
+                    label = { Text(stringResource(R.string.skills_description_hint)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(stringResource(R.string.skills_implementation), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+
+                OutlinedTextField(
+                    value = skillCode,
+                    onValueChange = { skillCode = it },
+                    label = { Text(stringResource(R.string.skills_code_example)) },
+                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
+                    modifier = Modifier.fillMaxWidth().height(200.dp)
+                )
+
+                Button(
+                    onClick = {
+                        if (skillName.isNotBlank()) {
+                            viewModel.addCustomSkill(
+                                name = skillName,
+                                description = skillDesc,
+                                schema = "{}",
+                                code = skillCode,
+                                id = selectedSkillForEdit
+                            )
+                            showCreateSkill = false
                         }
-                    )
-                }
-                NexaraGlassCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
-                    BasicTextField(
-                        value = skillDesc,
-                        onValueChange = { skillDesc = it },
-                        textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnSurface),
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        decorationBox = { inner ->
-                            if (skillDesc.isEmpty()) Text(stringResource(R.string.skills_description_hint), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
-                            inner()
-                        }
-                    )
-                }
-                
-                Text(stringResource(R.string.skills_implementation), style = NexaraTypography.labelSmall, color = NexaraColors.Primary)
-                
-                NexaraGlassCard(
-                    modifier = Modifier.fillMaxWidth().height(240.dp),
-                    shape = RoundedCornerShape(8.dp)
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    BasicTextField(
-                        value = skillCode,
-                        onValueChange = { skillCode = it },
-                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = NexaraColors.OnSurface),
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        decorationBox = { inner ->
-                            if (skillCode.isEmpty()) Text(stringResource(R.string.skills_code_example), style = NexaraTypography.bodySmall, color = NexaraColors.OnSurfaceVariant)
-                            inner()
-                        }
-                    )
-                }
-                
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(NexaraColors.Primary)
-                        .clickable {
-                            if (skillName.isNotBlank()) {
-                                viewModel.addCustomSkill(
-                                    name = skillName,
-                                    description = skillDesc,
-                                    schema = "{}",
-                                    code = skillCode,
-                                    id = selectedSkillForEdit
-                                )
-                                showCreateSkill = false
-                            }
-                        }
-                        .padding(vertical = 14.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(stringResource(R.string.shared_btn_save), style = NexaraTypography.labelMedium, color = NexaraColors.OnPrimary)
+                    Text(stringResource(R.string.shared_btn_save))
                 }
             }
         }
@@ -545,7 +478,7 @@ fun SkillsScreen(
 }
 
 @Composable
-private fun SkillCard(
+private fun SkillItem(
     skill: SkillInfo,
     icon: ImageVector,
     onToggle: () -> Unit,
@@ -553,62 +486,59 @@ private fun SkillCard(
 ) {
     var enabled by remember { mutableStateOf(skill.enabled) }
 
-    NexaraGlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = NexaraShapes.large as RoundedCornerShape
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+    ListItem(
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(NexaraColors.SurfaceHigh, RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(icon, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
-                }
-                Column {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(skill.name, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                        Text(
-                            skill.id,
-                            style = NexaraTypography.bodySmall.copy(fontSize = 10.sp, fontFamily = FontFamily.Monospace),
-                            color = NexaraColors.Outline
-                        )
-                    }
-                    Text(skill.description, style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 16.sp), color = NexaraColors.OnSurfaceVariant)
-                }
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             }
-            
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        },
+        headlineContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(skill.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    text = skill.id,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.outline,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
+        supportingContent = {
+            Text(skill.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        trailingContent = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 if (onConfig != null) {
-                    IconButton(onClick = { onConfig.invoke() }, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.common_cd_config), tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
+                    IconButton(onClick = onConfig, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = stringResource(R.string.common_cd_config),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
                 Switch(
                     checked = enabled,
-                    onCheckedChange = { enabled = it; onToggle() },
-                    colors = SwitchDefaults.colors(
-                        checkedTrackColor = NexaraColors.Primary,
-                        checkedThumbColor = NexaraColors.OnPrimary
-                    )
+                    onCheckedChange = { enabled = it; onToggle() }
                 )
             }
         }
-    }
+    )
 }
 
 @Composable
-private fun UserSkillCard(
+private fun UserSkillItem(
     id: String,
     name: String,
     description: String,
@@ -620,63 +550,59 @@ private fun UserSkillCard(
 ) {
     var isEnabled by remember { mutableStateOf(enabled) }
 
-    NexaraGlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = NexaraShapes.large as RoundedCornerShape
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            leadingContent = {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier.size(36.dp).background(NexaraColors.SurfaceHigh, RoundedCornerShape(8.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(icon, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
-                    }
-                    Column {
-                        Text(name, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                        Text(description, style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 16.sp), color = NexaraColors.OnSurfaceVariant)
-                    }
+                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 }
-                Switch(checked = isEnabled, onCheckedChange = { isEnabled = it; onToggle() }, colors = SwitchDefaults.colors(checkedTrackColor = NexaraColors.Primary, checkedThumbColor = NexaraColors.OnPrimary))
+            },
+            headlineContent = {
+                Text(name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            },
+            supportingContent = {
+                Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            },
+            trailingContent = {
+                Switch(
+                    checked = isEnabled,
+                    onCheckedChange = { isEnabled = it; onToggle() }
+                )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onEdit) {
+                Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(stringResource(R.string.skills_configure))
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            TextButton(
+                onClick = onDelete,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
             ) {
-                Box(
-                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(NexaraColors.SurfaceHigh).clickable { onEdit() }.padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Edit, contentDescription = null, tint = NexaraColors.OnSurface, modifier = Modifier.size(14.dp))
-                        Text(stringResource(R.string.skills_configure), style = NexaraTypography.labelMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurface)
-                    }
-                }
-                Spacer(modifier = Modifier.width(6.dp))
-                Box(
-                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(NexaraColors.Error.copy(alpha = 0.1f)).clickable { onDelete() }.padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Delete, contentDescription = null, tint = NexaraColors.Error, modifier = Modifier.size(14.dp))
-                        Text(stringResource(R.string.shared_btn_delete), style = NexaraTypography.labelMedium.copy(fontSize = 11.sp), color = NexaraColors.Error)
-                    }
-                }
+                Icon(Icons.Rounded.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(stringResource(R.string.shared_btn_delete))
             }
         }
     }
 }
 
 @Composable
-private fun McpServerCard(
+private fun McpServerItem(
     server: McpServerUiModel,
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
@@ -685,87 +611,106 @@ private fun McpServerCard(
     onSync: () -> Unit,
     onUpdateDefault: (Boolean) -> Unit
 ) {
-    NexaraGlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = NexaraShapes.large as RoundedCornerShape
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(if (server.isConnected) NexaraColors.StatusSuccess else NexaraColors.Error, CircleShape)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            leadingContent = {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .background(
+                            if (server.isConnected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.error,
+                            CircleShape
+                        )
+                )
+            },
+            headlineContent = {
+                Text(server.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            },
+            supportingContent = {
+                Column {
+                    Text(server.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.skills_mcp_call_interval) + ": ${server.callIntervalMs}ms",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
                     )
-                    Column {
-                        Text(server.name, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                        Text(server.url, style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurfaceVariant)
-                    }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(onClick = onSync, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Rounded.Sync, contentDescription = stringResource(R.string.common_cd_sync), tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_cd_delete), tint = NexaraColors.Error, modifier = Modifier.size(16.dp))
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(stringResource(R.string.skills_mcp_call_interval), style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurfaceVariant)
-                Text("${server.callIntervalMs}ms", style = NexaraTypography.bodySmall.copy(fontSize = 11.sp), color = NexaraColors.Primary)
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Switch(
-                    checked = server.isEnabled,
-                    onCheckedChange = onToggleEnabled,
-                    colors = SwitchDefaults.colors(checkedTrackColor = NexaraColors.Primary, checkedThumbColor = NexaraColors.OnPrimary)
-                )
-                Text(stringResource(R.string.skills_mcp_enabled), style = NexaraTypography.labelMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurface)
-                Spacer(modifier = Modifier.width(12.dp))
-                Switch(
-                    checked = server.isDefault,
-                    onCheckedChange = onUpdateDefault,
-                    colors = SwitchDefaults.colors(checkedTrackColor = NexaraColors.Primary, checkedThumbColor = NexaraColors.OnPrimary)
-                )
-                Text(stringResource(R.string.skills_mcp_default), style = NexaraTypography.labelMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurface)
-            }
-
-            if (server.tools.isNotEmpty()) {
+            },
+            trailingContent = {
                 Row(
-                    modifier = Modifier.fillMaxWidth().clickable { onToggleExpand() },
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(stringResource(R.string.skills_mcp_tools, server.tools.size), style = NexaraTypography.labelMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurfaceVariant)
-                    Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(16.dp))
+                    IconButton(onClick = onSync) {
+                        Icon(Icons.Rounded.Sync, contentDescription = stringResource(R.string.common_cd_sync))
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_cd_delete), tint = MaterialTheme.colorScheme.error)
+                    }
                 }
-                if (isExpanded) {
+            }
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Switch(
+                checked = server.isEnabled,
+                onCheckedChange = onToggleEnabled
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.skills_mcp_enabled), style = MaterialTheme.typography.bodyMedium)
+
+            Spacer(modifier = Modifier.width(24.dp))
+
+            Switch(
+                checked = server.isDefault,
+                onCheckedChange = onUpdateDefault
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.skills_mcp_default), style = MaterialTheme.typography.bodyMedium)
+        }
+
+        if (server.tools.isNotEmpty()) {
+            ListItem(
+                modifier = Modifier.clickable { onToggleExpand() },
+                headlineContent = {
+                    Text(
+                        text = stringResource(R.string.skills_mcp_tools, server.tools.size),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingContent = {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.ChevronRight,
+                        contentDescription = null
+                    )
+                },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
+            AnimatedVisibility(visible = isExpanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 32.dp, end = 16.dp, bottom = 8.dp)
+                ) {
                     server.tools.forEach { tool ->
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 2.dp, bottom = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Rounded.Code, contentDescription = null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(12.dp))
-                            Text(tool, style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp, fontFamily = FontFamily.Monospace), color = NexaraColors.OnSurface)
+                            Icon(Icons.Rounded.Code, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                            Text(tool, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                 }
@@ -785,10 +730,10 @@ private fun SearchConfigBottomSheet(
         factory = SearchConfigViewModel.factory(application)
     )
     val searchState by searchViewModel.uiState.collectAsState()
-    
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = NexaraColors.CanvasBackground,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         dragHandle = {
             Box(
                 modifier = Modifier.fillMaxWidth(),
@@ -799,7 +744,7 @@ private fun SearchConfigBottomSheet(
                         .padding(vertical = 12.dp)
                         .width(36.dp)
                         .height(4.dp)
-                        .background(NexaraColors.Outline.copy(alpha = 0.2f), CircleShape)
+                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), CircleShape)
                 )
             }
         }
@@ -818,12 +763,12 @@ private fun SearchConfigBottomSheet(
                     "search_searxng" -> stringResource(R.string.search_sheet_searxng_title)
                     else -> stringResource(R.string.search_sheet_title)
                 },
-                style = NexaraTypography.headlineMedium,
-                color = NexaraColors.OnSurface
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             if (skillId == "web_search") {
-                Text(stringResource(R.string.search_engine_select), style = NexaraTypography.labelMedium)
+                Text(stringResource(R.string.search_engine_select), style = MaterialTheme.typography.labelMedium)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     EngineOption("duckduckgo", stringResource(R.string.search_engine_duckduckgo), searchState.searchEngine == "duckduckgo") {
                         searchViewModel.updateSearchEngine("duckduckgo")
@@ -835,24 +780,27 @@ private fun SearchConfigBottomSheet(
                         searchViewModel.updateSearchEngine("searxng")
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
-                // Common settings for generic web_search
-                SettingsSlider(
-                    label = stringResource(R.string.search_count_label),
+
+                Text(
+                    text = stringResource(R.string.search_count_label) + ": ${searchState.resultCount}",
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Slider(
                     value = searchState.resultCount.toFloat(),
-                    range = 1f..20f,
+                    valueRange = 1f..20f,
+                    steps = 18,
                     onValueChange = { searchViewModel.updateResultCount(it.toInt()) }
                 )
             }
 
             if (skillId == "search_tavily" || (skillId == "web_search" && searchState.searchEngine == "tavily")) {
-                Text(stringResource(R.string.search_api_key), style = NexaraTypography.labelMedium)
+                Text(stringResource(R.string.search_api_key), style = MaterialTheme.typography.labelMedium)
                 TavilySecretEditor(searchViewModel, searchState)
-                
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.search_depth_label), style = NexaraTypography.labelMedium)
+                    Text(stringResource(R.string.search_depth_label), style = MaterialTheme.typography.labelMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         DepthChip("basic", stringResource(R.string.search_depth_basic), searchState.searchDepth == "basic") {
                             searchViewModel.updateSearchDepth("basic")
@@ -865,23 +813,12 @@ private fun SearchConfigBottomSheet(
             }
 
             if (skillId == "search_searxng" || (skillId == "web_search" && searchState.searchEngine == "searxng")) {
-                Text(stringResource(R.string.search_instance_url), style = NexaraTypography.labelMedium)
-                BasicTextField(
+                Text(stringResource(R.string.search_instance_url), style = MaterialTheme.typography.labelMedium)
+                OutlinedTextField(
                     value = searchState.searXngUrl,
                     onValueChange = { searchViewModel.updateSearXngUrl(it) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .background(NexaraColors.SurfaceContainer, RoundedCornerShape(12.dp))
-                        .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 12.dp),
-                    textStyle = NexaraTypography.bodyLarge.copy(color = NexaraColors.OnSurface, fontFamily = FontFamily.Monospace),
-                    decorationBox = { innerTextField ->
-                        Box(contentAlignment = Alignment.CenterStart) {
-                            if (searchState.searXngUrl.isEmpty()) Text("https://...", color = NexaraColors.Outline, style = NexaraTypography.bodyLarge)
-                            innerTextField()
-                        }
-                    }
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = TextStyle(fontFamily = FontFamily.Monospace)
                 )
             }
         }
@@ -894,10 +831,10 @@ private fun EngineOption(id: String, label: String, isSelected: Boolean, onClick
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(if (isSelected) NexaraColors.Primary.copy(alpha = 0.1f) else Color.Transparent)
+            .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else Color.Transparent)
             .border(
                 width = if (isSelected) 1.dp else 0.5.dp,
-                color = if (isSelected) NexaraColors.Primary else NexaraColors.GlassBorder,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                 shape = RoundedCornerShape(12.dp)
             )
             .clickable { onClick() }
@@ -905,8 +842,8 @@ private fun EngineOption(id: String, label: String, isSelected: Boolean, onClick
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, style = NexaraTypography.bodyLarge, color = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurface)
-        if (isSelected) Icon(Icons.Rounded.Check, contentDescription = null, tint = NexaraColors.Primary, modifier = Modifier.size(20.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+        if (isSelected) Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -915,25 +852,10 @@ private fun DepthChip(id: String, label: String, isSelected: Boolean, onClick: (
     Box(
         modifier = Modifier
             .clip(CircleShape)
-            .background(if (isSelected) NexaraColors.Primary else NexaraColors.SurfaceContainer)
+            .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
             .clickable { onClick() }
             .padding(horizontal = 16.dp, vertical = 6.dp)
     ) {
-        Text(label, style = NexaraTypography.labelSmall, color = if (isSelected) NexaraColors.OnPrimary else NexaraColors.OnSurfaceVariant)
-    }
-}
-
-@Composable
-private fun SettingsSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onValueChange: (Float) -> Unit) {
-    Column {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, style = NexaraTypography.labelMedium)
-            Text("${value.toInt()}", style = NexaraTypography.labelMedium, color = NexaraColors.Primary)
-        }
-        NexaraSlider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = range
-        )
+        Text(label, style = MaterialTheme.typography.labelSmall, color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

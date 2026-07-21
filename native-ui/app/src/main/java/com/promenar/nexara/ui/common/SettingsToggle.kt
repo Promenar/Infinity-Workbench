@@ -1,31 +1,17 @@
 package com.promenar.nexara.ui.common
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
-import androidx.compose.ui.unit.sp
-import com.promenar.nexara.ui.theme.NexaraTypography
+import androidx.compose.ui.semantics.Role
 
 @Composable
 fun SettingsToggle(
@@ -36,63 +22,46 @@ fun SettingsToggle(
     icon: ImageVector? = null,
     enabled: Boolean = true
 ) {
-    NexaraGlassCard(
+    ListItem(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(NexaraShapes.large as RoundedCornerShape)
-            .then(
-                if (enabled) {
-                    Modifier.clickable { onCheckedChange(!checked) }
-                } else {
-                    Modifier
-                }
+            .alpha(if (enabled) 1f else 0.38f)
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            ),
+        headlineContent = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
             )
-            .alpha(if (enabled) 1.0f else 0.4f),
-        shape = NexaraShapes.large as RoundedCornerShape
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = NexaraColors.Primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-            }
-
-            Column(modifier = Modifier.weight(1f)) {
+        },
+        supportingContent = description?.let { supportingText ->
+            {
                 Text(
-                    text = title,
-                    style = NexaraTypography.labelMedium,
-                    color = NexaraColors.OnSurface
+                    text = supportingText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (description != null) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = description,
-                        style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
-                        color = NexaraColors.OnSurfaceVariant
-                    )
-                }
             }
-
+        },
+        leadingContent = icon?.let { imageVector ->
+            {
+                Icon(
+                    imageVector = imageVector,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        },
+        trailingContent = {
             Switch(
                 checked = checked,
-                onCheckedChange = if (enabled) onCheckedChange else null,
+                onCheckedChange = null,
                 enabled = enabled,
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = NexaraColors.Primary,
-                    checkedThumbColor = NexaraColors.OnPrimary,
-                    uncheckedTrackColor = NexaraColors.SurfaceHighest,
-                    uncheckedThumbColor = NexaraColors.Secondary
-                )
             )
-        }
-    }
+        },
+    )
 }

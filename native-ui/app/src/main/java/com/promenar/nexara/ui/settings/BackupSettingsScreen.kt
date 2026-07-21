@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.imePadding
@@ -22,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudSync
@@ -36,15 +36,26 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -58,26 +69,21 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.SettingsToggle
-import com.promenar.nexara.ui.theme.NexaraColors
-import com.promenar.nexara.ui.theme.NexaraShapes
-import com.promenar.nexara.ui.theme.NexaraTypography
-import com.promenar.nexara.ui.theme.SpaceGrotesk
-
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.collectAsState
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.SecretField
 import com.promenar.nexara.ui.testing.UiTags
 
@@ -91,7 +97,6 @@ fun BackupSettingsScreen(
     BackupSettingsScreen(onNavigateBack, viewModel)
 }
 
-/** 测试与预览可注入真实状态机；生产入口仍使用上方 Application factory。 */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 internal fun BackupSettingsScreen(
@@ -118,8 +123,7 @@ internal fun BackupSettingsScreen(
     var backupPassword by remember { mutableStateOf("") }
     var passwordConfirmation by remember { mutableStateOf("") }
     var restorePassword by remember { mutableStateOf("") }
-    
-    // WebDAV local editing states for the sheet
+
     var tempWebdavUrl by remember(uiState.webdavUrl) { mutableStateOf(uiState.webdavUrl) }
     var tempWebdavUser by remember(uiState.webdavUser) { mutableStateOf(uiState.webdavUser) }
     var tempWebdavPass by remember { mutableStateOf("") }
@@ -186,23 +190,22 @@ internal fun BackupSettingsScreen(
     val onImportClick = { importLauncher.launch("*/*") }
 
     Scaffold(
-        containerColor = NexaraColors.CanvasBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.backup_title), style = NexaraTypography.headlineLarge) },
+                title = { Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.common_cd_back),
-                            tint = NexaraColors.OnSurface,
-                            modifier = Modifier.size(24.dp)
+                            contentDescription = stringResource(R.string.common_cd_back)
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f),
-                    titleContentColor = NexaraColors.OnSurface
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         }
@@ -221,33 +224,51 @@ internal fun BackupSettingsScreen(
             item {
                 Text(
                     text = stringResource(R.string.backup_desc),
-                    style = NexaraTypography.bodyMedium,
-                    color = NexaraColors.OnSurfaceVariant
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
             item {
                 backupOperationText(uiState.operation)?.let { status ->
-                    NexaraGlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (uiState.operation is BackupOperation.Error || uiState.operation is BackupOperation.Blocked)
+                                MaterialTheme.colorScheme.errorContainer
+                            else
+                                MaterialTheme.colorScheme.primaryContainer
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Text(
                                 text = status,
                                 modifier = Modifier.testTag(UiTags.BACKUP_OPERATION_STATUS),
-                                style = NexaraTypography.bodyMedium,
-                                color = when {
-                                    uiState.operation is BackupOperation.Error || uiState.operation is BackupOperation.Blocked -> NexaraColors.Error
-                                    (uiState.operation as? BackupOperation.Success)?.cleanupWarning == true -> NexaraColors.Tertiary
-                                    else -> NexaraColors.OnSurfaceVariant
-                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (uiState.operation is BackupOperation.Error || uiState.operation is BackupOperation.Blocked)
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                else
+                                    MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             if (uiState.operation.isCancellable) {
-                                ActionButton(
-                                    label = stringResource(R.string.common_btn_cancel),
-                                    icon = Icons.Rounded.DeleteForever,
-                                    modifier = Modifier.fillMaxWidth(),
+                                FilledTonalButton(
                                     onClick = viewModel::cancelOperation,
-                                )
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.error,
+                                        contentColor = MaterialTheme.colorScheme.onError
+                                    )
+                                ) {
+                                    Icon(Icons.Rounded.DeleteForever, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(stringResource(R.string.common_btn_cancel))
+                                }
                             }
                         }
                     }
@@ -255,76 +276,68 @@ internal fun BackupSettingsScreen(
             }
 
             item {
-                NexaraGlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = NexaraShapes.large as RoundedCornerShape
-                ) {
-                    Column(
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ListItem(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(NexaraColors.SurfaceContainer.copy(alpha = 0.3f))
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { contentExpanded = !contentExpanded }
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Link,
-                                    contentDescription = null,
-                                    tint = NexaraColors.Primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = stringResource(R.string.backup_content_title),
-                                        style = NexaraTypography.labelMedium,
-                                        color = NexaraColors.OnSurface
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.backup_core_content_summary),
-                                        style = NexaraTypography.bodyMedium.copy(
-                                            fontSize = 12.sp,
-                                            fontFamily = SpaceGrotesk
-                                        ),
-                                        color = NexaraColors.OnSurfaceVariant
-                                    )
-                                }
-                            }
+                            .clickable { contentExpanded = !contentExpanded },
+                        headlineContent = {
+                            Text(
+                                text = stringResource(R.string.backup_content_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                text = stringResource(R.string.backup_core_content_summary),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.Rounded.Link,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        trailingContent = {
                             Icon(
                                 imageVector = if (contentExpanded) Icons.Rounded.KeyboardArrowUp
                                 else Icons.Rounded.KeyboardArrowDown,
                                 contentDescription = null,
-                                tint = NexaraColors.Outline
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+
+                    AnimatedVisibility(visible = contentExpanded) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.backup_core_content_fixed),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = coreContentLabels.joinToString(" · "),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            SettingsToggle(
+                                title = stringResource(R.string.backup_content_keys),
+                                checked = uiState.keysChecked,
+                                onCheckedChange = { viewModel.setIncludeKeys(it) }
                             )
                         }
-
-                        AnimatedVisibility(visible = contentExpanded) {
-                            Column(
-                                modifier = Modifier
-                                    .background(NexaraColors.SurfaceLow.copy(alpha = 0.5f))
-                                    .padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.backup_core_content_fixed),
-                                    style = NexaraTypography.labelMedium,
-                                    color = NexaraColors.OnSurface,
-                                )
-                                Text(
-                                    text = coreContentLabels.joinToString(" · "),
-                                    style = NexaraTypography.bodyMedium,
-                                    color = NexaraColors.OnSurfaceVariant,
-                                )
-                                SettingsToggle(stringResource(R.string.backup_content_keys), checked = uiState.keysChecked, onCheckedChange = { viewModel.setIncludeKeys(it) })
-                            }
-                        }
                     }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
 
@@ -381,165 +394,171 @@ internal fun BackupSettingsScreen(
             item { SettingsSectionHeader(stringResource(R.string.backup_section_webdav)) }
 
             item {
-                NexaraGlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = NexaraShapes.large as RoundedCornerShape
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(NexaraColors.SurfaceContainer.copy(alpha = 0.3f))
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                text = stringResource(R.string.backup_webdav_sync),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                text = if (uiState.webdavEnabled) stringResource(R.string.backup_webdav_configured) else stringResource(R.string.backup_webdav_not_configured),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudSync,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = uiState.webdavEnabled,
+                                onCheckedChange = { viewModel.setWebdavEnabled(it) }
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+
+                    AnimatedVisibility(visible = uiState.webdavEnabled) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            SettingsToggle(
+                                title = stringResource(R.string.backup_auto_backup),
+                                checked = uiState.autoBackup,
+                                onCheckedChange = { viewModel.setAutoBackup(it) }
+                            )
+
+                            Button(
+                                onClick = {
+                                    if (uiState.includeKeys) showUploadPasswordDialog = true
+                                    else viewModel.upload(null, null)
+                                },
+                                enabled = uiState.canExecute,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Rounded.Upload, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.backup_upload_cloud))
+                            }
+
+                            FilledTonalButton(
+                                onClick = { viewModel.listRemote() },
+                                enabled = uiState.canExecute,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Rounded.Refresh, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.backup_remote_refresh))
+                            }
+
+                            if (uiState.operation is BackupOperation.ListingRemote) {
                                 Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(NexaraColors.SurfaceContainer),
+                                    modifier = Modifier.fillMaxWidth().padding(8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.CloudSync,
-                                        contentDescription = null,
-                                        tint = NexaraColors.Tertiary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
                                 }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = stringResource(R.string.backup_webdav_sync),
-                                        style = NexaraTypography.headlineMedium,
-                                        color = NexaraColors.OnSurface
-                                    )
-                                    Text(
-                                        text = if (uiState.webdavEnabled) stringResource(R.string.backup_webdav_configured) else stringResource(R.string.backup_webdav_not_configured),
-                                        style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
-                                        color = NexaraColors.OnSurfaceVariant
-                                    )
-                                }
-                            }
-                            androidx.compose.material3.Switch(
-                                checked = uiState.webdavEnabled,
-                                onCheckedChange = { viewModel.setWebdavEnabled(it) },
-                                colors = androidx.compose.material3.SwitchDefaults.colors(
-                                    checkedTrackColor = NexaraColors.Primary,
-                                    checkedThumbColor = NexaraColors.OnPrimary,
-                                    uncheckedTrackColor = NexaraColors.SurfaceHighest,
-                                    uncheckedThumbColor = NexaraColors.Secondary
+                            } else if (uiState.remoteBackups.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.backup_remote_empty),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 8.dp)
                                 )
-                            )
-                        }
+                            }
 
-                        AnimatedVisibility(visible = uiState.webdavEnabled) {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                SettingsToggle(stringResource(R.string.backup_auto_backup), checked = uiState.autoBackup, onCheckedChange = { viewModel.setAutoBackup(it) })
-                                ActionButton(
-                                    label = stringResource(R.string.backup_upload_cloud),
-                                    icon = Icons.Rounded.Upload,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    enabled = uiState.canExecute,
-                                    onClick = {
-                                        if (uiState.includeKeys) showUploadPasswordDialog = true
-                                        else viewModel.upload(null, null)
-                                    }
-                                )
-                                ActionButton(
-                                    label = stringResource(R.string.backup_remote_refresh),
-                                    icon = Icons.Rounded.Refresh,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    enabled = uiState.canExecute,
-                                    onClick = { viewModel.listRemote() },
-                                )
-                                if (uiState.operation is BackupOperation.ListingRemote) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = NexaraColors.Primary)
-                                } else if (uiState.remoteBackups.isEmpty()) {
-                                    Text(
-                                        stringResource(R.string.backup_remote_empty),
-                                        style = NexaraTypography.bodyMedium,
-                                        color = NexaraColors.OnSurfaceVariant,
-                                    )
-                                }
-                                uiState.remoteBackups.forEach { remote ->
-                                    val selected = uiState.selectedRemote == remote
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(NexaraShapes.medium)
-                                            .border(
-                                                1.dp,
-                                                if (selected) NexaraColors.Primary else NexaraColors.GlassBorder,
-                                                NexaraShapes.medium,
-                                            )
-                                            .clickable(enabled = uiState.canExecute) { viewModel.selectRemote(remote) }
-                                            .padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        if (selected) Icon(Icons.Rounded.CheckCircle, contentDescription = stringResource(R.string.common_cd_selected), tint = NexaraColors.Primary)
-                                        Column(modifier = Modifier.weight(1f).padding(start = if (selected) 8.dp else 0.dp)) {
-                                            Text(remote.fileName, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-                                            Text(stringResource(R.string.backup_remote_metadata, remote.sizeBytes, remote.lastModifiedEpochMillis), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
+                            uiState.remoteBackups.forEach { remote ->
+                                val selected = uiState.selectedRemote == remote
+                                ListItem(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable(enabled = uiState.canExecute) { viewModel.selectRemote(remote) }
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                            shape = RoundedCornerShape(8.dp)
+                                        ),
+                                    headlineContent = {
+                                        Text(remote.fileName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                                    },
+                                    supportingContent = {
+                                        Text(
+                                            text = stringResource(R.string.backup_remote_metadata, remote.sizeBytes, remote.lastModifiedEpochMillis),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    leadingContent = {
+                                        if (selected) {
+                                            Icon(Icons.Rounded.CheckCircle, contentDescription = stringResource(R.string.common_cd_selected), tint = MaterialTheme.colorScheme.primary)
                                         }
-                                    }
-                                }
-                                if (uiState.selectedRemote != null) {
-                                    ActionButton(
-                                        label = stringResource(R.string.backup_restore_cloud),
-                                        icon = Icons.Rounded.Restore,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        enabled = uiState.canExecute,
-                                        onClick = {
-                                            restoreRemote = true
-                                            showRestorePasswordDialog = true
-                                        },
-                                    )
+                                    },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                )
+                            }
+
+                            if (uiState.selectedRemote != null) {
+                                Button(
+                                    onClick = {
+                                        restoreRemote = true
+                                        showRestorePasswordDialog = true
+                                    },
+                                    enabled = uiState.canExecute,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Rounded.Restore, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(stringResource(R.string.backup_restore_cloud))
                                 }
                             }
                         }
-                        ActionButton(
-                            label = stringResource(R.string.backup_config_webdav),
-                            icon = Icons.Rounded.Link,
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = uiState.canExecute,
-                            onClick = { showWebdavSheet = true }
-                        )
                     }
+
+                    Button(
+                        onClick = { showWebdavSheet = true },
+                        enabled = uiState.canExecute,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                    ) {
+                        Icon(Icons.Rounded.Link, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.backup_config_webdav))
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 12.dp))
                 }
             }
 
             item {
-                NexaraGlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = NexaraShapes.large as RoundedCornerShape
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(NexaraColors.SurfaceContainer.copy(alpha = 0.3f))
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = stringResource(R.string.backup_info_text),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    leadingContent = {
                         Icon(
                             imageVector = Icons.Rounded.Info,
                             contentDescription = null,
-                            tint = NexaraColors.Outline,
-                            modifier = Modifier.size(20.dp)
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = stringResource(R.string.backup_info_text),
-                            style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
-                            color = NexaraColors.OnSurfaceVariant
-                        )
-                    }
-                }
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
             }
         }
     }
@@ -552,7 +571,7 @@ internal fun BackupSettingsScreen(
                 showWebdavSheet = false
             },
             sheetState = sheetState,
-            containerColor = NexaraColors.SurfaceContainer,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
         ) {
             Column(
@@ -568,12 +587,31 @@ internal fun BackupSettingsScreen(
             ) {
                 Text(
                     text = stringResource(R.string.backup_webdav_config_title),
-                    style = NexaraTypography.headlineMedium,
-                    color = NexaraColors.OnSurface
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                GlassInputField(stringResource(R.string.backup_webdav_url_label), tempWebdavUrl, { tempWebdavUrl = it }, stringResource(R.string.backup_webdav_url_hint))
-                GlassInputField(stringResource(R.string.backup_webdav_user_label), tempWebdavUser, { tempWebdavUser = it }, stringResource(R.string.backup_webdav_user_hint))
-                Text(stringResource(R.string.backup_webdav_pass_label), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurfaceVariant)
+
+                OutlinedTextField(
+                    value = tempWebdavUrl,
+                    onValueChange = { tempWebdavUrl = it },
+                    label = { Text(stringResource(R.string.backup_webdav_url_label)) },
+                    placeholder = { Text(stringResource(R.string.backup_webdav_url_hint)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = tempWebdavUser,
+                    onValueChange = { tempWebdavUser = it },
+                    label = { Text(stringResource(R.string.backup_webdav_user_label)) },
+                    placeholder = { Text(stringResource(R.string.backup_webdav_user_hint)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    text = stringResource(R.string.backup_webdav_pass_label),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 SecretField(
                     value = tempWebdavPass,
                     onValueChange = { tempWebdavPass = it },
@@ -584,11 +622,8 @@ internal fun BackupSettingsScreen(
                         viewModel.deleteWebDavPassword()
                     },
                 )
-                ActionButton(
-                    label = stringResource(R.string.backup_test_connection),
-                    icon = Icons.Rounded.Link,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = uiState.canExecute,
+
+                Button(
                     onClick = {
                         val accepted = viewModel.saveAndTestWebDavConfig(
                             tempWebdavUrl,
@@ -596,14 +631,16 @@ internal fun BackupSettingsScreen(
                             tempWebdavPass.takeIf { it.isNotEmpty() }?.toCharArray(),
                         )
                         if (accepted) tempWebdavPass = ""
-                    }
-                )
-                ActionButton(
-                    label = stringResource(R.string.backup_save_config),
-                    icon = Icons.Rounded.CloudSync,
-                    modifier = Modifier.fillMaxWidth(),
-                    isPrimary = true,
+                    },
                     enabled = uiState.canExecute,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Rounded.Link, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(R.string.backup_test_connection))
+                }
+
+                Button(
                     onClick = {
                         val accepted = viewModel.saveWebDavConfig(
                             tempWebdavUrl,
@@ -611,30 +648,44 @@ internal fun BackupSettingsScreen(
                             tempWebdavPass.takeIf { it.isNotEmpty() }?.toCharArray(),
                         )
                         if (accepted) tempWebdavPass = ""
-                    }
-                )
+                    },
+                    enabled = uiState.canExecute,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Rounded.CloudSync, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(R.string.backup_save_config))
+                }
+
                 backupOperationText(uiState.operation)?.let { status ->
                     Text(
                         text = status,
-                        style = NexaraTypography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = if (uiState.operation is BackupOperation.Blocked ||
                             uiState.operation is BackupOperation.Error
-                        ) NexaraColors.Error else NexaraColors.OnSurfaceVariant,
+                        ) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+
                 val blockedCode = (uiState.operation as? BackupOperation.Blocked)?.code
                 if (blockedCode == BackupErrorCode.CONNECTION_FAILED ||
                     blockedCode == BackupErrorCode.CONFIGURATION_MISSING
                 ) {
-                    ActionButton(
-                        label = stringResource(R.string.backup_reset_webdav_security),
-                        icon = Icons.Rounded.DeleteForever,
-                        modifier = Modifier.fillMaxWidth(),
+                    Button(
                         onClick = {
                             tempWebdavPass = ""
                             viewModel.resetWebDavAuth()
                         },
-                    )
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    ) {
+                        Icon(Icons.Rounded.DeleteForever, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.backup_reset_webdav_security))
+                    }
                 }
             }
         }
@@ -777,11 +828,11 @@ internal fun BackupPasswordDialog(
     val valid = !requireConfirmation || (password.isNotEmpty() && password == passwordConfirmation)
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = NexaraColors.SurfaceContainer,
-        title = { Text(title, style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface) },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        title = { Text(title, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.backup_password_label), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurfaceVariant)
+                Text(stringResource(R.string.backup_password_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 SecretField(
                     value = password,
                     onValueChange = onPasswordChange,
@@ -791,7 +842,7 @@ internal fun BackupPasswordDialog(
                     placeholder = stringResource(R.string.backup_password_hint),
                 )
                 if (requireConfirmation) {
-                    Text(stringResource(R.string.backup_password_confirm_label), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurfaceVariant)
+                    Text(stringResource(R.string.backup_password_confirm_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     SecretField(
                         value = passwordConfirmation,
                         onValueChange = onConfirmationChange,
@@ -800,9 +851,9 @@ internal fun BackupPasswordDialog(
                         onClear = { onConfirmationChange("") },
                         placeholder = stringResource(R.string.backup_password_confirm_hint),
                     )
-                    if (mismatch) Text(stringResource(R.string.backup_password_mismatch), color = NexaraColors.Error, style = NexaraTypography.bodyMedium)
+                    if (mismatch) Text(stringResource(R.string.backup_password_mismatch), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 } else {
-                    Text(stringResource(R.string.backup_restore_password_optional), color = NexaraColors.OnSurfaceVariant, style = NexaraTypography.bodyMedium)
+                    Text(stringResource(R.string.backup_restore_password_optional), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         },
@@ -830,128 +881,35 @@ private fun ExportButton(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    NexaraGlassCard(
+    FilledTonalButton(
         modifier = modifier,
-        shape = NexaraShapes.large as RoundedCornerShape,
-        onClick = if (enabled) onClick else null
+        enabled = enabled,
+        onClick = onClick,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            horizontal = 12.dp,
+            vertical = 16.dp,
+        ),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(NexaraColors.SurfaceContainer.copy(alpha = 0.3f))
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(NexaraColors.SurfaceContainer, CircleShape()),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = NexaraColors.Primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Text(
-                text = title,
-                style = NexaraTypography.labelMedium,
-                color = NexaraColors.OnSurface
-            )
-            Text(
-                text = subtitle,
-                style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp),
-                color = NexaraColors.OnSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun ActionButton(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    modifier: Modifier = Modifier,
-    isPrimary: Boolean = false,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = modifier
-            .clip(NexaraShapes.medium)
-            .background(if (isPrimary) NexaraColors.InversePrimary else NexaraColors.SurfaceHigh)
-            .border(0.5.dp, NexaraColors.GlassBorder, NexaraShapes.medium)
-            .clickable(enabled = enabled, onClick = onClick)
-            .heightIn(min = 48.dp)
-            .padding(vertical = 12.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (isPrimary) NexaraColors.OnPrimary else NexaraColors.Primary,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(24.dp),
             )
             Text(
-                text = label,
-                style = NexaraTypography.labelMedium,
-                color = if (isPrimary) NexaraColors.OnPrimary else NexaraColors.Primary
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
             )
         }
     }
 }
-
-@Composable
-private fun GlassInputField(
-    label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-    isPassword: Boolean = false
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = label,
-            style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-            color = NexaraColors.OnSurfaceVariant
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(NexaraShapes.medium)
-                .background(NexaraColors.SurfaceContainer)
-                .border(0.5.dp, NexaraColors.GlassBorder, NexaraShapes.medium)
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-        ) {
-            androidx.compose.foundation.text.BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = true,
-                textStyle = NexaraTypography.bodyMedium.copy(
-                    fontFamily = SpaceGrotesk,
-                    color = NexaraColors.OnSurface
-                ),
-                cursorBrush = androidx.compose.ui.graphics.SolidColor(NexaraColors.Primary),
-                visualTransformation = if (isPassword) androidx.compose.ui.text.input.PasswordVisualTransformation()
-                else androidx.compose.ui.text.input.VisualTransformation.None,
-                modifier = Modifier.fillMaxWidth()
-            )
-            if (value.isEmpty()) {
-                Text(
-                    text = placeholder,
-                    style = NexaraTypography.bodyMedium.copy(fontFamily = SpaceGrotesk),
-                    color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f)
-                )
-            }
-        }
-    }
-}
-
-private fun CircleShape() = RoundedCornerShape(50)

@@ -688,6 +688,8 @@
     <string name="local_models_engine_subtitle">运行已下载的 GGUF 模型所必需</string>
     <string name="local_models_import_title">导入 GGUF 文件</string>
     <string name="local_models_import_subtitle">从设备中选择 .gguf 文件</string>
+    <string name="local_models_importing">正在导入…</string>
+    <string name="local_models_please_wait">请稍候</string>
     <string name="local_models_active_slots">活跃插槽</string>
     <string name="local_models_imported">已导入模型</string>
     <string name="local_models_engine_status">引擎状态</string>
@@ -702,6 +704,7 @@
     <string name="local_models_loaded">已加载</string>
     <string name="local_models_load">加载</string>
     <string name="local_models_cd_delete">删除</string>
+    <string name="local_models_none_imported">尚未导入模型</string>
 
 
     <!-- ProviderFormScreen -->
@@ -867,6 +870,21 @@
     <string name="theme_preview">预览</string>
     <string name="theme_primary_btn">主要按钮</string>
     <string name="theme_secondary_btn">次要按钮</string>
+    <string name="theme_dynamic_color">动态取色</string>
+    <string name="theme_dynamic_color_desc">根据系统壁纸动态生成应用配色 (Android 12+)</string>
+    <string name="theme_dynamic_color_unavailable">当前 Android 版本不支持动态取色</string>
+    <string name="developer_title">开发者面板</string>
+    <string name="developer_diagnostics_section">系统诊断与调试</string>
+    <string name="developer_export_logs">导出运行日志</string>
+    <string name="developer_export_logs_desc">分享 nexara_logs.txt 文件以进行故障诊断</string>
+    <string name="developer_share_logs_chooser">分享日志文件</string>
+    <string name="developer_clear_logs">清除运行日志</string>
+    <string name="developer_clear_logs_desc">重置日志文件大小</string>
+    <string name="developer_device_section">设备信息</string>
+    <string name="developer_os_version">系统版本</string>
+    <string name="developer_model">型号</string>
+    <string name="developer_manufacturer">制造商</string>
+
 
     <!-- TokenUsageScreen -->
     <string name="token_title">用量管理</string>

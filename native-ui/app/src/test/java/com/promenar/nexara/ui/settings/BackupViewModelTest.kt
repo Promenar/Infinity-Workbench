@@ -48,6 +48,14 @@ class BackupViewModelTest {
     @AfterEach fun tearDown() = Dispatchers.resetMain()
 
     @Test
+    fun `backup actions stack at accessibility font scales`() {
+        assertThat(shouldStackBackupActions(1.0f)).isFalse()
+        assertThat(shouldStackBackupActions(1.49f)).isFalse()
+        assertThat(shouldStackBackupActions(1.5f)).isTrue()
+        assertThat(shouldStackBackupActions(2.0f)).isTrue()
+    }
+
+    @Test
     fun `state never contains secrets and include keys defaults off`() {
         val state = BackupUiState()
         val names = BackupUiState::class.java.declaredFields.map { it.name }
