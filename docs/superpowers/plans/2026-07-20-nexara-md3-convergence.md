@@ -1426,7 +1426,7 @@
 
   2026-07-21 最终返修复审已闭合：Terra 为 Critical 0 / Important 0 / Minor 0，Sol 为 Critical 0 / Important 0 / Minor 2，二者均判定 Task 14 GO。两项不阻断 Minor 已显式保留：性能 runner 示例只检查 raw 行数，尚未自动复算五轮九指标唯一性、分片连续性与 bucket；JVM 源码字符串合同对格式调整较敏感。当前两轮有效性能原始数据已独立复算，真实 API 36 Insets/IME 设备测试 17/17 且证据文件绑定当前测试源码和 APK 哈希，因此不降低既定完成标准。此 GO 仅覆盖 Task 14 本地返修，不改变真实 Provider、签名 release、冷安装、真机与远端发行门禁。
 
-- [ ] **Step 9：提交和推送阶段收口**
+- [x] **Step 9：提交和推送阶段收口**
 
   ```bash
   git add CHANGELOG.md docs/release/v0.2-beta.md docs/release/v0.2-beta-validation.md \
@@ -1434,6 +1434,8 @@
   git commit -m "docs: close Material 3 convergence phase"
   git push origin codex/md3-redesign
   ```
+
+  当前阶段源码、Screenshot 确定性修复和正式账本均按独立提交推送至 `origin/codex/md3-redesign`。提交 `c192ccea` 的远端 run `29831794553` 最终全绿：quality、API 31、API 35 首轮通过；API 36 首轮被托管模拟器系统 ANR 对话框遮挡权限按钮，保留失败证据后仅重跑失败 job 并通过。Step 5/6 仍因当前进程缺少签名变量而阻断，未使用旧 APK 回填。
 
 ## Completion Definition
 
@@ -1449,4 +1451,4 @@
 - [x] 全量 JVM 0 failure/error；skip 独立记录；Lint 0 Error/Fatal；全部截图 PASS 并逐张人工审阅。
 - [ ] API 31/35/36 相关设备矩阵通过；当前 release APK 完成 R8/zipalign/签名/checksum 和 API 35/36 冷安装。
 - [x] 真机 TalkBack、核心业务人工验收、远端 CI、tag workflow 和 GitHub Release 未闭合时，发行继续 NO-GO。
-- [ ] DIA、HLG、registry、release validation 与当前实现同步；每个完成任务已提交并推送，未触碰保护目录和敏感材料。
+- [x] DIA、HLG、registry、release validation 与当前实现同步；每个完成任务已提交并推送，未触碰保护目录和敏感材料。

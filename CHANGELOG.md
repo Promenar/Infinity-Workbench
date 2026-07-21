@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - **竞态与布局收口**：后台通知断言改为有界等待真实 active notification，引导底部导航使用稳定语义标签；文档标题在 2.0x 下最多两行显示且换行输入归一为空格，API 36 文档编辑交互 32/32。Provider Models 从搜索结果进入编辑 Sheet 时会先清除搜索焦点并收起 IME，避免键盘残留挤压编辑面板。
 - **性能与视觉证据**：固定 API 36、`-no-window -no-snapshot -gpu host`、动画缩放 0 的 500 模型性能双跑均通过；两轮各保留 45 条可复算 raw histogram，较差有效样本 p95 35ms、max 51ms、PSS +2763KiB。两次命中系统周期包事件的批次明确标为 `FIXTURE_INVALID` 并保留，未替换慢样本；96 张 actual 已逐张检查，5 张文档编辑 reference 经定向复核后更新，Screenshot 96/96。
 - **跨平台 Screenshot 确定性**：Task 14 首轮远端 CI 在 Ubuntu UTC 上准确暴露 9 张含时间文本的 Screenshot 与东八区 reference 相差 8 小时；截图验证与更新任务现在都从 JVM 启动阶段固定 `Asia/Shanghai`。第二轮远端 CI 继续暴露 3 张流式正文捕获到 140ms 尾部淡入不同中间帧；Preview/Screenshot 检查模式现在固定渲染动画终态，真实应用仍保留尾部淡入。本机以外部 `TZ=UTC` 取得两轮逐张相同的定点渲染哈希并完成 96/96 GREEN，仅在人工核对差异范围后更新 3 张流式 reference。
+- **当前提交远端矩阵**：提交 `c192ccea` 的 Android CI run `29831794553` 最终全绿；quality、API 31、API 35 首轮通过。API 36 首轮被托管模拟器 `Process system isn't responding` 系统 ANR 对话框遮住通知权限按钮，失败截图、UI tree 与空应用 crash buffer 均已保留；仅重跑失败 job 后同一测试链 13 分 43 秒通过，最终 run conclusion 为 `success`。
 - **当前质量门禁**：JVM 2117 项（0 failure/error、14 skip）、Lint 0 Error/Fatal（420 warning、25 hint）、AndroidTest Kotlin 编译与设备脚本契约通过；release-equivalent `minifiedTest` R8 新鲜构建成功。API 36 完整 Provider Models 设备回归 17/17，并用真实 Insets 断言确认编辑 Sheet 打开后 IME 已收起；Terra 最终复审 0/0/0，Sol 为 0/0/2 且两项不阻断 Minor 已记录，Task 14 本地返修 GO。当前进程缺少真实 Provider 与签名环境变量，未重建签名 APK、未执行当前包冷安装，历史 PASS 不替代本轮，发行继续 NO-GO。
 
 ### Material 3 总收敛：全站自适应语义色与富文本主题（2026-07-21）
