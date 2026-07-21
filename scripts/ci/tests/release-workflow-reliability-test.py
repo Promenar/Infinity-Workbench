@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -47,6 +48,25 @@ def workflow_job(name: str) -> str:
 def job_level_value(job: str, key: str) -> str | None:
     match = re.search(rf"^    {re.escape(key)}:\s*(.+)$", job, flags=re.MULTILINE)
     return match.group(1).strip() if match else None
+
+
+def continued_shell_commands(script: str, executable: str) -> list[list[str]]:
+    commands: list[list[str]] = []
+    current: list[str] | None = None
+    for line in script.splitlines():
+        stripped = line.strip()
+        if current is None:
+            if re.match(rf"{re.escape(executable)}(?:\s|$)", stripped) is None:
+                continue
+            current = [stripped.removesuffix("\\").rstrip()]
+        else:
+            current.append(stripped.removesuffix("\\").rstrip())
+        if not stripped.endswith("\\"):
+            commands.append(shlex.split(" ".join(current)))
+            current = None
+    if current is not None:
+        raise AssertionError(f"unterminated shell command: {executable}")
+    return commands
 
 
 class ReleaseWorkflowReliabilityTest(unittest.TestCase):
@@ -147,6 +167,46 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertNotIn("NEXARA_DEVICE_E2E_BUILD_TYPE: minifiedTest", RELEASE)
         self.assertIn("build-release:", RELEASE)
         self.assertIn("needs: [device-e2e, minified-blackbox]", RELEASE)
+
+    def test_build_release_cleans_before_fresh_full_gate_gradle_invocation(self) -> None:
+        build_job = workflow_job("build-release")
+        build_step = build_job.split("- name: 执行全门禁并构建签名 APK", 1)[1]
+        build_step = build_step.split("- name: 删除临时 keystore", 1)[0]
+        commands = continued_shell_commands(build_step, "./gradlew")
+        self.assertEqual(
+            commands,
+            [
+                [
+                    "./gradlew",
+                    "--no-daemon",
+                    "--stacktrace",
+                    "--no-build-cache",
+                    "clean",
+                ],
+                [
+                    "./gradlew",
+                    "--no-daemon",
+                    "--stacktrace",
+                    "--no-build-cache",
+                    ":app:validateDebugScreenshotTest",
+                ],
+                [
+                    "./gradlew",
+                    "--no-daemon",
+                    "--stacktrace",
+                    "--no-build-cache",
+                    ":app:testDebugUnitTest",
+                    ":app:lintDebug",
+                    ":app:assembleDebug",
+                    ":app:assembleRelease",
+                ],
+            ],
+        )
+        errexit = re.search(r"(?m)^\s*set -euo pipefail\s*$", build_step)
+        self.assertIsNotNone(errexit)
+        assert errexit is not None
+        self.assertLess(errexit.start(), build_step.index("./gradlew"))
+        self.assertNotRegex(build_step, r"(?m)^\s*set\s+\+e\b")
 
     def test_r8_evidence_and_download_integrity_are_mandatory(self) -> None:
         self.assertIn("outputs/mapping/release/mapping.txt", RELEASE)
