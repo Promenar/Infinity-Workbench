@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -21,7 +22,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTheme
 
 enum class LoadingSize(val dotSize: Dp, val spacing: Dp) {
@@ -110,7 +110,7 @@ private fun Dot(dotSize: Dp, scale: Float, alpha: Float) {
             .size(dotSize)
             .scale(scale)
             .graphicsLayer { this.alpha = alpha }
-            .background(NexaraColors.Primary, CircleShape)
+            .background(MaterialTheme.colorScheme.primary, CircleShape)
     )
 }
 

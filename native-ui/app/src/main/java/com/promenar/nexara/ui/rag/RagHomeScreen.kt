@@ -97,7 +97,6 @@ import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.rag.components.IndexingProgressBar
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import java.text.SimpleDateFormat
 
@@ -874,9 +873,9 @@ internal fun RagHomeScreenContent(
                     Text(stringResource(R.string.common_btn_cancel))
                 }
             },
-            containerColor = NexaraColors.SurfaceDim,
-            titleContentColor = NexaraColors.OnSurface,
-            textContentColor = NexaraColors.OnSurfaceVariant,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 
@@ -884,7 +883,7 @@ internal fun RagHomeScreenContent(
         ModalBottomSheet(
             onDismissRequest = { if (!isMovingSelection) showMoveSheet = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = NexaraColors.SurfaceLow,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
             modifier = Modifier.testTag(UiTags.RAG_HOME_MOVE_SHEET),
         ) {
@@ -1001,7 +1000,7 @@ internal fun RagHomeScreenContent(
                         }
                     },
                     enabled = pendingDelete.ids.isNotEmpty() && !isDeletingSelection,
-                    colors = ButtonDefaults.buttonColors(containerColor = NexaraColors.Error),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     modifier = Modifier
                         .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                         .testTag(UiTags.RAG_HOME_DELETE_CONFIRM_BUTTON),
@@ -1018,9 +1017,9 @@ internal fun RagHomeScreenContent(
                     Text(stringResource(R.string.common_btn_cancel))
                 }
             },
-            containerColor = NexaraColors.SurfaceDim,
-            titleContentColor = NexaraColors.OnSurface,
-            textContentColor = NexaraColors.OnSurfaceVariant,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 
@@ -1062,9 +1061,9 @@ internal fun RagHomeScreenContent(
                     Text(stringResource(R.string.common_btn_cancel))
                 }
             },
-            containerColor = NexaraColors.SurfaceDim,
-            titleContentColor = NexaraColors.OnSurface,
-            textContentColor = NexaraColors.OnSurfaceVariant,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -1148,7 +1147,7 @@ private fun RagHomeSelectionBar(
                     TextButton(
                         onClick = onDelete,
                         enabled = operationsEnabled,
-                        colors = ButtonDefaults.textButtonColors(contentColor = NexaraColors.Error),
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier
                             .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                             .testTag(UiTags.RAG_HOME_DELETE_SELECTION),

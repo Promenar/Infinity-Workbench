@@ -13,6 +13,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarData
 import androidx.compose.material3.SnackbarDuration
@@ -29,14 +30,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 
 enum class SnackbarType(val icon: ImageVector, val iconColor: Color) {
-    SUCCESS(Icons.Rounded.CheckCircle, NexaraColors.StatusSuccess),
-    ERROR(Icons.Rounded.Error, NexaraColors.StatusError),
-    INFO(Icons.Rounded.Info, NexaraColors.StatusInfo)
+    SUCCESS(Icons.Rounded.CheckCircle, Color.Unspecified),
+    ERROR(Icons.Rounded.Error, Color.Unspecified),
+    INFO(Icons.Rounded.Info, Color.Unspecified)
 }
 
 @Stable
@@ -74,14 +75,14 @@ fun NexaraSnackbar(
 ) {
     Snackbar(
         modifier = modifier.padding(16.dp),
-        containerColor = NexaraColors.SurfaceHigh,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(12.dp),
         action = {
             if (data.actionLabel != null) {
                 TextButton(onClick = onAction) {
                     Text(
                         text = data.actionLabel,
-                        color = NexaraColors.Primary,
+                        color = MaterialTheme.colorScheme.primary,
                         style = NexaraTypography.labelMedium
                     )
                 }
@@ -95,13 +96,21 @@ fun NexaraSnackbar(
             Icon(
                 imageVector = data.type.icon,
                 contentDescription = null,
-                tint = data.type.iconColor,
+                tint = if (data.type.iconColor == Color.Unspecified) {
+                    when (data.type) {
+                        SnackbarType.SUCCESS -> MaterialTheme.nexaraDomainColors.success
+                        SnackbarType.ERROR -> MaterialTheme.colorScheme.error
+                        SnackbarType.INFO -> MaterialTheme.nexaraDomainColors.info
+                    }
+                } else {
+                    data.type.iconColor
+                },
                 modifier = Modifier.size(20.dp)
             )
             Text(
                 text = data.message,
                 style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurface
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }

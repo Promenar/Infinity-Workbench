@@ -41,9 +41,9 @@ import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
 import com.promenar.nexara.onboarding.OnboardingState
 import com.promenar.nexara.onboarding.OnboardingStep
-import com.promenar.nexara.ui.common.NexaraGlassCard
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import com.promenar.nexara.data.model.ModelInfo
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -80,7 +80,7 @@ fun WelcomeScreen(
     }
     // Scaffold provides the true immersive edge-to-edge canvas
     Scaffold(
-        containerColor = NexaraColors.CanvasBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing
     ) { paddingValues ->
         Box(
@@ -114,13 +114,13 @@ fun WelcomeScreen(
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = (-0.05).sp
                         ),
-                        color = NexaraColors.Primary,
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(bottom = 8.dp) // mb-sm
                     )
                     Text(
                         text = stringResource(R.string.welcome_slogan),
                         style = NexaraTypography.labelMedium,
-                        color = NexaraColors.Secondary.copy(alpha = 0.8f),
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
                         letterSpacing = 0.1.sp
                     )
                 }
@@ -163,7 +163,7 @@ fun WelcomeScreen(
                             Brush.horizontalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    NexaraColors.Outline,
+                                    MaterialTheme.colorScheme.outline,
                                     Color.Transparent
                                 )
                             )
@@ -191,7 +191,7 @@ private fun OnboardingProgressScreen(
     var agentName by rememberSaveable { mutableStateOf("") }
     val stepNumber = (state.step.ordinal + 1).coerceIn(1, 6)
     Scaffold(
-        containerColor = NexaraColors.CanvasBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
     ) { paddingValues ->
         Box(
@@ -227,7 +227,7 @@ private fun OnboardingProgressScreen(
                             Text(
                                 text = stringResource(R.string.onboarding_model_empty),
                                 style = NexaraTypography.bodyMedium,
-                                color = NexaraColors.Error,
+                                color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.testTag("onboarding_model_empty"),
                             )
                         }
@@ -311,19 +311,19 @@ private fun OnboardingStepHeader(step: OnboardingStep, stepNumber: Int) {
     Text(
         text = stringResource(R.string.onboarding_progress, stepNumber),
         style = NexaraTypography.labelMedium,
-        color = NexaraColors.Primary,
+        color = MaterialTheme.colorScheme.primary,
     )
     Spacer(Modifier.height(12.dp))
     Text(
         text = stringResource(step.titleResource()),
         style = NexaraTypography.headlineLarge,
-        color = NexaraColors.OnBackground,
+        color = MaterialTheme.colorScheme.onBackground,
     )
     Spacer(Modifier.height(8.dp))
     Text(
         text = stringResource(step.descriptionResource()),
         style = NexaraTypography.bodyMedium,
-        color = NexaraColors.OnSurfaceVariant,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Spacer(Modifier.height(28.dp))
 }
@@ -333,7 +333,7 @@ private fun OnboardingError(message: String) {
     Text(
         text = message,
         style = NexaraTypography.bodyMedium,
-        color = NexaraColors.Error,
+        color = MaterialTheme.colorScheme.error,
     )
 }
 
@@ -382,7 +382,7 @@ private fun BoxScope.AtmosphereBackground() {
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        NexaraColors.Primary.copy(alpha = 0.15f),
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                         Color.Transparent
                     )
                 )
@@ -398,7 +398,7 @@ private fun BoxScope.AtmosphereBackground() {
             .background(
                 Brush.radialGradient(
                     colors = listOf(
-                        NexaraColors.Tertiary.copy(alpha = 0.1f),
+                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f),
                         Color.Transparent
                     )
                 )
@@ -423,17 +423,19 @@ private fun LanguageButton(
         label = "ButtonScale"
     )
 
-    NexaraGlassCard(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .scale(scale)
             .clickable(
                 enabled = enabled,
                 interactionSource = interactionSource,
-                indication = null, // Disable default ripple because the scale + glass is the intended feedback
+                indication = null, // Disable default ripple because the scale is the intended feedback
                 onClick = onClick
             ),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier
@@ -450,13 +452,13 @@ private fun LanguageButton(
                 Box(
                     modifier = Modifier
                         .size(32.dp) // w-8 h-8
-                        .background(NexaraColors.Primary.copy(alpha = 0.1f), shape = androidx.compose.foundation.shape.CircleShape),
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), shape = androidx.compose.foundation.shape.CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = NexaraColors.Primary,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -464,14 +466,14 @@ private fun LanguageButton(
                 Text(
                     text = text,
                     style = NexaraTypography.headlineMedium,
-                    color = NexaraColors.OnBackground
+                    color = MaterialTheme.colorScheme.onBackground
                 )
             }
             
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
                 contentDescription = null,
-                tint = NexaraColors.Outline,
+                tint = MaterialTheme.colorScheme.outline,
                 modifier = Modifier.size(16.dp)
             )
         }

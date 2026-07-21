@@ -1094,7 +1094,7 @@
 - Consumes: resolved `MaterialTheme.colorScheme`.
 - Produces: no static deep-dark dependency in formal UI; theme-aware native and WebView renderers.
 
-- [ ] **Step 1：写全站主题 RED**
+- [x] **Step 1：写全站主题 RED**
 
   `ThemeSurfaceContractTest` reads `md3-theme-surface-patterns.txt`, scans the complete formal `ui/**` tree and rejects matched static roles outside theme token definitions. `Color.kt` may define ColorScheme/domain status tokens, but production pages and renderers may not consume direct constants. The migration allowlist must be empty at Task completion.
 
@@ -1104,13 +1104,13 @@
 
   Expected: RED with every remaining static dark surface, including `WelcomeScreen` and inline LaTeX.
 
-- [ ] **Step 2：按目录串行迁移语义色**
+- [x] **Step 2：按目录串行迁移语义色**
 
   Before editing, require every path in `.agent/plans/20260720-md3-convergence-task13-manifest.txt` to be clean; any pre-existing diff blocks the Task until ownership is resolved. Compare a fresh full-tree static scan using the shared pattern file to the committed manifest and fail on unregistered paths. Replace static surface/text/accent colors with `MaterialTheme.colorScheme`. Preserve domain status colors only where they encode real success/warning/error/info state, and map their foregrounds to accessible on-colors.
 
   ```bash
-  while IFS= read -r path; do
-    test -z "$(git status --short -- "$path")"
+  while IFS= read -r file; do
+    test -z "$(git status --short -- "$file")"
   done < .agent/plans/20260720-md3-convergence-task13-manifest.txt
   rg -l -f native-ui/app/src/test/resources/md3-theme-surface-patterns.txt \
     native-ui/app/src/main/java/com/promenar/nexara/ui \
@@ -1118,15 +1118,15 @@
   test -z "$(comm -23 /tmp/nexara-md3-task13-fresh-scan.txt .agent/plans/20260720-md3-convergence-task13-manifest.txt)"
   ```
 
-- [ ] **Step 3：迁移 Markdown/WebView/图表 CSS**
+- [x] **Step 3：迁移 Markdown/WebView/图表 CSS**
 
   Inject background, foreground, surface, outline, primary, error and code colors from current theme. Theme changes must invalidate or update renderer content without Activity restart.
 
-- [ ] **Step 4：清除兼容桥**
+- [x] **Step 4：清除兼容桥**
 
   Delete `NexaraGlassCard` when no production consumer remains. Reduce `NexaraColors` to domain status constants only or remove it if all roles are available from MaterialTheme. Run the static contract until allowlist is empty.
 
-- [ ] **Step 5：运行全量 JVM、Lint、截图和编译**
+- [x] **Step 5：运行全量 JVM、Lint、截图和编译**
 
   ```bash
   ./gradlew :app:testDebugUnitTest
@@ -1137,19 +1137,22 @@
 
   Expected: exact counts recorded; 0 failure/error, Lint 0 Error/Fatal, screenshot validation all PASS, skips reported separately.
 
-- [ ] **Step 6：独立主题审阅、提交和推送**
+- [x] **Step 6：独立主题审阅、提交和推送**
 
   Require one code reviewer and one multimodal visual reviewer. Critical/Important and P0/P1 visual findings must be zero.
 
   ```bash
-  while IFS= read -r path; do
-    if ! git diff --quiet -- "$path"; then git add -- "$path"; fi
+  while IFS= read -r file; do
+    if ! git diff --quiet -- "$file"; then git add -- "$file"; fi
   done < .agent/plans/20260720-md3-convergence-task13-manifest.txt
-  git add native-ui/app/src/test/java/com/promenar/nexara/ui/theme/ThemeSurfaceContractTest.kt \
+  git add native-ui/app/src/androidTest/java/com/promenar/nexara/ui/renderer/RichContentThemeTest.kt \
+    native-ui/app/src/test/java/com/promenar/nexara/ui/chat/PipelineBubbleTest.kt \
+    native-ui/app/src/test/java/com/promenar/nexara/ui/theme/NexaraThemeTokenTest.kt \
+    native-ui/app/src/test/java/com/promenar/nexara/ui/theme/ThemeSurfaceContractTest.kt \
     native-ui/app/src/screenshotTest/kotlin/com/promenar/nexara/ui/ReleasePreviewScreenshotTest.kt
   git ls-files --modified --deleted --others --exclude-standard -- native-ui/app/src/screenshotTestDebug/reference > /tmp/nexara-md3-task13-goldens.txt
   cat /tmp/nexara-md3-task13-goldens.txt
-  while IFS= read -r path; do git add -- "$path"; done < /tmp/nexara-md3-task13-goldens.txt
+  while IFS= read -r file; do git add -- "$file"; done < /tmp/nexara-md3-task13-goldens.txt
   git diff --cached --name-only
   git commit -m "feat: complete adaptive Material 3 color migration"
   git push origin codex/md3-redesign

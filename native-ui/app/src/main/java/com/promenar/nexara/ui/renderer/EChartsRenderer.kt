@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -39,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -47,8 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonArray
@@ -62,10 +62,16 @@ fun EChartsBlock(
     fontSize: Int = 13
 ) {
     val context = LocalContext.current
+    val palette = rememberRichContentPalette()
     var showFullScreen by remember { mutableStateOf(false) }
     val webView = remember { RichContentWebViewPool.acquire(context) }
     var webViewHeight by remember { mutableIntStateOf(200) }
-    val html = remember(optionJson, fontSize) { buildEChartsHtml(optionJson, fullScreen = false, fontSize = fontSize) }
+    val html = remember(optionJson, fontSize, palette) {
+        buildEChartsHtml(optionJson, fullScreen = false, fontSize = fontSize, palette = palette)
+    }
+    val fullScreenHtml = remember(optionJson, fontSize, palette) {
+        buildEChartsHtml(optionJson, fullScreen = true, fontSize = fontSize, palette = palette)
+    }
 
     LaunchedEffect(webView) {
         webView.webViewClient = object : WebViewClient() {
@@ -101,7 +107,7 @@ fun EChartsBlock(
                 .fillMaxWidth()
                 .heightIn(min = 200.dp, max = 500.dp)
                 .clip(NexaraShapes.medium)
-                .background(NexaraColors.SurfaceLowest)
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest)
         )
 
         Row(
@@ -115,21 +121,21 @@ fun EChartsBlock(
                 Icon(
                     Icons.Rounded.Fullscreen,
                     contentDescription = "Fullscreen",
-                    tint = NexaraColors.OnSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             IconButton(onClick = { exportCSV(optionJson, context) }) {
                 Icon(
                     Icons.Rounded.TableChart,
                     contentDescription = "Export CSV",
-                    tint = NexaraColors.OnSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             IconButton(onClick = { exportPNG(webView, context) }) {
                 Icon(
                     Icons.Rounded.Download,
                     contentDescription = "Export PNG",
-                    tint = NexaraColors.OnSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -143,10 +149,10 @@ fun EChartsBlock(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.95f))
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.95f))
             ) {
                 RichContentWebView(
-                    html = buildEChartsHtml(optionJson, fullScreen = true, fontSize = fontSize),
+                    html = fullScreenHtml,
                     modifier = Modifier.fillMaxSize(),
                     fontSize = fontSize,
                     minHeight = 40,
@@ -159,12 +165,12 @@ fun EChartsBlock(
                         .padding(16.dp)
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.2f))
+                        .background(MaterialTheme.nexaraDomainColors.overlayContent.copy(alpha = 0.2f))
                 ) {
                     Icon(
                         Icons.Rounded.Close,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = MaterialTheme.nexaraDomainColors.overlayContent,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -173,7 +179,12 @@ fun EChartsBlock(
     }
 }
 
-private fun buildEChartsHtml(optionJson: String, fullScreen: Boolean, fontSize: Int = 13): String {
+private fun buildEChartsHtml(
+    optionJson: String,
+    fullScreen: Boolean,
+    fontSize: Int = 13,
+    palette: RichContentPalette,
+): String {
     val encoded = android.util.Base64.encodeToString(
         optionJson.toByteArray(), android.util.Base64.NO_WRAP
     )
@@ -186,7 +197,7 @@ private fun buildEChartsHtml(optionJson: String, fullScreen: Boolean, fontSize: 
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script src="echarts/echarts.min.js"></script>
         <style>
-            body { margin: 0; padding: 0; background: transparent; font-size: ${fontSize}px; }
+            body { margin: 0; padding: 0; background: ${palette.background}; color: ${palette.foreground}; font-size: ${fontSize}px; }
             #chart { width: 100%; height: $height; }
         </style>
     </head>
@@ -194,25 +205,41 @@ private fun buildEChartsHtml(optionJson: String, fullScreen: Boolean, fontSize: 
         <div id="chart"></div>
         <script>
             try {
-                var chart = echarts.init(document.getElementById('chart'), 'dark');
+                var chart = echarts.init(
+                    document.getElementById('chart'),
+                    ${if (palette.isDark) "'dark'" else "null"}
+                );
                 var option = JSON.parse(atob("$encoded"));
-                option.backgroundColor = 'transparent';
+                option.backgroundColor = '${palette.background}';
+                option.color = option.color || ['${palette.primary}'];
                 option.textStyle = option.textStyle || {};
                 option.textStyle.fontSize = $fontSize;
+                option.textStyle.color = option.textStyle.color || '${palette.foreground}';
+                option.tooltip = option.tooltip || {};
+                option.tooltip.backgroundColor = option.tooltip.backgroundColor || '${palette.surface}';
+                option.tooltip.borderColor = option.tooltip.borderColor || '${palette.outline}';
+                option.tooltip.textStyle = option.tooltip.textStyle || {};
+                option.tooltip.textStyle.color = option.tooltip.textStyle.color || '${palette.foreground}';
                 option.toolbox = {
                     show: true,
+                    iconStyle: { borderColor: '${palette.foreground}' },
                     feature: {
                         saveAsImage: { show: true, title: 'Save' },
                         dataView: { show: true, title: 'Data', readOnly: true },
                         restore: { show: true, title: 'Reset' }
                     }
                 };
-                option.dataZoom = [{ type: 'inside' }, { type: 'slider' }];
+                option.dataZoom = [{ type: 'inside' }, {
+                    type: 'slider',
+                    borderColor: '${palette.outline}',
+                    backgroundColor: '${palette.codeBackground}',
+                    textStyle: { color: '${palette.foreground}' }
+                }];
                 chart.setOption(option);
                 window.addEventListener('resize', function() { chart.resize(); });
             } catch(e) {
                 document.getElementById('chart').innerHTML =
-                    '<p style="color:#FFB4AB;font-size:${fontSize}px;">ECharts Error: ' + e.message + '</p>';
+                    '<p style="color:${palette.error};font-size:${fontSize}px;">ECharts Error: ' + e.message + '</p>';
             }
         </script>
     </body>

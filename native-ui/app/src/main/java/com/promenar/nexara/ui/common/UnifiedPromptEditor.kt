@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
@@ -68,7 +69,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -237,7 +237,7 @@ fun UnifiedPromptEditor(
                 Icon(
                     imageVector = Icons.Rounded.Close,
                     contentDescription = closeDescription,
-                    tint = NexaraColors.OnSurface
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
 
@@ -248,7 +248,7 @@ fun UnifiedPromptEditor(
                 style = NexaraTypography.headlineMedium.copy(
                     fontWeight = FontWeight.Bold
                 ),
-                color = NexaraColors.OnSurface,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
             )
 
@@ -284,14 +284,14 @@ fun UnifiedPromptEditor(
                 if (isSaving) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
-                        color = NexaraColors.Primary,
+                        color = MaterialTheme.colorScheme.primary,
                         strokeWidth = 2.dp,
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Rounded.Check,
                         contentDescription = saveDescription,
-                        tint = NexaraColors.Primary,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -304,13 +304,13 @@ fun UnifiedPromptEditor(
         val tabs = EditorTab.entries
         TabRow(
             selectedTabIndex = selectedTab,
-            containerColor = NexaraColors.SurfaceContainer,
-            contentColor = NexaraColors.OnSurface,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             indicator = { tabPositions ->
                 TabRowDefaults.Indicator(
                     modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
                     height = 2.dp,
-                    color = NexaraColors.Primary
+                    color = MaterialTheme.colorScheme.primary
                 )
             },
             divider = {}
@@ -326,7 +326,11 @@ fun UnifiedPromptEditor(
                             style = NexaraTypography.labelMedium.copy(
                                 fontWeight = if (selectedTab == index) FontWeight.SemiBold else FontWeight.Normal
                             ),
-                            color = if (selectedTab == index) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
+                            color = if (selectedTab == index) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                         )
                     }
                 )
@@ -339,6 +343,7 @@ fun UnifiedPromptEditor(
         val scrollState = rememberScrollState()
         val textMeasurer = rememberTextMeasurer()
         var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+        val lineNumberColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
 
         val textLines = text.split("\n")
         val lineOffsets = remember(text) {
@@ -356,7 +361,7 @@ fun UnifiedPromptEditor(
                 modifier = Modifier
                     .width(36.dp)
                     .fillMaxHeight()
-                    .background(NexaraColors.SurfaceLowest)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest)
                     .padding(end = 6.dp, top = 8.dp)
             ) {
                 val layout = layoutResult
@@ -374,7 +379,7 @@ fun UnifiedPromptEditor(
                             style = NexaraTypography.bodySmall.copy(
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
-                                color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                                color = lineNumberColor
                             )
                         )
 
@@ -400,7 +405,7 @@ fun UnifiedPromptEditor(
                             style = NexaraTypography.bodySmall.copy(
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
-                                color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                                color = lineNumberColor
                             )
                         )
                         val x = size.width - textLayout.size.width
@@ -434,12 +439,12 @@ fun UnifiedPromptEditor(
                         .padding(top = 8.dp, start = 8.dp, end = 8.dp),
                     onTextLayout = { getResult -> layoutResult = getResult() },
                     textStyle = NexaraTypography.bodySmall.copy(
-                        color = NexaraColors.OnSurface,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 14.sp,
                         fontFamily = FontFamily.Monospace,
                         lineHeight = 20.sp
                     ),
-                    cursorBrush = SolidColor(NexaraColors.Primary),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     decorator = { innerTextField ->
                         if (text.isEmpty()) {
                             Text(
@@ -448,7 +453,7 @@ fun UnifiedPromptEditor(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 14.sp
                                 ),
-                                color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                             )
                         }
                         innerTextField()
@@ -470,7 +475,7 @@ fun UnifiedPromptEditor(
                 Text(
                     text = resolvedPlaceholder,
                     style = NexaraTypography.bodyMedium,
-                    color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.7f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )
             } else {
                 MarkdownText(
@@ -488,12 +493,12 @@ fun UnifiedPromptEditor(
         Column {
             HorizontalDivider(
                 thickness = 0.5.dp,
-                color = NexaraColors.OutlineVariant
+                color = MaterialTheme.colorScheme.outlineVariant
             )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(NexaraColors.SurfaceContainer)
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
                     .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -505,7 +510,7 @@ fun UnifiedPromptEditor(
                         wordCount
                     ),
                     style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                    color = NexaraColors.OnSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
@@ -515,7 +520,7 @@ fun UnifiedPromptEditor(
                         lineCount
                     ),
                     style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                    color = NexaraColors.OnSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
@@ -525,7 +530,7 @@ fun UnifiedPromptEditor(
                         charCount
                     ),
                     style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
-                    color = NexaraColors.OnSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -536,7 +541,7 @@ fun UnifiedPromptEditor(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(NexaraColors.CanvasBackground)
+                .background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .imePadding()
@@ -546,7 +551,7 @@ fun UnifiedPromptEditor(
                 Text(
                     text = stringResource(R.string.shared_error_generic),
                     style = NexaraTypography.bodySmall,
-                    color = NexaraColors.Error,
+                    color = MaterialTheme.colorScheme.error,
                     modifier = Modifier
                         .fillMaxWidth()
                         .semantics { liveRegion = LiveRegionMode.Assertive }

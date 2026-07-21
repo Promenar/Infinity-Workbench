@@ -55,7 +55,6 @@ import androidx.compose.ui.unit.dp
 import com.promenar.nexara.data.model.TaskStep
 import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 @Composable
@@ -109,20 +108,20 @@ fun TaskFloatingPanel(
                     Text(
                         text = "\uD83C\uDFAF $displayGoal",
                         style = NexaraTypography.labelMedium,
-                        color = NexaraColors.OnSurface,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "$doneCount/$totalCount \u6B65\u9AA4 \u00B7 $percent%",
                         style = NexaraTypography.labelMedium,
-                        color = NexaraColors.Primary
+                        color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Icon(
                         imageVector = if (isCollapsed) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
                         contentDescription = if (isCollapsed) "\u5C55\u5F00" else "\u6536\u8D77",
-                        tint = NexaraColors.OnSurfaceVariant,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -141,8 +140,8 @@ fun TaskFloatingPanel(
                                 .fillMaxWidth()
                                 .height(4.dp)
                                 .clip(RoundedCornerShape(2.dp)),
-                            color = NexaraColors.Primary,
-                            trackColor = NexaraColors.SurfaceHighest,
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                             strokeCap = StrokeCap.Round
                         )
 
@@ -195,26 +194,26 @@ private fun TaskNodeRow(
                 text = "\u2705",
                 style = NexaraTypography.bodyMedium
             )
-            status == "doing" -> PulseDotInline(color = NexaraColors.Primary)
+            status == "doing" -> PulseDotInline(color = MaterialTheme.colorScheme.primary)
             status == "dropped" -> Text(
                 text = "\u2715",
                 style = NexaraTypography.bodyMedium,
-                color = NexaraColors.Error
+                color = MaterialTheme.colorScheme.error
             )
             status == "partial-dropped" -> Text(
                 text = "\u2298",
                 style = NexaraTypography.bodyMedium,
-                color = NexaraColors.StatusWarning
+                color = MaterialTheme.colorScheme.tertiary
             )
             else -> Text(
                 text = "\u25CB",
                 style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
 
-    val textColor = if (status == "doing") NexaraColors.Primary else NexaraColors.OnSurface
+    val textColor = if (status == "doing") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
 
     Row(
         modifier = Modifier

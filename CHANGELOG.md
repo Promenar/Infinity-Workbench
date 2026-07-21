@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 总收敛：全站自适应语义色与富文本主题（2026-07-21）
+
+- **单一主题事实源**：正式 UI 清除 `NexaraColors`、`NexaraGlassCard` 与静态深色/Glass 消费，页面统一使用 `MaterialTheme.colorScheme`；成功、警告、信息、RAG 状态和代码语法色通过主题内 `NexaraDomainColors` 成对提供前景与容器色。
+- **富文本实时换肤**：Markdown、LaTeX、Mermaid、PlantUML、ECharts 与 HTML WebView 从当前主题生成背景、前景、surface、outline、primary、error 和代码色板；API 36 真 WebView 在同一 Activity 内从深色切至浅色后计算背景由 `rgb(19, 19, 21)` 更新为 `rgb(251, 248, 251)`。
+- **浅色视觉闭环**：新增与既有深色样例同内容的浅色富 Markdown reference；聊天、附件、引导、Provider Models、RAG/资源确认、RTL、横屏、平板和 2.0x 受影响 actual 已逐张人工及多模态复审。
+- **当前门禁**：全量 JVM 2117 项（0 failure/error、14 skip）、96/96 Screenshot、Lint 0 Error/Fatal（420 warning）、AndroidTest 编译通过；API 36 富文本主题切换 1/1。独立代码复审 Critical/Important/Minor 为 0，多模态视觉复审 P0/P1 为 0。最终发行 Task 14 与真机/远端门禁尚未闭合，整体发行继续保持 NO-GO。
+
 ### Material 3 总收敛：外观与其余设置表面（2026-07-21）
 
 - **真实外观状态**：外观页使用 Application 级 `ThemePreferenceStore` 和 `ThemeViewModel`，系统跟随、浅色、深色与 Android 12+ 动态色会立即持久化并在进程重建后恢复；单选行与动态色开关提供标准 Material 语义。

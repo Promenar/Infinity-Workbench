@@ -87,7 +87,6 @@ import com.promenar.nexara.ui.renderer.nexaraMarkdownColors
 import com.promenar.nexara.ui.renderer.nexaraMarkdownTypography
 import com.promenar.nexara.ui.renderer.parseMarkdownTable
 import com.promenar.nexara.ui.renderer.parseGfmAlert
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.testing.UiTags
@@ -145,6 +144,7 @@ private fun Modifier.streamingTailFade(
 ): Modifier {
     if (!enabled) return this
 
+    val maskColor = MaterialTheme.colorScheme.onSurface
     val tailAlpha = remember { Animatable(1f) }
     var previousContent by remember { mutableStateOf("") }
     LaunchedEffect(enabled, content) {
@@ -174,7 +174,7 @@ private fun Modifier.streamingTailFade(
         if (fadeHeight > 0f && tailAlpha.value < 1f) {
             drawRect(
                 brush = Brush.verticalGradient(
-                    colors = listOf(Color.White, Color.White.copy(alpha = tailAlpha.value)),
+                    colors = listOf(maskColor, maskColor.copy(alpha = tailAlpha.value)),
                     startY = size.height - fadeHeight,
                     endY = size.height,
                 ),
@@ -456,7 +456,7 @@ fun MarkdownText(
     val currentStyle = LocalTextStyle.current
     val effectiveColor = overrideColor
         ?: currentStyle.color.takeUnless { it == Color.Unspecified }
-        ?: NexaraColors.OnBackground
+        ?: MaterialTheme.colorScheme.onBackground
     val m3Typography = MaterialTheme.typography.copy(
         bodyMedium = nexaraMarkdownTypography(fontSize).text.copy(color = effectiveColor, fontStyle = fontStyle),
         headlineLarge = nexaraMarkdownTypography(fontSize).h1.copy(color = effectiveColor, fontStyle = fontStyle),
@@ -609,7 +609,7 @@ private fun MarkdownSafe(
     fontSize: Int,
     markdown: String,
     onContentChange: ((String) -> Unit)?,
-    textColor: Color = NexaraColors.OnBackground,
+    textColor: Color = MaterialTheme.colorScheme.onBackground,
     fontStyle: androidx.compose.ui.text.font.FontStyle? = null,
     compactSpacing: Boolean = false,
     modifier: Modifier = Modifier,
@@ -747,7 +747,7 @@ private fun MarkdownSafe(
                 HorizontalDivider(
                     modifier = Modifier.padding(vertical = 12.dp),
                     thickness = 1.dp,
-                    color = NexaraColors.OutlineVariant.copy(alpha = 0.5f)
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
             },
             custom = { type, model ->
@@ -847,7 +847,10 @@ private fun MarkdownSafe(
                                             text = standaloneCode,
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .background(NexaraColors.SurfaceContainer, NexaraShapes.small)
+                                                .background(
+                                                    MaterialTheme.colorScheme.surfaceContainer,
+                                                    NexaraShapes.small,
+                                                )
                                                 .padding(horizontal = 8.dp, vertical = 4.dp),
                                             style = codeStyle,
                                             softWrap = false,
@@ -1105,7 +1108,7 @@ private fun StreamingCursor() {
             .width(8.dp)
             .height(16.dp)
             .alpha(alpha)
-            .background(NexaraColors.Primary, RoundedCornerShape(1.dp))
+            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(1.dp))
             .semantics {
                 contentDescription = generatingDescription
             }

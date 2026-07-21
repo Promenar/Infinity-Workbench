@@ -20,7 +20,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.*
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -62,7 +61,7 @@ fun AgentRagConfigScreen(
         title = stringResource(R.string.agent_rag_reset_title),
         description = stringResource(R.string.agent_rag_reset_message),
         confirmLabel = stringResource(R.string.agent_rag_reset_confirm),
-        confirmColor = NexaraColors.StatusWarning,
+        confirmColor = MaterialTheme.colorScheme.tertiary,
         destructive = true
     )
 
@@ -79,19 +78,21 @@ fun AgentRagConfigScreen(
                 Icon(
                     imageVector = Icons.Rounded.BookmarkAdded,
                     contentDescription = null,
-                    tint = NexaraColors.Primary,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
                 )
                 Text(
                     text = scopeLabel,
                     style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = NexaraColors.Primary
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
 
-            NexaraGlassCard(
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Row(
                     modifier = Modifier
@@ -105,15 +106,15 @@ fun AgentRagConfigScreen(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(50))
                                 .background(
-                                    if (useInherited) NexaraColors.Primary.copy(alpha = 0.15f)
-                                    else NexaraColors.StatusWarning.copy(alpha = 0.15f)
+                                    if (useInherited) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                    else MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
                                 )
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
                                 text = if (useInherited) stringResource(R.string.agent_rag_status_inherited) else stringResource(R.string.agent_rag_status_custom),
                                 style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                color = if (useInherited) NexaraColors.Primary else NexaraColors.StatusWarning
+                                color = if (useInherited) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
                             )
                         }
                     }
@@ -122,23 +123,25 @@ fun AgentRagConfigScreen(
                             Icon(
                                 imageVector = Icons.Rounded.RestartAlt,
                                 contentDescription = null,
-                                tint = NexaraColors.StatusWarning,
+                                tint = MaterialTheme.colorScheme.tertiary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = stringResource(R.string.shared_btn_reset),
                                 style = NexaraTypography.labelMedium,
-                                color = NexaraColors.StatusWarning
+                                color = MaterialTheme.colorScheme.tertiary
                             )
                         }
                     }
                 }
             }
 
-            NexaraGlassCard(
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Column(
                     modifier = Modifier
@@ -149,7 +152,7 @@ fun AgentRagConfigScreen(
                     Text(
                         text = stringResource(R.string.agent_rag_section_chunk),
                         style = NexaraTypography.headlineMedium,
-                        color = NexaraColors.OnSurface
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     RagConfigSlider(
                         label = stringResource(R.string.agent_rag_chunk_size),
@@ -172,9 +175,11 @@ fun AgentRagConfigScreen(
                 }
             }
 
-            NexaraGlassCard(
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Column(
                     modifier = Modifier
@@ -185,7 +190,7 @@ fun AgentRagConfigScreen(
                     Text(
                         text = stringResource(R.string.agent_rag_section_memory),
                         style = NexaraTypography.headlineMedium,
-                        color = NexaraColors.OnSurface
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     RagConfigSlider(
                         label = stringResource(R.string.agent_rag_memory_chunk),
@@ -199,13 +204,15 @@ fun AgentRagConfigScreen(
                 }
             }
 
-            NexaraGlassCard(
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
                         showTemplateEditor = true
                     },
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Column(
                     modifier = Modifier
@@ -220,21 +227,21 @@ fun AgentRagConfigScreen(
                         Text(
                             text = stringResource(R.string.agent_rag_section_summary),
                             style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = NexaraColors.OnSurface
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(50))
                                 .background(
-                                    if (ragConfig.summaryTemplate.isNotBlank()) NexaraColors.Primary.copy(alpha = 0.15f)
-                                    else NexaraColors.OnSurfaceVariant.copy(alpha = 0.1f)
+                                    if (ragConfig.summaryTemplate.isNotBlank()) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
                                 )
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
                                 text = if (ragConfig.summaryTemplate.isNotBlank()) stringResource(R.string.agent_rag_summary_configured) else stringResource(R.string.agent_rag_summary_default),
                                 style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                color = if (ragConfig.summaryTemplate.isNotBlank()) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
+                                color = if (ragConfig.summaryTemplate.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -242,7 +249,7 @@ fun AgentRagConfigScreen(
                     Text(
                         text = ragConfig.summaryTemplate.ifBlank { stringResource(R.string.agent_rag_summary_hint) },
                         style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
-                        color = if (ragConfig.summaryTemplate.isNotBlank()) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                        color = if (ragConfig.summaryTemplate.isNotBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         maxLines = 2
                     )
                 }
@@ -270,12 +277,12 @@ private fun RagConfigSlider(
             Text(
                 text = label,
                 style = NexaraTypography.labelMedium,
-                color = NexaraColors.OnSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = displayValue,
                 style = NexaraTypography.bodySmall,
-                color = NexaraColors.Primary
+                color = MaterialTheme.colorScheme.primary
             )
         }
         Spacer(modifier = Modifier.height(4.dp))

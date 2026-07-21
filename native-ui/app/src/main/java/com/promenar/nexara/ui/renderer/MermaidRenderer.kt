@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -35,8 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -45,7 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.promenar.nexara.ui.theme.NexaraColors
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 
 @Composable
 fun MermaidBlock(
@@ -54,7 +55,11 @@ fun MermaidBlock(
     fontSize: Int = 14
 ) {
     val context = LocalContext.current
-    val html = buildMermaidHtml(code, fontSize)
+    val palette = rememberRichContentPalette()
+    val exportBackground = MaterialTheme.colorScheme.background.toArgb()
+    val html = remember(code, fontSize, palette) {
+        buildMermaidHtml(code, fontSize, palette)
+    }
     var showFullScreen by remember { mutableStateOf(false) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
@@ -82,14 +87,14 @@ fun MermaidBlock(
                 Icon(
                     Icons.Default.ZoomIn,
                     contentDescription = "Fullscreen",
-                    tint = NexaraColors.OnSurfaceVariant,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
             }
             IconButton(
                 onClick = {
                     webViewRef?.let { wv ->
-                        exportWebViewToPng(context, wv)
+                        exportWebViewToPng(context, wv, exportBackground)
                     }
                 },
                 modifier = Modifier.size(32.dp)
@@ -97,7 +102,7 @@ fun MermaidBlock(
                 Icon(
                     Icons.Default.Download,
                     contentDescription = "Export PNG",
-                    tint = NexaraColors.OnSurfaceVariant,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -120,6 +125,7 @@ private fun MermaidFullScreenDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val exportBackground = MaterialTheme.colorScheme.background.toArgb()
     val webView = remember { RichContentWebViewPool.acquire(context) }
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -135,7 +141,7 @@ private fun MermaidFullScreenDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.95f))
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.95f))
         ) {
             AndroidView(
                 factory = { webView },
@@ -172,19 +178,19 @@ private fun MermaidFullScreenDialog(
                     .padding(8.dp)
             ) {
                 IconButton(
-                    onClick = { exportWebViewToPng(context, webView) }
+                    onClick = { exportWebViewToPng(context, webView, exportBackground) }
                 ) {
                     Icon(
                         Icons.Default.Download,
                         contentDescription = "Export PNG",
-                        tint = Color.White
+                        tint = MaterialTheme.nexaraDomainColors.overlayContent
                     )
                 }
                 IconButton(onClick = onDismiss) {
                     Icon(
                         Icons.Default.Close,
                         contentDescription = "Close",
-                        tint = Color.White
+                        tint = MaterialTheme.nexaraDomainColors.overlayContent
                     )
                 }
             }
@@ -192,7 +198,11 @@ private fun MermaidFullScreenDialog(
     }
 }
 
-private fun exportWebViewToPng(context: android.content.Context, webView: WebView) {
+private fun exportWebViewToPng(
+    context: android.content.Context,
+    webView: WebView,
+    backgroundColor: Int,
+) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
         if (context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
             != PackageManager.PERMISSION_GRANTED
@@ -211,7 +221,7 @@ private fun exportWebViewToPng(context: android.content.Context, webView: WebVie
         webView.width, webView.height, Bitmap.Config.ARGB_8888
     )
     val canvas = Canvas(bitmap)
-    canvas.drawColor(0xFF0E0E10.toInt())
+    canvas.drawColor(backgroundColor)
     webView.draw(canvas)
     saveBitmapToMediaStore(context, bitmap)
 }
@@ -246,7 +256,11 @@ private fun saveBitmapToMediaStore(context: android.content.Context, bitmap: Bit
     bitmap.recycle()
 }
 
-private fun buildMermaidHtml(code: String, fontSize: Int): String {
+private fun buildMermaidHtml(
+    code: String,
+    fontSize: Int,
+    palette: RichContentPalette,
+): String {
     val encoded = android.util.Base64.encodeToString(
         code.toByteArray(), android.util.Base64.NO_WRAP
     )
@@ -258,14 +272,14 @@ private fun buildMermaidHtml(code: String, fontSize: Int): String {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script src="mermaid/mermaid.min.js"></script>
         <style>
-            body { margin: 0; padding: 12px; background: transparent; font-size: ${fontSize}px; }
+            body { margin: 0; padding: 12px; background: ${palette.background}; color: ${palette.foreground}; font-size: ${fontSize}px; }
             .mermaid { display: flex; justify-content: center; }
             .mermaid svg { max-width: 100%; height: auto; }
             #mermaid-diagram { transition: transform 0.2s; transform-origin: top left; }
-            .node rect, .node circle, .node polygon { fill: #2A2A2C !important; stroke: #464554 !important; }
-            .nodeLabel, .edgeLabel { color: #E5E1E4 !important; fill: #E5E1E4 !important; }
-            .edgePath .path { stroke: #908FA0 !important; }
-            .cluster rect { fill: #201F22 !important; stroke: #464554 !important; }
+            .node rect, .node circle, .node polygon { fill: ${palette.surface} !important; stroke: ${palette.outline} !important; }
+            .nodeLabel, .edgeLabel { color: ${palette.foreground} !important; fill: ${palette.foreground} !important; }
+            .edgePath .path { stroke: ${palette.outline} !important; }
+            .cluster rect { fill: ${palette.codeBackground} !important; stroke: ${palette.outline} !important; }
         </style>
     </head>
     <body>
@@ -275,15 +289,15 @@ private fun buildMermaidHtml(code: String, fontSize: Int): String {
             document.getElementById('mermaid-diagram').textContent = diagramCode;
             mermaid.initialize({
                 startOnLoad: true,
-                theme: 'dark',
+                theme: 'base',
                 themeVariables: {
-                    darkMode: true,
-                    background: 'transparent',
-                    primaryColor: '#C0C1FF',
-                    primaryTextColor: '#E5E1E4',
-                    lineColor: '#908FA0',
-                    secondaryColor: '#2A2A2C',
-                    tertiaryColor: '#201F22'
+                    darkMode: ${palette.isDark},
+                    background: '${palette.background}',
+                    primaryColor: '${palette.primary}',
+                    primaryTextColor: '${palette.foreground}',
+                    lineColor: '${palette.outline}',
+                    secondaryColor: '${palette.surface}',
+                    tertiaryColor: '${palette.codeBackground}'
                 }
             });
             mermaid.run();

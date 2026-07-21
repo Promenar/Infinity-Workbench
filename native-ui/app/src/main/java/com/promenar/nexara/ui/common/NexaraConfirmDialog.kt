@@ -19,12 +19,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -46,10 +44,10 @@ fun NexaraConfirmDialog(
             .clip(NexaraShapes.extraLarge)
             .border(
                 0.5.dp,
-                NexaraColors.GlassBorder,
+                MaterialTheme.colorScheme.outlineVariant,
                 NexaraShapes.extraLarge
             ),
-        color = NexaraColors.SurfaceContainer,
+        color = MaterialTheme.colorScheme.surfaceContainer,
         shape = NexaraShapes.extraLarge
     ) {
         Column(
@@ -60,7 +58,7 @@ fun NexaraConfirmDialog(
             Text(
                 text = title,
                 style = NexaraTypography.headlineMedium,
-                color = NexaraColors.OnSurface
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             if (message.isNotEmpty()) {
@@ -68,7 +66,7 @@ fun NexaraConfirmDialog(
                 Text(
                     text = message,
                     style = NexaraTypography.bodyMedium,
-                    color = NexaraColors.OnSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
@@ -86,7 +84,7 @@ fun NexaraConfirmDialog(
                     TextButton(
                         onClick = onCancel,
                         colors = ButtonDefaults.textButtonColors(
-                            contentColor = NexaraColors.OnSurfaceVariant
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     ) {
                         Text(
@@ -104,14 +102,14 @@ fun NexaraConfirmDialog(
                     modifier = confirmButtonModifier,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isDestructive) {
-                            Color(0xFFBA1A1A) // 优雅醒目的深红色
+                            MaterialTheme.colorScheme.error
                         } else {
-                            NexaraColors.Primary
+                            MaterialTheme.colorScheme.primary
                         },
                         contentColor = if (isDestructive) {
-                            Color.White // 高对比度的纯白文字，保证易读性
+                            MaterialTheme.colorScheme.onError
                         } else {
-                            NexaraColors.OnPrimary
+                            MaterialTheme.colorScheme.onPrimary
                         }
                     ),
                     shape = NexaraShapes.medium

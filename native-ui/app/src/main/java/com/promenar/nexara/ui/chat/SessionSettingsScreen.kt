@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -62,7 +64,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.usecase.ExportSessionUseCase
 import com.promenar.nexara.ui.common.*
-import com.promenar.nexara.ui.theme.NexaraColors
 import kotlinx.coroutines.launch
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -211,15 +212,15 @@ fun SessionSettingsScreen(
     }
 
     Scaffold(
-        containerColor = NexaraColors.CanvasBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text(stringResource(R.string.session_settings_title), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
+                        Text(stringResource(R.string.session_settings_title), style = NexaraTypography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
                         if (session != null) {
-                            Text(session.title, style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp), color = NexaraColors.OnSurfaceVariant, maxLines = 1)
+                            Text(session.title, style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                         }
                     }
                 },
@@ -227,7 +228,7 @@ fun SessionSettingsScreen(
                     NexaraBackButton(onClick = onNavigateBack)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f)
+                    containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f)
                 )
             )
         }
@@ -240,9 +241,11 @@ fun SessionSettingsScreen(
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             item {
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
@@ -258,27 +261,27 @@ fun SessionSettingsScreen(
                                     modifier = Modifier
                                         .size(48.dp)
                                         .clip(CircleShape)
-                                        .background(NexaraColors.SurfaceHigh),
+                                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Rounded.SmartToy, null, tint = NexaraColors.Primary, modifier = Modifier.size(24.dp))
+                                    Icon(Icons.Rounded.SmartToy, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                                 }
                                 Column {
-                                    Text(stringResource(R.string.session_settings_active_agent), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurfaceVariant)
-                                    Text(agentName, style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Medium), color = NexaraColors.OnSurface)
+                                    Text(stringResource(R.string.session_settings_active_agent), style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(agentName, style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurface)
                                 }
                             }
                             Row {
                                 if (session?.agentId != null) {
                                     IconButton(onClick = { onNavigateToAgentEdit(session.agentId) }) {
-                                        Icon(Icons.Rounded.SwapHoriz, null, tint = NexaraColors.Primary)
+                                        Icon(Icons.Rounded.SwapHoriz, null, tint = MaterialTheme.colorScheme.primary)
                                     }
                                 }
                             }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
-                        Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(NexaraColors.GlassBorder))
+                        Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)))
 
                         Spacer(modifier = Modifier.height(16.dp))
 
@@ -290,9 +293,9 @@ fun SessionSettingsScreen(
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Rounded.Download, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Rounded.Download, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text(stringResource(R.string.session_settings_export), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurface)
+                            Text(stringResource(R.string.session_settings_export), style = NexaraTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                 }
@@ -323,9 +326,9 @@ fun SessionSettingsScreen(
                                 .padding(top = 20.dp)
                                 .size(40.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(NexaraColors.SurfaceHighest)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                         ) {
-                            Icon(Icons.Rounded.AutoFixHigh, null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Rounded.AutoFixHigh, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -335,9 +338,11 @@ fun SessionSettingsScreen(
                 SettingsSectionHeader(stringResource(R.string.session_settings_section_inference))
                 Spacer(modifier = Modifier.height(12.dp))
 
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         InferenceSlider(stringResource(R.string.session_settings_temperature), temperature, 0f, 2f, 0.1f, stringResource(R.string.common_preset_precise), stringResource(R.string.common_preset_creative)) { temperature = it }
@@ -401,11 +406,13 @@ fun SessionSettingsScreen(
 
                     if (enableDocs) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text(stringResource(R.string.session_settings_attached_docs_label), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold), color = NexaraColors.OnSurface)
+                        Text(stringResource(R.string.session_settings_attached_docs_label), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
 
-                        NexaraGlassCard(
+                        Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 FlowRow(
@@ -422,16 +429,16 @@ fun SessionSettingsScreen(
                                     Surface(
                                         onClick = { docPickerLauncher.launch("*/*") },
                                         shape = RoundedCornerShape(50),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, NexaraColors.GlassBorder.copy(alpha = 0.2f)),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
                                         color = Color.Transparent
                                     ) {
                                         Row(
                                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Icon(Icons.Rounded.Add, null, tint = NexaraColors.Primary, modifier = Modifier.size(14.dp))
+                                            Icon(Icons.Rounded.Add, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
                                             Spacer(modifier = Modifier.width(4.dp))
-                                            Text(stringResource(R.string.session_settings_add_docs), style = NexaraTypography.labelMedium.copy(fontSize = 12.sp), color = NexaraColors.Primary)
+                                            Text(stringResource(R.string.session_settings_add_docs), style = NexaraTypography.labelMedium.copy(fontSize = 12.sp), color = MaterialTheme.colorScheme.primary)
                                         }
                                     }
                                 }
@@ -445,11 +452,13 @@ fun SessionSettingsScreen(
                 SettingsSectionHeader(stringResource(R.string.session_settings_section_prompt))
                 Spacer(modifier = Modifier.height(12.dp))
 
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { showPromptEditor = true },
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                 ) {
                     Row(
                         modifier = Modifier
@@ -458,13 +467,13 @@ fun SessionSettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.session_settings_system_prompt_label), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                            Text(stringResource(R.string.session_settings_system_prompt_label), style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
                             Spacer(modifier = Modifier.height(4.dp))
                             if (customPrompt.isNotBlank()) {
                                 Text(
                                     customPrompt.take(80) + if (customPrompt.length > 80) "..." else "",
                                     style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
-                                    color = NexaraColors.OnSurfaceVariant,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2
                                 )
                             }
@@ -474,15 +483,15 @@ fun SessionSettingsScreen(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(
-                                    if (customPrompt.isNotBlank()) NexaraColors.Primary.copy(alpha = 0.15f)
-                                    else NexaraColors.SurfaceHighest
+                                    if (customPrompt.isNotBlank()) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                    else MaterialTheme.colorScheme.surfaceContainerHighest
                                 )
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
                                 if (customPrompt.isNotBlank()) stringResource(R.string.session_settings_configured) else stringResource(R.string.session_settings_not_set),
                                 style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                color = if (customPrompt.isNotBlank()) NexaraColors.Primary else NexaraColors.Outline
+                                color = if (customPrompt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                             )
                         }
                     }
@@ -497,8 +506,8 @@ fun SessionSettingsScreen(
                 Surface(
                     onClick = { showDeleteDialog = true },
                     shape = RoundedCornerShape(12.dp),
-                    color = NexaraColors.ErrorContainer.copy(alpha = 0.15f),
-                    border = androidx.compose.foundation.BorderStroke(0.5.dp, NexaraColors.Error.copy(alpha = 0.2f))
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f),
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f))
                 ) {
                     Row(
                         modifier = Modifier
@@ -506,9 +515,9 @@ fun SessionSettingsScreen(
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Rounded.Delete, null, tint = NexaraColors.Error, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text(stringResource(R.string.session_settings_delete_btn), style = NexaraTypography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = NexaraColors.Error)
+                        Text(stringResource(R.string.session_settings_delete_btn), style = NexaraTypography.bodyMedium.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -534,14 +543,14 @@ private fun InferenceSlider(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                Text(label, style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.width(4.dp))
-                Icon(Icons.Rounded.Info, null, tint = NexaraColors.Outline, modifier = Modifier.size(14.dp))
+                Icon(Icons.Rounded.Info, null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(14.dp))
             }
             Text(
                 String.format("%.1f", value),
                 style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp, fontFamily = FontFamily.Monospace),
-                color = NexaraColors.Primary
+                color = MaterialTheme.colorScheme.primary
             )
         }
         Spacer(modifier = Modifier.height(8.dp))
@@ -555,8 +564,8 @@ private fun InferenceSlider(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(minLabel, style = NexaraTypography.labelMedium.copy(fontSize = 10.sp, letterSpacing = 0.05.sp), color = NexaraColors.Outline)
-            Text(maxLabel, style = NexaraTypography.labelMedium.copy(fontSize = 10.sp, letterSpacing = 0.05.sp), color = NexaraColors.Outline)
+            Text(minLabel, style = NexaraTypography.labelMedium.copy(fontSize = 10.sp, letterSpacing = 0.05.sp), color = MaterialTheme.colorScheme.outline)
+            Text(maxLabel, style = NexaraTypography.labelMedium.copy(fontSize = 10.sp, letterSpacing = 0.05.sp), color = MaterialTheme.colorScheme.outline)
         }
     }
 }
@@ -579,14 +588,14 @@ private fun InferenceSliderInt(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                Text(label, style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.width(4.dp))
-                Icon(Icons.Rounded.Info, null, tint = NexaraColors.Outline, modifier = Modifier.size(14.dp))
+                Icon(Icons.Rounded.Info, null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(14.dp))
             }
             Text(
                 value.toString(),
                 style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp, fontFamily = FontFamily.Monospace),
-                color = NexaraColors.Primary
+                color = MaterialTheme.colorScheme.primary
             )
         }
         Spacer(modifier = Modifier.height(8.dp))
@@ -600,8 +609,8 @@ private fun InferenceSliderInt(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(minLabel, style = NexaraTypography.labelMedium.copy(fontSize = 10.sp, letterSpacing = 0.05.sp), color = NexaraColors.Outline)
-            Text(maxLabel, style = NexaraTypography.labelMedium.copy(fontSize = 10.sp, letterSpacing = 0.05.sp), color = NexaraColors.Outline)
+            Text(minLabel, style = NexaraTypography.labelMedium.copy(fontSize = 10.sp, letterSpacing = 0.05.sp), color = MaterialTheme.colorScheme.outline)
+            Text(maxLabel, style = NexaraTypography.labelMedium.copy(fontSize = 10.sp, letterSpacing = 0.05.sp), color = MaterialTheme.colorScheme.outline)
         }
     }
 }
@@ -616,19 +625,19 @@ private fun DocumentChip(
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(NexaraColors.SurfaceContainer)
-            .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), RoundedCornerShape(50))
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(14.dp))
+        Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
         Spacer(modifier = Modifier.width(6.dp))
-        Text(name, style = NexaraTypography.labelMedium.copy(fontSize = 12.sp), color = NexaraColors.OnSurface, maxLines = 1)
+        Text(name, style = NexaraTypography.labelMedium.copy(fontSize = 12.sp), color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
         Spacer(modifier = Modifier.width(4.dp))
         Icon(
             Icons.Rounded.Close,
             null,
-            tint = NexaraColors.Outline,
+            tint = MaterialTheme.colorScheme.outline,
             modifier = Modifier
                 .size(14.dp)
                 .clickable { onRemove() }

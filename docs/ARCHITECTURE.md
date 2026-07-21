@@ -28,7 +28,7 @@ graph TD
 
 ### 关键组件
 - **NexaraApplication**: 全局上下文管理与服务初始化（嵌入/重排/图像生成客户端均在此懒加载）；`onCreate()` 自动创建 `WorkSpace` 物理目录；同时持有唯一 Application 级 `ThemePreferenceStore`。
-- **ThemePreferenceStore / NexaraTheme**: `ThemePreferenceStore` 是 `theme_mode` 与 `theme_color_source` 的唯一可变事实源，监听备份恢复产生的偏好变化并通过 `StateFlow` 发布；`MainActivity` 按生命周期收集后交给根 `NexaraTheme`，统一解析系统明暗、Nexara 双配色、Android 12+ 动态色及系统栏图标外观。
+- **ThemePreferenceStore / NexaraTheme**: `ThemePreferenceStore` 是 `theme_mode` 与 `theme_color_source` 的唯一可变事实源，监听备份恢复产生的偏好变化并通过 `StateFlow` 发布；`MainActivity` 按生命周期收集后交给根 `NexaraTheme`，统一解析系统明暗、Nexara 双配色、Android 12+ 动态色及系统栏图标外观。正式 UI 只消费 `MaterialTheme.colorScheme` 与主题内注入的 `NexaraDomainColors`；Markdown、LaTeX、Mermaid、PlantUML、ECharts 与 HTML WebView 从当前主题生成 CSS/图表色板，主题变化会触发内容重建，无静态深色或 Glass 兼容桥。
 - **NexaraPageLayout / NexaraSettingsSection / NexaraSearchTopBar**: 管理页面共享 Material 3 骨架。页面根统一持有 system bars 与可选 IME insets；设置区使用透明连续列表和正文对齐分隔线；搜索由调用方持有 query/active 状态，Top App Bar 只负责焦点、IME、清除、返回优先级和 reduced-motion 兼容过渡。
 - **AgentHubScreen / AgentSessionsScreen**: 助手与会话列表共用顶栏上下文搜索和透明连续 `ListItem` 契约；退出搜索按稳定条目 ID、原始索引和像素偏移恢复列表位置。会话行保留滑动置顶/删除及确认流程，并通过自定义无障碍动作向 TalkBack 暴露等价操作。
 - **MainTabScaffold / AdaptiveNavigationSurface**: 主导航按 600dp 断点切换手机 `Surface + NavigationBar + NavigationBarItem` 浮动坞与大屏 `NavigationRail`；Scaffold 内边距保证业务内容和滚动末项不进入手机导航区域，导航颜色、选中指示和标签均由 MaterialTheme 提供。

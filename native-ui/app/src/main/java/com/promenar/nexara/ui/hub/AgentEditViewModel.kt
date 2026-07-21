@@ -35,7 +35,7 @@ class AgentEditViewModel(
     private val _description = MutableStateFlow("")
     private val _systemPrompt = MutableStateFlow("")
     private val _selectedModel = MutableStateFlow("")
-    private val _selectedColor = MutableStateFlow("#C0C1FF")
+    private val _selectedColor = MutableStateFlow(Agent(id = "", name = "").color)
     private val _selectedIcon = MutableStateFlow("✨")
     private val _avatarPath = MutableStateFlow<String?>(null)
     private val _temperature = MutableStateFlow(0.7f)

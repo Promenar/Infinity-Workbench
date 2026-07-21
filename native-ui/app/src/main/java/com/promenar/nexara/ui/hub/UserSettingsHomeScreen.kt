@@ -55,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -99,6 +100,7 @@ fun UserSettingsHomeScreen(
     var editingName by remember { mutableStateOf(userName) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     val editAvatarTitle = stringResource(R.string.settings_edit_avatar)
+    val colorScheme = MaterialTheme.colorScheme
 
     val cropLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -120,9 +122,9 @@ fun UserSettingsHomeScreen(
                 setCircleDimmedLayer(true)
                 setShowCropFrame(false)
                 setShowCropGrid(false)
-                setToolbarColor(android.graphics.Color.BLACK)
-                setStatusBarColor(android.graphics.Color.BLACK)
-                setActiveControlsWidgetColor(android.graphics.Color.parseColor("#888DFF"))
+                setToolbarColor(colorScheme.surface.toArgb())
+                setStatusBarColor(colorScheme.surface.toArgb())
+                setActiveControlsWidgetColor(colorScheme.primary.toArgb())
                 setToolbarTitle(editAvatarTitle)
             }
             

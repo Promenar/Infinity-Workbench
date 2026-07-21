@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -33,21 +34,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.theme.NexaraColors
+import com.promenar.nexara.ui.theme.NexaraPresetColors
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 
-val defaultPresetColors = listOf(
-    Color(0xFF6366F1),
-    Color(0xFFF43F5E),
-    Color(0xFF10B981),
-    Color(0xFFF59E0B),
-    Color(0xFF06B6D4),
-    Color(0xFF8B5CF6),
-    Color(0xFFF97316),
-    Color(0xFF14B8A6),
-    Color(0xFFD946EF),
-    Color(0xFF0EA5E9)
-)
+val defaultPresetColors = NexaraPresetColors
 
 private fun Color.toHue(): Float {
     val r = red
@@ -106,9 +97,9 @@ fun ColorPickerPanel(
                         .background(color)
                         .then(
                             if (isSelected) {
-                                Modifier.border(2.dp, NexaraColors.Primary, CircleShape)
+                                Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
                             } else {
-                                Modifier.border(0.5.dp, NexaraColors.GlassBorder, CircleShape)
+                                Modifier.border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
                             }
                         )
                         .clickable { onColorSelected(color) },
@@ -118,7 +109,7 @@ fun ColorPickerPanel(
                         Icon(
                             imageVector = Icons.Rounded.Check,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = MaterialTheme.nexaraDomainColors.overlayContent,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -141,7 +132,7 @@ fun ColorPickerPanel(
                     Text(
                         text = stringResource(R.string.common_color_custom),
                         style = NexaraTypography.labelMedium,
-                        color = NexaraColors.OnSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     NexaraSlider(
@@ -160,7 +151,7 @@ fun ColorPickerPanel(
                         .size(40.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(selectedColor)
-                        .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(8.dp))
+                        .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
                 )
             }
         }

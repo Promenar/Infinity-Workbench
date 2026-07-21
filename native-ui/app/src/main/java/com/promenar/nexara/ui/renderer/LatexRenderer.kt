@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.renderer
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -11,7 +12,10 @@ fun LatexBlock(
     modifier: Modifier = Modifier,
     fontSize: Int = 14
 ) {
-    val html = buildLatexHtml(latex, fontSize)
+    val palette = rememberRichContentPalette()
+    val html = remember(latex, fontSize, palette) {
+        buildLatexHtml(latex, fontSize, palette)
+    }
     RichContentWebView(
         html = html,
         modifier = modifier.semantics {
@@ -23,7 +27,11 @@ fun LatexBlock(
     )
 }
 
-private fun buildLatexHtml(latex: String, fontSize: Int): String {
+private fun buildLatexHtml(
+    latex: String,
+    fontSize: Int,
+    palette: RichContentPalette,
+): String {
     val encoded = android.util.Base64.encodeToString(
         latex.toByteArray(), android.util.Base64.NO_WRAP
     )
@@ -38,14 +46,14 @@ private fun buildLatexHtml(latex: String, fontSize: Int): String {
         <style>
             body {
                 margin: 0; padding: 12px;
-                background: transparent;
-                color: #E5E1E4;
+                background: ${palette.background};
+                color: ${palette.foreground};
                 display: flex; justify-content: center; align-items: center;
                 min-height: 20px;
                 font-size: ${fontSize}px;
             }
             .katex { font-size: 1.1em; }
-            .error { color: #FFB4AB; font-size: ${fontSize - 2}px; }
+            .error { color: ${palette.error}; font-size: ${fontSize - 2}px; }
         </style>
     </head>
     <body>
@@ -67,7 +75,11 @@ private fun buildLatexHtml(latex: String, fontSize: Int): String {
     """.trimIndent()
 }
 
-internal fun buildInlineLatexHtml(latex: String, fontSize: Int): String {
+internal fun buildInlineLatexHtml(
+    latex: String,
+    fontSize: Int,
+    palette: RichContentPalette,
+): String {
     val encoded = android.util.Base64.encodeToString(
         latex.toByteArray(), android.util.Base64.NO_WRAP
     )
@@ -82,13 +94,13 @@ internal fun buildInlineLatexHtml(latex: String, fontSize: Int): String {
         <style>
             body {
                 margin: 0; padding: 2px 4px;
-                background: transparent;
-                color: #E5E1E4;
+                background: ${palette.background};
+                color: ${palette.foreground};
                 display: inline-block;
                 font-size: ${fontSize}px;
             }
             .katex { font-size: 1em; }
-            .error { color: #FFB4AB; font-size: ${fontSize - 2}px; }
+            .error { color: ${palette.error}; font-size: ${fontSize - 2}px; }
         </style>
     </head>
     <body>

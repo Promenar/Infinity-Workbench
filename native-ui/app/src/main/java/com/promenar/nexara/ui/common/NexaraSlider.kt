@@ -9,6 +9,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
@@ -21,7 +22,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.promenar.nexara.ui.theme.NexaraColors
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 
 /**
  * Nexara 风格的优雅 Slider 组件
@@ -38,8 +39,8 @@ fun NexaraSlider(
     enabled: Boolean = true,
     trackHeight: Dp = 4.dp,
     thumbSize: Dp = 20.dp,
-    activeColor: Color = NexaraColors.Primary,
-    inactiveColor: Color = NexaraColors.GlassSurface,
+    activeColor: Color = MaterialTheme.colorScheme.primary,
+    inactiveColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
     onValueChangeFinished: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -71,7 +72,7 @@ fun NexaraSlider(
                 modifier = Modifier
                     .size(currentThumbSize)
                     .shadow(if (isActive) 6.dp else 2.dp, CircleShape)
-                    .background(Color.White, CircleShape)
+                    .background(MaterialTheme.nexaraDomainColors.overlayContent, CircleShape)
                     .padding(2.dp)
                     .background(activeColor, CircleShape),
                 contentAlignment = Alignment.Center
@@ -80,7 +81,7 @@ fun NexaraSlider(
                 Box(
                     modifier = Modifier
                         .size(thumbSize / 3)
-                        .background(Color.White, CircleShape)
+                        .background(MaterialTheme.nexaraDomainColors.overlayContent, CircleShape)
                 )
             }
         },

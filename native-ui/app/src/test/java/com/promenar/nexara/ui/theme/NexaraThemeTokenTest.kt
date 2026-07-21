@@ -48,23 +48,23 @@ class NexaraThemeTokenTest {
 
     @Test
     fun `深色主题完整映射 tonal surface 层级`() {
-        assertThat(NexaraDarkColorScheme.surfaceDim).isEqualTo(NexaraColors.SurfaceDim)
-        assertThat(NexaraDarkColorScheme.surfaceBright).isEqualTo(NexaraColors.SurfaceBright)
-        assertThat(NexaraDarkColorScheme.surfaceContainerLowest).isEqualTo(NexaraColors.SurfaceLowest)
-        assertThat(NexaraDarkColorScheme.surfaceContainerLow).isEqualTo(NexaraColors.SurfaceLow)
-        assertThat(NexaraDarkColorScheme.surfaceContainer).isEqualTo(NexaraColors.SurfaceContainer)
-        assertThat(NexaraDarkColorScheme.surfaceContainerHigh).isEqualTo(NexaraColors.SurfaceHigh)
-        assertThat(NexaraDarkColorScheme.surfaceContainerHighest).isEqualTo(NexaraColors.SurfaceHighest)
+        assertThat(NexaraDarkColorScheme.surfaceDim).isEqualTo(Color(0xFF131315))
+        assertThat(NexaraDarkColorScheme.surfaceBright).isEqualTo(Color(0xFF39393B))
+        assertThat(NexaraDarkColorScheme.surfaceContainerLowest).isEqualTo(Color(0xFF0E0E10))
+        assertThat(NexaraDarkColorScheme.surfaceContainerLow).isEqualTo(Color(0xFF1C1B1D))
+        assertThat(NexaraDarkColorScheme.surfaceContainer).isEqualTo(Color(0xFF201F22))
+        assertThat(NexaraDarkColorScheme.surfaceContainerHigh).isEqualTo(Color(0xFF2A2A2C))
+        assertThat(NexaraDarkColorScheme.surfaceContainerHighest).isEqualTo(Color(0xFF353437))
     }
 
     @Test
     fun `次级容器为深色消息容器且前景保持高对比`() {
-        assertThat(NexaraColors.SecondaryContainer).isEqualTo(Color(0xFF2A2A2C))
-        assertThat(NexaraColors.SecondaryContainer).isEqualTo(NexaraColors.SurfaceHigh)
-        assertThat(NexaraColors.OnSecondaryContainer).isEqualTo(Color(0xFFE5E1E4))
-        assertThat(NexaraColors.OnSecondaryContainer).isEqualTo(NexaraColors.OnSurface)
-        assertThat(NexaraDarkColorScheme.secondaryContainer).isEqualTo(NexaraColors.SecondaryContainer)
-        assertThat(NexaraDarkColorScheme.onSecondaryContainer).isEqualTo(NexaraColors.OnSecondaryContainer)
+        assertThat(NexaraDarkColorScheme.secondaryContainer).isEqualTo(Color(0xFF2A2A2C))
+        assertThat(NexaraDarkColorScheme.secondaryContainer)
+            .isEqualTo(NexaraDarkColorScheme.surfaceContainerHigh)
+        assertThat(NexaraDarkColorScheme.onSecondaryContainer).isEqualTo(Color(0xFFE5E1E4))
+        assertThat(NexaraDarkColorScheme.onSecondaryContainer)
+            .isEqualTo(NexaraDarkColorScheme.onSurface)
     }
 
     @Test

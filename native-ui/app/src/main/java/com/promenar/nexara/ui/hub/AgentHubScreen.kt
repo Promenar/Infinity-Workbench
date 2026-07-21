@@ -39,7 +39,6 @@ import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 // =====================================================================================
@@ -179,11 +178,13 @@ private fun AddAgentDialog(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { showModelPicker = true },
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Row(
                         modifier = Modifier
@@ -196,13 +197,13 @@ private fun AddAgentDialog(
                             Text(
                                 text = stringResource(R.string.hub_dialog_label_model),
                                 style = NexaraTypography.labelMedium,
-                                color = NexaraColors.OnSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = model.ifBlank { stringResource(R.string.hub_dialog_placeholder_select_model) },
                                 style = NexaraTypography.bodyMedium,
-                                color = if (model.isNotBlank()) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                                color = if (model.isNotBlank()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -210,7 +211,7 @@ private fun AddAgentDialog(
                         Icon(
                             imageVector = Icons.Rounded.ChevronRight,
                             contentDescription = null,
-                            tint = NexaraColors.Outline,
+                            tint = MaterialTheme.colorScheme.outline,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -218,23 +219,25 @@ private fun AddAgentDialog(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { showPromptEditor = true },
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
                             text = stringResource(R.string.hub_dialog_label_prompt),
                             style = NexaraTypography.labelMedium,
-                            color = NexaraColors.OnSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = systemPrompt.ifBlank { stringResource(R.string.agent_edit_prompt_hint) },
                             style = NexaraTypography.bodyMedium,
-                            color = if (systemPrompt.isNotBlank()) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                            color = if (systemPrompt.isNotBlank()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -256,9 +259,9 @@ private fun AddAgentDialog(
                 Text(stringResource(R.string.common_btn_cancel))
             }
         },
-        containerColor = NexaraColors.SurfaceDim,
-        titleContentColor = NexaraColors.OnSurface,
-        textContentColor = NexaraColors.OnSurfaceVariant
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
     )
 }
 
@@ -329,7 +332,7 @@ internal fun AgentHubScreenContent(
     }
     Scaffold(
         modifier = Modifier.testTag(UiTags.HUB_ROOT),
-        containerColor = NexaraColors.CanvasBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.statusBars,
         topBar = {
             Box(
@@ -354,7 +357,7 @@ internal fun AgentHubScreenContent(
                             Icon(
                                 imageVector = Icons.Rounded.Add,
                                 contentDescription = stringResource(R.string.hub_btn_add_agent),
-                                tint = NexaraColors.OnSurface,
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(28.dp)
                             )
                         }
@@ -402,7 +405,7 @@ internal fun AgentHubScreenContent(
                     val parsedColor = try {
                         Color(agent.color.toColorInt())
                     } catch (_: Exception) {
-                        NexaraColors.Primary
+                        MaterialTheme.colorScheme.primary
                     }
 
                     val iconVector = agentIconVector(agent.icon)
@@ -626,20 +629,20 @@ private fun EmptyAgentState(
             Icon(
                 imageVector = Icons.Rounded.SmartToy,
                 contentDescription = null,
-                tint = NexaraColors.OnSurfaceVariant,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(48.dp)
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = stringResource(R.string.hub_empty_title),
                 style = NexaraTypography.headlineMedium,
-                color = NexaraColors.OnSurface
+                color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = stringResource(R.string.hub_empty_subtitle),
                 style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -648,8 +651,8 @@ private fun EmptyAgentState(
                 onClick = onCreateAgent,
                 modifier = Modifier.testTag(UiTags.HUB_EMPTY_ADD_AGENT),
                 colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = NexaraColors.Primary.copy(alpha = 0.15f),
-                    contentColor = NexaraColors.Primary
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                    contentColor = MaterialTheme.colorScheme.primary
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {

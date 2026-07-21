@@ -51,9 +51,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import com.promenar.nexara.ui.chat.components.RagDetailsSheet
 import com.promenar.nexara.ui.common.MarkdownText
-import com.promenar.nexara.ui.common.NexaraGlassCard
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraElevation
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -66,11 +64,13 @@ fun SummaryIndicator(
     text: String,
     modifier: Modifier = Modifier
 ) {
-    NexaraGlassCard(
+    Surface(
         modifier = modifier
             .wrapContentWidth()
             .padding(vertical = 4.dp),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -92,12 +92,12 @@ fun SummaryIndicator(
                     .size(8.dp)
                     .clip(CircleShape)
                     .alpha(alpha)
-                    .background(NexaraColors.Primary)
+                    .background(MaterialTheme.colorScheme.primary)
             )
             Text(
                 text = text,
                 style = NexaraTypography.labelMedium,
-                color = NexaraColors.Primary
+                color = MaterialTheme.colorScheme.primary
             )
         }
     }
@@ -125,11 +125,13 @@ fun ThinkingBlock(
             .fillMaxWidth()
             .padding(vertical = 4.dp)
     ) {
-        NexaraGlassCard(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth(0.85f)
                 .clickable { isExpanded = !isExpanded },
-            shape = RoundedCornerShape(20.dp)
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -152,13 +154,13 @@ fun ThinkingBlock(
                             .size(6.dp)
                             .clip(CircleShape)
                             .alpha(alpha)
-                            .background(NexaraColors.Primary)
+                            .background(MaterialTheme.colorScheme.primary)
                     )
                 } else {
                     Icon(
                         Icons.Rounded.CheckCircle,
                         null,
-                        tint = NexaraColors.Primary,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(14.dp)
                     )
                 }
@@ -166,14 +168,14 @@ fun ThinkingBlock(
                 Text(
                     text = if (isGenerating) stringResource(R.string.chat_status_thinking) else stringResource(R.string.chat_status_thought),
                     style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary
+                    color = MaterialTheme.colorScheme.primary
                 )
                 
                 if (reasoning.isNotBlank()) {
                     Icon(
                         if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                         null,
-                        tint = NexaraColors.OnSurfaceVariant,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(14.dp)
                     )
                 }
@@ -186,17 +188,17 @@ fun ThinkingBlock(
             exit = shrinkVertically() + fadeOut()
         ) {
             Surface(
-                color = NexaraColors.SurfaceLow.copy(alpha = 0.2f),
+                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.2f),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .padding(top = 8.dp)
                     .fillMaxWidth(0.95f),
-                border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.15f))
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f))
             ) {
                 Column(modifier = Modifier.padding(10.dp)) {
                     CompositionLocalProvider(
                         LocalTextStyle provides NexaraTypography.bodySmall.copy(
-                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.8f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                             fontSize = (fontSize - 2).coerceAtLeast(10).sp,
                             lineHeight = (fontSize + 3).sp,
                             fontStyle = FontStyle.Italic
@@ -236,12 +238,14 @@ fun RagOmniIndicator(
 
     if (!showProgress && (references == null || references.isEmpty())) return
 
-    NexaraGlassCard(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .clickable(enabled = (!references.isNullOrEmpty() || !kgPaths.isNullOrEmpty())) { showDetailsSheet = true },
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -259,27 +263,27 @@ fun RagOmniIndicator(
                     Icon(
                         Icons.Rounded.CloudSync,
                         null,
-                        tint = NexaraColors.Primary,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
                         text = stringResource(R.string.chat_rag_knowledge_retrieval),
                         style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = NexaraColors.OnSurface
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
                 if (showProgress) {
                     Surface(
-                        color = NexaraColors.Primary.copy(alpha = 0.1f),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                         shape = RoundedCornerShape(4.dp),
-                        border = BorderStroke(0.5.dp, NexaraColors.Primary.copy(alpha = 0.2f))
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
                     ) {
                         Text(
                             text = stringResource(R.string.chat_rag_active),
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             style = NexaraTypography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
-                            color = NexaraColors.Primary
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -295,12 +299,12 @@ fun RagOmniIndicator(
                         Text(
                             text = progress?.stage ?: stringResource(R.string.chat_rag_scanning),
                             style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                            color = NexaraColors.OnSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
                             text = "$percentage%",
                             style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                            color = NexaraColors.Primary
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                     Box(
@@ -308,7 +312,7 @@ fun RagOmniIndicator(
                             .fillMaxWidth()
                             .height(6.dp)
                             .clip(CircleShape)
-                            .background(NexaraColors.SurfaceHigh)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                     ) {
                         val animatedProgress by animateFloatAsState(
                             targetValue = percentage / 100f,
@@ -321,7 +325,7 @@ fun RagOmniIndicator(
                                 .fillMaxHeight()
                                 .background(
                                     Brush.horizontalGradient(
-                                        colors = listOf(NexaraColors.Primary, NexaraColors.Tertiary)
+                                        colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
                                     )
                                 )
                         )
@@ -334,7 +338,7 @@ fun RagOmniIndicator(
                 HorizontalDivider(
                     modifier = Modifier.padding(top = 4.dp),
                     thickness = 0.5.dp,
-                    color = NexaraColors.OutlineVariant.copy(alpha = 0.2f)
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
                 )
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -343,20 +347,20 @@ fun RagOmniIndicator(
                 ) {
                     items(references) { ref ->
                         Surface(
-                            color = NexaraColors.SurfaceContainer.copy(alpha = 0.6f),
+                            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.6f),
                             shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.3f))
+                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Icon(Icons.Rounded.Description, null, tint = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(10.dp))
+                                Icon(Icons.Rounded.Description, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(10.dp))
                                 Text(
                                     text = ref.source.substringAfterLast("/"),
                                     style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
-                                    color = NexaraColors.OnSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -551,11 +555,13 @@ fun ToolExecutionTimeline(
 ) {
     if (steps.isEmpty()) return
 
-    NexaraGlassCard(
+    Surface(
         modifier = Modifier
             .fillMaxWidth(0.85f)
             .padding(vertical = 4.dp),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -567,14 +573,14 @@ fun ToolExecutionTimeline(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(NexaraColors.SurfaceHigh)
-                        .border(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.3f), RoundedCornerShape(10.dp)),
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Rounded.Terminal,
                         null,
-                        tint = NexaraColors.Tertiary,
+                        tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -582,12 +588,12 @@ fun ToolExecutionTimeline(
                     Text(
                         text = stringResource(R.string.chat_tool_execution_pipeline),
                         style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                        color = NexaraColors.OnSurface
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = if (isExecuting) stringResource(R.string.chat_tool_pipeline_running) else stringResource(R.string.chat_tool_pipeline_completed),
                         style = NexaraTypography.labelSmall,
-                        color = NexaraColors.OnSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -623,7 +629,7 @@ private fun TimelineStep(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.width(14.dp)
         ) {
-            val dotColor = if (isActive) NexaraColors.Tertiary else NexaraColors.Primary
+            val dotColor = if (isActive) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
             val dotAlpha by if (isActive) {
                 rememberInfiniteTransition(label = "dot_pulse").animateFloat(
                     initialValue = 0.4f,
@@ -641,7 +647,7 @@ private fun TimelineStep(
                     .clip(CircleShape)
                     .alpha(dotAlpha)
                     .background(dotColor)
-                    .border(2.dp, NexaraColors.SurfaceLow, CircleShape)
+                    .border(2.dp, MaterialTheme.colorScheme.surfaceContainerLow, CircleShape)
             )
             
             if (!isLast) {
@@ -649,7 +655,7 @@ private fun TimelineStep(
                     modifier = Modifier
                         .width(1.5.dp)
                         .weight(1f)
-                        .background(NexaraColors.OutlineVariant.copy(alpha = 0.6f))
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
                 )
             }
         }
@@ -660,21 +666,21 @@ private fun TimelineStep(
             Text(
                 text = step.toolName ?: step.type,
                 style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = if (isActive) NexaraColors.OnSurface else NexaraColors.OnSurfaceVariant
+                color = if (isActive) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
             )
             
             if (!step.toolArgs.isNullOrBlank()) {
                 Surface(
-                    color = NexaraColors.SurfaceLow.copy(alpha = 0.6f),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.6f),
                     shape = RoundedCornerShape(6.dp),
                     modifier = Modifier.padding(vertical = 6.dp),
-                    border = BorderStroke(0.5.dp, NexaraColors.OutlineVariant.copy(alpha = 0.2f))
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                 ) {
                     Text(
                         text = step.toolArgs,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         style = NexaraTypography.labelSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 11.sp),
-                        color = NexaraColors.OnSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -687,7 +693,7 @@ private fun TimelineStep(
                 Text(
                     text = if (isActive) stringResource(R.string.chat_tool_running) else stringResource(R.string.chat_tool_completed),
                     style = NexaraTypography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Medium),
-                    color = if (isActive) NexaraColors.Tertiary else NexaraColors.Primary.copy(alpha = 0.7f)
+                    color = if (isActive) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
                 )
                 
             }
@@ -729,9 +735,9 @@ fun PostProcessChip(
     }
 
     val iconColor = when (task.status) {
-        PostProcessStatus.RUNNING -> NexaraColors.Primary
-        PostProcessStatus.DONE -> NexaraColors.StatusSuccess
-        PostProcessStatus.ERROR -> NexaraColors.StatusError
+        PostProcessStatus.RUNNING -> MaterialTheme.colorScheme.primary
+        PostProcessStatus.DONE -> MaterialTheme.colorScheme.primary
+        PostProcessStatus.ERROR -> MaterialTheme.colorScheme.error
     }
 
     val icon = when (task.status) {
@@ -781,7 +787,7 @@ fun PostProcessChip(
             Text(
                 text = label,
                 style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
-                color = NexaraColors.OnSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -841,32 +847,32 @@ fun SummaryCard(
                                 .size(8.dp)
                                 .clip(CircleShape)
                                 .alpha(alpha)
-                                .background(NexaraColors.Primary)
+                                .background(MaterialTheme.colorScheme.primary)
                         )
                     } else {
                         Icon(
                             Icons.Rounded.CheckCircle,
                             null,
-                            tint = NexaraColors.StatusSuccess,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(18.dp)
                         )
                     }
                     Text(
                         text = stringResource(R.string.chat_summary_card_title),
                         style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = NexaraColors.OnSurface
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
                 Surface(
-                    color = if (isCompressing) NexaraColors.Primary.copy(alpha = 0.1f) else NexaraColors.StatusSuccess.copy(alpha = 0.1f),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                     shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
                         text = if (isCompressing) stringResource(R.string.chat_summary_card_compressing) else stringResource(R.string.chat_summary_card_done),
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                         style = NexaraTypography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
-                        color = if (isCompressing) NexaraColors.Primary else NexaraColors.StatusSuccess
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -880,13 +886,13 @@ fun SummaryCard(
                     Text(
                         text = detail,
                         style = NexaraTypography.labelSmall.copy(fontSize = 11.sp),
-                        color = NexaraColors.OnSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f)
                     )
                     Text(
                         text = "${(progress * 100).toInt()}%",
                         style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                        color = NexaraColors.Primary
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
                 Box(
@@ -894,7 +900,7 @@ fun SummaryCard(
                         .fillMaxWidth()
                         .height(4.dp)
                         .clip(CircleShape)
-                        .background(NexaraColors.SurfaceHigh)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 ) {
                     val animatedProgress by animateFloatAsState(
                         targetValue = progress,
@@ -907,7 +913,7 @@ fun SummaryCard(
                             .fillMaxHeight()
                             .background(
                                 Brush.horizontalGradient(
-                                    colors = listOf(NexaraColors.Primary, NexaraColors.Tertiary)
+                                    colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
                                 )
                             )
                     )
@@ -917,7 +923,7 @@ fun SummaryCard(
             if (result != null) {
                 HorizontalDivider(
                     thickness = 0.5.dp,
-                    color = NexaraColors.OutlineVariant.copy(alpha = 0.2f)
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
                 )
                 Row(
                     modifier = Modifier
@@ -932,13 +938,13 @@ fun SummaryCard(
                     Text(
                         text = if (isExpanded) stringResource(R.string.chat_summary_card_collapse) else stringResource(R.string.chat_summary_card_expand),
                         style = NexaraTypography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Medium),
-                        color = NexaraColors.Primary
+                        color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     Icon(
                         if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                         null,
-                        tint = NexaraColors.OnSurfaceVariant,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -949,13 +955,13 @@ fun SummaryCard(
                     exit = shrinkVertically() + fadeOut()
                 ) {
                     Surface(
-                        color = NexaraColors.SurfaceLow.copy(alpha = 0.2f),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.2f),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
                             text = result,
                             style = NexaraTypography.bodyMedium.copy(fontSize = 15.sp),
-                            color = NexaraColors.OnSurfaceVariant,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(10.dp)
                         )
                     }
@@ -974,7 +980,7 @@ fun ApprovalCard(
     onApprove: () -> Unit = {},
     onDecline: () -> Unit = {}
 ) {
-    val accentColor = if (isExecuted) NexaraColors.Primary else NexaraColors.Tertiary
+    val accentColor = if (isExecuted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
 
     Surface(
         modifier = Modifier
@@ -1022,19 +1028,19 @@ fun ApprovalCard(
                     Text(
                         text = toolName,
                         style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                        color = NexaraColors.OnSurface
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     if (!isExecuted) {
                         Text(
                             text = description,
                             style = NexaraTypography.bodySmall,
-                            color = NexaraColors.OnSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else if (executionTime != null) {
                         Text(
                             text = stringResource(R.string.chat_approval_executed_at, executionTime),
                             style = NexaraTypography.labelSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                            color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                     }
                 }
@@ -1050,8 +1056,8 @@ fun ApprovalCard(
                                 .weight(1f)
                                 .testTag(UiTags.CHAT_APPROVAL_DECLINE),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = NexaraColors.SurfaceHigh,
-                                contentColor = NexaraColors.OnSurface
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface
                             ),
                             shape = RoundedCornerShape(12.dp)
                         ) {
@@ -1063,8 +1069,8 @@ fun ApprovalCard(
                                 .weight(1f)
                                 .testTag(UiTags.CHAT_APPROVAL_APPROVE),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = NexaraColors.Tertiary,
-                                contentColor = NexaraColors.OnTertiary
+                                containerColor = MaterialTheme.colorScheme.tertiary,
+                                contentColor = MaterialTheme.colorScheme.onTertiary
                             ),
                             shape = RoundedCornerShape(12.dp),
                             elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)

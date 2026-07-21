@@ -76,7 +76,6 @@ import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.theme.NexaraColors
 
 private val ModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
 private val ModelTypeLabelResources = listOf(
@@ -757,27 +756,31 @@ private fun ProviderModelsListMessage(
  * 据 [NoticeSeverity] 派生反馈条颜色，**不依赖任何展示字符串**。
  * Success→绿、Warning→琥珀、Error→红、Info→主题色。
  */
-private fun noticeColor(severity: NoticeSeverity): NoticeColor = when (severity) {
-    NoticeSeverity.Success -> NoticeColor(
-        NexaraColors.StatusSuccess.copy(alpha = 0.1f),
-        NexaraColors.StatusSuccess.copy(alpha = 0.3f),
-        NexaraColors.StatusSuccess,
-    )
-    NoticeSeverity.Warning -> NoticeColor(
-        NexaraColors.StatusWarning.copy(alpha = 0.1f),
-        NexaraColors.StatusWarning.copy(alpha = 0.3f),
-        NexaraColors.StatusWarning,
-    )
-    NoticeSeverity.Error -> NoticeColor(
-        NexaraColors.StatusError.copy(alpha = 0.1f),
-        NexaraColors.StatusError.copy(alpha = 0.3f),
-        NexaraColors.StatusError,
-    )
-    NoticeSeverity.Info -> NoticeColor(
-        NexaraColors.Primary.copy(alpha = 0.1f),
-        NexaraColors.Primary.copy(alpha = 0.3f),
-        NexaraColors.Primary,
-    )
+@Composable
+private fun noticeColor(severity: NoticeSeverity): NoticeColor {
+    val colors = MaterialTheme.colorScheme
+    return when (severity) {
+        NoticeSeverity.Success -> NoticeColor(
+            colors.primaryContainer,
+            colors.primary.copy(alpha = 0.3f),
+            colors.onPrimaryContainer,
+        )
+        NoticeSeverity.Warning -> NoticeColor(
+            colors.tertiaryContainer,
+            colors.tertiary.copy(alpha = 0.3f),
+            colors.onTertiaryContainer,
+        )
+        NoticeSeverity.Error -> NoticeColor(
+            colors.errorContainer,
+            colors.error.copy(alpha = 0.3f),
+            colors.onErrorContainer,
+        )
+        NoticeSeverity.Info -> NoticeColor(
+            colors.secondaryContainer,
+            colors.secondary.copy(alpha = 0.3f),
+            colors.onSecondaryContainer,
+        )
+    }
 }
 
 private data class NoticeColor(

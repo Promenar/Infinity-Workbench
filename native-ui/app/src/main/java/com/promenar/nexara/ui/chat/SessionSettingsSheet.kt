@@ -85,23 +85,32 @@ import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.settings.SettingsViewModel
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.launch
 
 private data class ThinkingLevelOption(
     val id: String,
-    val icon: ImageVector,
-    val tint: Color
+    val icon: ImageVector
 )
 
 private val thinkingLevels = listOf(
-    ThinkingLevelOption("minimal", Icons.Rounded.Bolt, Color(0xFFA78BFA)),
-    ThinkingLevelOption("low", Icons.Rounded.Psychology, Color(0xFF22D3EE)),
-    ThinkingLevelOption("medium", Icons.Rounded.AutoFixHigh, Color(0xFFFBBF24)),
-    ThinkingLevelOption("high", Icons.Rounded.School, Color(0xFF10B981))
+    ThinkingLevelOption("minimal", Icons.Rounded.Bolt),
+    ThinkingLevelOption("low", Icons.Rounded.Psychology),
+    ThinkingLevelOption("medium", Icons.Rounded.AutoFixHigh),
+    ThinkingLevelOption("high", Icons.Rounded.School)
 )
+
+@Composable
+private fun getThinkingLevelColor(id: String): Color {
+    return when (id) {
+        "minimal" -> MaterialTheme.colorScheme.secondary
+        "low" -> MaterialTheme.colorScheme.primary
+        "medium" -> MaterialTheme.colorScheme.tertiary
+        "high" -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.primary
+    }
+}
 
 @Composable
 private fun thinkingLevelTitle(id: String): String = when (id) {
@@ -171,7 +180,7 @@ fun SessionSettingsSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = NexaraColors.SurfaceContainer,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
         dragHandle = {
             Column(
@@ -185,10 +194,10 @@ fun SessionSettingsSheet(
                     modifier = Modifier
                         .width(48.dp)
                         .height(4.dp)
-                        .background(NexaraColors.OutlineVariant, CircleShape)
+                        .background(MaterialTheme.colorScheme.outlineVariant, CircleShape)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(stringResource(R.string.sheet_title), style = NexaraTypography.headlineMedium, color = NexaraColors.OnSurface)
+                Text(stringResource(R.string.sheet_title), style = NexaraTypography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
             }
         }
     ) {
@@ -200,12 +209,12 @@ fun SessionSettingsSheet(
             ScrollableTabRow(
                 selectedTabIndex = pagerState.currentPage,
                 containerColor = Color.Transparent,
-                contentColor = NexaraColors.OnSurface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
                 edgePadding = 24.dp,
                 divider = {
                     HorizontalDivider(
                         thickness = 0.5.dp,
-                        color = NexaraColors.GlassBorder
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                     )
                 },
                 indicator = { tabPositions ->
@@ -217,7 +226,7 @@ fun SessionSettingsSheet(
                                 .padding(horizontal = 32.dp)
                                 .height(3.dp)
                                 .clip(RoundedCornerShape(3.dp))
-                                .background(NexaraColors.Primary)
+                                .background(MaterialTheme.colorScheme.primary)
                         )
                     }
                 }
@@ -232,11 +241,11 @@ fun SessionSettingsSheet(
                                 style = NexaraTypography.labelMedium.copy(
                                     fontWeight = if (pagerState.currentPage == index) FontWeight.Bold else FontWeight.Normal
                                 ),
-                                color = if (pagerState.currentPage == index) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
+                                color = if (pagerState.currentPage == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
-                        selectedContentColor = NexaraColors.Primary,
-                        unselectedContentColor = NexaraColors.OnSurfaceVariant
+                        selectedContentColor = MaterialTheme.colorScheme.primary,
+                        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -401,36 +410,39 @@ private fun ParamsPanel(
                     ) {
                         row.forEach { level ->
                             val isSelected = selectedLevel == level.id
-                            NexaraGlassCard(
+                            Surface(
                                 modifier = Modifier
                                     .weight(1f)
                                     .then(
-                                        if (isSelected) Modifier.border(1.dp, NexaraColors.Primary, RoundedCornerShape(12.dp))
+                                        if (isSelected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
                                         else Modifier
                                     )
                                     .clickable { onLevelClick(level.id) },
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                             ) {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .then(if (isSelected) Modifier.background(NexaraColors.Primary.copy(alpha = 0.08f)) else Modifier)
+                                        .then(if (isSelected) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)) else Modifier)
                                         .padding(16.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
+                                    val levelColor = getThinkingLevelColor(level.id)
                                     Box(
                                         modifier = Modifier
                                             .size(36.dp)
                                             .clip(CircleShape)
-                                            .background(level.tint.copy(alpha = 0.15f)),
+                                            .background(levelColor.copy(alpha = 0.15f)),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(level.icon, null, tint = level.tint, modifier = Modifier.size(20.dp))
+                                        Icon(level.icon, null, tint = levelColor, modifier = Modifier.size(20.dp))
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Text(thinkingLevelTitle(level.id), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurface)
+                                    Text(thinkingLevelTitle(level.id), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text(thinkingLevelDesc(level.id), style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp), color = NexaraColors.OnSurfaceVariant)
+                                    Text(thinkingLevelDesc(level.id), style = NexaraTypography.bodyMedium.copy(fontSize = 11.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
@@ -442,12 +454,12 @@ private fun ParamsPanel(
 
         // --- Standard Generation Parameters ---
         item {
-            HorizontalDivider(color = NexaraColors.GlassBorder, thickness = 0.5.dp)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), thickness = 0.5.dp)
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 stringResource(R.string.sheet_settings_section_inference),
                 style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = NexaraColors.OnSurface
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
 
@@ -455,7 +467,7 @@ private fun ParamsPanel(
             Text(
                 text = stringResource(R.string.sheet_settings_stream_timeout),
                 style = NexaraTypography.titleSmall,
-                color = NexaraColors.OnSurface,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -473,7 +485,7 @@ private fun ParamsPanel(
                 Text(
                     text = stringResource(R.string.session_settings_unit_seconds, currentTimeout),
                     style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary,
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.width(60.dp)
                 )
             }
@@ -483,7 +495,7 @@ private fun ParamsPanel(
             Text(
                 text = stringResource(R.string.sheet_settings_top_p),
                 style = NexaraTypography.titleSmall,
-                color = NexaraColors.OnSurface,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -500,7 +512,7 @@ private fun ParamsPanel(
                 Text(
                     text = String.format("%.2f", currentTopP),
                     style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary,
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.width(60.dp)
                 )
             }
@@ -510,7 +522,7 @@ private fun ParamsPanel(
             Text(
                 text = stringResource(R.string.sheet_settings_max_tokens),
                 style = NexaraTypography.titleSmall,
-                color = NexaraColors.OnSurface,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -528,7 +540,7 @@ private fun ParamsPanel(
                 Text(
                     text = if (currentMaxTokens == 0) stringResource(R.string.sheet_settings_unlimited) else currentMaxTokens.toString(),
                     style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary,
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.width(60.dp)
                 )
             }
@@ -546,7 +558,7 @@ private fun ParamsPanel(
                         Text(
                             text = stringResource(R.string.sheet_settings_top_k),
                             style = NexaraTypography.titleSmall,
-                            color = NexaraColors.OnSurface,
+                            color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -563,7 +575,7 @@ private fun ParamsPanel(
                             Text(
                                 text = if (currentTopK == 0) stringResource(R.string.sheet_settings_unlimited) else currentTopK.toString(),
                                 style = NexaraTypography.labelMedium,
-                                color = NexaraColors.Primary,
+                                color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.width(60.dp)
                             )
                         }
@@ -574,7 +586,7 @@ private fun ParamsPanel(
                         Text(
                             text = stringResource(R.string.sheet_settings_repetition_penalty),
                             style = NexaraTypography.titleSmall,
-                            color = NexaraColors.OnSurface,
+                            color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -591,7 +603,7 @@ private fun ParamsPanel(
                             Text(
                                 text = String.format("%.2f", currentRepetitionPenalty),
                                 style = NexaraTypography.labelMedium,
-                                color = NexaraColors.Primary,
+                                color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.width(60.dp)
                             )
                         }
@@ -602,7 +614,7 @@ private fun ParamsPanel(
                         Text(
                             text = stringResource(R.string.sheet_settings_presence_penalty),
                             style = NexaraTypography.titleSmall,
-                            color = NexaraColors.OnSurface,
+                            color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -619,7 +631,7 @@ private fun ParamsPanel(
                             Text(
                                 text = String.format("%.2f", currentPresencePenalty),
                                 style = NexaraTypography.labelMedium,
-                                color = NexaraColors.Primary,
+                                color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.width(60.dp)
                             )
                         }
@@ -630,7 +642,7 @@ private fun ParamsPanel(
                         Text(
                             text = stringResource(R.string.sheet_settings_frequency_penalty),
                             style = NexaraTypography.titleSmall,
-                            color = NexaraColors.OnSurface,
+                            color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -647,7 +659,7 @@ private fun ParamsPanel(
                             Text(
                                 text = String.format("%.2f", currentFrequencyPenalty),
                                 style = NexaraTypography.labelMedium,
-                                color = NexaraColors.Primary,
+                                color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.width(60.dp)
                             )
                         }
@@ -700,7 +712,7 @@ private fun ToolsPanel(
             }
         }
 
-        Text(stringResource(R.string.sheet_tab_tools), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold), color = NexaraColors.OnSurface)
+        Text(stringResource(R.string.sheet_tab_tools), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
         ToolToggleRow(stringResource(R.string.sheet_tool_search_retrieval), Icons.Rounded.Storage, toolsEnabled) { 
             toolsEnabled = it
             onToggle("toolsEnabled", it)
@@ -715,21 +727,21 @@ private fun ToolsPanel(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(10.dp)),
+                .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), RoundedCornerShape(10.dp)),
             shape = RoundedCornerShape(10.dp),
-            color = NexaraColors.SurfaceLow
+            color = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(
                     stringResource(R.string.sheet_tool_execution_mode),
                     style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = NexaraColors.OnSurface
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     modeDesc,
                     style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
-                    color = NexaraColors.OnSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -769,7 +781,7 @@ private fun SettingsPanel(
             Text(
                 stringResource(R.string.sheet_settings_section_vectorization),
                 style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = NexaraColors.OnSurface
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
 
@@ -777,7 +789,7 @@ private fun SettingsPanel(
             Text(
                 text = stringResource(R.string.sheet_settings_summary_threshold),
                 style = NexaraTypography.titleSmall,
-                color = NexaraColors.OnSurface,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -795,7 +807,7 @@ private fun SettingsPanel(
                 Text(
                     text = "${(currentSummaryThreshold * 100).toInt()}%",
                     style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary,
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.width(60.dp)
                 )
             }
@@ -805,7 +817,7 @@ private fun SettingsPanel(
             Text(
                 text = stringResource(R.string.sheet_settings_active_window),
                 style = NexaraTypography.titleSmall,
-                color = NexaraColors.OnSurface,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -824,7 +836,7 @@ private fun SettingsPanel(
                 Text(
                     text = stringResource(R.string.sheet_settings_active_window_unit, currentActiveWindow),
                     style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary,
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.width(80.dp)
                 )
             }
@@ -832,12 +844,12 @@ private fun SettingsPanel(
 
         // --- Vector Retrieval ---
         item {
-            HorizontalDivider(color = NexaraColors.GlassBorder, thickness = 0.5.dp)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), thickness = 0.5.dp)
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 stringResource(R.string.sheet_settings_section_retrieval),
                 style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = NexaraColors.OnSurface
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
 
@@ -868,7 +880,7 @@ private fun SettingsPanel(
                     Text(
                         text = stringResource(R.string.sheet_settings_rerank_unavailable),
                         style = NexaraTypography.bodySmall.copy(fontSize = 11.sp),
-                        color = NexaraColors.StatusWarning.copy(alpha = 0.85f),
+                        color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f),
                         modifier = Modifier.padding(start = 12.dp, top = 2.dp, bottom = 4.dp)
                     )
                 }
@@ -883,8 +895,8 @@ private fun SettingsPanel(
                             .fillMaxWidth()
                             .padding(top = 4.dp),
                         shape = RoundedCornerShape(10.dp),
-                        color = NexaraColors.SurfaceLow.copy(alpha = 0.5f),
-                        border = BorderStroke(0.5.dp, NexaraColors.GlassBorder)
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.5f),
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                     ) {
                         Row(
                             modifier = Modifier.padding(12.dp),
@@ -893,7 +905,7 @@ private fun SettingsPanel(
                             Icon(
                                 Icons.Rounded.Info,
                                 contentDescription = null,
-                                tint = NexaraColors.OnSurfaceVariant,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
@@ -901,12 +913,12 @@ private fun SettingsPanel(
                                 Text(
                                     stringResource(R.string.sheet_settings_rag_disabled),
                                     style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    color = NexaraColors.OnSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
                                     stringResource(R.string.sheet_settings_rag_disabled_hint),
                                     style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
-                                    color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                 )
                             }
                         }
@@ -917,12 +929,12 @@ private fun SettingsPanel(
 
         // --- UI Settings ---
         item {
-            HorizontalDivider(color = NexaraColors.GlassBorder, thickness = 0.5.dp)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), thickness = 0.5.dp)
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 stringResource(R.string.sheet_settings_ui_title),
                 style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = NexaraColors.OnSurface
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
 
@@ -933,7 +945,7 @@ private fun SettingsPanel(
             Text(
                 text = stringResource(R.string.sheet_settings_font_size),
                 style = NexaraTypography.titleSmall,
-                color = NexaraColors.OnSurface,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -954,7 +966,7 @@ private fun SettingsPanel(
                 Text(
                     text = "$currentFontSize ${stringResource(R.string.sheet_settings_font_size_unit)}",
                     style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Primary,
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.width(60.dp)
                 )
             }
@@ -979,23 +991,23 @@ private fun ToolToggleRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(NexaraColors.SurfaceLow)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .alpha(alpha)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, tint = NexaraColors.Primary, modifier = Modifier.size(18.dp))
+        Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(10.dp))
-        Text(label, style = NexaraTypography.bodyMedium.copy(fontSize = 14.sp), color = NexaraColors.OnSurface, modifier = Modifier.weight(1f))
+        Text(label, style = NexaraTypography.bodyMedium.copy(fontSize = 14.sp), color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
         Switch(
             checked = checked,
             enabled = enabled,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedTrackColor = NexaraColors.InversePrimary,
-                checkedThumbColor = Color.White,
-                uncheckedTrackColor = NexaraColors.SurfaceHighest,
-                uncheckedThumbColor = NexaraColors.Outline
+                checkedTrackColor = MaterialTheme.colorScheme.inversePrimary,
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                uncheckedThumbColor = MaterialTheme.colorScheme.outline
             ),
             modifier = Modifier.height(28.dp)
         )

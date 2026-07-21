@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -40,7 +41,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -53,6 +53,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.toBitmap
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -82,7 +83,7 @@ fun ImageLightbox(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.95f))
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.95f))
                     .pointerInput(Unit) {
                         detectTapGestures { onDismiss() }
                     },
@@ -118,12 +119,12 @@ fun ImageLightbox(
                         .padding(16.dp)
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.2f))
+                        .background(MaterialTheme.nexaraDomainColors.overlayContent.copy(alpha = 0.2f))
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = MaterialTheme.nexaraDomainColors.overlayContent,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -132,7 +133,7 @@ fun ImageLightbox(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .background(Color.Black.copy(alpha = 0.6f))
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f))
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
@@ -147,7 +148,7 @@ fun ImageLightbox(
                         Icon(
                             imageVector = Icons.Rounded.ZoomOutMap,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = MaterialTheme.nexaraDomainColors.overlayContent,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -158,7 +159,7 @@ fun ImageLightbox(
                         Icon(
                             imageVector = Icons.Rounded.RotateRight,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = MaterialTheme.nexaraDomainColors.overlayContent,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -173,7 +174,7 @@ fun ImageLightbox(
                         Icon(
                             imageVector = Icons.Rounded.SaveAlt,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = MaterialTheme.nexaraDomainColors.overlayContent,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -188,7 +189,7 @@ fun ImageLightbox(
                         Icon(
                             imageVector = Icons.Rounded.Share,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = MaterialTheme.nexaraDomainColors.overlayContent,
                             modifier = Modifier.size(24.dp)
                         )
                     }

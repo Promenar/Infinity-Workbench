@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -24,7 +25,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 enum class ExecutionMode(@StringRes val labelRes: Int) {
@@ -44,19 +44,19 @@ fun ExecutionModeSelector(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(NexaraColors.GlassSurface)
-            .border(0.5.dp, NexaraColors.GlassBorder, shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, shape)
             .padding(3.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
             ExecutionMode.entries.forEach { mode ->
                 val isSelected = mode == selected
                 val bg by animateColorAsState(
-                    targetValue = if (isSelected) NexaraColors.Primary else Color.Transparent,
+                    targetValue = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                     animationSpec = tween(200)
                 )
                 val textColor by animateColorAsState(
-                    targetValue = if (isSelected) NexaraColors.OnPrimary else NexaraColors.Secondary,
+                    targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                     animationSpec = tween(200)
                 )
 

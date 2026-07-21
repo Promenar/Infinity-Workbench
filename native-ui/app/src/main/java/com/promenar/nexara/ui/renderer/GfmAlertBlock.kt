@@ -8,14 +8,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.promenar.nexara.ui.theme.NexaraColors
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 
 enum class GfmAlertType(val label: String, val emoji: String) {
     NOTE("NOTE", "\uD83D\uDCDD"),
@@ -45,11 +45,11 @@ fun GfmAlertBlock(
 
     val (type, content) = parsed
     val accentColor = when (type) {
-        GfmAlertType.NOTE -> Color(0xFF0969DA)
-        GfmAlertType.TIP -> Color(0xFF1A7F37)
-        GfmAlertType.IMPORTANT -> Color(0xFF8250DF)
-        GfmAlertType.WARNING -> Color(0xFF9A6700)
-        GfmAlertType.CAUTION -> Color(0xFFCF222E)
+        GfmAlertType.NOTE -> MaterialTheme.nexaraDomainColors.info
+        GfmAlertType.TIP -> MaterialTheme.nexaraDomainColors.success
+        GfmAlertType.IMPORTANT -> MaterialTheme.colorScheme.primary
+        GfmAlertType.WARNING -> MaterialTheme.nexaraDomainColors.warning
+        GfmAlertType.CAUTION -> MaterialTheme.colorScheme.error
     }
 
     Column(
@@ -72,7 +72,7 @@ fun GfmAlertBlock(
                 text = content,
                 fontSize = fontSize.sp,
                 lineHeight = (fontSize * 1.5).sp,
-                color = NexaraColors.OnBackground,
+                color = MaterialTheme.colorScheme.onBackground,
             )
         }
     }

@@ -62,7 +62,6 @@ import com.promenar.nexara.ui.common.FileIndexStatus
 import com.promenar.nexara.ui.common.IndexStatusBadge
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -119,7 +118,7 @@ fun RecycleBinPanel(
                 )
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 12.dp),
-                    color = NexaraColors.OutlineVariant,
+                    color = MaterialTheme.colorScheme.outlineVariant,
                 )
             }
 
@@ -127,7 +126,7 @@ fun RecycleBinPanel(
                 Text(
                     text = stringResource(R.string.recycle_bin_auto_cleanup),
                     style = NexaraTypography.bodySmall,
-                    color = NexaraColors.OnSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(UiTags.RESOURCE_EXPLORER_RECYCLE_CLEANUP_NOTICE)
@@ -262,8 +261,8 @@ private fun RecycleOperationNotice(
     val message = recycleOperationMessage(state)
     val isRunning = state is RecycleOperationState.Running
     val hasFailure = state is RecycleOperationState.PartialFailure || state is RecycleOperationState.Failure
-    val containerColor = if (hasFailure) NexaraColors.ErrorContainer else NexaraColors.SecondaryContainer
-    val contentColor = if (hasFailure) NexaraColors.OnErrorContainer else NexaraColors.OnSurface
+    val containerColor = if (hasFailure) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer
+    val contentColor = if (hasFailure) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
 
     Surface(
         modifier = Modifier
@@ -480,7 +479,7 @@ private fun FileIcon() {
     Icon(
         imageVector = Icons.Rounded.Description,
         contentDescription = null,
-        tint = NexaraColors.OnSurfaceVariant,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.size(24.dp),
     )
 }
@@ -491,7 +490,7 @@ private fun FileDetails(file: FileEntry, nowMillis: Long, modifier: Modifier) {
         Text(
             text = file.name,
             style = NexaraTypography.bodyLarge,
-            color = NexaraColors.OnSurface,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -499,7 +498,7 @@ private fun FileDetails(file: FileEntry, nowMillis: Long, modifier: Modifier) {
             Text(
                 text = stringResource(R.string.recycle_bin_original_path, path),
                 style = NexaraTypography.bodySmall,
-                color = NexaraColors.OnSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -508,7 +507,7 @@ private fun FileDetails(file: FileEntry, nowMillis: Long, modifier: Modifier) {
             Text(
                 text = formatRecycledTime(recycledAt, nowMillis),
                 style = NexaraTypography.bodySmall,
-                color = NexaraColors.OnSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -555,8 +554,8 @@ private fun FileActions(
                 .then(restoreSemantics),
             enabled = enabled,
             colors = IconButtonDefaults.iconButtonColors(
-                contentColor = NexaraColors.Primary,
-                disabledContentColor = NexaraColors.Primary.copy(alpha = 0.38f),
+                contentColor = MaterialTheme.colorScheme.primary,
+                disabledContentColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
             ),
             onClick = onRestore,
         ) {
@@ -568,8 +567,8 @@ private fun FileActions(
                 .then(deleteSemantics),
             enabled = enabled,
             colors = IconButtonDefaults.iconButtonColors(
-                contentColor = NexaraColors.Error,
-                disabledContentColor = NexaraColors.Error.copy(alpha = 0.38f),
+                contentColor = MaterialTheme.colorScheme.error,
+                disabledContentColor = MaterialTheme.colorScheme.error.copy(alpha = 0.38f),
             ),
             onClick = onPermanentDelete,
         ) {
@@ -591,14 +590,14 @@ private fun EmptyRecycleBinState() {
         Icon(
             imageVector = Icons.Rounded.DeleteForever,
             contentDescription = null,
-            tint = NexaraColors.OnSurfaceVariant,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(48.dp),
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = stringResource(R.string.recycle_bin_empty_state),
             style = NexaraTypography.bodyMedium,
-            color = NexaraColors.OnSurface,
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }

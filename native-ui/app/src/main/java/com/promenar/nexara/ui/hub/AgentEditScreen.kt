@@ -34,7 +34,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.SettingsViewModel
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.data.agent.PresetAgents
@@ -90,7 +89,7 @@ fun AgentEditScreen(
     val parsedColor = try {
         Color(android.graphics.Color.parseColor(selectedColor))
     } catch (_: Exception) {
-        NexaraColors.Primary
+        MaterialTheme.colorScheme.primary
     }
 
     val currentIconVector = presetIcons.find { it.id == selectedIcon }?.icon ?: Icons.Rounded.AutoAwesome
@@ -121,12 +120,12 @@ fun AgentEditScreen(
         title = stringResource(R.string.agent_edit_delete_title),
         description = stringResource(R.string.agent_edit_delete_message),
         confirmLabel = stringResource(R.string.agent_edit_delete_confirm),
-        confirmColor = NexaraColors.Error,
+        confirmColor = MaterialTheme.colorScheme.error,
         destructive = true
     )
 
     Scaffold(
-        containerColor = NexaraColors.CanvasBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             TopAppBar(
@@ -135,7 +134,7 @@ fun AgentEditScreen(
                     NexaraBackButton(onClick = onNavigateBack)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f)
+                    containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f)
                 )
             )
         }
@@ -154,7 +153,7 @@ fun AgentEditScreen(
                 item {
                     Text(
                         text = message,
-                        color = NexaraColors.Error,
+                        color = MaterialTheme.colorScheme.error,
                         style = NexaraTypography.bodyMedium,
                     )
                 }
@@ -165,9 +164,11 @@ fun AgentEditScreen(
             }
 
             item {
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(
                         modifier = Modifier
@@ -200,9 +201,11 @@ fun AgentEditScreen(
             }
 
             item {
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     var isExpanded by remember { mutableStateOf(false) }
                     val avatarPath by viewModel.avatarPath.collectAsState()
@@ -236,15 +239,15 @@ fun AgentEditScreen(
                                     modifier = Modifier
                                         .size(28.dp)
                                         .clip(CircleShape)
-                                        .background(NexaraColors.Primary)
-                                        .border(2.dp, NexaraColors.SurfaceContainer, CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary)
+                                        .border(2.dp, MaterialTheme.colorScheme.surfaceContainer, CircleShape)
                                         .clickable { imagePickerLauncher.launch("image/*") },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = Icons.Rounded.AddAPhoto,
                                         contentDescription = null,
-                                        tint = Color.White,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier.size(14.dp)
                                     )
                                 }
@@ -261,7 +264,7 @@ fun AgentEditScreen(
                                 text = stringResource(R.string.agent_edit_label_icon),
                                 style = NexaraTypography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = NexaraColors.OnSurface
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             
                             Row(
@@ -270,12 +273,12 @@ fun AgentEditScreen(
                             ) {
                                 Text(
                                     text = if (isExpanded) stringResource(R.string.agent_edit_icon_toggle_collapse) else stringResource(R.string.agent_edit_icon_toggle_expand),
-                                    style = NexaraTypography.labelMedium.copy(color = NexaraColors.Primary, fontSize = 12.sp)
+                                    style = NexaraTypography.labelMedium.copy(color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
                                 )
                                 Icon(
                                     imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                                     contentDescription = null,
-                                    tint = NexaraColors.Primary,
+                                    tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -349,11 +352,13 @@ fun AgentEditScreen(
             }
 
             item {
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { showSystemPromptEditor = true },
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(
                         modifier = Modifier
@@ -369,21 +374,21 @@ fun AgentEditScreen(
                             text = stringResource(R.string.agent_edit_prompt_label),
                             style = NexaraTypography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = NexaraColors.OnSurface
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(50))
                                 .background(
-                                    if (systemPrompt.isNotBlank()) NexaraColors.Primary.copy(alpha = 0.15f)
-                                    else NexaraColors.GlassSurface
+                                    if (systemPrompt.isNotBlank()) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
                                 )
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
                                 text = if (systemPrompt.isNotBlank()) stringResource(R.string.agent_edit_prompt_configured) else stringResource(R.string.agent_edit_prompt_not_set),
                                     style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                    color = if (systemPrompt.isNotBlank()) NexaraColors.Primary else NexaraColors.OnSurfaceVariant
+                                    color = if (systemPrompt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -391,7 +396,7 @@ fun AgentEditScreen(
                         Text(
                             text = systemPrompt.ifBlank { stringResource(R.string.agent_edit_prompt_hint) },
                             style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
-                            color = if (systemPrompt.isNotBlank()) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                            color = if (systemPrompt.isNotBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                             maxLines = 2
                         )
                     }
@@ -433,8 +438,8 @@ fun AgentEditScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .border(0.5.dp, NexaraColors.Error.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                        .background(NexaraColors.Error.copy(alpha = 0.05f))
+                        .border(0.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.05f))
                         .clickable { showDeleteConfirm = true }
                         .padding(16.dp),
                     contentAlignment = Alignment.Center
@@ -443,14 +448,14 @@ fun AgentEditScreen(
                         Icon(
                             imageVector = Icons.Rounded.Delete,
                             contentDescription = null,
-                            tint = NexaraColors.Error,
+                            tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = stringResource(R.string.agent_edit_delete_btn),
                             style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = NexaraColors.Error
+                            color = MaterialTheme.colorScheme.error
                         )
                     }
                 }
@@ -471,10 +476,10 @@ private fun RowScope.IconSelectionItem(
             .weight(1f)
             .aspectRatio(1f)
             .clip(RoundedCornerShape(12.dp))
-            .background(NexaraColors.GlassSurface)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .then(
                 if (isSelected) Modifier.border(2.dp, activeColor, RoundedCornerShape(12.dp))
-                else Modifier.border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(12.dp))
+                else Modifier.border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
             )
             .clickable { onClick() },
         contentAlignment = Alignment.Center
@@ -482,7 +487,7 @@ private fun RowScope.IconSelectionItem(
         Icon(
             imageVector = option.icon,
             contentDescription = option.label,
-            tint = if (isSelected) activeColor else NexaraColors.OnSurfaceVariant,
+            tint = if (isSelected) activeColor else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(28.dp)
         )
     }

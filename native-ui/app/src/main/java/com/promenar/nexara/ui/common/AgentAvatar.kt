@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,7 +31,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.theme.NexaraColors
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 
 @Composable
 fun AgentAvatar(
@@ -87,7 +88,7 @@ fun AgentAvatar(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = Color.White,
+                tint = MaterialTheme.nexaraDomainColors.overlayContent,
                 modifier = Modifier.size(36.dp)
             )
         }

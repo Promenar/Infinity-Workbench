@@ -19,13 +19,13 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -33,7 +33,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.promenar.nexara.ui.theme.NexaraColors
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -75,13 +74,13 @@ fun SwipeableItem(
                     modifier = Modifier
                         .size(width = 80.dp, height = 48.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(NexaraColors.StatusError),
+                        .background(MaterialTheme.colorScheme.error),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Delete,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = MaterialTheme.colorScheme.onError,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -105,13 +104,20 @@ fun SwipeableItem(
                         modifier = Modifier
                             .size(width = 80.dp, height = 48.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(if (isPinned) NexaraColors.Tertiary else NexaraColors.Primary),
+                            .background(
+                                if (isPinned) MaterialTheme.colorScheme.tertiary
+                                else MaterialTheme.colorScheme.primary
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.PushPin,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = if (isPinned) {
+                                MaterialTheme.colorScheme.onTertiary
+                            } else {
+                                MaterialTheme.colorScheme.onPrimary
+                            },
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -123,13 +129,13 @@ fun SwipeableItem(
                         modifier = Modifier
                             .size(width = 80.dp, height = 48.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(NexaraColors.Secondary),
+                            .background(MaterialTheme.colorScheme.secondary),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Edit,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onSecondary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -141,7 +147,7 @@ fun SwipeableItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-                .background(NexaraColors.CanvasBackground) // Added background to make content opaque
+                .background(MaterialTheme.colorScheme.background)
                 .pointerInput(actionWidth, threshold, maxOffset) {
                     detectHorizontalDragGestures(
                         onDragEnd = {

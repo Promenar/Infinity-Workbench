@@ -96,7 +96,6 @@ import com.promenar.nexara.ui.common.IndexStatusBadge
 import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.KgStatusIcon
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -362,7 +361,7 @@ internal fun FilesPanel(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.End,
                 ) {
-                    Text(failedLabel, style = NexaraTypography.labelMedium, color = NexaraColors.Error)
+                    Text(failedLabel, style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.error)
                     TextButton(
                         onClick = { requestDelete(failure.failedIds) },
                         enabled = !isDeleting,
@@ -473,8 +472,8 @@ private fun BatchActionBar(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(NexaraColors.SurfaceLow.copy(alpha = 0.95f))
-            .border(0.5.dp, NexaraColors.GlassBorder, RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.95f))
+            .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -485,7 +484,7 @@ private fun BatchActionBar(
                 Text(
                     stringResource(R.string.files_selected_count, selectedCount),
                     style = NexaraTypography.labelMedium,
-                    color = NexaraColors.OnSurface,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 TextButton(
                     onClick = onClear,
@@ -494,7 +493,7 @@ private fun BatchActionBar(
                     Text(
                         stringResource(R.string.files_cancel),
                         style = NexaraTypography.labelSmall,
-                        color = NexaraColors.Primary,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
@@ -507,7 +506,7 @@ private fun BatchActionBar(
                         Text(
                             stringResource(R.string.files_reindex),
                             style = NexaraTypography.labelSmall,
-                            color = NexaraColors.Primary,
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
@@ -519,7 +518,7 @@ private fun BatchActionBar(
                         Text(
                             stringResource(R.string.shared_btn_delete),
                             style = NexaraTypography.labelSmall,
-                            color = NexaraColors.Error,
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
@@ -950,7 +949,7 @@ private fun FilesPanelLoadingState(modifier: Modifier = Modifier) {
         Text(
             loadingLabel,
             style = NexaraTypography.bodyMedium,
-            color = NexaraColors.OnSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -975,7 +974,7 @@ private fun FilesPanelErrorState(
         Text(
             errorLabel,
             style = NexaraTypography.labelMedium,
-            color = NexaraColors.Error,
+            color = MaterialTheme.colorScheme.error,
         )
         onRetry?.let { retry ->
             TextButton(
@@ -995,10 +994,10 @@ private fun SearchEmptyFilesState(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(Icons.Rounded.FolderOpen, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(48.dp))
+        Icon(Icons.Rounded.FolderOpen, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(48.dp))
         Spacer(modifier = Modifier.height(12.dp))
-        Text(stringResource(R.string.rag_home_search_results), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
-        Text(stringResource(R.string.files_empty_title), style = NexaraTypography.bodyMedium, color = NexaraColors.OnSurfaceVariant)
+        Text(stringResource(R.string.rag_home_search_results), style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
+        Text(stringResource(R.string.files_empty_title), style = NexaraTypography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -1009,13 +1008,13 @@ private fun EmptyFilesState(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(Icons.Rounded.FolderOpen, null, tint = NexaraColors.OnSurfaceVariant, modifier = Modifier.size(48.dp))
+        Icon(Icons.Rounded.FolderOpen, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(48.dp))
         Spacer(modifier = Modifier.height(12.dp))
-        Text(stringResource(R.string.files_empty_title), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+        Text(stringResource(R.string.files_empty_title), style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
         Text(
             stringResource(R.string.files_empty_subtitle),
             style = NexaraTypography.bodyMedium,
-            color = NexaraColors.OnSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

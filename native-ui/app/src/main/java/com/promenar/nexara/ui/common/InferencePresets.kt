@@ -21,6 +21,8 @@ import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -35,8 +37,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 
 data class InferencePreset(
     val id: String,
@@ -52,7 +54,7 @@ private val builtInPresets = listOf(
         id = "precise",
         labelRes = R.string.common_preset_precise,
         icon = Icons.Rounded.Code,
-        iconTint = Color(0xFFA78BFA),
+        iconTint = Color.Unspecified,
         temperature = 0.2f,
         topP = 0.8f
     ),
@@ -60,7 +62,7 @@ private val builtInPresets = listOf(
         id = "balanced",
         labelRes = R.string.common_preset_balanced,
         icon = Icons.Rounded.AutoFixHigh,
-        iconTint = Color(0xFF22D3EE),
+        iconTint = Color.Unspecified,
         temperature = 0.7f,
         topP = 0.9f
     ),
@@ -68,7 +70,7 @@ private val builtInPresets = listOf(
         id = "creative",
         labelRes = R.string.common_preset_creative,
         icon = Icons.AutoMirrored.Rounded.MenuBook,
-        iconTint = Color(0xFFFBBF24),
+        iconTint = Color.Unspecified,
         temperature = 1.0f,
         topP = 0.95f
     )
@@ -87,8 +89,17 @@ fun InferencePresets(
     ) {
         presets.forEach { preset ->
             val isSelected = preset.id == selected
+            val resolvedIconTint = if (preset.iconTint == Color.Unspecified) {
+                when (preset.id) {
+                    "precise" -> MaterialTheme.colorScheme.tertiary
+                    "creative" -> MaterialTheme.nexaraDomainColors.warning
+                    else -> MaterialTheme.nexaraDomainColors.info
+                }
+            } else {
+                preset.iconTint
+            }
 
-            NexaraGlassCard(
+            Surface(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
@@ -97,14 +108,15 @@ fun InferencePresets(
                         if (isSelected) {
                             Modifier.border(
                                 2.dp,
-                                NexaraColors.Primary,
+                                MaterialTheme.colorScheme.primary,
                                 RoundedCornerShape(12.dp)
                             )
                         } else {
                             Modifier
                         }
-                    ),
-                shape = RoundedCornerShape(12.dp)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
                 Column(
                     modifier = Modifier
@@ -112,7 +124,7 @@ fun InferencePresets(
                         .then(
                             if (isSelected) {
                                 Modifier.background(
-                                    NexaraColors.Primary.copy(alpha = 0.1f)
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
                                 )
                             } else {
                                 Modifier
@@ -124,7 +136,7 @@ fun InferencePresets(
                     Icon(
                         imageVector = preset.icon,
                         contentDescription = null,
-                        tint = preset.iconTint,
+                        tint = resolvedIconTint,
                         modifier = Modifier.size(24.dp)
                     )
 
@@ -135,7 +147,11 @@ fun InferencePresets(
                         style = NexaraTypography.labelMedium.copy(
                             fontWeight = FontWeight.SemiBold
                         ),
-                        color = if (isSelected) NexaraColors.Primary else NexaraColors.OnSurface
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
                     )
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -143,7 +159,7 @@ fun InferencePresets(
                     Text(
                         text = stringResource(R.string.common_preset_temp_label, preset.temperature.toString()),
                         style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                        color = NexaraColors.OnSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

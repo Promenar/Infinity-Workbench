@@ -32,6 +32,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -42,7 +43,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.promenar.nexara.ui.rag.GraphEdge
-import com.promenar.nexara.ui.theme.NexaraColors
+import androidx.compose.material3.MaterialTheme
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -75,45 +76,46 @@ fun InteractiveGraphCanvas(
     val hubPainter = rememberVectorPainter(Icons.Rounded.Hub)
 
     val density = LocalDensity.current
-    val textPaint = remember(density) {
+    val colorScheme = MaterialTheme.colorScheme
+    val textPaint = remember(density, colorScheme.onSurface) {
         android.graphics.Paint().apply {
             isAntiAlias = true
             textSize = with(density) { 10.sp.toPx() }
-            color = android.graphics.Color.parseColor("#E5E1E4")
+            color = colorScheme.onSurface.toArgb()
             textAlign = android.graphics.Paint.Align.CENTER
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            // 部署抗锯齿软投影
-            setShadowLayer(4f, 0f, 2f, android.graphics.Color.BLACK)
         }
     }
 
-    val edgeTextPaint = remember(density) {
+    val edgeTextPaint = remember(density, colorScheme.onSurfaceVariant) {
         android.graphics.Paint().apply {
             isAntiAlias = true
             textSize = with(density) { 8.sp.toPx() }
-            color = android.graphics.Color.parseColor("#999999")
+            color = colorScheme.onSurfaceVariant.toArgb()
             textAlign = android.graphics.Paint.Align.CENTER
-            setShadowLayer(2f, 0f, 1f, android.graphics.Color.BLACK)
         }
     }
 
-    // 色彩映射表
-    val colorMap = remember {
+    val colorMap = remember(colorScheme) {
         mapOf(
-            "concept" to Color(0xFFC0C1FF),
-            "document" to Color(0xFF4ADE80),
-            "person" to Color(0xFF60A5FA),
-            "organization" to Color(0xFFFBBF24),
-            "location" to Color(0xFFF472B6),
-            "event" to Color(0xFFA78BFA),
-            "other" to Color(0xFF9E9EA0)
+            "concept" to (colorScheme.primary to colorScheme.onPrimary),
+            "document" to (colorScheme.tertiary to colorScheme.onTertiary),
+            "person" to (colorScheme.secondary to colorScheme.onSecondary),
+            "organization" to (colorScheme.primaryContainer to colorScheme.onPrimaryContainer),
+            "location" to (colorScheme.error to colorScheme.onError),
+            "event" to (colorScheme.secondaryContainer to colorScheme.onSecondaryContainer),
+            "other" to (colorScheme.outline to colorScheme.surface)
         )
     }
+    val gridColor = colorScheme.outlineVariant.copy(alpha = 0.18f)
+    val edgeColor = colorScheme.outline.copy(alpha = 0.35f)
+    val pulseColor = colorScheme.primary.copy(alpha = 0.55f)
+    val nodeOutlineColor = colorScheme.onSurface.copy(alpha = 0.8f)
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(NexaraColors.CanvasBackground)
+            .background(MaterialTheme.colorScheme.background)
             // 🧠 部署极致无冲突手势控制器：单指高敏感拖曳节点/平移，多指无缝 focal-point 缩放
             .pointerInput(simulator) {
                 awaitEachGesture {
@@ -195,7 +197,7 @@ fun InteractiveGraphCanvas(
 
             for (x in generateSequence(startX) { it + gridSpacing }.takeWhile { it < canvasWidth }) {
                 drawLine(
-                    color = Color.White.copy(alpha = 0.025f),
+                    color = gridColor,
                     start = Offset(x, 0f),
                     end = Offset(x, canvasHeight),
                     strokeWidth = 1f
@@ -203,7 +205,7 @@ fun InteractiveGraphCanvas(
             }
             for (y in generateSequence(startY) { it + gridSpacing }.takeWhile { it < canvasHeight }) {
                 drawLine(
-                    color = Color.White.copy(alpha = 0.025f),
+                    color = gridColor,
                     start = Offset(0f, y),
                     end = Offset(canvasWidth, y),
                     strokeWidth = 1f
@@ -239,7 +241,7 @@ fun InteractiveGraphCanvas(
 
                         // 柔和微透明关系底线
                         drawLine(
-                            color = Color.White.copy(alpha = 0.08f),
+                            color = edgeColor,
                             start = start,
                             end = end,
                             strokeWidth = 1.5f
@@ -256,7 +258,7 @@ fun InteractiveGraphCanvas(
                                 val px = start.x + dx * fraction
                                 val py = start.y + dy * fraction
                                 drawCircle(
-                                    color = Color(0xFFC0C1FF).copy(alpha = 0.55f),
+                                    color = pulseColor,
                                     radius = 2.2f,
                                     center = Offset(px, py)
                                 )
@@ -283,7 +285,7 @@ fun InteractiveGraphCanvas(
                     val inView = node.x in viewLeft..viewRight && node.y in viewTop..viewBottom
                     if (!inView) return@forEach
 
-                    val nodeColor = colorMap[node.type] ?: colorMap["other"]!!
+                    val (nodeColor, nodeContentColor) = colorMap[node.type] ?: colorMap.getValue("other")
 
                     // 1) 绘制柔美渐变呼吸发光阴影 Halo
                     drawCircle(
@@ -306,7 +308,7 @@ fun InteractiveGraphCanvas(
 
                     // 3) 绘制精细的纯白星球亮边轮廓线
                     drawCircle(
-                        color = Color.White.copy(alpha = 0.8f),
+                        color = nodeOutlineColor,
                         radius = 16f,
                         center = Offset(node.x, node.y),
                         style = Stroke(width = 1.2f)
@@ -324,7 +326,7 @@ fun InteractiveGraphCanvas(
                         with(painter) {
                             draw(
                                 size = Size(iconSize, iconSize),
-                                colorFilter = ColorFilter.tint(Color.Black.copy(alpha = 0.85f))
+                                colorFilter = ColorFilter.tint(nodeContentColor.copy(alpha = 0.85f))
                             )
                         }
                     }

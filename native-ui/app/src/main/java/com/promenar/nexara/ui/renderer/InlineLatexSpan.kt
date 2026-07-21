@@ -29,14 +29,18 @@ fun InlineLatexSpan(
     fontSize: Int = 14
 ) {
     val context = LocalContext.current
+    val palette = rememberRichContentPalette()
     val density = LocalDensity.current
     val screenDensity = context.resources.displayMetrics.density
     val maxWidthPx = context.resources.displayMetrics.widthPixels
     val maxHeightPx = (40 * screenDensity).toInt()
 
-    var bitmap by remember(latex) { mutableStateOf<Bitmap?>(null) }
-    var contentWidthDp by remember(latex) { mutableStateOf(100.dp) }
-    var contentHeightDp by remember(latex) { mutableStateOf(24.dp) }
+    var bitmap by remember(latex, fontSize, palette) { mutableStateOf<Bitmap?>(null) }
+    var contentWidthDp by remember(latex, fontSize, palette) { mutableStateOf(100.dp) }
+    var contentHeightDp by remember(latex, fontSize, palette) { mutableStateOf(24.dp) }
+    val html = remember(latex, fontSize, palette) {
+        buildInlineLatexHtml(latex, fontSize, palette)
+    }
 
     val webView = remember { RichContentWebViewPool.acquire(context) }
 
@@ -86,7 +90,7 @@ fun InlineLatexSpan(
                 }
                 wv.loadDataWithBaseURL(
                     "file:///android_asset/",
-                    buildInlineLatexHtml(latex, fontSize),
+                    html,
                     "text/html",
                     "UTF-8",
                     null

@@ -73,7 +73,6 @@ import com.promenar.nexara.share.core.SharedFileImporter
 import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -228,8 +227,8 @@ internal fun ResourceExplorerSheetContent(
         PrimaryTabRow(
             selectedTabIndex = state.selectedTab.page,
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
-            contentColor = NexaraColors.Primary,
-            divider = { HorizontalDivider(color = NexaraColors.OutlineVariant) },
+            contentColor = MaterialTheme.colorScheme.primary,
+            divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) },
         ) {
             ResourceExplorerTab.entries.forEach { tab ->
                 val isFiles = tab == ResourceExplorerTab.Files
@@ -260,8 +259,8 @@ internal fun ResourceExplorerSheetContent(
                             overflow = TextOverflow.Ellipsis,
                         )
                     },
-                    selectedContentColor = NexaraColors.Primary,
-                    unselectedContentColor = NexaraColors.OnSurfaceVariant,
+                    selectedContentColor = MaterialTheme.colorScheme.primary,
+                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .heightIn(min = 48.dp)
                         .testTag(
@@ -418,7 +417,7 @@ private fun ResourceExplorerSessionState(
         Text(
             text = message,
             style = NexaraTypography.bodyMedium,
-            color = if (isLoading) NexaraColors.OnSurfaceVariant else NexaraColors.Error,
+            color = if (isLoading) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
         )
         if (!isLoading && onRetry != null) {
             TextButton(
@@ -442,7 +441,7 @@ private fun ImportStatusList(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = NexaraColors.SurfaceLow,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = MaterialTheme.shapes.medium,
     ) {
         Column(
@@ -456,7 +455,7 @@ private fun ImportStatusList(
                 Text(
                     stringResource(R.string.resource_explorer_import_status),
                     style = NexaraTypography.titleMedium,
-                    color = NexaraColors.OnSurface,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(
@@ -486,7 +485,7 @@ private fun ImportStatusList(
                         isImporting = isImporting,
                         onRetry = onRetry,
                     )
-                    HorizontalDivider(color = NexaraColors.OutlineVariant)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
         }
@@ -509,9 +508,9 @@ private fun ImportStatusRow(
         )
     }
     val statusColor = if (item.status == ShareImportStatus.Rejected) {
-        NexaraColors.Error
+        MaterialTheme.colorScheme.error
     } else {
-        NexaraColors.OnSurfaceVariant
+        MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -536,7 +535,7 @@ private fun ImportStatusRow(
                     Text(
                         text = item.displayName,
                         style = NexaraTypography.bodyMedium,
-                        color = NexaraColors.OnSurface,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -599,9 +598,9 @@ private fun ImportRetryAction(
             text = stringResource(R.string.shared_btn_retry),
             style = NexaraTypography.labelLarge,
             color = if (isImporting) {
-                NexaraColors.OnSurfaceVariant.copy(alpha = 0.38f)
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
             } else {
-                NexaraColors.Primary
+                MaterialTheme.colorScheme.primary
             },
         )
     }

@@ -118,7 +118,9 @@ class PipelineBubbleTest {
         val thinkingTraceSource = source
             .substringAfter("internal fun ThinkingTrace(")
             .substringBefore("//  InlineToolRow")
-        assertThat(thinkingTraceSource).contains(".drawBehind")
+        assertThat(thinkingTraceSource).contains(".drawWithContent")
+        assertThat(thinkingTraceSource).contains("drawContent()")
+        assertThat(thinkingTraceSource).doesNotContain(".drawBehind")
         assertThat(thinkingTraceSource).contains("CHAT_THINKING_COLLAPSED_CONNECTOR")
         assertThat(thinkingTraceSource).doesNotContain("AnimatedVisibility(visible = internalExpanded")
         assertThat(thinkingTraceSource).doesNotContain(".fillMaxHeight()")

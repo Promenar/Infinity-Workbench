@@ -4,12 +4,50 @@ import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+
+private val LocalNexaraDomainColors = staticCompositionLocalOf { NexaraDarkDomainColors }
+
+val MaterialTheme.nexaraDomainColors: NexaraDomainColors
+    @Composable
+    @ReadOnlyComposable
+    get() = LocalNexaraDomainColors.current
+
+private fun dynamicDomainColors(colorScheme: ColorScheme): NexaraDomainColors = NexaraDomainColors(
+    success = colorScheme.tertiary,
+    onSuccess = colorScheme.onTertiary,
+    successContainer = colorScheme.tertiaryContainer,
+    onSuccessContainer = colorScheme.onTertiaryContainer,
+    warning = colorScheme.secondary,
+    onWarning = colorScheme.onSecondary,
+    warningContainer = colorScheme.secondaryContainer,
+    onWarningContainer = colorScheme.onSecondaryContainer,
+    info = colorScheme.primary,
+    onInfo = colorScheme.onPrimary,
+    infoContainer = colorScheme.primaryContainer,
+    onInfoContainer = colorScheme.onPrimaryContainer,
+    overlayContent = NexaraDarkDomainColors.overlayContent,
+    ragReady = colorScheme.tertiary,
+    ragIndexing = colorScheme.primary,
+    ragError = colorScheme.error,
+    ragPending = colorScheme.outline,
+    codeKeyword = colorScheme.tertiary,
+    codeDeclaration = colorScheme.primary,
+    codeLiteral = colorScheme.secondary,
+    codeFunction = colorScheme.tertiary,
+    codeString = colorScheme.primary,
+    codeComment = colorScheme.onSurfaceVariant,
+)
 
 @Composable
 fun NexaraTheme(
@@ -38,6 +76,15 @@ fun NexaraTheme(
         useDarkTheme -> NexaraDarkColorScheme
         else -> NexaraLightColorScheme
     }
+    val domainColors = remember(colorScheme, useDynamicColor, useDarkTheme) {
+        when {
+            useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                dynamicDomainColors(colorScheme)
+            }
+            useDarkTheme -> NexaraDarkDomainColors
+            else -> NexaraLightDomainColors
+        }
+    }
 
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -54,10 +101,12 @@ fun NexaraTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = NexaraTypography,
-        shapes = NexaraShapes,
-        content = content
-    )
+    CompositionLocalProvider(LocalNexaraDomainColors provides domainColors) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = NexaraTypography,
+            shapes = NexaraShapes,
+            content = content
+        )
+    }
 }

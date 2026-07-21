@@ -9,7 +9,6 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.webkit.WebView
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,10 +41,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.promenar.nexara.ui.theme.NexaraColors
 
 private val HTML_ARTIFACT_LANGUAGES = setOf("html", "htm", "svg", "xml")
 
@@ -90,7 +89,9 @@ fun HtmlArtifactCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = NexaraColors.SurfaceHigh)
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        )
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             RichContentWebView(
@@ -113,6 +114,7 @@ fun HtmlArtifactsPopup(
 ) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     val context = LocalContext.current
+    val exportBackground = MaterialTheme.colorScheme.background.toArgb()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -121,29 +123,29 @@ fun HtmlArtifactsPopup(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(NexaraColors.SurfaceDim)
+                .background(MaterialTheme.colorScheme.background)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(NexaraColors.SurfaceContainer)
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "HTML Preview",
                         style = MaterialTheme.typography.titleSmall,
-                        color = NexaraColors.OnSurface,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = {
-                        webView?.let { exportHtmlArtifactPng(it, context) }
+                        webView?.let { exportHtmlArtifactPng(it, context, exportBackground) }
                     }) {
                         Icon(
                             imageVector = Icons.Rounded.Download,
                             contentDescription = "Export PNG",
-                            tint = NexaraColors.OnSurfaceVariant,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -151,7 +153,7 @@ fun HtmlArtifactsPopup(
                         Icon(
                             imageVector = Icons.Rounded.Close,
                             contentDescription = "Close",
-                            tint = NexaraColors.OnSurfaceVariant,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -177,12 +179,20 @@ fun HtmlArtifactsPopup(
 }
 
 internal fun exportHtmlArtifactPng(webView: WebView, context: Context) {
+    exportHtmlArtifactPng(webView, context, android.graphics.Color.TRANSPARENT)
+}
+
+private fun exportHtmlArtifactPng(
+    webView: WebView,
+    context: Context,
+    backgroundColor: Int,
+) {
     if (webView.width <= 0 || webView.height <= 0) return
     val bitmap = Bitmap.createBitmap(
         webView.width, webView.height, Bitmap.Config.ARGB_8888
     )
     val canvas = Canvas(bitmap)
-    canvas.drawColor(android.graphics.Color.WHITE)
+    canvas.drawColor(backgroundColor)
     webView.draw(canvas)
 
     val filename = "html_artifact_${System.currentTimeMillis()}.png"

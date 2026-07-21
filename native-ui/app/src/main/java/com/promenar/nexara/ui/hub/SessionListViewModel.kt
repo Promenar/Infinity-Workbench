@@ -10,6 +10,7 @@ import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.domain.usecase.IdGenerator
+import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.manager.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,7 +43,7 @@ class SessionListViewModel(
     private val _agentName = MutableStateFlow("")
     val agentName: StateFlow<String> = _agentName
 
-    private val _agentColor = MutableStateFlow("#C0C1FF")
+    private val _agentColor = MutableStateFlow(Agent(id = "", name = "").color)
     val agentColor: StateFlow<String> = _agentColor
 
     private val _operationFailed = MutableStateFlow(false)
@@ -78,7 +79,7 @@ class SessionListViewModel(
             try {
                 val agent = agentRepository.observeById(agentId).first()
                 _agentName.value = agent?.name ?: "Agent"
-                _agentColor.value = agent?.color ?: "#C0C1FF"
+                _agentColor.value = agent?.color ?: Agent(id = agentId, name = "").color
             } catch (_: Exception) {}
 
             try {

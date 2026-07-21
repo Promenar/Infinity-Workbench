@@ -24,7 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -46,7 +46,6 @@ import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.status.UiStatusNotice
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraCustomShapes
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -239,7 +238,7 @@ fun PipelineBubble(
                             .padding(start = 20.dp, top = 2.dp, bottom = 2.dp)
                             .width(1.dp)
                             .height(12.dp)
-                            .background(NexaraColors.OutlineVariant.copy(alpha = 0.8f))
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f))
                     )
                 }
             }
@@ -282,7 +281,7 @@ fun PipelineBubble(
             Text(
                 text = stringResource(resolved.resourceId, *resolved.args.toTypedArray()),
                 style = NexaraTypography.bodyMedium.copy(fontSize = (fontSize - 2).coerceAtLeast(10).sp),
-                color = NexaraColors.Error,
+                color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 6.dp, start = 4.dp)
             )
         }
@@ -558,7 +557,8 @@ internal fun ThinkingTrace(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(UiTags.CHAT_THINKING_CONTENT)
-                    .drawBehind {
+                    .drawWithContent {
+                        drawContent()
                         val lineX = NexaraSpacing.XLarge.toPx()
                         drawLine(
                             color = lineColor,
@@ -595,7 +595,8 @@ internal fun ThinkingTrace(
                     .fillMaxWidth()
                     .height(NexaraSpacing.XLarge)
                     .testTag(UiTags.CHAT_THINKING_COLLAPSED_CONNECTOR)
-                    .drawBehind {
+                    .drawWithContent {
+                        drawContent()
                         val lineX = NexaraSpacing.XLarge.toPx()
                         val nodeY = NexaraSpacing.Large.toPx()
                         drawLine(
@@ -686,8 +687,8 @@ private fun InlineToolRow(
                     .fillMaxWidth(0.7f) // 进一步缩减指示器宽度
                     .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(NexaraColors.Tertiary.copy(alpha = 0.08f))
-                    .border(0.5.dp, NexaraColors.Tertiary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.08f))
+                    .border(0.5.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                     .clickable { isExpanded = !isExpanded } // 移到此处修复涟漪超出容器 Bug
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -705,18 +706,18 @@ private fun InlineToolRow(
                             .size(8.dp)
                             .clip(CircleShape)
                             .alpha(dotAlpha)
-                            .background(NexaraColors.Tertiary)
+                            .background(MaterialTheme.colorScheme.tertiary)
                     )
                 } else if (hasError) {
                     Icon(
                         Icons.Rounded.Cancel, null,
-                        tint = NexaraColors.Error,
+                        tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(14.dp)
                     )
                 } else {
                     Icon(
                         Icons.Rounded.CheckCircle, null,
-                        tint = NexaraColors.Tertiary,
+                        tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(14.dp)
                     )
                 }
@@ -727,20 +728,20 @@ private fun InlineToolRow(
                         fontWeight = FontWeight.Medium,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                     ),
-                    color = NexaraColors.Tertiary
+                    color = MaterialTheme.colorScheme.tertiary
                 )
                 if (hasError && !isExecuting) {
                     Text(
                         text = stringResource(R.string.chat_tool_error),
                         style = NexaraTypography.labelSmall.copy(fontSize = (fontSize - 3).coerceAtLeast(9).sp),
-                        color = NexaraColors.Error.copy(alpha = 0.8f)
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
                     )
                 }
                 Spacer(modifier = Modifier.weight(1f))
                 Icon(
                     if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                     null,
-                    tint = NexaraColors.OnSurfaceVariant.copy(alpha = 0.5f),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     modifier = Modifier.size(14.dp)
                 )
             }
@@ -757,7 +758,7 @@ private fun InlineToolRow(
                     if (!call.toolArgs.isNullOrBlank()) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Surface(
-                                color = NexaraColors.SurfaceLow.copy(alpha = 0.4f),
+                                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.4f),
                                 shape = RoundedCornerShape(6.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -769,7 +770,7 @@ private fun InlineToolRow(
                                     style = NexaraTypography.labelSmall.copy(
                                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                         fontSize = (fontSize - 3).coerceAtLeast(9).sp,
-                                        color = NexaraColors.OnSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 )
                             }
@@ -793,7 +794,7 @@ private fun InlineToolRow(
                                         .fillMaxWidth()
                                         .heightIn(min = 120.dp, max = 220.dp)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(NexaraColors.SurfaceLow),
+                                        .background(MaterialTheme.colorScheme.surfaceContainerLow),
                                     contentScale = ContentScale.Fit
                                 )
                             }
@@ -802,7 +803,7 @@ private fun InlineToolRow(
                     if (!result.content.isNullOrBlank()) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Surface(
-                                color = NexaraColors.SurfaceLow.copy(alpha = 0.4f),
+                                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.4f),
                                 shape = RoundedCornerShape(6.dp),
                                 modifier = Modifier
                                     .fillMaxWidth() // 展开内容与正文等宽
@@ -813,7 +814,7 @@ private fun InlineToolRow(
                                     modifier = Modifier.padding(8.dp),
                                     style = NexaraTypography.labelSmall.copy(
                                         fontSize = (fontSize - 3).coerceAtLeast(9).sp,
-                                        color = NexaraColors.OnSurfaceVariant,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         lineHeight = ((fontSize - 3).coerceAtLeast(9) * 1.4).sp
                                     ),
                                     maxLines = 4
@@ -901,7 +902,7 @@ private fun ContentSegment(
 private fun PipelineConnector(
     isLast: Boolean,
     withLine: Boolean = false,
-    color: Color = NexaraColors.OutlineVariant.copy(alpha = 0.25f)
+    color: Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1051,7 +1052,7 @@ fun UserMessageBubble(
         Text(
             text = timestamp,
             style = NexaraTypography.labelSmall.copy(
-                color = NexaraColors.OnSurfaceVariant.copy(alpha = 0.6f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 fontSize = (fontSize - 2).coerceAtLeast(9).sp
             ),
             modifier = Modifier.padding(top = 4.dp, end = 4.dp)
@@ -1132,7 +1133,7 @@ private fun StreamingCursor() {
                 .width(10.dp)
                 .height(20.dp)
                 .alpha(alpha)
-                .background(NexaraColors.Primary, RoundedCornerShape(2.dp))
+                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
                 .semantics { contentDescription = generatingDescription }
         )
     }
@@ -1159,7 +1160,7 @@ fun MessageContextMenu(
         offset = offset
     ) {
         DropdownMenuItem(
-            text = { Text(stringResource(R.string.chat_action_copy), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface) },
+            text = { Text(stringResource(R.string.chat_action_copy), style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurface) },
             onClick = {
                 onCopy()
                 onDismiss()
@@ -1176,7 +1177,7 @@ fun MessageContextMenu(
                             stringResource(R.string.chat_action_regenerate)
                         },
                         style = NexaraTypography.labelMedium,
-                        color = NexaraColors.OnSurface
+                        color = MaterialTheme.colorScheme.onSurface
                     ) 
                 },
                 onClick = {
@@ -1193,7 +1194,7 @@ fun MessageContextMenu(
                     Text(
                         stringResource(R.string.chat_action_branch),
                         style = NexaraTypography.labelMedium,
-                        color = NexaraColors.OnSurface,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 },
                 onClick = {
@@ -1208,7 +1209,7 @@ fun MessageContextMenu(
                 Text(
                     text = stringResource(R.string.chat_action_delete),
                     style = NexaraTypography.labelMedium,
-                    color = NexaraColors.Error
+                    color = MaterialTheme.colorScheme.error
                 ) 
             },
             onClick = {

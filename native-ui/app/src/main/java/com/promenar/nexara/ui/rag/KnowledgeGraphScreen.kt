@@ -42,7 +42,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraBackButton
 import com.promenar.nexara.ui.rag.canvas.GraphPhysicsSimulator
 import com.promenar.nexara.ui.rag.canvas.InteractiveGraphCanvas
-import com.promenar.nexara.ui.theme.NexaraColors
+import androidx.compose.material3.MaterialTheme
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,7 +73,7 @@ fun KnowledgeGraphScreen(
     }
 
     Scaffold(
-        containerColor = NexaraColors.CanvasBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             Column {
                 TopAppBar(
@@ -82,21 +82,20 @@ fun KnowledgeGraphScreen(
                             Text(
                                 stringResource(R.string.kg_title),
                                 style = NexaraTypography.headlineLarge,
-                                color = NexaraColors.OnSurface
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
                                 stringResource(R.string.kg_stats_summary, nodes.size, edges.size),
                                 style = NexaraTypography.labelMedium,
-                                color = NexaraColors.OnSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     },
                     navigationIcon = {
                         NexaraBackButton(onClick = onNavigateBack)
                     },
-
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = NexaraColors.CanvasBackground.copy(alpha = 0.8f)
+                        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f)
                     )
                 )
                 Row(
@@ -112,11 +111,11 @@ fun KnowledgeGraphScreen(
                     ).forEach { (mode, label) ->
                         val isActive = viewMode == mode
                         val bgColor by animateColorAsState(
-                            if (isActive) NexaraColors.Primary.copy(alpha = 0.12f) else NexaraColors.SurfaceHigh,
+                            if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant,
                             label = "tabBg"
                         )
                         val textColor by animateColorAsState(
-                            if (isActive) NexaraColors.Primary else NexaraColors.OnSurfaceVariant,
+                            if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             label = "tabText"
                         )
                         Box(
@@ -126,7 +125,7 @@ fun KnowledgeGraphScreen(
                                 .then(
                                     if (isActive) Modifier.border(
                                         0.5.dp,
-                                        NexaraColors.Primary.copy(alpha = 0.3f),
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
                                         RoundedCornerShape(8.dp)
                                     ) else Modifier
                                 )
@@ -158,7 +157,7 @@ fun KnowledgeGraphScreen(
             } else if (isLoading) {
                 androidx.compose.material3.CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
-                    color = NexaraColors.Primary
+                    color = MaterialTheme.colorScheme.primary
                 )
             } else {
                 Box(
@@ -169,7 +168,7 @@ fun KnowledgeGraphScreen(
                         stringResource(R.string.kg_empty_graph),
                         modifier = Modifier.padding(horizontal = 16.dp),
                         style = NexaraTypography.bodyMedium,
-                        color = NexaraColors.OnSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
                 }

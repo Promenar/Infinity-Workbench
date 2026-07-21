@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -22,7 +23,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mikepenz.markdown.compose.components.MarkdownComponentModel
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import org.intellij.markdown.ast.ASTNode
@@ -93,14 +93,14 @@ internal fun NexaraTableWidget(
         modifier = modifier
             .fillMaxWidth()
             .clip(NexaraShapes.medium)
-            .background(NexaraColors.SurfaceLow),
+            .background(MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
         val fixedColumns = maxWidth <= table.requiredWidth
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(NexaraColors.SurfaceContainer)
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
                     .height(IntrinsicSize.Max),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -117,7 +117,7 @@ internal fun NexaraTableWidget(
 
             HorizontalDivider(
                 thickness = 0.5.dp,
-                color = NexaraColors.OutlineVariant.copy(alpha = 0.4f),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
             )
 
             table.rows.forEachIndexed { rowIndex, row ->
@@ -125,8 +125,11 @@ internal fun NexaraTableWidget(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(
-                            if (rowIndex % 2 == 0) NexaraColors.SurfaceLowest
-                            else NexaraColors.SurfaceLow,
+                            if (rowIndex % 2 == 0) {
+                                MaterialTheme.colorScheme.surfaceContainerLowest
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            },
                         )
                         .height(IntrinsicSize.Max),
                     verticalAlignment = Alignment.CenterVertically,
@@ -144,7 +147,7 @@ internal fun NexaraTableWidget(
                 if (rowIndex < table.rows.lastIndex) {
                     HorizontalDivider(
                         thickness = 0.5.dp,
-                        color = NexaraColors.OutlineVariant.copy(alpha = 0.2f),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
                     )
                 }
             }
@@ -165,13 +168,13 @@ private fun RowScope.TableCell(
         style = if (isHeader) {
             NexaraTypography.labelMedium.copy(
                 fontWeight = FontWeight.Bold,
-                color = NexaraColors.OnSurface,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontSize = fontSize.sp,
                 lineHeight = (fontSize * 1.4).sp
             )
         } else {
             NexaraTypography.bodySmall.copy(
-                color = NexaraColors.OnSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = (fontSize - 1).coerceAtLeast(10).sp,
                 lineHeight = ((fontSize - 1).coerceAtLeast(10) * 1.4).sp
             )

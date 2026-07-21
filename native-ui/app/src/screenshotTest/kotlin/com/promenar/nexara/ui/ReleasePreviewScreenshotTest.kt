@@ -148,7 +148,6 @@ import com.promenar.nexara.ui.settings.PROVIDER_PRESETS
 import com.promenar.nexara.ui.settings.ProviderFormActions
 import com.promenar.nexara.ui.settings.ProviderFormContent
 import com.promenar.nexara.ui.settings.ProviderFormUiState
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraThemeMode
 import com.promenar.nexara.ui.theme.NexaraThemePreferences
@@ -514,7 +513,7 @@ fun providerMaskedKeyReleasePreview() {
             Text(
                 text = stringResource(R.string.provider_form_label_api_key),
                 style = NexaraTypography.labelMedium,
-                color = NexaraColors.OnSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             SecretField(
                 value = "",
@@ -527,7 +526,7 @@ fun providerMaskedKeyReleasePreview() {
             Text(
                 text = stringResource(R.string.provider_form_secure_storage),
                 style = NexaraTypography.labelMedium,
-                color = NexaraColors.OnSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -2162,6 +2161,31 @@ fun docEditorRichMarkdownPreviewEnglishReleasePreview() {
 
 @PreviewTest
 @Preview(
+    name = "DocEditor rich markdown preview English light",
+    widthDp = 412,
+    heightDp = 892,
+    locale = "en",
+    uiMode = Configuration.UI_MODE_NIGHT_NO,
+)
+@Composable
+fun docEditorRichMarkdownPreviewEnglishLightReleasePreview() {
+    ReleasePreviewSurface(darkTheme = false) {
+        DocEditorScreenContent(
+            state = DocEditorScreenState(
+                editorState = previewDocEditorState(
+                    title = "Release readiness notes",
+                    content = PREVIEW_DOC_EDITOR_RICH_MARKDOWN,
+                    sizeBytes = 768L,
+                ),
+                viewMode = DocEditorViewMode.PREVIEW,
+            ),
+            actions = DocEditorScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
     name = "DocEditor split English tablet",
     widthDp = 840,
     heightDp = 900,
@@ -3105,13 +3129,13 @@ private fun ResourceExplorerReleasePreviewContainer(content: @Composable () -> U
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(NexaraColors.SurfaceContainer)
+                .background(MaterialTheme.colorScheme.surfaceContainer)
                 .padding(horizontal = 24.dp, vertical = 20.dp),
         ) {
             Text(
                 text = stringResource(R.string.resource_explorer_title),
                 style = NexaraTypography.headlineMedium,
-                color = NexaraColors.OnSurface,
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.size(16.dp))
             Box(modifier = Modifier.fillMaxSize()) {
@@ -3300,9 +3324,17 @@ private fun RagSettingsPreviewSurface(
 }
 
 @Composable
-private fun ReleasePreviewSurface(content: @Composable () -> Unit) {
-    NexaraTheme(dynamicColor = false) {
-        Box(modifier = Modifier.fillMaxSize().background(NexaraColors.CanvasBackground)) {
+private fun ReleasePreviewSurface(
+    darkTheme: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    NexaraTheme(
+        preferences = NexaraThemePreferences(
+            mode = if (darkTheme) NexaraThemeMode.DARK else NexaraThemeMode.LIGHT,
+            colorSource = NexaraColorSource.NEXARA,
+        ),
+    ) {
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             content()
         }
     }

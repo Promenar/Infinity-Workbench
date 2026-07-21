@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,7 +29,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -60,7 +60,7 @@ fun NexaraCollapsibleSection(
                     Icons.AutoMirrored.Rounded.KeyboardArrowRight
                 },
                 contentDescription = if (expanded) stringResource(R.string.common_cd_collapse) else stringResource(R.string.common_cd_expand),
-                tint = NexaraColors.OnSurfaceVariant,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
 
@@ -69,7 +69,7 @@ fun NexaraCollapsibleSection(
             Text(
                 text = title,
                 style = NexaraTypography.labelMedium,
-                color = NexaraColors.OnSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
@@ -93,7 +93,7 @@ private fun NexaraCollapsibleSectionCollapsedPreview() {
             Text(
                 text = "Hidden content here",
                 style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -110,7 +110,7 @@ private fun NexaraCollapsibleSectionExpandedPreview() {
             Text(
                 text = "Visible content here",
                 style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

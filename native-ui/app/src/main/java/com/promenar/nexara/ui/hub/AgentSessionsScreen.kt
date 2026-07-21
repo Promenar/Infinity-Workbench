@@ -67,7 +67,6 @@ import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.ui.common.ConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSearchTopBar
 import com.promenar.nexara.ui.common.SwipeableItem
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -107,7 +106,7 @@ fun AgentSessionsScreen(
 
     val parsedAgentColor = runCatching {
         Color(android.graphics.Color.parseColor(agentColor))
-    }.getOrDefault(NexaraColors.Primary)
+    }.getOrElse { MaterialTheme.colorScheme.primary }
 
     AgentSessionsScreenContent(
         state = AgentSessionsScreenState(
@@ -145,7 +144,7 @@ fun AgentSessionsScreen(
 internal data class AgentSessionsScreenState(
     val sessions: List<Session> = emptyList(),
     val agentName: String = "",
-    val agentColor: Color = NexaraColors.Primary,
+    val agentColor: Color = Color.Unspecified,
     val searchQuery: String = "",
     val searchActive: Boolean = false,
     val pendingDeleteSessionId: String? = null,
@@ -234,7 +233,7 @@ internal fun AgentSessionsScreenContent(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = actions.onCreateSession,
-                containerColor = state.agentColor,
+                containerColor = if (state.agentColor != Color.Unspecified) state.agentColor else MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = CircleShape,
                 modifier = Modifier.size(56.dp),

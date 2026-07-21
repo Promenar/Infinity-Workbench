@@ -134,7 +134,6 @@ import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.NexaraSnackbarHost
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraElevation
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraSpacing
@@ -402,7 +401,7 @@ fun ChatScreenContent(
         val fallbackMaximumBottom = rootHeightPx - with(density) { fallbackComposerReserve.toPx() }
 
         Scaffold(
-            containerColor = NexaraColors.CanvasBackground,
+            containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 ChatTopBar(
                     title = sessionTitle,
@@ -605,7 +604,7 @@ fun ChatScreenContent(
                                         Icon(
                                             Icons.Rounded.Close,
                                             stringResource(R.string.chat_cd_remove_image),
-                                            tint = Color.White,
+                                            tint = MaterialTheme.colorScheme.onPrimary,
                                             modifier = Modifier.size(18.dp),
                                         )
                                     }
@@ -704,8 +703,8 @@ fun ChatScreenContent(
                             scrollToStreamingTail()
                         }
                     },
-                    containerColor = NexaraColors.SurfaceHigh,
-                    contentColor = NexaraColors.Primary,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.primary,
                     shape = CircleShape,
                     modifier = Modifier
                         .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
@@ -842,7 +841,7 @@ private fun ChatInputTopBar(
                 Text(
                     text = modelName.ifBlank { stringResource(R.string.chat_model_placeholder) },
                     style = NexaraTypography.labelMedium,
-                    color = if (modelName.isBlank()) NexaraColors.OnSurfaceVariant else NexaraColors.OnSurface,
+                    color = if (modelName.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -895,14 +894,14 @@ private fun TokenIndicator(
                 Text(
                     text = "${state.used / 1000}K / ${state.max / 1000}K",
                     style = NexaraTypography.labelMedium,
-                    color = NexaraColors.OnSurface,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                 )
             },
             leadingIcon = {
                 ContextCircularIndicator(
                     progress = (state.used.toFloat() / state.max.toFloat()).coerceIn(0f, 1f),
-                    color = if (state.used > state.max * 0.8) NexaraColors.StatusWarning else NexaraColors.StatusSuccess,
+                    color = if (state.used > state.max * 0.8) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(12.dp)
                 )
             },
@@ -951,8 +950,8 @@ private fun TokenDetailRow(label: String, value: Int) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, style = NexaraTypography.bodySmall, color = NexaraColors.OnSurfaceVariant)
-        Text("$value", style = NexaraTypography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace), color = NexaraColors.OnSurface)
+        Text(label, style = NexaraTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("$value", style = NexaraTypography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace), color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -974,12 +973,12 @@ fun ChatTopBar(
     TopAppBar(
         title = {
             Column {
-                Text(title, style = NexaraTypography.titleMedium, color = NexaraColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(title, style = NexaraTypography.titleMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (subtitle.isNotBlank()) {
                     Text(
                         subtitle,
                         style = NexaraTypography.labelSmall,
-                        color = NexaraColors.OnSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                 }
@@ -993,7 +992,7 @@ fun ChatTopBar(
                 Icon(
                     Icons.Rounded.Folder,
                     stringResource(R.string.chat_cd_workspace),
-                    tint = NexaraColors.OnSurface,
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
             Box {
@@ -1004,13 +1003,13 @@ fun ChatTopBar(
                     Icon(
                         Icons.Rounded.MoreVert,
                         stringResource(R.string.chat_cd_options),
-                        tint = NexaraColors.OnSurface,
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 DropdownMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
-                    modifier = Modifier.background(NexaraColors.SurfaceContainer)
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
                 ) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_menu_session_settings), style = NexaraTypography.labelMedium) },
@@ -1036,7 +1035,7 @@ fun ChatTopBar(
                     )
                     HorizontalDivider(
                         modifier = Modifier.padding(vertical = 4.dp),
-                        color = NexaraColors.OutlineVariant.copy(alpha = 0.3f)
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_menu_rename), style = NexaraTypography.labelMedium) },
@@ -1046,7 +1045,7 @@ fun ChatTopBar(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_menu_delete_session), style = NexaraTypography.labelMedium, color = NexaraColors.Error) },
+                        text = { Text(stringResource(R.string.chat_menu_delete_session), style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.error) },
                         onClick = {
                             showMenu = false
                             onDeleteSession()
@@ -1127,7 +1126,7 @@ private fun DocumentDraftStrip(
                         Text(
                             text = formatDocumentBytes(document.sizeBytes),
                             style = NexaraTypography.labelSmall,
-                            color = NexaraColors.OnSurfaceVariant,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 },
@@ -1209,7 +1208,7 @@ fun ChatInputBar(
             .fillMaxWidth()
             .animateContentSize()
             .clip(NexaraShapes.extraLarge as RoundedCornerShape)
-            .background(NexaraColors.SurfaceHighest.copy(alpha = 0.45f))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f))
             .testTag(UiTags.CHAT_INPUT_BAR_SURFACE),
     ) {
         Row(
@@ -1242,9 +1241,9 @@ fun ChatInputBar(
                         Icons.Rounded.Add,
                         contentDescription = null,
                         tint = if (hasImages || hasDocuments) {
-                            NexaraColors.Primary
+                            MaterialTheme.colorScheme.primary
                         } else {
-                            NexaraColors.OnSurfaceVariant
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         },
                         modifier = Modifier
                             .size(22.dp)
@@ -1265,8 +1264,8 @@ fun ChatInputBar(
                         }
                     }
                     .testTag(UiTags.CHAT_INPUT),
-                textStyle = NexaraTypography.bodyMedium.copy(color = NexaraColors.OnBackground),
-                cursorBrush = SolidColor(NexaraColors.Primary),
+                textStyle = NexaraTypography.bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 enabled = !isGenerating,
                 decorationBox = { innerTextField ->
                     Box(
@@ -1280,7 +1279,7 @@ fun ChatInputBar(
                             Text(
                                 text = placeholder,
                                 style = NexaraTypography.bodyMedium,
-                                color = NexaraColors.OnSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         innerTextField()
@@ -1367,16 +1366,16 @@ private fun GenerationStatusButton(
         when (status) {
             GenerationStatus.IDLE -> {
                 if (enabled) {
-                    if (isModelSelected) NexaraColors.Primary else NexaraColors.SurfaceHighest
+                    if (isModelSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest
                 } else {
-                    NexaraColors.SurfaceHighest
+                    MaterialTheme.colorScheme.surfaceContainerHighest
                 }
             }
-            GenerationStatus.UPLOADING -> NexaraColors.Primary.copy(alpha = pulseAlpha)
-            GenerationStatus.THINKING -> NexaraColors.Primary
-            GenerationStatus.RECEIVING -> NexaraColors.Error
-            GenerationStatus.COMPLETED -> NexaraColors.StatusSuccess
-            GenerationStatus.ERROR -> NexaraColors.Error
+            GenerationStatus.UPLOADING -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
+            GenerationStatus.THINKING -> MaterialTheme.colorScheme.primary
+            GenerationStatus.RECEIVING -> MaterialTheme.colorScheme.error
+            GenerationStatus.COMPLETED -> MaterialTheme.colorScheme.primary
+            GenerationStatus.ERROR -> MaterialTheme.colorScheme.error
         },
         label = "container_color"
     )
@@ -1385,16 +1384,16 @@ private fun GenerationStatusButton(
         when (status) {
             GenerationStatus.IDLE -> {
                 if (enabled) {
-                    if (isModelSelected) NexaraColors.OnPrimary else NexaraColors.OnSurfaceVariant
+                    if (isModelSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                 } else {
-                    NexaraColors.OnSurfaceVariant
+                    MaterialTheme.colorScheme.onSurfaceVariant
                 }
             }
-            GenerationStatus.UPLOADING -> NexaraColors.OnPrimary
-            GenerationStatus.THINKING -> NexaraColors.OnPrimary
-            GenerationStatus.RECEIVING -> Color.White
-            GenerationStatus.COMPLETED -> Color.White
-            GenerationStatus.ERROR -> Color.White
+            GenerationStatus.UPLOADING -> MaterialTheme.colorScheme.onPrimary
+            GenerationStatus.THINKING -> MaterialTheme.colorScheme.onPrimary
+            GenerationStatus.RECEIVING -> MaterialTheme.colorScheme.onError
+            GenerationStatus.COMPLETED -> MaterialTheme.colorScheme.onPrimary
+            GenerationStatus.ERROR -> MaterialTheme.colorScheme.onError
         },
         label = "content_color"
     )
@@ -1491,14 +1490,14 @@ fun ChatSkeleton(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .size(width = 160.dp, height = 48.dp)
                     .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 4.dp, bottomStart = 20.dp, bottomEnd = 20.dp))
-                    .background(NexaraColors.SurfaceHigh.copy(alpha = alpha))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = alpha))
             )
             Spacer(modifier = Modifier.height(4.dp))
             Box(
                 modifier = Modifier
                     .size(width = 40.dp, height = 12.dp)
                     .clip(CircleShape)
-                    .background(NexaraColors.SurfaceHigh.copy(alpha = alpha * 0.5f))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = alpha * 0.5f))
             )
         }
 
@@ -1509,7 +1508,7 @@ fun ChatSkeleton(modifier: Modifier = Modifier) {
                     .fillMaxWidth(0.7f)
                     .height(20.dp)
                     .clip(CircleShape)
-                    .background(NexaraColors.SurfaceVariant.copy(alpha = alpha))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha))
             )
             Spacer(modifier = Modifier.height(8.dp))
             Box(
@@ -1517,7 +1516,7 @@ fun ChatSkeleton(modifier: Modifier = Modifier) {
                     .fillMaxWidth(0.9f)
                     .height(20.dp)
                     .clip(CircleShape)
-                    .background(NexaraColors.SurfaceVariant.copy(alpha = alpha))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha))
             )
             Spacer(modifier = Modifier.height(8.dp))
             Box(
@@ -1525,7 +1524,7 @@ fun ChatSkeleton(modifier: Modifier = Modifier) {
                     .fillMaxWidth(0.5f)
                     .height(20.dp)
                     .clip(CircleShape)
-                    .background(NexaraColors.SurfaceVariant.copy(alpha = alpha))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha))
             )
         }
 
@@ -1535,7 +1534,7 @@ fun ChatSkeleton(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .size(width = 100.dp, height = 32.dp)
                     .clip(CircleShape)
-                    .background(NexaraColors.Primary.copy(alpha = alpha * 0.2f))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha * 0.2f))
             )
             Spacer(modifier = Modifier.height(12.dp))
             Box(
@@ -1543,7 +1542,7 @@ fun ChatSkeleton(modifier: Modifier = Modifier) {
                     .fillMaxWidth(0.85f)
                     .height(20.dp)
                     .clip(CircleShape)
-                    .background(NexaraColors.SurfaceVariant.copy(alpha = alpha))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha))
             )
             Spacer(modifier = Modifier.height(8.dp))
             Box(
@@ -1551,7 +1550,7 @@ fun ChatSkeleton(modifier: Modifier = Modifier) {
                     .fillMaxWidth(0.4f)
                     .height(20.dp)
                     .clip(CircleShape)
-                    .background(NexaraColors.SurfaceVariant.copy(alpha = alpha))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha))
             )
         }
     }

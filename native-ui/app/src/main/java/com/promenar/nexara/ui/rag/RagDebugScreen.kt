@@ -37,10 +37,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraGlassCard
+import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.common.SettingsSectionHeader
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -60,7 +60,7 @@ fun RagDebugScreen(
                 Icon(
                     Icons.Rounded.Refresh,
                     contentDescription = stringResource(R.string.workbench_refresh),
-                    tint = NexaraColors.Primary,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -74,28 +74,30 @@ fun RagDebugScreen(
                 Box(
                     modifier = Modifier
                         .size(32.dp)
-                        .background(NexaraColors.SurfaceHigh, CircleShape),
+                        .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Rounded.Storage,
                         contentDescription = null,
-                        tint = NexaraColors.Primary,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp)
                     )
                 }
                 Text(
                     stringResource(R.string.rag_debug_desc),
                     style = NexaraTypography.bodyMedium,
-                    color = NexaraColors.OnSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
             val stats = vectorStats
             if (stats != null) {
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = NexaraShapes.large as RoundedCornerShape
+                    shape = NexaraShapes.large as RoundedCornerShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(
                         modifier = Modifier
@@ -106,20 +108,22 @@ fun RagDebugScreen(
                         Text(
                             "%,d".format(stats.total),
                             style = NexaraTypography.headlineLarge.copy(fontWeight = FontWeight.Black),
-                            color = NexaraColors.Primary
+                            color = MaterialTheme.colorScheme.primary
                         )
                         Text(
                             stringResource(R.string.rag_debug_total_vectors, stats.storageSizeMb),
                             style = NexaraTypography.labelMedium,
-                            color = NexaraColors.OnSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
                 SettingsSectionHeader(stringResource(R.string.rag_debug_section_types))
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = NexaraShapes.large as RoundedCornerShape
+                    shape = NexaraShapes.large as RoundedCornerShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(
                         modifier = Modifier
@@ -131,27 +135,29 @@ fun RagDebugScreen(
                             label = stringResource(R.string.rag_debug_doc_vectors),
                             count = stats.byType.doc,
                             total = stats.total,
-                            color = NexaraColors.Primary
+                            color = MaterialTheme.colorScheme.primary
                         )
                         DistributionRow(
                             label = stringResource(R.string.rag_debug_memory_vectors),
                             count = stats.byType.memory,
                             total = stats.total,
-                            color = NexaraColors.StatusInfo
+                            color = MaterialTheme.colorScheme.secondary
                         )
                         DistributionRow(
                             label = stringResource(R.string.rag_debug_summary_vectors),
                             count = stats.byType.summary,
                             total = stats.total,
-                            color = NexaraColors.Tertiary
+                            color = MaterialTheme.colorScheme.tertiary
                         )
                     }
                 }
 
                 SettingsSectionHeader(stringResource(R.string.rag_debug_section_health))
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = NexaraShapes.large as RoundedCornerShape
+                    shape = NexaraShapes.large as RoundedCornerShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(
                         modifier = Modifier
@@ -164,11 +170,11 @@ fun RagDebugScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                             Text(stringResource(R.string.rag_debug_redundancy), style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+                             Text(stringResource(R.string.rag_debug_redundancy), style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
                             Text(
                                 "${"%.1f".format(stats.redundancyRate * 100)}%",
                                 style = NexaraTypography.bodySmall.copy(
-                                    color = if (stats.redundancyRate > 0.2f) NexaraColors.Error else NexaraColors.StatusSuccess
+                                    color = if (stats.redundancyRate > 0.2f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                                 )
                             )
                         }
@@ -178,8 +184,8 @@ fun RagDebugScreen(
                                 .fillMaxWidth()
                                 .height(6.dp)
                                 .clip(RoundedCornerShape(3.dp)),
-                            color = if (stats.redundancyRate > 0.2f) NexaraColors.Error else NexaraColors.StatusSuccess,
-                            trackColor = NexaraColors.SurfaceHighest
+                            color = if (stats.redundancyRate > 0.2f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                         )
 
                         if (stats.redundancyRate > 0.01f) {
@@ -187,8 +193,8 @@ fun RagDebugScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(NexaraColors.StatusWarning.copy(alpha = 0.1f))
-                                    .border(0.5.dp, NexaraColors.StatusWarning.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f))
+                                    .border(0.5.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
                                     .clickable { }
                                     .padding(12.dp),
                                 horizontalArrangement = Arrangement.Center,
@@ -197,14 +203,14 @@ fun RagDebugScreen(
                                 Icon(
                                     Icons.Rounded.Delete,
                                     contentDescription = null,
-                                    tint = NexaraColors.StatusWarning,
+                                    tint = MaterialTheme.colorScheme.tertiary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     stringResource(R.string.rag_debug_cleanup),
                                     style = NexaraTypography.labelMedium,
-                                    color = NexaraColors.StatusWarning
+                                    color = MaterialTheme.colorScheme.tertiary
                                 )
                             }
                         }
@@ -213,9 +219,11 @@ fun RagDebugScreen(
 
                 SettingsSectionHeader(stringResource(R.string.rag_debug_section_sessions))
                 val topSessions = stats.bySession.take(5)
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = NexaraShapes.large as RoundedCornerShape
+                    shape = NexaraShapes.large as RoundedCornerShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(
                         modifier = Modifier
@@ -238,34 +246,36 @@ fun RagDebugScreen(
                                     Box(
                                         modifier = Modifier
                                             .size(24.dp)
-                                            .background(NexaraColors.SurfaceHigh, CircleShape),
+                                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
                                             "${index + 1}",
                                             style = NexaraTypography.labelMedium.copy(fontSize = 10.sp),
-                                            color = NexaraColors.OnSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                     Text(
                                         session.sessionId.take(12),
                                         style = NexaraTypography.labelMedium,
-                                        color = NexaraColors.OnSurface
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
                                 Text(
                                     stringResource(R.string.rag_debug_vectors_count, "%,d".format(session.count)),
                                     style = NexaraTypography.bodySmall.copy(fontSize = 12.sp),
-                                    color = NexaraColors.Primary
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
                     }
                 }
             } else {
-                NexaraGlassCard(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = NexaraShapes.large as RoundedCornerShape
+                    shape = NexaraShapes.large as RoundedCornerShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(
                         modifier = Modifier
@@ -277,13 +287,13 @@ fun RagDebugScreen(
                         Icon(
                             Icons.Rounded.Storage,
                             contentDescription = null,
-                            tint = NexaraColors.OnSurfaceVariant,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(40.dp)
                         )
                         Text(
                             stringResource(R.string.rag_debug_empty),
                             style = NexaraTypography.headlineMedium,
-                            color = NexaraColors.OnSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -308,7 +318,7 @@ private fun DistributionRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(label, style = NexaraTypography.labelMedium, color = NexaraColors.OnSurface)
+            Text(label, style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
             Text("%,d".format(count), style = NexaraTypography.bodySmall, color = color)
         }
         LinearProgressIndicator(
@@ -318,7 +328,7 @@ private fun DistributionRow(
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp)),
             color = color,
-            trackColor = NexaraColors.SurfaceHighest
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
         )
     }
 }

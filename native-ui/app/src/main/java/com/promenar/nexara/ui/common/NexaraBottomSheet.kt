@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -20,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.promenar.nexara.ui.theme.NexaraColors
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraTypography
 
@@ -37,7 +37,7 @@ fun NexaraBottomSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = NexaraColors.SurfaceContainer,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         dragHandle = {
             Box(
@@ -46,7 +46,7 @@ fun NexaraBottomSheet(
                     .width(40.dp)
                     .height(4.dp)
                     .background(
-                        NexaraColors.OutlineVariant,
+                        MaterialTheme.colorScheme.outlineVariant,
                         CircleShape
                     )
             )
@@ -62,7 +62,7 @@ fun NexaraBottomSheet(
                 Text(
                     text = title,
                     style = NexaraTypography.headlineMedium,
-                    color = NexaraColors.OnSurface
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -86,7 +86,7 @@ private fun NexaraBottomSheetPreview() {
             Text(
                 text = "Bottom sheet content goes here",
                 style = NexaraTypography.bodyMedium,
-                color = NexaraColors.OnSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
