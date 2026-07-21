@@ -1177,7 +1177,7 @@
 - Consumes: Tasks 1–13 current candidate.
 - Produces: verified delivery evidence and a resumable HLG record; does not create tag/PR/Release.
 
-- [ ] **Step 1：运行全量本地门禁**
+- [x] **Step 1：运行全量本地门禁**
 
   ```bash
   cd native-ui
@@ -1189,7 +1189,9 @@
 
   Record exact test/failure/error/skip, Lint Error/Fatal/warning, screenshot count and build output.
 
-- [ ] **Step 2：运行 API 31/35/36 设备矩阵**
+  2026-07-21 当前集成工作树结果：JVM 2117 项，0 failure/error、14 skip；Lint 0 Error/Fatal、420 warning、25 hint；Screenshot 96/96；AndroidTest Kotlin 编译通过。另以 `--rerun-tasks :app:assembleMinifiedTest` 完成非发行 R8 诊断构建，不能替代签名 release。
+
+- [x] **Step 2：运行 API 31/35/36 设备矩阵**
 
   Run this closed class list on each fixed AVD; do not reuse a prior candidate result:
 
@@ -1227,7 +1229,9 @@
   done
   ```
 
-- [ ] **Step 3：人工检查全部 actual**
+  当前候选闭合集合在 API 31/35/36 各 101/101，均 0 failure/error/skip；同源 broader harness 分别执行 39/41/41 个显式测试并各保留 1 个设计内 phase checkpoint skip，三档 `exit-code.txt` 均为 0。API 31 仍执行通知打开会话与前台服务，只跳过 Android 13+ 通知权限三项。
+
+- [x] **Step 3：人工检查全部 actual**
 
   Required combinations:
 
@@ -1242,9 +1246,11 @@
 
   Inspect every actual for crop, overlap, hierarchy, contrast, touch reachability, focus order and unified MD3 language. Screenshot PASS without inspection is insufficient.
 
-- [ ] **Step 4：复跑 500 模型性能**
+  主控已检查 96 张 actual。独立多模态首轮指出文档标题 2.0x 硬截断后，标题改为最多两行；首次新鲜验证准确暴露 5 张差异，逐张确认无裁切、重叠或不可达控件后更新对应 reference。代码块横向裁切按既有可滚动合同保留，设置紧凑图的联系表缩放不误判为产品缺陷。更新后 96/96，API 36 `DocEditorInteractionTest` 32/32。
 
-  Run `ProviderModelsPerformanceTest` twice on the fixed API 36 AVD. All raw samples remain in separate logs; use the worse run. Do not replace or discard slow samples.
+- [x] **Step 4：复跑 500 模型性能**
+
+  Run `ProviderModelsPerformanceTest` twice on the fixed API 36 AVD. Before each formal batch, keep API 36 as the only running AVD, use the historical headless `-gpu host` Apple Silicon/Metal configuration, set all three system animation scales to `0`, allow the Play Store image's delayed package-install work to settle for 10 seconds, and do not run screenshot processing, builds, other emulator matrices or other controller workloads concurrently. The test must fail fast and print the animation scales when this fixture contract drifts. All raw samples remain in separate logs; use the worse valid run. Do not replace or discard slow samples. A batch whose recorded preconditions were broken remains diagnostic evidence and must not be relabeled as a valid product sample.
 
   ```bash
   mkdir -p native-ui/app/build/reports/provider-models-performance
@@ -1252,12 +1258,18 @@
     (
       cd native-ui
       set -o pipefail
+      adb -s emulator-5572 logcat -c
       ANDROID_SERIAL=emulator-5572 ./gradlew :app:connectedDebugAndroidTest \
         -Pandroid.testInstrumentationRunnerArguments.class=com.promenar.nexara.ui.settings.ProviderModelsPerformanceTest \
         | tee "app/build/reports/provider-models-performance/run-$run.log"
+      adb -s emulator-5572 logcat -d -v threadtime -s ProviderModelsPerf:I '*:S' \
+        > "app/build/reports/provider-models-performance/run-$run-metrics.log"
+      test "$(grep -c 'PROVIDER_MODELS_PERF' "app/build/reports/provider-models-performance/run-$run-metrics.log")" = 1
     )
   done
   ```
+
+  固定 API 36 有效双跑均通过；较差有效样本 p95 35ms、max 68ms、稳定 PSS +455KiB，原阈值 50ms/150ms/64MiB 未放宽。前提被并发截图处理或系统动画漂移破坏的批次仅保留为无效诊断证据。
 
 - [ ] **Step 5：构建当前 release APK 并检查签名链**
 
@@ -1283,6 +1295,8 @@
 
   Expected: every command exits 0; mapping and checksum files are non-empty; verifier reports one expected signer and no sensitive-pattern finding.
 
+  **BLOCKED（2026-07-21）**：当前主控进程缺少五项签名环境变量，Gradle release task 按设计 fail-closed。未读取 `secure_env`，未把既有 APK 或 `minifiedTest` 冒充当前签名候选。
+
 - [ ] **Step 6：冷安装和真机边界**
 
   Cold-install the exact current APK on API 35/36 and retain reports outside protected `artifacts/`:
@@ -1302,7 +1316,9 @@
 
   Then smoke theme persistence, Provider/default-model navigation, knowledge settings and chat attachment on the installed package and record screenshots/logs in the same build report roots. Final signed APK still requires user-operated physical-device TalkBack full traversal and core business acceptance; these remain PENDING until the user supplies evidence.
 
-- [ ] **Step 7：DIA/HLG 收口**
+  **BLOCKED（2026-07-21）**：Step 5 没有产生当前签名 APK，因此不得对旧 APK 执行并回填为当前 API 35/36 冷安装 PASS。真机 TalkBack 与核心业务人工验收继续 PENDING。
+
+- [x] **Step 7：DIA/HLG 收口**
 
   Update user-visible CHANGELOG/release docs and validation ledger. Append a new ISO handover record with `continuity-key: nexara-md3-redesign`; rebuild index using:
 
@@ -1310,6 +1326,8 @@
   python3 /Users/promenar/.codex/skills/handover-lifecycle-governance/scripts/hlg-handover.py \
     index --root /Users/promenar/Codex/Nexara/.worktrees/codex-v0.2-beta --days 7
   ```
+
+  已同步 CHANGELOG、发行说明、验证账本和本计划；追加 `2026-07-21T15:06:15+08:00` 阶段恢复记录并使用 HLG Skill 重建索引。最终双复审仍在 Step 8 保持未完成。
 
 - [ ] **Step 8：最终双复审**
 

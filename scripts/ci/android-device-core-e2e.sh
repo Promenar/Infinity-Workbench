@@ -207,6 +207,36 @@ reset_target_with_notification_permission_granted() {
     wait_for_package_manager_idle
 }
 
+run_notification_permission_contracts() {
+    reset_target_with_notification_permission_revoked
+    run_test notification-permission-deny "${MAIN_ACTIVITY_RUNNER}" \
+        -e class com.promenar.nexara.MainActivityNotificationE2eTest#denyingSystemNotificationPermissionContinuesForegroundOnlyWithoutFgs
+
+    reset_target_with_notification_permission_revoked
+    run_test notification-permission-grant "${MAIN_ACTIVITY_RUNNER}" \
+        -e class com.promenar.nexara.MainActivityNotificationE2eTest#grantingSystemNotificationPermissionContinuesBackgroundAllowed
+}
+
+run_notification_open_session_contract() {
+    if (( API_LEVEL >= 33 )); then
+        reset_target_with_notification_permission_granted
+    else
+        adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
+        wait_for_package_manager_idle
+    fi
+    run_test notification-open-session "${MAIN_ACTIVITY_RUNNER}" \
+        -e class com.promenar.nexara.MainActivityNotificationE2eTest#postedNotificationOpenPendingIntentReturnsToExactSession
+}
+
+prepare_target_for_foreground_notification() {
+    if (( API_LEVEL >= 33 )); then
+        reset_target_with_notification_permission_granted
+    else
+        adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
+        wait_for_package_manager_idle
+    fi
+}
+
 run_expected_relay_death() {
     local output_file="${ARTIFACT_DIR}/restore-relay-stage-expected-death.txt"
     local after_pids_file="${ARTIFACT_DIR}/restore-relay-stage-after-pids.txt"
@@ -256,17 +286,12 @@ printf '%s\n' "${MAIN_ACTIVITY_RUNNER}" > "${ARTIFACT_DIR}/mainactivity-runner.t
 adb logcat -c
 
 if [[ "${DEVICE_E2E_SCOPE}" == "full" ]]; then
-    reset_target_with_notification_permission_revoked
-    run_test notification-permission-deny "${MAIN_ACTIVITY_RUNNER}" \
-        -e class com.promenar.nexara.MainActivityNotificationE2eTest#denyingSystemNotificationPermissionContinuesForegroundOnlyWithoutFgs
-
-    reset_target_with_notification_permission_revoked
-    run_test notification-permission-grant "${MAIN_ACTIVITY_RUNNER}" \
-        -e class com.promenar.nexara.MainActivityNotificationE2eTest#grantingSystemNotificationPermissionContinuesBackgroundAllowed
-
-    reset_target_with_notification_permission_granted
-    run_test notification-open-session "${MAIN_ACTIVITY_RUNNER}" \
-        -e class com.promenar.nexara.MainActivityNotificationE2eTest#postedNotificationOpenPendingIntentReturnsToExactSession
+    if (( API_LEVEL >= 33 )); then
+        run_notification_permission_contracts
+    else
+        echo "API ${API_LEVEL} 无运行时通知权限，跳过 Android 13+ 权限弹窗 E2E。"
+    fi
+    run_notification_open_session_contract
 fi
 
 adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
@@ -327,6 +352,7 @@ run_test restore-relay-no-replay "${APP_RUNNER}" \
 
 run_test generation-notification-factory "${APP_RUNNER}" \
     -e class com.promenar.nexara.background.generation.GenerationNotificationFactoryTest
+prepare_target_for_foreground_notification
 run_test generation-foreground-service "${APP_RUNNER}" \
     -e class com.promenar.nexara.background.generation.GenerationForegroundServiceDeviceTest
 

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Material 3 总收敛：Task 14 本地设备、视觉与性能门禁（2026-07-21）
+
+- **三档设备闭环**：当前集成工作树在 API 31/35/36 的冻结类集合各 101/101；同源 broader harness 分别完成 39/41/41 个显式测试并保留各 1 个设计内 phase checkpoint skip，三档均无 failure/error 且脚本退出 0。API 31 仍执行通知打开会话与前台服务，只跳过 Android 13+ 通知权限路径。
+- **竞态与布局收口**：后台通知断言改为有界等待真实 active notification，引导底部导航使用稳定语义标签；文档标题在 2.0x 下最多两行显示且换行输入归一为空格，API 36 文档编辑交互 32/32。
+- **性能与视觉证据**：固定 API 36、headless `-gpu host`、动画缩放 0 的 500 模型性能双跑均通过，较差有效样本 p95 35ms、max 68ms、PSS +455KiB；96 张 actual 已逐张检查，5 张文档编辑 reference 经定向复核后更新，Screenshot 96/96。
+- **当前质量门禁**：JVM 2117 项（0 failure/error、14 skip）、Lint 0 Error/Fatal（420 warning、25 hint）、AndroidTest Kotlin 编译与设备脚本契约通过；release-equivalent `minifiedTest` R8 新鲜构建成功。当前进程缺少真实 Provider 与签名环境变量，未重建签名 APK、未执行当前包冷安装，历史 PASS 不替代本轮，发行继续 NO-GO。
+
 ### Material 3 总收敛：全站自适应语义色与富文本主题（2026-07-21）
 
 - **单一主题事实源**：正式 UI 清除 `NexaraColors`、`NexaraGlassCard` 与静态深色/Glass 消费，页面统一使用 `MaterialTheme.colorScheme`；成功、警告、信息、RAG 状态和代码语法色通过主题内 `NexaraDomainColors` 成对提供前景与容器色。

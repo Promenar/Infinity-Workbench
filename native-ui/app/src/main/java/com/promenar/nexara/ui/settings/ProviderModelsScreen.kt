@@ -192,7 +192,9 @@ internal fun ProviderModelsScreenContent(
     var showAddDialog by remember { mutableStateOf(false) }
 
     // 选中项始终从最新同步结果派生，删除或同步移除后不会继续编辑旧快照。
-    val selectedModel = state.models.firstOrNull { it.id == selectedModelId }
+    val selectedModel = remember(state.models, selectedModelId) {
+        state.models.firstOrNull { it.id == selectedModelId }
+    }
     LaunchedEffect(selectedModelId, selectedModel) {
         if (selectedModelId != null && selectedModel == null) {
             selectedModelId = null
@@ -576,11 +578,15 @@ internal fun ProviderModelsModelRow(
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val remoteModelId = model.remoteModelId.ifBlank { model.id.substringAfter("::", model.id) }
-    val summaryCapabilities = model.capabilities
-        .filterNot { it == "chat" }
-        .ifEmpty { listOf(model.type) }
-        .distinct()
+    val remoteModelId = remember(model.id, model.remoteModelId) {
+        model.remoteModelId.ifBlank { model.id.substringAfter("::", model.id) }
+    }
+    val summaryCapabilities = remember(model.capabilities, model.type) {
+        model.capabilities
+            .filterNot { it == "chat" }
+            .ifEmpty { listOf(model.type) }
+            .distinct()
+    }
     val remainingCapabilityCount = (summaryCapabilities.size - 2).coerceAtLeast(0)
 
     Column(

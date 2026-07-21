@@ -237,10 +237,10 @@ class OnboardingAndroidEndToEndTest {
 
         rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }
         rule.onNodeWithTag(UiTags.HUB_ROOT).assertIsDisplayed()
-        rule.onNodeWithText(rule.activity.getString(R.string.nav_tab_library)).performClick()
+        rule.onNodeWithTag("main_navigation_tab_library").performClick()
         rule.onNodeWithTag(UiTags.RAG_HOME_ROOT).assertIsDisplayed()
 
-        rule.onNodeWithText(rule.activity.getString(R.string.nav_tab_settings)).performClick()
+        rule.onNodeWithTag("main_navigation_tab_settings").performClick()
         rule.onNodeWithTag(UiTags.SETTINGS_ROOT).assertIsDisplayed()
         val ragConfigLabel = rule.activity.getString(R.string.settings_rag_config)
         rule.onNodeWithTag(UiTags.SETTINGS_APP_LIST)

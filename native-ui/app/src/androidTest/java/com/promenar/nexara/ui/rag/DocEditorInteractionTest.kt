@@ -53,6 +53,7 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import org.junit.After
 import org.junit.Rule
@@ -702,6 +703,24 @@ class DocEditorInteractionTest {
         rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.DOC_EDITOR_STATUS).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_SPLIT).assertDoesNotExist()
+    }
+
+    @Test
+    fun titleInputNormalizesPastedAndEnteredLineBreaksWithoutDiscardingText() {
+        val changedTitle = AtomicReference<String>()
+        rule.setContent {
+            TestContent(
+                screenState = DocEditorScreenState(
+                    editorState = readyEditorState(dirty = true),
+                ),
+                actions = DocEditorScreenActions(onTitleChange = changedTitle::set),
+            )
+        }
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_TITLE_INPUT)
+            .performTextReplacement("release\r\nnotes\nfinal\rend")
+
+        assertThat(changedTitle.get()).isEqualTo("release notes final end")
     }
 
     @Test

@@ -119,10 +119,15 @@ assert_contains "${DEVICE_SCRIPT}" 'adb shell cmd package wait-for-handler --tim
 assert_contains "${DEVICE_SCRIPT}" 'adb shell cmd package wait-for-background-handler --timeout 5000'
 assert_contains "${DEVICE_SCRIPT}" 'if (( API_LEVEL >= 33 )); then'
 assert_contains "${DEVICE_SCRIPT}" 'sleep 1'
-assert_count "${DEVICE_SCRIPT}" 'wait_for_package_manager_idle' 3
+assert_count "${DEVICE_SCRIPT}" 'wait_for_package_manager_idle' 5
 assert_not_contains "${DEVICE_SCRIPT}" "\"${TIMEOUT_HELPER}\" adb"
 assert_not_contains "${DEVICE_SCRIPT}" "'${TIMEOUT_HELPER}' adb"
 assert_not_contains "${DEVICE_SCRIPT}" 'timeout "${INSTRUMENT_TIMEOUT_SECONDS}s"'
+assert_contains "${DEVICE_SCRIPT}" 'run_notification_permission_contracts() {'
+assert_contains "${DEVICE_SCRIPT}" 'run_notification_open_session_contract() {'
+assert_contains "${DEVICE_SCRIPT}" 'prepare_target_for_foreground_notification() {'
+assert_contains "${DEVICE_SCRIPT}" $'prepare_target_for_foreground_notification\nrun_test generation-foreground-service'
+assert_contains "${DEVICE_SCRIPT}" $'if (( API_LEVEL >= 33 )); then\n        run_notification_permission_contracts\n    else\n        echo "API ${API_LEVEL} 无运行时通知权限，跳过 Android 13+ 权限弹窗 E2E。"\n    fi\n    run_notification_open_session_contract'
 
 # 设备夹具必须服从异步启动闸门，且系统权限按钮不能只依赖当前活动窗口。
 assert_contains "${ONBOARDING_E2E_TEST}" 'waitForStartupReady()'

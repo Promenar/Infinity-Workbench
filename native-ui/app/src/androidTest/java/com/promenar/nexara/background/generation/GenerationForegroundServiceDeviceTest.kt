@@ -67,19 +67,25 @@ class GenerationForegroundServiceDeviceTest {
 
         assertThat(waitUntil(timeoutMillis = 10_000) { isServiceRunning() }).isTrue()
 
-        val notificationFactory = GenerationNotificationFactory(context, app.appIntentRouter)
-        val notification = notificationFactory.create(snapshot)
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        assertThat(waitUntil(timeoutMillis = 10_000) {
+            notificationManager.activeNotifications.any {
+                it.id == GenerationNotificationFactory.NOTIFICATION_ID
+            }
+        }).isTrue()
+        val notification = notificationManager.activeNotifications.single {
+            it.id == GenerationNotificationFactory.NOTIFICATION_ID
+        }.notification
         assertThat(notification.flags and Notification.FLAG_ONGOING_EVENT).isNotEqualTo(0)
         assertThat(notification.actions).hasLength(1)
 
         notification.actions.single().actionIntent.send()
 
         assertThat(waitUntil(timeoutMillis = 10_000) { !isServiceRunning() }).isTrue()
-        assertThat(
-            context.getSystemService(NotificationManager::class.java)
-                .activeNotifications
-                .none { it.id == GenerationNotificationFactory.NOTIFICATION_ID },
-        ).isTrue()
+        assertThat(waitUntil(timeoutMillis = 10_000) {
+            notificationManager.activeNotifications
+                .none { it.id == GenerationNotificationFactory.NOTIFICATION_ID }
+        }).isTrue()
     }
 
     @Suppress("UNCHECKED_CAST")

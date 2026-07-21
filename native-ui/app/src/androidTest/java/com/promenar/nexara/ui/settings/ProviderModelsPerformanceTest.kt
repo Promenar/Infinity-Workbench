@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.settings
 
 import android.os.Build
 import android.os.Debug
+import android.provider.Settings
 import android.util.Log
 import android.util.SparseIntArray
 import androidx.activity.ComponentActivity
@@ -45,6 +46,11 @@ class ProviderModelsPerformanceTest {
     @Test
     fun `500模型列表在搜索滚动切换和编辑场景下保持性能门禁`() {
         assertTrue("性能门禁仅允许固定 API 36 AVD", Build.VERSION.SDK_INT == 36)
+        val animationScales = animationScales()
+        assertTrue(
+            "PERF_FIXTURE_INVALID: 三项系统动画倍率必须全部为 0，实际为 $animationScales",
+            animationScales.values.all { it == 0f },
+        )
         val models = buildModelFixture(500)
         val modelState = mutableStateOf(models)
 
@@ -105,6 +111,9 @@ class ProviderModelsPerformanceTest {
             append("PROVIDER_MODELS_PERF")
             append(" device=").append(Build.MODEL)
             append(" api=").append(Build.VERSION.SDK_INT)
+            append(" animationScales=").append(
+                animationScales.entries.joinToString(",") { (name, value) -> "$name:$value" },
+            )
             append(" warmups=").append(WARMUP_ROUNDS)
             append(" measured=").append(MEASURED_ROUNDS)
             append(" cyclesPerRound=").append(CYCLES_PER_ROUND)
@@ -134,6 +143,24 @@ class ProviderModelsPerformanceTest {
             pssDeltaKiB <= PSS_DELTA_GATE_KIB,
         )
     }
+
+    private fun animationScales(): Map<String, Float> = linkedMapOf(
+        Settings.Global.ANIMATOR_DURATION_SCALE to Settings.Global.getFloat(
+            rule.activity.contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE,
+            -1f,
+        ),
+        Settings.Global.TRANSITION_ANIMATION_SCALE to Settings.Global.getFloat(
+            rule.activity.contentResolver,
+            Settings.Global.TRANSITION_ANIMATION_SCALE,
+            -1f,
+        ),
+        Settings.Global.WINDOW_ANIMATION_SCALE to Settings.Global.getFloat(
+            rule.activity.contentResolver,
+            Settings.Global.WINDOW_ANIMATION_SCALE,
+            -1f,
+        ),
+    )
 
     private fun collectRound(round: Int, exercise: () -> Unit): FrameMetricsSnapshot {
         prepareRound()
@@ -306,7 +333,8 @@ class ProviderModelsPerformanceTest {
         const val ROUND_SETTLE_MILLIS = 120L
         const val PSS_SAMPLE_INTERVAL_MILLIS = 100L
         const val PSS_SAMPLES = 3
-        const val GUEST_BACKGROUND_SETTLE_MILLIS = 1_000L
+        // Gradle 安装后 Play Store AVD 会延迟处理 PACKAGE_ADDED；不要把安装器/GMS 工作计入产品帧。
+        const val GUEST_BACKGROUND_SETTLE_MILLIS = 10_000L
         val FRAME_METRIC_NAMES = listOf(
             "total",
             "input",

@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -79,6 +81,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -828,18 +831,24 @@ private fun DocumentTitleField(
     modifier: Modifier = Modifier,
 ) {
     val titleDescription = stringResource(R.string.doc_editor_title_input_description)
+    val keyboardController = LocalSoftwareKeyboardController.current
     BasicTextField(
         value = editor.title,
-        onValueChange = onTitleChange,
+        onValueChange = { value ->
+            onTitleChange(value.replace("\r\n", " ").replace('\n', ' ').replace('\r', ' '))
+        },
         readOnly = !editable,
-        singleLine = true,
+        singleLine = false,
+        maxLines = 2,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() }),
         textStyle = MaterialTheme.typography.titleLarge.copy(
             color = MaterialTheme.colorScheme.onSurface,
         ),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         modifier = modifier
             .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
-            // 紧凑横屏中标题与元数据各占一半宽度；BasicTextField 的单行绘制不能
+            // 紧凑横屏中标题与元数据各占一半宽度；长标题最多换成两行，仍不能
             // 越过自身测量边界压住相邻元数据。
             .clipToBounds()
             .testTagCompat(UiTags.DOC_EDITOR_TITLE_INPUT)
