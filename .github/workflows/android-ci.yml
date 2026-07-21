@@ -7,6 +7,7 @@ on:
       - main
       - B-native-refactor
       - codex/v0.2-beta
+      - codex/md3-redesign
   workflow_dispatch:
 
 permissions:

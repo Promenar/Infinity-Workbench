@@ -54,6 +54,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("pull_request:", ANDROID_CI)
         self.assertIn("      - B-native-refactor", ANDROID_CI)
         self.assertIn("      - codex/v0.2-beta", ANDROID_CI)
+        self.assertIn("      - codex/md3-redesign", ANDROID_CI)
 
     def test_release_inputs_and_tag_provenance_fail_closed(self) -> None:
         self.assertIn("docs/release/v0.2-beta.md", RELEASE)
