@@ -15,6 +15,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -49,25 +50,27 @@ class VectorizationQueueRoomTest {
     @Test
     fun `真实Room中的失败任务通过Update重置不会触发主键冲突`() = runTest {
         seedFileAndTask("failed")
-        val queue = queue(StandardTestDispatcher(testScheduler))
+        val queue = queue(StandardTestDispatcher(TestCoroutineScheduler()))
 
         val id = queue.enqueueDocumentReference(ROOT, DOC, source.name, "text/plain", "hash-v1", 2)
 
         assertThat(id).isEqualTo(TASK)
         assertThat(database.vectorizationTaskDao().getById(TASK)?.status).isEqualTo("pending")
         assertThat(queue.getQueueLength()).isEqualTo(1)
+        queue.shutdown()
     }
 
     @Test
     fun `启动恢复会把missing scan发现的失败任务重置并重新入队`() = runTest {
         seedFileAndTask("failed")
-        val queue = queue(StandardTestDispatcher(testScheduler))
+        val queue = queue(StandardTestDispatcher(TestCoroutineScheduler()))
 
         val result = queue.resumeInterruptedTasks()
 
         assertThat(result.isSuccess).isTrue()
         assertThat(database.vectorizationTaskDao().getById(TASK)?.status).isEqualTo("pending")
         assertThat(queue.snapshotState().queue.map { it.id }).containsExactly(TASK)
+        queue.shutdown()
     }
 
     @Test
@@ -108,7 +111,10 @@ class VectorizationQueueRoomTest {
                 updatedAt = 1,
             ),
         )
-        val queue = queue(StandardTestDispatcher(testScheduler))
+        val queue = queue(
+            StandardTestDispatcher(testScheduler),
+            documentIndexService = BlockingDocumentIndexService(),
+        )
 
         assertThat(queue.resumeInterruptedTasks().isSuccess).isTrue()
 
@@ -180,7 +186,10 @@ class VectorizationQueueRoomTest {
             assertThat(restoredDoc.uuid).isEqualTo(DOC)
 
             // 4) 用重开的 DAO 构造 Queue，复用同一 task id 并安全重置为 pending，不发生主键冲突
-            val queue = queue(StandardTestDispatcher(testScheduler), reopened)
+            val queue = queue(
+                StandardTestDispatcher(TestCoroutineScheduler()),
+                reopened,
+            )
             val id = queue.enqueueDocumentReference(ROOT, DOC, source.name, "text/plain", "hash-v1", 2)
 
             assertThat(id).isEqualTo(TASK)
@@ -277,6 +286,7 @@ class VectorizationQueueRoomTest {
         seedFilesWithoutTask()
         val queue = queue(
             StandardTestDispatcher(testScheduler),
+            documentIndexService = BlockingDocumentIndexService(),
             ragConfig = RagConfiguration(enableKnowledgeGraph = false),
         )
 
@@ -796,7 +806,10 @@ class VectorizationQueueRoomTest {
                 updatedAt = 1,
             ),
         )
-        val queue = queue(StandardTestDispatcher(testScheduler))
+        val queue = queue(
+            StandardTestDispatcher(testScheduler),
+            documentIndexService = BlockingDocumentIndexService(),
+        )
 
         assertThat(queue.resumeInterruptedTasks().isSuccess).isTrue()
 
