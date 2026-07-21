@@ -12,8 +12,10 @@ import io.mockk.mockk
 import io.mockk.coEvery
 import io.mockk.coJustRun
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.advanceTimeBy
@@ -133,12 +135,26 @@ class VectorizationQueueRoomTest {
         val handle = checkNotNull(holder.beginReset())
 
         old.shutdownForReplacement()
+        assertThat(database.vectorizationTaskDao().getById(TASK)?.status).isEqualTo("interrupted")
         holder.completeReset(handle)
         val replacement = holder.getOrCreate { queue(StandardTestDispatcher(testScheduler)) }
+        val finalEntered = CompletableDeferred<Unit>()
+        val allowFinal = CompletableDeferred<Unit>()
+        replacement.beforeFinalQueueTransitionForTest = {
+            finalEntered.complete(Unit)
+            withContext(NonCancellable) { allowFinal.await() }
+        }
         assertThat(replacement.resumeInterruptedTasks().isSuccess).isTrue()
+        finalEntered.await()
+
+        try {
+            assertThat(database.vectorizationTaskDao().getById(TASK)).isNull()
+            assertThat(replacement.snapshotState().queue.map { it.id }).containsExactly(TASK)
+        } finally {
+            allowFinal.complete(Unit)
+        }
         runCurrent()
 
-        assertThat(database.vectorizationTaskDao().getById(TASK)).isNull()
         assertThat(replacement.snapshotState().queue).isEmpty()
         assertThat(replacement).isNotSameInstanceAs(old)
         replacement.shutdown()
@@ -413,7 +429,7 @@ class VectorizationQueueRoomTest {
         queue.beforeFinalQueueTransitionForTest = {
             if (!finalEntered.isCompleted) {
                 finalEntered.complete(Unit)
-                allowFinal.await()
+                withContext(NonCancellable) { allowFinal.await() }
             }
         }
 
@@ -421,13 +437,15 @@ class VectorizationQueueRoomTest {
         runCurrent()
         finalEntered.await()
 
-        val current = database.fileEntryDao().getByUuid(ROOT, DOC)!!
-        database.fileEntryDao().update(current.copy(hash = "hash-v2", updatedAt = 3))
-        queue.publish(FileIndexEvent.Changed(ROOT, DOC, "hash-v2", 3))
-        runCurrent()
-        assertThat(service.secondStarted.isCompleted).isFalse()
-
-        allowFinal.complete(Unit)
+        try {
+            val current = database.fileEntryDao().getByUuid(ROOT, DOC)!!
+            database.fileEntryDao().update(current.copy(hash = "hash-v2", updatedAt = 3))
+            queue.publish(FileIndexEvent.Changed(ROOT, DOC, "hash-v2", 3))
+            runCurrent()
+            assertThat(service.secondStarted.isCompleted).isFalse()
+        } finally {
+            allowFinal.complete(Unit)
+        }
         runCurrent()
 
         service.secondStarted.await()
