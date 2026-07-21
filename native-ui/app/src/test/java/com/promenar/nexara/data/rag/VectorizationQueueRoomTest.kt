@@ -239,6 +239,7 @@ class VectorizationQueueRoomTest {
             val coldQueue = queue(
                 StandardTestDispatcher(testScheduler),
                 reopened,
+                documentIndexService = BlockingDocumentIndexService(),
                 ragConfig = RagConfiguration(enableKnowledgeGraph = true),
             )
             assertThat(coldQueue.resumeInterruptedTasks().isSuccess).isTrue()
