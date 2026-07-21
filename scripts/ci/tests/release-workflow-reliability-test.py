@@ -33,6 +33,22 @@ def braced_block_after(source: str, marker: str) -> str:
     raise AssertionError(f"unclosed block after {marker}")
 
 
+def workflow_job(name: str) -> str:
+    match = re.search(
+        rf"^  {re.escape(name)}:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)",
+        RELEASE,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    if match is None:
+        raise AssertionError(f"missing workflow job: {name}")
+    return match.group("body")
+
+
+def job_level_value(job: str, key: str) -> str | None:
+    match = re.search(rf"^    {re.escape(key)}:\s*(.+)$", job, flags=re.MULTILINE)
+    return match.group(1).strip() if match else None
+
+
 class ReleaseWorkflowReliabilityTest(unittest.TestCase):
     def test_android_ci_covers_current_default_and_release_branches(self) -> None:
         self.assertIn("pull_request:", ANDROID_CI)
@@ -51,6 +67,70 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("origin/codex/v0.2-beta", RELEASE)
         self.assertIn('git rev-parse "${reviewed_branch}"', RELEASE)
         self.assertNotIn("merge-base --is-ancestor", RELEASE)
+
+    def test_workflow_dispatch_manual_candidate_entry_exists(self) -> None:
+        self.assertRegex(
+            RELEASE,
+            r"(?m)^on:\n  workflow_dispatch:\n  push:\n    tags:\n      - v0\.2-beta$",
+        )
+
+    def test_workflow_dispatch_candidate_must_be_only_codex_md3_redesign_branch(self) -> None:
+        validate_job = RELEASE.split("  validate-release-inputs:", 1)[1].split("  device-e2e:", 1)[0]
+        self.assertIn('test "${GITHUB_REF_TYPE}" = "branch"', validate_job)
+        self.assertIn('test "${GITHUB_REF_NAME}" = "codex/md3-redesign"', validate_job)
+
+    def test_workflow_dispatch_candidate_must_match_controlled_full_sha(self) -> None:
+        validate_job = workflow_job("validate-release-inputs")
+        candidate_start = validate_job.index('if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]')
+        candidate_end = validate_job.index("\n          fi", candidate_start)
+        candidate_branch = validate_job[candidate_start:candidate_end]
+        ordered_checks = (
+            'test "${GITHUB_REF_TYPE}" = "branch"',
+            'test "${GITHUB_REF_NAME}" = "codex/md3-redesign"',
+            'candidate_head="$(git rev-parse HEAD)"',
+            'controlled_sha="${NEXARA_RELEASE_COMMIT_SHA:-}"',
+            '[[ ! "${controlled_sha}" =~ ^[0-9a-fA-F]{40}$ ]]',
+            'test "${GITHUB_SHA}" = "${candidate_head}"',
+            'test "${GITHUB_SHA,,}" = "${controlled_sha,,}"',
+            "exit 0",
+        )
+        positions = [candidate_branch.index(check) for check in ordered_checks]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_readiness_validator_only_runs_for_push_tag_event(self) -> None:
+        validate_job = workflow_job("validate-release-inputs")
+        readiness_step = validate_job.split("- name: 发行前统一校验发布状态", 1)[1].split(
+            "\n      - name:", 1
+        )[0]
+        self.assertIn(
+            "if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}",
+            readiness_step,
+        )
+        self.assertIn("validate-release-readiness.py", readiness_step)
+        self.assertIn("校验固定标签、发行文档、签名与来源", validate_job)
+
+    def test_publish_only_runs_on_tag_push_events(self) -> None:
+        publish_job = workflow_job("publish")
+        self.assertEqual(
+            job_level_value(publish_job, "if"),
+            "${{ github.event_name == 'push' && github.ref == 'refs/tags/v0.2-beta' }}",
+        )
+
+    def test_candidate_mode_keeps_all_pre_publish_jobs_enabled(self) -> None:
+        for job_name in ("device-e2e", "minified-blackbox", "build-release", "signed-apk-smoke"):
+            with self.subTest(job=job_name):
+                self.assertIsNone(job_level_value(workflow_job(job_name), "if"))
+        signed_job = workflow_job("signed-apk-smoke")
+        self.assertIn("- api-level: 35", signed_job)
+        self.assertIn("- api-level: 36", signed_job)
+
+    def test_candidate_checks_documents_before_early_exit(self) -> None:
+        validate_job = workflow_job("validate-release-inputs")
+        document_check = validate_job.index("for required_document in")
+        candidate_branch = validate_job.index('if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]')
+        candidate_exit = validate_job.index("exit 0", candidate_branch)
+        self.assertLess(document_check, candidate_branch)
+        self.assertLess(candidate_branch, candidate_exit)
 
     def test_cross_job_artifact_name_survives_failed_job_rerun(self) -> None:
         self.assertIn("signed-release-apk-${{ github.run_id }}", RELEASE)
@@ -118,7 +198,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
 
     def test_validate_release_input_job_calls_validator_early(self) -> None:
         validate_job = RELEASE.split("  validate-release-inputs:", 1)[1].split("  device-e2e:", 1)[0]
-        checkout_idx = validate_job.find("- name: 检出已存在的发行标签")
+        checkout_idx = validate_job.find("- name: 检出候选提交或已存在的发行标签")
         validator_idx = validate_job.find("validate-release-readiness.py")
         provenance_idx = validate_job.find("校验固定标签、发行文档、签名与来源")
         self.assertGreaterEqual(checkout_idx, 0)

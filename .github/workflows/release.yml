@@ -1,6 +1,7 @@
-name: Publish v0.2-beta APK
+name: Validate or publish v0.2-beta APK
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - v0.2-beta
@@ -18,13 +19,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: 检出已存在的发行标签
+      - name: 检出候选提交或已存在的发行标签
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: 发行前统一校验发布状态（验证账本 + 发布说明）
+        if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
         run: |
           python3 scripts/ci/validate-release-readiness.py \
             docs/release/v0.2-beta-validation.md \
@@ -38,8 +40,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF_TYPE}" = "tag"
-          test "${GITHUB_REF_NAME}" = "v0.2-beta"
           for required_document in \
             docs/release/v0.2-beta.md \
             docs/release/v0.2-beta-validation.md; do
@@ -48,6 +48,25 @@ jobs:
               exit 1
             }
           done
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            test "${GITHUB_REF_TYPE}" = "branch"
+            test "${GITHUB_REF_NAME}" = "codex/md3-redesign"
+            candidate_head="$(git rev-parse HEAD)"
+            controlled_sha="${NEXARA_RELEASE_COMMIT_SHA:-}"
+            if [[ ! "${controlled_sha}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+              echo "::error::候选验证要求 NEXARA_RELEASE_COMMIT_SHA 为完整 40 位提交 SHA。"
+              exit 1
+            fi
+            test "${GITHUB_SHA}" = "${candidate_head}"
+            test "${GITHUB_SHA,,}" = "${controlled_sha,,}"
+            echo "候选验证模式：允许构建和冷安装签名 APK，但禁止发布。"
+            exit 0
+          fi
+
+          test "${GITHUB_EVENT_NAME}" = "push"
+          test "${GITHUB_REF_TYPE}" = "tag"
+          test "${GITHUB_REF_NAME}" = "v0.2-beta"
 
           tag_ref="refs/tags/${GITHUB_REF_NAME}"
           tag_object_type="$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")"
@@ -66,6 +85,7 @@ jobs:
             echo "::error::检出提交与发行标签目标不一致。"
             exit 1
           fi
+          test "${tag_target_sha}" = "${GITHUB_SHA}"
 
           signature_verified="$(gh api \
             "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object_sha}" \
@@ -498,6 +518,7 @@ jobs:
   publish:
     name: 发布 GitHub prerelease
     needs: signed-apk-smoke
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/tags/v0.2-beta' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
