@@ -1439,6 +1439,8 @@
 
   2026-07-22 通知 stop 防重放后继提交 `98ec89bf` 的 run `29877797382` 已完成当前生产字节远端闭环：quality、API 31 minimum、API 35/36 full 均首轮通过。六个 artifact ZIP digest 与 GitHub API 一致；JVM 2119 项 0 failure/error、14 skip，Screenshot 96/96，Lint 0 Error/Fatal，三档设备 `exit-code=0` 且应用 crash buffer 为空。Step 5/6 现在只受当前签名候选重建、同哈希冷安装和用户物理真机验收约束。
 
+  当前治理 HEAD `e7e7bd4f` 的 run `29886387249` 也已最终闭合：quality、API 31、API 35 首轮成功；API 36 首轮被托管模拟器 `System UI isn't responding` ANR 遮挡权限弹窗，首轮截图/UI tree 与空 Nexara crash buffer 已保留，随后仅重跑失败 job。attempt 2 API 36 在 13m47s 完整成功，artifact 为 44 项真实通过、1 项设计内 checkpoint skip、`exit-code=0`，测试前后 crash buffer 均为空。该结果验证当前 HEAD，不改变用户物理真机与外部发布门禁。
+
 ## Completion Definition
 
 - [x] 手机主导航使用 64dp 全胶囊流体导航坞与单一移动指示器，大屏使用同目的地 `NavigationRail`；两端均保留 Tab 语义、48dp 目标、系统 Insets 和内容避让，无 glow 或静态自绘选中圆。
@@ -1451,7 +1453,7 @@
 - [x] 系统、浅色、深色和 Android 12+ 动态色真实生效、持久恢复、备份恢复后立即生效。
 - [x] UI、Markdown、Mermaid、ECharts、LaTeX、PlantUML、HTML 和表格在深浅色下可读。
 - [x] 全量 JVM 0 failure/error；skip 独立记录；Lint 0 Error/Fatal；全部截图 PASS 并逐张人工审阅。
-- [x] API 31/35/36 相关设备矩阵已在本地及提交 `98ec89bf` 的远端 run `29877797382` 通过；当前 release APK 已完成 R8/zipalign/签名/checksum 和 API 35/36 同哈希冷安装，当前哈希为 `2627b00750cdd98765a29ede75ed3f042b44e7a17c0a41cc335039bd4dfb674d`。
+- [x] API 31/35/36 相关设备矩阵已在本地、生产提交 `98ec89bf` 的 run `29877797382` 及当前治理 HEAD `e7e7bd4f` 的 run `29886387249` 通过；后者 API 36 首轮宿主 SystemUI ANR 已保留证据并由失败 job 定向重跑闭合。当前 release APK 已完成 R8/zipalign/签名/checksum 和 API 35/36 同哈希冷安装，当前哈希为 `2627b00750cdd98765a29ede75ed3f042b44e7a17c0a41cc335039bd4dfb674d`。
 - [ ] 非调试签名 APK 的完整业务黑盒、物理真机 TalkBack 与核心业务人工验收完成。
 - [x] 真机 TalkBack、核心业务人工验收、远端 CI、tag workflow 和 GitHub Release 未闭合时，发行继续 NO-GO。
 - [x] 提交 `6fd0227b` 的 run `29870166426` 暴露已消费 stop action 可重放后，显式私有 Service `PendingIntent` + `FLAG_ONE_SHOT` 修复已由提交 `98ec89bf` 的 run `29877797382` 完成 quality、API 31/35/36 首轮全绿及 artifact readback；JVM 2119、Lint 0 Error/Fatal、Screenshot 96/96、三档设备 exit 0，当前签名 APK 及 API 35/36 同哈希冷安装也已闭合。用户物理真机验收由上一条独立保持 PENDING，保护目录和敏感材料保持未触碰。
