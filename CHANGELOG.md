@@ -8,7 +8,8 @@ All notable changes to this project will be documented in this file.
 
 - **一次性停止能力**：后台生成通知继续使用显式、不可变的私有 Service `PendingIntent`，并增加 `FLAG_ONE_SHOT`；首次停止后旧通知动作由系统取消，重复触发不会瞬时重建前台服务或通知。
 - **设备回归**：API 35 完整设备链覆盖通知权限、真实锁屏/唤醒/旋转、通知返回准确会话、首次停止、重复停止拒绝和静默窗口；冷启动 stop/track、备份恢复、文档解析与其余核心 E2E 同轮通过。
-- **发行边界**：生产字节发生变化，上一签名 APK（SHA-256 `cc3934f506c3e307d6666195e0abed6f3271cc2f358d601bc9f285142c1fda3e`）降级为历史证据；新签名候选、API 35/36 同哈希冷安装、当前提交远端矩阵、真机 TalkBack/核心业务与发布外部门禁闭合前继续 NO-GO。
+- **远端复验**：提交 `98ec89bf` 的 Android CI run `29877797382` 中，quality、API 31 minimum、API 35/36 full 均首轮通过；artifact 回读为 JVM 2119 项 0 failure/error、14 skip，Screenshot 96/96、Lint 0 Error/Fatal，三档设备 exit 0 且应用 crash buffer 为空。
+- **发行边界**：上一签名 APK（SHA-256 `cc3934f506c3e307d6666195e0abed6f3271cc2f358d601bc9f285142c1fda3e`）早于当前生产修复，继续只作历史证据；新签名候选、API 35/36 同哈希冷安装、真机 TalkBack/核心业务与发布外部门禁闭合前保持 NO-GO。
 
 ### Material 3 总收敛：Task 14 本地设备、视觉与性能门禁（2026-07-21）
 
