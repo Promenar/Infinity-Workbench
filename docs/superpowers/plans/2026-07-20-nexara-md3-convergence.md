@@ -1362,7 +1362,7 @@
 
   当前源码已按 headless + raw-evidence 合同取得两轮有效结果：run 1 与 run 4 均为 `VALID_PASS`，各保留 45 条 raw histogram、单一 START/END 标记且测量窗口污染为 0；独立复算帧数、p95 与 max 全部匹配。较差有效样本为 p95 35ms、max 51ms、稳定 PSS +2763KiB，原阈值 50ms/150ms/64MiB 未放宽。run 2 与 run 3 指标虽在阈值内，但窗口内各捕获一条约 180 秒周期的 `BackgroundInstallControlService` 包事件，均按合同保留并分类为 `FIXTURE_INVALID`，未替换、删除或冒充有效样本。完整证据位于 `native-ui/app/build/reports/provider-models-performance-task14-final-20260721-191942/`。
 
-- [ ] **Step 5：构建当前 release APK 并检查签名链**
+- [x] **Step 5：构建当前 release APK 并检查签名链**
 
   Rebuild from current source, then verify R8 output, zipalign, package identity, signing certificate and SHA-256. Sensitive signing material is used only by the main controller and never written to logs, reports or Agent prompts.
 
@@ -1386,7 +1386,7 @@
 
   Expected: every command exits 0; mapping and checksum files are non-empty; verifier reports one expected signer and no sensitive-pattern finding.
 
-  **历史完成、当前重新打开（2026-07-22）**：历史候选 `nexara-v0.2-beta.apk` 为 18,367,648 bytes，SHA-256 `cc3934f506c3e307d6666195e0abed6f3271cc2f358d601bc9f285142c1fda3e`，当时 R8、签名、敏感扫描、16 KiB zipalign 和 checksum 全部通过。当前新增通知 stop `FLAG_ONE_SHOT` 生产字节后，该 APK 仅保留为历史证据；须重新构建并验真当前候选。
+  **当前完成（2026-07-22）**：主控从文档后继提交 `9a62392e` 执行独立 `clean` 与无构建缓存、全任务重跑的 `:app:assembleRelease`，构建成功；交付 APK 为 18,367,648 bytes，SHA-256 `2627b00750cdd98765a29ede75ed3f042b44e7a17c0a41cc335039bd4dfb674d`。验证器确认包名 `com.promenar.nexara.native`、versionCode `2`、versionName `0.2-beta`、单一 signer、登记证书、ZIP/体积、敏感内容和 GGUF/llama/ggml 排除全部通过；mapping、seeds、usage、configuration 均非空，16 KiB zipalign 与 checksum 通过。签名材料仅在主控本地安全运行时读取，未进入日志、报告或 Agent 提示词。
 
 - [ ] **Step 6：冷安装和真机边界**
 
