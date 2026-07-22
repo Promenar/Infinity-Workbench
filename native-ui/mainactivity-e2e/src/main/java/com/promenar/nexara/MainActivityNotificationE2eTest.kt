@@ -247,8 +247,9 @@ class MainActivityNotificationE2eTest {
             GenerationForegroundService.trackIntent(app, snapshot),
         )
 
-        requireDeviceCondition("前台生成服务与通知未在时限内启动") {
-            isGenerationServiceRunning() && generationNotifications().size == 1
+        requireDeviceCondition("前台生成服务与完整通知未在时限内启动") {
+            isGenerationServiceRunning() &&
+                generationNotifications().singleOrNull()?.notification?.actions?.size == 1
         }
         assertSingleTrackedGeneration(snapshot)
 
@@ -288,7 +289,8 @@ class MainActivityNotificationE2eTest {
         compose.onNodeWithTag(UiTags.CHAT_STATE_READY).assertIsDisplayed()
         assertThat(app.createdChatViewModel?.uiState?.value?.session?.id).isEqualTo(targetSessionId)
 
-        val stopAction = notification.actions.single().actionIntent
+        val stopAction = requireNotNull(notification.actions) { "前台生成通知缺少停止动作" }
+            .single().actionIntent
         sendAndAwaitPendingIntent(stopAction)
         requireDeviceCondition("首次停止动作后服务或通知仍存在") {
             !isGenerationServiceRunning() && generationNotifications().isEmpty()
@@ -325,11 +327,33 @@ class MainActivityNotificationE2eTest {
         val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
         enableInteractiveWindowRetrieval(uiAutomation)
         val deadline = SystemClock.elapsedRealtime() + 10_000
+        var hostSystemAnrRecovered = false
         do {
-            if (handleBlockingQuickstepAnr(uiAutomation)) {
-                SystemClock.sleep(500)
+            val blockingHostSystemAnr = findBlockingHostSystemAnrRoot(uiAutomation)
+            if (blockingHostSystemAnr != null) {
+                check(!hostSystemAnrRecovered) { "同一权限操作最多恢复一次宿主 System UI ANR" }
+                captureDeviceScreenshot(hostSystemAnrScreenshotName(screenshotName))
+                val waitButton = blockingHostSystemAnr
+                    .findAccessibilityNodeInfosByViewId(SYSTEM_ANR_WAIT_BUTTON)
+                    ?.firstOrNull { it.isEnabled }
+                check(waitButton?.isEnabled == true) { "宿主 System UI ANR 缺少可用 Wait 按钮" }
+                check(waitButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    "宿主 System UI ANR 的 Wait 按钮点击失败"
+                }
+                hostSystemAnrRecovered = true
+                val recoveryDeadline = minOf(
+                    deadline,
+                    SystemClock.elapsedRealtime() + HOST_SYSTEM_ANR_RECOVERY_TIMEOUT_MILLIS,
+                )
+                val recoveredButton = waitForPermissionControllerButtonEnabled(
+                    uiAutomation,
+                    resourceId,
+                    recoveryDeadline,
+                )
+                check(recoveredButton?.isEnabled == true) { "宿主 System UI ANR 恢复后权限窗口未重新出现" }
                 continue
             }
+
             val button = findPermissionControllerButton(uiAutomation, resourceId)
             if (button != null && button.isEnabled) {
                 captureDeviceScreenshot(screenshotName)
@@ -342,8 +366,22 @@ class MainActivityNotificationE2eTest {
             }
             SystemClock.sleep(50)
         } while (SystemClock.elapsedRealtime() < deadline)
+
         captureDeviceScreenshot(notFoundScreenshotName(screenshotName))
         return false
+    }
+
+    private fun waitForPermissionControllerButtonEnabled(
+        uiAutomation: UiAutomation,
+        resourceId: String,
+        deadline: Long,
+    ): AccessibilityNodeInfo? {
+        do {
+            val button = findPermissionControllerButton(uiAutomation, resourceId)
+            if (button != null && button.isEnabled) return button
+            SystemClock.sleep(50)
+        } while (SystemClock.elapsedRealtime() < deadline)
+        return null
     }
 
     private fun findPermissionControllerButton(
@@ -354,18 +392,16 @@ class MainActivityNotificationE2eTest {
             root.findAccessibilityNodeInfosByViewId(resourceId)?.firstOrNull { it.isEnabled }
         }
 
-    private fun handleBlockingQuickstepAnr(uiAutomation: UiAutomation): Boolean {
-        val blockingRoot = permissionControllerRoots(uiAutomation).firstOrNull { root ->
+    private fun findBlockingHostSystemAnrRoot(uiAutomation: UiAutomation): AccessibilityNodeInfo? =
+        permissionControllerRoots(uiAutomation).firstOrNull { root ->
             root.packageName == SYSTEM_PACKAGE &&
                 root.findAccessibilityNodeInfosByViewId(SYSTEM_ALERT_TITLE)?.any { title ->
-                    title.text?.contains(QUICKSTEP_APP_NAME, ignoreCase = true) == true
+                    isHostSystemAnrTitle(title.text?.toString().orEmpty())
                 } == true
-        } ?: return false
-        val waitButton = blockingRoot.findAccessibilityNodeInfosByViewId(SYSTEM_ANR_WAIT_BUTTON)
-            ?.firstOrNull { it.isEnabled }
-        waitButton?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        return true
-    }
+        }
+
+    private fun isHostSystemAnrTitle(text: String): Boolean =
+        HOST_SYSTEM_ANR_TITLES.any { title -> text.trim().equals(title, ignoreCase = true) }
 
     private fun permissionControllerRoots(uiAutomation: UiAutomation): List<AccessibilityNodeInfo> {
         val roots = uiAutomation.windows.orEmpty().mapNotNull { it.root }.toMutableList()
@@ -386,6 +422,9 @@ class MainActivityNotificationE2eTest {
 
     private fun notFoundScreenshotName(screenshotName: String): String =
         screenshotName.substringBeforeLast('.') + "-not-found.png"
+
+    private fun hostSystemAnrScreenshotName(screenshotName: String): String =
+        screenshotName.substringBeforeLast('.') + "-host-system-anr-before-wait.png"
 
     private fun waitForPermissionExplanationToClose() {
         compose.waitUntil(10_000) {
@@ -444,7 +483,8 @@ class MainActivityNotificationE2eTest {
         assertThat(notifications).hasSize(1)
         val notification = notifications.single().notification
         assertThat(notification.flags and android.app.Notification.FLAG_ONGOING_EVENT).isNotEqualTo(0)
-        assertThat(notification.actions).hasLength(1)
+        val actions = requireNotNull(notification.actions) { "前台生成通知缺少停止动作" }
+        assertThat(actions).hasLength(1)
     }
 
     private fun generationNotifications() = app.getSystemService(NotificationManager::class.java)
@@ -705,7 +745,12 @@ class MainActivityNotificationE2eTest {
         private const val SYSTEM_ALERT_TITLE = "android:id/alertTitle"
         private const val SYSTEM_ANR_WAIT_BUTTON = "android:id/aerr_wait"
         private const val SYSTEM_PACKAGE = "android"
-        private const val QUICKSTEP_APP_NAME = "Quickstep"
+        private const val HOST_SYSTEM_ANR_RECOVERY_TIMEOUT_MILLIS = 3_000L
+        private val HOST_SYSTEM_ANR_TITLES = setOf(
+            "Quickstep isn't responding",
+            "Pixel Launcher isn't responding",
+            "System UI isn't responding",
+        )
 
         internal fun isPermissionControllerPackage(packageName: CharSequence?): Boolean =
             packageName?.endsWith("permissioncontroller") == true

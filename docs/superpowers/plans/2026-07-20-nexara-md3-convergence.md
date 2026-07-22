@@ -1388,7 +1388,7 @@
 
   **当前完成（2026-07-22）**：主控从文档后继提交 `9a62392e` 执行独立 `clean` 与无构建缓存、全任务重跑的 `:app:assembleRelease`，构建成功；交付 APK 为 18,367,648 bytes，SHA-256 `2627b00750cdd98765a29ede75ed3f042b44e7a17c0a41cc335039bd4dfb674d`。验证器确认包名 `com.promenar.nexara.native`、versionCode `2`、versionName `0.2-beta`、单一 signer、登记证书、ZIP/体积、敏感内容和 GGUF/llama/ggml 排除全部通过；mapping、seeds、usage、configuration 均非空，16 KiB zipalign 与 checksum 通过。签名材料仅在主控本地安全运行时读取，未进入日志、报告或 Agent 提示词。
 
-- [ ] **Step 6：冷安装和真机边界**
+- [x] **Step 6A：API 35/36 冷安装与自动黑盒边界**
 
   Cold-install the exact current APK on API 35/36 and retain reports outside protected `artifacts/`:
 
@@ -1405,9 +1405,15 @@
   test "$(cat native-ui/app/build/reports/release-smoke-api-36/exit-code.txt)" = "0"
   ```
 
-  Then smoke theme persistence, Provider/default-model navigation, knowledge settings and chat attachment on the installed package and record screenshots/logs in the same build report roots. Final signed APK still requires user-operated physical-device TalkBack full traversal and core business acceptance; these remain PENDING until the user supplies evidence.
+  Then smoke the reachable signed-package onboarding surface and retain screenshots/logs in the same build report roots. Theme persistence, Provider/default-model navigation, knowledge settings, chat attachment and the remaining business paths continue to use the debuggable, debug-signed `deviceTest` automated matrix because the production-signed package intentionally exposes neither test hooks nor an HTTP Provider bypass. This broad `deviceTest` coverage is not release-equivalent and does not replace the signed-package physical-device black-box gate.
 
-  **自动化完成、真机边界待用户（2026-07-22）**：当前 SHA-256 `2627b00750cdd98765a29ede75ed3f042b44e7a17c0a41cc335039bd4dfb674d` 的同一签名 APK 已在可见 API 35/36 完成卸载、冷安装、设备 `base.apk` 回拉同哈希、冷启动、前台存活和 crash/ANR 检查，两套脚本 `exit-code=0`。主控继续真实点击 API 35 中文与 API 36 英文语言选项，均进入 Provider onboarding，UI tree、截图和交互后 crash buffer 已保留到 `native-ui/app/build/reports/release-smoke-api-*-current-20260722-1028/`。可测试 `deviceTest` 构建此前已完成无 Key/含 Key 备份恢复、首聊、Provider/模型、主题、知识设置、附件、真实锁屏/唤醒/旋转/停止/返回业务链；非调试签名包没有测试后门，完整业务黑盒和用户物理真机 TalkBack/核心人工验收继续 PENDING，因此本 Step 保持未勾选。
+  **自动化完成（2026-07-22）**：当前 SHA-256 `2627b00750cdd98765a29ede75ed3f042b44e7a17c0a41cc335039bd4dfb674d` 的同一签名 APK 已在可见 API 35/36 完成卸载、冷安装、设备 `base.apk` 回拉同哈希、冷启动、前台存活和 crash/ANR 检查，两套脚本 `exit-code=0`。主控继续真实点击 API 35 中文与 API 36 英文语言选项，均进入 Provider onboarding，UI tree、截图和交互后 crash buffer 已保留到 `native-ui/app/build/reports/release-smoke-api-*-current-20260722-1028/`。可测试 `deviceTest` 构建此前已完成无 Key/含 Key 备份恢复、首聊、Provider/模型、主题、知识设置、附件、真实锁屏/唤醒/旋转/停止/返回业务链；没有为生产签名包增加测试后门或放宽 HTTPS-only 网络策略。
+
+  **设备 harness 后继加固（2026-07-22）**：托管与本地模拟器均曾暴露宿主 Launcher/System UI ANR 遮挡系统权限窗口。恢复策略现仅匹配三个完整标题，每次权限操作最多执行一次，必须在 Wait 之前截图、确认 Wait 可用且点击成功，并在限时内重新找到权限按钮；第二次命中直接 fail closed，不提供通用重试或 skip。脚本会在下一次 `pm clear` 前回拉权限截图。API 35 实际命中 `Pixel Launcher isn't responding` 并保留恢复前证据；API 36 首轮另外暴露启动通知未替换为带停止动作的完整通知时测试过早断言，现以动作完整性作为就绪条件并将缺失转为语义化失败。最终 API 35/36 full 均 `exit-code=0`，各 26 个 instrumentation 结果文件含 `OK`，测试前后 crash buffer 均为 0 bytes；设计内 onboarding checkpoint skip 仍不计为 PASS。
+
+- [ ] **Step 6B：物理真机 TalkBack 与核心业务人工验收**
+
+  Install the exact Step 6A APK on a physical device. The user must complete TalkBack audio, full focus traversal, OEM system bar/IME behavior and core business acceptance, then provide the device/API/result evidence. Automated semantics, emulators and the debuggable, debug-signed `deviceTest` matrix do not satisfy this gate.
 
 - [x] **Step 7：DIA/HLG 收口**
 
@@ -1426,6 +1432,8 @@
 
   2026-07-21 最终返修复审已闭合：Terra 为 Critical 0 / Important 0 / Minor 0，Sol 为 Critical 0 / Important 0 / Minor 2，二者均判定 Task 14 GO。两项不阻断 Minor 已显式保留：性能 runner 示例只检查 raw 行数，尚未自动复算五轮九指标唯一性、分片连续性与 bucket；JVM 源码字符串合同对格式调整较敏感。当前两轮有效性能原始数据已独立复算，真实 API 36 Insets/IME 设备测试 17/17 且证据文件绑定当前测试源码和 APK 哈希，因此不降低既定完成标准。此 GO 仅覆盖 Task 14 本地返修，不改变真实 Provider、签名 release、冷安装、真机与远端发行门禁。
 
+  2026-07-22 宿主 ANR 后继审计：Terra 规格复审最终 Critical/Important/Minor 均为 0；Sol 两轮质量复审提出并推动关闭截图回拉时序、远程枚举失败传播、精确 allowlist 契约、测试/证据时间绑定、`adb pull` 显式失败传播和部分证据优先保存等 Important。修正后的 API 35/36 `final4` 均为 26 个含 `OK` 的结果文件、`exit-code=0`、测试前后 crash buffer 0 bytes及 4 张权限截图；Sol 最终复审也为 Critical/Important/Minor 均为 0，变更集 GO。此后继审计只加固测试基础设施与证据链，不改变生产 APK 字节或物理真机验收门禁。
+
 - [x] **Step 9：提交和推送阶段收口**
 
   ```bash
@@ -1441,6 +1449,8 @@
 
   当前治理 HEAD `e7e7bd4f` 的 run `29886387249` 也已最终闭合：quality、API 31、API 35 首轮成功；API 36 首轮被托管模拟器 `System UI isn't responding` ANR 遮挡权限弹窗，首轮截图/UI tree 与空 Nexara crash buffer 已保留，随后仅重跑失败 job。attempt 2 API 36 在 13m47s 完整成功，artifact 为 44 项真实通过、1 项设计内 checkpoint skip、`exit-code=0`，测试前后 crash buffer 均为空。该结果验证当前 HEAD，不改变用户物理真机与外部发布门禁。
 
+  文档治理后继 HEAD `5e8d468d` 的 run `29889114257` 已首轮全绿：quality 20m51s、API 31 10m03s、API 35 13m00s、API 36 13m22s，四个 job 均为 `success`。该提交相对生产候选只更新正式治理文档，用于确认远端分支 HEAD 仍可复现完整矩阵；不再为记录本次纯文档 CI 结果制造新的追认提交。
+
 ## Completion Definition
 
 - [x] 手机主导航使用 64dp 全胶囊流体导航坞与单一移动指示器，大屏使用同目的地 `NavigationRail`；两端均保留 Tab 语义、48dp 目标、系统 Insets 和内容避让，无 glow 或静态自绘选中圆。
@@ -1453,7 +1463,7 @@
 - [x] 系统、浅色、深色和 Android 12+ 动态色真实生效、持久恢复、备份恢复后立即生效。
 - [x] UI、Markdown、Mermaid、ECharts、LaTeX、PlantUML、HTML 和表格在深浅色下可读。
 - [x] 全量 JVM 0 failure/error；skip 独立记录；Lint 0 Error/Fatal；全部截图 PASS 并逐张人工审阅。
-- [x] API 31/35/36 相关设备矩阵已在本地、生产提交 `98ec89bf` 的 run `29877797382` 及当前治理 HEAD `e7e7bd4f` 的 run `29886387249` 通过；后者 API 36 首轮宿主 SystemUI ANR 已保留证据并由失败 job 定向重跑闭合。当前 release APK 已完成 R8/zipalign/签名/checksum 和 API 35/36 同哈希冷安装，当前哈希为 `2627b00750cdd98765a29ede75ed3f042b44e7a17c0a41cc335039bd4dfb674d`。
+- [x] API 31/35/36 相关设备矩阵已在本地、生产提交 `98ec89bf` 的 run `29877797382`、治理 HEAD `e7e7bd4f` 的 run `29886387249` 及最新远端 HEAD `5e8d468d` 的 run `29889114257` 通过；`29886387249` 的 API 36 首轮宿主 SystemUI ANR 已保留证据并由失败 job 定向重跑闭合，最新 run 四个 job 首轮全绿。当前 release APK 已完成 R8/zipalign/签名/checksum 和 API 35/36 同哈希冷安装，当前哈希为 `2627b00750cdd98765a29ede75ed3f042b44e7a17c0a41cc335039bd4dfb674d`。
 - [ ] 非调试签名 APK 的完整业务黑盒、物理真机 TalkBack 与核心业务人工验收完成。
 - [x] 真机 TalkBack、核心业务人工验收、远端 CI、tag workflow 和 GitHub Release 未闭合时，发行继续 NO-GO。
 - [x] 提交 `6fd0227b` 的 run `29870166426` 暴露已消费 stop action 可重放后，显式私有 Service `PendingIntent` + `FLAG_ONE_SHOT` 修复已由提交 `98ec89bf` 的 run `29877797382` 完成 quality、API 31/35/36 首轮全绿及 artifact readback；JVM 2119、Lint 0 Error/Fatal、Screenshot 96/96、三档设备 exit 0，当前签名 APK 及 API 35/36 同哈希冷安装也已闭合。用户物理真机验收由上一条独立保持 PENDING，保护目录和敏感材料保持未触碰。

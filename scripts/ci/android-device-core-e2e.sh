@@ -44,6 +44,8 @@ ORIGINAL_WM_DENSITY_OVERRIDE=""
 ORIGINAL_FONT_SCALE=""
 ORIGINAL_ACCELEROMETER_ROTATION=""
 ORIGINAL_USER_ROTATION=""
+PENDING_NOTIFICATION_SCREENSHOT_STAGE=""
+PENDING_NOTIFICATION_SCREENSHOT_EXPECTED=""
 
 mkdir -p "${ARTIFACT_DIR}"
 printf 'api_level=%s\nabi=%s\nscope=%s\nbuild_type=deviceTest\n' \
@@ -111,6 +113,11 @@ restore_device_display_state() {
 
 finish_run() {
     local exit_code="$1"
+    if [[ -n "${PENDING_NOTIFICATION_SCREENSHOT_STAGE}" ]]; then
+        pull_notification_permission_screenshots \
+            "${PENDING_NOTIFICATION_SCREENSHOT_STAGE}" \
+            "${PENDING_NOTIFICATION_SCREENSHOT_EXPECTED}" || true
+    fi
     capture_artifacts "${exit_code}"
     restore_device_display_state
 }
@@ -207,13 +214,74 @@ reset_target_with_notification_permission_granted() {
     wait_for_package_manager_idle
 }
 
+pull_notification_permission_screenshots() {
+    local stage="$1"
+    local expected_name="$2"
+    local remote_dir="/sdcard/Android/data/${TARGET_PACKAGE}/files"
+    local remote_files
+    local remote_file
+    local pulled=0
+    local pull_failed=false
+
+    if ! remote_files="$(adb shell find "${remote_dir}" -maxdepth 1 -type f -name '*.png' -print 2>&1)"; then
+        echo "无法枚举 ${stage} 权限截图：${remote_files}" >&2
+        return 1
+    fi
+    remote_files="${remote_files//$'\r'/}"
+
+    while IFS= read -r remote_file; do
+        [[ -n "${remote_file}" ]] || continue
+        if ! adb pull "${remote_file}" "${ARTIFACT_DIR}/${stage}-$(basename "${remote_file}")" >/dev/null; then
+            echo "${stage} 无法回拉权限截图：${remote_file}" >&2
+            pull_failed=true
+            continue
+        fi
+        pulled=$((pulled + 1))
+    done <<<"${remote_files}"
+    if (( pulled == 0 )); then
+        echo "${stage} 未回拉任何权限截图" >&2
+        return 1
+    fi
+    if [[ "${pull_failed}" == "true" ]]; then
+        return 1
+    fi
+    if ! grep -Fxq -- "${remote_dir}/${expected_name}" <<<"${remote_files}"; then
+        echo "${stage} 缺少预期权限截图：${expected_name}" >&2
+        return 1
+    fi
+}
+
+run_notification_permission_test() {
+    local stage="$1"
+    local expected_name="$2"
+    shift 2
+    local test_status=0
+    local pull_status=0
+
+    PENDING_NOTIFICATION_SCREENSHOT_STAGE="${stage}"
+    PENDING_NOTIFICATION_SCREENSHOT_EXPECTED="${expected_name}"
+    run_test "${stage}" "${MAIN_ACTIVITY_RUNNER}" "$@" || test_status=$?
+    pull_notification_permission_screenshots "${stage}" "${expected_name}" || pull_status=$?
+    if (( pull_status == 0 )); then
+        PENDING_NOTIFICATION_SCREENSHOT_STAGE=""
+        PENDING_NOTIFICATION_SCREENSHOT_EXPECTED=""
+    fi
+
+    if (( test_status != 0 )); then
+        return "${test_status}"
+    fi
+    return "${pull_status}"
+}
+
 run_notification_permission_contracts() {
     reset_target_with_notification_permission_revoked
-    run_test notification-permission-deny "${MAIN_ACTIVITY_RUNNER}" \
+    run_notification_permission_test \
+        notification-permission-deny notification-permission-deny-dialog.png \
         -e class com.promenar.nexara.MainActivityNotificationE2eTest#denyingSystemNotificationPermissionContinuesForegroundOnlyWithoutFgs
 
     reset_target_with_notification_permission_revoked
-    run_test notification-permission-grant "${MAIN_ACTIVITY_RUNNER}" \
+    run_notification_permission_test \
+        notification-permission-grant notification-permission-grant-dialog.png \
         -e class com.promenar.nexara.MainActivityNotificationE2eTest#grantingSystemNotificationPermissionContinuesBackgroundAllowed
 }
 

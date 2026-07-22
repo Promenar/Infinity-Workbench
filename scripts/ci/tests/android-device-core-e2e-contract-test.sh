@@ -144,6 +144,27 @@ assert_not_contains "${DEVICE_SCRIPT}" "\"${TIMEOUT_HELPER}\" adb"
 assert_not_contains "${DEVICE_SCRIPT}" "'${TIMEOUT_HELPER}' adb"
 assert_not_contains "${DEVICE_SCRIPT}" 'timeout "${INSTRUMENT_TIMEOUT_SECONDS}s"'
 assert_contains "${DEVICE_SCRIPT}" 'run_notification_permission_contracts() {'
+assert_contains "${DEVICE_SCRIPT}" 'pull_notification_permission_screenshots() {'
+assert_contains "${DEVICE_SCRIPT}" 'run_notification_permission_test() {'
+assert_contains "${DEVICE_SCRIPT}" 'run_test "${stage}" "${MAIN_ACTIVITY_RUNNER}" "$@" || test_status=$?'
+assert_contains "${DEVICE_SCRIPT}" 'pull_notification_permission_screenshots "${stage}" "${expected_name}" || pull_status=$?'
+assert_contains "${DEVICE_SCRIPT}" 'if (( pull_status == 0 )); then'
+assert_contains "${DEVICE_SCRIPT}" 'if (( test_status != 0 )); then'
+assert_contains "${DEVICE_SCRIPT}" 'PENDING_NOTIFICATION_SCREENSHOT_STAGE'
+assert_contains "${DEVICE_SCRIPT}" 'pull_notification_permission_screenshots \'
+assert_contains "${DEVICE_SCRIPT}" 'if ! remote_files="$(adb shell find "${remote_dir}" -maxdepth 1 -type f -name '\''*.png'\'' -print 2>&1)"; then'
+assert_contains "${DEVICE_SCRIPT}" 'if ! adb pull "${remote_file}" "${ARTIFACT_DIR}/${stage}-$(basename "${remote_file}")" >/dev/null; then'
+assert_contains "${DEVICE_SCRIPT}" 'pull_failed=true'
+assert_contains "${DEVICE_SCRIPT}" 'if [[ "${pull_failed}" == "true" ]]; then'
+assert_contains "${DEVICE_SCRIPT}" 'grep -Fxq -- "${remote_dir}/${expected_name}"'
+assert_contains "${DEVICE_SCRIPT}" 'if (( pulled == 0 )); then'
+assert_contains "${DEVICE_SCRIPT}" 'notification-permission-deny notification-permission-deny-dialog.png'
+assert_contains "${DEVICE_SCRIPT}" 'notification-permission-grant notification-permission-grant-dialog.png'
+permission_pull_line="$(grep -n 'if ! adb pull "${remote_file}"' "${DEVICE_SCRIPT}" | cut -d: -f1)"
+permission_expected_line="$(grep -n 'grep -Fxq -- "${remote_dir}/${expected_name}"' "${DEVICE_SCRIPT}" | cut -d: -f1)"
+[[ -n "${permission_pull_line}" && -n "${permission_expected_line}" &&
+    "${permission_pull_line}" -lt "${permission_expected_line}" ]] ||
+    fail "宿主 ANR 失败证据必须在预期 dialog 完整性检查前回拉"
 assert_contains "${DEVICE_SCRIPT}" 'run_notification_open_session_contract() {'
 assert_contains "${DEVICE_SCRIPT}" 'run_notification_background_lifecycle_contract() {'
 assert_contains "${DEVICE_SCRIPT}" 'prepare_target_for_foreground_notification() {'
@@ -176,6 +197,41 @@ assert_contains "${NOTIFICATION_E2E_TEST}" 'PendingIntent.OnFinished'
 assert_contains "${NOTIFICATION_E2E_TEST}" 'requireDeviceConditionRemains'
 assert_contains "${NOTIFICATION_E2E_TEST}" 'scenario.state != Lifecycle.State.RESUMED'
 assert_contains "${NOTIFICATION_E2E_TEST}" 'current === activityBeforeRotation'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'generationNotifications().singleOrNull()?.notification?.actions?.size == 1'
+assert_count "${NOTIFICATION_E2E_TEST}" 'requireNotNull(notification.actions) { "前台生成通知缺少停止动作" }' 2
+assert_contains "${NOTIFICATION_E2E_TEST}" 'private fun clickPermissionControllerButton'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'var hostSystemAnrRecovered = false'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'private fun findBlockingHostSystemAnrRoot'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'HOST_SYSTEM_ANR_TITLES = setOf('
+assert_contains "${NOTIFICATION_E2E_TEST}" '"Quickstep isn'"'"'t responding"'
+assert_contains "${NOTIFICATION_E2E_TEST}" '"Pixel Launcher isn'"'"'t responding"'
+assert_contains "${NOTIFICATION_E2E_TEST}" '"System UI isn'"'"'t responding"'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'text.trim().equals(title, ignoreCase = true)'
+host_anr_titles_block="$(sed -n '/HOST_SYSTEM_ANR_TITLES = setOf(/,/^[[:space:]]*)/p' "${NOTIFICATION_E2E_TEST}")"
+host_anr_title_count="$(grep -Ec '^[[:space:]]+"[^"]+",?$' <<<"${host_anr_titles_block}" || true)"
+[[ "${host_anr_title_count}" == "3" ]] ||
+    fail "宿主 ANR 精确允许列表只能包含三个完整标题，实际 ${host_anr_title_count} 个"
+if grep -Fq -- '"Nexara isn'"'"'t responding"' <<<"${host_anr_titles_block}"; then
+    fail "宿主 ANR 允许列表不得包含 Nexara"
+fi
+host_anr_match_block="$(sed -n '/private fun isHostSystemAnrTitle/,/^$/p' "${NOTIFICATION_E2E_TEST}")"
+if grep -Fq -- '.contains(' <<<"${host_anr_match_block}"; then
+    fail "宿主 ANR 标题不得使用模糊 contains 匹配"
+fi
+assert_contains "${NOTIFICATION_E2E_TEST}" 'check(!hostSystemAnrRecovered)'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'captureDeviceScreenshot(hostSystemAnrScreenshotName(screenshotName))'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'waitForPermissionControllerButtonEnabled'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'check(waitButton?.isEnabled == true)'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'check(waitButton.performAction(AccessibilityNodeInfo.ACTION_CLICK))'
+assert_contains "${NOTIFICATION_E2E_TEST}" 'check(recoveredButton?.isEnabled == true)'
+screenshot_line="$(grep -n 'captureDeviceScreenshot(hostSystemAnrScreenshotName(screenshotName))' "${NOTIFICATION_E2E_TEST}" | cut -d: -f1)"
+wait_click_line="$(grep -n 'check(waitButton.performAction(AccessibilityNodeInfo.ACTION_CLICK))' "${NOTIFICATION_E2E_TEST}" | cut -d: -f1)"
+single_recovery_line="$(grep -n 'check(!hostSystemAnrRecovered)' "${NOTIFICATION_E2E_TEST}" | cut -d: -f1)"
+[[ -n "${screenshot_line}" && -n "${wait_click_line}" && "${screenshot_line}" -lt "${wait_click_line}" ]] ||
+    fail "宿主 ANR 证据截图必须发生在 Wait 点击之前"
+[[ -n "${single_recovery_line}" && "${single_recovery_line}" -lt "${wait_click_line}" ]] ||
+    fail "第二次宿主 ANR 必须在点击 Wait 前 fail closed"
+assert_not_contains "${NOTIFICATION_E2E_TEST}" 'minifiedTest'
 [[ -f "${NEW_SESSION_E2E_TEST}" ]] || fail "缺少新会话真实导航 E2E"
 assert_contains "${NEW_SESSION_E2E_TEST}" 'LoopStatus.COMPLETED'
 assert_contains "${NEW_SESSION_E2E_TEST}" 'app.sessionRepository.getById(sessionId)'
