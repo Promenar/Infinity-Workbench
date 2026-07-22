@@ -1407,7 +1407,7 @@
 
   Then smoke theme persistence, Provider/default-model navigation, knowledge settings and chat attachment on the installed package and record screenshots/logs in the same build report roots. Final signed APK still requires user-operated physical-device TalkBack full traversal and core business acceptance; these remain PENDING until the user supplies evidence.
 
-  **分层状态（2026-07-22）**：历史候选曾在 API 35/36 对同一 SHA-256 签名 APK 完成卸载、冷安装、回拉同哈希、冷启动、前台存活和 crash/ANR 检查；该 APK 早于通知 stop `FLAG_ONE_SHOT` 生产修复，当前候选必须重新执行本 Step。可测试 `deviceTest` 构建已在可见 API 35/36 完成无 Key/含 Key 备份恢复、首聊、Provider/模型、真实锁屏/唤醒/旋转/停止/返回业务链，API 31 minimum 同步通过。由于非调试签名包受 onboarding 成功 Provider 与 HTTPS 门禁约束，未增加发行后门，当前签名包业务黑盒及用户物理真机 TalkBack/核心人工验收继续 PENDING。
+  **自动化完成、真机边界待用户（2026-07-22）**：当前 SHA-256 `2627b00750cdd98765a29ede75ed3f042b44e7a17c0a41cc335039bd4dfb674d` 的同一签名 APK 已在可见 API 35/36 完成卸载、冷安装、设备 `base.apk` 回拉同哈希、冷启动、前台存活和 crash/ANR 检查，两套脚本 `exit-code=0`。主控继续真实点击 API 35 中文与 API 36 英文语言选项，均进入 Provider onboarding，UI tree、截图和交互后 crash buffer 已保留到 `native-ui/app/build/reports/release-smoke-api-*-current-20260722-1028/`。可测试 `deviceTest` 构建此前已完成无 Key/含 Key 备份恢复、首聊、Provider/模型、主题、知识设置、附件、真实锁屏/唤醒/旋转/停止/返回业务链；非调试签名包没有测试后门，完整业务黑盒和用户物理真机 TalkBack/核心人工验收继续 PENDING，因此本 Step 保持未勾选。
 
 - [x] **Step 7：DIA/HLG 收口**
 
@@ -1451,7 +1451,7 @@
 - [x] 系统、浅色、深色和 Android 12+ 动态色真实生效、持久恢复、备份恢复后立即生效。
 - [x] UI、Markdown、Mermaid、ECharts、LaTeX、PlantUML、HTML 和表格在深浅色下可读。
 - [x] 全量 JVM 0 failure/error；skip 独立记录；Lint 0 Error/Fatal；全部截图 PASS 并逐张人工审阅。
-- [ ] API 31/35/36 相关设备矩阵已在本地及提交 `98ec89bf` 的远端 run `29877797382` 通过；当前 release APK 仍须完成 R8/zipalign/签名/checksum 和 API 35/36 同哈希冷安装。历史哈希已闭合但早于 `FLAG_ONE_SHOT`，不能回填当前候选。
+- [x] API 31/35/36 相关设备矩阵已在本地及提交 `98ec89bf` 的远端 run `29877797382` 通过；当前 release APK 已完成 R8/zipalign/签名/checksum 和 API 35/36 同哈希冷安装，当前哈希为 `2627b00750cdd98765a29ede75ed3f042b44e7a17c0a41cc335039bd4dfb674d`。
 - [ ] 非调试签名 APK 的完整业务黑盒、物理真机 TalkBack 与核心业务人工验收完成。
 - [x] 真机 TalkBack、核心业务人工验收、远端 CI、tag workflow 和 GitHub Release 未闭合时，发行继续 NO-GO。
-- [ ] 提交 `6fd0227b` 的 run `29870166426` 暴露已消费 stop action 可重放后，显式私有 Service `PendingIntent` + `FLAG_ONE_SHOT` 修复已由提交 `98ec89bf` 的 run `29877797382` 完成 quality、API 31/35/36 首轮全绿及 artifact readback；JVM 2119、Lint 0 Error/Fatal、Screenshot 96/96、三档设备 exit 0。此项只剩新签名 APK、API 35/36 同哈希冷安装和用户物理真机验收，保护目录和敏感材料保持未触碰。
+- [x] 提交 `6fd0227b` 的 run `29870166426` 暴露已消费 stop action 可重放后，显式私有 Service `PendingIntent` + `FLAG_ONE_SHOT` 修复已由提交 `98ec89bf` 的 run `29877797382` 完成 quality、API 31/35/36 首轮全绿及 artifact readback；JVM 2119、Lint 0 Error/Fatal、Screenshot 96/96、三档设备 exit 0，当前签名 APK 及 API 35/36 同哈希冷安装也已闭合。用户物理真机验收由上一条独立保持 PENDING，保护目录和敏感材料保持未触碰。

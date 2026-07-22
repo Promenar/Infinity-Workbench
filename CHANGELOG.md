@@ -10,7 +10,8 @@ All notable changes to this project will be documented in this file.
 - **设备回归**：API 35 完整设备链覆盖通知权限、真实锁屏/唤醒/旋转、通知返回准确会话、首次停止、重复停止拒绝和静默窗口；冷启动 stop/track、备份恢复、文档解析与其余核心 E2E 同轮通过。
 - **远端复验**：提交 `98ec89bf` 的 Android CI run `29877797382` 中，quality、API 31 minimum、API 35/36 full 均首轮通过；artifact 回读为 JVM 2119 项 0 failure/error、14 skip，Screenshot 96/96、Lint 0 Error/Fatal，三档设备 exit 0 且应用 crash buffer 为空。
 - **当前签名候选**：从文档后继提交 `9a62392e` clean 重建稳定证书签名 R8 APK；18,367,648-byte 产物 SHA-256 为 `2627b00750cdd98765a29ede75ed3f042b44e7a17c0a41cc335039bd4dfb674d`，包名/版本、唯一 signer、登记证书、敏感内容、GGUF/本地推理制品、R8 四类输出、checksum 与 16 KiB zipalign 均通过。
-- **发行边界**：API 35/36 对当前 APK 的同哈希冷安装、真机 TalkBack/核心业务与发布外部门禁闭合前保持 NO-GO。
+- **当前包冷安装**：同一 APK 在可见 API 35/36 模拟器均完成卸载旧包、冷安装、设备 `base.apk` 回拉同哈希、冷启动、前台存活和 crash/ANR 检查；中文/英文语言选择进入 Provider onboarding 后继续存活，实际截图无裁切或重叠。
+- **发行边界**：完整非调试签名包业务黑盒、真机 TalkBack/核心业务与发布外部门禁闭合前保持 NO-GO。
 
 ### Material 3 总收敛：Task 14 本地设备、视觉与性能门禁（2026-07-21）
 
