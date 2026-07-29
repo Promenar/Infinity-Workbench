@@ -551,7 +551,7 @@ jobs:
             docs/release/v0.2-beta-validation.md \
             docs/release/v0.2-beta.md
 
-      - name: 幂等创建或恢复 GitHub prerelease
+      - name: 幂等创建或恢复 GitHub prerelease draft
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -566,6 +566,7 @@ jobs:
           if ! gh release view "${tag}" >/dev/null 2>&1; then
             gh release create "${tag}" \
               --verify-tag \
+              --draft \
               --prerelease \
               --latest=false \
               --title "Nexara v0.2-beta" \
@@ -577,8 +578,9 @@ jobs:
               --json isDraft,isPrerelease \
               --jq '[.isDraft,.isPrerelease] | @tsv'
           )
-          if [[ "${is_draft}" != "false" || "${is_prerelease}" != "true" ]]; then
-            echo "::error::既有 v0.2-beta Release 不是已发布的 prerelease，拒绝覆盖。"
+          if [[ "${is_prerelease}" != "true" ]] || \
+            [[ "${is_draft}" != "true" && "${is_draft}" != "false" ]]; then
+            echo "::error::既有 v0.2-beta Release 既不是 prerelease draft，也不是已发布的 prerelease。"
             exit 1
           fi
 
@@ -616,3 +618,20 @@ jobs:
               exit 1
             fi
           done
+
+          gh release edit "${tag}" \
+            --draft=false \
+            --prerelease \
+            --latest=false \
+            --title "Nexara v0.2-beta" \
+            --notes-file docs/release/v0.2-beta.md
+
+          read -r final_is_draft final_is_prerelease < <(
+            gh release view "${tag}" \
+              --json isDraft,isPrerelease \
+              --jq '[.isDraft,.isPrerelease] | @tsv'
+          )
+          if [[ "${final_is_draft}" != "false" || "${final_is_prerelease}" != "true" ]]; then
+            echo "::error::资产验真后未能公开为 prerelease。"
+            exit 1
+          fi

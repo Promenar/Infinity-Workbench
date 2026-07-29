@@ -9,10 +9,14 @@ import sys
 from pathlib import Path
 
 
-ALLOWED_RELEASE_MARKERS = {"GO", "GO / PASS"}
+ALLOWED_RELEASE_MARKERS = {"GO"}
 RELEASE_STATUS_PREFIX = re.compile(r"^>\s*发布状态：\s*(.*?)\s*$")
 TOP_STATUS_PREFIX = re.compile(r"^>\s*状态：\s*(.*?)\s*$")
 FINAL_CONCLUSION_PREFIX = re.compile(r"^\s*-\s*最终结论：\s*(.*?)\s*$")
+PHYSICAL_DEVICE_ACCEPTANCE_PREFIX = re.compile(r"^>\s*物理真机人工验收：\s*(.*?)\s*$")
+GITHUB_RELEASE_AUTHORIZATION_PREFIX = re.compile(r"^>\s*GitHub 发布动作：\s*(.*?)\s*$")
+CURRENT_APK_COLD_INSTALL_PREFIX = re.compile(r"^>\s*当前本地 APK 冷安装：\s*(.*?)\s*$")
+HISTORICAL_APK_COLD_INSTALL_PREFIX = re.compile(r"^>\s*同源历史候选冷安装：\s*(.*?)\s*$")
 
 
 def parse_plain_value(raw: str) -> str:
@@ -58,7 +62,20 @@ def require_exact_go_marker(
     if not value:
         fail(f"{document_name}值为空")
     if value not in ALLOWED_RELEASE_MARKERS:
-        fail(f"{document_name}值非法：{value}，仅允许 GO 或 GO / PASS")
+        fail(f"{document_name}值非法：{value}，仅允许 GO")
+
+
+def require_exact_value_marker(
+    document_name: str,
+    lines: list[str],
+    pattern: re.Pattern[str],
+    expected_value: str,
+) -> None:
+    matches = find_marker_lines(lines, pattern)
+    if len(matches) != 1:
+        fail(f"{document_name}必须出现 1 次，当前为 {len(matches)} 次")
+    if matches[0] != expected_value:
+        fail(f"{document_name}值非法：{matches[0]}，必须为 {expected_value}")
 
 
 def validate_ledgers(validation_content: str, release_content: str) -> None:
@@ -66,6 +83,30 @@ def validate_ledgers(validation_content: str, release_content: str) -> None:
     require_exact_go_marker("验证账本顶部状态行", ledger_lines, TOP_STATUS_PREFIX)
     require_exact_go_marker("验证账本最终结论行", ledger_lines, FINAL_CONCLUSION_PREFIX)
     require_exact_go_marker("发布说明状态行", release_content.splitlines(), RELEASE_STATUS_PREFIX)
+    require_exact_value_marker(
+        "物理真机人工验收风险接受行",
+        ledger_lines,
+        PHYSICAL_DEVICE_ACCEPTANCE_PREFIX,
+        "BETA-RISK-ACCEPTED",
+    )
+    require_exact_value_marker(
+        "GitHub 发布授权行",
+        ledger_lines,
+        GITHUB_RELEASE_AUTHORIZATION_PREFIX,
+        "AUTHORIZED",
+    )
+    require_exact_value_marker(
+        "当前本地 APK 冷安装证据行",
+        ledger_lines,
+        CURRENT_APK_COLD_INSTALL_PREFIX,
+        "NOT-RUN",
+    )
+    require_exact_value_marker(
+        "同源历史候选冷安装证据行",
+        ledger_lines,
+        HISTORICAL_APK_COLD_INSTALL_PREFIX,
+        "PASS",
+    )
 
 
 def main() -> int:

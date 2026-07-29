@@ -18,6 +18,12 @@ RELEASE = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 SMOKE = (ROOT / "scripts/ci/android-release-apk-smoke.sh").read_text(encoding="utf-8")
 APP_BUILD = (ROOT / "native-ui/app/build.gradle.kts").read_text(encoding="utf-8")
 VALIDATOR = str((ROOT / "scripts/ci/validate-release-readiness.py"))
+REQUIRED_LEDGER_MARKERS = (
+    "> 物理真机人工验收：BETA-RISK-ACCEPTED",
+    "> GitHub 发布动作：AUTHORIZED",
+    "> 当前本地 APK 冷安装：NOT-RUN",
+    "> 同源历史候选冷安装：PASS",
+)
 
 
 def braced_block_after(source: str, marker: str) -> str:
@@ -257,6 +263,20 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("gh release upload", publish_job)
         self.assertIn("gh release create", publish_job)
 
+    def test_publish_keeps_release_draft_until_all_assets_are_verified(self) -> None:
+        publish_job = RELEASE.split("\n  publish:", 1)[1]
+        create_idx = publish_job.index("gh release create")
+        upload_idx = publish_job.index("gh release upload")
+        verification_idx = publish_job.index("上传后 Release 资产")
+        publish_idx = publish_job.index("gh release edit")
+        self.assertIn("--draft", publish_job[create_idx:upload_idx])
+        self.assertLess(create_idx, upload_idx)
+        self.assertLess(upload_idx, verification_idx)
+        self.assertLess(verification_idx, publish_idx)
+        self.assertIn("--draft=false", publish_job[publish_idx:])
+        self.assertIn("--notes-file docs/release/v0.2-beta.md", publish_job[publish_idx:])
+        self.assertIn("--latest=false", publish_job[publish_idx:])
+
     def test_validate_release_input_job_calls_validator_early(self) -> None:
         validate_job = RELEASE.split("  validate-release-inputs:", 1)[1].split("  device-e2e:", 1)[0]
         checkout_idx = validate_job.find("- name: 检出候选提交或已存在的发行标签")
@@ -302,9 +322,10 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
             )
 
     def test_validate_release_readiness_accepts_only_exact_go_markers(self) -> None:
+        required_markers = "\n".join(REQUIRED_LEDGER_MARKERS)
         accepted_documents = (
-            ("> 状态：GO\n- 最终结论：GO\n", "> 发布状态：GO\n"),
-            ("> 状态：**GO / PASS**\n- 最终结论：`GO / PASS`\n", "> 发布状态：**GO / PASS**\n"),
+            (f"> 状态：GO\n{required_markers}\n- 最终结论：GO\n", "> 发布状态：GO\n"),
+            (f"> 状态：**GO**\n{required_markers}\n- 最终结论：`GO`\n", "> 发布状态：**GO**\n"),
         )
         for ledger, notes in accepted_documents:
             with self.subTest(ledger=ledger, notes=notes):
@@ -329,17 +350,47 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
 
     def test_validate_release_readiness_rejects_ambiguous_go_substrings(self) -> None:
-        invalid_values = ("PENDING", "NO-GO", "NOT GO", "NO GO", "ONGOING", "GOING", "GO / PENDING")
+        invalid_values = (
+            "PENDING",
+            "NO-GO",
+            "NOT GO",
+            "NO GO",
+            "ONGOING",
+            "GOING",
+            "GO / PASS",
+            "GO / PENDING",
+        )
+        required_markers = "\n".join(REQUIRED_LEDGER_MARKERS)
         for invalid_value in invalid_values:
             documents = (
-                (f"> 状态：{invalid_value}\n- 最终结论：GO\n", "> 发布状态：GO\n"),
-                (f"> 状态：GO\n- 最终结论：{invalid_value}\n", "> 发布状态：GO\n"),
-                ("> 状态：GO\n- 最终结论：GO\n", f"> 发布状态：{invalid_value}\n"),
+                (
+                    f"> 状态：{invalid_value}\n{required_markers}\n- 最终结论：GO\n",
+                    "> 发布状态：GO\n",
+                ),
+                (
+                    f"> 状态：GO\n{required_markers}\n- 最终结论：{invalid_value}\n",
+                    "> 发布状态：GO\n",
+                ),
+                (
+                    f"> 状态：GO\n{required_markers}\n- 最终结论：GO\n",
+                    f"> 发布状态：{invalid_value}\n",
+                ),
             )
             for ledger, notes in documents:
                 with self.subTest(value=invalid_value, ledger=ledger, notes=notes):
                     result = self.run_release_validator(ledger, notes)
                     self.assertNotEqual(result.returncode, 0)
+
+    def test_validate_release_readiness_requires_explicit_beta_risk_and_evidence_markers(self) -> None:
+        required_markers = "\n".join(REQUIRED_LEDGER_MARKERS)
+        valid_ledger = f"> 状态：GO\n{required_markers}\n- 最终结论：GO\n"
+        for missing_marker in REQUIRED_LEDGER_MARKERS:
+            with self.subTest(missing_marker=missing_marker):
+                result = self.run_release_validator(
+                    valid_ledger.replace(f"{missing_marker}\n", ""),
+                    "> 发布状态：GO\n",
+                )
+                self.assertNotEqual(result.returncode, 0)
 
     def test_actions_are_sha_pinned_and_permissions_are_minimal(self) -> None:
         for workflow in (ANDROID_CI, RELEASE):

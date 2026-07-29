@@ -5,11 +5,11 @@
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg)
 ![Compose](https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4.svg)
 ![Version](https://img.shields.io/badge/version-0.2--beta-6366F1.svg)
-![Stage](https://img.shields.io/badge/stage-release%20candidate-orange.svg)
+![Stage](https://img.shields.io/badge/stage-beta%20prerelease-6366F1.svg)
 
 > Android 端 BYOK 开源 AI 客户端，以 Kotlin 与 Jetpack Compose 原生构建，集成多服务商对话、RAG、知识图谱、Agent 工具、会话工作区和加密备份。
 
-`v0.2-beta` 当前处于发行候选收口阶段。后台持续生成等功能已经实现；完整设备/视觉矩阵、真实 API 四模型 smoke、分支 Android CI及本地稳定证书签名 R8 APK 的 API 35/36 冷安装均已通过。2026-07-15 真机首轮反馈中的引导跳转、三个 RAG 设置入口闪退、聊天/模型管理布局及模型元数据问题已在新工作树候选中修复，并通过 1665 项 JVM、36 张截图、针对性设备回归和 API 36 稳定签名冷安装；该新候选仍待提交后的远端 API 31/35/36 CI 与用户真机复验。现存发行门禁是 GitHub 可验证的 tag 签名、签名候选的真机 TalkBack/人工业务验收及 GitHub Release。在这些证据全部关闭前，本仓库不会把开发分支产物描述为正式发行包。
+`v0.2-beta` 已于 2026-07-29 获得 beta prerelease 放行。后台持续生成等功能已经实现；2119 项 JVM、96 张截图、Lint、真实 API 四模型 smoke、分支 Android CI、API 31/35/36 设备矩阵，以及同源稳定证书签名候选的 API 35/36 冷安装均已通过。2026-07-15 真机首轮反馈中的引导跳转、三个 RAG 设置入口闪退、聊天/模型管理布局及模型元数据问题已在当前候选中修复。最终 tag workflow 会重新构建、验签并冷安装远端 APK；物理真机 TalkBack 人工听觉、完整焦点遍历和更广泛 OEM/IME 体验继续作为 beta 期间的人工验证项，不冒充已完成的自动化门禁。
 
 ## 主要能力
 
@@ -58,7 +58,7 @@ GGUF/llama.cpp 不属于 `v0.2-beta` 稳定发行范围，本轮不继续推进�
 
 ## 安装
 
-正式制品只从 [Promenar/Nexara Releases](https://github.com/Promenar/Nexara/releases) 发布。`v0.2-beta` Release 完成后：
+正式制品只从 [Promenar/Nexara Releases](https://github.com/Promenar/Nexara/releases) 发布。安装 `v0.2-beta`：
 
 1. 下载 `nexara-v0.2-beta.apk` 与同名 `.sha256` 文件。
 2. 校验 APK 的 SHA-256 与发布文件一致。
