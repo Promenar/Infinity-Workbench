@@ -257,6 +257,142 @@ for health_contract in \
         fail "assert_target_healthy 缺少全 logcat/exit-info 契约：${health_contract}"
 done
 
+for host_anr_contract in \
+    'HOST_SYSTEM_ANR_RECOVERED=false' \
+    'host_system_anr_wait_coordinates()' \
+    'recover_host_system_anr_once()' \
+    "Quickstep isn't responding" \
+    "Pixel Launcher isn't responding" \
+    "System UI isn't responding" \
+    'android:id/aerr_wait' \
+    'screen-host-system-anr-before-wait.png' \
+    'window-host-system-anr-before-wait.xml' \
+    'window-host-system-anr-before-wait-click.xml' \
+    'if ! capture_stable_screenshot' \
+    'if ! adb shell input tap ${coordinates}' \
+    '宿主 System UI ANR 再次出现，拒绝继续恢复' \
+    'recover_host_system_anr_once "${xml}" "${deadline}"'; do
+    assert_contains "${BLACKBOX_SCRIPT}" "${host_anr_contract}"
+done
+
+host_anr_recovery_block="$(
+    sed -n '/^recover_host_system_anr_once() {/,/^}/p' "${BLACKBOX_SCRIPT}"
+)"
+screenshot_line="$(
+    grep -n 'screen-host-system-anr-before-wait.png' <<<"${host_anr_recovery_block}" |
+        cut -d: -f1
+)"
+wait_click_line="$(
+    grep -n 'host_system_anr_wait_coordinates "${click_xml}"' \
+        <<<"${host_anr_recovery_block}" |
+        cut -d: -f1
+)"
+[[ -n "${screenshot_line}" && -n "${wait_click_line}" ]] ||
+    fail "宿主 ANR 恢复必须同时保留截图与 Wait 点击"
+(( screenshot_line < wait_click_line )) ||
+    fail "宿主 ANR 证据截图必须发生在 Wait 点击之前"
+
+host_anr_coordinates_block="$(
+    sed -n \
+        '/^host_system_anr_wait_coordinates() {/,/^recover_host_system_anr_once() {/p' \
+        "${BLACKBOX_SCRIPT}" |
+        sed '$d'
+)"
+(
+    eval "${host_anr_coordinates_block}"
+    eval "${host_anr_recovery_block}"
+
+    temp_dir="$(mktemp -d)"
+    ARTIFACT_DIR="${temp_dir}/artifacts"
+    mkdir -p "${ARTIFACT_DIR}"
+    HOST_SYSTEM_ANR_RECOVERED=false
+    MOCK_SCREENSHOT_STATUS=0
+    MOCK_ADB_STATUS=0
+    MOCK_FRESH_XML="${temp_dir}/host-anr.xml"
+    MOCK_ADB_LOG="${temp_dir}/adb.log"
+
+    cat > "${temp_dir}/host-anr.xml" <<'XML'
+<hierarchy>
+  <node text="Quickstep isn't responding" resource-id="android:id/alertTitle" package="android"
+        enabled="true" clickable="false" bounds="[0,0][100,20]" />
+  <node text="Wait" resource-id="android:id/aerr_wait" package="android"
+        enabled="true" clickable="true" bounds="[10,20][50,60]" />
+</hierarchy>
+XML
+    cat > "${temp_dir}/target-anr.xml" <<'XML'
+<hierarchy>
+  <node text="Nexara isn't responding" resource-id="android:id/alertTitle" package="android"
+        enabled="true" clickable="false" bounds="[0,0][100,20]" />
+  <node text="Wait" resource-id="android:id/aerr_wait" package="android"
+        enabled="true" clickable="true" bounds="[10,20][50,60]" />
+</hierarchy>
+XML
+    cat > "${temp_dir}/wait-missing.xml" <<'XML'
+<hierarchy>
+  <node text="Quickstep isn't responding" resource-id="android:id/alertTitle" package="android"
+        enabled="true" clickable="false" bounds="[0,0][100,20]" />
+</hierarchy>
+XML
+
+    capture_stable_screenshot() {
+        if (( MOCK_SCREENSHOT_STATUS != 0 )); then
+            return "${MOCK_SCREENSHOT_STATUS}"
+        fi
+        : > "$1"
+    }
+    dump_ui() {
+        cp "${MOCK_FRESH_XML}" "$1"
+    }
+    adb() {
+        printf '%s\n' "$*" >> "${MOCK_ADB_LOG}"
+        return "${MOCK_ADB_STATUS}"
+    }
+
+    MOCK_SCREENSHOT_STATUS=1
+    if recover_host_system_anr_once "${temp_dir}/host-anr.xml" 9999999999; then
+        fail "截图失败时不得继续恢复宿主 ANR"
+    fi
+    [[ ! -e "${MOCK_ADB_LOG}" ]] ||
+        fail "截图失败时不得点击 Wait"
+
+    MOCK_SCREENSHOT_STATUS=0
+    recover_host_system_anr_once "${temp_dir}/host-anr.xml" 9999999999
+    [[ "${HOST_SYSTEM_ANR_RECOVERED}" == "true" ]] ||
+        fail "首次宿主 ANR 恢复后必须记录已恢复状态"
+    [[ "$(wc -l < "${MOCK_ADB_LOG}" | tr -d ' ')" == "1" ]] ||
+        fail "首次宿主 ANR 恢复必须且只能点击一次"
+    [[ -s "${ARTIFACT_DIR}/window-host-system-anr-before-wait.xml" ]] ||
+        fail "首次宿主 ANR 必须保留点击前 XML"
+    [[ -s "${ARTIFACT_DIR}/window-host-system-anr-before-wait-click.xml" ]] ||
+        fail "首次宿主 ANR 必须保留点击时 XML"
+
+    if recover_host_system_anr_once "${temp_dir}/host-anr.xml" 9999999999; then
+        fail "第二次宿主 ANR 必须失败关闭"
+    fi
+    [[ "$(wc -l < "${MOCK_ADB_LOG}" | tr -d ' ')" == "1" ]] ||
+        fail "第二次宿主 ANR 不得再次点击"
+
+    HOST_SYSTEM_ANR_RECOVERED=false
+    if recover_host_system_anr_once "${temp_dir}/target-anr.xml" 9999999999; then
+        fail "目标 Nexara ANR 不得进入宿主恢复路径"
+    fi
+
+    MOCK_FRESH_XML="${temp_dir}/wait-missing.xml"
+    if recover_host_system_anr_once "${temp_dir}/host-anr.xml" 9999999999; then
+        fail "截图后 Wait 消失时必须失败关闭"
+    fi
+    [[ "$(wc -l < "${MOCK_ADB_LOG}" | tr -d ' ')" == "1" ]] ||
+        fail "Wait 消失时不得使用旧 XML 坐标点击"
+
+    MOCK_FRESH_XML="${temp_dir}/host-anr.xml"
+    MOCK_ADB_STATUS=1
+    if recover_host_system_anr_once "${temp_dir}/host-anr.xml" 9999999999; then
+        fail "Wait 点击失败时必须失败关闭"
+    fi
+    [[ "${HOST_SYSTEM_ANR_RECOVERED}" == "false" ]] ||
+        fail "Wait 点击失败时不得记录为已恢复"
+)
+
 artifact_resolution_block="$(sed -n '/^ARTIFACT_DIR_INPUT=/,/^WAIT_SECONDS=/p' "${BLACKBOX_SCRIPT}")"
 [[ -n "${artifact_resolution_block}" ]] || fail "smoke 必须先保存 ARTIFACT_DIR_INPUT 再规范路径"
 for artifact_path_contract in \

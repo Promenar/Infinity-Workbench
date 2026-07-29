@@ -37,6 +37,7 @@ ORIGINAL_ACCELEROMETER_ROTATION=""
 ORIGINAL_USER_ROTATION=""
 TALKBACK_PRESENT=false
 TALKBACK_NOTIFICATION_WAS_GRANTED=false
+HOST_SYSTEM_ANR_RECOVERED=false
 
 case "${TARGET_ABI}" in
     x86_64|arm64-v8a) ;;
@@ -473,6 +474,86 @@ PY
     adb shell input tap ${coordinates}
 }
 
+host_system_anr_wait_coordinates() {
+    local xml="$1"
+    python3 - "${xml}" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+allowed_titles = {
+    "Quickstep isn't responding",
+    "Pixel Launcher isn't responding",
+    "System UI isn't responding",
+}
+root = ET.parse(sys.argv[1]).getroot()
+title_found = False
+wait_bounds = None
+for node in root.iter("node"):
+    resource_id = node.attrib.get("resource-id", "")
+    package_name = node.attrib.get("package", "")
+    if (
+        package_name == "android"
+        and resource_id == "android:id/alertTitle"
+        and node.attrib.get("text", "").strip() in allowed_titles
+    ):
+        title_found = True
+    if (
+        package_name == "android"
+        and resource_id == "android:id/aerr_wait"
+        and node.attrib.get("enabled") == "true"
+        and node.attrib.get("clickable") == "true"
+    ):
+        wait_bounds = node.attrib.get("bounds", "")
+
+match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", wait_bounds or "")
+if not title_found or match is None:
+    raise SystemExit(1)
+left, top, right, bottom = map(int, match.groups())
+print(f"{(left + right) // 2} {(top + bottom) // 2}")
+PY
+}
+
+recover_host_system_anr_once() {
+    local xml="$1"
+    local deadline="$2"
+    local click_xml="${ARTIFACT_DIR}/window-host-system-anr-before-wait-click.xml"
+    local coordinates
+    if [[ "${HOST_SYSTEM_ANR_RECOVERED}" == "true" ]]; then
+        echo "宿主 System UI ANR 再次出现，拒绝继续恢复" >&2
+        return 1
+    fi
+
+    if ! host_system_anr_wait_coordinates "${xml}" >/dev/null; then
+        echo "当前窗口不是允许恢复的宿主 System UI ANR" >&2
+        return 1
+    fi
+    if ! cp "${xml}" "${ARTIFACT_DIR}/window-host-system-anr-before-wait.xml"; then
+        echo "无法保存宿主 System UI ANR 点击前 XML" >&2
+        return 1
+    fi
+    if ! capture_stable_screenshot \
+        "${ARTIFACT_DIR}/screen-host-system-anr-before-wait.png"; then
+        echo "无法保存宿主 System UI ANR 点击前截图" >&2
+        return 1
+    fi
+    if ! dump_ui "${click_xml}" "${deadline}"; then
+        echo "无法在宿主 System UI ANR 点击前刷新窗口结构" >&2
+        return 1
+    fi
+    if ! coordinates="$(host_system_anr_wait_coordinates "${click_xml}")"; then
+        echo "宿主 System UI ANR 的 Wait 按钮已消失或不可点击" >&2
+        return 1
+    fi
+
+    if ! adb shell input tap ${coordinates}; then
+        echo "宿主 System UI ANR 的 Wait 按钮点击失败" >&2
+        return 1
+    fi
+    HOST_SYSTEM_ANR_RECOVERED=true
+    sleep 1
+}
+
 click_any_text() {
     local xml="$1"
     shift
@@ -614,8 +695,15 @@ wait_for_initial_launcher_ui() {
     local xml="${ARTIFACT_DIR}/window-launcher.xml"
     local deadline=$(( $(date +%s) + WAIT_SECONDS ))
     while (( $(date +%s) < deadline )); do
-        if dump_ui "${xml}" "${deadline}" && \
-            grep -Fq 'NEXARA' "${xml}" && \
+        if ! dump_ui "${xml}" "${deadline}"; then
+            sleep 0.5
+            continue
+        fi
+        if host_system_anr_wait_coordinates "${xml}" >/dev/null; then
+            recover_host_system_anr_once "${xml}" "${deadline}" || return 1
+            continue
+        fi
+        if grep -Fq 'NEXARA' "${xml}" && \
             grep -Fq 'English' "${xml}" && \
             grep -Fq '中文 (简体)' "${xml}"; then
             LAST_WINDOW_XML="${xml}"
