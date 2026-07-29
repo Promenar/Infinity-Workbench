@@ -8,9 +8,9 @@ All notable changes to this project will be documented in this file.
 
 ### Beta prerelease 放行
 
-- **放行决定**：用户在主力机体验当前签名候选后，明确授权把 `v0.2-beta` 作为 GitHub prerelease 发布，并清理 Release 页面中的旧版本。
+- **放行决定**：用户在主力机体验当前签名候选后，明确授权把 `v0.2-beta` 作为 GitHub prerelease 发布；后续明确要求保留既有 `v0.1-beta` Release，本次未删除任何历史版本。
 - **证据边界**：2119 项 JVM、96/96 Screenshot、Lint 0 Error/Fatal、真实 Provider、远端 Android CI、API 31/35/36 设备回归，以及同源稳定证书签名 R8 APK 的 API 35/36 冷安装均已闭合。物理真机 TalkBack 人工听觉、完整焦点遍历和更广泛 OEM/IME 体验仍作为 beta 后续验证项，不记为 PASS。
-- **发布方式**：`v0.2-beta` annotated tag 触发受保护 Release workflow；工作流重新执行设备、混淆、签名、冷安装和远端资产哈希门禁后发布 APK 与 checksum。
+- **发布结果**：SSH 签名 annotated tag `v0.2-beta` 在 GitHub 验证为 `valid`，固定提交 `a7c94f03`；受保护 Release workflow [30420324239](https://github.com/Promenar/Nexara/actions/runs/30420324239) 全绿，完成 API 31/35/36 设备、API 35/36 minified、签名 R8 构建、双 API 冷安装及远端资产回读后发布 [GitHub prerelease](https://github.com/Promenar/Nexara/releases/tag/v0.2-beta)。远端 APK SHA-256 为 `59d641b6b8f04a15bc9f4ce064a7a116df3def4efabf8231feb408612246fe9a`。
 
 ### 后台生成通知停止动作防重放（2026-07-22）
 
