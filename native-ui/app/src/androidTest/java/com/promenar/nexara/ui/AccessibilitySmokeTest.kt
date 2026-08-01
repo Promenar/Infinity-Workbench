@@ -25,10 +25,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.model.PostProcessStatus
 import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.data.model.PostProcessType
-import com.promenar.nexara.data.model.TaskState
 import com.promenar.nexara.data.model.TaskStep
-import com.promenar.nexara.domain.repository.ITaskRepository
-import com.promenar.nexara.domain.repository.PlanPatchOp
 import com.promenar.nexara.ui.chat.ChatApprovalLiveRegion
 import com.promenar.nexara.ui.chat.ChatInputBar
 import com.promenar.nexara.ui.chat.ChatScreenActions
@@ -36,6 +33,7 @@ import com.promenar.nexara.ui.chat.ChatScreenContent
 import com.promenar.nexara.ui.chat.ChatScreenState
 import com.promenar.nexara.ui.chat.GenerationStatus
 import com.promenar.nexara.ui.chat.PostProcessChip
+import com.promenar.nexara.ui.chat.taskPanelUiState
 import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
 import com.promenar.nexara.ui.common.NexaraPageLayout
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
@@ -48,8 +46,6 @@ import com.promenar.nexara.ui.rag.DocEditorUiState
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import java.util.Locale
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -343,27 +339,6 @@ class AccessibilitySmokeTest {
                 TaskStep(id = "step-1-2", title = "生成脑图", status = "pending"),
             ),
         )
-        val fakeRepo = object : ITaskRepository {
-            override fun observeActiveTree(sessionId: String): Flow<List<TaskStep>> =
-                flowOf(listOf(rootNode))
-
-            override suspend fun initializePlan(
-                sessionId: String,
-                goal: String,
-                tree: List<TaskStep>,
-            ): TaskState = TaskState()
-
-            override suspend fun updatePlan(
-                sessionId: String,
-                operations: List<PlanPatchOp>,
-            ): TaskState = TaskState()
-
-            override suspend fun getPlan(sessionId: String): TaskState? = null
-            override suspend fun dropPlan(sessionId: String, reason: String) {}
-            override fun deriveParentStatus(children: List<TaskStep>): String = "doing"
-            override fun countLeafProgress(steps: List<TaskStep>): Pair<Int, Int> = 1 to 2
-        }
-
         composeRule.setContent {
             NexaraTheme {
                 Column {
@@ -372,9 +347,10 @@ class AccessibilitySmokeTest {
                         onRemove = {},
                     )
                     TaskFloatingPanel(
-                        sessionId = "session-1",
-                        taskRepo = fakeRepo,
-                        goalTitle = "分析文档结构",
+                        state = taskPanelUiState(listOf(rootNode), isGenerating = false)!!,
+                        isGenerating = false,
+                        onContinue = {},
+                        onComplete = {},
                     )
                 }
             }
@@ -384,21 +360,17 @@ class AccessibilitySmokeTest {
 
         composeRule.onNodeWithText(postProcessLabel).assertIsDisplayed()
 
-        composeRule.onNodeWithText("🎯 分析文档结构", substring = true).assertIsDisplayed()
-        composeRule.onNodeWithText("1/2 步骤 · 50%", substring = true).assertIsDisplayed()
-        composeRule.onNodeWithText("提取大纲", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("分析文档结构", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("1/2", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("生成脑图", substring = true).assertIsDisplayed()
 
         val headerRow = composeRule.onNodeWithTag(UiTags.CHAT_TASK_PANEL_HEADER)
         headerRow.assertExists()
-        headerRow.assertHasClickAction()
-        headerRow.assertHeightIsAtLeast(48.dp)
-
-        headerRow.performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("提取大纲", substring = true).assertDoesNotExist()
-
-        headerRow.performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("提取大纲", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag(UiTags.CHAT_TASK_CONTINUE)
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag(UiTags.CHAT_TASK_COMPLETE)
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
     }
 }

@@ -1,172 +1,137 @@
 package com.promenar.nexara.ui.chat.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.promenar.nexara.data.model.TaskStep
-import com.promenar.nexara.domain.repository.ITaskRepository
+import com.promenar.nexara.R
+import com.promenar.nexara.ui.chat.TaskPanelUiState
 import com.promenar.nexara.ui.testing.UiTags
-import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.NexaraSpacing
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TaskFloatingPanel(
-    sessionId: String,
-    taskRepo: ITaskRepository?,
-    goalTitle: String = "",
-    modifier: Modifier = Modifier
+    state: TaskPanelUiState,
+    isGenerating: Boolean,
+    onContinue: () -> Unit,
+    onComplete: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    if (taskRepo == null) return
-
-    val activeTree by taskRepo.observeActiveTree(sessionId).collectAsState(emptyList())
-    if (activeTree.isEmpty()) return
-
-    val (doneCount, totalCount) = taskRepo.countLeafProgress(activeTree)
-    val progress = if (totalCount > 0) doneCount.toFloat() / totalCount else 0f
-    val percent = if (totalCount > 0) (doneCount * 100 / totalCount) else 0
-
-    val displayGoal = goalTitle.ifBlank {
-        activeTree.firstOrNull()?.title ?: ""
-    }
-
-    var isCollapsed by rememberSaveable { mutableStateOf(false) }
-
-    AnimatedVisibility(
-        visible = true,
-        enter = expandVertically() + fadeIn(),
-        exit = shrinkVertically() + fadeOut()
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag(UiTags.CHAT_TASK_CARD),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Surface(
-            modifier = modifier
+        Column(
+            modifier = Modifier
                 .fillMaxWidth()
-                .animateContentSize(),
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                .padding(NexaraSpacing.Medium),
+            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp)
+                    .testTag(UiTags.CHAT_TASK_PANEL_HEADER),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
             ) {
-                Row(
+                Text(
+                    text = stringResource(R.string.chat_task_title, state.title),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${state.doneCount}/${state.totalCount}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+            ) {
+                TaskStatusDot(
+                    pulsing = state.shouldPulse,
+                    color = if (state.shouldPulse) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.tertiary
+                    },
+                )
+                Text(
+                    text = state.currentStepTitle,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+            ) {
+                TextButton(
+                    onClick = onComplete,
+                    enabled = !isGenerating,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .testTag(UiTags.CHAT_TASK_PANEL_HEADER)
-                        .clickable { isCollapsed = !isCollapsed },
-                    verticalAlignment = Alignment.CenterVertically
+                        .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                        .testTag(UiTags.CHAT_TASK_COMPLETE),
                 ) {
                     Text(
-                        text = "\uD83C\uDFAF $displayGoal",
-                        style = NexaraTypography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "$doneCount/$totalCount \u6B65\u9AA4 \u00B7 $percent%",
-                        style = NexaraTypography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = if (isCollapsed) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
-                        contentDescription = if (isCollapsed) "\u5C55\u5F00" else "\u6536\u8D77",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
+                        text = stringResource(R.string.chat_task_mark_completed),
+                        color = if (isGenerating) {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
                 }
-
-                AnimatedVisibility(
-                    visible = !isCollapsed,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
+                TextButton(
+                    onClick = onContinue,
+                    enabled = !isGenerating,
+                    modifier = Modifier
+                        .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                        .testTag(UiTags.CHAT_TASK_CONTINUE),
                 ) {
-                    Column {
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp)),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            strokeCap = StrokeCap.Round
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            items(activeTree, key = { it.id }) { rootNode ->
-                                TaskNodeRow(
-                                    node = rootNode,
-                                    depth = 0,
-                                    taskRepo = taskRepo
-                                )
-                            }
-                        }
-                    }
+                    Text(stringResource(R.string.chat_task_continue))
                 }
             }
         }
@@ -174,95 +139,39 @@ fun TaskFloatingPanel(
 }
 
 @Composable
-private fun TaskNodeRow(
-    node: TaskStep,
-    depth: Int,
-    taskRepo: ITaskRepository
+fun TaskStatusDot(
+    pulsing: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier,
 ) {
-    val indent = (depth * 16).dp
-
-    val isLeaf = node.children.isEmpty()
-    val status: String = if (isLeaf) {
-        node.status
-    } else {
-        taskRepo.deriveParentStatus(node.children)
-    }
-
-    val statusIcon: @Composable () -> Unit = {
-        when {
-            status == "done" -> Text(
-                text = "\u2705",
-                style = NexaraTypography.bodyMedium
-            )
-            status == "doing" -> PulseDotInline(color = MaterialTheme.colorScheme.primary)
-            status == "dropped" -> Text(
-                text = "\u2715",
-                style = NexaraTypography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
-            )
-            status == "partial-dropped" -> Text(
-                text = "\u2298",
-                style = NexaraTypography.bodyMedium,
-                color = MaterialTheme.colorScheme.tertiary
-            )
-            else -> Text(
-                text = "\u25CB",
-                style = NexaraTypography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-
-    val textColor = if (status == "doing") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = indent, top = 2.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-            statusIcon()
-        }
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = node.title,
-            style = NexaraTypography.bodyMedium,
-            color = textColor
+    val scale = if (pulsing) {
+        val transition = rememberInfiniteTransition(label = "task_status_pulse")
+        val animated by transition.animateFloat(
+            initialValue = 0.82f,
+            targetValue = 1.18f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(800),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "task_status_scale",
         )
+        animated
+    } else {
+        1f
     }
 
-    if (node.children.isNotEmpty()) {
-        node.children.sortedBy { it.sortOrder }.forEach { child ->
-            TaskNodeRow(
-                node = child,
-                depth = depth + 1,
-                taskRepo = taskRepo
-            )
-        }
-    }
-}
-
-@Composable
-private fun PulseDotInline(
-    color: androidx.compose.ui.graphics.Color,
-    modifier: Modifier = Modifier
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "task_pulse")
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 0.8f,
-        targetValue = 1.3f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "taskPulseScale"
-    )
     Box(
         modifier = modifier
-            .size(8.dp)
-            .scale(scale)
-            .clip(CircleShape)
-            .background(color)
-    )
+            .size(12.dp)
+            .scale(scale),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier.size(if (pulsing) 10.dp else 9.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+            color = if (pulsing) color else Color.Transparent,
+            border = if (pulsing) null else BorderStroke(1.5.dp, color),
+            content = {},
+        )
+    }
 }

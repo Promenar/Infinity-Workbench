@@ -132,6 +132,8 @@ import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.PostProcessTask
+import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
+import com.promenar.nexara.ui.chat.components.TaskStatusDot
 import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.NexaraSnackbarHost
 import com.promenar.nexara.ui.theme.NexaraElevation
@@ -171,6 +173,7 @@ data class ChatScreenState(
     val draftDocuments: List<MessageDocumentAttachment> = emptyList(),
     val isImportingDocument: Boolean = false,
     val modelDisplayNames: Map<String, String> = emptyMap(),
+    val taskPanel: TaskPanelUiState? = null,
 )
 
 data class ChatScreenActions(
@@ -198,6 +201,8 @@ data class ChatScreenActions(
     val onRemoveImage: (Int) -> Unit = {},
     val onRemoveDocument: (String) -> Unit = {},
     val onSnackbarAction: () -> Unit = {},
+    val onContinueTask: () -> Unit = {},
+    val onCompleteTask: () -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -208,7 +213,6 @@ fun ChatScreenContent(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     snackbarData: NexaraSnackbarData? = null,
     attachmentMenuExpandedState: MutableState<Boolean> = remember { mutableStateOf(false) },
-    taskPanel: @Composable () -> Unit = {},
 ) {
     val uiState = state.uiState
     val inputText = state.inputText
@@ -500,6 +504,20 @@ fun ChatScreenContent(
                     )
                 }
 
+                state.taskPanel?.let { taskPanel ->
+                    item(
+                        key = "task_panel:${taskPanel.planId}",
+                        contentType = "task_panel",
+                    ) {
+                        TaskFloatingPanel(
+                            state = taskPanel,
+                            isGenerating = uiState.isGenerating,
+                            onContinue = actions.onContinueTask,
+                            onComplete = actions.onCompleteTask,
+                        )
+                    }
+                }
+
                 if (compressionState.isCompressing || compressionState.result != null) {
                     item(key = "summary_card") {
                         SummaryCard(
@@ -575,10 +593,17 @@ fun ChatScreenContent(
                     ChatInputTopBar(
                         modelName = modelDisplayName,
                         tokenState = tokenState,
+                        taskPanel = state.taskPanel,
                         postProcessTasks = state.postProcessTasks,
                         onRemovePostProcessTask = actions.onRemovePostProcessTask,
                         onModelClick = actions.onOpenSettings,
                         onManualSummary = actions.onManualSummary,
+                        onTaskClick = {
+                            autoFollowEnabled = false
+                            scope.launch {
+                                listState.animateScrollToItem(pipelineGroups.size)
+                            }
+                        },
                     )
 
                     if (selectedImageUris.isNotEmpty()) {
@@ -620,9 +645,6 @@ fun ChatScreenContent(
                             onRemove = actions.onRemoveDocument,
                         )
                     }
-
-                    // 任务浮动面板
-                    taskPanel()
 
                     Box(modifier = Modifier.fillMaxWidth()) {
                         ChatInputBar(
@@ -809,10 +831,12 @@ fun ContextCircularIndicator(
 private fun ChatInputTopBar(
     modelName: String,
     tokenState: ChatViewModel.TokenIndicatorState,
+    taskPanel: TaskPanelUiState?,
     postProcessTasks: List<PostProcessTask>,
     onRemovePostProcessTask: (String) -> Unit,
     onModelClick: () -> Unit,
-    onManualSummary: () -> Unit
+    onManualSummary: () -> Unit,
+    onTaskClick: () -> Unit,
 ) {
     androidx.compose.foundation.layout.FlowRow(
         modifier = Modifier.fillMaxWidth(),
@@ -853,6 +877,58 @@ private fun ChatInputTopBar(
 
         // Token Indicator
         TokenIndicator(state = tokenState, onManualSummary = onManualSummary)
+
+        taskPanel?.let { panel ->
+            val isGenerating = panel.capsuleMode == TaskCapsuleMode.GENERATING
+            val accessibilityLabel = if (isGenerating) {
+                stringResource(R.string.chat_task_generating)
+            } else {
+                stringResource(R.string.chat_task_pending_accessibility, panel.pendingCount)
+            }
+            AssistChip(
+                onClick = onTaskClick,
+                modifier = Modifier
+                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                    .semantics { contentDescription = accessibilityLabel }
+                    .testTag(UiTags.CHAT_TASK_CAPSULE),
+                shape = CircleShape,
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    labelColor = MaterialTheme.colorScheme.onSurface,
+                    leadingIconContentColor = if (isGenerating) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.tertiary
+                    },
+                ),
+                border = AssistChipDefaults.assistChipBorder(
+                    enabled = true,
+                    borderColor = Color.Transparent,
+                    disabledBorderColor = Color.Transparent,
+                ),
+                leadingIcon = {
+                    TaskStatusDot(
+                        pulsing = panel.shouldPulse,
+                        color = if (isGenerating) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.tertiary
+                        },
+                    )
+                },
+                label = {
+                    Text(
+                        text = if (isGenerating) {
+                            stringResource(R.string.chat_task_generating)
+                        } else {
+                            stringResource(R.string.chat_task_pending, panel.pendingCount)
+                        },
+                        style = NexaraTypography.labelMedium,
+                        maxLines = 1,
+                    )
+                },
+            )
+        }
 
         // PostProcess Tasks (e.g. Session RAG, Summary)
         postProcessTasks.forEach { task ->

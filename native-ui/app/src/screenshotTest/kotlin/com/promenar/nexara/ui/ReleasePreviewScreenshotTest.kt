@@ -40,6 +40,7 @@ import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.SessionOptions
+import com.promenar.nexara.data.model.TaskStep
 import com.promenar.nexara.data.backup.BackupExportOptions
 import com.promenar.nexara.data.backup.PendingRestoreMetadata
 import com.promenar.nexara.data.local.db.entity.FileEntry
@@ -65,6 +66,7 @@ import com.promenar.nexara.ui.chat.ChatScreenContent
 import com.promenar.nexara.ui.chat.ChatScreenState
 import com.promenar.nexara.ui.chat.ChatUiState
 import com.promenar.nexara.ui.chat.GenerationStatus
+import com.promenar.nexara.ui.chat.taskPanelUiState
 import com.promenar.nexara.ui.chat.ResourceExplorerSheetActions
 import com.promenar.nexara.ui.chat.ResourceExplorerSheetContent
 import com.promenar.nexara.ui.chat.ResourceExplorerSheetState
@@ -669,6 +671,122 @@ fun streamingChatReleasePreview() {
                     status = GenerationStatus.RECEIVING,
                     streamingContent = "正在核对安全、备份、后台生成与视觉回归门禁……",
                 ),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+private fun previewTaskTree(): List<TaskStep> = listOf(
+    TaskStep(
+        id = "release-plan",
+        title = "完成 0.2 Beta 发布检查",
+        children = listOf(
+            TaskStep(id = "release-safety", title = "核对安全与备份门禁", status = "done"),
+            TaskStep(
+                id = "release-visual",
+                title = "验证任务面板交互与视觉回归",
+                status = "doing",
+                sortOrder = 1,
+            ),
+        ),
+    ),
+)
+
+@PreviewTest
+@Preview(
+    name = "Chat task pending Chinese",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatTaskPendingReleasePreview() {
+    val tree = previewTaskTree()
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    session = previewChatSession(),
+                    agentName = "Nexara 助手",
+                    messages = listOf(
+                        previewMessage("task-user", MessageRole.USER, "继续完成发布检查。"),
+                        previewMessage(
+                            "task-assistant",
+                            MessageRole.ASSISTANT,
+                            "基础检查已经结束，剩余视觉回归需要确认。",
+                            modelId = PREVIEW_CHAT_MODEL_ID,
+                        ),
+                    ),
+                ),
+                taskPanel = taskPanelUiState(tree, isGenerating = false),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Chat task generating Chinese",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatTaskGeneratingReleasePreview() {
+    val tree = previewTaskTree()
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    session = previewChatSession(),
+                    agentName = "Nexara 助手",
+                    messages = listOf(
+                        previewMessage("task-live-user", MessageRole.USER, "继续完成发布检查。"),
+                        previewMessage(
+                            "task-live-assistant",
+                            MessageRole.ASSISTANT,
+                            "正在验证任务面板交互与视觉回归……",
+                            modelId = PREVIEW_CHAT_MODEL_ID,
+                        ),
+                    ),
+                    isGenerating = true,
+                    status = GenerationStatus.RECEIVING,
+                    streamingContent = "正在验证任务面板交互与视觉回归……",
+                ),
+                taskPanel = taskPanelUiState(tree, isGenerating = true),
+                modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
+            ),
+            actions = ChatScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Chat task pending Chinese font scale 2",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = PHONE_HEIGHT_DP,
+    locale = "zh-rCN",
+    fontScale = 2f,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatTaskPendingLargeFontReleasePreview() {
+    val tree = previewTaskTree()
+    ReleasePreviewSurface {
+        ChatScreenContent(
+            state = ChatScreenState(
+                uiState = ChatUiState(
+                    session = previewChatSession().copy(options = SessionOptions(fontSize = 22)),
+                    agentName = "Nexara 助手",
+                ),
+                taskPanel = taskPanelUiState(tree, isGenerating = false),
                 modelDisplayNames = mapOf(PREVIEW_CHAT_MODEL_ID to PREVIEW_METADATA_SHORT_NAME),
             ),
             actions = ChatScreenActions(),

@@ -581,6 +581,13 @@
     <string name="workspace_task_running">Running</string>
     <string name="workspace_task_pending">Pending</string>
     <string name="workspace_task_completed">Completed</string>
+    <string name="chat_task_title">Task · %1$s</string>
+    <string name="chat_task_generating">Generating</string>
+    <string name="chat_task_pending">Pending %1$d</string>
+    <string name="chat_task_pending_accessibility">%1$d task item(s) pending confirmation</string>
+    <string name="chat_task_continue">Continue</string>
+    <string name="chat_task_mark_completed">Mark completed</string>
+    <string name="chat_task_continue_prompt">Continue the unfinished task from the current plan.</string>
     <string name="workspace_sprint_pipeline">Sprint Pipeline</string>
     <string name="workspace_x_of_y_completed">%1$d of %2$d completed</string>
     <string name="workspace_no_tasks">No active tasks</string>

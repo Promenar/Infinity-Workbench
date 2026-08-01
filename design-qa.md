@@ -45,3 +45,31 @@
 宽代码真实像素宽度、IME 保存终态反馈、代码块工具栏触控/本地化、嵌套 GFM 表格横向可达及性能样本替换风险均已修复并重新验收。
 
 final result: passed
+
+---
+
+# 会话任务进度面板 Material 3 视觉验收
+
+- 验收日期：2026-08-01
+- 源方案：`/Users/promenar/.codex/visualizations/2026/07/31/019fb5e7-35b5-7e93-8c9d-dd4203ce2c8e/nexara-task-panel-final-runtime.png`
+- 同屏对比：`native-ui/app/build/reports/task-panel-md3-comparison.png`
+- 覆盖基线：待确认、真实生成、中文 2.0x 字体三种任务状态。
+
+## 视觉结论
+
+- 任务卡已从 composer 移入消息流；composer 保留模型、Token 与第三任务 `AssistChip`，不再使用大描边容器包裹整组控件。
+- 真实生成态显示脉冲“正在生成”，生成停止但仍有未销项任务时显示静态“待确认 N”，状态不再只依赖模型是否正确销项。
+- 卡片仅保留标题、`x/y` 数字进度、当前未完成项和两个人工动作；没有进度条、“计划待确认”或本轮结束说明。
+- 实现使用目标分支的 `MaterialTheme`、语义 surface、Shape/Spacing token、标准文本按钮和 48dp 触控目标，没有恢复 Glass 组件或硬编码容器圆角。
+- 已逐张查看三个基线与源图/实现合并对比图。2.0x 字体下胶囊自然换行，输入栏与操作仍可达；当前步骤末字孤行是非阻断视觉瑕疵。
+- GPT-5.6 Sol 对合并图和三个目标截图进行独立主观视觉验收，结论为 PASS。
+
+## 自动化证据
+
+- `validateDebugScreenshotTest`：通过。
+- API 35 `ChatScreenContentStateTest`：10/10 通过。
+- API 35 `AccessibilitySmokeTest`：9/9 通过。
+- 全量 JVM：2125 项，0 failure、0 error、14 skip；Lint 0 Error/Fatal；Debug APK 构建通过。
+- `git diff --check`：通过。
+
+final result: passed

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 会话任务进度面板完整回归 Material 3（2026-08-01）
+
+- **消息流任务卡**：任务进度从 composer 内部移入消息流，只保留任务标题、`x/y` 数字进度、当前未完成项与“继续处理 / 标记已完成”动作；移除进度条、整树列表和累赘状态说明。
+- **第三任务胶囊**：模型与 Token 胶囊旁新增同体系 `AssistChip`。只有真实生成状态显示脉冲“正在生成”；生成已停止但模型漏销项时改为静态“待确认 N”，避免把残留计划误报为仍在生成。
+- **人工恢复与销项**：胶囊可滚动定位消息流任务卡并关闭自动追尾；生成停止后可继续处理或一次性完成所有未完成叶节点，完成后卡片与胶囊同步消失。活动计划仍拒绝被覆盖，已全部完成的旧计划会在事务内清理后创建新计划。
+- **MD3 与验证**：实现沿用目标分支 `MaterialTheme`、语义 surface、Shape/Spacing token、标准按钮与 48dp 触控目标，不引入 Glass。新增待确认、生成中和中文 2.0x 字体截图，Screenshot validation、API 35 会话状态 10/10 与无障碍 9/9 均通过。
+
 ## [0.2-beta] - 2026-07-29
 
 ### Beta prerelease 放行

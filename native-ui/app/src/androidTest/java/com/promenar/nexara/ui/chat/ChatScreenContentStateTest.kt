@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -22,6 +23,7 @@ import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.SessionOptions
+import com.promenar.nexara.data.model.TaskStep
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import kotlin.math.abs
@@ -84,6 +86,69 @@ class ChatScreenContentStateTest {
             .assertContentDescriptionEquals(resource(R.string.chat_cd_stop))
             .performClick()
         rule.runOnIdle { assertThat(stopped).isTrue() }
+    }
+
+    @Test
+    fun pendingTask_rendersThirdCapsuleAndDispatchesManualActions() {
+        var continued = false
+        var completed = false
+        val taskPanel = taskPanelUiState(
+            listOf(
+                TaskStep(
+                    id = "plan",
+                    title = "发布检查",
+                    children = listOf(
+                        TaskStep(id = "done", title = "安全检查", status = "done"),
+                        TaskStep(id = "pending", title = "视觉回归", status = "doing", sortOrder = 1),
+                    ),
+                ),
+            ),
+            isGenerating = false,
+        )!!
+
+        render(
+            uiState = ChatUiState(session = session),
+            taskPanel = taskPanel,
+            actions = ChatScreenActions(
+                onContinueTask = { continued = true },
+                onCompleteTask = { completed = true },
+            ),
+        )
+
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CAPSULE)
+            .assertContentDescriptionEquals(resource(R.string.chat_task_pending_accessibility, 1))
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_TASK_COMPLETE).performClick()
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CONTINUE).performClick()
+        rule.runOnIdle {
+            assertThat(completed).isTrue()
+            assertThat(continued).isTrue()
+        }
+    }
+
+    @Test
+    fun generatingTask_disablesManualActions() {
+        val taskPanel = taskPanelUiState(
+            listOf(TaskStep(id = "plan", title = "发布检查", status = "doing")),
+            isGenerating = true,
+        )!!
+
+        render(
+            uiState = ChatUiState(
+                session = session,
+                isGenerating = true,
+                status = GenerationStatus.THINKING,
+            ),
+            taskPanel = taskPanel,
+        )
+
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CAPSULE)
+            .assertContentDescriptionEquals(resource(R.string.chat_task_generating))
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CARD).performScrollTo()
+        rule.onNodeWithTag(UiTags.CHAT_TASK_COMPLETE).assertIsNotEnabled()
+        rule.onNodeWithTag(UiTags.CHAT_TASK_CONTINUE).assertIsNotEnabled()
     }
 
     @Test
@@ -272,6 +337,7 @@ class ChatScreenContentStateTest {
         actions: ChatScreenActions = ChatScreenActions(),
         modelDisplayNames: Map<String, String> = emptyMap(),
         draftDocuments: List<MessageDocumentAttachment> = emptyList(),
+        taskPanel: TaskPanelUiState? = null,
     ) {
         rule.setContent {
             NexaraTheme {
@@ -280,6 +346,7 @@ class ChatScreenContentStateTest {
                         uiState = uiState,
                         modelDisplayNames = modelDisplayNames,
                         draftDocuments = draftDocuments,
+                        taskPanel = taskPanel,
                     ),
                     actions = actions,
                 )
@@ -287,6 +354,6 @@ class ChatScreenContentStateTest {
         }
     }
 
-    private fun resource(id: Int): String =
-        InstrumentationRegistry.getInstrumentation().targetContext.getString(id)
+    private fun resource(id: Int, vararg args: Any): String =
+        InstrumentationRegistry.getInstrumentation().targetContext.getString(id, *args)
 }

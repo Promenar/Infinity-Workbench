@@ -110,6 +110,32 @@ class TaskRepositoryTest {
     }
 
     @Test
+    fun `initializePlan replaces a fully completed plan atomically`() = runBlocking {
+        repo.initializePlan(sessionId, "旧任务", buildTree("old-1" to "旧步骤"))
+        repo.updatePlan(
+            sessionId,
+            listOf(
+                PlanPatchOp(
+                    action = "set_status",
+                    stepId = "old-1",
+                    payload = mapOf("status" to "done"),
+                ),
+            ),
+        )
+
+        val result = repo.initializePlan(
+            sessionId,
+            "新任务",
+            buildTree("new-1" to "新步骤"),
+        )
+
+        assertThat(result.status).isEqualTo("active")
+        assertThat(result.title).isEqualTo("新任务")
+        assertThat(result.steps.map { it.id }).containsExactly("new-1")
+        assertThat(dao.getById("old-1")).isNull()
+    }
+
+    @Test
     fun `updatePlan set_status changes leaf node status`() = runBlocking {
         val tree = buildNestedTree()
         repo.initializePlan(sessionId, "测试", tree)

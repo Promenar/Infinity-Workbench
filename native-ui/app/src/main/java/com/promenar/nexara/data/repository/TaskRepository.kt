@@ -28,10 +28,27 @@ class TaskRepository(
     }
 
     override suspend fun initializePlan(sessionId: String, goal: String, tree: List<TaskStep>): TaskState {
+        if (database != null) {
+            return database.withTransaction {
+                initializePlanInternal(sessionId, goal, tree)
+            }
+        }
+        return initializePlanInternal(sessionId, goal, tree)
+    }
+
+    private suspend fun initializePlanInternal(
+        sessionId: String,
+        goal: String,
+        tree: List<TaskStep>,
+    ): TaskState {
         val existing = dao.getAllActiveBySession(sessionId)
         if (existing.isNotEmpty()) {
             val existingTree = buildTree(existing)
             val (done, total) = countLeafProgress(existingTree)
+            if (total > 0 && done == total) {
+                dao.deleteBySession(sessionId)
+                return createPlan(sessionId, goal, tree)
+            }
             val rootStep = existingTree.firstOrNull()
             return TaskState(
                 id = rootStep?.id ?: "",
@@ -43,6 +60,14 @@ class TaskRepository(
             )
         }
 
+        return createPlan(sessionId, goal, tree)
+    }
+
+    private suspend fun createPlan(
+        sessionId: String,
+        goal: String,
+        tree: List<TaskStep>,
+    ): TaskState {
         val now = System.currentTimeMillis()
         val entities = mutableListOf<TaskNodeEntity>()
         flattenTree(tree, sessionId, parentId = null, now, entities)

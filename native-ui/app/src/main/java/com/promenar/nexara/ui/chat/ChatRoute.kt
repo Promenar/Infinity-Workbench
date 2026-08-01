@@ -45,7 +45,7 @@ import com.promenar.nexara.background.generation.shouldExplainNotificationPermis
 import com.promenar.nexara.background.generation.shouldShowNotificationPermissionDialog
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.domain.repository.ITaskRepository
-import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
+import com.promenar.nexara.domain.repository.PlanPatchOp
 import com.promenar.nexara.ui.common.EditorMode
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSnackbarData
@@ -187,6 +187,12 @@ fun ChatRoute(
     }
     val chatViewModel: ChatViewModel = viewModel(factory = resolvedDependencies.viewModelFactory)
     val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
+    val activeTaskTree by remember(sessionId, resolvedDependencies.taskRepository) {
+        resolvedDependencies.taskRepository.observeActiveTree(sessionId)
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val taskPanel = remember(activeTaskTree, uiState.isGenerating) {
+        taskPanelUiState(activeTaskTree, uiState.isGenerating)
+    }
     val inputText by chatViewModel.inputText.collectAsStateWithLifecycle()
     val tokenState by chatViewModel.tokenIndicatorState.collectAsStateWithLifecycle()
     val ragPhases by chatViewModel.ragPhases.collectAsStateWithLifecycle()
@@ -217,6 +223,7 @@ fun ChatRoute(
     val pendingNotificationPermission = permissionExplanationTaskId
         ?.let(::NotificationPermissionRequest)
     val scope = rememberCoroutineScope()
+    val continueTaskPrompt = stringResource(R.string.chat_task_continue_prompt)
 
     val hasBlockingOverlay = activeOverlay != null
     val permissionDialogVisible = shouldShowNotificationPermissionDialog(
@@ -397,6 +404,7 @@ fun ChatRoute(
             draftDocuments = draftDocuments,
             isImportingDocument = isImportingDocument,
             modelDisplayNames = modelDisplayNames,
+            taskPanel = taskPanel,
         ),
         actions = ChatScreenActions(
             onNavigateBack = onNavigateBack,
@@ -462,17 +470,33 @@ fun ChatRoute(
                 snackbarAction?.invoke()
                 snackbarHostState.currentSnackbarData?.dismiss()
             },
+            onContinueTask = {
+                if (!uiState.isGenerating) {
+                    chatViewModel.sendMessage(continueTaskPrompt)
+                }
+            },
+            onCompleteTask = {
+                if (!uiState.isGenerating) {
+                    val unfinishedIds = unfinishedTaskLeafIds(activeTaskTree)
+                    if (unfinishedIds.isNotEmpty()) {
+                        scope.launch {
+                            resolvedDependencies.taskRepository.updatePlan(
+                                sessionId = sessionId,
+                                operations = unfinishedIds.map { stepId ->
+                                    PlanPatchOp(
+                                        action = "set_status",
+                                        stepId = stepId,
+                                        payload = mapOf("status" to "done"),
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
+            },
         ),
         snackbarHostState = snackbarHostState,
         snackbarData = snackbarData,
-        taskPanel = {
-            TaskFloatingPanel(
-                sessionId = sessionId,
-                taskRepo = resolvedDependencies.taskRepository,
-                goalTitle = uiState.session?.activeTask?.title.orEmpty(),
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-        },
     )
 
     pendingNotificationPermission?.takeIf { permissionDialogVisible }?.let { request ->
