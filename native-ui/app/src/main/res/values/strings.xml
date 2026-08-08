@@ -316,9 +316,11 @@
     <string name="settings_provider_count_summary">%1$d provider(s)</string>
     <string name="settings_default_models_count_summary">%1$d model(s)</string>
     <string name="settings_language">Language</string>
+    <string name="settings_language_desc">Choose the app interface language</string>
     <string name="settings_language_zh">Chinese</string>
     <string name="settings_language_en">English</string>
     <string name="settings_appearance">Appearance</string>
+    <string name="settings_appearance_desc">Theme, colors, and interface display</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_dark">Dark</string>
@@ -337,6 +339,7 @@
     <string name="settings_advanced_retrieval">Advanced Retrieval</string>
     <string name="settings_retrieval_desc">Reranking, query rewriting, hybrid search</string>
     <string name="settings_token_usage">Usage Management</string>
+    <string name="settings_token_usage_desc">Review model usage and cost statistics</string>
     <string name="settings_token_cost_month">%1$s this month</string>
     <string name="settings_section_tools">Tools</string>
     <string name="settings_web_search">Web Search</string>
@@ -354,6 +357,7 @@
     <string name="settings_export_logs_desc">Share log files</string>
     <string name="settings_section_about">About</string>
     <string name="settings_about_nexara">About Nexara</string>
+    <string name="settings_about_nexara_desc">Version, licenses, and project information</string>
     <string name="settings_version">Version %1$s</string>
     <string name="settings_provider_empty">No providers configured yet.\nTap the button above to add one.</string>
     <string name="settings_provider_type_generic_openai">OpenAI Compatible (Generic)</string>

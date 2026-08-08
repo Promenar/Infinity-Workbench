@@ -27,7 +27,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DeleteForever
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Link
@@ -35,7 +34,7 @@ import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -47,7 +46,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
@@ -56,8 +54,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -69,10 +65,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
@@ -80,11 +76,11 @@ import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.SettingsToggle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.collectAsState
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.promenar.nexara.ui.common.SecretField
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.testing.UiTags
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -181,44 +177,20 @@ internal fun BackupSettingsScreen(
             showRestorePasswordDialog = true
         }
     }
-    val stackLocalActions = shouldStackBackupActions(LocalDensity.current.fontScale)
-
     val onExportClick = {
         if (uiState.includeKeys) showExportPasswordDialog = true
         else exportLauncher.launch("nexara_backup_${System.currentTimeMillis()}.nexara")
     }
     val onImportClick = { importLauncher.launch("*/*") }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.common_cd_back)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface
-                )
-            )
-        }
+    NexaraSettingsPageLayout(
+        title = stringResource(R.string.backup_title),
+        onBack = onNavigateBack,
     ) { paddingValues ->
         LazyColumn(
             state = listState,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(paddingValues)
-                .padding(horizontal = 20.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                top = 24.dp, bottom = 120.dp
-            ),
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = paddingValues,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
@@ -295,13 +267,6 @@ internal fun BackupSettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
-                        leadingContent = {
-                            Icon(
-                                imageVector = Icons.Rounded.Link,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        },
                         trailingContent = {
                             Icon(
                                 imageVector = if (contentExpanded) Icons.Rounded.KeyboardArrowUp
@@ -344,50 +309,24 @@ internal fun BackupSettingsScreen(
             item { SettingsSectionHeader(stringResource(R.string.backup_section_local)) }
 
             item {
-                if (stackLocalActions) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        ExportButton(
-                            icon = Icons.Rounded.Download,
-                            title = stringResource(R.string.backup_export_title),
-                            subtitle = if (uiState.isExporting) stringResource(R.string.backup_exporting) else stringResource(R.string.backup_export_subtitle),
-                            modifier = Modifier.fillMaxWidth().testTag(UiTags.BACKUP_EXPORT),
-                            enabled = uiState.canExecute,
-                            onClick = onExportClick,
-                        )
-                        ExportButton(
-                            icon = Icons.Rounded.Upload,
-                            title = stringResource(R.string.backup_import_title),
-                            subtitle = if (uiState.isImporting) stringResource(R.string.backup_importing) else stringResource(R.string.backup_import_subtitle),
-                            modifier = Modifier.fillMaxWidth().testTag(UiTags.BACKUP_IMPORT),
-                            enabled = uiState.canExecute,
-                            onClick = onImportClick,
-                        )
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        ExportButton(
-                            icon = Icons.Rounded.Download,
-                            title = stringResource(R.string.backup_export_title),
-                            subtitle = if (uiState.isExporting) stringResource(R.string.backup_exporting) else stringResource(R.string.backup_export_subtitle),
-                            modifier = Modifier.weight(1f).testTag(UiTags.BACKUP_EXPORT),
-                            enabled = uiState.canExecute,
-                            onClick = onExportClick,
-                        )
-                        ExportButton(
-                            icon = Icons.Rounded.Upload,
-                            title = stringResource(R.string.backup_import_title),
-                            subtitle = if (uiState.isImporting) stringResource(R.string.backup_importing) else stringResource(R.string.backup_import_subtitle),
-                            modifier = Modifier.weight(1f).testTag(UiTags.BACKUP_IMPORT),
-                            enabled = uiState.canExecute,
-                            onClick = onImportClick,
-                        )
-                    }
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ExportButton(
+                        icon = Icons.Rounded.Download,
+                        title = stringResource(R.string.backup_export_title),
+                        subtitle = if (uiState.isExporting) stringResource(R.string.backup_exporting) else stringResource(R.string.backup_export_subtitle),
+                        modifier = Modifier.fillMaxWidth().testTag(UiTags.BACKUP_EXPORT),
+                        enabled = uiState.canExecute,
+                        onClick = onExportClick,
+                    )
+                    ExportButton(
+                        icon = Icons.Rounded.Upload,
+                        title = stringResource(R.string.backup_import_title),
+                        subtitle = if (uiState.isImporting) stringResource(R.string.backup_importing) else stringResource(R.string.backup_import_subtitle),
+                        modifier = Modifier.fillMaxWidth().testTag(UiTags.BACKUP_IMPORT),
+                        enabled = uiState.canExecute,
+                        onClick = onImportClick,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
 
@@ -408,13 +347,6 @@ internal fun BackupSettingsScreen(
                                 text = if (uiState.webdavEnabled) stringResource(R.string.backup_webdav_configured) else stringResource(R.string.backup_webdav_not_configured),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        leadingContent = {
-                            Icon(
-                                imageVector = Icons.Rounded.CloudSync,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
                             )
                         },
                         trailingContent = {
@@ -548,13 +480,6 @@ internal fun BackupSettingsScreen(
                             text = stringResource(R.string.backup_info_text),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Rounded.Info,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -881,35 +806,34 @@ private fun ExportButton(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    FilledTonalButton(
-        modifier = modifier,
-        enabled = enabled,
-        onClick = onClick,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            horizontal = 12.dp,
-            vertical = 16.dp,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+    ListItem(
+        modifier = modifier
+            .alpha(if (enabled) 1f else 0.38f)
+            .clickable(enabled = enabled, onClick = onClick),
+        leadingContent = {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
-                textAlign = TextAlign.Center,
-            )
+        },
+        headlineContent = { Text(title, style = MaterialTheme.typography.titleMedium) },
+        supportingContent = {
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-    }
+        },
+        trailingContent = {
+            Icon(
+                imageVector = Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
 }

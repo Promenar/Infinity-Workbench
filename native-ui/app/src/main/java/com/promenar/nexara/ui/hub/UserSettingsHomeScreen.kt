@@ -12,38 +12,25 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Key
-import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Psychology
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -62,18 +49,19 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.R
 import com.promenar.nexara.navigation.NavDestinations
-import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
-import com.promenar.nexara.ui.theme.NexaraThemePreferences
 import com.yalantis.ucrop.UCrop
 import java.io.File
 
@@ -86,15 +74,7 @@ fun UserSettingsHomeScreen(
     val viewModel = viewModel<SettingsViewModel>(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
     val userName by viewModel.userName.collectAsState()
     val userAvatar by viewModel.userAvatar.collectAsState()
-    val tokenCost by viewModel.tokenCostThisMonth.collectAsState()
     val language by viewModel.language.collectAsState()
-    val themePreferences by viewModel.themePreferences.collectAsState()
-    val providers by viewModel.providers.collectAsState()
-
-    val summaryModelId by viewModel.summaryModelId.collectAsState()
-    val imageModelId by viewModel.imageModelId.collectAsState()
-    val embeddingModelId by viewModel.embeddingModelId.collectAsState()
-    val rerankModelId by viewModel.rerankModelId.collectAsState()
 
     var showNameEditor by remember { mutableStateOf(false) }
     var editingName by remember { mutableStateOf(userName) }
@@ -138,20 +118,10 @@ fun UserSettingsHomeScreen(
         }
     }
 
-    val configuredDefaultModelsCount = remember(summaryModelId, imageModelId, embeddingModelId, rerankModelId) {
-        listOf(summaryModelId, imageModelId, embeddingModelId, rerankModelId).count { it.isNotEmpty() }
-    }
-
-    val state = remember(userName, userAvatar, tokenCost, language, themePreferences, providers, configuredDefaultModelsCount) {
+    val state = remember(userName, userAvatar) {
         UserSettingsHomeScreenState(
             userName = userName,
             userAvatar = userAvatar,
-            tokenCost = tokenCost,
-            language = language,
-            themePreferences = themePreferences,
-            providerCount = providers.size,
-            configuredDefaultModelsCount = configuredDefaultModelsCount,
-            versionName = BuildConfig.VERSION_NAME,
             localInferenceAvailable = BuildConfig.LOCAL_INFERENCE_AVAILABLE
         )
     }
@@ -214,12 +184,6 @@ fun UserSettingsHomeScreen(
 internal data class UserSettingsHomeScreenState(
     val userName: String = "",
     val userAvatar: String? = null,
-    val tokenCost: String = "",
-    val language: String = "en",
-    val themePreferences: NexaraThemePreferences = NexaraThemePreferences(),
-    val providerCount: Int = 0,
-    val configuredDefaultModelsCount: Int = 0,
-    val versionName: String = "",
     val localInferenceAvailable: Boolean = false,
 )
 
@@ -238,35 +202,22 @@ internal fun UserSettingsHomeScreenContent(
     state: UserSettingsHomeScreenState,
     actions: UserSettingsHomeScreenActions,
 ) {
-    Scaffold(
+    NexaraSettingsPageLayout(
+        title = stringResource(R.string.settings_title),
         modifier = Modifier.testTag(UiTags.SETTINGS_ROOT),
-        containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets.systemBars,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.settings_title),
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-            )
-        },
-    ) { paddingValues ->
+        horizontalContentPadding = 0.dp,
+    ) { contentPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = NexaraSpacing.ScreenHorizontal)
                 .testTag(UiTags.SETTINGS_APP_LIST),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = NexaraSpacing.XLarge),
+            contentPadding = contentPadding,
         ) {
             item {
-                NexaraSettingsSection(title = stringResource(R.string.settings_section_account)) {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.settings_section_account),
+                    headerStartPadding = NexaraSpacing.ScreenHorizontal,
+                ) {
                     UserProfileListItem(
                         userName = state.userName,
                         avatarUri = state.userAvatar,
@@ -277,50 +228,43 @@ internal fun UserSettingsHomeScreenContent(
             }
 
             item {
-                NexaraSettingsSection(title = stringResource(R.string.settings_section_general)) {
-                    NexaraSettingsItem(
-                        icon = Icons.Rounded.Key,
+                NexaraSettingsSection(
+                    title = stringResource(R.string.settings_section_general),
+                    headerStartPadding = NexaraSpacing.ScreenHorizontal,
+                ) {
+                    UserSettingsNavigationItem(
                         title = stringResource(R.string.settings_language),
-                        subtitle = if (state.language == "zh") {
-                            stringResource(R.string.settings_language_zh)
-                        } else {
-                            stringResource(R.string.settings_language_en)
-                        },
+                        subtitle = stringResource(R.string.settings_language_desc),
                         onClick = actions.onShowLanguageDialog,
                     )
-                    NexaraSettingsItem(
-                        icon = Icons.Rounded.Palette,
+                    UserSettingsNavigationItem(
                         title = stringResource(R.string.settings_appearance),
-                        subtitle = when (state.themePreferences.mode) {
-                            com.promenar.nexara.ui.theme.NexaraThemeMode.SYSTEM -> stringResource(R.string.settings_theme_system)
-                            com.promenar.nexara.ui.theme.NexaraThemeMode.LIGHT -> stringResource(R.string.settings_theme_light)
-                            com.promenar.nexara.ui.theme.NexaraThemeMode.DARK -> stringResource(R.string.settings_theme_dark)
-                        },
+                        subtitle = stringResource(R.string.settings_appearance_desc),
                         onClick = { actions.onNavigateToSecondary(NavDestinations.THEME_CONFIG) }
                     )
                 }
             }
 
             item {
-                NexaraSettingsSection(title = stringResource(R.string.settings_section_ai_models)) {
-                    NexaraSettingsItem(
-                        icon = Icons.Rounded.Settings,
+                NexaraSettingsSection(
+                    title = stringResource(R.string.settings_section_ai_models),
+                    headerStartPadding = NexaraSpacing.ScreenHorizontal,
+                ) {
+                    UserSettingsNavigationItem(
                         title = stringResource(R.string.settings_provider_management),
-                        subtitle = stringResource(R.string.settings_provider_count_summary, state.providerCount),
+                        subtitle = stringResource(R.string.settings_provider_management_desc),
                         onClick = { actions.onNavigateToSecondary(NavDestinations.PROVIDER_LIST) },
                         modifier = Modifier.testTag(UiTags.SETTINGS_PROVIDER_ENTRY),
                     )
-                    NexaraSettingsItem(
-                        icon = Icons.Rounded.Psychology,
+                    UserSettingsNavigationItem(
                         title = stringResource(R.string.settings_default_models),
-                        subtitle = stringResource(R.string.settings_default_models_count_summary, state.configuredDefaultModelsCount),
+                        subtitle = stringResource(R.string.settings_default_models_desc),
                         onClick = { actions.onNavigateToSecondary(NavDestinations.DEFAULT_MODELS) },
                         modifier = Modifier.testTag(UiTags.SETTINGS_DEFAULT_MODELS_ENTRY),
                     )
                     if (state.localInferenceAvailable) {
                         Box(modifier = Modifier.testTag(UiTags.SETTINGS_LOCAL_INFERENCE_ENTRY)) {
-                            NexaraSettingsItem(
-                                icon = Icons.Rounded.Tune,
+                            UserSettingsNavigationItem(
                                 title = stringResource(R.string.settings_local_models),
                                 subtitle = stringResource(R.string.settings_local_models_desc),
                                 onClick = { actions.onNavigateToSecondary("local_models") }
@@ -331,15 +275,16 @@ internal fun UserSettingsHomeScreenContent(
             }
 
             item {
-                NexaraSettingsSection(title = stringResource(R.string.settings_section_knowledge_retrieval)) {
-                    NexaraSettingsItem(
-                        icon = Icons.Rounded.Settings,
+                NexaraSettingsSection(
+                    title = stringResource(R.string.settings_section_knowledge_retrieval),
+                    headerStartPadding = NexaraSpacing.ScreenHorizontal,
+                ) {
+                    UserSettingsNavigationItem(
                         title = stringResource(R.string.settings_rag_config),
                         subtitle = stringResource(R.string.settings_rag_desc),
                         onClick = { actions.onNavigateToSecondary("rag_global_config") },
                     )
-                    NexaraSettingsItem(
-                        icon = Icons.Rounded.Tune,
+                    UserSettingsNavigationItem(
                         title = stringResource(R.string.settings_advanced_retrieval),
                         subtitle = stringResource(R.string.settings_retrieval_desc),
                         onClick = { actions.onNavigateToSecondary("rag_advanced") },
@@ -348,21 +293,21 @@ internal fun UserSettingsHomeScreenContent(
             }
 
             item {
-                NexaraSettingsSection(title = stringResource(R.string.settings_section_tools_data)) {
-                    NexaraSettingsItem(
-                        icon = Icons.Rounded.Tune,
+                NexaraSettingsSection(
+                    title = stringResource(R.string.settings_section_tools_data),
+                    headerStartPadding = NexaraSpacing.ScreenHorizontal,
+                ) {
+                    UserSettingsNavigationItem(
                         title = stringResource(R.string.settings_skills),
                         subtitle = stringResource(R.string.settings_skills_desc),
                         onClick = { actions.onNavigateToSecondary("skills_config") },
                     )
-                    NexaraSettingsItem(
-                        icon = Icons.Rounded.Edit,
+                    UserSettingsNavigationItem(
                         title = stringResource(R.string.settings_token_usage),
-                        subtitle = stringResource(R.string.settings_token_cost_month, state.tokenCost),
+                        subtitle = stringResource(R.string.settings_token_usage_desc),
                         onClick = { actions.onNavigateToSecondary("token_usage") },
                     )
-                    NexaraSettingsItem(
-                        icon = Icons.Rounded.Settings,
+                    UserSettingsNavigationItem(
                         title = stringResource(R.string.settings_backup),
                         subtitle = stringResource(R.string.settings_backup_desc),
                         onClick = { actions.onNavigateToSecondary("backup_settings") },
@@ -371,11 +316,13 @@ internal fun UserSettingsHomeScreenContent(
             }
 
             item {
-                NexaraSettingsSection(title = stringResource(R.string.settings_section_about)) {
-                    NexaraSettingsItem(
-                        icon = Icons.Rounded.Info,
+                NexaraSettingsSection(
+                    title = stringResource(R.string.settings_section_about),
+                    headerStartPadding = NexaraSpacing.ScreenHorizontal,
+                ) {
+                    UserSettingsNavigationItem(
                         title = stringResource(R.string.settings_about_nexara),
-                        subtitle = stringResource(R.string.settings_version, state.versionName),
+                        subtitle = stringResource(R.string.settings_about_nexara_desc),
                         onClick = actions.onAboutClick,
                     )
                 }
@@ -390,6 +337,46 @@ internal fun UserSettingsHomeScreenContent(
 }
 
 @Composable
+private fun UserSettingsNavigationItem(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ListItem(
+        modifier = modifier.clickable(
+            role = Role.Button,
+            onClick = onClick,
+        ),
+        headlineContent = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                    fontWeight = FontWeight.Normal,
+                ),
+            )
+        },
+        supportingContent = {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.Normal,
+                ),
+            )
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = Color.Transparent,
+            headlineColor = MaterialTheme.colorScheme.onSurface,
+            supportingColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+    )
+}
+
+@Composable
 private fun UserProfileListItem(
     userName: String,
     avatarUri: String?,
@@ -399,60 +386,70 @@ private fun UserProfileListItem(
     val editAvatarDescription = stringResource(R.string.settings_edit_avatar)
     val editNameDescription = stringResource(R.string.settings_edit_name)
 
-    ListItem(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+            .defaultMinSize(minHeight = 88.dp)
             .clickable(
                 role = Role.Button,
-                onClickLabel = editAvatarDescription,
-                onClick = onChangeAvatar
+                onClickLabel = editNameDescription,
+                onClick = onEditName,
+            )
+            .padding(
+                horizontal = NexaraSpacing.ScreenHorizontal,
+                vertical = NexaraSpacing.Large,
             ),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        leadingContent = {
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clickable(
+                    role = Role.Button,
+                    onClickLabel = editAvatarDescription,
+                    onClick = onChangeAvatar,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
             Box(
                 modifier = Modifier
-                    .size(NexaraSpacing.MinimumTouchTarget)
+                    .fillMaxSize()
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 if (avatarUri != null) {
                     AsyncImage(
                         model = avatarUri,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                     )
                 } else {
                     Text(
                         text = userName.take(1).uppercase(),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontSize = 22.sp,
+                            lineHeight = 28.sp,
+                            fontWeight = FontWeight.Medium,
+                        ),
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }
-        },
-        headlineContent = {
-            Text(
-                text = userName,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        },
-        trailingContent = {
-            IconButton(
-                onClick = onEditName,
-                modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Edit,
-                    contentDescription = editNameDescription,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
-    )
+        Spacer(modifier = Modifier.width(NexaraSpacing.Large))
+        Text(
+            text = userName,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = 22.sp,
+                lineHeight = 28.sp,
+                fontWeight = FontWeight.Medium,
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+    }
 }
 
 @Composable

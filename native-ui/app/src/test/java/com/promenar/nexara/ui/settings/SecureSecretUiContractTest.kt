@@ -39,8 +39,8 @@ class SecureSecretUiContractTest {
         assertThat(form).contains("data class ProviderFormUiState")
         assertThat(form).contains("data class ProviderFormActions")
         assertThat(form).contains("fun ProviderFormContent(")
-        assertThat(form).contains("imePadding = true")
-        assertThat(form).contains("scrollable = false")
+        assertThat(form).contains("NexaraSettingsPageLayout(")
+        assertThat(form).contains("contentPadding = contentPadding")
         assertThat(form).contains("LazyColumn(")
         assertThat(form).contains("ExposedDropdownMenuBox(")
         assertThat(form).contains("OutlinedTextField(")
@@ -55,7 +55,7 @@ class SecureSecretUiContractTest {
         assertThat(form).doesNotContain("BasicTextField")
         assertThat(form).doesNotContain("Spacer(modifier = Modifier.height(200.dp))")
         assertThat(form).doesNotContain("navigationBarsPadding()")
-        assertThat(form).doesNotContain("imePadding()")
+        assertThat(form).contains("imePadding()")
     }
 
     @Test

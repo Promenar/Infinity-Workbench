@@ -1,22 +1,18 @@
 package com.promenar.nexara.ui.settings
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -24,18 +20,14 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -44,13 +36,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -65,6 +54,7 @@ import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 
@@ -129,65 +119,39 @@ internal data class ProviderListScreenActions(
     val onRequestDeleteProvider: (String) -> Unit = {}
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ProviderListScreenContent(
     state: ProviderListScreenState,
     actions: ProviderListScreenActions
 ) {
-    Scaffold(
+    NexaraSettingsPageLayout(
+        title = stringResource(R.string.settings_provider_management),
+        onBack = actions.onNavigateBack,
+        horizontalContentPadding = 0.dp,
         modifier = Modifier.testTag(UiTags.SETTINGS_PROVIDER_LIST),
-        containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets.systemBars,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.settings_provider_management),
-                        style = MaterialTheme.typography.titleLarge
+        actions = {
+            IconButton(
+                onClick = actions.onAddProvider,
+                modifier = Modifier
+                    .sizeIn(
+                        minWidth = NexaraSpacing.MinimumTouchTarget,
+                        minHeight = NexaraSpacing.MinimumTouchTarget,
                     )
-                },
-                navigationIcon = {
-                    IconButton(onClick = actions.onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.common_cd_back)
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = actions.onAddProvider,
-                        modifier = Modifier
-                            .sizeIn(
-                                minWidth = NexaraSpacing.MinimumTouchTarget,
-                                minHeight = NexaraSpacing.MinimumTouchTarget,
-                            )
-                            .testTag(UiTags.SETTINGS_ADD_PROVIDER)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Add,
-                            contentDescription = stringResource(R.string.settings_add_provider)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
+                    .testTag(UiTags.SETTINGS_ADD_PROVIDER),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = stringResource(R.string.settings_add_provider),
                 )
-            )
+            }
         }
-    ) { paddingValues ->
+    ) { contentPadding ->
         val compactHeightEmptyState = LocalConfiguration.current.screenHeightDp < 480
 
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = NexaraSpacing.ScreenHorizontal),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             if (state.providers.isEmpty()) {
                 item {
@@ -287,17 +251,6 @@ private fun ProviderCard(
     onDelete: (() -> Unit)?,
 ) {
     var menuExpanded by remember(provider.id) { mutableStateOf(false) }
-    val useLargeTextLayout = LocalDensity.current.fontScale >= 1.5f
-    val titleStyle = if (useLargeTextLayout) {
-        MaterialTheme.typography.titleSmall
-    } else {
-        MaterialTheme.typography.titleMedium
-    }
-    val supportingStyle = if (useLargeTextLayout) {
-        MaterialTheme.typography.bodySmall
-    } else {
-        MaterialTheme.typography.bodyMedium
-    }
     val manageDescription = stringResource(R.string.settings_manage_models)
     val editDescription = stringResource(R.string.shared_btn_edit)
     val deleteDescription = stringResource(R.string.shared_btn_delete)
@@ -342,49 +295,6 @@ private fun ProviderCard(
             stringResource(R.string.settings_provider_type_local)
         else -> provider.typeName
     }
-    val providerIcon = remember(provider.typeName) {
-        ProtocolType.entries.find { it.displayName == provider.typeName }?.iconRes
-    }
-    val iconContainerColor = if (provider.enabled) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    }
-    val iconColor = if (provider.enabled) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val leadingContent: (@Composable () -> Unit)? = if (useLargeTextLayout) {
-        null
-    } else {
-        {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(iconContainerColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (providerIcon != null) {
-                    Icon(
-                        painter = painterResource(id = providerIcon),
-                        contentDescription = null,
-                        tint = iconColor,
-                        modifier = Modifier.size(NexaraSpacing.XLarge),
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Rounded.Psychology,
-                        contentDescription = null,
-                        tint = iconColor,
-                        modifier = Modifier.size(NexaraSpacing.XLarge),
-                    )
-                }
-            }
-        }
-    }
-
     ListItem(
         modifier = Modifier
             .fillMaxWidth()
@@ -400,23 +310,23 @@ private fun ProviderCard(
         headlineContent = {
             Text(
                 text = provider.name,
-                style = titleStyle,
+                style = MaterialTheme.typography.bodyLarge,
                 color = if (provider.enabled) {
                     MaterialTheme.colorScheme.onSurface
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
-                maxLines = if (useLargeTextLayout) 3 else 2,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
         },
         supportingContent = {
             Column {
                 Text(
-                    text = localizedTypeName,
-                    style = supportingStyle,
+                    text = "$localizedTypeName · $providerStateDescription",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = if (useLargeTextLayout) 2 else 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
@@ -426,16 +336,8 @@ private fun ProviderCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = providerStateDescription,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = if (useLargeTextLayout) 2 else 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
             }
         },
-        leadingContent = leadingContent,
         trailingContent = {
             Box {
                 IconButton(

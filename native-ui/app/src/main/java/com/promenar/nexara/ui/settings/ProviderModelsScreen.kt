@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -73,7 +74,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
-import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
@@ -214,12 +215,17 @@ internal fun ProviderModelsScreenContent(
         }
     }
 
-    NexaraPageLayout(
+    NexaraSettingsPageLayout(
         title = state.providerName,
         onBack = onNavigateBack,
-        scrollable = false,
         modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_SCREEN_ROOT),
-    ) {
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .imePadding(),
+        ) {
         NexaraSearchBar(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -308,7 +314,6 @@ internal fun ProviderModelsScreenContent(
                 ) { index, model ->
                     if (index > 0) {
                         HorizontalDivider(
-                            modifier = Modifier.padding(start = 16.dp),
                             color = MaterialTheme.colorScheme.outlineVariant,
                         )
                     }
@@ -323,6 +328,7 @@ internal fun ProviderModelsScreenContent(
                     )
                 }
             }
+        }
         }
     }
 
@@ -602,8 +608,8 @@ internal fun ProviderModelsModelRow(
             .fillMaxWidth()
             .clickable(role = Role.Button, onClick = onRowClick)
             .testTag(UiTags.providerModelsModelCard(model.id))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
             text = model.name,

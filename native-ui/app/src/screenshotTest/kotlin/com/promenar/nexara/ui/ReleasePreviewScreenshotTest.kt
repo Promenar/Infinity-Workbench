@@ -2574,15 +2574,63 @@ fun userSettingsAppChineseTabletReleasePreview() {
         UserSettingsHomeScreenContent(
             state = UserSettingsHomeScreenState(
                 userName = "黎明",
-                tokenCost = "¥12.46",
-                language = "zh",
-                providerCount = 2,
-                configuredDefaultModelsCount = 4,
-                versionName = "0.2-beta",
                 localInferenceAvailable = false,
             ),
             actions = UserSettingsHomeScreenActions(),
         )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "User settings app Chinese phone",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun userSettingsAppChinesePhoneReleasePreview() {
+    ReleasePreviewSurface {
+        UserSettingsHomeScreenContent(
+            state = UserSettingsHomeScreenState(
+                userName = "黎明",
+                localInferenceAvailable = false,
+            ),
+            actions = UserSettingsHomeScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "User settings integrated navigation Chinese phone",
+    widthDp = 360,
+    heightDp = 800,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun userSettingsIntegratedNavigationChinesePhoneReleasePreview() {
+    NexaraTheme(
+        preferences = NexaraThemePreferences(
+            mode = NexaraThemeMode.DARK,
+            colorSource = NexaraColorSource.NEXARA,
+        ),
+    ) {
+        AdaptiveNavigationSurface(
+            expanded = false,
+            selectedTab = AppTab.SETTINGS,
+            onTabSelected = {},
+        ) {
+            UserSettingsHomeScreenContent(
+                state = UserSettingsHomeScreenState(
+                    userName = "黎明",
+                    localInferenceAvailable = false,
+                ),
+                actions = UserSettingsHomeScreenActions(),
+            )
+        }
     }
 }
 
@@ -2601,11 +2649,6 @@ fun userSettingsAppChineseCompactLargeFontReleasePreview() {
         UserSettingsHomeScreenContent(
             state = UserSettingsHomeScreenState(
                 userName = "黎明",
-                tokenCost = "¥12.46",
-                language = "zh",
-                providerCount = 12,
-                configuredDefaultModelsCount = 4,
-                versionName = "0.2-beta",
                 localInferenceAvailable = false,
             ),
             actions = UserSettingsHomeScreenActions(),

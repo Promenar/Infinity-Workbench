@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
@@ -48,7 +50,8 @@ import com.promenar.nexara.domain.repository.DailyTokenStats
 import com.promenar.nexara.domain.repository.SessionTokenUsage
 import com.promenar.nexara.ui.common.ConfirmDialog
 import com.promenar.nexara.ui.common.NexaraCollapsibleSection
-import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.SettingsSectionHeader
 
 @Composable
 fun TokenUsageScreen(
@@ -68,10 +71,15 @@ fun TokenUsageScreen(
         destructive = true
     )
 
-    NexaraPageLayout(
+    NexaraSettingsPageLayout(
         title = stringResource(R.string.token_title),
         onBack = onNavigateBack
-    ) {
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(contentPadding),
+        ) {
         Text(
             text = stringResource(R.string.token_desc),
             style = MaterialTheme.typography.bodyMedium,
@@ -98,13 +106,7 @@ fun TokenUsageScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             if (state.topSessions.isNotEmpty()) {
-                Text(
-                    text = stringResource(R.string.token_top_sessions),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+                SettingsSectionHeader(stringResource(R.string.token_top_sessions))
                 Column(modifier = Modifier.fillMaxWidth()) {
                     state.topSessions.forEachIndexed { index, session ->
                         SessionRankingRow(index + 1, session)
@@ -115,13 +117,7 @@ fun TokenUsageScreen(
             }
 
             if (state.dailyTrend.isNotEmpty()) {
-                Text(
-                    text = stringResource(R.string.token_7day_trend),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+                SettingsSectionHeader(stringResource(R.string.token_7day_trend))
                 TrendChart(state.dailyTrend)
                 Spacer(modifier = Modifier.height(20.dp))
             }
@@ -178,6 +174,7 @@ fun TokenUsageScreen(
                     style = MaterialTheme.typography.labelLarge
                 )
             }
+        }
         }
     }
 }

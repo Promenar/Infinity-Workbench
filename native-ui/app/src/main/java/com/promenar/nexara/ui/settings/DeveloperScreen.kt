@@ -4,10 +4,6 @@ import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.BugReport
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -18,6 +14,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.SettingsSectionHeader
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -28,70 +27,24 @@ fun DeveloperScreen(
     val context = LocalContext.current
     val shareLogsChooser = stringResource(R.string.developer_share_logs_chooser)
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.developer_title), style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.common_cd_back)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface
-                )
-            )
-        }
+    NexaraSettingsPageLayout(
+        title = stringResource(R.string.developer_title),
+        onBack = onNavigateBack,
     ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = paddingValues,
         ) {
             item {
-                Text(
-                    text = stringResource(R.string.developer_diagnostics_section),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
+                SettingsSectionHeader(stringResource(R.string.developer_diagnostics_section))
             }
 
             item {
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            text = stringResource(R.string.developer_export_logs),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = stringResource(R.string.developer_export_logs_desc),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Rounded.Share,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
+                NexaraSettingsItem(
+                    title = stringResource(R.string.developer_export_logs),
+                    subtitle = stringResource(R.string.developer_export_logs_desc),
+                    showChevron = false,
+                    onClick = {
                             val logFile = File(context.filesDir, "nexara_logs.txt")
                             if (logFile.exists()) {
                                 val uri = FileProvider.getUriForFile(
@@ -111,55 +64,28 @@ fun DeveloperScreen(
                                     )
                                 )
                             }
-                        }
+                    },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
 
             item {
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            text = stringResource(R.string.developer_clear_logs),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = stringResource(R.string.developer_clear_logs_desc),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Rounded.BugReport,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            val logFile = File(context.filesDir, "nexara_logs.txt")
-                            if (logFile.exists()) {
-                                logFile.writeText("")
-                            }
+                NexaraSettingsItem(
+                    title = stringResource(R.string.developer_clear_logs),
+                    subtitle = stringResource(R.string.developer_clear_logs_desc),
+                    showChevron = false,
+                    onClick = {
+                        val logFile = File(context.filesDir, "nexara_logs.txt")
+                        if (logFile.exists()) {
+                            logFile.writeText("")
                         }
+                    },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
 
             item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = stringResource(R.string.developer_device_section),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
+                SettingsSectionHeader(stringResource(R.string.developer_device_section))
             }
 
             item {

@@ -48,6 +48,49 @@ final result: passed
 
 ---
 
+# 设置全层级 Solid Explorer 连续列表视觉验收
+
+- 验收日期：2026-08-04
+- 视觉目标：`/Users/promenar/.codex/generated_images/019fb5e7-35b5-7e93-8c9d-dd4203ce2c8e/exec-d2105ed2-67be-452c-a2f8-807a9c1a74c0.png`
+- SE 参考：`/Users/promenar/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/lengzehua_8cef/temp/RWTemp/2026-08/9e20f478899dc29eb19741386f9343c8/6de85487ec40e0fea33906d81f1eca39.jpg`
+- 实现截图：`native-ui/app/build/outputs/screenshotTest-results/preview/debug/rendered/com/promenar/nexara/ui/ReleasePreviewScreenshotTestKt/userSettingsIntegratedNavigationChinesePhoneReleasePreview_User settings integrated navigation Chinese phone_8b19e30b_0.png`
+- 同屏对比：`native-ui/app/build/design-qa/settings-home-iconless-two-line-comparison.png`
+- 视口与状态：360×800dp、360×800px、中文、深色、设置 Tab 选中；并复核手机、横屏、平板、英文/中文与 2.0x 字体状态。
+
+## 对比结论
+
+- **字体**：全设置层级采用 Material 3 标准角色。一级导航与深层设置行使用 16sp/24sp 主标题和 14sp/20sp 副标题；二至四级页面标题为 22sp/28sp，分组标题为 14sp/20sp，不再沿用 10–14sp 的压缩体系。2.0x 字体自然放大并滚动，没有内容重叠。
+- **间距与布局**：一级入口使用标准双行 `ListItem` 的 72dp 节奏、16dp 水平起点和统一文字轴线；取消 48dp 前导图标列。账户区独立为至少 88dp 的身份头部，头像 56dp、用户名 22sp/28sp，与普通设置项形成明确层级。
+- **颜色与表面**：使用现有 `MaterialTheme.colorScheme` 的中性黑紫背景、主色分组标题、正文/次要正文和低对比分隔线；普通设置项不再使用逐项卡片或 Glass 容器。
+- **图标**：首页设置入口不再渲染前导图标、箭头或账户铅笔；尾部空间只为未来真实状态或操作保留，不使用装饰元素暗示可点击。
+- **信息层级**：一级页恢复简短功能副标题，但不显示语言、主题、Provider 数量、模型数量、费用或版本等动态状态。整行按压反馈、Button 语义及至少 48dp 触控目标继续表达可操作性。
+- **响应式与行为**：设置首页、主题、Provider 列表/表单/模型、默认模型、RAG、知识图谱、检索、技能、备份、本地模型、开发者和用量页共用设置骨架；返回、搜索、开关、单选、表单和底部动作行为保持不变。
+- **导航边界**：`MainTabScaffold.kt` 为零 diff。底部三按钮导航的宽度、槽位、选中胶囊和动画未改动；集成截图只验证新设置页面在原导航容器内的构图。
+
+## 发现、修复与复审
+
+- 第一轮实现存在首屏密度偏低和“知识图谱”孤字换行 P1；第二次人工反馈仍指出字号与显示密度显得粗糙。通过设置链路独立的 10–20sp 文字层级、48dp 前导列、32dp 尾随图标列、18dp 线性图标及紧凑分组 token 完成二次修复，没有降低触控目标。
+- 实机继续验证后确认根因是一级页固定双行导致字号被迫缩小，而非单纯字号 token。第三轮删除一级页全部副标题、状态、箭头及账户铅笔，并把标题恢复为 16sp；同屏对比中页面重心更安静，文字可读性明显提高。用户选择暂时保留左侧图标作为扫描锚点。
+- 第四轮重新对照 SE 后进一步区分“副标题存在”与“压缩排版”两个变量：移除前导图标和尾随装饰，副标题改为 14sp/20sp 的稳定功能说明，主标题恢复 16sp/24sp；账户身份另用 56dp 头像和 `titleLarge`。同屏对比显示文字起点、主副层级和组间节奏已接近 SE，且比第三轮单行版更易读，P0/P1/P2 为 0。
+- 第五轮将同一规则扩展到所有二、三、四级页面：删除设置骨架内部的压缩字体映射，提供商列表移除品牌图标前导列，模型列表收紧文字轴，默认模型取消默认箭头；主题、Provider 表单/模型编辑、RAG、检索、技能、备份、本地模型、开发者和用量页面统一继承标准 Token。SE 参考、主题页、Provider Models 与默认模型的四宫格对比见 `native-ui/app/build/design-qa/settings-deep-pages-se-comparison.png`。
+- 第二轮独立视觉复审确认 P0/P1/P2 均为 0；背景层次、三个入口的具体图标造型和截图未模拟系统状态栏属于非阻断 P3。
+- 源图与实现合并对比聚焦首页整体密度；深层页面另以 Theme、Default Models、Provider Form、Provider Models、RAG Advanced、Search 与 Backup 的真实渲染，以及手机/横屏/平板和 2.0x 截图检查页面骨架、表单、长文本和操作状态。普通设置项使用连续列表；必须承载输入、统计或主动作的富功能区保留必要表面。
+- 单行版源图为用户实机双行截图 `f079dffa56f64b0b9307a62f5356ed8a.jpg`，实现为同一中文深色设置 Tab 状态；源图 1140×2616px、实现 945×2100px，比较图按等高归一化并保留各自纵横比。完整标签在全图可辨，因此无需额外局部裁切。
+
+## 自动化证据
+
+- 全量 JVM：2140 项，0 failure、0 error、14 个既有配置/真实网络条件 skip。
+- `validateDebugScreenshotTest`：101/101 通过；一级设置首页手机、集成底栏、平板与 2.0x 字体基线已更新。
+- `lintDebug`：0 Error/Fatal；425 Warning、25 Hint 为既有静态建议。
+- `compileDebugAndroidTestKotlin`、`assembleDebug`：通过。
+- Debug APK 在视觉回归阶段构建通过；最终 clean 发行构建随后清理了该可再生调试产物。
+- 正式签名 R8 APK：深层页面标准 MD3 Token 收敛后重新 clean 构建 `native-ui/app/build/outputs/apk/release/nexara-v0.2-beta.apk`，18,369,076 bytes，SHA-256 `4b19f50fa7c383d69b4acc28eebc4965f484194fe022f8a45f67fe9587f6bbe1`。统一验证器确认包名 `com.promenar.nexara.native`、versionCode 2、versionName `0.2-beta`、单一 signer、稳定正式证书、ZIP/体积、敏感内容和 GGUF/llama/ggml 排除；R8 mapping/seeds/usage/configuration 非空，16 KiB zipalign 与 checksum 回读通过。
+- `git diff --check`：通过；`MainTabScaffold.kt` 零 diff。
+
+final result: passed
+
+---
+
 # 会话任务进度面板 Material 3 视觉验收
 
 - 验收日期：2026-08-01

@@ -23,10 +23,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AddCircle
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.SdCard
 import androidx.compose.material.icons.rounded.Speed
@@ -44,12 +42,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -73,6 +67,8 @@ import com.promenar.nexara.data.local.inference.SlotState
 import com.promenar.nexara.data.local.inference.SlotType
 import com.promenar.nexara.data.local.inference.StoredModel
 import com.promenar.nexara.ui.common.SettingsSectionHeader
+import com.promenar.nexara.ui.common.SettingsToggle
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,35 +93,13 @@ fun LocalModelsScreen(
         if (uri != null) viewModel.importModel(uri)
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.local_models_title), style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.common_cd_back)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface
-                )
-            )
-        }
+    NexaraSettingsPageLayout(
+        title = stringResource(R.string.local_models_title),
+        onBack = onNavigateBack,
     ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(paddingValues)
-                .padding(horizontal = 20.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                top = 24.dp, bottom = 120.dp
-            ),
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = paddingValues,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
@@ -138,36 +112,11 @@ fun LocalModelsScreen(
             }
 
             item {
-                ListItem(
-                    modifier = Modifier.fillMaxWidth(),
-                    headlineContent = {
-                        Text(
-                            text = stringResource(R.string.local_models_enable_engine),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = stringResource(R.string.local_models_engine_subtitle),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Rounded.Dns,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    trailingContent = {
-                        Switch(
-                            checked = engineEnabled,
-                            onCheckedChange = { viewModel.setEngineEnabled(it) }
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                SettingsToggle(
+                    title = stringResource(R.string.local_models_enable_engine),
+                    description = stringResource(R.string.local_models_engine_subtitle),
+                    checked = engineEnabled,
+                    onCheckedChange = viewModel::setEngineEnabled,
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }

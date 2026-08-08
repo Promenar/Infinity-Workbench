@@ -1,28 +1,30 @@
 package com.promenar.nexara.ui.settings
 
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.SettingsToggle
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraThemeMode
 
@@ -53,123 +55,101 @@ fun ThemeScreenContent(
     val dynamicColorChecked = state.dynamicColorAvailable &&
         state.preferences.colorSource == NexaraColorSource.DYNAMIC
 
-    NexaraPageLayout(
+    NexaraSettingsPageLayout(
         title = stringResource(R.string.theme_title),
         onBack = onNavigateBack
+    ) { contentPadding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = contentPadding,
+        ) {
+            item("description") {
+                Text(
+                    text = stringResource(R.string.theme_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(
+                        horizontal = NexaraSpacing.XSmall,
+                        vertical = NexaraSpacing.Small,
+                    ),
+                )
+            }
+            item("mode") {
+                NexaraSettingsSection(title = stringResource(R.string.theme_mode)) {
+                    ThemeModeRow(
+                        title = stringResource(R.string.settings_theme_system),
+                        selected = state.preferences.mode == NexaraThemeMode.SYSTEM,
+                        onClick = { onModeSelect(NexaraThemeMode.SYSTEM) },
+                        modifier = Modifier.testTag("theme_mode_system"),
+                    )
+                    ThemeModeRow(
+                        title = stringResource(R.string.settings_theme_light),
+                        selected = state.preferences.mode == NexaraThemeMode.LIGHT,
+                        onClick = { onModeSelect(NexaraThemeMode.LIGHT) },
+                        modifier = Modifier.testTag("theme_mode_light"),
+                    )
+                    ThemeModeRow(
+                        title = stringResource(R.string.settings_theme_dark),
+                        selected = state.preferences.mode == NexaraThemeMode.DARK,
+                        onClick = { onModeSelect(NexaraThemeMode.DARK) },
+                        modifier = Modifier.testTag("theme_mode_dark"),
+                    )
+                }
+            }
+            item("color") {
+                NexaraSettingsSection(title = stringResource(R.string.settings_theme_color)) {
+                    SettingsToggle(
+                        title = stringResource(R.string.theme_dynamic_color),
+                        description = stringResource(
+                            if (state.dynamicColorAvailable) {
+                                R.string.theme_dynamic_color_desc
+                            } else {
+                                R.string.theme_dynamic_color_unavailable
+                            },
+                        ),
+                        checked = dynamicColorChecked,
+                        enabled = state.dynamicColorAvailable,
+                        onCheckedChange = { enabled ->
+                            onColorSourceSelect(
+                                if (enabled) NexaraColorSource.DYNAMIC else NexaraColorSource.NEXARA,
+                            )
+                        },
+                        modifier = Modifier.testTag("theme_dynamic_color_switch"),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeModeRow(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
+            .padding(vertical = NexaraSpacing.Small),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = stringResource(R.string.theme_desc),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = stringResource(R.string.theme_mode),
+            text = title,
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
         )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 跟随系统
-        ListItem(
-            headlineContent = { Text(stringResource(R.string.settings_theme_system)) },
-            leadingContent = {
-                RadioButton(
-                    selected = state.preferences.mode == NexaraThemeMode.SYSTEM,
-                    onClick = null
-                )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("theme_mode_system")
-                .selectable(
-                    selected = state.preferences.mode == NexaraThemeMode.SYSTEM,
-                    role = Role.RadioButton,
-                    onClick = { onModeSelect(NexaraThemeMode.SYSTEM) },
-                )
-        )
-
-        // 浅色
-        ListItem(
-            headlineContent = { Text(stringResource(R.string.settings_theme_light)) },
-            leadingContent = {
-                RadioButton(
-                    selected = state.preferences.mode == NexaraThemeMode.LIGHT,
-                    onClick = null
-                )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("theme_mode_light")
-                .selectable(
-                    selected = state.preferences.mode == NexaraThemeMode.LIGHT,
-                    role = Role.RadioButton,
-                    onClick = { onModeSelect(NexaraThemeMode.LIGHT) },
-                )
-        )
-
-        // 深色
-        ListItem(
-            headlineContent = { Text(stringResource(R.string.settings_theme_dark)) },
-            leadingContent = {
-                RadioButton(
-                    selected = state.preferences.mode == NexaraThemeMode.DARK,
-                    onClick = null
-                )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("theme_mode_dark")
-                .selectable(
-                    selected = state.preferences.mode == NexaraThemeMode.DARK,
-                    role = Role.RadioButton,
-                    onClick = { onModeSelect(NexaraThemeMode.DARK) },
-                )
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = stringResource(R.string.settings_theme_color),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 动态取色 Switch
-        ListItem(
-            headlineContent = { Text(stringResource(R.string.theme_dynamic_color)) },
-            supportingContent = {
-                if (state.dynamicColorAvailable) {
-                    Text(stringResource(R.string.theme_dynamic_color_desc))
-                } else {
-                    Text(stringResource(R.string.theme_dynamic_color_unavailable))
-                }
-            },
-            trailingContent = {
-                Switch(
-                    checked = dynamicColorChecked,
-                    onCheckedChange = null,
-                    enabled = state.dynamicColorAvailable
-                )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("theme_dynamic_color_switch")
-                .toggleable(
-                    value = dynamicColorChecked,
-                    enabled = state.dynamicColorAvailable,
-                    role = Role.Switch,
-                    onValueChange = { enabled ->
-                        onColorSourceSelect(
-                            if (enabled) NexaraColorSource.DYNAMIC else NexaraColorSource.NEXARA,
-                        )
-                    },
-                )
+        RadioButton(
+            selected = selected,
+            onClick = null,
         )
     }
 }

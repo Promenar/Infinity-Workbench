@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.rag
 
 import android.app.Application
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -41,7 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.rag.RagConfiguration
-import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.data.manager.ProviderManager
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -85,11 +87,17 @@ internal fun AdvancedRetrievalScreenContent(
     val config = state.config
     val isRerankAvailable = state.isRerankAvailable
 
-    NexaraPageLayout(
+    NexaraSettingsPageLayout(
         title = stringResource(R.string.retrieval_title),
         onBack = actions.onBack
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(contentPadding),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
 
             Text(
                 text = stringResource(R.string.retrieval_desc),

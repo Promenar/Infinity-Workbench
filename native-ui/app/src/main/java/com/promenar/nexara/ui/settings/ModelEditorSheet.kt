@@ -54,6 +54,7 @@ import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.model.withRecordedUserEdits
 import com.promenar.nexara.domain.generation.GenerationFailureCode
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
+import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.testing.UiTags
 
 private val EditorModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
@@ -167,7 +168,7 @@ internal fun ModelEditorSheet(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 24.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                .padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -194,8 +195,8 @@ internal fun ModelEditorSheet(
                 .weight(1f, fill = false)
                 .imePadding()
                 .testTag(UiTags.providerModelsEditorList(model.id)),
-            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item("identity") {
                 ModelEditorIdentity(
@@ -216,10 +217,7 @@ internal fun ModelEditorSheet(
                 )
             }
             item("type") {
-                Text(
-                    text = stringResource(R.string.provider_models_editor_type),
-                    style = MaterialTheme.typography.titleSmall,
-                )
+                SettingsSectionHeader(stringResource(R.string.provider_models_editor_type))
                 androidx.compose.foundation.layout.FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -243,10 +241,7 @@ internal fun ModelEditorSheet(
                 }
             }
             item("capabilities") {
-                Text(
-                    text = stringResource(R.string.provider_models_editor_capabilities),
-                    style = MaterialTheme.typography.titleSmall,
-                )
+                SettingsSectionHeader(stringResource(R.string.provider_models_editor_capabilities))
                 androidx.compose.foundation.layout.FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -367,6 +362,7 @@ internal fun ModelEditorSheet(
         ModalBottomSheet(
             onDismissRequest = onDismissRequest,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.background,
             modifier = modifier.testTag(UiTags.providerModelsEditorSheet(model.id)),
         ) {
             editorContent()
@@ -376,7 +372,7 @@ internal fun ModelEditorSheet(
             modifier = modifier
                 .fillMaxSize()
                 .testTag(UiTags.providerModelsEditorSheet(model.id)),
-            color = MaterialTheme.colorScheme.surface,
+            color = MaterialTheme.colorScheme.background,
         ) {
             editorContent()
         }
@@ -413,10 +409,7 @@ private fun ModelEditorIdentity(
     editedFieldLabels: List<String>,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = stringResource(R.string.provider_models_editor_identity),
-            style = MaterialTheme.typography.titleSmall,
-        )
+        SettingsSectionHeader(stringResource(R.string.provider_models_editor_identity))
         Text(
             text = remoteModelId,
             style = MaterialTheme.typography.bodyMedium,

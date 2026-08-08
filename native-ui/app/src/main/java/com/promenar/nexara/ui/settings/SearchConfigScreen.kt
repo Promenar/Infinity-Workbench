@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
@@ -50,8 +52,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.SecretField
+import com.promenar.nexara.ui.common.SettingsSectionHeader
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,10 +114,15 @@ internal fun SearchConfigScreenContent(
     var newIncludeDomain by remember { mutableStateOf("") }
     var newExcludeDomain by remember { mutableStateOf("") }
 
-    NexaraPageLayout(
+    NexaraSettingsPageLayout(
         title = stringResource(R.string.search_config_title),
         onBack = actions.onBack
-    ) {
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(contentPadding),
+        ) {
         Text(
             text = stringResource(R.string.search_config_desc),
             style = MaterialTheme.typography.bodyMedium,
@@ -154,19 +162,14 @@ internal fun SearchConfigScreenContent(
                         .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                         .testTag("search_web_enabled_switch"),
                 )
-            }
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
         // Search Engine Selection
-        Text(
-            text = stringResource(R.string.search_config_engine_label),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(12.dp))
+        SettingsSectionHeader(stringResource(R.string.search_config_engine_label))
         
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val engines = listOf(
@@ -199,7 +202,8 @@ internal fun SearchConfigScreenContent(
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                    }
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
             }
         }
@@ -229,12 +233,7 @@ internal fun SearchConfigScreenContent(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        Text(
-            text = stringResource(R.string.search_config_search_depth),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
+        SettingsSectionHeader(stringResource(R.string.search_config_search_depth))
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -320,6 +319,7 @@ internal fun SearchConfigScreenContent(
             },
             onRemove = actions.onRemoveExcludeDomain
         )
+        }
     }
 }
 
@@ -405,12 +405,7 @@ private fun DomainListSection(
     onAdd: () -> Unit,
     onRemove: (String) -> Unit
 ) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurface
-    )
+    SettingsSectionHeader(title)
 
     Spacer(modifier = Modifier.height(8.dp))
 

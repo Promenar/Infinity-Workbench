@@ -11,12 +11,14 @@ class RagSettingsMaterialContractTest {
         "search" to source("ui/settings/SearchConfigScreen.kt"),
         "advanced" to source("ui/rag/AdvancedRetrievalScreen.kt"),
         "ragAdvanced" to source("ui/rag/RagAdvancedScreen.kt"),
+        "debug" to source("ui/rag/RagDebugScreen.kt"),
+        "graph" to source("ui/rag/KnowledgeGraphScreen.kt"),
         "agentAdvanced" to source("ui/hub/AgentAdvancedRetrievalScreen.kt"),
     )
 
     @Test
     fun `all retrieval settings screens use theme roles without glass styling`() {
-        sources.values.forEach { screen ->
+        sources.forEach { (key, screen) ->
             assertThat(screen).doesNotContain("NexaraGlassCard")
             assertThat(screen).doesNotContain("NexaraColors.")
             assertThat(screen).doesNotContain("GlassBorder")
@@ -25,8 +27,29 @@ class RagSettingsMaterialContractTest {
             assertThat(screen).doesNotContain("Surface(")
             assertThat(screen).contains("MaterialTheme.colorScheme")
             assertThat(screen).contains("MaterialTheme.typography")
-            assertThat(screen).contains("NexaraPageLayout(")
+            if (key != "agentAdvanced") {
+                assertThat(screen).contains("NexaraSettingsPageLayout(")
+            }
         }
+    }
+
+    @Test
+    fun `settings-owned retrieval pages use the dedicated se settings page layout`() {
+        listOf("global", "search", "advanced", "ragAdvanced", "debug", "graph").forEach { key ->
+            val screen = sources.getValue(key)
+            assertThat(screen).contains("NexaraSettingsPageLayout(")
+            assertThat(screen).doesNotContain("NexaraPageLayout(")
+        }
+    }
+
+    @Test
+    fun `debug page is a flat settings surface without legacy cards or typography`() {
+        val screen = sources.getValue("debug")
+        assertThat(screen).contains("SettingsSectionHeader(")
+        assertThat(screen).contains("HorizontalDivider(")
+        assertThat(screen).doesNotContain("Surface(")
+        assertThat(screen).doesNotContain("NexaraShapes")
+        assertThat(screen).doesNotContain("NexaraTypography")
     }
 
     @Test

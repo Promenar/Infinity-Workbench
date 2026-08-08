@@ -82,7 +82,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.text.font.FontWeight
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,12 +132,16 @@ fun SkillsScreen(
     var selectedSkillForEdit by remember { mutableStateOf<String?>(null) }
     var expandedServerId by remember { mutableStateOf<String?>(null) }
 
-    NexaraPageLayout(
+    NexaraSettingsPageLayout(
         title = stringResource(R.string.skills_title),
         onBack = onNavigateBack,
-        scrollable = true
-    ) {
-        Column(modifier = Modifier.padding(bottom = 32.dp)) {
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(contentPadding),
+        ) {
 
             ListItem(
                 headlineContent = {

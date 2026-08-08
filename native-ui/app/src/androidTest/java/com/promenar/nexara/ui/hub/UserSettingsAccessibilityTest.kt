@@ -275,7 +275,7 @@ class UserSettingsAccessibilityTest {
     }
 
     @Test
-    fun settingsSectionDividerAlignsWithRowTextAt2xScale() {
+    fun settingsSectionDividerSpansPastTheFixedIconColumnAt2xScale() {
         val rowTitle = "Aligned settings row"
         rule.setContent {
             val currentDensity = LocalDensity.current
@@ -311,8 +311,7 @@ class UserSettingsAccessibilityTest {
             .boundsInRoot
             .left
         com.google.common.truth.Truth.assertThat(dividerLeft)
-            .isWithin(1f)
-            .of(rowTextLeft)
+            .isLessThan(rowTextLeft)
     }
 
     @Test
@@ -385,9 +384,8 @@ class UserSettingsAccessibilityTest {
     }
 
     @Test
-    fun appSettingsLongSubtitleReflowsAt2xAndAboutRemainsReachable() {
-        val longVersionName =
-            "MiniMax-M3 multimodal reasoning and tool-calling production model with extended context"
+    fun appSettingsSingleLineRowsRemainReachableAt2x() {
+        val aboutTitle = resources.getString(R.string.settings_about_nexara)
         val aboutOpened = AtomicBoolean(false)
 
         rule.setContent {
@@ -401,7 +399,7 @@ class UserSettingsAccessibilityTest {
                 NexaraTheme {
                     Box(modifier = androidx.compose.ui.Modifier.width(360.dp)) {
                         UserSettingsHomeScreenContent(
-                            state = UserSettingsHomeScreenState(versionName = longVersionName),
+                            state = UserSettingsHomeScreenState(),
                             actions = UserSettingsHomeScreenActions(
                                 onAboutClick = { aboutOpened.set(true) },
                             ),
@@ -413,12 +411,12 @@ class UserSettingsAccessibilityTest {
 
         rule.onNodeWithTag(UiTags.SETTINGS_APP_LIST)
             .performScrollToNode(
-                hasText(longVersionName, substring = true),
+                hasText(aboutTitle),
             )
 
-        rule.onNodeWithText(longVersionName, substring = true)
+        rule.onNodeWithText(aboutTitle)
             .assertIsDisplayed()
-            .assertHeightIsAtLeast(96.dp)
+            .assertHeightIsAtLeast(48.dp)
             .assertHasClickAction()
             .performClick()
 

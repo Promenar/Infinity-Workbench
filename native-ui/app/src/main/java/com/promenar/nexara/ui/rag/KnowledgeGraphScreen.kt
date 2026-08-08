@@ -14,14 +14,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -36,14 +31,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraBackButton
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.rag.canvas.GraphPhysicsSimulator
 import com.promenar.nexara.ui.rag.canvas.InteractiveGraphCanvas
-import androidx.compose.material3.MaterialTheme
-import com.promenar.nexara.ui.theme.NexaraTypography
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,104 +64,92 @@ fun KnowledgeGraphScreen(
         }
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = {
-                        Column(modifier = Modifier.padding(start = 4.dp)) {
-                            Text(
-                                stringResource(R.string.kg_title),
-                                style = NexaraTypography.headlineLarge,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                stringResource(R.string.kg_stats_summary, nodes.size, edges.size),
-                                style = NexaraTypography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        NexaraBackButton(onClick = onNavigateBack)
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f)
+    NexaraSettingsPageLayout(
+        title = stringResource(R.string.kg_title),
+        onBack = onNavigateBack,
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+        ) {
+            Text(
+                text = stringResource(R.string.kg_stats_summary, nodes.size, edges.size),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                listOf(
+                    KgViewMode.GLOBAL to stringResource(R.string.kg_view_global),
+                    KgViewMode.DOCUMENT to stringResource(R.string.kg_view_document),
+                    KgViewMode.CONCEPT to stringResource(R.string.kg_filter_concepts),
+                ).forEach { (mode, label) ->
+                    val isActive = viewMode == mode
+                    val backgroundColor by animateColorAsState(
+                        if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        label = "graphModeBackground",
                     )
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf(
-                        KgViewMode.GLOBAL to stringResource(R.string.kg_view_global),
-                        KgViewMode.DOCUMENT to stringResource(R.string.kg_view_document),
-                        KgViewMode.CONCEPT to stringResource(R.string.kg_filter_concepts)
-                    ).forEach { (mode, label) ->
-                        val isActive = viewMode == mode
-                        val bgColor by animateColorAsState(
-                            if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant,
-                            label = "tabBg"
-                        )
-                        val textColor by animateColorAsState(
-                            if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            label = "tabText"
-                        )
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(bgColor)
-                                .then(
-                                    if (isActive) Modifier.border(
-                                        0.5.dp,
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                                        RoundedCornerShape(8.dp)
-                                    ) else Modifier
-                                )
-                                .clickable { viewModel.setViewMode(mode) }
-                                .padding(horizontal = 14.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                label,
-                                style = NexaraTypography.labelMedium.copy(fontSize = 12.sp),
-                                color = textColor
+                    val contentColor by animateColorAsState(
+                        if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        label = "graphModeContent",
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(backgroundColor)
+                            .then(
+                                if (isActive) {
+                                    Modifier.border(
+                                        width = 0.5.dp,
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                                        shape = RoundedCornerShape(8.dp),
+                                    )
+                                } else {
+                                    Modifier
+                                },
                             )
-                        }
+                            .clickable { viewModel.setViewMode(mode) }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = contentColor,
+                        )
                     }
                 }
             }
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            if (nodes.isNotEmpty()) {
-                InteractiveGraphCanvas(
-                    simulator = simulator,
-                    edges = edges,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else if (isLoading) {
-                androidx.compose.material3.CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            } else {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                if (nodes.isNotEmpty()) {
+                    InteractiveGraphCanvas(
+                        simulator = simulator,
+                        edges = edges,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (isLoading) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
                     Text(
-                        stringResource(R.string.kg_empty_graph),
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        style = NexaraTypography.bodyMedium,
+                        text = stringResource(R.string.kg_empty_graph),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(horizontal = 16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
                     )
                 }
             }

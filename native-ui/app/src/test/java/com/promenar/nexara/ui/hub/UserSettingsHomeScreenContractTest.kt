@@ -106,19 +106,54 @@ class UserSettingsHomeScreenContractTest {
     }
 
     @Test
-    fun `profile and github footer use material roles without legacy glass or hardcoded type`() {
+    fun `settings home uses the dedicated settings page layout and content padding`() {
+        val content = screenSource.substringAfter("fun UserSettingsHomeScreenContent(")
+            .substringBefore("private fun UserProfileListItem(")
+
+        assertThat(content).contains("NexaraSettingsPageLayout(")
+        assertThat(content).contains("contentPadding = contentPadding")
+        assertThat(content).doesNotContain("TopAppBar(")
+    }
+
+    @Test
+    fun `settings home uses iconless two-line Material list items without chevrons`() {
+        val content = screenSource.substringAfter("fun UserSettingsHomeScreenContent(")
+            .substringBefore("private fun UserProfileListItem(")
+
+        assertThat(content).contains("UserSettingsNavigationItem(")
+        assertThat(content).contains("ListItem(")
+        assertThat(content).contains("supportingContent")
+        assertThat(content).contains("fontSize = 16.sp")
+        assertThat(content).contains("lineHeight = 24.sp")
+        assertThat(content).contains("fontSize = 14.sp")
+        assertThat(content).contains("lineHeight = 20.sp")
+        assertThat(content).doesNotContain("Icons.Outlined")
+        assertThat(content).doesNotContain("showChevron")
+        assertThat(content).contains("settings_language_desc")
+        assertThat(content).contains("settings_about_nexara_desc")
+    }
+
+    @Test
+    fun `profile is a prominent identity header and footer remains a continuous row`() {
         val profile = screenSource.substringAfter("private fun UserProfileListItem(")
             .substringBefore("internal fun GitHubProjectFooter(")
-        assertThat(profile).contains("ListItem(")
-        assertThat(profile).contains("containerColor = Color.Transparent")
+        assertThat(profile).contains("Row(")
+        assertThat(profile).contains("minHeight = 88.dp")
+        assertThat(profile).contains("size(56.dp)")
+        assertThat(profile).contains("MaterialTheme.typography.titleLarge")
         assertThat(profile).doesNotContain("Surface(")
+        assertThat(profile).doesNotContain("Icons.Outlined.Edit")
+        assertThat(profile).doesNotContain("IconButton(")
+        assertThat(profile).contains("onClick = onEditName")
+        assertThat(profile).contains("onClick = onChangeAvatar")
         assertThat(screenSource).doesNotContain("UserProfileHeader")
         assertThat(screenSource).contains("GitHubProjectFooter")
     }
 
     @Test
     fun `provider screen has one material add action and a clear empty state`() {
-        assertThat(providerListSource).contains("TopAppBar(")
+        assertThat(providerListSource).contains("NexaraSettingsPageLayout(")
+        assertThat(providerListSource).doesNotContain("TopAppBar(")
         assertThat(providerListSource).contains("onClick = actions.onAddProvider")
         assertThat(providerListSource).contains("UiTags.SETTINGS_ADD_PROVIDER")
         assertThat(providerListSource).contains("settings_provider_empty")
@@ -152,8 +187,10 @@ class UserSettingsHomeScreenContractTest {
         assertThat(providerListSource).contains("settings_provider_vertex_credentials_not_configured")
         assertThat(providerListSource).contains("settings_provider_credentials_not_required")
         assertThat(providerListSource).contains("stateDescription = providerStateDescription")
-        assertThat(providerListSource).contains("val titleStyle = if (useLargeTextLayout)")
-        assertThat(providerListSource).contains("maxLines = if (useLargeTextLayout) 3 else 2")
+        assertThat(providerListSource).contains("style = MaterialTheme.typography.bodyLarge")
+        assertThat(providerListSource).contains("style = MaterialTheme.typography.bodyMedium")
+        assertThat(providerListSource).doesNotContain("useLargeTextLayout")
+        assertThat(providerListSource).doesNotContain("leadingContent = leadingContent")
         assertThat(providerListSource).contains("TextOverflow.Ellipsis")
         assertThat(providerListSource).doesNotContain("NexaraGlassCard")
     }
@@ -176,16 +213,18 @@ class UserSettingsHomeScreenContractTest {
     }
 
     @Test
-    fun `state carries typed summaries version and local inference availability`() {
-        assertThat(screenSource).contains("val userName")
-        assertThat(screenSource).contains("val userAvatar")
-        assertThat(screenSource).contains("val tokenCost")
-        assertThat(screenSource).contains("val language")
-        assertThat(screenSource).contains("val themePreferences: NexaraThemePreferences")
-        assertThat(screenSource).contains("val providerCount")
-        assertThat(screenSource).contains("val configuredDefaultModelsCount")
-        assertThat(screenSource).contains("val versionName")
-        assertThat(screenSource).contains("val localInferenceAvailable")
+    fun `state only carries values rendered by the title-only home surface`() {
+        val state = screenSource.substringAfter("data class UserSettingsHomeScreenState(")
+            .substringBefore(")\n\ninternal data class UserSettingsHomeScreenActions")
+
+        assertThat(state).contains("val userName")
+        assertThat(state).contains("val userAvatar")
+        assertThat(state).contains("val localInferenceAvailable")
+        assertThat(state).doesNotContain("val tokenCost")
+        assertThat(state).doesNotContain("val themePreferences")
+        assertThat(state).doesNotContain("val providerCount")
+        assertThat(state).doesNotContain("val configuredDefaultModelsCount")
+        assertThat(state).doesNotContain("val versionName")
 
         assertThat(providerListSource).contains("val providers")
     }

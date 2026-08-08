@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.rag
 
 import android.app.Application
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -42,7 +44,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.ui.common.ModelPicker
-import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.ui.settings.SettingsViewModel
@@ -96,11 +98,17 @@ internal fun RagAdvancedScreenContent(
     var showPromptEditor by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
 
-    NexaraPageLayout(
+    NexaraSettingsPageLayout(
         title = stringResource(R.string.rag_advanced_title),
         onBack = actions.onBack
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(contentPadding),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
             Text(
                 text = stringResource(R.string.rag_advanced_desc),
                 style = MaterialTheme.typography.bodyMedium,

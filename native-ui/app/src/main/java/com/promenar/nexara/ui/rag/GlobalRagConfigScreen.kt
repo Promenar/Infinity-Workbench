@@ -56,7 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.data.rag.RagConfiguration
@@ -108,11 +108,17 @@ internal fun GlobalRagConfigScreenContent(
     var clearWithGraph by remember { mutableStateOf(true) }
     var showSummaryTemplateEditor by remember { mutableStateOf(false) }
 
-    NexaraPageLayout(
+    NexaraSettingsPageLayout(
         title = stringResource(R.string.rag_config_title),
         onBack = actions.onBack
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(contentPadding),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
 
             SettingsSectionHeader(stringResource(R.string.rag_config_presets))
 

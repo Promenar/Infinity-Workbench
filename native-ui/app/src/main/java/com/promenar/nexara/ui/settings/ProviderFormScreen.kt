@@ -3,13 +3,13 @@ package com.promenar.nexara.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
@@ -57,8 +57,10 @@ import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.model.ProviderSummary
 import com.promenar.nexara.data.remote.protocol.ProtocolFactory
 import com.promenar.nexara.data.remote.protocol.ProtocolType
-import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.SecretField
+import com.promenar.nexara.ui.common.SettingsSectionHeader
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -497,19 +499,17 @@ internal fun ProviderFormContent(
         state.isEditing -> stringResource(R.string.provider_form_title_edit)
         else -> stringResource(R.string.provider_form_title_add)
     }
-    NexaraPageLayout(
+    NexaraSettingsPageLayout(
         title = title,
         onBack = actions.onBack,
-        scrollable = false,
-        imePadding = true,
         modifier = modifier,
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+    ) { contentPadding ->
+        Column(modifier = Modifier.fillMaxSize().imePadding()) {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth().testTag(PROVIDER_FORM_LIST_TAG),
                 state = listState,
-                contentPadding = PaddingValues(bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = contentPadding,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
                     Text(
@@ -569,7 +569,12 @@ internal fun ProviderFormContent(
                 ProviderFormActionsSection(
                     state = state,
                     actions = actions,
-                    modifier = Modifier.padding(top = 12.dp),
+                    modifier = Modifier.padding(
+                        start = NexaraSpacing.ScreenHorizontal,
+                        top = NexaraSpacing.Small,
+                        end = NexaraSpacing.ScreenHorizontal,
+                        bottom = contentPadding.calculateBottomPadding(),
+                    ),
                 )
             }
         }
@@ -700,11 +705,7 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(
-            text = stringResource(R.string.provider_form_config_section),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        SettingsSectionHeader(stringResource(R.string.provider_form_config_section))
         OutlinedTextField(
             value = state.name,
             onValueChange = actions.onNameChange,
