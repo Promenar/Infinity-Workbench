@@ -33,6 +33,9 @@ interface TaskNodeDao {
     @Query("DELETE FROM task_nodes WHERE session_id = :sessionId")
     suspend fun deleteBySession(sessionId: String)
 
+    @Query("DELETE FROM task_nodes WHERE session_id = :sessionId AND status != 'dropped'")
+    suspend fun deleteActiveBySession(sessionId: String)
+
     @Query("SELECT * FROM task_nodes WHERE session_id = :sessionId AND status != 'dropped' ORDER BY sort_order")
     suspend fun getAllActiveBySession(sessionId: String): List<TaskNodeEntity>
 

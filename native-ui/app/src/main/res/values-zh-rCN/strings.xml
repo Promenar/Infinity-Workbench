@@ -286,6 +286,12 @@
     <string name="chat_tool_running">运行中</string>
     <string name="chat_tool_completed">已完成</string>
     <string name="chat_tool_pipeline_completed">所有工具执行完成</string>
+    <string name="chat_task_card_title">任务 · %1$s</string>
+    <string name="chat_task_generating">正在生成</string>
+    <string name="chat_task_pending">待确认 %1$d</string>
+    <string name="chat_task_continue">继续处理</string>
+    <string name="chat_task_mark_complete">标记已完成</string>
+    <string name="chat_task_continue_prompt">请继续处理当前任务计划，从第一个未完成步骤开始，并在完成后更新计划状态。</string>
     <string name="chat_tool_result">工具结果</string>
     <string name="chat_tool_selecting">正在选择工具…</string>
     <string name="chat_approval_required">需要审批</string>

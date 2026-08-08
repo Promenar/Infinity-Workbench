@@ -175,10 +175,24 @@ class ChatViewModelTest {
     private val fakeLlmProvider = LlmProvider(fakeProtocol)
 
     private val fakeTaskRepository = object : com.promenar.nexara.domain.repository.ITaskRepository {
+        var activePlan: TaskState? = null
+
         override fun observeActiveTree(sessionId: String): Flow<List<TaskStep>> = kotlinx.coroutines.flow.flowOf(emptyList())
         override suspend fun initializePlan(sessionId: String, goal: String, tree: List<TaskStep>): TaskState = TaskState(id = "", title = goal, status = "idle", steps = emptyList())
-        override suspend fun updatePlan(sessionId: String, operations: List<com.promenar.nexara.domain.repository.PlanPatchOp>): TaskState = TaskState(id = "", title = "", status = "idle", steps = emptyList())
-        override suspend fun getPlan(sessionId: String): TaskState? = null
+        override suspend fun updatePlan(sessionId: String, operations: List<com.promenar.nexara.domain.repository.PlanPatchOp>): TaskState {
+            val current = requireNotNull(activePlan)
+            val statusById = operations.associate { operation ->
+                operation.stepId.orEmpty() to operation.payload?.get("status").orEmpty()
+            }
+            fun update(steps: List<TaskStep>): List<TaskStep> = steps.map { step ->
+                step.copy(
+                    status = statusById[step.id] ?: step.status,
+                    children = update(step.children)
+                )
+            }
+            return current.copy(steps = update(current.steps)).also { activePlan = it }
+        }
+        override suspend fun getPlan(sessionId: String): TaskState? = activePlan
         override suspend fun dropPlan(sessionId: String, reason: String) {}
         override fun deriveParentStatus(children: List<TaskStep>): String = "todo"
         override fun countLeafProgress(steps: List<TaskStep>): Pair<Int, Int> = 0 to 0
@@ -204,6 +218,7 @@ class ChatViewModelTest {
         savedMessages.clear()
         deletedMessages.clear()
         fakeStreamChunks = emptyList()
+        fakeTaskRepository.activePlan = null
 
         stubAgentRepo.seed(Agent(
             id = "a1",
@@ -394,6 +409,47 @@ class ChatViewModelTest {
 
         assertThat(viewModel.uiState.value.error).isEqualTo("Something went wrong")
         
+    }
+
+    @Test
+    fun completeActivePlan_marks_every_unfinished_leaf_done() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession(); advanceUntilIdle()
+        fakeTaskRepository.activePlan = TaskState(
+            id = "plan",
+            title = "测试计划",
+            status = "active",
+            steps = listOf(
+                TaskStep(
+                    id = "root",
+                    title = "根任务",
+                    children = listOf(
+                        TaskStep(id = "first", title = "第一步", status = "doing"),
+                        TaskStep(id = "second", title = "第二步", status = "todo")
+                    )
+                )
+            )
+        )
+
+        viewModel.completeActivePlan()
+        advanceUntilIdle()
+
+        val leafStatuses = fakeTaskRepository.activePlan!!.steps.single().children.map { it.status }
+        assertThat(leafStatuses).containsExactly("done", "done")
+    }
+
+    @Test
+    fun continueActivePlan_submits_exactly_one_resumption_prompt() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession(); advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.Done)
+        val prompt = "继续当前计划"
+
+        viewModel.continueActivePlan(prompt)
+        advanceUntilIdle()
+
+        val userMessages = viewModel.uiState.value.messages.filter { it.role == MessageRole.USER }
+        assertThat(userMessages.map { it.content }).containsExactly(prompt)
     }
 
     @Test

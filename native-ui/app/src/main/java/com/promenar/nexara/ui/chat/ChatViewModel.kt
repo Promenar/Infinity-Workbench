@@ -16,6 +16,7 @@ import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.data.model.PostProcessType
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.SessionOptions
+import com.promenar.nexara.data.model.TaskStep
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.TokenUsage
 import com.promenar.nexara.data.model.ExecutionStep
@@ -45,6 +46,7 @@ import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.domain.repository.IAgentRepository
+import com.promenar.nexara.domain.repository.PlanPatchOp
 import com.promenar.nexara.ui.chat.manager.ApprovalManager
 import com.promenar.nexara.ui.chat.manager.ContextBuilder
 import com.promenar.nexara.ui.chat.manager.ContextBuilderParams
@@ -117,6 +119,7 @@ class ChatViewModel(
 ) : ViewModel() {
 
     private val store = (application as NexaraApplication).chatStore
+    private val taskRepository = (application as NexaraApplication).taskRepository
 
     private val sessionManager = SessionManager(store, sessionRepository)
     private val messageManager = MessageManager(store, messageRepository, sessionRepository, viewModelScope)
@@ -126,9 +129,9 @@ class ChatViewModel(
         webSearchProvider = webSearchContextProvider,
         ragProvider = memoryManager?.let { MemoryManagerRagAdapter(it) },
         kgProvider = kgProvider,
-        taskRepository = (application as NexaraApplication).taskRepository
+        taskRepository = taskRepository
     )
-    private val toolExecutor = ToolExecutor(store, messageManager, skillRegistry, (application as NexaraApplication).taskRepository)
+    private val toolExecutor = ToolExecutor(store, messageManager, skillRegistry, taskRepository)
     private val postProcessor = PostProcessor(store, sessionManager, messageManager, embeddingClient, vectorStore, textSplitter)
     private val summaryManager = SummaryManager(llmProvider)
     private val approvalManager = ApprovalManager(store)
@@ -278,6 +281,43 @@ class ChatViewModel(
             _inputText.update { "" }
             sessionManager.updateSessionDraft(sessionId, null)
             enqueuePreparedUserTurn(sessionId, session, text, imageDataUrls)
+        }
+    }
+
+    fun continueActivePlan(prompt: String) {
+        if (_isGenerating.value || generationJob?.isActive == true) return
+        sendMessage(prompt)
+    }
+
+    fun completeActivePlan() {
+        if (_isGenerating.value || generationJob?.isActive == true) return
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            val plan = taskRepository.getPlan(sessionId) ?: return@launch
+            val incompleteLeafIds = buildList {
+                fun collectLeaves(steps: List<TaskStep>) {
+                    steps.forEach { step ->
+                        if (step.children.isEmpty()) {
+                            if (step.status != "done") add(step.id)
+                        } else {
+                            collectLeaves(step.children)
+                        }
+                    }
+                }
+                collectLeaves(plan.steps)
+            }
+            if (incompleteLeafIds.isNotEmpty()) {
+                taskRepository.updatePlan(
+                    sessionId,
+                    incompleteLeafIds.map { stepId ->
+                        PlanPatchOp(
+                            action = "set_status",
+                            stepId = stepId,
+                            payload = mapOf("status" to "done")
+                        )
+                    }
+                )
+            }
         }
     }
 

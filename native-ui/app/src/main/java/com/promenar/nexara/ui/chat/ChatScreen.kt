@@ -20,6 +20,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +34,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.offset
@@ -44,6 +47,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.material.icons.Icons
@@ -91,6 +96,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -116,6 +122,9 @@ import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
+import com.promenar.nexara.ui.chat.components.TaskCapsuleMode
+import com.promenar.nexara.ui.chat.components.TaskPanelState
+import com.promenar.nexara.ui.chat.components.taskPanelState
 import com.promenar.nexara.ui.common.EditorMode
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraGlassCard
@@ -176,6 +185,12 @@ fun ChatScreen(
     val agentName = uiState.agentName
 
     val pipelineGroups = remember(uiState.messages) { buildPipelineGroups(uiState.messages) }
+    val activeTaskTree by taskRepo.observeActiveTree(sessionId).collectAsState(emptyList())
+    val taskPanelState = remember(activeTaskTree, uiState.isGenerating) {
+        taskPanelState(activeTaskTree, uiState.isGenerating)
+    }
+    // 任务卡紧随 pipelineGroups，因此其 LazyColumn 目标索引恒为 groups 数量。
+    val taskPanelIndex = pipelineGroups.size
 
     val density = LocalDensity.current
     val isUserScrolledAway by remember(pipelineGroups.size, uiState.isGenerating) {
@@ -419,6 +434,19 @@ fun ChatScreen(
                         )
                     }
 
+                    taskPanelState?.let { panelState ->
+                        item(key = "task_panel_$sessionId") {
+                            val continuePrompt = stringResource(R.string.chat_task_continue_prompt)
+                            TaskFloatingPanel(
+                                activeTree = activeTaskTree,
+                                goalTitle = "",
+                                isGenerating = uiState.isGenerating,
+                                onContinue = { chatViewModel.continueActivePlan(continuePrompt) },
+                                onComplete = chatViewModel::completeActivePlan
+                            )
+                        }
+                    }
+
                     if (compressionState.isCompressing || compressionState.result != null) {
                         item(key = "summary_card") {
                             SummaryCard(
@@ -503,9 +531,14 @@ fun ChatScreen(
                             modelName = modelDisplayName,
                             tokenState = tokenState,
                             postProcessTasks = postProcessTasks,
+                            taskPanelState = taskPanelState,
                             onRemovePostProcessTask = { chatViewModel.removePostProcessTask(it) },
                             onModelClick = { showModelSettingsSheet = true },
-                            onManualSummary = { chatViewModel.summarizeHistory() }
+                            onManualSummary = { chatViewModel.summarizeHistory() },
+                            onTaskClick = {
+                                autoFollowEnabled = false
+                                scope.launch { listState.animateScrollToItem(taskPanelIndex) }
+                            }
                         )
 
                         if (selectedImageUris.isNotEmpty()) {
@@ -532,14 +565,6 @@ fun ChatScreen(
                                 }
                             }
                         }
-
-                        // 任务浮动面板
-                        TaskFloatingPanel(
-                            sessionId = sessionId,
-                            taskRepo = taskRepo,
-                            goalTitle = uiState.session?.activeTask?.title ?: "",
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
 
                         Box(modifier = Modifier.fillMaxWidth()) {
                             ChatInputBar(
@@ -722,12 +747,16 @@ private fun ChatInputTopBar(
     modelName: String,
     tokenState: ChatViewModel.TokenIndicatorState,
     postProcessTasks: List<PostProcessTask>,
+    taskPanelState: TaskPanelState?,
     onRemovePostProcessTask: (String) -> Unit,
     onModelClick: () -> Unit,
-    onManualSummary: () -> Unit
+    onManualSummary: () -> Unit,
+    onTaskClick: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -754,6 +783,10 @@ private fun ChatInputTopBar(
         // Token Indicator
         TokenIndicator(state = tokenState, onManualSummary = onManualSummary)
 
+        taskPanelState?.let { state ->
+            TaskCapsule(state = state, onClick = onTaskClick)
+        }
+
         // PostProcess Tasks (e.g. Session RAG, Summary)
         postProcessTasks.forEach { task ->
             PostProcessChip(
@@ -762,7 +795,64 @@ private fun ChatInputTopBar(
             )
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun TaskCapsule(state: TaskPanelState, onClick: () -> Unit) {
+    val isGenerating = state.capsuleMode == TaskCapsuleMode.GENERATING
+    val color = if (isGenerating) NexaraColors.Primary else NexaraColors.StatusWarning
+    Box(
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(50))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        NexaraGlassCard(
+            shape = RoundedCornerShape(50)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (state.shouldPulse) {
+                    val transition = rememberInfiniteTransition(label = "task_capsule_pulse")
+                    val scale by transition.animateFloat(
+                        initialValue = 0.8f,
+                        targetValue = 1.2f,
+                        animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
+                        label = "task_capsule_scale"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .scale(scale)
+                            .clip(CircleShape)
+                            .background(color)
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .border(1.dp, color, CircleShape)
+                    )
+                }
+                Text(
+                    text = if (isGenerating) {
+                        stringResource(R.string.chat_task_generating)
+                    } else {
+                        stringResource(R.string.chat_task_pending, state.unfinishedLeafCount)
+                    },
+                    style = NexaraTypography.labelMedium.copy(fontSize = 11.sp),
+                    color = color,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
     }
 }
 

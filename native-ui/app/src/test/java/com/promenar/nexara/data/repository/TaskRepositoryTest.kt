@@ -110,6 +110,22 @@ class TaskRepositoryTest {
     }
 
     @Test
+    fun `initializePlan replaces a fully completed old tree instead of conflicting`() = runBlocking {
+        repo.initializePlan(sessionId, "旧计划", buildNestedTree())
+        repo.updatePlan(sessionId, listOf(
+            PlanPatchOp(action = "set_status", stepId = "s1a", payload = mapOf("status" to "done")),
+            PlanPatchOp(action = "set_status", stepId = "s1b", payload = mapOf("status" to "done")),
+            PlanPatchOp(action = "set_status", stepId = "s2a", payload = mapOf("status" to "done"))
+        ))
+
+        val result = repo.initializePlan(sessionId, "新计划", buildTree("fresh" to "开始新计划"))
+
+        assertThat(result.status).isEqualTo("active")
+        assertThat(result.title).isEqualTo("新计划")
+        assertThat(result.steps.single().id).isEqualTo("fresh")
+    }
+
+    @Test
     fun `updatePlan set_status changes leaf node status`() = runBlocking {
         val tree = buildNestedTree()
         repo.initializePlan(sessionId, "测试", tree)

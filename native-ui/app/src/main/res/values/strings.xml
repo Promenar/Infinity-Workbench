@@ -281,6 +281,12 @@
     <string name="chat_tool_running">Running</string>
     <string name="chat_tool_completed">Completed</string>
     <string name="chat_tool_pipeline_completed">All tools completed</string>
+    <string name="chat_task_card_title">Task · %1$s</string>
+    <string name="chat_task_generating">Generating</string>
+    <string name="chat_task_pending">Pending %1$d</string>
+    <string name="chat_task_continue">Continue</string>
+    <string name="chat_task_mark_complete">Mark complete</string>
+    <string name="chat_task_continue_prompt">Please continue the current task plan from the first unfinished step and update the plan when the work is complete.</string>
     <string name="chat_tool_result">Tool Result</string>
     <string name="chat_tool_selecting">Selecting tools…</string>
     <string name="chat_approval_required">Approval Required</string>

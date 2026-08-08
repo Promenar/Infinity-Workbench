@@ -28,19 +28,36 @@ class TaskRepository(
     }
 
     override suspend fun initializePlan(sessionId: String, goal: String, tree: List<TaskStep>): TaskState {
+        if (database != null) {
+            return database.withTransaction {
+                initializePlanInternal(sessionId, goal, tree)
+            }
+        }
+        return initializePlanInternal(sessionId, goal, tree)
+    }
+
+    private suspend fun initializePlanInternal(
+        sessionId: String,
+        goal: String,
+        tree: List<TaskStep>
+    ): TaskState {
         val existing = dao.getAllActiveBySession(sessionId)
         if (existing.isNotEmpty()) {
             val existingTree = buildTree(existing)
             val (done, total) = countLeafProgress(existingTree)
-            val rootStep = existingTree.firstOrNull()
-            return TaskState(
-                id = rootStep?.id ?: "",
-                title = rootStep?.title ?: goal,
-                status = "conflict",
-                steps = existingTree,
-                currentFocusStepId = existing.find { it.status == "doing" }?.id,
-                createdAt = rootStep?.createdAt ?: System.currentTimeMillis()
-            )
+            if (total > 0 && done == total) {
+                dao.deleteActiveBySession(sessionId)
+            } else {
+                val rootStep = existingTree.firstOrNull()
+                return TaskState(
+                    id = rootStep?.id ?: "",
+                    title = rootStep?.title ?: goal,
+                    status = "conflict",
+                    steps = existingTree,
+                    currentFocusStepId = existing.find { it.status == "doing" }?.id,
+                    createdAt = rootStep?.createdAt ?: System.currentTimeMillis()
+                )
+            }
         }
 
         val now = System.currentTimeMillis()
