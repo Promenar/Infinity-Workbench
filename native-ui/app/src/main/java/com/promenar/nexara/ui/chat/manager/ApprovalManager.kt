@@ -216,13 +216,17 @@ class ApprovalManager(
                     setOf(decision.key.toolCallId),
                 )
             } catch (cancelled: CancellationException) {
-                withContext(NonCancellable) {
-                    completeOrCompensate(
-                        sessionId,
-                        request,
-                        ToolLedgerState.CANCELLED,
-                        "工具执行协程已取消",
-                    )
+                try {
+                    withContext(NonCancellable) {
+                        completeOrCompensate(
+                            sessionId,
+                            request,
+                            ToolLedgerState.CANCELLED,
+                            "工具执行协程已取消",
+                        )
+                    }
+                } catch (cleanupFailure: Throwable) {
+                    if (cleanupFailure !== cancelled) cancelled.addSuppressed(cleanupFailure)
                 }
                 throw cancelled
             } catch (error: Exception) {

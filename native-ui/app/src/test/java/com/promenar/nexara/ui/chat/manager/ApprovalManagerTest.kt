@@ -65,6 +65,7 @@ class ApprovalManagerTest {
     private class ApprovalLedger : ToolExecutionLedger {
         val states = mutableMapOf<ToolExecutionKey, ToolLedgerState>()
         var suspendCompensationCancellably = false
+        var compensationFailure: Throwable? = null
         private val identities = mutableMapOf<ToolExecutionKey, ToolInvocationIdentity>()
         var completionTransition: com.promenar.nexara.data.repository.ApprovalTransition? = null
         override suspend fun register(
@@ -240,6 +241,7 @@ class ApprovalManagerTest {
             error: String,
         ): ExactToolApprovalDecision {
             if (suspendCompensationCancellably) yield()
+            compensationFailure?.let { throw it }
             val current = request.calls.firstOrNull() ?: return ExactToolApprovalDecision.Conflict
             val key = ToolExecutionKey(sessionId, request.assistantMessageId!!, current.toolCallId)
             if (states[key] !in setOf(ToolLedgerState.APPROVED, ToolLedgerState.RUNNING)) {
@@ -697,6 +699,51 @@ class ApprovalManagerTest {
         assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.CANCELLED)
         assertThat(store.getSession("s1")!!.approvalRequest).isNull()
         assertThat(store.getSession("s1")!!.messages.last().content).contains("已取消")
+    }
+
+    @Test
+    fun realJobCancellationKeepsOriginalCancellationAndSuppressesCleanupFailure() = testScope.runTest {
+        val call = ToolCall("cleanup-fails", "write_file", "{}")
+        seedSessionWithAssistant(toolCalls = listOf(call), pendingApprovalToolIds = listOf(call.id))
+        val key = ToolExecutionKey("s1", "m1", call.id)
+        ledger.register(key, call.name, true)
+        val cleanupFailure = IllegalStateException("cleanup failed")
+        ledger.compensationFailure = cleanupFailure
+        val request = ToolApprovalRequestFactory.create(
+            "m1",
+            listOf(ApprovalCallCandidate(call, com.promenar.nexara.domain.tool.ToolRisk.FILE_WRITE)),
+        )
+        approvalManager.setApprovalRequest("s1", request)
+        val callbackEntered = CompletableDeferred<Unit>()
+        val propagated = CompletableDeferred<Throwable>()
+        approvalManager.setCallbacks(
+            onGenerateMessage = null,
+            onExecuteTools = { _, _, _ ->
+                callbackEntered.complete(Unit)
+                CompletableDeferred<Unit>().await()
+            },
+        )
+
+        val job = launch {
+            try {
+                approvalManager.resumeGeneration("s1", request, approved = true)
+            } catch (error: Throwable) {
+                propagated.complete(error)
+                throw error
+            }
+        }
+        callbackEntered.await()
+        val originalCancellation = CancellationException("original cancellation")
+        job.cancel(originalCancellation)
+        job.join()
+
+        val failure = propagated.await()
+        assertThat(failure).isInstanceOf(CancellationException::class.java)
+        assertThat(failure).hasMessageThat().isEqualTo("original cancellation")
+        assertThat(failure.suppressed).hasLength(1)
+        assertThat(failure.suppressed.single()).isInstanceOf(IllegalStateException::class.java)
+        assertThat(failure.suppressed.single()).hasMessageThat().isEqualTo("cleanup failed")
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.APPROVED)
     }
 
     @Test
