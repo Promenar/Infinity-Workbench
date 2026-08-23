@@ -7,6 +7,7 @@ import com.promenar.nexara.data.remote.protocol.ProviderEndpointTarget
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.protocol.UnsupportedProviderOperationException
 import com.promenar.nexara.data.remote.protocol.UnsupportedProviderProtocolException
+import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -22,8 +23,10 @@ import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.net.URI
 
 enum class ProviderConnectionProbeFailure {
     CREDENTIALS_MISSING,
@@ -31,6 +34,7 @@ enum class ProviderConnectionProbeFailure {
     AUTHENTICATION_REJECTED,
     NETWORK_UNAVAILABLE,
     RESPONSE_INVALID,
+    ENDPOINT_INVALID,
 }
 
 sealed interface ProviderConnectionProbeResult {
@@ -57,12 +61,20 @@ class ProviderConnectionProbe(
         expectSuccess = false
     },
 ) {
+    companion object {
+        /**
+         * 进程级共享探测器。其 HttpClient 与应用进程同生命周期，避免 Compose 重组反复创建连接池。
+         * 单元测试仍通过公开构造器注入 MockEngine。
+         */
+        val processScoped: ProviderConnectionProbe by lazy { ProviderConnectionProbe() }
+    }
+
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun probe(config: UnifiedProviderConfig): ProviderConnectionProbeResult {
         return try {
             when (config.protocolType) {
-                ProtocolType.Local -> ProviderConnectionProbeResult.Success
+                ProtocolType.Local -> ProviderConnectionProbeResult.Unsupported
                 ProtocolType.Google_VertexAI -> probeVertex(config)
                 else -> probeApiKeyProvider(config)
             }
@@ -74,6 +86,8 @@ class ProviderConnectionProbe(
             ProviderConnectionProbeResult.Unsupported
         } catch (_: VertexCredentialException) {
             ProviderConnectionProbeResult.Failure(ProviderConnectionProbeFailure.CREDENTIALS_INVALID)
+        } catch (_: IllegalArgumentException) {
+            ProviderConnectionProbeResult.Failure(ProviderConnectionProbeFailure.ENDPOINT_INVALID)
         } catch (_: Exception) {
             ProviderConnectionProbeResult.Failure(ProviderConnectionProbeFailure.NETWORK_UNAVAILABLE)
         }
@@ -92,6 +106,7 @@ class ProviderConnectionProbe(
             config.baseUrl,
             ProviderEndpointOperation.CONNECTION_PROBE,
         )
+        requireHttps(endpoint)
         val response = httpClient.get(endpoint) {
             when (config.protocolType) {
                 ProtocolType.Anthropic_Messages -> {
@@ -101,12 +116,15 @@ class ProviderConnectionProbe(
                 else -> header(HttpHeaders.Authorization, "Bearer ${config.apiKey}")
             }
         }
-        return if (response.status.isSuccess()) {
-            ProviderConnectionProbeResult.Success
-        } else {
-            ProviderConnectionProbeResult.Failure(
+        if (!response.status.isSuccess()) {
+            return ProviderConnectionProbeResult.Failure(
                 ProviderConnectionProbeFailure.AUTHENTICATION_REJECTED,
             )
+        }
+        return if (hasModelsEnvelope(response.bodyAsText())) {
+            ProviderConnectionProbeResult.Success
+        } else {
+            ProviderConnectionProbeResult.Failure(ProviderConnectionProbeFailure.RESPONSE_INVALID)
         }
     }
 
@@ -121,6 +139,16 @@ class ProviderConnectionProbe(
         val credential = VertexCredentialParser.parse(
             serviceAccountJson = config.serviceAccountJson,
             explicitProjectId = config.projectId,
+        )
+        ProviderEndpointResolver.resolve(
+            ProtocolType.Google_VertexAI,
+            config.baseUrl,
+            ProviderEndpointTarget.VertexInference(
+                projectId = credential.projectId,
+                location = config.location.ifBlank { VERTEX_DEFAULT_LOCATION },
+                model = config.defaultModel.ifBlank { "endpoint-check" },
+                streaming = false,
+            ),
         )
         val assertion = VertexCredentialParser.createJwtAssertion(credential)
         val endpoint = ProviderEndpointResolver.resolve(
@@ -151,6 +179,23 @@ class ProviderConnectionProbe(
             ProviderConnectionProbeResult.Success
         } else {
             ProviderConnectionProbeResult.Failure(ProviderConnectionProbeFailure.RESPONSE_INVALID)
+        }
+    }
+
+    private fun hasModelsEnvelope(body: String): Boolean = try {
+        json.parseToJsonElement(body).jsonObject["data"]?.jsonArray != null
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun requireHttps(endpoint: String) {
+        val uri = try {
+            URI(endpoint)
+        } catch (_: Exception) {
+            throw IllegalArgumentException("Provider endpoint 无效")
+        }
+        require(uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()) {
+            "Provider endpoint 必须使用 HTTPS"
         }
     }
 }

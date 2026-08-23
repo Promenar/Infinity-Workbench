@@ -17,10 +17,12 @@ import com.promenar.nexara.domain.model.ProviderConfig
 import com.promenar.nexara.domain.repository.IProviderRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CancellationException
 
 class ProviderRepository(
     private val providerManager: ProviderManager,
-    private val connectionProbe: ProviderConnectionProbe = ProviderConnectionProbe(),
+    private val connectionProbe: ProviderConnectionProbe = ProviderConnectionProbe.processScoped,
+    private val modelListFetcher: (suspend (UnifiedProviderConfig) -> List<String>)? = null,
 ) : IProviderRepository {
 
     override fun observeAll(): Flow<List<ProviderConfig>> {
@@ -60,6 +62,8 @@ class ProviderRepository(
                     error = result.reason.name,
                 )
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             val latency = System.currentTimeMillis() - start
             ConnectionResult(false, latency, "CONNECTION_PROBE_FAILED")
@@ -69,17 +73,27 @@ class ProviderRepository(
     override suspend fun fetchModels(providerId: String): List<ModelSpec> {
         val config = providerManager.getProviderConfig(providerId)
             ?: return emptyList()
-        val provider = LlmProvider.builder()
-            .protocolType(config.protocolType)
-            .baseUrl(config.baseUrl)
-            .apiKey(config.apiKey)
-            .model(config.model)
-            .serviceAccountJson(config.vertexServiceAccountJson)
-            .projectId("")
-            .location(VERTEX_DEFAULT_LOCATION)
-            .build()
+        val unifiedConfig = UnifiedProviderConfig(
+            protocolType = config.protocolType,
+            baseUrl = config.baseUrl,
+            apiKey = config.apiKey,
+            defaultModel = config.model,
+            serviceAccountJson = config.vertexServiceAccountJson,
+            projectId = "",
+            location = VERTEX_DEFAULT_LOCATION,
+        )
         return try {
-            provider.listModels().map { modelId ->
+            val modelIds = modelListFetcher?.invoke(unifiedConfig) ?: LlmProvider.builder()
+                .protocolType(unifiedConfig.protocolType)
+                .baseUrl(unifiedConfig.baseUrl)
+                .apiKey(unifiedConfig.apiKey)
+                .model(unifiedConfig.defaultModel)
+                .serviceAccountJson(unifiedConfig.serviceAccountJson)
+                .projectId(unifiedConfig.projectId)
+                .location(unifiedConfig.location)
+                .build()
+                .listModels()
+            modelIds.map { modelId ->
                 ModelSpec(
                     id = modelId,
                     name = modelId,
@@ -88,6 +102,8 @@ class ProviderRepository(
                     providerId = providerId
                 )
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             emptyList()
         }

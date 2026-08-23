@@ -58,6 +58,9 @@ import com.promenar.nexara.data.model.ProviderSummary
 import com.promenar.nexara.data.remote.UnifiedProviderConfig
 import com.promenar.nexara.data.remote.provider.ProviderConnectionProbe
 import com.promenar.nexara.data.remote.provider.ProviderConnectionProbeResult
+import com.promenar.nexara.data.remote.protocol.ProviderEndpointOperation
+import com.promenar.nexara.data.remote.protocol.ProviderEndpointResolver
+import com.promenar.nexara.data.remote.protocol.ProviderEndpointTarget
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
@@ -93,6 +96,8 @@ internal data class ProviderFormUiState(
     val usesVertexCredential: Boolean = false,
     val isLocal: Boolean = false,
     val endpointValid: Boolean = true,
+    val protocolUnsupported: Boolean = false,
+    val legacyMigrationBlocked: Boolean = false,
     val credentialKindMismatch: Boolean = false,
     val unavailableLocalConfiguration: Boolean = false,
     val connectionTestState: ProviderConnectionTestState = ProviderConnectionTestState.Idle,
@@ -205,7 +210,8 @@ fun ProviderFormScreen(
     var localProtocol by remember { mutableStateOf<ProtocolType>(ProtocolType.Generic_OpenAI_Compat) }
     var protocolMenuExpanded by remember { mutableStateOf(false) }
     var connectionTestState by remember { mutableStateOf(ProviderConnectionTestState.Idle) }
-    val connectionProbe = remember { ProviderConnectionProbe() }
+    var legacyUnsupportedProtocol by remember { mutableStateOf<ProtocolType?>(null) }
+    val connectionProbe = ProviderConnectionProbe.processScoped
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(providerId) {
@@ -230,16 +236,24 @@ fun ProviderFormScreen(
                 baseUrl = config.baseUrl
                 hasCredential = config.hasApiKey || config.hasVertexCredentials
                 originalUsesVertex = config.hasVertexCredentials
+                legacyUnsupportedProtocol = config.protocolType.takeIf(::isRetiredProviderProtocol)
                 val matched = availableProviderPresets.find {
                     it.protocolType == config.protocolType &&
                         (it.name != "Custom" || config.protocolType == ProtocolType.Generic_OpenAI_Compat)
                 }
-                selectedPreset = matched ?: availableProviderPresets.last()
+                selectedPreset = when {
+                    matched != null -> matched
+                    legacyUnsupportedProtocol != null -> ProviderPreset(
+                        name = config.protocolType.displayName,
+                        protocolType = config.protocolType,
+                        defaultBaseUrl = config.baseUrl,
+                        iconRes = config.protocolType.iconRes,
+                    )
+                    else -> availableProviderPresets.last()
+                }
                 if (selectedPreset.name == "Custom") {
                     localProtocol = config.protocolType.takeUnless {
-                        (it is ProtocolType.Local && !app.localInferenceRuntimeGate.isAvailable) ||
-                            it == ProtocolType.Cohere_Chat ||
-                            it == ProtocolType.Yi_ZeroOne
+                        it is ProtocolType.Local && !app.localInferenceRuntimeGate.isAvailable
                     } ?: ProtocolType.Generic_OpenAI_Compat
                 }
             }
@@ -248,13 +262,16 @@ fun ProviderFormScreen(
 
     val effectiveProtocol = if (selectedPreset.name == "Custom") localProtocol else selectedPreset.protocolType
     val endpointValid = isProviderEndpointAllowed(effectiveProtocol, baseUrl)
+    val protocolUnsupported = isRetiredProviderProtocol(effectiveProtocol)
+    val legacyMigrationBlocked = legacyUnsupportedProtocol != null &&
+        credentialUpdate is CredentialUpdate.Preserve
     val selectedUsesVertex = effectiveProtocol is ProtocolType.Google_VertexAI
     val credentialKindMismatch = hasCredential && credentialUpdate is CredentialUpdate.Preserve &&
         originalUsesVertex != null && originalUsesVertex != selectedUsesVertex
 
     val launchSave: () -> Unit = {
         if (!isSaving && connectionTestState != ProviderConnectionTestState.Testing &&
-            endpointValid && !credentialKindMismatch
+            endpointValid && !protocolUnsupported && !legacyMigrationBlocked && !credentialKindMismatch
         ) {
             isSaving = true
             saveFailed = false
@@ -288,7 +305,7 @@ fun ProviderFormScreen(
 
     val launchConnectionTest: () -> Unit = {
         if (connectionTestState != ProviderConnectionTestState.Testing && !isSaving &&
-            endpointValid && !credentialKindMismatch
+            endpointValid && !protocolUnsupported && !legacyMigrationBlocked && !credentialKindMismatch
         ) {
             connectionTestState = ProviderConnectionTestState.Testing
             scope.launch {
@@ -438,6 +455,8 @@ fun ProviderFormScreen(
             usesVertexCredential = effectiveProtocol is ProtocolType.Google_VertexAI,
             isLocal = effectiveProtocol is ProtocolType.Local,
             endpointValid = endpointValid,
+            protocolUnsupported = protocolUnsupported,
+            legacyMigrationBlocked = legacyMigrationBlocked,
             credentialKindMismatch = credentialKindMismatch,
             unavailableLocalConfiguration = unavailableLocalConfiguration,
             connectionTestState = connectionTestState,
@@ -535,6 +554,13 @@ internal fun ProviderFormContent(
                 }
                 item {
                     ProviderPresetSelector(state = state, actions = actions)
+                }
+                if (state.legacyMigrationBlocked) {
+                    item {
+                        ProviderFormErrorText(
+                            stringResource(R.string.provider_form_legacy_migration_required),
+                        )
+                    }
                 }
                 if (state.selectedPreset.name == "Custom") {
                     item {
@@ -740,7 +766,17 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
             singleLine = true,
             isError = !state.endpointValid,
             supportingText = if (!state.endpointValid) {
-                { ProviderFormErrorText(stringResource(R.string.provider_form_https_required)) }
+                {
+                    ProviderFormErrorText(
+                        stringResource(
+                            if (state.protocolUnsupported) {
+                                R.string.provider_form_protocol_unsupported
+                            } else {
+                                R.string.provider_form_https_required
+                            },
+                        ),
+                    )
+                }
             } else {
                 null
             },
@@ -802,7 +838,9 @@ private fun ProviderFormActionsSection(
     ) {
         OutlinedButton(
             onClick = actions.onTestConnection,
-            enabled = !testing && !state.isSaving && state.endpointValid && !state.credentialKindMismatch,
+            enabled = !testing && !state.isSaving && state.endpointValid &&
+                !state.protocolUnsupported && !state.legacyMigrationBlocked &&
+                !state.credentialKindMismatch,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
@@ -823,7 +861,8 @@ private fun ProviderFormActionsSection(
         }
         Button(
             onClick = actions.onSave,
-            enabled = state.endpointValid && !state.credentialKindMismatch && !state.isSaving &&
+            enabled = state.endpointValid && !state.protocolUnsupported &&
+                !state.legacyMigrationBlocked && !state.credentialKindMismatch && !state.isSaving &&
                 state.connectionTestState != ProviderConnectionTestState.Testing,
             modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp),
         ) {
@@ -922,7 +961,33 @@ internal fun isSecureProviderEndpoint(value: String): Boolean = runCatching {
 }.getOrDefault(false)
 
 internal fun isProviderEndpointAllowed(protocol: ProtocolType, value: String): Boolean =
-    protocol is ProtocolType.Local || isSecureProviderEndpoint(value)
+    when {
+        protocol is ProtocolType.Local -> true
+        isRetiredProviderProtocol(protocol) -> false
+        !isSecureProviderEndpoint(value) -> false
+        else -> runCatching {
+            when (protocol) {
+                ProtocolType.Google_VertexAI -> ProviderEndpointResolver.resolve(
+                    protocol = protocol,
+                    configuredBaseUrl = value,
+                    target = ProviderEndpointTarget.VertexInference(
+                        projectId = "endpoint-check",
+                        location = VERTEX_DEFAULT_LOCATION,
+                        model = "endpoint-check",
+                        streaming = false,
+                    ),
+                )
+                else -> ProviderEndpointResolver.resolve(
+                    protocol = protocol,
+                    configuredBaseUrl = value,
+                    operation = ProviderEndpointOperation.INFERENCE,
+                )
+            }
+        }.isSuccess
+    }
+
+internal fun isRetiredProviderProtocol(protocol: ProtocolType): Boolean =
+    protocol == ProtocolType.Cohere_Chat || protocol == ProtocolType.Yi_ZeroOne
 
 internal fun localProviderModelsForConnection(state: SlotState): List<String> =
     state.modelName.trim().takeIf { state.isLoaded && it.isNotEmpty() }?.let(::listOf).orEmpty()

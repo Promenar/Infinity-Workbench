@@ -127,8 +127,51 @@ class ProviderFormInteractionTest {
             .assertIsDisplayed()
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
             .assertIsNotEnabled()
+            .performClick()
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
             .assertIsNotEnabled()
+            .performClick()
+    }
+
+    @Test
+    fun historicalUnsupportedProviderDisablesCallbacksUntilExplicitMigration() {
+        val tests = AtomicInteger()
+        val saves = AtomicInteger()
+        rule.setContent {
+            NexaraTheme {
+                ProviderFormContent(
+                    state = validCloudState(
+                        selectedPreset = ProviderPreset(
+                            name = ProtocolType.Cohere_Chat.displayName,
+                            protocolType = ProtocolType.Cohere_Chat,
+                            defaultBaseUrl = ProtocolType.Cohere_Chat.defaultBaseUrl,
+                        ),
+                        baseUrl = ProtocolType.Cohere_Chat.defaultBaseUrl,
+                        endpointValid = false,
+                        protocolUnsupported = true,
+                        legacyMigrationBlocked = true,
+                    ),
+                    actions = ProviderFormActions(
+                        onTestConnection = { tests.incrementAndGet() },
+                        onSave = { saves.incrementAndGet() },
+                    ),
+                )
+            }
+        }
+
+        rule.onNodeWithText(resources.getString(R.string.provider_form_protocol_unsupported))
+            .performScrollTo()
+            .assertIsDisplayed()
+        rule.onNodeWithText(resources.getString(R.string.provider_form_legacy_migration_required))
+            .performScrollTo()
+            .assertIsDisplayed()
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
+            .assertIsNotEnabled()
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
+            .assertIsNotEnabled()
+
+        assertThat(tests.get()).isEqualTo(0)
+        assertThat(saves.get()).isEqualTo(0)
     }
 
     @Test
@@ -338,6 +381,8 @@ class ProviderFormInteractionTest {
         protocolMenuExpanded: Boolean = false,
         localProtocol: ProtocolType = ProtocolType.Generic_OpenAI_Compat,
         hasStoredCredential: Boolean = false,
+        protocolUnsupported: Boolean = false,
+        legacyMigrationBlocked: Boolean = false,
     ) = ProviderFormUiState(
         name = "Example Provider",
         selectedPreset = selectedPreset,
@@ -350,5 +395,7 @@ class ProviderFormInteractionTest {
         connectionTestState = connectionTestState,
         isSaving = isSaving,
         hasStoredCredential = hasStoredCredential,
+        protocolUnsupported = protocolUnsupported,
+        legacyMigrationBlocked = legacyMigrationBlocked,
     )
 }

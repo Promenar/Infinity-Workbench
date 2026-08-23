@@ -124,14 +124,15 @@ object VertexCredentialParser {
     }
 
     private fun parsePkcs8RsaKey(pem: String): PrivateKey {
-        if (!pem.contains("-----BEGIN PRIVATE KEY-----") ||
-            !pem.contains("-----END PRIVATE KEY-----")
+        val normalizedPem = pem.trim()
+        if (!normalizedPem.startsWith("-----BEGIN PRIVATE KEY-----") ||
+            !normalizedPem.endsWith("-----END PRIVATE KEY-----")
         ) {
             throw VertexCredentialException(VertexCredentialFailure.INVALID_PRIVATE_KEY)
         }
         val encoded = try {
             Base64.getDecoder().decode(
-                pem.removePrefix("-----BEGIN PRIVATE KEY-----")
+                normalizedPem.removePrefix("-----BEGIN PRIVATE KEY-----")
                     .removeSuffix("-----END PRIVATE KEY-----")
                     .replace(Regex("\\s"), ""),
             )

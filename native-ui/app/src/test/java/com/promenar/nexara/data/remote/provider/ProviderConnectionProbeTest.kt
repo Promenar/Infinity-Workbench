@@ -113,6 +113,95 @@ class ProviderConnectionProbeTest {
     }
 
     @Test
+    fun `Local is not remotely probed or unconditionally reported connected`() = runTest {
+        var requestCount = 0
+        val probe = ProviderConnectionProbe(
+            HttpClient(MockEngine {
+                requestCount++
+                error("Local 不应进入远程探测")
+            }),
+        )
+
+        val result = probe.probe(
+            UnifiedProviderConfig(
+                protocolType = ProtocolType.Local,
+                baseUrl = "",
+                apiKey = "",
+                defaultModel = "local.gguf",
+            ),
+        )
+
+        assertThat(result).isEqualTo(ProviderConnectionProbeResult.Unsupported)
+        assertThat(requestCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `Vertex attacker endpoint is rejected before OAuth exchange`() = runTest {
+        val fixture = validCredentialJson()
+        var requestCount = 0
+        val probe = ProviderConnectionProbe(
+            HttpClient(MockEngine {
+                requestCount++
+                error("非法 Vertex origin 不应进入 OAuth")
+            }),
+        )
+
+        val result = probe.probe(
+            UnifiedProviderConfig(
+                protocolType = ProtocolType.Google_VertexAI,
+                baseUrl = "https://attacker.example.invalid",
+                apiKey = "",
+                defaultModel = "gemini-2.5-pro",
+                serviceAccountJson = fixture.json,
+                projectId = "",
+                location = VERTEX_DEFAULT_LOCATION,
+            ),
+        )
+
+        assertThat(result).isEqualTo(
+            ProviderConnectionProbeResult.Failure(
+                ProviderConnectionProbeFailure.ENDPOINT_INVALID,
+            ),
+        )
+        assertThat(requestCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `models probe rejects 2xx without JSON object data array`() = runTest {
+        listOf(
+            "" to HttpStatusCode.NoContent,
+            "<html>ok</html>" to HttpStatusCode.OK,
+            "{}" to HttpStatusCode.OK,
+            "{\"data\":{}}" to HttpStatusCode.OK,
+        ).forEach { (body, status) ->
+            val probe = ProviderConnectionProbe(
+                HttpClient(MockEngine {
+                    respond(
+                        content = body,
+                        status = status,
+                        headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                    )
+                }),
+            )
+
+            val result = probe.probe(
+                UnifiedProviderConfig(
+                    protocolType = ProtocolType.OpenAI_ChatCompletions,
+                    baseUrl = "https://api.openai.com",
+                    apiKey = "fake-key",
+                    defaultModel = "",
+                ),
+            )
+
+            assertThat(result).isEqualTo(
+                ProviderConnectionProbeResult.Failure(
+                    ProviderConnectionProbeFailure.RESPONSE_INVALID,
+                ),
+            )
+        }
+    }
+
+    @Test
     fun `probe failure never includes upstream body credentials or private key`() = runTest {
         val fixture = validCredentialJson()
         val upstreamMarker = "UPSTREAM-SECRET-MARKER"

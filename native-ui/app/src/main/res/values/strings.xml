@@ -75,6 +75,8 @@
     <string name="secret_field_hide">Hide secret</string>
     <string name="secret_field_clear">Clear saved secret</string>
     <string name="provider_form_https_required">Cloud provider endpoints must use a valid HTTPS URL.</string>
+    <string name="provider_form_protocol_unsupported">This historical provider protocol is no longer supported.</string>
+    <string name="provider_form_legacy_migration_required">Select a supported provider and replace or explicitly clear the stored credential before saving.</string>
     <string name="provider_form_credential_kind_changed">This protocol uses a different credential type. Enter a replacement or explicitly clear the saved credential before saving.</string>
     <string name="provider_form_saving">Saving securely…</string>
     <string name="provider_form_save_failed">Provider settings could not be saved. The previous configuration is unchanged.</string>

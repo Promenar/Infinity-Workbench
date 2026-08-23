@@ -6,6 +6,10 @@ import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.remote.middleware.LlmMiddleware
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.protocol.ProviderEndpointOperation
+import com.promenar.nexara.data.remote.protocol.ProviderEndpointResolver
+import com.promenar.nexara.data.remote.protocol.ProviderEndpointTarget
+import com.promenar.nexara.data.remote.protocol.UnsupportedProviderProtocolException
 import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import com.promenar.nexara.data.remote.provider.VertexCredentialParser
 import com.promenar.nexara.data.remote.provider.VertexCredentialException
@@ -122,6 +126,30 @@ class DefaultProviderRequestRouter(
             }
         } else {
             ""
+        }
+        try {
+            when (raw.protocolType) {
+                ProtocolType.Local -> Unit
+                ProtocolType.Google_VertexAI -> ProviderEndpointResolver.resolve(
+                    protocol = raw.protocolType,
+                    configuredBaseUrl = raw.baseUrl,
+                    target = ProviderEndpointTarget.VertexInference(
+                        projectId = vertexProjectId,
+                        location = VERTEX_DEFAULT_LOCATION,
+                        model = model.remoteModelId,
+                        streaming = false,
+                    ),
+                )
+                else -> ProviderEndpointResolver.resolve(
+                    protocol = raw.protocolType,
+                    configuredBaseUrl = raw.baseUrl,
+                    operation = ProviderEndpointOperation.INFERENCE,
+                )
+            }
+        } catch (_: UnsupportedProviderProtocolException) {
+            return failure(ProviderResolutionError.PROTOCOL_UNSUPPORTED, modelId, providerId)
+        } catch (_: IllegalArgumentException) {
+            return failure(ProviderResolutionError.BASE_URL_INVALID, modelId, providerId)
         }
         val config = UnifiedProviderConfig(
             protocolType = raw.protocolType,

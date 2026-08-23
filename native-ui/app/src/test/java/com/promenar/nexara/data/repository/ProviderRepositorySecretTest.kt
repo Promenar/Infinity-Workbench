@@ -12,6 +12,7 @@ import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -120,6 +121,62 @@ class ProviderRepositorySecretTest {
         assertThat(result.supported).isFalse()
         assertThat(result.error).isNull()
         assertThat(requestCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `Repository connection probe cancellation is rethrown`() = runTest {
+        manager.addProvider(
+            ProviderListItem(
+                id = "cancel-probe",
+                name = "Cancel",
+                typeName = ProtocolType.OpenAI_ChatCompletions.displayName,
+                baseUrl = "https://api.openai.com",
+                model = "model",
+                protocolType = ProtocolType.OpenAI_ChatCompletions,
+            ),
+            CredentialUpdate.Replace("fake-key"),
+        )
+        val repository = ProviderRepository(
+            providerManager = manager,
+            connectionProbe = ProviderConnectionProbe(
+                HttpClient(MockEngine { throw CancellationException("cancel probe") }),
+            ),
+        )
+
+        val failure = try {
+            repository.testConnection("cancel-probe")
+            null
+        } catch (cancelled: CancellationException) {
+            cancelled
+        }
+        assertThat(failure).isNotNull()
+    }
+
+    @Test
+    fun `Repository model listing cancellation is rethrown`() = runTest {
+        manager.addProvider(
+            ProviderListItem(
+                id = "cancel-models",
+                name = "Cancel",
+                typeName = ProtocolType.OpenAI_ChatCompletions.displayName,
+                baseUrl = "https://api.openai.com",
+                model = "model",
+                protocolType = ProtocolType.OpenAI_ChatCompletions,
+            ),
+            CredentialUpdate.Replace("fake-key"),
+        )
+        val repository = ProviderRepository(
+            providerManager = manager,
+            modelListFetcher = { throw CancellationException("cancel models") },
+        )
+
+        val failure = try {
+            repository.fetchModels("cancel-models")
+            null
+        } catch (cancelled: CancellationException) {
+            cancelled
+        }
+        assertThat(failure).isNotNull()
     }
 
     private class MemorySecretStore : SecretStore {

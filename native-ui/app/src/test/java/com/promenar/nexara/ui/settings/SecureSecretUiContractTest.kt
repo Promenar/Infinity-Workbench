@@ -34,7 +34,8 @@ class SecureSecretUiContractTest {
         val form = source("ui/settings/ProviderFormScreen.kt")
         val route = form.substringBefore("fun ProviderFormContent(")
 
-        assertThat(route).contains("ProviderConnectionProbe")
+        assertThat(route).contains("ProviderConnectionProbe.processScoped")
+        assertThat(route).doesNotContain("remember { ProviderConnectionProbe() }")
         assertThat(route).doesNotContain("ProtocolFactory.create(")
         assertThat(route).doesNotContain("listModels().isNotEmpty()")
         assertThat(route).doesNotContain("Reply OK.")
@@ -188,7 +189,36 @@ class SecureSecretUiContractTest {
     fun `local effective protocol bypasses cloud HTTPS while custom cloud stays protected`() {
         assertThat(isProviderEndpointAllowed(ProtocolType.Local, "")).isTrue()
         assertThat(isProviderEndpointAllowed(ProtocolType.Generic_OpenAI_Compat, "http://plain.invalid")).isFalse()
-        assertThat(isProviderEndpointAllowed(ProtocolType.Generic_OpenAI_Compat, "https://secure.invalid")).isTrue()
+        assertThat(isProviderEndpointAllowed(ProtocolType.Generic_OpenAI_Compat, "https://secure.invalid")).isFalse()
+        assertThat(
+            isProviderEndpointAllowed(
+                ProtocolType.Generic_OpenAI_Compat,
+                "https://secure.invalid/chat/completions",
+            ),
+        ).isTrue()
+        assertThat(
+            isProviderEndpointAllowed(
+                ProtocolType.Generic_OpenAI_Compat,
+                "https://secure.invalid/v2",
+            ),
+        ).isTrue()
+        assertThat(isProviderEndpointAllowed(ProtocolType.Cohere_Chat, ProtocolType.Cohere_Chat.defaultBaseUrl))
+            .isFalse()
+        assertThat(isProviderEndpointAllowed(ProtocolType.Yi_ZeroOne, ProtocolType.Yi_ZeroOne.defaultBaseUrl))
+            .isFalse()
+    }
+
+    @Test
+    fun `historical unsupported provider stays identifiable until explicit migration`() {
+        assertThat(isRetiredProviderProtocol(ProtocolType.Cohere_Chat)).isTrue()
+        assertThat(isRetiredProviderProtocol(ProtocolType.Yi_ZeroOne)).isTrue()
+        assertThat(isRetiredProviderProtocol(ProtocolType.Generic_OpenAI_Compat)).isFalse()
+
+        val form = source("ui/settings/ProviderFormScreen.kt")
+        val route = form.substringBefore("fun ProviderFormContent(")
+        assertThat(route).contains("legacyUnsupportedProtocol")
+        assertThat(route).contains("legacyMigrationBlocked")
+        assertThat(route).doesNotContain("ProtocolType.Yi_ZeroOne\n                    } ?: ProtocolType.Generic_OpenAI_Compat")
     }
 
     @Test

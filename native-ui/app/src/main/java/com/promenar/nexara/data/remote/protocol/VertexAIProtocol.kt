@@ -57,6 +57,19 @@ class VertexAIProtocol(
     override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = channelFlow {
         activeChannel = null
 
+        val endpoint = try {
+            inferenceUrl(request, streaming = true)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            send(StreamChunk.Error(
+                code = com.promenar.nexara.domain.generation.GenerationFailureCode.INVALID_REQUEST,
+                retryable = false,
+                technical = "Vertex endpoint validation failed",
+            ))
+            return@channelFlow
+        }
+
         val token: String
         try {
             token = getAccessToken()
@@ -73,7 +86,7 @@ class VertexAIProtocol(
 
         val response: HttpResponse
         try {
-            response = httpClient.post(inferenceUrl(request, streaming = true)) {
+            response = httpClient.post(endpoint) {
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $token")
                 setBody(buildRequestBody(request))
@@ -169,6 +182,8 @@ class VertexAIProtocol(
     }
 
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
+        // 必须在创建 JWT 或交换 OAuth token 前验证 inference origin 与所有路径 segment。
+        val endpoint = inferenceUrl(request, streaming = false)
         val token: String
         try {
             token = getAccessToken()
@@ -180,7 +195,7 @@ class VertexAIProtocol(
 
         val response: HttpResponse
         try {
-            response = httpClient.post(inferenceUrl(request, streaming = false)) {
+            response = httpClient.post(endpoint) {
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $token")
                 setBody(buildRequestBody(request))

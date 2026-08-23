@@ -48,12 +48,22 @@ class VertexCredentialParserTest {
         assertThat(error.cause?.message.orEmpty()).doesNotContain(marker)
     }
 
-    private fun validCredentialJson(): CredentialFixture {
+    @Test
+    fun `标准 Google PEM 末尾换行可解析`() {
+        val fixture = validCredentialJson(trailingPemNewline = true)
+
+        val parsed = VertexCredentialParser.parse(fixture.json)
+
+        assertThat(parsed.projectId).isEqualTo("project-safe")
+        assertThat(parsed.clientEmail).isEqualTo("service@example.invalid")
+    }
+
+    private fun validCredentialJson(trailingPemNewline: Boolean = false): CredentialFixture {
         val encoded = KeyPairGenerator.getInstance("RSA").apply { initialize(1024) }
             .generateKeyPair().private.encoded
         val pem = "-----BEGIN PRIVATE KEY-----\n" +
             Base64.getEncoder().encodeToString(encoded) +
-            "\n-----END PRIVATE KEY-----"
+            "\n-----END PRIVATE KEY-----" + if (trailingPemNewline) "\n" else ""
         encoded.fill(0)
         val json = """{"project_id":"project-safe","client_email":"service@example.invalid","private_key":${jsonString(pem)}}"""
         return CredentialFixture(json, pem)

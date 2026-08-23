@@ -177,9 +177,29 @@ class ProviderRequestRouterTest {
 
         assertThat(success.value.config.projectId).isEqualTo("project-safe")
         assertThat(success.value.config.serviceAccountJson).contains("service@example.invalid")
-        assertThat(success.value.config.baseUrl).isEqualTo("https://vertex.invalid")
+        assertThat(success.value.config.baseUrl)
+            .isEqualTo("https://us-central1-aiplatform.googleapis.com")
         assertThat(success.value.config.defaultModel).isEqualTo("gemini")
         assertThat(success.value.config.location).isEqualTo(VERTEX_DEFAULT_LOCATION)
+    }
+
+    @Test
+    fun `Vertex attacker origin is rejected before client creation`() {
+        val privateKey = KeyPairGenerator.getInstance("RSA").apply { initialize(1024) }
+            .generateKeyPair().private.encoded
+        val pem = "-----BEGIN PRIVATE KEY-----\n" +
+            Base64.getEncoder().encodeToString(privateKey) +
+            "\n-----END PRIVATE KEY-----"
+        privateKey.fill(0)
+        seedVertex(
+            "vertex-attacker",
+            "gemini",
+            """{"project_id":"project-safe","client_email":"service@example.invalid","private_key":${jsonString(pem)}}""",
+            baseUrl = "https://attacker.example.invalid",
+        )
+
+        assertFailure("vertex-attacker::gemini", ProviderResolutionError.BASE_URL_INVALID)
+        assertThat(createdConfigs).isEmpty()
     }
 
     @Test
@@ -244,7 +264,12 @@ class ProviderRequestRouterTest {
         models[stableModelId(providerId, remoteModelId)] = model(providerId, remoteModelId)
     }
 
-    private fun seedVertex(providerId: String, remoteModelId: String, credentials: String) {
+    private fun seedVertex(
+        providerId: String,
+        remoteModelId: String,
+        credentials: String,
+        baseUrl: String = "https://us-central1-aiplatform.googleapis.com",
+    ) {
         providers[providerId] = ProviderListItem(
             id = providerId,
             name = providerId,
@@ -252,7 +277,7 @@ class ProviderRequestRouterTest {
         )
         configs[providerId] = ProviderConfig(
             protocolType = ProtocolType.Google_VertexAI,
-            baseUrl = "https://vertex.invalid",
+            baseUrl = baseUrl,
             model = remoteModelId,
             vertexServiceAccountJson = credentials,
         )

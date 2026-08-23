@@ -114,7 +114,7 @@ object ProviderEndpointResolver {
         }
 
         val operationPath = when (operation) {
-            ProviderEndpointOperation.INFERENCE -> normalizePath(protocol.defaultPath)
+            ProviderEndpointOperation.INFERENCE -> inferencePath(protocol, basePath)
             ProviderEndpointOperation.MODELS -> modelPath(protocol, basePath)
             ProviderEndpointOperation.CONNECTION_PROBE -> {
                 if (protocol == ProtocolType.Anthropic_Messages) "/v1/models" else modelPath(protocol, basePath)
@@ -125,7 +125,14 @@ object ProviderEndpointResolver {
             basePath = stripInferenceResource(protocol, basePath)
         }
 
-        val resolvedPath = appendWithOverlap(basePath, operationPath)
+        val resolvedPath = if (
+            operation == ProviderEndpointOperation.INFERENCE &&
+            isCompleteInferencePath(protocol, basePath)
+        ) {
+            basePath
+        } else {
+            appendWithOverlap(basePath, operationPath)
+        }
         return buildString {
             append(uri.scheme.lowercase())
             append("://")
@@ -157,7 +164,7 @@ object ProviderEndpointResolver {
                 "https://$location-aiplatform.googleapis.com"
             }
         }
-        val uri = validatedHttpUri(raw)
+        val uri = validatedVertexOrigin(raw, location)
         val operation = if (target.streaming) "streamGenerateContent" else "generateContent"
         val path = appendWithOverlap(
             normalizePath(uri.rawPath.orEmpty()),
@@ -187,6 +194,31 @@ object ProviderEndpointResolver {
         return uri
     }
 
+    private fun validatedVertexOrigin(raw: String, location: String): URI {
+        val uri = validatedHttpUri(raw)
+        val expectedHost = if (location == "global") {
+            "aiplatform.googleapis.com"
+        } else {
+            "$location-aiplatform.googleapis.com"
+        }
+        require(uri.scheme.equals("https", ignoreCase = true)) {
+            "Vertex endpoint 必须使用 HTTPS"
+        }
+        require(uri.host?.equals(expectedHost, ignoreCase = true) == true) {
+            "Vertex endpoint 与 location 不匹配"
+        }
+        require(uri.rawUserInfo == null && uri.port == -1) {
+            "Vertex endpoint 必须使用 Google 官方 origin"
+        }
+        require(uri.rawPath.isNullOrEmpty() || uri.rawPath == "/") {
+            "Vertex endpoint 必须使用 Google 官方 origin"
+        }
+        require(uri.rawQuery == null && uri.rawFragment == null) {
+            "Vertex endpoint 必须使用 Google 官方 origin"
+        }
+        return uri
+    }
+
     private fun validateGenericConfiguredPath(path: String) {
         val segments = normalizePath(path).split('/').filter(String::isNotEmpty)
         val isCompleteInference = segments.takeLast(2) == listOf("chat", "completions")
@@ -194,6 +226,35 @@ object ProviderEndpointResolver {
         require(isCompleteInference || containsVersion) {
             "Generic OpenAI Compat 端点必须包含明确版本前缀或完整 chat/completions 路径"
         }
+    }
+
+    private fun inferencePath(protocol: ProtocolType, basePath: String): String {
+        val defaultSegments = normalizePath(protocol.defaultPath)
+            .split('/')
+            .filter(String::isNotEmpty)
+        if (defaultSegments.isEmpty()) return ""
+        val existingHasVersion = normalizePath(basePath)
+            .split('/')
+            .filter(String::isNotEmpty)
+            .any { it.matches(Regex("v\\d+")) }
+        val targetSegments = if (
+            existingHasVersion && defaultSegments.first().matches(Regex("v\\d+"))
+        ) {
+            defaultSegments.drop(1)
+        } else {
+            defaultSegments
+        }
+        return normalizePath(targetSegments.joinToString("/"))
+    }
+
+    private fun isCompleteInferencePath(protocol: ProtocolType, basePath: String): Boolean {
+        val normalized = normalizePath(basePath)
+        val resourcePath = when (protocol) {
+            ProtocolType.OpenAI_Responses -> "/responses"
+            ProtocolType.Anthropic_Messages -> "/messages"
+            else -> "/chat/completions"
+        }
+        return normalized.endsWith(resourcePath)
     }
 
     private fun modelPath(protocol: ProtocolType, basePath: String): String = when (protocol) {
@@ -250,7 +311,11 @@ object ProviderEndpointResolver {
 
     private fun requireSafeVertexSegment(label: String, value: String): String {
         val trimmed = value.trim()
-        require(trimmed.matches(Regex("[A-Za-z0-9._-]+"))) { "Vertex $label 无效" }
+        require(trimmed.length in 1..128) { "Vertex $label 无效" }
+        require(trimmed != "." && trimmed != "..") { "Vertex $label 无效" }
+        require(trimmed.matches(Regex("[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?"))) {
+            "Vertex $label 无效"
+        }
         return trimmed
     }
 

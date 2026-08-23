@@ -209,6 +209,85 @@ class ProviderEndpointResolverTest {
     }
 
     @Test
+    fun `完整 chat inference 路径保持配置版本且不再追加默认路径`() {
+        assertThat(
+            ProviderEndpointResolver.resolve(
+                ProtocolType.Generic_OpenAI_Compat,
+                "https://generic.example.invalid/chat/completions",
+                ProviderEndpointOperation.INFERENCE,
+            ),
+        ).isEqualTo("https://generic.example.invalid/chat/completions")
+        assertThat(
+            ProviderEndpointResolver.resolve(
+                ProtocolType.OpenAI_ChatCompletions,
+                "https://proxy.example.invalid/v2/chat/completions",
+                ProviderEndpointOperation.INFERENCE,
+            ),
+        ).isEqualTo("https://proxy.example.invalid/v2/chat/completions")
+    }
+
+    @Test
+    fun `Vertex inference 只接受 location 对应的官方 HTTPS origin`() {
+        listOf(
+            "https://attacker.example.invalid",
+            "http://us-central1-aiplatform.googleapis.com",
+            "https://europe-west1-aiplatform.googleapis.com",
+            "https://us-central1-aiplatform.googleapis.com.attacker.example",
+            "https://us-central1-aiplatform.googleapis.com/custom-prefix",
+        ).forEach { configured ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ProviderEndpointResolver.resolve(
+                    ProtocolType.Google_VertexAI,
+                    configured,
+                    ProviderEndpointTarget.VertexInference(
+                        projectId = "project-safe",
+                        location = VERTEX_DEFAULT_LOCATION,
+                        model = "gemini-2.5-pro",
+                        streaming = false,
+                    ),
+                )
+            }
+        }
+
+        assertThat(
+            ProviderEndpointResolver.resolve(
+                ProtocolType.Google_VertexAI,
+                "https://aiplatform.googleapis.com",
+                ProviderEndpointTarget.VertexInference(
+                    projectId = "project-safe",
+                    location = "global",
+                    model = "gemini-2.5-pro",
+                    streaming = false,
+                ),
+            ),
+        ).isEqualTo(
+            "https://aiplatform.googleapis.com/v1/projects/project-safe/locations/global/publishers/google/models/gemini-2.5-pro:generateContent",
+        )
+    }
+
+    @Test
+    fun `Vertex project location model 分别拒绝 dot segment`() {
+        listOf(
+            Triple(".", VERTEX_DEFAULT_LOCATION, "gemini-2.5-pro"),
+            Triple("project-safe", "..", "gemini-2.5-pro"),
+            Triple("project-safe", VERTEX_DEFAULT_LOCATION, "."),
+        ).forEach { (project, location, model) ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ProviderEndpointResolver.resolve(
+                    ProtocolType.Google_VertexAI,
+                    "",
+                    ProviderEndpointTarget.VertexInference(
+                        projectId = project,
+                        location = location,
+                        model = model,
+                        streaming = false,
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
     fun `厂商前缀保留并拼接各自版本路径`() {
         assertThat(
             ProviderEndpointResolver.resolve(

@@ -60,6 +60,35 @@ class ProviderWireEndpointTest {
     }
 
     @Test
+    fun `完整 custom 和 OpenAI v2 inference URL 在真实 wire 保持原样`() = runTest {
+        val genericUrls = mutableListOf<String>()
+        val generic = GenericOpenAICompatProtocol(
+            baseUrl = "https://generic.example.invalid/chat/completions",
+            apiKey = "fake-key",
+            model = "fake-model",
+            protocolType = ProtocolType.Generic_OpenAI_Compat,
+            httpClient = recordingClient(genericUrls),
+        )
+        val openAiUrls = mutableListOf<String>()
+        val openAi = OpenAIProtocol(
+            baseUrl = "https://proxy.example.invalid/v2/chat/completions",
+            apiKey = "fake-key",
+            model = "fake-model",
+            httpClient = recordingClient(openAiUrls),
+        )
+
+        runCatching { generic.sendPromptSync(request) }
+        runCatching { openAi.sendPromptSync(request) }
+
+        assertThat(genericUrls).containsExactly(
+            "https://generic.example.invalid/chat/completions",
+        )
+        assertThat(openAiUrls).containsExactly(
+            "https://proxy.example.invalid/v2/chat/completions",
+        )
+    }
+
+    @Test
     fun `Anthropic generation uses resolver exact URL and headers`() = runTest {
         var apiKeyHeader: String? = null
         var versionHeader: String? = null
@@ -208,6 +237,44 @@ class ProviderWireEndpointTest {
             "https://us-central1-aiplatform.googleapis.com/v1/projects/project-safe/locations/us-central1/publishers/google/models/gemini-2.5-pro:generateContent",
             "https://us-central1-aiplatform.googleapis.com/v1/projects/project-safe/locations/us-central1/publishers/google/models/gemini-2.5-pro:streamGenerateContent?alt=sse",
         ).inOrder()
+    }
+
+    @Test
+    fun `Vertex attacker origin and dot model fail before OAuth or HTTP`() = runTest {
+        val fixture = validVertexCredentialJson()
+        listOf(
+            "https://attacker.example.invalid" to "gemini-2.5-pro",
+            "https://us-central1-aiplatform.googleapis.com" to "..",
+        ).forEach { (configuredBaseUrl, model) ->
+            var requestCount = 0
+            var bearerObserved = false
+            val client = HttpClient(MockEngine { captured ->
+                requestCount++
+                bearerObserved = bearerObserved || captured.headers[HttpHeaders.Authorization]
+                    ?.startsWith("Bearer ") == true
+                respond(
+                    content = """{"access_token":"fake-token","expires_in":3600}""",
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                )
+            })
+            val protocol = VertexAIProtocol(
+                baseUrl = configuredBaseUrl,
+                serviceAccountJson = fixture,
+                projectId = "",
+                location = VERTEX_DEFAULT_LOCATION,
+                model = model,
+                httpClient = client,
+            )
+
+            val error = runCatching {
+                protocol.sendPromptSync(request.copy(model = model))
+            }.exceptionOrNull()
+
+            assertThat(error).isNotNull()
+            assertThat(requestCount).isEqualTo(0)
+            assertThat(bearerObserved).isFalse()
+        }
     }
 
     private fun recordingClient(urls: MutableList<String>): HttpClient =
