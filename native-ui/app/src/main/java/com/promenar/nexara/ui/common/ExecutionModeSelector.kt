@@ -7,10 +7,12 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -19,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -48,7 +51,7 @@ fun ExecutionModeSelector(
             .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, shape)
             .padding(3.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth().selectableGroup()) {
             ExecutionMode.entries.forEach { mode ->
                 val isSelected = mode == selected
                 val bg by animateColorAsState(
@@ -65,7 +68,12 @@ fun ExecutionModeSelector(
                         .weight(1f)
                         .clip(RoundedCornerShape(10.dp))
                         .background(bg)
-                        .clickable { onSelect(mode) }
+                        .heightIn(min = 48.dp)
+                        .selectable(
+                            selected = isSelected,
+                            onClick = { onSelect(mode) },
+                            role = Role.RadioButton,
+                        )
                         .padding(vertical = 10.dp),
                     contentAlignment = Alignment.Center
                 ) {

@@ -548,6 +548,7 @@ fun ChatScreenContent(
                                         riskLabel = approvalRiskLabel(call.risk),
                                     )
                                 },
+                                enabled = !uiState.isApprovalSubmitting,
                                 onApprove = { actions.onApprove(request) },
                                 onDecline = { actions.onDecline(request) },
                             )

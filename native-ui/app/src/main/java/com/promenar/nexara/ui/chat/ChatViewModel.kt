@@ -148,7 +148,8 @@ data class ChatUiState(
     val error: String? = null,
     val generationNotice: UiStatusNotice? = null,
     val backgroundWarning: BackgroundGenerationWarning? = null,
-    val approvalRequest: ApprovalRequest? = null
+    val approvalRequest: ApprovalRequest? = null,
+    val isApprovalSubmitting: Boolean = false,
 )
 
 enum class BackgroundWarningKind { FGS_UNAVAILABLE, NOTIFICATIONS_UNAVAILABLE }
@@ -299,6 +300,7 @@ class ChatViewModel(
     private val _isGenerating = MutableStateFlow(false)
     private val _isLoading = MutableStateFlow(false)
     private val _generationStatus = MutableStateFlow(GenerationStatus.IDLE)
+    private val _isApprovalSubmitting = MutableStateFlow(false)
 
     data class TokenIndicatorState(
         val used: Int = 0,
@@ -353,6 +355,7 @@ class ChatViewModel(
 
     private var generationJob: Job? = null
     private val sendPreparationMutex = Mutex()
+    private val approvalSubmissionMutex = Mutex()
 
     @Suppress("UNCHECKED_CAST")
     val uiState: StateFlow<ChatUiState> = combine(
@@ -367,6 +370,7 @@ class ChatViewModel(
         _generationNotice,
         _backgroundServiceStoppedError,
         _backgroundWarning,
+        _isApprovalSubmitting,
     ) { args: Array<Any?> ->
         val state = args[0] as com.promenar.nexara.ui.chat.ChatState
         val sessionId = args[1] as String?
@@ -379,6 +383,7 @@ class ChatViewModel(
         val generationNotice = args[8] as UiStatusNotice?
         val backgroundServiceStoppedError = args[9] as BackgroundServiceStoppedError?
         val backgroundWarning = args[10] as BackgroundGenerationWarning?
+        val isApprovalSubmitting = args[11] as Boolean
 
         val session = state.sessions.find { it.id == sessionId }
         if (session != null) {
@@ -395,7 +400,8 @@ class ChatViewModel(
             error = backgroundServiceStoppedError?.message ?: error,
             generationNotice = generationNotice,
             backgroundWarning = backgroundWarning,
-            approvalRequest = session?.approvalRequest
+            approvalRequest = session?.approvalRequest,
+            isApprovalSubmitting = isApprovalSubmitting,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ChatUiState())
 
@@ -1333,25 +1339,34 @@ class ChatViewModel(
 
     fun approveRequest(expectedRequest: ApprovalRequest, intervention: String? = null) {
         val sessionId = _currentSessionId.value ?: return
-        cancelCurrentSessionGeneration()
-        generationJob = viewModelScope.launch {
-            approvalManager.resumeGeneration(
-                sessionId,
-                expectedRequest = expectedRequest,
-                approved = true,
-                intervention = intervention,
-            )
-        }
+        submitApproval(sessionId, expectedRequest, approved = true, intervention = intervention)
     }
 
     fun rejectRequest(expectedRequest: ApprovalRequest) {
         val sessionId = _currentSessionId.value ?: return
+        submitApproval(sessionId, expectedRequest, approved = false, intervention = null)
+    }
+
+    private fun submitApproval(
+        sessionId: String,
+        expectedRequest: ApprovalRequest,
+        approved: Boolean,
+        intervention: String?,
+    ) {
+        if (!approvalSubmissionMutex.tryLock()) return
+        _isApprovalSubmitting.value = true
         viewModelScope.launch {
-            approvalManager.resumeGeneration(
-                sessionId,
-                expectedRequest = expectedRequest,
-                approved = false,
-            )
+            try {
+                approvalManager.resumeGeneration(
+                    sessionId,
+                    expectedRequest = expectedRequest,
+                    approved = approved,
+                    intervention = intervention,
+                )
+            } finally {
+                _isApprovalSubmitting.value = false
+                approvalSubmissionMutex.unlock()
+            }
         }
     }
 

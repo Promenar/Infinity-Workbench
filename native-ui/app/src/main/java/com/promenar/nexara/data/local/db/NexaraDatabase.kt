@@ -74,7 +74,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
         FileVersionEntity::class,
         WorkspaceMutationEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

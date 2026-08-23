@@ -1,0 +1,23 @@
+[
+  {
+    "id": "agent-1",
+    "name": "Agent",
+    "description": "",
+    "name_customized": 0,
+    "description_customized": 0,
+    "system_prompt": "",
+    "model": "",
+    "icon": "✨",
+    "color": "#C0C1FF",
+    "avatar_path": null,
+    "is_pinned": 0,
+    "created_at": 100,
+    "temperature": null,
+    "top_p": null,
+    "max_tokens": null,
+    "rag_config": null,
+    "retrieval_config": null,
+    "use_inherited_config": 1,
+    "execution_mode": "manual"
+  }
+]

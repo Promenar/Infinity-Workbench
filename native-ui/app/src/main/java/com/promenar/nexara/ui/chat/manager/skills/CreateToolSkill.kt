@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat.manager.skills
 import com.promenar.nexara.data.local.db.dao.SkillDao
 import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import java.util.UUID
@@ -14,6 +15,7 @@ class CreateToolSkill(
     override val name: String = "create_tool"
     override val description: String = "Create a new custom tool/skill for the assistant to use."
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.FILE_WRITE
     
     override val parametersSchema: String = """
         {

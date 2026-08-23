@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.WriteResult
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
@@ -19,6 +20,7 @@ class FileWriteSkill(
     override val name = "write_file"
     override val description = "将内容写入工作区文件（全量覆盖）。自动进行乐观锁冲突检测。"
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.FILE_WRITE
     override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"目标文件UUID"},"content":{"type":"string","description":"要写入的完整内容"},"expectedHash":{"type":"string","description":"文件的当前hash(乐观锁)"}},"required":["uuid","content","expectedHash"]}"""
 
     override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {

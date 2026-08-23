@@ -20,6 +20,10 @@ import com.promenar.nexara.data.repository.ToolApprovalRequestFactory
 import com.promenar.nexara.data.repository.toInvocationIdentity
 import com.promenar.nexara.ui.chat.ChatStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -190,6 +194,19 @@ class ApprovalManagerTest {
             request: ApprovalRequest,
         ): ExactToolApprovalCompletion {
             completionTransition?.let { return ExactToolApprovalCompletion.Completed(it) }
+            val currentKey = ToolExecutionKey(
+                sessionId,
+                request.assistantMessageId!!,
+                request.calls.first().toolCallId,
+            )
+            if (states[currentKey] !in setOf(
+                    ToolLedgerState.SUCCEEDED,
+                    ToolLedgerState.FAILED,
+                    ToolLedgerState.REJECTED,
+                    ToolLedgerState.CANCELLED,
+                    ToolLedgerState.TIMED_OUT,
+                )
+            ) return ExactToolApprovalCompletion.Conflict
             val remaining = request.calls.drop(1)
             val next = remaining.takeIf { it.isNotEmpty() }?.let {
                 ToolApprovalRequestFactory.createFromIdentities(
@@ -211,6 +228,32 @@ class ApprovalManagerTest {
                     approvalRequest = next,
                     nextAssistantMessageId = next?.assistantMessageId,
                     nextPendingToolCallIds = next?.calls?.map { it.toolCallId }.orEmpty(),
+                ),
+            )
+        }
+        override suspend fun compensateExactToolApproval(
+            sessionId: String,
+            request: ApprovalRequest,
+            state: ToolLedgerState,
+            error: String,
+        ): ExactToolApprovalDecision {
+            val current = request.calls.firstOrNull() ?: return ExactToolApprovalDecision.Conflict
+            val key = ToolExecutionKey(sessionId, request.assistantMessageId!!, current.toolCallId)
+            if (states[key] !in setOf(ToolLedgerState.APPROVED, ToolLedgerState.RUNNING)) {
+                return ExactToolApprovalDecision.Conflict
+            }
+            states[key] = state
+            return ExactToolApprovalDecision.Decided(
+                key,
+                listOf(
+                    Message(
+                        id = "terminal-${state.name}-${key.toolCallId}",
+                        role = MessageRole.TOOL,
+                        toolCallId = key.toolCallId,
+                        parentMessageId = key.assistantMessageId,
+                        name = current.toolName,
+                        content = if (state == ToolLedgerState.FAILED) "工具执行失败：$error" else "工具执行已取消。",
+                    ),
                 ),
             )
         }
@@ -349,7 +392,12 @@ class ApprovalManagerTest {
     @Test
     fun resumeGenerationApprovedAddsDecisionStep() = testScope.runTest {
         val request = seedExactApproval()
-        approvalManager.setCallbacks(onGenerateMessage = { _, _, _ -> }, onExecuteTools = { _, _, _ -> })
+        approvalManager.setCallbacks(
+            onGenerateMessage = { _, _, _ -> },
+            onExecuteTools = { sessionId, messageId, ids ->
+                ids.forEach { ledger.states[ToolExecutionKey(sessionId, messageId, it)] = ToolLedgerState.SUCCEEDED }
+            },
+        )
 
         approvalManager.resumeGeneration("s1", request, approved = true)
 
@@ -364,7 +412,12 @@ class ApprovalManagerTest {
     @Test
     fun resumeGenerationWithIntervention() = testScope.runTest {
         val request = seedExactApproval()
-        approvalManager.setCallbacks(onGenerateMessage = { _, _, _ -> }, onExecuteTools = { _, _, _ -> })
+        approvalManager.setCallbacks(
+            onGenerateMessage = { _, _, _ -> },
+            onExecuteTools = { sessionId, messageId, ids ->
+                ids.forEach { ledger.states[ToolExecutionKey(sessionId, messageId, it)] = ToolLedgerState.SUCCEEDED }
+            },
+        )
 
         approvalManager.resumeGeneration("s1", request, approved = true, intervention = "Do it differently")
 
@@ -414,13 +467,16 @@ class ApprovalManagerTest {
         var executedIds: Set<String>? = null
         approvalManager.setCallbacks(
             onGenerateMessage = { _, _, _ -> },
-            onExecuteTools = { _, _, allowedIds -> executedIds = allowedIds },
+            onExecuteTools = { sessionId, messageId, allowedIds ->
+                executedIds = allowedIds
+                allowedIds.forEach { ledger.states[ToolExecutionKey(sessionId, messageId, it)] = ToolLedgerState.SUCCEEDED }
+            },
         )
 
         approvalManager.resumeGeneration("s1", request, approved = true)
 
         assertThat(executedIds).containsExactly("risky")
-        assertThat(ledger.state(riskyKey)).isEqualTo(ToolLedgerState.APPROVED)
+        assertThat(ledger.state(riskyKey)).isEqualTo(ToolLedgerState.SUCCEEDED)
         assertThat(store.getSession("s1")!!.messages.first { it.id == "m1" }.pendingApprovalToolIds)
             .isNull()
     }
@@ -479,7 +535,7 @@ class ApprovalManagerTest {
     }
 
     @Test
-    fun crashAfterApproveBeforeExecuteKeepsPersistedApprovalForExplicitRecovery() = testScope.runTest {
+    fun callbackFailureWritesDeterministicFailedToolMessageAndClosesApproval() = testScope.runTest {
         val call = ToolCall("risky", "write_file", "{}")
         seedSessionWithAssistant(
             toolCalls = listOf(call),
@@ -498,20 +554,78 @@ class ApprovalManagerTest {
             onExecuteTools = { _, _, _ -> throw IllegalStateException("模拟进程在claim前终止") },
         )
 
-        val failure = runCatching {
-            approvalManager.resumeGeneration("s1", request, approved = true)
-        }.exceptionOrNull()
+        approvalManager.resumeGeneration("s1", request, approved = true)
 
-        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
-        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.APPROVED)
-        assertThat(store.getSession("s1")!!.approvalRequest).isEqualTo(request)
-        assertThat(store.getSession("s1")!!.loopStatus).isEqualTo(LoopStatus.WAITING_FOR_APPROVAL)
-        assertThat(store.getSession("s1")!!.messages.single().pendingApprovalToolIds)
-            .containsExactly(call.id)
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
+        assertThat(store.getSession("s1")!!.loopStatus).isEqualTo(LoopStatus.RUNNING)
+        assertThat(store.getSession("s1")!!.messages.first().pendingApprovalToolIds).isNull()
+        assertThat(store.getSession("s1")!!.messages.last().content).contains("工具执行失败")
         val persistedApprovalUpdates = sessionUpdates
             .filter { "approvalRequest" in it }
             .map { it["approvalRequest"] }
         assertThat(persistedApprovalUpdates).containsExactly(request)
+    }
+
+    @Test
+    fun callbackCancellationCompensatesThenRethrows() = testScope.runTest {
+        val call = ToolCall("cancelled", "write_file", "{}")
+        seedSessionWithAssistant(toolCalls = listOf(call), pendingApprovalToolIds = listOf(call.id))
+        val key = ToolExecutionKey("s1", "m1", call.id)
+        ledger.register(key, call.name, true)
+        val request = ToolApprovalRequestFactory.create(
+            "m1",
+            listOf(ApprovalCallCandidate(call, com.promenar.nexara.domain.tool.ToolRisk.FILE_WRITE)),
+        )
+        approvalManager.setApprovalRequest("s1", request)
+        approvalManager.setCallbacks(
+            onGenerateMessage = null,
+            onExecuteTools = { _, _, _ -> throw CancellationException("cancel") },
+        )
+
+        val failure = runCatching {
+            approvalManager.resumeGeneration("s1", request, approved = true)
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(CancellationException::class.java)
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.CANCELLED)
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
+        assertThat(store.getSession("s1")!!.messages.last().content).contains("已取消")
+    }
+
+    @Test
+    fun concurrentDoubleSubmitExecutesCurrentApprovalOnlyOnce() = testScope.runTest {
+        val call = ToolCall("once", "write_file", "{}")
+        seedSessionWithAssistant(toolCalls = listOf(call), pendingApprovalToolIds = listOf(call.id))
+        val key = ToolExecutionKey("s1", "m1", call.id)
+        ledger.register(key, call.name, true)
+        val request = ToolApprovalRequestFactory.create(
+            "m1",
+            listOf(ApprovalCallCandidate(call, com.promenar.nexara.domain.tool.ToolRisk.FILE_WRITE)),
+        )
+        approvalManager.setApprovalRequest("s1", request)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var executions = 0
+        approvalManager.setCallbacks(
+            onGenerateMessage = { _, _, _ -> },
+            onExecuteTools = { sessionId, messageId, ids ->
+                executions += 1
+                entered.complete(Unit)
+                release.await()
+                ids.forEach { ledger.states[ToolExecutionKey(sessionId, messageId, it)] = ToolLedgerState.SUCCEEDED }
+            },
+        )
+
+        val first = launch { approvalManager.resumeGeneration("s1", request, approved = true) }
+        entered.await()
+        val duplicate = launch { approvalManager.resumeGeneration("s1", request, approved = false) }
+        release.complete(Unit)
+        listOf(first, duplicate).joinAll()
+
+        assertThat(executions).isEqualTo(1)
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.SUCCEEDED)
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
     }
 
     @Test
@@ -562,7 +676,7 @@ class ApprovalManagerTest {
     }
 
     @Test
-    fun exactApprovalExecutesOnlyFirstVisibleIdentityAndOldRequestCannotSubmitTwice() = testScope.runTest {
+    fun consecutiveExactApprovalsAlwaysDecideTheCurrentlyVisibleFirstIdentity() = testScope.runTest {
         val calls = listOf(
             ToolCall("first", "write_file", "{\"path\":\"a\"}"),
             ToolCall("second", "delete_file", "{\"path\":\"b\"}"),
@@ -584,19 +698,23 @@ class ApprovalManagerTest {
         val executed = mutableListOf<Set<String>>()
         approvalManager.setCallbacks(
             onGenerateMessage = { _, _, _ -> },
-            onExecuteTools = { _, _, ids -> executed += ids },
+            onExecuteTools = { sessionId, messageId, ids ->
+                executed += ids
+                ids.forEach { ledger.states[ToolExecutionKey(sessionId, messageId, it)] = ToolLedgerState.SUCCEEDED }
+            },
         )
 
         approvalManager.resumeGeneration("s1", request, approved = true)
+        val nextRequest = store.getSession("s1")!!.approvalRequest!!
+        approvalManager.resumeGeneration("s1", nextRequest, approved = true)
         approvalManager.resumeGeneration("s1", request, approved = true)
 
-        assertThat(executed).containsExactlyElementsIn(listOf(setOf("first")))
+        assertThat(executed).containsExactly(setOf("first"), setOf("second")).inOrder()
         assertThat(ledger.state(ToolExecutionKey("s1", "m1", "first")))
-            .isEqualTo(ToolLedgerState.APPROVED)
+            .isEqualTo(ToolLedgerState.SUCCEEDED)
         assertThat(ledger.state(ToolExecutionKey("s1", "m1", "second")))
-            .isEqualTo(ToolLedgerState.PENDING_APPROVAL)
-        assertThat(store.getSession("s1")!!.approvalRequest!!.calls.map { it.toolCallId })
-            .containsExactly("second")
+            .isEqualTo(ToolLedgerState.SUCCEEDED)
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
     }
 
     @Test

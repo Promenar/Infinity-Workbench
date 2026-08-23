@@ -14,6 +14,7 @@ import com.promenar.nexara.data.model.TaskState
 import com.promenar.nexara.data.model.json
 import com.promenar.nexara.data.model.toDomain
 import com.promenar.nexara.data.model.toEntity
+import com.promenar.nexara.domain.model.ExecutionModeCodec
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.serializer
@@ -76,7 +77,11 @@ open class SessionRepository(
                 "isPinned" -> result.copy(isPinned = if (value as? Boolean == true) 1 else 0)
                 "modelId" -> result.copy(modelId = value as? String)
                 "customPrompt" -> result.copy(customPrompt = value as? String)
-                "executionMode" -> result.copy(executionMode = value as? String ?: result.executionMode)
+                "executionMode" -> result.copy(
+                    executionMode = ExecutionModeCodec.serialize(
+                        ExecutionModeCodec.parseOrSemi(value as? String),
+                    ),
+                )
                 "loopStatus" -> result.copy(loopStatus = (value as? LoopStatus)?.toSerializedName() ?: result.loopStatus)
                 "pendingIntervention" -> result.copy(pendingIntervention = value as? String)
                 "approvalRequest" -> result.copy(approvalRequest = value?.let { encode(it as ApprovalRequest) })

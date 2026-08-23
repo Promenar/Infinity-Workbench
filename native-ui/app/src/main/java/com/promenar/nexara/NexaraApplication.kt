@@ -15,6 +15,7 @@ import com.promenar.nexara.data.local.inference.SlotType
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.MIGRATION_1_2
 import com.promenar.nexara.data.local.db.MIGRATION_2_3
+import com.promenar.nexara.data.local.db.MIGRATION_3_4
 import com.promenar.nexara.data.backup.BackupRuntime
 import com.promenar.nexara.data.backup.BackupStartupState
 import com.promenar.nexara.data.backup.RestoreRelayActivity
@@ -150,7 +151,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val database: NexaraDatabase by lazy {
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
                     if (com.promenar.nexara.BuildConfig.DEBUG) {

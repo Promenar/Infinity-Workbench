@@ -2,9 +2,12 @@ package com.promenar.nexara.ui.chat
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.ui.testing.UiTags
@@ -39,6 +42,30 @@ class ApprovalCardTagsTest {
             assertThat(declined).isTrue()
             assertThat(approved).isTrue()
         }
+    }
+
+    @Test
+    fun exactQueueLabelsCurrentAndRemainingAndDisablesActionsInFlight() {
+        rule.setContent {
+            NexaraTheme {
+                ApprovalCard(
+                    toolName = "write_file",
+                    description = "test approval",
+                    calls = listOf(
+                        ApprovalDisplayCall("write_file", "{path:a}", "file write"),
+                        ApprovalDisplayCall("delete_file", "{path:b}", "delete"),
+                    ),
+                    enabled = false,
+                )
+            }
+        }
+
+        rule.onNodeWithText("Current approval").assertIsDisplayed()
+        rule.onNodeWithText("Next waiting: 1").assertIsDisplayed()
+        rule.onNodeWithText("Approve current").assertIsNotEnabled()
+        rule.onNodeWithText("Reject current").assertIsNotEnabled()
+        rule.onNodeWithContentDescription("Approve current write_file, risk file write, 1 remaining")
+            .assertIsDisplayed()
     }
 
     @Test

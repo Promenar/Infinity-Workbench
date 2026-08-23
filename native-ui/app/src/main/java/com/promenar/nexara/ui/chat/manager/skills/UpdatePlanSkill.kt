@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.domain.repository.PlanPatchOp
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
@@ -14,6 +15,7 @@ class UpdatePlanSkill(
     override val name = "update_plan"
     override val description = "增量修改任务计划。支持 set_status（仅叶节点）、add_step、remove_step、move_step、update_title、set_note 操作。"
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.FILE_WRITE
     override val parametersSchema = """{"type":"object","properties":{"operations":{"type":"array","items":{"type":"object","properties":{"action":{"type":"string","enum":["set_status","add_step","remove_step","move_step","update_title","set_note"]},"stepId":{"type":"string"},"parentId":{"type":"string"},"payload":{"type":"object","properties":{"status":{"type":"string"},"note":{"type":"string"},"title":{"type":"string"},"sortOrder":{"type":"string"},"newParentId":{"type":"string"},"newSortOrder":{"type":"string"}}}},"required":["action"]}}},"required":["operations"]}"""
 
     override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {

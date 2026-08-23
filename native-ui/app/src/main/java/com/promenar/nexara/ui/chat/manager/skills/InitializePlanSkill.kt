@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.model.TaskStep
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
@@ -20,6 +21,7 @@ class InitializePlanSkill(
     override val name = "initialize_plan"
     override val description = "创建任务计划树。每个会话同时只能有一个活跃任务。若已存在活跃任务则返回冲突信息。"
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.FILE_WRITE
     override val parametersSchema = """{"type":"object","properties":{"goal":{"type":"string","description":"任务目标描述"},"tree":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"sortOrder":{"type":"integer"},"children":{"type":"array","items":{}}},"required":["id","title"]}}},"required":["goal","tree"]}"""
 
     private val json = Json { ignoreUnknownKeys = true }

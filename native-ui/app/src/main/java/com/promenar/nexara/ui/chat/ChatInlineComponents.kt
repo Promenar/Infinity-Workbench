@@ -25,10 +25,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.testTag as semanticsTestTag
 import androidx.compose.ui.text.font.FontStyle
@@ -984,10 +986,27 @@ fun ApprovalCard(
     calls: List<ApprovalDisplayCall> = emptyList(),
     isExecuted: Boolean = false,
     executionTime: String? = null,
+    enabled: Boolean = true,
     onApprove: () -> Unit = {},
     onDecline: () -> Unit = {}
 ) {
     val accentColor = if (isExecuted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
+    val currentCall = calls.firstOrNull()
+    val remainingCount = (calls.size - 1).coerceAtLeast(0)
+    val currentName = currentCall?.name ?: toolName
+    val currentRisk = currentCall?.riskLabel.orEmpty()
+    val approveA11y = stringResource(
+        R.string.chat_approval_approve_current_a11y,
+        currentName,
+        currentRisk,
+        remainingCount,
+    )
+    val declineA11y = stringResource(
+        R.string.chat_approval_decline_current_a11y,
+        currentName,
+        currentRisk,
+        remainingCount,
+    )
 
     Surface(
         modifier = Modifier
@@ -1040,7 +1059,22 @@ fun ApprovalCard(
                         )
                     } else {
                         calls.forEachIndexed { index, call ->
-                            if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            if (index == 0) {
+                                Text(
+                                    text = stringResource(R.string.chat_approval_current),
+                                    style = NexaraTypography.labelSmall,
+                                    color = accentColor,
+                                )
+                            } else {
+                                if (index == 1) {
+                                    Text(
+                                        text = stringResource(R.string.chat_approval_remaining, remainingCount),
+                                        style = NexaraTypography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            }
                             Column(
                                 modifier = Modifier.padding(vertical = 4.dp),
                                 verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -1092,8 +1126,12 @@ fun ApprovalCard(
                     ) {
                         Button(
                             onClick = onDecline,
+                            enabled = enabled,
                             modifier = Modifier
                                 .weight(1f)
+                                .semantics {
+                                    contentDescription = declineA11y
+                                }
                                 .testTag(UiTags.CHAT_APPROVAL_DECLINE),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1101,12 +1139,16 @@ fun ApprovalCard(
                             ),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text(stringResource(R.string.common_decline), style = NexaraTypography.labelMedium)
+                            Text(stringResource(R.string.chat_approval_decline_current), style = NexaraTypography.labelMedium)
                         }
                         Button(
                             onClick = onApprove,
+                            enabled = enabled,
                             modifier = Modifier
                                 .weight(1f)
+                                .semantics {
+                                    contentDescription = approveA11y
+                                }
                                 .testTag(UiTags.CHAT_APPROVAL_APPROVE),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.tertiary,
@@ -1115,7 +1157,7 @@ fun ApprovalCard(
                             shape = RoundedCornerShape(12.dp),
                             elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
                         ) {
-                            Text(stringResource(R.string.common_approve), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                            Text(stringResource(R.string.chat_approval_approve_current), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold))
                         }
                     }
                 }

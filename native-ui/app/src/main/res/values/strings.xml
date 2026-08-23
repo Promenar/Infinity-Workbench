@@ -469,6 +469,12 @@
     <string name="chat_approval_required">Approval Required</string>
     <string name="chat_approval_executed">Executed</string>
     <string name="chat_approval_unknown_tool">Tool request</string>
+    <string name="chat_approval_current">Current approval</string>
+    <string name="chat_approval_remaining">Next waiting: %1$d</string>
+    <string name="chat_approval_approve_current">Approve current</string>
+    <string name="chat_approval_decline_current">Reject current</string>
+    <string name="chat_approval_approve_current_a11y">Approve current %1$s, risk %2$s, %3$d remaining</string>
+    <string name="chat_approval_decline_current_a11y">Reject current %1$s, risk %2$s, %3$d remaining</string>
     <string name="chat_approval_risk_safe_read">Safe read</string>
     <string name="chat_approval_risk_file_write">File write</string>
     <string name="chat_approval_risk_patch">Patch</string>

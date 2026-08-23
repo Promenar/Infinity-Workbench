@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.PatchError
 import com.promenar.nexara.domain.repository.PatchOperation
@@ -29,6 +30,7 @@ class FilePatchSkill(
     override val name = "patch_file"
     override val description = "应用 JSON diff 指令到文件。支持 replace_lines、insert_after、delete_lines 操作，带乐观锁冲突检测。"
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.PATCH
     override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"expectedHash":{"type":"string","description":"乐观锁基础版本hash"},"operations":{"type":"array","items":{"type":"object","properties":{"action":{"type":"string","enum":["replace_lines","insert_after","delete_lines"]},"startLine":{"type":"integer"},"endLine":{"type":"integer"},"afterLine":{"type":"integer"},"newContent":{"type":"string"}},"required":["action"]}}},"required":["uuid","expectedHash","operations"]}"""
 
     private val json = Json { ignoreUnknownKeys = true }

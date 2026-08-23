@@ -15,6 +15,10 @@ import com.promenar.nexara.data.repository.ExactToolApprovalDecision
 import com.promenar.nexara.data.repository.ToolApprovalRequestFactory
 import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.ui.chat.ChatStore
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 
 class ApprovalManager(
     private val store: ChatStore,
@@ -22,6 +26,7 @@ class ApprovalManager(
     private val messageManager: MessageManager,
     private val sessionRepository: ISessionRepository,
 ) {
+    private val approvalLocks = ConcurrentHashMap<String, Mutex>()
     private var onGenerateMessage: (suspend (sessionId: String, content: String, isResumption: Boolean) -> Unit)? = null
     private var onExecuteTools: (suspend (
         sessionId: String,
@@ -53,6 +58,15 @@ class ApprovalManager(
         expectedRequest: ApprovalRequest? = null,
         approved: Boolean = true,
         intervention: String? = null
+    ) = approvalLock(sessionId).withLock {
+        resumeGenerationLocked(sessionId, expectedRequest, approved, intervention)
+    }
+
+    private suspend fun resumeGenerationLocked(
+        sessionId: String,
+        expectedRequest: ApprovalRequest?,
+        approved: Boolean,
+        intervention: String?,
     ) {
         val session = store.getSession(sessionId) ?: return
         val approvalRequest = session.approvalRequest ?: return
@@ -193,13 +207,50 @@ class ApprovalManager(
             messageManager.mirrorPersistedMessage(sessionId, message)
         }
         if (approved) {
-            onExecuteTools?.invoke(
-                sessionId,
-                assistantMessageId,
-                setOf(decision.key.toolCallId),
-            )
+            try {
+                onExecuteTools?.invoke(
+                    sessionId,
+                    assistantMessageId,
+                    setOf(decision.key.toolCallId),
+                )
+            } catch (cancelled: CancellationException) {
+                val compensated = compensateAndComplete(
+                    sessionId,
+                    request,
+                    ToolLedgerState.CANCELLED,
+                    "工具执行协程已取消",
+                )
+                if (compensated is ExactToolApprovalCompletion.Completed) {
+                    mirrorApprovalTransition(compensated.transition)
+                }
+                throw cancelled
+            } catch (error: Exception) {
+                val compensated = compensateAndComplete(
+                    sessionId,
+                    request,
+                    ToolLedgerState.FAILED,
+                    error.message ?: error::class.java.simpleName,
+                )
+                if (compensated is ExactToolApprovalCompletion.Completed &&
+                    compensated.transition.loopStatus != LoopStatus.WAITING_FOR_APPROVAL
+                ) {
+                    mirrorApprovalTransition(compensated.transition)
+                    onGenerateMessage?.invoke(sessionId, intervention.orEmpty(), true)
+                } else if (compensated is ExactToolApprovalCompletion.Completed) {
+                    mirrorApprovalTransition(compensated.transition)
+                }
+                return
+            }
         }
-        val completion = ledger.completeExactToolApproval(sessionId, request)
+        var completion = ledger.completeExactToolApproval(sessionId, request)
+        if (approved && completion !is ExactToolApprovalCompletion.Completed) {
+            completion = compensateAndComplete(
+                sessionId,
+                request,
+                ToolLedgerState.FAILED,
+                "工具执行未写入稳定终态",
+            ) ?: return
+        }
         if (completion !is ExactToolApprovalCompletion.Completed) return
         mirrorApprovalTransition(completion.transition)
         if (completion.transition.loopStatus == LoopStatus.WAITING_FOR_APPROVAL || !approved) return
@@ -207,11 +258,33 @@ class ApprovalManager(
     }
 
     suspend fun cancelPendingApproval(sessionId: String) {
-        terminateCurrentApproval(sessionId, ToolLedgerState.CANCELLED)
+        approvalLock(sessionId).withLock {
+            terminateCurrentApproval(sessionId, ToolLedgerState.CANCELLED)
+        }
     }
 
     suspend fun timeoutPendingApproval(sessionId: String) {
-        terminateCurrentApproval(sessionId, ToolLedgerState.TIMED_OUT)
+        approvalLock(sessionId).withLock {
+            terminateCurrentApproval(sessionId, ToolLedgerState.TIMED_OUT)
+        }
+    }
+
+    private fun approvalLock(sessionId: String): Mutex =
+        approvalLocks.computeIfAbsent(sessionId) { Mutex() }
+
+    private suspend fun compensateAndComplete(
+        sessionId: String,
+        request: ApprovalRequest,
+        state: ToolLedgerState,
+        error: String,
+    ): ExactToolApprovalCompletion? {
+        val compensation = ledger.compensateExactToolApproval(sessionId, request, state, error)
+        if (compensation !is ExactToolApprovalDecision.Decided) return null
+        compensation.terminalMessages.forEach { message ->
+            messageManager.mirrorPersistedMessage(sessionId, message)
+        }
+        val completion = ledger.completeExactToolApproval(sessionId, request)
+        return completion
     }
 
     private suspend fun terminateCurrentApproval(sessionId: String, state: ToolLedgerState) {

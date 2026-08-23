@@ -2,6 +2,7 @@ package com.promenar.nexara.data.model
 
 import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.local.db.entity.SessionEntity
+import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerializationException
@@ -61,7 +62,7 @@ fun SessionEntity.toDomain(): Session = Session(
     isPinned = isPinned == 1,
     scrollOffset = scrollOffset,
     draft = draft,
-    executionMode = executionMode,
+    executionMode = ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrSemi(executionMode)),
     loopStatus = LoopStatus.fromSerializedName(loopStatus),
     pendingIntervention = pendingIntervention,
     approvalRequest = approvalRequest?.let { decodeFromJson<ApprovalRequest>(it) },
@@ -94,7 +95,7 @@ fun Session.toEntity(): SessionEntity = SessionEntity(
     isPinned = if (isPinned) 1 else 0,
     scrollOffset = scrollOffset,
     draft = draft,
-    executionMode = executionMode,
+    executionMode = ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrSemi(executionMode)),
     loopStatus = loopStatus.toSerializedName(),
     pendingIntervention = pendingIntervention,
     approvalRequest = approvalRequest?.let { encodeToJson(it) },

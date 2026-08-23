@@ -456,6 +456,11 @@ class ToolExecutionLedgerRepositoryTest {
         assertThat(duplicate).isEqualTo(ExactToolApprovalDecision.Conflict)
         assertThat(staleMessage).isEqualTo(ExactToolApprovalDecision.Conflict)
 
+        assertThat(repository.completeExactToolApproval("s1", request))
+            .isEqualTo(ExactToolApprovalCompletion.Conflict)
+        assertThat(repository.claim(key(first.id))).isTrue()
+        assertThat(repository.finish(key(first.id), ToolExecutionOutcome.Succeeded)).isTrue()
+
         val completion = repository.completeExactToolApproval("s1", request)
         assertThat(completion).isInstanceOf(ExactToolApprovalCompletion.Completed::class.java)
         val transition = (completion as ExactToolApprovalCompletion.Completed).transition
@@ -465,6 +470,42 @@ class ToolExecutionLedgerRepositoryTest {
             .containsExactly(second.id)
         assertThat(database.messageDao().getById("m1")!!.pendingApprovalToolIds)
             .isEqualTo("[\"second-risk\"]")
+    }
+
+    @Test
+    fun exactApprovalCompletionRejectsApprovedAndRunningUntilExecutionIsTerminal() = runBlocking {
+        val call = ToolCall("risk", "write_file", "{}")
+        val request = exactRequest("m1", listOf(call), setOf(call.id))
+        repository.createToolApproval("s1", "m1", listOf(call), setOf(call.id), request)
+
+        repository.decideExactToolApproval("s1", request, approved = true)
+        assertThat(repository.completeExactToolApproval("s1", request))
+            .isEqualTo(ExactToolApprovalCompletion.Conflict)
+        assertThat(repository.claim(key(call.id))).isTrue()
+        assertThat(repository.completeExactToolApproval("s1", request))
+            .isEqualTo(ExactToolApprovalCompletion.Conflict)
+        assertThat(repository.finish(key(call.id), ToolExecutionOutcome.Failed("boom"))).isTrue()
+        assertThat(repository.completeExactToolApproval("s1", request))
+            .isInstanceOf(ExactToolApprovalCompletion.Completed::class.java)
+    }
+
+    @Test
+    fun recoveryPreservesValidatedPendingQueueOrderDespiteSameTimestampAndInverseIds() = runBlocking {
+        val first = ToolCall("z-first", "write_file", "{}")
+        val second = ToolCall("a-second", "delete_file", "{}")
+        val request = exactRequest("m1", listOf(first, second), setOf(first.id, second.id))
+        repository.createToolApproval("s1", "m1", listOf(first, second), setOf(first.id, second.id), request)
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE tool_execution_ledger SET created_at=42, updated_at=42 WHERE assistant_message_id='m1'",
+        )
+        database.sessionDao().updateToolApprovalState("s1", null, "paused", now++)
+
+        assertThat(repository.recoverApprovalState()).isEqualTo(1)
+
+        val restored = com.promenar.nexara.data.model.json.decodeFromString<ApprovalRequest>(
+            database.sessionDao().getById("s1")!!.approvalRequest!!,
+        )
+        assertThat(restored.calls.map { it.toolCallId }).containsExactly("z-first", "a-second").inOrder()
     }
 
     @Test
@@ -499,7 +540,7 @@ class ToolExecutionLedgerRepositoryTest {
     }
 
     @Test
-    fun startupFailsUnclaimedSafeToolAndRebuildsRiskApprovalWithoutClaimingIt() = runBlocking {
+    fun startupFailsClosedForApprovedAndPendingRecoveryMixWithoutRebuildingApproval() = runBlocking {
         val calls = listOf(
             com.promenar.nexara.data.model.ToolCall("pending", "write_file", "{}"),
             com.promenar.nexara.data.model.ToolCall("approved", "read_file", "{}"),
@@ -515,17 +556,42 @@ class ToolExecutionLedgerRepositoryTest {
         database.messageDao().updatePendingApprovalToolIds("m1", null)
         database.sessionDao().updateToolApprovalState("s1", null, "paused", now++)
 
-        assertThat(repository.recoverApprovalState()).isEqualTo(1)
+        assertThat(repository.recoverApprovalState()).isEqualTo(0)
 
-        assertThat(repository.state(key("pending"))).isEqualTo(ToolLedgerState.APPROVED)
+        assertThat(repository.state(key("pending"))).isEqualTo(ToolLedgerState.FAILED)
         assertThat(repository.state(key("approved"))).isEqualTo(ToolLedgerState.FAILED)
-        assertThat(database.messageDao().getById("m1")!!.pendingApprovalToolIds).contains("pending")
-        assertThat(database.sessionDao().getById("s1")!!.approvalRequest).isNotNull()
-        assertThat(database.sessionDao().getById("s1")!!.loopStatus).isEqualTo("waiting_for_approval")
-        val safeResult = database.messageDao().getBySession("s1")
-            .single { it.toolCallId == "approved" }
-        assertThat(safeResult.parentMessageId).isEqualTo("m1")
-        assertThat(safeResult.content).contains("执行前中断")
+        assertThat(database.messageDao().getById("m1")!!.pendingApprovalToolIds).isNull()
+        assertThat(database.sessionDao().getById("s1")!!.approvalRequest).isNull()
+        assertThat(database.sessionDao().getById("s1")!!.loopStatus).isEqualTo("paused")
+        assertThat(database.messageDao().getBySession("s1").filter { it.role == "tool" }
+            .mapNotNull { it.toolCallId }).containsExactly("approved", "pending")
+        Unit
+    }
+
+    @Test
+    fun startupFailsClosedForRunningAndPendingRecoveryMix() = runBlocking {
+        val running = ToolCall("running", "write_file", "{}")
+        val pending = ToolCall("pending", "delete_file", "{}")
+        val request = exactRequest("m1", listOf(running, pending), setOf(running.id, pending.id))
+        repository.createToolApproval(
+            "s1",
+            "m1",
+            listOf(running, pending),
+            setOf(running.id, pending.id),
+            request,
+        )
+        repository.decideExactToolApproval("s1", request, approved = true)
+        assertThat(repository.claim(key(running.id))).isTrue()
+
+        assertThat(repository.recoverApprovalState()).isEqualTo(0)
+
+        assertThat(repository.state(key(running.id))).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(repository.state(key(pending.id))).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(database.sessionDao().getById("s1")!!.approvalRequest).isNull()
+        assertThat(database.sessionDao().getById("s1")!!.loopStatus).isEqualTo("paused")
+        assertThat(database.messageDao().getBySession("s1").filter { it.role == "tool" }
+            .mapNotNull { it.toolCallId }).containsExactly("running", "pending")
+        Unit
     }
 
     @Test

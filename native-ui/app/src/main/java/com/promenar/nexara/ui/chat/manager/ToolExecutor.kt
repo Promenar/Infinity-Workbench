@@ -14,6 +14,7 @@ import com.promenar.nexara.data.repository.ToolInvocationIdentityFactory
 import com.promenar.nexara.data.repository.ToolInvocationIdentityResolution
 import com.promenar.nexara.data.repository.ToolRegistrationResult
 import com.promenar.nexara.ui.chat.ChatStore
+import kotlinx.coroutines.CancellationException
 
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
@@ -178,6 +179,8 @@ class ToolExecutor(
                         ?: throw SecurityException("Session workspace root is missing")
                 }
             )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             ToolResult(id = tc.id, content = "工具执行失败", status = "error")
         }

@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat.manager.skills
 import android.content.Context
 import android.webkit.WebView
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,7 @@ class ExecJsSkill(
         "No file system or network access. " +
         "Assign the final value to a variable named 'result'."
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.SCRIPT
 
     override val parametersSchema = """{
         "type":"object",

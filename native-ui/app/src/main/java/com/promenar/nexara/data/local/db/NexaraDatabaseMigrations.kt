@@ -37,8 +37,6 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE agents ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'semi'")
-        db.execSQL("ALTER TABLE agents ADD COLUMN skill_ids TEXT NOT NULL DEFAULT '[]'")
-        db.execSQL("ALTER TABLE agents ADD COLUMN mcp_server_ids TEXT NOT NULL DEFAULT '[]'")
         db.execSQL("ALTER TABLE tool_execution_ledger ADD COLUMN runtime_tool_id TEXT NOT NULL DEFAULT ''")
         db.execSQL("UPDATE tool_execution_ledger SET runtime_tool_id = tool_name")
         db.execSQL("ALTER TABLE tool_execution_ledger ADD COLUMN arguments_digest TEXT NOT NULL DEFAULT ''")
@@ -124,5 +122,13 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         } finally {
             db.execSQL("PRAGMA legacy_alter_table=OFF")
         }
+    }
+}
+
+/** v3 已发布，Agent 的 Skill/MCP 默认选择必须通过独立 v4 迁移追加。 */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE agents ADD COLUMN skill_ids TEXT NOT NULL DEFAULT '[]'")
+        db.execSQL("ALTER TABLE agents ADD COLUMN mcp_server_ids TEXT NOT NULL DEFAULT '[]'")
     }
 }

@@ -57,7 +57,7 @@ class NexaraDatabaseMigration2To3Test {
             close()
         }
 
-        helper.runMigrationsAndValidate(DATABASE_NAME, 3, true, MIGRATION_2_3).use { database ->
+        helper.runMigrationsAndValidate(DATABASE_NAME, 4, true, MIGRATION_2_3, MIGRATION_3_4).use { database ->
             assertThat(database.stringQuery("SELECT execution_mode FROM agents WHERE id='agent-1'"))
                 .isEqualTo("semi")
             assertThat(database.stringQuery("SELECT skill_ids FROM agents WHERE id='agent-1'"))
@@ -87,6 +87,49 @@ class NexaraDatabaseMigration2To3Test {
         }
     }
 
+    @Test
+    fun migration3To4PreservesFrozenV3AgentSessionAndLedger() {
+        helper.createDatabase(DATABASE_V3_NAME, 3).apply {
+            execSQL(
+                """INSERT INTO agents(
+                    id,name,description,name_customized,description_customized,system_prompt,model,
+                    icon,color,is_pinned,execution_mode,created_at,use_inherited_config
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                arrayOf<Any?>("agent-v3", "Agent", "", 0, 0, "", "model", "icon", "color", 0, "manual", 1, 1),
+            )
+            execSQL(
+                """INSERT INTO sessions(id,agent_id,title,unread,is_pinned,execution_mode,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?)""",
+                arrayOf<Any?>("session-v3", "agent-v3", "Session", 0, 0, "manual", 1, 1),
+            )
+            execSQL(
+                "INSERT INTO messages(id,session_id,role,content,created_at) VALUES(?,?,?,?,?)",
+                arrayOf<Any?>("message-v3", "session-v3", "assistant", "kept", 1),
+            )
+            execSQL(
+                """INSERT INTO tool_execution_ledger(
+                    session_id,assistant_message_id,tool_call_id,tool_name,runtime_tool_id,
+                    arguments_digest,definition_digest,requires_approval,status,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                arrayOf<Any?>("session-v3", "message-v3", "call-v3", "write_file", "write_file", "args", "definition", 1, "SUCCEEDED", 1, 1),
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(DATABASE_V3_NAME, 4, true, MIGRATION_3_4).use { database ->
+            assertThat(database.stringQuery("SELECT execution_mode FROM agents WHERE id='agent-v3'"))
+                .isEqualTo("manual")
+            assertThat(database.stringQuery("SELECT skill_ids FROM agents WHERE id='agent-v3'"))
+                .isEqualTo("[]")
+            assertThat(database.stringQuery("SELECT mcp_server_ids FROM agents WHERE id='agent-v3'"))
+                .isEqualTo("[]")
+            assertThat(database.stringQuery("SELECT execution_mode FROM sessions WHERE id='session-v3'"))
+                .isEqualTo("manual")
+            assertThat(database.stringQuery("SELECT status FROM tool_execution_ledger WHERE tool_call_id='call-v3'"))
+                .isEqualTo("SUCCEEDED")
+        }
+    }
+
     private fun androidx.sqlite.db.SupportSQLiteDatabase.stringQuery(sql: String): String =
         query(sql).use { cursor ->
             check(cursor.moveToFirst())
@@ -101,5 +144,6 @@ class NexaraDatabaseMigration2To3Test {
 
     private companion object {
         const val DATABASE_NAME = "migration-2-3"
+        const val DATABASE_V3_NAME = "migration-3-4"
     }
 }

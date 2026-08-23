@@ -7,6 +7,7 @@ import com.promenar.nexara.data.rag.ImageGenClient
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -42,6 +43,7 @@ class ImageGenerationSkill(
         "Use this when the user asks to create, draw, or generate an image, illustration, or artwork. " +
         "Provide a detailed prompt describing the desired image content, style, composition, and mood."
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.EXTERNAL_WRITE
 
     override val parametersSchema = """
         {

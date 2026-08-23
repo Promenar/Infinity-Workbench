@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
@@ -12,6 +13,7 @@ class DropPlanSkill(
     override val name = "drop_plan"
     override val description = "终止当前任务，递归标记所有节点为 DROPPED。"
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.DELETE
     override val parametersSchema = """{"type":"object","properties":{"reason":{"type":"string","description":"终止原因"}},"required":["reason"]}"""
 
     override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {

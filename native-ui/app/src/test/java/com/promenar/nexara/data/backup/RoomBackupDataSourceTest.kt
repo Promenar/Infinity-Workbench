@@ -298,8 +298,8 @@ class RoomBackupDataSourceTest {
             val text = snapshot.database.toString(Charsets.UTF_8)
             val payload = Json.parseToJsonElement(text).jsonObject
 
-            assertThat(snapshot.databaseSchemaVersion).isEqualTo(2)
-            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("2")
+            assertThat(snapshot.databaseSchemaVersion).isEqualTo(3)
+            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("3")
 
             listOf(
                 "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",
@@ -356,6 +356,56 @@ class RoomBackupDataSourceTest {
         assertThat(db.agentDao().getById("agent-1")!!.skillIds).isEqualTo("[]")
         assertThat(db.agentDao().getById("agent-1")!!.mcpServerIds).isEqualTo("[]")
         assertThat(db.sessionDao().getById("session-1")!!.executionMode).isEqualTo("semi")
+    }
+
+    @Test
+    fun `restore upgrades immutable v2 payload with missing agent selections only`() = runBlocking {
+        seedCompleteGraph()
+        val current = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(current.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        val baselineV2Agents = Json.parseToJsonElement(
+            checkNotNull(javaClass.getResource("/backup/agents-schema-v2.json")).readText(),
+        ).jsonArray
+        val immutableV2 = JsonObject(
+            root + mapOf(
+                "schemaVersion" to JsonPrimitive(2),
+                "tables" to JsonObject(tables + ("agents" to baselineV2Agents)),
+            ),
+        ).toString().toByteArray()
+
+        db.clearAllTables()
+        newDataSource().restore(validated(current, database = immutableV2))
+
+        val restored = db.agentDao().getById("agent-1")!!
+        assertThat(restored.executionMode).isEqualTo("manual")
+        assertThat(restored.skillIds).isEqualTo("[]")
+        assertThat(restored.mcpServerIds).isEqualTo("[]")
+        assertThat(db.sessionDao().getById("session-1")!!.executionMode).isEqualTo("semi")
+    }
+
+    @Test
+    fun `v2 upgrade still rejects unrelated missing or extra agent columns`() = runBlocking {
+        seedCompleteGraph()
+        val current = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(current.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        val malformedAgents = JsonArray(
+            tables.getValue("agents").jsonArray.map { row ->
+                JsonObject(
+                    (row.jsonObject - "skill_ids" - "mcp_server_ids" - "name") +
+                        ("unexpected" to JsonPrimitive("value")),
+                )
+            },
+        )
+        val malformedV2 = JsonObject(
+            root + mapOf(
+                "schemaVersion" to JsonPrimitive(2),
+                "tables" to JsonObject(tables + ("agents" to malformedAgents)),
+            ),
+        ).toString().toByteArray()
+
+        assertFails { newDataSource().restore(validated(current, database = malformedV2)) }
     }
 
     @Test

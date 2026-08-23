@@ -34,7 +34,7 @@ class NexaraDatabaseMigration2To3JvmTest {
     }
 
     @Test
-    fun migration2To3PreservesHistoricalAutoAndChangesDatabaseDefaultToSemi() {
+    fun migration2To3To4PreservesHistoricalRowsAndAddsAgentSelectionsOnlyInV4() {
         createSchemaV2().apply {
             execSQL(
                 """INSERT INTO agents(
@@ -55,7 +55,7 @@ class NexaraDatabaseMigration2To3JvmTest {
         }
 
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_2_3)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
             .allowMainThreadQueries()
             .build()
         try {
@@ -81,12 +81,67 @@ class NexaraDatabaseMigration2To3JvmTest {
         }
     }
 
-    private fun createSchemaV2(): SQLiteDatabase {
+    @Test
+    fun migration3To4PreservesAgentSessionMessageAndLedgerFromFrozenV3() {
+        createSchema(3, "7a7a094ee1fd1b9b144a0a241812e53f").apply {
+            execSQL(
+                """INSERT INTO agents(
+                    id,name,description,name_customized,description_customized,system_prompt,model,
+                    icon,color,is_pinned,execution_mode,created_at,use_inherited_config
+                ) VALUES('agent','Agent','',0,0,'','model','icon','color',0,'manual',1,1)""",
+            )
+            execSQL(
+                """INSERT INTO sessions(id,agent_id,title,unread,is_pinned,execution_mode,created_at,updated_at)
+                    VALUES('session','agent','Session',0,0,'manual',1,1)""",
+            )
+            execSQL(
+                """INSERT INTO messages(
+                    id,session_id,role,content,rag_references_loading,is_archived,is_error,created_at
+                ) VALUES('message','session','assistant','kept',0,0,0,1)""",
+            )
+            execSQL(
+                """INSERT INTO tool_execution_ledger(
+                    session_id,assistant_message_id,tool_call_id,tool_name,runtime_tool_id,
+                    arguments_digest,definition_digest,requires_approval,status,created_at,updated_at
+                ) VALUES('session','message','call','write_file','write_file','args','definition',1,'SUCCEEDED',1,1)""",
+            )
+            close()
+        }
+
+        val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
+            .addMigrations(MIGRATION_3_4)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val database = room.openHelper.writableDatabase
+            assertThat(database.stringQuery("SELECT execution_mode FROM agents WHERE id='agent'"))
+                .isEqualTo("manual")
+            assertThat(database.stringQuery("SELECT skill_ids FROM agents WHERE id='agent'"))
+                .isEqualTo("[]")
+            assertThat(database.stringQuery("SELECT mcp_server_ids FROM agents WHERE id='agent'"))
+                .isEqualTo("[]")
+            assertThat(database.stringQuery("SELECT execution_mode FROM sessions WHERE id='session'"))
+                .isEqualTo("manual")
+            assertThat(database.stringQuery("SELECT content FROM messages WHERE id='message'"))
+                .isEqualTo("kept")
+            assertThat(database.stringQuery("SELECT status FROM tool_execution_ledger WHERE tool_call_id='call'"))
+                .isEqualTo("SUCCEEDED")
+        } finally {
+            room.close()
+        }
+    }
+
+    private fun createSchemaV2(): SQLiteDatabase = createSchema(
+        version = 2,
+        identityHash = "7777303c63145d5bbb9b161b38f94495",
+    )
+
+    private fun createSchema(version: Int, identityHash: String): SQLiteDatabase {
         val databaseFile = context.getDatabasePath(DATABASE_NAME)
         databaseFile.parentFile?.mkdirs()
         val sqlite = SQLiteDatabase.openOrCreateDatabase(databaseFile, null)
         val schema = Json.parseToJsonElement(
-            File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/2.json").readText(),
+            File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json").readText(),
         ).jsonObject.getValue("database").jsonObject
         schema.getValue("entities").jsonArray.forEach { entityElement ->
             val entity = entityElement.jsonObject
@@ -104,9 +159,9 @@ class NexaraDatabaseMigration2To3JvmTest {
         sqlite.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
         sqlite.execSQL(
             "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42,?)",
-            arrayOf("7777303c63145d5bbb9b161b38f94495"),
+            arrayOf(identityHash),
         )
-        sqlite.version = 2
+        sqlite.version = version
         return sqlite
     }
 

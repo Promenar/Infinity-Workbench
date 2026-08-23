@@ -474,6 +474,12 @@
     <string name="chat_approval_required">需要审批</string>
     <string name="chat_approval_executed">已执行</string>
     <string name="chat_approval_unknown_tool">工具请求</string>
+    <string name="chat_approval_current">当前待审批</string>
+    <string name="chat_approval_remaining">后续等待 %1$d 项</string>
+    <string name="chat_approval_approve_current">批准当前项</string>
+    <string name="chat_approval_decline_current">拒绝当前项</string>
+    <string name="chat_approval_approve_current_a11y">批准当前工具 %1$s，风险 %2$s，后续等待 %3$d 项</string>
+    <string name="chat_approval_decline_current_a11y">拒绝当前工具 %1$s，风险 %2$s，后续等待 %3$d 项</string>
     <string name="chat_approval_risk_safe_read">安全读取</string>
     <string name="chat_approval_risk_file_write">文件写入</string>
     <string name="chat_approval_risk_patch">补丁修改</string>
