@@ -37,11 +37,11 @@ data class ToolExecutionLedgerEntity(
     @ColumnInfo(name = "tool_name")
     val toolName: String,
     @ColumnInfo(name = "runtime_tool_id", defaultValue = "''")
-    val runtimeToolId: String = toolName,
+    val runtimeToolId: String,
     @ColumnInfo(name = "arguments_digest", defaultValue = "''")
-    val argumentsDigest: String = "",
+    val argumentsDigest: String,
     @ColumnInfo(name = "definition_digest", defaultValue = "''")
-    val definitionDigest: String = "",
+    val definitionDigest: String,
     @ColumnInfo(name = "requires_approval")
     val requiresApproval: Boolean,
     val status: ToolLedgerStatus,

@@ -8,7 +8,11 @@ import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.data.repository.ToolExecutionKey
 import com.promenar.nexara.data.repository.ToolExecutionLedger
 import com.promenar.nexara.data.repository.ToolExecutionOutcome
+import com.promenar.nexara.data.repository.ToolInvocationIdentity
+import com.promenar.nexara.data.repository.ToolInvocationIdentityFactory
+import com.promenar.nexara.data.repository.ToolInvocationIdentityResolution
 import com.promenar.nexara.data.repository.ToolLedgerState
+import com.promenar.nexara.data.repository.ToolRegistrationResult
 import com.promenar.nexara.data.repository.ToolTerminalRequest
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
@@ -33,15 +37,28 @@ class ToolExecutorTest {
 
     private class RecordingLedger : ToolExecutionLedger {
         private val states = mutableMapOf<ToolExecutionKey, ToolLedgerState>()
+        private val identities = mutableMapOf<ToolExecutionKey, ToolInvocationIdentity>()
 
         override suspend fun register(
             key: ToolExecutionKey,
-            toolName: String,
-            requiresApproval: Boolean,
-        ): ToolLedgerState = synchronized(states) {
-            states.getOrPut(key) {
-                if (requiresApproval) ToolLedgerState.PENDING_APPROVAL else ToolLedgerState.APPROVED
+            identity: ToolInvocationIdentity,
+        ): ToolRegistrationResult = synchronized(states) {
+            val existing = identities[key]
+            if (existing != null) {
+                return@synchronized if (existing == identity) {
+                    ToolRegistrationResult.Existing(states.getValue(key))
+                } else {
+                    ToolRegistrationResult.Conflict
+                }
             }
+            identities[key] = identity
+            val state = if (identity.requiresApproval) {
+                ToolLedgerState.PENDING_APPROVAL
+            } else {
+                ToolLedgerState.APPROVED
+            }
+            states[key] = state
+            ToolRegistrationResult.Registered(state)
         }
 
         override suspend fun approve(keys: Set<ToolExecutionKey>): Int = transition(
@@ -110,6 +127,9 @@ class ToolExecutorTest {
 
         override suspend fun state(key: ToolExecutionKey): ToolLedgerState? = synchronized(states) { states[key] }
 
+        override suspend fun invocationIdentity(key: ToolExecutionKey): ToolInvocationIdentity? =
+            synchronized(states) { identities[key] }
+
         override suspend fun recoverInterruptedRunning(error: String): Int = synchronized(states) {
             val running = states.filterValues { it == ToolLedgerState.RUNNING }.keys
             running.forEach { states[it] = ToolLedgerState.FAILED }
@@ -122,11 +142,20 @@ class ToolExecutorTest {
             pendingToolCallIds: Set<String>,
             request: ApprovalRequest,
         ): com.promenar.nexara.data.repository.ToolApprovalCreation {
-            toolCalls.forEach { register(
-                ToolExecutionKey(keySessionId, assistantMessageId, it.id),
-                it.name,
-                it.id in pendingToolCallIds,
-            ) }
+            toolCalls.forEach {
+                val identity = ToolInvocationIdentityFactory.fromLegacyToolCall(
+                    it,
+                    it.id in pendingToolCallIds,
+                )
+                if (identity !is ToolInvocationIdentityResolution.Valid) {
+                    return com.promenar.nexara.data.repository.ToolApprovalCreation.CONFLICT
+                }
+                if (register(
+                        ToolExecutionKey(keySessionId, assistantMessageId, it.id),
+                        identity.identity,
+                    ) == ToolRegistrationResult.Conflict
+                ) return com.promenar.nexara.data.repository.ToolApprovalCreation.CONFLICT
+            }
             return com.promenar.nexara.data.repository.ToolApprovalCreation.CREATED
         }
         override suspend fun completeToolApproval(sessionId: String, assistantMessageId: String) =

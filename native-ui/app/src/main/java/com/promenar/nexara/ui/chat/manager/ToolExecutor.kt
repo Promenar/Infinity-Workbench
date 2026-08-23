@@ -10,6 +10,9 @@ import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.data.repository.ToolExecutionKey
 import com.promenar.nexara.data.repository.ToolExecutionLedger
 import com.promenar.nexara.data.repository.ToolExecutionOutcome
+import com.promenar.nexara.data.repository.ToolInvocationIdentityFactory
+import com.promenar.nexara.data.repository.ToolInvocationIdentityResolution
+import com.promenar.nexara.data.repository.ToolRegistrationResult
 import com.promenar.nexara.ui.chat.ChatStore
 
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
@@ -59,17 +62,26 @@ class ToolExecutor(
 
         val activeLedger = ledger ?: return
 
+        val registeredToolCallIds = mutableSetOf<String>()
         toolCalls.distinctBy { it.id }.forEach { toolCall ->
-            activeLedger.register(
-                key = ToolExecutionKey(sessionId, targetMsgId, toolCall.id),
-                toolName = toolCall.name,
-                requiresApproval = toolCall.id !in allowedToolCallIds,
+            val key = ToolExecutionKey(sessionId, targetMsgId, toolCall.id)
+            val persistedIdentity = activeLedger.invocationIdentity(key)
+            val identity = ToolInvocationIdentityFactory.fromLegacyToolCall(
+                toolCall,
+                persistedIdentity?.requiresApproval ?: (toolCall.id !in allowedToolCallIds),
             )
+            if (identity !is ToolInvocationIdentityResolution.Valid) return@forEach
+            val registration = activeLedger.register(
+                key = key,
+                identity = identity.identity,
+            )
+            if (registration != ToolRegistrationResult.Conflict) registeredToolCallIds += toolCall.id
         }
 
         for (tc in toolCalls.distinctBy { it.id }) {
             if (tc.name.isEmpty()) continue
             if (tc.id !in allowedToolCallIds) continue
+            if (tc.id !in registeredToolCallIds) continue
             val key = ToolExecutionKey(sessionId, targetMsgId, tc.id)
             if (!activeLedger.claim(key)) continue
 

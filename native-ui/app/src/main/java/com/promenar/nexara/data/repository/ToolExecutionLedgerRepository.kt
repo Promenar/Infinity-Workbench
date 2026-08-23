@@ -12,6 +12,8 @@ import com.promenar.nexara.data.model.ApprovalRequest
 import com.promenar.nexara.data.model.LoopStatus
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.json
+import com.promenar.nexara.domain.tool.ToolArgumentsValidation
+import com.promenar.nexara.domain.tool.ToolArgumentsValidator
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import java.security.MessageDigest
@@ -21,6 +23,58 @@ data class ToolExecutionKey(
     val assistantMessageId: String,
     val toolCallId: String,
 )
+
+data class ToolInvocationIdentity(
+    val runtimeToolId: String,
+    val toolName: String,
+    val argumentsDigest: String,
+    val definitionDigest: String,
+    val requiresApproval: Boolean,
+) {
+    init {
+        require(runtimeToolId.isNotBlank()) { "runtime tool id 不能为空" }
+        require(toolName.isNotBlank()) { "工具名称不能为空" }
+        require(argumentsDigest.isNotBlank()) { "工具参数摘要不能为空" }
+        require(definitionDigest.isNotBlank()) { "工具定义摘要不能为空" }
+    }
+}
+
+sealed interface ToolInvocationIdentityResolution {
+    data class Valid(val identity: ToolInvocationIdentity) : ToolInvocationIdentityResolution
+    data class Invalid(val message: String) : ToolInvocationIdentityResolution
+}
+
+object ToolInvocationIdentityFactory {
+    private const val LEGACY_DEFINITION_PREFIX = "nexara:legacy-tool-definition:v1:"
+
+    fun fromLegacyToolCall(
+        call: ToolCall,
+        requiresApproval: Boolean,
+    ): ToolInvocationIdentityResolution {
+        val toolName = call.name.trim()
+        if (toolName.isEmpty()) return ToolInvocationIdentityResolution.Invalid("工具名称不能为空")
+        val validated = ToolArgumentsValidator().validate(call.arguments)
+        if (validated is ToolArgumentsValidation.Invalid) {
+            return ToolInvocationIdentityResolution.Invalid(validated.error.message)
+        }
+        validated as ToolArgumentsValidation.Valid
+        return ToolInvocationIdentityResolution.Valid(
+            ToolInvocationIdentity(
+                runtimeToolId = toolName,
+                toolName = toolName,
+                argumentsDigest = validated.sha256,
+                definitionDigest = sha256Hex("$LEGACY_DEFINITION_PREFIX$toolName"),
+                requiresApproval = requiresApproval,
+            ),
+        )
+    }
+}
+
+sealed interface ToolRegistrationResult {
+    data class Registered(val state: ToolLedgerState) : ToolRegistrationResult
+    data class Existing(val state: ToolLedgerState) : ToolRegistrationResult
+    data object Conflict : ToolRegistrationResult
+}
 
 typealias ToolLedgerState = ToolLedgerStatus
 
@@ -57,9 +111,8 @@ data class ApprovalTransition(
 interface ToolExecutionLedger {
     suspend fun register(
         key: ToolExecutionKey,
-        toolName: String,
-        requiresApproval: Boolean,
-    ): ToolLedgerState
+        identity: ToolInvocationIdentity,
+    ): ToolRegistrationResult
 
     suspend fun approve(keys: Set<ToolExecutionKey>): Int
     suspend fun reject(keys: Set<ToolExecutionKey>): Int
@@ -80,6 +133,7 @@ interface ToolExecutionLedger {
         state: ToolLedgerState,
     ): List<Message>
     suspend fun state(key: ToolExecutionKey): ToolLedgerState?
+    suspend fun invocationIdentity(key: ToolExecutionKey): ToolInvocationIdentity?
     suspend fun recoverInterruptedRunning(error: String): Int
     suspend fun createToolApproval(
         keySessionId: String,
@@ -99,28 +153,44 @@ class ToolExecutionLedgerRepository(
     private val dao: ToolExecutionLedgerDao = database.toolExecutionLedgerDao()
     override suspend fun register(
         key: ToolExecutionKey,
-        toolName: String,
-        requiresApproval: Boolean,
-    ): ToolLedgerState {
+        identity: ToolInvocationIdentity,
+    ): ToolRegistrationResult = database.withTransaction {
+        registerInTransaction(key, identity)
+    }
+
+    private suspend fun registerInTransaction(
+        key: ToolExecutionKey,
+        identity: ToolInvocationIdentity,
+    ): ToolRegistrationResult {
         val now = clock()
-        val initial = if (requiresApproval) {
+        val initial = if (identity.requiresApproval) {
             ToolLedgerState.PENDING_APPROVAL
         } else {
             ToolLedgerState.APPROVED
         }
-        dao.insert(
+        val inserted = dao.insert(
             ToolExecutionLedgerEntity(
                 sessionId = key.sessionId,
                 assistantMessageId = key.assistantMessageId,
                 toolCallId = key.toolCallId,
-                toolName = toolName,
-                requiresApproval = requiresApproval,
+                toolName = identity.toolName,
+                runtimeToolId = identity.runtimeToolId,
+                argumentsDigest = identity.argumentsDigest,
+                definitionDigest = identity.definitionDigest,
+                requiresApproval = identity.requiresApproval,
                 status = initial,
                 createdAt = now,
                 updatedAt = now,
             ),
         )
-        return state(key) ?: error("工具账本注册失败")
+        if (inserted != -1L) return ToolRegistrationResult.Registered(initial)
+        val existing = dao.get(key.sessionId, key.assistantMessageId, key.toolCallId)
+            ?: return ToolRegistrationResult.Conflict
+        return if (existing.matches(identity)) {
+            ToolRegistrationResult.Existing(existing.status)
+        } else {
+            ToolRegistrationResult.Conflict
+        }
     }
 
     override suspend fun approve(keys: Set<ToolExecutionKey>): Int = database.withTransaction {
@@ -247,6 +317,12 @@ class ToolExecutionLedgerRepository(
         key.toolCallId,
     )?.status
 
+    override suspend fun invocationIdentity(key: ToolExecutionKey): ToolInvocationIdentity? = dao.get(
+        key.sessionId,
+        key.assistantMessageId,
+        key.toolCallId,
+    )?.toIdentityOrNull()
+
     override suspend fun recoverInterruptedRunning(error: String): Int {
         database.withTransaction { dao.deleteOrphans() }
         val running = dao.getRunning()
@@ -299,6 +375,16 @@ class ToolExecutionLedgerRepository(
         if (distinctCalls.size != toolCalls.size || pendingToolCallIds.isEmpty() ||
             pendingToolCallIds.any { pendingId -> distinctCalls.none { it.id == pendingId } }
         ) return@withTransaction ToolApprovalCreation.CONFLICT
+        val identities = distinctCalls.map { call ->
+            val resolved = ToolInvocationIdentityFactory.fromLegacyToolCall(
+                call,
+                call.id in pendingToolCallIds,
+            )
+            if (resolved !is ToolInvocationIdentityResolution.Valid) {
+                return@withTransaction ToolApprovalCreation.CONFLICT
+            }
+            call.id to resolved.identity
+        }.toMap()
         val orderedPendingIds = distinctCalls.filter { it.id in pendingToolCallIds }.map { it.id }
         val existingSame = if (awaiting.any { it.assistantMessageId == assistantMessageId }) {
             dao.getForAssistant(keySessionId, assistantMessageId)
@@ -323,6 +409,11 @@ class ToolExecutionLedgerRepository(
             val persistedApprovalRequirements = existingSame.associate {
                 it.toolCallId to it.requiresApproval
             }
+            val persistedIdentities = existingSame.associate { entry ->
+                entry.toolCallId to identities[entry.toolCallId]?.let { identity ->
+                    entry.matches(identity)
+                }
+            }
             val persistedRequest = database.sessionDao().getById(keySessionId)?.approvalRequest?.let {
                 runCatching { json.decodeFromString<ApprovalRequest>(it) }.getOrNull()
             }
@@ -330,12 +421,17 @@ class ToolExecutionLedgerRepository(
                 persistedCalls == distinctCalls &&
                     persistedPending == orderedPendingIds &&
                     persistedStates == expectedStates &&
+                    persistedIdentities == identities.keys.associateWith { true } &&
                     persistedApprovalRequirements == distinctCalls.associate {
                         it.id to (it.id in pendingToolCallIds)
                     } &&
                     persistedRequest == request
             ) ToolApprovalCreation.EXISTING else ToolApprovalCreation.CONFLICT
         }
+        if (identities.keys.any { callId ->
+                dao.get(keySessionId, assistantMessageId, callId) != null
+            }
+        ) return@withTransaction ToolApprovalCreation.CONFLICT
         val now = clock()
         distinctCalls.forEach { call ->
             val expectedState = if (call.id in pendingToolCallIds) {
@@ -343,19 +439,10 @@ class ToolExecutionLedgerRepository(
             } else {
                 ToolLedgerState.APPROVED
             }
-            dao.insert(
-                ToolExecutionLedgerEntity(
-                    sessionId = keySessionId,
-                    assistantMessageId = assistant.id,
-                    toolCallId = call.id,
-                    toolName = call.name,
-                    requiresApproval = call.id in pendingToolCallIds,
-                    status = expectedState,
-                    createdAt = now,
-                    updatedAt = now,
-                ),
-            )
-            check(dao.get(keySessionId, assistantMessageId, call.id)?.status == expectedState) {
+            check(registerInTransaction(
+                ToolExecutionKey(keySessionId, assistant.id, call.id),
+                identities.getValue(call.id),
+            ) == ToolRegistrationResult.Registered(expectedState)) {
                 "重复工具调用状态与审批请求冲突"
             }
         }
@@ -663,7 +750,28 @@ class ToolExecutionLedgerRepository(
         return "tool_result_" + digest.take(16).joinToString("") { "%02x".format(it) }
     }
 
+    private fun ToolExecutionLedgerEntity.matches(identity: ToolInvocationIdentity): Boolean =
+        runtimeToolId == identity.runtimeToolId &&
+            toolName == identity.toolName &&
+            argumentsDigest == identity.argumentsDigest &&
+            definitionDigest == identity.definitionDigest &&
+            requiresApproval == identity.requiresApproval
+
+    private fun ToolExecutionLedgerEntity.toIdentityOrNull(): ToolInvocationIdentity? = runCatching {
+        ToolInvocationIdentity(
+            runtimeToolId = runtimeToolId,
+            toolName = toolName,
+            argumentsDigest = argumentsDigest,
+            definitionDigest = definitionDigest,
+            requiresApproval = requiresApproval,
+        )
+    }.getOrNull()
+
     private companion object {
         const val MAX_ERROR_LENGTH = 256
     }
 }
+
+private fun sha256Hex(raw: String): String = MessageDigest.getInstance("SHA-256")
+    .digest(raw.toByteArray(Charsets.UTF_8))
+    .joinToString("") { byte -> "%02x".format(byte) }

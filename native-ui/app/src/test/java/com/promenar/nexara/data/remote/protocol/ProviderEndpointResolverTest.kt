@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.remote.protocol
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class ProviderEndpointResolverTest {
@@ -67,5 +68,35 @@ class ProviderEndpointResolverTest {
                 ProviderEndpointOperation.MODELS,
             ),
         ).isEqualTo("https://proxy.test/provider/v1/models")
+    }
+
+    @Test
+    fun `模型清单拒绝从歧义的完整推理资源路径继续向下拼接`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            ProviderEndpointResolver.resolve(
+                ProtocolType.OpenAI_ChatCompletions,
+                "https://proxy.test/vendor/chat/completions",
+                ProviderEndpointOperation.MODELS,
+            )
+        }
+
+        assertThat(error).hasMessageThat().isEqualTo(
+            "Provider base URL 的完整推理路径无法无歧义转换为模型列表端点",
+        )
+    }
+
+    @Test
+    fun `Anthropic 连接探测在专用 probe 接线前失败关闭`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            ProviderEndpointResolver.resolve(
+                ProtocolType.Anthropic_Messages,
+                "https://api.anthropic.com",
+                ProviderEndpointOperation.CONNECTION_PROBE,
+            )
+        }
+
+        assertThat(error).hasMessageThat().isEqualTo(
+            "Anthropic 连接探测尚未接线，拒绝回退模型列表",
+        )
     }
 }

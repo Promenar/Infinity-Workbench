@@ -28,12 +28,23 @@ object ProviderEndpointResolver {
         require(uri.rawFragment == null) { "Provider base URL 不支持 fragment" }
 
         var basePath = normalizePath(uri.rawPath.orEmpty())
+        if (operation == ProviderEndpointOperation.CONNECTION_PROBE &&
+            protocol == ProtocolType.Anthropic_Messages
+        ) {
+            throw IllegalArgumentException("Anthropic 连接探测尚未接线，拒绝回退模型列表")
+        }
         val operationPath = operationPath(protocol, operation)
         if (operation != ProviderEndpointOperation.INFERENCE &&
             protocol.defaultPath.isNotEmpty() &&
             basePath.endsWith(normalizePath(protocol.defaultPath))
         ) {
             basePath = basePath.removeSuffix(normalizePath(protocol.defaultPath))
+        } else if (operation == ProviderEndpointOperation.MODELS &&
+            looksLikeAmbiguousInferenceResource(basePath, protocol.defaultPath)
+        ) {
+            throw IllegalArgumentException(
+                "Provider base URL 的完整推理路径无法无歧义转换为模型列表端点",
+            )
         }
         val resolvedPath = appendWithOverlap(basePath, operationPath)
         return buildString {
@@ -59,6 +70,13 @@ object ProviderEndpointResolver {
     private fun apiVersionPrefix(path: String): String {
         val first = normalizePath(path).split('/').firstOrNull(String::isNotEmpty)
         return first?.let { "/$it" }.orEmpty()
+    }
+
+    private fun looksLikeAmbiguousInferenceResource(basePath: String, defaultPath: String): Boolean {
+        val defaultSegments = normalizePath(defaultPath).split('/').filter(String::isNotEmpty)
+        val resourceSegments = defaultSegments.dropWhile { it.matches(Regex("v\\d+")) }
+        val baseSegments = normalizePath(basePath).split('/').filter(String::isNotEmpty)
+        return resourceSegments.isNotEmpty() && baseSegments.takeLast(resourceSegments.size) == resourceSegments
     }
 
     private fun normalizePath(path: String): String {

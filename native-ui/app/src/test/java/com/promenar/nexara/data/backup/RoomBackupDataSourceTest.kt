@@ -382,6 +382,7 @@ class RoomBackupDataSourceTest {
             seedCompleteGraph()
             val backup = newDataSource().snapshot(CANONICAL_CONTENT)
             seedDerivedRows()
+            assertThat(rowCount("workspace_mutations")).isEqualTo(1)
 
             newDataSource().restore(validated(backup))
 
@@ -1247,6 +1248,23 @@ class RoomBackupDataSourceTest {
         sqlite.execSQL(
             "INSERT INTO file_versions(id,file_uuid,workspace_root_uuid,hash,content_path,created_at) VALUES(?,?,?,?,?,?)",
             arrayOf<Any?>("version-1", "file-1", "root-1", "hash", "/version", 100L),
+        )
+        sqlite.execSQL(
+            """INSERT INTO workspace_mutations(
+               operation_id,workspace_root_uuid,operation_type,payload_version,payload,
+               payload_digest,state,created_at,updated_at
+               ) VALUES(?,?,?,?,?,?,?,?,?)""",
+            arrayOf<Any?>(
+                "mutation-1",
+                "root-1",
+                "CREATE",
+                1,
+                """{"sourceRelativePath":"docs/a.md"}""",
+                "digest-1",
+                "DB_COMMITTED",
+                100L,
+                100L,
+            ),
         )
     }
 

@@ -8,6 +8,8 @@ import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Message
+import com.promenar.nexara.data.model.ApprovalRequest
+import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.toEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -60,20 +62,94 @@ class ToolExecutionLedgerRepositoryTest {
     }
 
     @Test
-    fun registerUsesApprovalRequirementAsInitialStateAndIsIdempotent() = runBlocking {
+    fun `register 原子核对完整 identity 与审批策略`() = runBlocking {
         val safeKey = key("safe")
         val riskyKey = key("risky")
+        val safeIdentity = legacyIdentity(ToolCall("safe", "read_file", "{\"path\":\"a\"}"), false)
+        val riskyIdentity = legacyIdentity(ToolCall("risky", "write_file", "{}"), true)
 
-        assertThat(repository.register(safeKey, "read_file", requiresApproval = false))
-            .isEqualTo(ToolLedgerState.APPROVED)
-        assertThat(repository.register(riskyKey, "write_file", requiresApproval = true))
-            .isEqualTo(ToolLedgerState.PENDING_APPROVAL)
+        assertThat(repository.register(safeKey, safeIdentity))
+            .isEqualTo(ToolRegistrationResult.Registered(ToolLedgerState.APPROVED))
+        assertThat(repository.register(riskyKey, riskyIdentity))
+            .isEqualTo(ToolRegistrationResult.Registered(ToolLedgerState.PENDING_APPROVAL))
+        assertThat(repository.register(safeKey, safeIdentity))
+            .isEqualTo(ToolRegistrationResult.Existing(ToolLedgerState.APPROVED))
 
-        // 重建后的重复注册不得覆盖已存在状态。
-        assertThat(repository.register(safeKey, "read_file", requiresApproval = true))
-            .isEqualTo(ToolLedgerState.APPROVED)
+        assertThat(repository.register(safeKey, safeIdentity.copy(runtimeToolId = "different")))
+            .isEqualTo(ToolRegistrationResult.Conflict)
+        assertThat(repository.register(safeKey, safeIdentity.copy(toolName = "different")))
+            .isEqualTo(ToolRegistrationResult.Conflict)
+        assertThat(repository.register(safeKey, safeIdentity.copy(argumentsDigest = "different")))
+            .isEqualTo(ToolRegistrationResult.Conflict)
+        assertThat(repository.register(safeKey, safeIdentity.copy(definitionDigest = "different")))
+            .isEqualTo(ToolRegistrationResult.Conflict)
+        assertThat(repository.register(safeKey, safeIdentity.copy(requiresApproval = true)))
+            .isEqualTo(ToolRegistrationResult.Conflict)
         assertThat(repository.state(safeKey)).isEqualTo(ToolLedgerState.APPROVED)
         assertThat(repository.state(riskyKey)).isEqualTo(ToolLedgerState.PENDING_APPROVAL)
+    }
+
+    @Test
+    fun `历史空 digest 账本无法证明 identity 时注册失败关闭`() = runBlocking {
+        database.openHelper.writableDatabase.execSQL(
+            """INSERT INTO tool_execution_ledger(
+               session_id,assistant_message_id,tool_call_id,tool_name,runtime_tool_id,
+               arguments_digest,definition_digest,requires_approval,status,created_at,updated_at
+               ) VALUES('s1','m1','legacy','write_file','write_file','','',1,'PENDING_APPROVAL',1,1)""",
+        )
+
+        val result = repository.register(
+            key("legacy"),
+            legacyIdentity(ToolCall("legacy", "write_file", "{}"), true),
+        )
+
+        assertThat(result).isEqualTo(ToolRegistrationResult.Conflict)
+    }
+
+    @Test
+    fun `legacy identity 对合法参数生成稳定非空 definition 与 canonical arguments digest`() {
+        val first = legacyIdentity(ToolCall("call", "write_file", "{\"b\":2,\"a\":1}"), true)
+        val reordered = legacyIdentity(ToolCall("call", "write_file", "{\"a\":1,\"b\":2}"), true)
+
+        assertThat(first.argumentsDigest)
+            .isEqualTo("43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777")
+        assertThat(first.argumentsDigest).isEqualTo(reordered.argumentsDigest)
+        assertThat(first.definitionDigest).isNotEmpty()
+        assertThat(first.definitionDigest).isEqualTo(reordered.definitionDigest)
+        assertThat(first.runtimeToolId).isEqualTo("write_file")
+    }
+
+    @Test
+    fun `createToolApproval 拒绝畸形 JSON 且不留下部分账本`() = runBlocking {
+        val call = ToolCall("broken", "write_file", "{\"path\":")
+
+        assertThat(repository.createToolApproval(
+            "s1",
+            "m1",
+            listOf(call),
+            setOf(call.id),
+            ApprovalRequest(type = "tool_approval"),
+        )).isEqualTo(ToolApprovalCreation.CONFLICT)
+        assertThat(database.toolExecutionLedgerDao().getForAssistant("s1", "m1")).isEmpty()
+    }
+
+    @Test
+    fun `createToolApproval 对历史空 digest 冲突失败关闭`() = runBlocking {
+        database.openHelper.writableDatabase.execSQL(
+            """INSERT INTO tool_execution_ledger(
+               session_id,assistant_message_id,tool_call_id,tool_name,runtime_tool_id,
+               arguments_digest,definition_digest,requires_approval,status,created_at,updated_at
+               ) VALUES('s1','m1','legacy','write_file','write_file','','',1,'PENDING_APPROVAL',1,1)""",
+        )
+        val call = ToolCall("legacy", "write_file", "{}")
+
+        assertThat(repository.createToolApproval(
+            "s1",
+            "m1",
+            listOf(call),
+            setOf(call.id),
+            ApprovalRequest(type = "tool_approval"),
+        )).isEqualTo(ToolApprovalCreation.CONFLICT)
     }
 
     @Test
@@ -599,4 +675,23 @@ class ToolExecutionLedgerRepositoryTest {
         assistantMessageId = messageId,
         toolCallId = toolCallId,
     )
+
+    private suspend fun ToolExecutionLedgerRepository.register(
+        key: ToolExecutionKey,
+        toolName: String,
+        requiresApproval: Boolean,
+    ): ToolRegistrationResult = register(
+        key,
+        legacyIdentity(ToolCall(key.toolCallId, toolName, "{}"), requiresApproval),
+    )
+
+    private fun legacyIdentity(
+        call: ToolCall,
+        requiresApproval: Boolean,
+    ): ToolInvocationIdentity = when (
+        val result = ToolInvocationIdentityFactory.fromLegacyToolCall(call, requiresApproval)
+    ) {
+        is ToolInvocationIdentityResolution.Valid -> result.identity
+        is ToolInvocationIdentityResolution.Invalid -> error(result.message)
+    }
 }
