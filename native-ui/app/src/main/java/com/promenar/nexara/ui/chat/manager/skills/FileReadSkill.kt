@@ -4,6 +4,7 @@ import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.domain.tool.ToolRisk
 
 class FileReadSkill(
     private val fileOpRepo: IFileOperationRepository
@@ -12,6 +13,7 @@ class FileReadSkill(
     override val name = "read_file"
     override val description = "读取工作区文件内容。支持分页（offset/limit）和行号范围（startLine/endLine）两种模式。"
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.SAFE_READ
     override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"mode":{"type":"string","enum":["page","range"],"default":"page"},"offset":{"type":"integer","description":"分页偏移(行号，0-based)"},"limit":{"type":"integer","description":"分页大小(行数)","default":200},"startLine":{"type":"integer","description":"起始行号(1-based)"},"endLine":{"type":"integer","description":"结束行号(1-based)"}},"required":["uuid"]}"""
 
     override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {

@@ -319,6 +319,10 @@ class RoomBackupDataSourceTest {
                 "tags", "document_tags", "task_nodes", "custom_skills", "mcp_servers",
                 "workspace_files", "workspace_seq",
             ).forEach { assertThat(rowCount(it)).isGreaterThan(0) }
+            val restoredAgent = db.agentDao().getById("agent-1")!!
+            assertThat(restoredAgent.executionMode).isEqualTo("manual")
+            assertThat(restoredAgent.skillIds).isEqualTo("[\"read_file\",\"calculator\"]")
+            assertThat(restoredAgent.mcpServerIds).isEqualTo("[\"mcp-1\"]")
             assertThat(db.messageDao().getById("message-1")!!.vectorizationStatus).isNull()
             assertThat(db.fileEntryDao().getByUuid("root-1", "file-1")!!.vectorizedAt).isNull()
             assertThat(db.fileEntryDao().getByUuid("root-1", "file-1")!!.kgExtractedAt).isNull()
@@ -335,7 +339,7 @@ class RoomBackupDataSourceTest {
         val tables = root.getValue("tables").jsonObject
         val legacyAgents = JsonArray(
             tables.getValue("agents").jsonArray.map { row ->
-                JsonObject(row.jsonObject - "execution_mode")
+                JsonObject(row.jsonObject - "execution_mode" - "skill_ids" - "mcp_server_ids")
             },
         )
         val legacyDatabase = JsonObject(
@@ -349,6 +353,8 @@ class RoomBackupDataSourceTest {
         newDataSource().restore(validated(current, database = legacyDatabase))
 
         assertThat(db.agentDao().getById("agent-1")!!.executionMode).isEqualTo("semi")
+        assertThat(db.agentDao().getById("agent-1")!!.skillIds).isEqualTo("[]")
+        assertThat(db.agentDao().getById("agent-1")!!.mcpServerIds).isEqualTo("[]")
         assertThat(db.sessionDao().getById("session-1")!!.executionMode).isEqualTo("semi")
     }
 
@@ -1166,7 +1172,14 @@ class RoomBackupDataSourceTest {
         val filePath = sourceRoot.resolve("docs/a.txt")
         Files.createDirectories(filePath.parent)
         Files.write(filePath, bytes)
-        val agent = AgentEntity("agent-1", "Agent", createdAt = now)
+        val agent = AgentEntity(
+            "agent-1",
+            "Agent",
+            createdAt = now,
+            executionMode = "manual",
+            skillIds = "[\"read_file\",\"calculator\"]",
+            mcpServerIds = "[\"mcp-1\"]",
+        )
         val session = SessionEntity(
             id = "session-1", agentId = agent.id, workspacePath = sourceRoot.toString(),
             workspaceRootUuid = "root-1", createdAt = now, updatedAt = now,

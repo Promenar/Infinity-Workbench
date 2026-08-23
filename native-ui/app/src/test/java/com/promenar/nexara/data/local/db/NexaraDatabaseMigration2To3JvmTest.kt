@@ -70,6 +70,10 @@ class NexaraDatabaseMigration2To3JvmTest {
                 .isEqualTo("semi")
             assertThat(database.stringQuery("SELECT execution_mode FROM agents WHERE id='agent'"))
                 .isEqualTo("semi")
+            assertThat(database.stringQuery("SELECT skill_ids FROM agents WHERE id='agent'"))
+                .isEqualTo("[]")
+            assertThat(database.stringQuery("SELECT mcp_server_ids FROM agents WHERE id='agent'"))
+                .isEqualTo("[]")
             assertThat(database.stringQuery("SELECT content FROM messages WHERE id='message'"))
                 .isEqualTo("preserved")
         } finally {

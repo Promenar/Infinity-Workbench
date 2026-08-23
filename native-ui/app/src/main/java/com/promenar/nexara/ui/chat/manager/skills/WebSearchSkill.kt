@@ -13,6 +13,7 @@ import com.promenar.nexara.data.security.SecretStore
 import io.ktor.client.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
+import com.promenar.nexara.domain.tool.ToolRisk
 
 class WebSearchSkill(
     private val context: Context,
@@ -23,6 +24,7 @@ class WebSearchSkill(
     override val name = "web_search"
     override val description = "Search the web for real-time information, news, or specific topics. Use this when your internal knowledge is outdated or when you need up-to-date facts."
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.SAFE_READ
     
     override val parametersSchema = """
         {

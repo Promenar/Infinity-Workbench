@@ -33,7 +33,7 @@ import java.util.UUID
 
 internal const val ROOM_SCHEMA_V1_IDENTITY_HASH = "1cec46d28d19744e8cb885fe6abdfcf1"
 internal const val ROOM_SCHEMA_V2_IDENTITY_HASH = "7777303c63145d5bbb9b161b38f94495"
-internal const val ROOM_SCHEMA_V3_IDENTITY_HASH = "7a7a094ee1fd1b9b144a0a241812e53f"
+internal const val ROOM_SCHEMA_V3_IDENTITY_HASH = "a48dd118f5212b60e657cbb257b75d92"
 
 class RoomBackupDataSource(
     private val database: NexaraDatabase,
@@ -447,8 +447,13 @@ class RoomBackupDataSource(
             schemaVersion = DATABASE_SCHEMA_VERSION,
             tables = payload.tables + (
                 "agents" to agents.map { row ->
-                    if ("execution_mode" in row) row
-                    else JsonObject(row + ("execution_mode" to JsonPrimitive("semi")))
+                    JsonObject(
+                        row + mapOf(
+                            "execution_mode" to (row["execution_mode"] ?: JsonPrimitive("semi")),
+                            "skill_ids" to (row["skill_ids"] ?: JsonPrimitive("[]")),
+                            "mcp_server_ids" to (row["mcp_server_ids"] ?: JsonPrimitive("[]")),
+                        ),
+                    )
                 }
             ),
         )

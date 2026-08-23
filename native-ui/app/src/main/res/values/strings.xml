@@ -469,6 +469,14 @@
     <string name="chat_approval_required">Approval Required</string>
     <string name="chat_approval_executed">Executed</string>
     <string name="chat_approval_unknown_tool">Tool request</string>
+    <string name="chat_approval_risk_safe_read">Safe read</string>
+    <string name="chat_approval_risk_file_write">File write</string>
+    <string name="chat_approval_risk_patch">Patch</string>
+    <string name="chat_approval_risk_delete">Delete</string>
+    <string name="chat_approval_risk_process">Process</string>
+    <string name="chat_approval_risk_script">Script</string>
+    <string name="chat_approval_risk_external_write">External write</string>
+    <string name="chat_approval_risk_unknown">Unknown risk</string>
     <string name="chat_approval_desc_tool">The agent is requesting permission to execute a tool, which may affect system state or incur external costs.</string>
     <string name="chat_copy_success">Copied to clipboard</string>
     <string name="common_decline">Decline</string>

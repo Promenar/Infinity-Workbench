@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat.manager.skills
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.domain.tool.ToolRisk
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -20,6 +21,7 @@ class CurrentTimeSkill : SkillDefinition {
     override val name = "current_time"
     override val description = "Get the current date and time"
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.SAFE_READ
     override val parametersSchema = """{"type":"object","properties":{}}"""
 
     override suspend fun execute(

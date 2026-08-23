@@ -971,10 +971,17 @@ fun SummaryCard(
     }
 }
 
+data class ApprovalDisplayCall(
+    val name: String,
+    val argumentsSummary: String,
+    val riskLabel: String,
+)
+
 @Composable
 fun ApprovalCard(
     toolName: String,
     description: String,
+    calls: List<ApprovalDisplayCall> = emptyList(),
     isExecuted: Boolean = false,
     executionTime: String? = null,
     onApprove: () -> Unit = {},
@@ -1025,11 +1032,44 @@ fun ApprovalCard(
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = toolName,
-                        style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    if (calls.isEmpty()) {
+                        Text(
+                            text = toolName,
+                            style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    } else {
+                        calls.forEachIndexed { index, call ->
+                            if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Column(
+                                modifier = Modifier.padding(vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text(
+                                        text = call.name,
+                                        style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = call.riskLabel,
+                                        style = NexaraTypography.labelSmall,
+                                        color = accentColor,
+                                    )
+                                }
+                                Text(
+                                    text = call.argumentsSummary,
+                                    style = NexaraTypography.bodySmall.copy(
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                     if (!isExecuted) {
                         Text(
                             text = description,

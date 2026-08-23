@@ -19,6 +19,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ApprovalRequest
+import com.promenar.nexara.data.model.ApprovalCallIdentity
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.Session
@@ -158,8 +159,30 @@ class ChatScreenContentStateTest {
             uiState = ChatUiState(
                 session = session,
                 approvalRequest = ApprovalRequest(
-                    toolName = "write_file",
-                    args = "{\"path\":\"notes.md\"}",
+                    assistantMessageId = "assistant-approval",
+                    identityHash = "preview-hash",
+                    calls = listOf(
+                        ApprovalCallIdentity(
+                            toolCallId = "call-write",
+                            runtimeToolId = "write_file",
+                            toolName = "write_file",
+                            argumentsDigest = "digest-write",
+                            definitionDigest = "definition-write",
+                            requiresApproval = true,
+                            argumentsSummary = "{\"path\":\"notes.md\"}",
+                            risk = "file_write",
+                        ),
+                        ApprovalCallIdentity(
+                            toolCallId = "call-delete",
+                            runtimeToolId = "delete_file",
+                            toolName = "delete_file",
+                            argumentsDigest = "digest-delete",
+                            definitionDigest = "definition-delete",
+                            requiresApproval = true,
+                            argumentsSummary = "{\"path\":\"old.md\"}",
+                            risk = "delete",
+                        ),
+                    ),
                     reason = "Update workspace",
                 ),
             ),
@@ -168,6 +191,11 @@ class ChatScreenContentStateTest {
 
         rule.onNodeWithTag(UiTags.CHAT_STATE_APPROVAL).assertHeightIsAtLeast(100.dp)
         rule.onNodeWithText("write_file").assertIsDisplayed()
+        rule.onNodeWithText("delete_file").assertIsDisplayed()
+        rule.onNodeWithText("notes.md", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("old.md", substring = true).assertIsDisplayed()
+        rule.onNodeWithText(resource(R.string.chat_approval_risk_file_write)).assertIsDisplayed()
+        rule.onNodeWithText(resource(R.string.chat_approval_risk_delete)).assertIsDisplayed()
         rule.onNodeWithText("Update workspace", substring = true).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.CHAT_APPROVAL_APPROVE).performClick()
         rule.runOnIdle { assertThat(approved).isTrue() }

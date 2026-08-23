@@ -9,6 +9,7 @@ import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.ApprovalRequest
+import com.promenar.nexara.data.model.LoopStatus
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.toEntity
 import kotlinx.coroutines.Dispatchers
@@ -399,10 +400,7 @@ class ToolExecutionLedgerRepositoryTest {
             com.promenar.nexara.data.model.ToolCall("safe", "read_file", "{}"),
             com.promenar.nexara.data.model.ToolCall("risky", "write_file", "{\"path\":\"a\"}"),
         )
-        val request = com.promenar.nexara.data.model.ApprovalRequest(
-            toolName = "write_file",
-            type = "tool_approval",
-        )
+        val request = exactRequest("m1", calls, setOf("risky"))
 
         repository.createToolApproval("s1", "m1", calls, setOf("risky"), request)
 
@@ -428,6 +426,79 @@ class ToolExecutionLedgerRepositoryTest {
     }
 
     @Test
+    fun exactApprovalDecisionAdvancesOneOrderedCallAndRejectsDuplicateOrStaleIdentity() = runBlocking {
+        val first = ToolCall("first-risk", "write_file", "{\"path\":\"a\"}")
+        val second = ToolCall("second-risk", "delete_file", "{\"path\":\"b\"}")
+        val request = ToolApprovalRequestFactory.create(
+            assistantMessageId = "m1",
+            candidates = listOf(
+                ApprovalCallCandidate(first, com.promenar.nexara.domain.tool.ToolRisk.FILE_WRITE),
+                ApprovalCallCandidate(second, com.promenar.nexara.domain.tool.ToolRisk.DELETE),
+            ),
+            reason = "manual",
+        )
+
+        assertThat(
+            repository.createToolApproval("s1", "m1", listOf(first, second), setOf(first.id, second.id), request),
+        ).isEqualTo(ToolApprovalCreation.CREATED)
+
+        val firstDecision = repository.decideExactToolApproval("s1", request, approved = true)
+        val duplicate = repository.decideExactToolApproval("s1", request, approved = true)
+        val staleMessage = repository.decideExactToolApproval(
+            "s1",
+            request.copy(assistantMessageId = "old-message"),
+            approved = true,
+        )
+
+        assertThat(firstDecision).isInstanceOf(ExactToolApprovalDecision.Decided::class.java)
+        assertThat((firstDecision as ExactToolApprovalDecision.Decided).key.toolCallId)
+            .isEqualTo(first.id)
+        assertThat(duplicate).isEqualTo(ExactToolApprovalDecision.Conflict)
+        assertThat(staleMessage).isEqualTo(ExactToolApprovalDecision.Conflict)
+
+        val completion = repository.completeExactToolApproval("s1", request)
+        assertThat(completion).isInstanceOf(ExactToolApprovalCompletion.Completed::class.java)
+        val transition = (completion as ExactToolApprovalCompletion.Completed).transition
+        assertThat(transition.loopStatus).isEqualTo(LoopStatus.WAITING_FOR_APPROVAL)
+        assertThat(transition.approvalRequest!!.assistantMessageId).isEqualTo("m1")
+        assertThat(transition.approvalRequest.calls.map { it.toolCallId })
+            .containsExactly(second.id)
+        assertThat(database.messageDao().getById("m1")!!.pendingApprovalToolIds)
+            .isEqualTo("[\"second-risk\"]")
+    }
+
+    @Test
+    fun exactApprovalFailsClosedWhenQueueHashOrOrderedIdentityDoesNotMatchPersistedState() = runBlocking {
+        val first = ToolCall("first-risk", "write_file", "{\"path\":\"a\"}")
+        val second = ToolCall("second-risk", "delete_file", "{\"path\":\"b\"}")
+        val request = ToolApprovalRequestFactory.create(
+            "m1",
+            listOf(
+                ApprovalCallCandidate(first, com.promenar.nexara.domain.tool.ToolRisk.FILE_WRITE),
+                ApprovalCallCandidate(second, com.promenar.nexara.domain.tool.ToolRisk.DELETE),
+            ),
+        )
+        repository.createToolApproval("s1", "m1", listOf(first, second), setOf(first.id, second.id), request)
+
+        val staleHash = repository.decideExactToolApproval(
+            "s1",
+            request.copy(identityHash = "stale-hash"),
+            approved = true,
+        )
+        val reordered = repository.decideExactToolApproval(
+            "s1",
+            request.copy(calls = request.calls.reversed()),
+            approved = false,
+        )
+
+        assertThat(staleHash).isEqualTo(ExactToolApprovalDecision.Conflict)
+        assertThat(reordered).isEqualTo(ExactToolApprovalDecision.Conflict)
+        assertThat(repository.state(key(first.id))).isEqualTo(ToolLedgerState.PENDING_APPROVAL)
+        assertThat(repository.state(key(second.id))).isEqualTo(ToolLedgerState.PENDING_APPROVAL)
+        assertThat(database.messageDao().getBySession("s1").filter { it.role == "tool" }).isEmpty()
+    }
+
+    @Test
     fun startupFailsUnclaimedSafeToolAndRebuildsRiskApprovalWithoutClaimingIt() = runBlocking {
         val calls = listOf(
             com.promenar.nexara.data.model.ToolCall("pending", "write_file", "{}"),
@@ -438,7 +509,7 @@ class ToolExecutionLedgerRepositoryTest {
             "m1",
             calls,
             setOf("pending"),
-            com.promenar.nexara.data.model.ApprovalRequest(type = "tool_approval"),
+            exactRequest("m1", calls, setOf("pending")),
         )
         repository.approve(setOf(key("pending")))
         database.messageDao().updatePendingApprovalToolIds("m1", null)
@@ -469,11 +540,11 @@ class ToolExecutionLedgerRepositoryTest {
         val badCall = com.promenar.nexara.data.model.ToolCall("bad", "write_file", "{}")
         repository.createToolApproval(
             "s1", "m1", listOf(goodCall), setOf(goodCall.id),
-            com.promenar.nexara.data.model.ApprovalRequest(type = "tool_approval"),
+            exactRequest("m1", listOf(goodCall), setOf(goodCall.id)),
         )
         repository.createToolApproval(
             "s2", "m4", listOf(badCall), setOf(badCall.id),
-            com.promenar.nexara.data.model.ApprovalRequest(type = "tool_approval"),
+            exactRequest("m4", listOf(badCall), setOf(badCall.id)),
         )
         database.openHelper.writableDatabase.execSQL("UPDATE messages SET role='user' WHERE id='m4'")
 
@@ -498,13 +569,13 @@ class ToolExecutionLedgerRepositoryTest {
             async(Dispatchers.IO) {
                 runCatching { repository.createToolApproval(
                     "s1", "m1", listOf(first), setOf(first.id),
-                    com.promenar.nexara.data.model.ApprovalRequest(type = "tool_approval"),
+                    exactRequest("m1", listOf(first), setOf(first.id)),
                 ) }
             },
             async(Dispatchers.IO) {
                 runCatching { repository.createToolApproval(
                     "s1", "m2", listOf(second), setOf(second.id),
-                    com.promenar.nexara.data.model.ApprovalRequest(type = "tool_approval"),
+                    exactRequest("m2", listOf(second), setOf(second.id)),
                 ) }
             },
         ).awaitAll()
@@ -520,10 +591,7 @@ class ToolExecutionLedgerRepositoryTest {
     @Test
     fun concurrentSameAssistantSameContractIsCreatedThenExisting() = runBlocking {
         val call = com.promenar.nexara.data.model.ToolCall("same", "write_file", "{}")
-        val request = com.promenar.nexara.data.model.ApprovalRequest(
-            toolName = call.name,
-            type = "tool_approval",
-        )
+        val request = exactRequest("m1", listOf(call), setOf(call.id))
         val results = (1..2).map {
             async(Dispatchers.IO) {
                 repository.createToolApproval("s1", "m1", listOf(call), setOf(call.id), request)
@@ -543,7 +611,7 @@ class ToolExecutionLedgerRepositoryTest {
             com.promenar.nexara.data.model.ToolCall("safe", "read_file", "{}"),
             com.promenar.nexara.data.model.ToolCall("risk", "write_file", "{}"),
         )
-        val request = com.promenar.nexara.data.model.ApprovalRequest(type = "tool_approval")
+        val request = exactRequest("m1", calls, setOf("risk"))
 
         assertThat(repository.createToolApproval("s1", "m1", calls, setOf("risk"), request))
             .isEqualTo(ToolApprovalCreation.CREATED)
@@ -559,7 +627,7 @@ class ToolExecutionLedgerRepositoryTest {
     fun concurrentSameAssistantDifferentContractConflictsWithoutOverwrite() = runBlocking {
         val first = com.promenar.nexara.data.model.ToolCall("same", "write_file", "{}")
         val second = first.copy(arguments = "{\"path\":\"different\"}")
-        val request = com.promenar.nexara.data.model.ApprovalRequest(type = "tool_approval")
+        val request = exactRequest("m1", listOf(first), setOf(first.id))
         val results = listOf(first, second).map { call ->
             async(Dispatchers.IO) {
                 runCatching {
@@ -580,7 +648,7 @@ class ToolExecutionLedgerRepositoryTest {
         val first = com.promenar.nexara.data.model.ToolCall("first", "write_file", "{}")
         repository.createToolApproval(
             "s1", "m1", listOf(first), setOf(first.id),
-            com.promenar.nexara.data.model.ApprovalRequest(type = "tool_approval"),
+            exactRequest("m1", listOf(first), setOf(first.id)),
         )
         database.messageDao().updateToolApprovalPayload(
             "m2",
@@ -602,11 +670,13 @@ class ToolExecutionLedgerRepositoryTest {
     }
 
     @Test
-    fun completingCurrentGroupSwitchesLegacyNextGroupToWaiting(): Unit = runBlocking {
+    fun completingCurrentGroupSwitchesNextExactIdentityGroupToWaiting(): Unit = runBlocking {
         val first = com.promenar.nexara.data.model.ToolCall("first", "write_file", "{}")
+        val second = com.promenar.nexara.data.model.ToolCall("second", "write_file", "{}")
+        val secondIdentity = legacyIdentity(second, requiresApproval = true)
         repository.createToolApproval(
             "s1", "m1", listOf(first), setOf(first.id),
-            com.promenar.nexara.data.model.ApprovalRequest(type = "tool_approval"),
+            exactRequest("m1", listOf(first), setOf(first.id)),
         )
         database.messageDao().updateToolApprovalPayload(
             "m2",
@@ -615,8 +685,14 @@ class ToolExecutionLedgerRepositoryTest {
         )
         database.openHelper.writableDatabase.execSQL(
             """INSERT INTO tool_execution_ledger(
-               session_id, assistant_message_id, tool_call_id, tool_name, requires_approval, status, created_at, updated_at
-               ) VALUES('s1','m2','second','write_file',1,'PENDING_APPROVAL',2,2)""",
+               session_id, assistant_message_id, tool_call_id, tool_name, runtime_tool_id,
+               arguments_digest, definition_digest, requires_approval, status, created_at, updated_at
+               ) VALUES('s1','m2','second','write_file',?,?,?,1,'PENDING_APPROVAL',2,2)""",
+            arrayOf(
+                secondIdentity.runtimeToolId,
+                secondIdentity.argumentsDigest,
+                secondIdentity.definitionDigest,
+            ),
         )
         repository.approve(setOf(key("first", "m1")))
         repository.claim(key("first", "m1"))
@@ -645,7 +721,7 @@ class ToolExecutionLedgerRepositoryTest {
         val risk = com.promenar.nexara.data.model.ToolCall("risk", "write_file", "{}")
         repository.createToolApproval(
             "s1", "m1", listOf(risk), setOf(risk.id),
-            com.promenar.nexara.data.model.ApprovalRequest(type = "tool_approval"),
+            exactRequest("m1", listOf(risk), setOf(risk.id)),
         )
         repository.register(key("safe", messageId = "m2"), "read_file", requiresApproval = false)
         repository.approve(setOf(key("risk")))
@@ -683,6 +759,17 @@ class ToolExecutionLedgerRepositoryTest {
     ): ToolRegistrationResult = register(
         key,
         legacyIdentity(ToolCall(key.toolCallId, toolName, "{}"), requiresApproval),
+    )
+
+    private fun exactRequest(
+        assistantMessageId: String,
+        calls: List<ToolCall>,
+        pendingIds: Set<String>,
+    ): ApprovalRequest = ToolApprovalRequestFactory.create(
+        assistantMessageId = assistantMessageId,
+        candidates = calls.filter { it.id in pendingIds }.map {
+            ApprovalCallCandidate(it, com.promenar.nexara.domain.tool.ToolRisk.UNKNOWN)
+        },
     )
 
     private fun legacyIdentity(

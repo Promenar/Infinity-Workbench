@@ -25,6 +25,9 @@ class AgentMapperTest {
         ragConfig: com.promenar.nexara.data.agent.AgentRagConfig? = null,
         retrievalConfig: com.promenar.nexara.data.agent.AgentRetrievalConfig? = null,
         useInheritedConfig: Boolean = true,
+        executionMode: String = "manual",
+        skillIds: String = "[\"read_file\",\"calculator\"]",
+        mcpServerIds: String = "[\"server-a\",\"server-b\"]",
         createdAt: Long = 1000L
     ) = AgentEntity(
         id = id,
@@ -44,6 +47,9 @@ class AgentMapperTest {
         ragConfig = ragConfig,
         retrievalConfig = retrievalConfig,
         useInheritedConfig = useInheritedConfig,
+        executionMode = executionMode,
+        skillIds = skillIds,
+        mcpServerIds = mcpServerIds,
         createdAt = createdAt
     )
 
@@ -76,15 +82,25 @@ class AgentMapperTest {
     }
 
     @Test
-    fun `toDomain defaults executionMode to SEMI`() {
+    fun `toDomain decodes execution mode and ordered tool selections`() {
         val entity = createEntity()
-        assertThat(AgentMapper.toDomain(entity).executionMode).isEqualTo(ExecutionMode.SEMI)
+        val agent = AgentMapper.toDomain(entity)
+
+        assertThat(agent.executionMode).isEqualTo(ExecutionMode.MANUAL)
+        assertThat(agent.skills).containsExactly("read_file", "calculator").inOrder()
+        assertThat(agent.mcpServerIds).containsExactly("server-a", "server-b").inOrder()
     }
 
     @Test
-    fun `toDomain defaults skills to empty`() {
-        val entity = createEntity()
+    fun `toDomain defaults malformed execution and tool selections safely`() {
+        val entity = createEntity(
+            executionMode = "unsafe-future-mode",
+            skillIds = "not-json",
+            mcpServerIds = "{\"wrong\":true}",
+        )
+        assertThat(AgentMapper.toDomain(entity).executionMode).isEqualTo(ExecutionMode.SEMI)
         assertThat(AgentMapper.toDomain(entity).skills).isEmpty()
+        assertThat(AgentMapper.toDomain(entity).mcpServerIds).isEmpty()
     }
 
     @Test
@@ -120,6 +136,9 @@ class AgentMapperTest {
             temperature = 0.5,
             topP = 0.8,
             maxTokens = 2048,
+            executionMode = ExecutionMode.AUTO,
+            skills = listOf("read_file", "calculator"),
+            mcpServerIds = listOf("server-a", "server-b"),
             createdAt = 42L
         )
         val entity = AgentMapper.toEntity(agent)
@@ -132,6 +151,9 @@ class AgentMapperTest {
         assertThat(entity.temperature).isEqualTo(0.5)
         assertThat(entity.top_p).isEqualTo(0.8)
         assertThat(entity.max_tokens).isEqualTo(2048)
+        assertThat(entity.executionMode).isEqualTo("auto")
+        assertThat(entity.skillIds).isEqualTo("[\"read_file\",\"calculator\"]")
+        assertThat(entity.mcpServerIds).isEqualTo("[\"server-a\",\"server-b\"]")
         assertThat(entity.createdAt).isEqualTo(42L)
     }
 

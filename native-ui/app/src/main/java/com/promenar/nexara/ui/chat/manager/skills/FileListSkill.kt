@@ -4,6 +4,7 @@ import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.coroutines.flow.firstOrNull
 
 class FileListSkill(
@@ -13,6 +14,7 @@ class FileListSkill(
     override val name = "list_files"
     override val description = "列出工作区指定目录下的文件和子目录。"
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.SAFE_READ
     override val parametersSchema = """{"type":"object","properties":{"parentUuid":{"type":"string","description":"父目录UUID(不传则列出根目录)"}}}"""
 
     override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {

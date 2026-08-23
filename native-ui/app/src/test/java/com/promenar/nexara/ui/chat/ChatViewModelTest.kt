@@ -318,6 +318,38 @@ class ChatViewModelTest {
     private var providerCancelled = false
     private var forcedProviderFailure: ProviderResolution.Failure? = null
 
+    @Test
+    fun createNewSessionInheritsAgentExecutionModeAndOrderedToolSelections() = runTest {
+        stubAgentRepo.create(
+            Agent(
+                id = "approval-agent",
+                name = "Approval Agent",
+                executionMode = com.promenar.nexara.domain.model.ExecutionMode.MANUAL,
+                skills = listOf("read_file", "calculator"),
+                mcpServerIds = listOf("server-a", "server-b"),
+            ),
+        )
+
+        viewModel.createNewSession("approval-agent")
+        advanceUntilIdle()
+
+        val created = savedSessions.single { it.agentId == "approval-agent" }
+        assertThat(created.executionMode).isEqualTo("manual")
+        assertThat(created.activeSkillIds).containsExactly("read_file", "calculator").inOrder()
+        assertThat(created.activeMcpServerIds).containsExactly("server-a", "server-b").inOrder()
+    }
+
+    @Test
+    fun createNewSessionWithoutAgentFallsBackToSemiAndEmptyToolSelections() = runTest {
+        viewModel.createNewSession("missing-approval-agent")
+        advanceUntilIdle()
+
+        val created = savedSessions.single { it.agentId == "missing-approval-agent" }
+        assertThat(created.executionMode).isEqualTo("semi")
+        assertThat(created.activeSkillIds).isEmpty()
+        assertThat(created.activeMcpServerIds).isEmpty()
+    }
+
     private val fakeProtocol = object : LlmProtocol {
         override val protocolType = ProtocolType.OpenAI_ChatCompletions
         override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> {
@@ -507,6 +539,7 @@ class ChatViewModelTest {
                     else -> error("unexpected string resource: $resourceId")
                 }
             },
+            sessionWorkspaceRootOverride = { "test-workspace-root" to "/test/workspace" },
         )
         this.documentReader = documentReader
     }

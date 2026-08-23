@@ -38,4 +38,8 @@ data class AgentEntity(
     val useInheritedConfig: Boolean = true,
     @ColumnInfo(name = "execution_mode", defaultValue = "semi")
     val executionMode: String = "semi",
+    @ColumnInfo(name = "skill_ids", defaultValue = "[]")
+    val skillIds: String = "[]",
+    @ColumnInfo(name = "mcp_server_ids", defaultValue = "[]")
+    val mcpServerIds: String = "[]",
 )

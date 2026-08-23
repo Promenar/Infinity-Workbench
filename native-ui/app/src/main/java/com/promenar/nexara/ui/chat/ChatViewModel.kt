@@ -233,6 +233,7 @@ class ChatViewModel(
     notificationPermissionGateway:
         com.promenar.nexara.background.generation.NotificationPermissionGateway? = null,
     stringResourceResolverOverride: ((Int) -> String)? = null,
+    sessionWorkspaceRootOverride: (suspend (String) -> Pair<String, String>)? = null,
 ) : ViewModel() {
 
     private val store = (application as NexaraApplication).chatStore
@@ -244,6 +245,11 @@ class ChatViewModel(
         ?: (application as NexaraApplication).generationForegroundController
     private val notificationPermissionGateway = notificationPermissionGateway
     private val stringResourceResolver = stringResourceResolverOverride ?: application::getString
+    private val sessionWorkspaceRoot: suspend (String) -> Pair<String, String> =
+        sessionWorkspaceRootOverride ?: { sessionId: String ->
+            val root = (application as NexaraApplication).workspaceRepository.ensureSessionRoot(sessionId)
+            root.uuid to root.physicalRootPath
+        }
 
     private val sessionManager = SessionManager(store, sessionRepository)
     private val messageManager = MessageManager(store, messageRepository, sessionRepository)
@@ -1208,15 +1214,20 @@ class ChatViewModel(
                 id = sessionId,
                 agentId = agentId,
                 modelId = defaultModelId,
+                executionMode = agent?.executionMode
+                    ?.let(com.promenar.nexara.domain.model.ExecutionModeCodec::serialize)
+                    ?: "semi",
+                activeSkillIds = agent?.skills.orEmpty(),
+                activeMcpServerIds = agent?.mcpServerIds.orEmpty(),
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis(),
                 ragOptions = defaultOptions
             )
             sessionManager.addSession(session)
-            val root = (application as NexaraApplication).workspaceRepository.ensureSessionRoot(sessionId)
+            val (rootUuid, rootPath) = sessionWorkspaceRoot(sessionId)
             sessionManager.updateSession(
                 sessionId,
-                mapOf("workspaceRootUuid" to root.uuid, "workspacePath" to root.physicalRootPath),
+                mapOf("workspaceRootUuid" to rootUuid, "workspacePath" to rootPath),
             )
             _currentSessionId.update { sessionId }
             updateAgentName(agentId)
@@ -1224,10 +1235,10 @@ class ChatViewModel(
     }
 
     private suspend fun ensureSessionWorkspace(sessionId: String) {
-        val root = (application as NexaraApplication).workspaceRepository.ensureSessionRoot(sessionId)
+        val (rootUuid, rootPath) = sessionWorkspaceRoot(sessionId)
         sessionManager.updateSession(
             sessionId,
-            mapOf("workspaceRootUuid" to root.uuid, "workspacePath" to root.physicalRootPath),
+            mapOf("workspaceRootUuid" to rootUuid, "workspacePath" to rootPath),
         )
     }
 
@@ -1320,18 +1331,34 @@ class ChatViewModel(
         }
     }
 
-    fun approveRequest(intervention: String? = null) {
+    fun approveRequest(expectedRequest: ApprovalRequest, intervention: String? = null) {
         val sessionId = _currentSessionId.value ?: return
         cancelCurrentSessionGeneration()
         generationJob = viewModelScope.launch {
-            approvalManager.resumeGeneration(sessionId, approved = true, intervention = intervention)
+            approvalManager.resumeGeneration(
+                sessionId,
+                expectedRequest = expectedRequest,
+                approved = true,
+                intervention = intervention,
+            )
         }
     }
 
-    fun rejectRequest() {
+    fun rejectRequest(expectedRequest: ApprovalRequest) {
         val sessionId = _currentSessionId.value ?: return
         viewModelScope.launch {
-            approvalManager.resumeGeneration(sessionId, approved = false)
+            approvalManager.resumeGeneration(
+                sessionId,
+                expectedRequest = expectedRequest,
+                approved = false,
+            )
+        }
+    }
+
+    fun updateExecutionMode(mode: String) {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            sessionManager.updateSessionExecutionMode(sessionId, mode)
         }
     }
 

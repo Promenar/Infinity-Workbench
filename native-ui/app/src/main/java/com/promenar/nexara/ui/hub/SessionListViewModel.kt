@@ -11,6 +11,7 @@ import com.promenar.nexara.data.repository.AgentRepository
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.domain.usecase.IdGenerator
 import com.promenar.nexara.domain.model.Agent
+import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.manager.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -102,6 +103,9 @@ class SessionListViewModel(
                 id = sessionId,
                 agentId = agentId,
                 modelId = defaultModelId,
+                executionMode = agent?.executionMode?.let(ExecutionModeCodec::serialize) ?: "semi",
+                activeSkillIds = agent?.skills.orEmpty(),
+                activeMcpServerIds = agent?.mcpServerIds.orEmpty(),
                 inferenceParams = if (agent != null) {
                     com.promenar.nexara.data.model.InferenceParams(
                         temperature = agent.temperature,

@@ -26,6 +26,8 @@ import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.ToolApprovalCreation
+import com.promenar.nexara.data.repository.ApprovalCallCandidate
+import com.promenar.nexara.data.repository.ToolApprovalRequestFactory
 import com.promenar.nexara.data.repository.ToolExecutionLedger
 import com.promenar.nexara.domain.generation.GenerationChunk
 import com.promenar.nexara.domain.generation.GenerationFailure
@@ -354,12 +356,12 @@ internal class DefaultChatGenerationRuntime(
         val calls = toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
         val pendingIds = contentStrategy.pendingApprovalIds(calls, session.executionMode.ifEmpty { "semi" })
         if (pendingIds.isNotEmpty()) {
-            val first = calls.firstOrNull { it.id in pendingIds }
-            val approval = ApprovalRequest(
-                toolName = first?.name,
-                args = first?.arguments,
+            val approval = ToolApprovalRequestFactory.create(
+                assistantMessageId = assistantMessageId(request),
+                candidates = calls.filter { it.id in pendingIds }.map { call ->
+                    ApprovalCallCandidate(call, contentStrategy.riskForTool(call.name))
+                },
                 reason = "Execution mode: ${session.executionMode.ifEmpty { "semi" }}",
-                type = "tool_approval",
             )
             messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
             val creation = toolLedger.createToolApproval(

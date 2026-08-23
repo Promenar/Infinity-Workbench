@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.chat.manager.registry
 
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
+import com.promenar.nexara.domain.tool.ToolRisk
 
 interface SkillRegistry {
     fun getSkill(name: String): SkillDefinition?
@@ -15,6 +16,7 @@ interface SkillDefinition {
     val description: String
     val mcpServerId: String?
     val parametersSchema: String
+    val risk: ToolRisk get() = ToolRisk.UNKNOWN
     suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult
 }
 

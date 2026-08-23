@@ -719,6 +719,11 @@ private fun ToolsPanel(
         }
 
         val executionMode = session?.executionMode?.ifEmpty { "semi" } ?: "semi"
+        val selectedExecutionMode = when (executionMode) {
+            "auto" -> ExecutionMode.AUTO
+            "manual" -> ExecutionMode.MANUAL
+            else -> ExecutionMode.SEMI
+        }
         val modeDesc = when (executionMode) {
             "auto" -> stringResource(R.string.sheet_execution_mode_auto)
             "manual" -> stringResource(R.string.sheet_execution_mode_manual)
@@ -738,6 +743,13 @@ private fun ToolsPanel(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(4.dp))
+                ExecutionModeSelector(
+                    selected = selectedExecutionMode,
+                    onSelect = { selected ->
+                        chatViewModel.updateExecutionMode(selected.name.lowercase())
+                    },
+                )
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     modeDesc,
                     style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),

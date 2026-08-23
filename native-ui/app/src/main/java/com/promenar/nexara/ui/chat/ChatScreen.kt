@@ -189,8 +189,8 @@ data class ChatScreenActions(
     val onDeleteMessage: (String) -> Unit = {},
     val onRegenerateMessage: (String) -> Unit = {},
     val onBranchMessage: (String) -> Unit = {},
-    val onApprove: () -> Unit = {},
-    val onDecline: () -> Unit = {},
+    val onApprove: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
+    val onDecline: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onRemovePostProcessTask: (String) -> Unit = {},
     val onManualSummary: () -> Unit = {},
     val onTextChange: (String) -> Unit = {},
@@ -533,14 +533,23 @@ fun ChatScreenContent(
                     item(key = "approval_request") {
                         ChatApprovalLiveRegion {
                             ApprovalCard(
-                                toolName = request.toolName ?: stringResource(R.string.chat_approval_unknown_tool),
+                                toolName = request.calls.firstOrNull()?.toolName
+                                    ?: request.toolName
+                                    ?: stringResource(R.string.chat_approval_unknown_tool),
                                 description = approvalDescription(
                                     request,
                                     approvalArgumentsLabel,
                                     approvalFallback,
                                 ),
-                                onApprove = actions.onApprove,
-                                onDecline = actions.onDecline,
+                                calls = request.calls.map { call ->
+                                    ApprovalDisplayCall(
+                                        name = call.toolName,
+                                        argumentsSummary = call.argumentsSummary,
+                                        riskLabel = approvalRiskLabel(call.risk),
+                                    )
+                                },
+                                onApprove = { actions.onApprove(request) },
+                                onDecline = { actions.onDecline(request) },
                             )
                         }
                     }
@@ -789,6 +798,20 @@ private fun approvalDescription(
         fallback
     }
 }
+
+@Composable
+private fun approvalRiskLabel(risk: String): String = stringResource(
+    when (risk) {
+        "safe_read" -> R.string.chat_approval_risk_safe_read
+        "file_write" -> R.string.chat_approval_risk_file_write
+        "patch" -> R.string.chat_approval_risk_patch
+        "delete" -> R.string.chat_approval_risk_delete
+        "process" -> R.string.chat_approval_risk_process
+        "script" -> R.string.chat_approval_risk_script
+        "external_write" -> R.string.chat_approval_risk_external_write
+        else -> R.string.chat_approval_risk_unknown
+    },
+)
 
 @Composable
 internal fun ChatApprovalLiveRegion(content: @Composable () -> Unit) {

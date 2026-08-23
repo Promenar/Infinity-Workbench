@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.android.tools.screenshot.PreviewTest
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ApprovalRequest
+import com.promenar.nexara.data.model.ApprovalCallIdentity
 import com.promenar.nexara.data.model.Citation
 import com.promenar.nexara.data.model.KgEdge
 import com.promenar.nexara.data.model.KgNode
@@ -852,8 +853,30 @@ fun chatApprovalTabletReleasePreview() {
                         previewMessage("user-approval", MessageRole.USER, "Prepare the release notes."),
                     ),
                     approvalRequest = ApprovalRequest(
-                        toolName = "write_file",
-                        args = "{\"path\":\"RELEASE_NOTES.md\"}",
+                        assistantMessageId = "assistant-approval",
+                        identityHash = "preview-hash",
+                        calls = listOf(
+                            ApprovalCallIdentity(
+                                toolCallId = "write-release-notes",
+                                runtimeToolId = "write_file",
+                                toolName = "write_file",
+                                argumentsDigest = "digest-write",
+                                definitionDigest = "definition-write",
+                                requiresApproval = true,
+                                argumentsSummary = "{\"path\":\"RELEASE_NOTES.md\"}",
+                                risk = "file_write",
+                            ),
+                            ApprovalCallIdentity(
+                                toolCallId = "delete-old-draft",
+                                runtimeToolId = "delete_file",
+                                toolName = "delete_file",
+                                argumentsDigest = "digest-delete",
+                                definitionDigest = "definition-delete",
+                                requiresApproval = true,
+                                argumentsSummary = "{\"path\":\"OLD_DRAFT.md\"}",
+                                risk = "delete",
+                            ),
+                        ),
                         reason = "Writing a release artifact requires approval.",
                     ),
                 ),

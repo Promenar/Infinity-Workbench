@@ -2,7 +2,17 @@ package com.promenar.nexara.data.mapper
 
 import com.promenar.nexara.data.local.db.entity.AgentEntity
 import com.promenar.nexara.domain.model.Agent
-import com.promenar.nexara.domain.model.ExecutionMode
+import com.promenar.nexara.domain.model.ExecutionModeCodec
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+
+private val agentSelectionJson = Json { ignoreUnknownKeys = true }
+
+private fun decodeOrderedIds(raw: String?): List<String> = runCatching {
+    raw?.let { agentSelectionJson.decodeFromString<List<String>>(it) }.orEmpty()
+}.getOrDefault(emptyList())
+
+private fun encodeOrderedIds(ids: List<String>): String = agentSelectionJson.encodeToString(ids)
 
 object AgentMapper {
     fun toDomain(entity: AgentEntity): Agent = Agent(
@@ -23,8 +33,9 @@ object AgentMapper {
         ragConfig = entity.ragConfig,
         retrievalConfig = entity.retrievalConfig,
         useInheritedConfig = entity.useInheritedConfig,
-        executionMode = ExecutionMode.SEMI,
-        skills = emptyList(),
+        executionMode = ExecutionModeCodec.parseOrSemi(entity.executionMode),
+        skills = decodeOrderedIds(entity.skillIds),
+        mcpServerIds = decodeOrderedIds(entity.mcpServerIds),
         createdAt = entity.createdAt
     )
 
@@ -46,6 +57,9 @@ object AgentMapper {
         ragConfig = agent.ragConfig,
         retrievalConfig = agent.retrievalConfig,
         useInheritedConfig = agent.useInheritedConfig,
+        executionMode = ExecutionModeCodec.serialize(agent.executionMode),
+        skillIds = encodeOrderedIds(agent.skills),
+        mcpServerIds = encodeOrderedIds(agent.mcpServerIds),
         createdAt = agent.createdAt
     )
 }

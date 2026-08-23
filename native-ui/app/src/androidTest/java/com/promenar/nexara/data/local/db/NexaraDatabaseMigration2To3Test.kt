@@ -60,6 +60,10 @@ class NexaraDatabaseMigration2To3Test {
         helper.runMigrationsAndValidate(DATABASE_NAME, 3, true, MIGRATION_2_3).use { database ->
             assertThat(database.stringQuery("SELECT execution_mode FROM agents WHERE id='agent-1'"))
                 .isEqualTo("semi")
+            assertThat(database.stringQuery("SELECT skill_ids FROM agents WHERE id='agent-1'"))
+                .isEqualTo("[]")
+            assertThat(database.stringQuery("SELECT mcp_server_ids FROM agents WHERE id='agent-1'"))
+                .isEqualTo("[]")
             assertThat(database.stringQuery("SELECT execution_mode FROM sessions WHERE id='session-1'"))
                 .isEqualTo("auto")
             database.execSQL(

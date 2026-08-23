@@ -10,6 +10,7 @@ import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretStore
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
+import com.promenar.nexara.domain.tool.ToolRisk
 
 class WebSearchTavilySkill(
     private val context: Context,
@@ -20,6 +21,7 @@ class WebSearchTavilySkill(
     override val name = "search_tavily"
     override val description = "Deep search using Tavily AI. Best for research and complex questions."
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.SAFE_READ
     
     override val parametersSchema = """
         {

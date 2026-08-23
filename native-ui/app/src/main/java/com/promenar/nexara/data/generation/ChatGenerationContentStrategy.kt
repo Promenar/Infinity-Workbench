@@ -13,6 +13,9 @@ import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.ProtocolToolCall
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
+import com.promenar.nexara.domain.model.ExecutionModeCodec
+import com.promenar.nexara.domain.tool.ToolExecutionPolicy
+import com.promenar.nexara.domain.tool.ToolRisk
 import java.security.MessageDigest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -42,6 +45,7 @@ interface ChatGenerationContentStrategy {
     fun stripToolCallMarkup(content: String): String
     fun mergeToolCalls(existing: List<ToolCall>, incoming: List<ToolCall>): List<ToolCall>
     fun pendingApprovalIds(toolCalls: List<ToolCall>, executionMode: String): List<String>
+    fun riskForTool(toolName: String): ToolRisk
 }
 
 /** 不依赖 ViewModel 的纯内容与工具协议策略，可由应用级生成协调器长期持有。 */
@@ -51,6 +55,8 @@ class DefaultChatGenerationContentStrategy(
 ) : ChatGenerationContentStrategy {
     @Volatile
     private var knownToolNames: Set<String>? = null
+    @Volatile
+    private var knownToolRisks: Map<String, ToolRisk> = emptyMap()
 
     override fun buildProtocolMessages(
         session: Session,
@@ -110,11 +116,14 @@ class DefaultChatGenerationContentStrategy(
     }
 
     override fun buildTools(session: Session): List<ProtocolTool> {
+        knownToolRisks = emptyMap()
         if (!session.options.toolsEnabled) return emptyList()
         val enabledSkills = settings.getStringSet("enabled_skills", null)?.toSet().orEmpty()
         if (enabledSkills.isEmpty()) return emptyList()
         knownToolNames = null
-        return skillRegistry?.getAllTools(enabledSkills.toList()).orEmpty()
+        return skillRegistry?.getAllTools(enabledSkills.toList()).orEmpty().also { tools ->
+            knownToolRisks = tools.associate { it.function.name to it.risk }
+        }
     }
 
     override fun safeActiveWindow(messages: List<Message>, windowSize: Int): List<Message> {
@@ -211,11 +220,14 @@ class DefaultChatGenerationContentStrategy(
         return merged.values.toList()
     }
 
-    override fun pendingApprovalIds(toolCalls: List<ToolCall>, executionMode: String): List<String> = when (executionMode) {
-        "auto" -> emptyList()
-        "manual" -> toolCalls.map { it.id }
-        else -> toolCalls.filter { it.name in HIGH_RISK_TOOL_NAMES }.map { it.id }
+    override fun pendingApprovalIds(toolCalls: List<ToolCall>, executionMode: String): List<String> {
+        val mode = ExecutionModeCodec.parseOrSemi(executionMode)
+        return toolCalls.filter { call ->
+            ToolExecutionPolicy.requiresApproval(mode, riskForTool(call.name))
+        }.map { it.id }
     }
+
+    override fun riskForTool(toolName: String): ToolRisk = knownToolRisks[toolName] ?: ToolRisk.UNKNOWN
 
     private fun parseToolCall(element: JsonElement, index: Int): ToolCall? {
         if (element !is JsonObject) return null
@@ -300,10 +312,6 @@ class DefaultChatGenerationContentStrategy(
         val TOOL_RESULT_SEPARATOR_PATTERN = Regex(
             """(?:^|\n)---(?!-{2,})\s*(?:工具|tool|search)?\s*(?:调用|执行)?\s*结果\s*[：:]\s*[\s\S]*?(?=\n\n|\n?$)""",
             setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE),
-        )
-        val HIGH_RISK_TOOL_NAMES = setOf(
-            "write_file", "patch_file", "create_file", "delete_file", "exec_js",
-            "web_fetch", "generate_image", "create_tool", "drop_plan",
         )
     }
 }

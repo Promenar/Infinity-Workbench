@@ -3,12 +3,14 @@ package com.promenar.nexara.ui.chat.manager.skills
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.domain.tool.ToolRisk
 
 class CalculatorSkill : SkillDefinition {
     override val id = "calculator"
     override val name = "calculator"
     override val description = "Evaluate a mathematical expression"
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.SAFE_READ
     override val parametersSchema =
         """{"type":"object","properties":{"expression":{"type":"string","description":"Math expression to evaluate"}},"required":["expression"]}"""
 

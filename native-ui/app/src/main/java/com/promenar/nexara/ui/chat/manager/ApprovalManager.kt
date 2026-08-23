@@ -10,6 +10,10 @@ import com.promenar.nexara.data.repository.ToolLedgerState
 import com.promenar.nexara.data.repository.ToolTerminalRequest
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.data.repository.ApprovalTransition
+import com.promenar.nexara.data.repository.ExactToolApprovalCompletion
+import com.promenar.nexara.data.repository.ExactToolApprovalDecision
+import com.promenar.nexara.data.repository.ToolApprovalRequestFactory
+import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.ui.chat.ChatStore
 
 class ApprovalManager(
@@ -46,6 +50,7 @@ class ApprovalManager(
 
     suspend fun resumeGeneration(
         sessionId: String,
+        expectedRequest: ApprovalRequest? = null,
         approved: Boolean = true,
         intervention: String? = null
     ) {
@@ -53,6 +58,13 @@ class ApprovalManager(
         val approvalRequest = session.approvalRequest ?: return
 
         val isContinuation = approvalRequest.type == "continuation"
+
+        if (!isContinuation) {
+            val exact = expectedRequest ?: return
+            if (approvalRequest != exact || !ToolApprovalRequestFactory.isValid(exact)) return
+            resumeExactToolApproval(sessionId, session, exact, approved, intervention)
+            return
+        }
 
         val targetMsg = if (isContinuation) {
             session.messages.lastOrNull { it.role == com.promenar.nexara.data.model.MessageRole.ASSISTANT }
@@ -144,6 +156,56 @@ class ApprovalManager(
         onGenerateMessage?.invoke(sessionId, intervention ?: "", true)
     }
 
+    private suspend fun resumeExactToolApproval(
+        sessionId: String,
+        session: com.promenar.nexara.data.model.Session,
+        request: ApprovalRequest,
+        approved: Boolean,
+        intervention: String?,
+    ) {
+        if (approved && onExecuteTools == null) return
+        val assistantMessageId = request.assistantMessageId ?: return
+        val targetMessage = session.messages.firstOrNull {
+            it.id == assistantMessageId && it.role == MessageRole.ASSISTANT
+        } ?: return
+        val decision = ledger.decideExactToolApproval(sessionId, request, approved)
+        if (decision !is ExactToolApprovalDecision.Decided) return
+
+        val decisionStep = ExecutionStep(
+            id = "dec_${System.currentTimeMillis()}",
+            type = "intervention_result",
+            content = when {
+                intervention != null -> "Human Instruction: $intervention"
+                approved -> "User Approved"
+                else -> "User Rejected"
+            },
+            timestamp = System.currentTimeMillis(),
+        )
+        store.updateMessageInSession(sessionId, assistantMessageId) { message ->
+            message.copy(
+                executionSteps = message.executionSteps.orEmpty()
+                    .filter { it.type != "intervention_required" } + decisionStep,
+            )
+        }
+        if (intervention != null) setPendingIntervention(sessionId, intervention)
+
+        decision.terminalMessages.forEach { message ->
+            messageManager.mirrorPersistedMessage(sessionId, message)
+        }
+        if (approved) {
+            onExecuteTools?.invoke(
+                sessionId,
+                assistantMessageId,
+                setOf(decision.key.toolCallId),
+            )
+        }
+        val completion = ledger.completeExactToolApproval(sessionId, request)
+        if (completion !is ExactToolApprovalCompletion.Completed) return
+        mirrorApprovalTransition(completion.transition)
+        if (completion.transition.loopStatus == LoopStatus.WAITING_FOR_APPROVAL || !approved) return
+        onGenerateMessage?.invoke(sessionId, intervention.orEmpty(), true)
+    }
+
     suspend fun cancelPendingApproval(sessionId: String) {
         terminateCurrentApproval(sessionId, ToolLedgerState.CANCELLED)
     }
@@ -219,9 +281,11 @@ class ApprovalManager(
         }
     }
 
-    fun setExecutionMode(sessionId: String, mode: String) {
+    suspend fun setExecutionMode(sessionId: String, mode: String) {
+        val normalized = ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrSemi(mode))
+        sessionRepository.updatePartial(sessionId, mapOf("executionMode" to normalized))
         store.updateSession(sessionId) { s ->
-            s.copy(executionMode = mode)
+            s.copy(executionMode = normalized)
         }
     }
 

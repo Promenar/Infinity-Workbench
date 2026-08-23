@@ -96,7 +96,9 @@ class SessionListViewModelTest {
         val agent = Agent(
             id = "a1", name = "Agent", modelId = "provider::gpt-4",
             temperature = 0.5, topP = 0.8, maxTokens = 2048,
-            executionMode = ExecutionMode.SEMI
+            executionMode = ExecutionMode.MANUAL,
+            skills = listOf("read_file", "calculator"),
+            mcpServerIds = listOf("server-a", "server-b"),
         )
         every { agentRepo.observeById("a1") } returns flowOf(agent)
         coEvery { sessionRepo.getAll() } returns emptyList()
@@ -110,6 +112,9 @@ class SessionListViewModelTest {
         val session = store.get().sessions.first()
         assertThat(session.modelId).isEqualTo("provider::gpt-4")
         assertThat(session.inferenceParams?.temperature).isEqualTo(0.5)
+        assertThat(session.executionMode).isEqualTo("manual")
+        assertThat(session.activeSkillIds).containsExactly("read_file", "calculator").inOrder()
+        assertThat(session.activeMcpServerIds).containsExactly("server-a", "server-b").inOrder()
     }
 
     @Test
@@ -125,6 +130,9 @@ class SessionListViewModelTest {
         val session = store.get().sessions.first()
         assertThat(session.agentId).isEqualTo("missing")
         assertThat(session.modelId).isNull()
+        assertThat(session.executionMode).isEqualTo("semi")
+        assertThat(session.activeSkillIds).isEmpty()
+        assertThat(session.activeMcpServerIds).isEmpty()
     }
 
     @Test

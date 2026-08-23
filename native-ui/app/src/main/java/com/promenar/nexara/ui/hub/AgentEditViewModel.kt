@@ -282,6 +282,7 @@ class AgentEditViewModel(
             useInheritedConfig = _useInheritedConfig.value,
             executionMode = initial?.executionMode ?: com.promenar.nexara.domain.model.ExecutionMode.SEMI,
             skills = initial?.skills ?: emptyList(),
+            mcpServerIds = initial?.mcpServerIds ?: emptyList(),
             createdAt = initial?.createdAt ?: System.currentTimeMillis(),
         )
     }

@@ -4,6 +4,7 @@ import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.domain.tool.ToolRisk
 
 class FileDiffSkill(
     private val fileOpRepo: IFileOperationRepository
@@ -12,6 +13,7 @@ class FileDiffSkill(
     override val name = "diff_file"
     override val description = "生成文件的差异报告（JSON格式）。可用于查看文件变更情况。"
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.SAFE_READ
     override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"basisHash":{"type":"string","description":"对比基准hash(可选，默认与上次已知版本对比)"}},"required":["uuid"]}"""
 
     override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {

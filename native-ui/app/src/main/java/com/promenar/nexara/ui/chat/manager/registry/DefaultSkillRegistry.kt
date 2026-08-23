@@ -34,6 +34,7 @@ class DefaultSkillRegistry : SkillRegistry {
         return filteredSkills.map { skill ->
             ProtocolTool(
                 type = "function",
+                risk = skill.risk,
                 function = ProtocolToolFunction(
                     name = skill.name,
                     description = skill.description,

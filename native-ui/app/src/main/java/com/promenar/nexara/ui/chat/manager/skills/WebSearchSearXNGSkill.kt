@@ -8,6 +8,7 @@ import io.ktor.client.*
 import android.content.Context
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
+import com.promenar.nexara.domain.tool.ToolRisk
 
 class WebSearchSearXNGSkill(
     private val context: Context,
@@ -17,6 +18,7 @@ class WebSearchSearXNGSkill(
     override val name = "search_searxng"
     override val description = "Privacy-focused meta-search using SearXNG instance."
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.SAFE_READ
     
     override val parametersSchema = """
         {

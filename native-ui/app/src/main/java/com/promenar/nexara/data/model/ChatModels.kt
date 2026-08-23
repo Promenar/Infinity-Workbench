@@ -239,7 +239,23 @@ data class UpdateMessageOptions(
 )
 
 @Serializable
+data class ApprovalCallIdentity(
+    val toolCallId: String,
+    val runtimeToolId: String,
+    val toolName: String,
+    val argumentsDigest: String,
+    val definitionDigest: String,
+    val requiresApproval: Boolean,
+    val argumentsSummary: String,
+    val risk: String,
+)
+
+@Serializable
 data class ApprovalRequest(
+    val assistantMessageId: String? = null,
+    val identityHash: String? = null,
+    val calls: List<ApprovalCallIdentity> = emptyList(),
+    // 旧字段仅用于兼容解码历史记录；新工具审批只写入上面的精确身份队列。
     val toolName: String? = null,
     val args: String? = null,
     val reason: String? = null,

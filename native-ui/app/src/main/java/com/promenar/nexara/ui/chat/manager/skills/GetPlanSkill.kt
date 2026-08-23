@@ -6,6 +6,7 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
+import com.promenar.nexara.domain.tool.ToolRisk
 
 class GetPlanSkill(
     private val taskRepo: ITaskRepository
@@ -14,6 +15,7 @@ class GetPlanSkill(
     override val name = "get_plan"
     override val description = "读取当前任务完整树。返回含实时派生的父节点状态和叶节点进度。"
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.SAFE_READ
     override val parametersSchema = """{"type":"object","properties":{}}"""
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }

@@ -10,6 +10,7 @@ import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
+import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import io.mockk.every
 import io.mockk.mockk
@@ -152,25 +153,79 @@ class ChatGenerationContentStrategyTest {
     }
 
     @Test
-    fun `审批策略区分auto manual与高风险semi`() {
-        val strategy = strategy()
+    fun `审批策略由工具风险元数据驱动且未知风险fail closed`() {
+        val strategy = strategy(
+            mapOf(
+                "safe_alias_not_hardcoded" to ToolRisk.SAFE_READ,
+                "write_alias_not_hardcoded" to ToolRisk.FILE_WRITE,
+                "unknown_legacy_tool" to ToolRisk.UNKNOWN,
+            ),
+        )
         val calls = listOf(
-            ToolCall("safe", "search", "{}"),
-            ToolCall("risk", "write_file", "{}"),
+            ToolCall("safe", "safe_alias_not_hardcoded", "{}"),
+            ToolCall("risk", "write_alias_not_hardcoded", "{}"),
+            ToolCall("unknown", "unknown_legacy_tool", "{}"),
         )
 
         assertThat(strategy.pendingApprovalIds(calls, "auto")).isEmpty()
-        assertThat(strategy.pendingApprovalIds(calls, "manual")).containsExactly("safe", "risk").inOrder()
-        assertThat(strategy.pendingApprovalIds(calls, "semi")).containsExactly("risk")
+        assertThat(strategy.pendingApprovalIds(calls, "manual"))
+            .containsExactly("safe", "risk", "unknown").inOrder()
+        assertThat(strategy.pendingApprovalIds(calls, "semi"))
+            .containsExactly("risk", "unknown").inOrder()
+        assertThat(strategy.pendingApprovalIds(calls, "invalid-mode"))
+            .containsExactly("risk", "unknown").inOrder()
     }
 
-    private fun strategy(knownNames: Set<String> = emptySet()): DefaultChatGenerationContentStrategy {
+    @Test
+    fun `工具禁用后清除旧风险快照并按未知风险审批`() {
+        var enabled = setOf("safe_alias")
         val settings = mockk<SharedPreferences>()
-        every { settings.getStringSet(any(), any()) } returns emptySet()
+        every { settings.getStringSet(any(), any()) } answers { enabled }
         val registry = mockk<SkillRegistry>()
-        every { registry.getAllTools() } returns knownNames.map { name ->
-            ProtocolTool(function = ProtocolToolFunction(name = name, description = "", parameters = "{}"))
+        val safeTool = ProtocolTool(
+            function = ProtocolToolFunction(
+                name = "safe_alias",
+                description = "",
+                parameters = "{}",
+            ),
+            risk = ToolRisk.SAFE_READ,
+        )
+        every { registry.getAllTools(any()) } returns listOf(safeTool)
+        val strategy = DefaultChatGenerationContentStrategy(settings, registry)
+        val session = Session(id = "risk-session", agentId = "agent")
+        val calls = listOf(ToolCall("safe", "safe_alias", "{}"))
+
+        strategy.buildTools(session)
+        assertThat(strategy.pendingApprovalIds(calls, "semi")).isEmpty()
+
+        enabled = emptySet()
+        strategy.buildTools(session)
+        assertThat(strategy.pendingApprovalIds(calls, "semi")).containsExactly("safe")
+    }
+
+    private fun strategy(knownNames: Set<String>): DefaultChatGenerationContentStrategy =
+        strategy(knownNames.associateWith { ToolRisk.UNKNOWN })
+
+    private fun strategy(
+        knownTools: Map<String, ToolRisk> = emptyMap(),
+    ): DefaultChatGenerationContentStrategy {
+        val settings = mockk<SharedPreferences>()
+        every { settings.getStringSet(any(), any()) } returns knownTools.keys
+        val registry = mockk<SkillRegistry>()
+        every { registry.getAllTools() } returns knownTools.map { (name, risk) ->
+            ProtocolTool(
+                function = ProtocolToolFunction(name = name, description = "", parameters = "{}"),
+                risk = risk,
+            )
         }
-        return DefaultChatGenerationContentStrategy(settings, registry)
+        every { registry.getAllTools(any()) } returns knownTools.map { (name, risk) ->
+            ProtocolTool(
+                function = ProtocolToolFunction(name = name, description = "", parameters = "{}"),
+                risk = risk,
+            )
+        }
+        return DefaultChatGenerationContentStrategy(settings, registry).also {
+            it.buildTools(Session(id = "risk-session", agentId = "agent"))
+        }
     }
 }

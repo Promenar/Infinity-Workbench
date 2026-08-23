@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 3,
-    "identityHash": "7a7a094ee1fd1b9b144a0a241812e53f",
+    "identityHash": "a48dd118f5212b60e657cbb257b75d92",
     "entities": [
       {
         "tableName": "agents",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `description` TEXT NOT NULL, `name_customized` INTEGER NOT NULL, `description_customized` INTEGER NOT NULL, `system_prompt` TEXT NOT NULL, `model` TEXT NOT NULL, `icon` TEXT NOT NULL, `color` TEXT NOT NULL, `avatar_path` TEXT, `is_pinned` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `temperature` REAL, `top_p` REAL, `max_tokens` INTEGER, `rag_config` TEXT, `retrieval_config` TEXT, `use_inherited_config` INTEGER NOT NULL, `execution_mode` TEXT NOT NULL DEFAULT 'semi', PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `description` TEXT NOT NULL, `name_customized` INTEGER NOT NULL, `description_customized` INTEGER NOT NULL, `system_prompt` TEXT NOT NULL, `model` TEXT NOT NULL, `icon` TEXT NOT NULL, `color` TEXT NOT NULL, `avatar_path` TEXT, `is_pinned` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `temperature` REAL, `top_p` REAL, `max_tokens` INTEGER, `rag_config` TEXT, `retrieval_config` TEXT, `use_inherited_config` INTEGER NOT NULL, `execution_mode` TEXT NOT NULL DEFAULT 'semi', `skill_ids` TEXT NOT NULL DEFAULT '[]', `mcp_server_ids` TEXT NOT NULL DEFAULT '[]', PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -116,6 +116,20 @@
             "affinity": "TEXT",
             "notNull": true,
             "defaultValue": "'semi'"
+          },
+          {
+            "fieldPath": "skillIds",
+            "columnName": "skill_ids",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'[]'"
+          },
+          {
+            "fieldPath": "mcpServerIds",
+            "columnName": "mcp_server_ids",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'[]'"
           }
         ],
         "primaryKey": {
@@ -2393,7 +2407,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7a7a094ee1fd1b9b144a0a241812e53f')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a48dd118f5212b60e657cbb257b75d92')"
     ]
   }
 }

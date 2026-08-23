@@ -6,6 +6,7 @@ import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.data.repository.ISessionRepository
+import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.ui.chat.ChatStore
 
 class SessionManager(
@@ -14,7 +15,7 @@ class SessionManager(
 ) {
     suspend fun addSession(session: Session) {
         val enrichedSession = session.copy(
-            executionMode = session.executionMode.ifEmpty { "semi" },
+            executionMode = ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrSemi(session.executionMode)),
             loopStatus = if (session.loopStatus == LoopStatus.IDLE) LoopStatus.COMPLETED else session.loopStatus,
         )
 
@@ -59,6 +60,11 @@ class SessionManager(
 
     suspend fun updateSessionPrompt(id: String, prompt: String?) {
         updateSession(id, mapOf("customPrompt" to prompt))
+    }
+
+    suspend fun updateSessionExecutionMode(id: String, mode: String) {
+        val normalized = ExecutionModeCodec.serialize(ExecutionModeCodec.parseOrSemi(mode))
+        updateSession(id, mapOf("executionMode" to normalized))
     }
 
     suspend fun updateSessionModel(id: String, modelId: String?) {
@@ -136,7 +142,11 @@ class SessionManager(
                 "isPinned" -> result.copy(isPinned = value as? Boolean ?: result.isPinned)
                 "modelId" -> result.copy(modelId = value as? String)
                 "customPrompt" -> result.copy(customPrompt = value as? String)
-                "executionMode" -> result.copy(executionMode = value as? String ?: result.executionMode)
+                "executionMode" -> result.copy(
+                    executionMode = ExecutionModeCodec.serialize(
+                        ExecutionModeCodec.parseOrSemi(value as? String),
+                    ),
+                )
                 "loopStatus" -> result.copy(loopStatus = value as? LoopStatus ?: result.loopStatus)
                 "pendingIntervention" -> result.copy(pendingIntervention = value as? String)
                 "approvalRequest" -> result.copy(approvalRequest = value as? com.promenar.nexara.data.model.ApprovalRequest)

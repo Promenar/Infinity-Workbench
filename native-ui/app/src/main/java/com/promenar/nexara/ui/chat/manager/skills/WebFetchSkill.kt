@@ -13,6 +13,7 @@ import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.URI
+import com.promenar.nexara.domain.tool.ToolRisk
 
 class WebFetchSkill(
     private val httpClient: HttpClient
@@ -21,6 +22,7 @@ class WebFetchSkill(
     override val name = "web_fetch"
     override val description = "Fetch and extract clean main text content from a specific web URL. Use this to read the detailed content of a search result or webpage."
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.SAFE_READ
 
     override val parametersSchema = """
         {

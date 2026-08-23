@@ -445,7 +445,7 @@ fun ChatRoute(
                     }
                 }
             },
-            onApprove = chatViewModel::approveRequest,
+            onApprove = { request -> chatViewModel.approveRequest(request) },
             onDecline = chatViewModel::rejectRequest,
             onRemovePostProcessTask = chatViewModel::removePostProcessTask,
             onManualSummary = chatViewModel::summarizeHistory,

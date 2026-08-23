@@ -9,11 +9,13 @@ import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.toEntity
 import com.promenar.nexara.data.model.ApprovalRequest
+import com.promenar.nexara.data.model.ApprovalCallIdentity
 import com.promenar.nexara.data.model.LoopStatus
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.json
 import com.promenar.nexara.domain.tool.ToolArgumentsValidation
 import com.promenar.nexara.domain.tool.ToolArgumentsValidator
+import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import java.security.MessageDigest
@@ -37,6 +39,98 @@ data class ToolInvocationIdentity(
         require(argumentsDigest.isNotBlank()) { "工具参数摘要不能为空" }
         require(definitionDigest.isNotBlank()) { "工具定义摘要不能为空" }
     }
+}
+
+fun ApprovalCallIdentity.toInvocationIdentity(): ToolInvocationIdentity = ToolInvocationIdentity(
+    runtimeToolId = runtimeToolId,
+    toolName = toolName,
+    argumentsDigest = argumentsDigest,
+    definitionDigest = definitionDigest,
+    requiresApproval = requiresApproval,
+)
+
+data class ApprovalCallCandidate(
+    val call: ToolCall,
+    val risk: ToolRisk,
+)
+
+object ToolApprovalRequestFactory {
+    private const val MAX_ARGUMENT_SUMMARY = 180
+
+    fun create(
+        assistantMessageId: String,
+        candidates: List<ApprovalCallCandidate>,
+        reason: String? = null,
+    ): ApprovalRequest {
+        val identities = candidates.map { candidate ->
+            val resolution = ToolInvocationIdentityFactory.fromLegacyToolCall(
+                candidate.call,
+                requiresApproval = true,
+            )
+            require(resolution is ToolInvocationIdentityResolution.Valid) {
+                (resolution as ToolInvocationIdentityResolution.Invalid).message
+            }
+            ApprovalCallIdentity(
+                toolCallId = candidate.call.id,
+                runtimeToolId = resolution.identity.runtimeToolId,
+                toolName = resolution.identity.toolName,
+                argumentsDigest = resolution.identity.argumentsDigest,
+                definitionDigest = resolution.identity.definitionDigest,
+                requiresApproval = true,
+                argumentsSummary = summarizeArguments(candidate.call.arguments),
+                risk = candidate.risk.name.lowercase(),
+            )
+        }
+        return createFromIdentities(assistantMessageId, identities, reason)
+    }
+
+    fun createFromIdentities(
+        assistantMessageId: String,
+        calls: List<ApprovalCallIdentity>,
+        reason: String? = null,
+    ): ApprovalRequest {
+        val request = ApprovalRequest(
+            assistantMessageId = assistantMessageId,
+            calls = calls,
+            reason = reason,
+            type = "tool_approval",
+        )
+        return request.copy(identityHash = identityHash(request))
+    }
+
+    fun isValid(request: ApprovalRequest): Boolean =
+        request.type == "tool_approval" &&
+            !request.assistantMessageId.isNullOrBlank() &&
+            request.calls.isNotEmpty() &&
+            request.calls.map { it.toolCallId }.distinct().size == request.calls.size &&
+            request.calls.all { call ->
+                call.toolCallId.isNotBlank() && call.runtimeToolId.isNotBlank() &&
+                    call.toolName.isNotBlank() && call.argumentsDigest.isNotBlank() &&
+                    call.definitionDigest.isNotBlank() && call.requiresApproval &&
+                    call.risk.isNotBlank()
+            } && request.identityHash == identityHash(request)
+
+    fun identityHash(request: ApprovalRequest): String {
+        val raw = buildString {
+            append(request.assistantMessageId.orEmpty())
+            request.calls.forEach { call ->
+                append('\u0000').append(call.toolCallId)
+                append('\u0000').append(call.runtimeToolId)
+                append('\u0000').append(call.toolName)
+                append('\u0000').append(call.argumentsDigest)
+                append('\u0000').append(call.definitionDigest)
+                append('\u0000').append(call.requiresApproval)
+                append('\u0000').append(call.argumentsSummary)
+                append('\u0000').append(call.risk)
+            }
+        }
+        return sha256Hex(raw)
+    }
+
+    private fun summarizeArguments(arguments: String): String = arguments
+        .replace(Regex("\\s+"), " ")
+        .trim()
+        .let { if (it.length <= MAX_ARGUMENT_SUMMARY) it else it.take(MAX_ARGUMENT_SUMMARY - 3) + "..." }
 }
 
 sealed interface ToolInvocationIdentityResolution {
@@ -98,6 +192,19 @@ data class ToolTerminalRequest(
 
 enum class ToolApprovalCreation { CREATED, EXISTING, CONFLICT }
 
+sealed interface ExactToolApprovalDecision {
+    data class Decided(
+        val key: ToolExecutionKey,
+        val terminalMessages: List<Message>,
+    ) : ExactToolApprovalDecision
+    data object Conflict : ExactToolApprovalDecision
+}
+
+sealed interface ExactToolApprovalCompletion {
+    data class Completed(val transition: ApprovalTransition) : ExactToolApprovalCompletion
+    data object Conflict : ExactToolApprovalCompletion
+}
+
 data class ApprovalTransition(
     val sessionId: String,
     val currentAssistantMessageId: String,
@@ -142,6 +249,15 @@ interface ToolExecutionLedger {
         pendingToolCallIds: Set<String>,
         request: ApprovalRequest,
     ): ToolApprovalCreation
+    suspend fun decideExactToolApproval(
+        sessionId: String,
+        request: ApprovalRequest,
+        approved: Boolean,
+    ): ExactToolApprovalDecision = ExactToolApprovalDecision.Conflict
+    suspend fun completeExactToolApproval(
+        sessionId: String,
+        request: ApprovalRequest,
+    ): ExactToolApprovalCompletion = ExactToolApprovalCompletion.Conflict
     suspend fun completeToolApproval(sessionId: String, assistantMessageId: String): ApprovalTransition
     suspend fun recoverApprovalState(): Int
 }
@@ -367,6 +483,10 @@ class ToolExecutionLedgerRepository(
         val assistant = database.messageDao().getById(assistantMessageId)
             ?.takeIf { it.sessionId == keySessionId && it.role == "assistant" }
             ?: return@withTransaction ToolApprovalCreation.CONFLICT
+        if (!ToolApprovalRequestFactory.isValid(request) ||
+            request.assistantMessageId != assistantMessageId ||
+            request.toolName != null || request.args != null
+        ) return@withTransaction ToolApprovalCreation.CONFLICT
         val awaiting = dao.getAwaitingApprovalForSession(keySessionId)
         val conflictingApproval = awaiting
             .firstOrNull { it.assistantMessageId != assistantMessageId }
@@ -386,6 +506,11 @@ class ToolExecutionLedgerRepository(
             call.id to resolved.identity
         }.toMap()
         val orderedPendingIds = distinctCalls.filter { it.id in pendingToolCallIds }.map { it.id }
+        if (request.calls.map { it.toolCallId } != orderedPendingIds ||
+            request.calls.any { approvalCall ->
+                identities[approvalCall.toolCallId] != approvalCall.toInvocationIdentity()
+            }
+        ) return@withTransaction ToolApprovalCreation.CONFLICT
         val existingSame = if (awaiting.any { it.assistantMessageId == assistantMessageId }) {
             dao.getForAssistant(keySessionId, assistantMessageId)
         } else {
@@ -460,6 +585,136 @@ class ToolExecutionLedgerRepository(
         ToolApprovalCreation.CREATED
     }
 
+    override suspend fun decideExactToolApproval(
+        sessionId: String,
+        request: ApprovalRequest,
+        approved: Boolean,
+    ): ExactToolApprovalDecision = database.withTransaction {
+        val context = validateExactApprovalContext(sessionId, request, allowFirstDecided = false)
+            ?: return@withTransaction ExactToolApprovalDecision.Conflict
+        val target = context.entries.first()
+        val key = ToolExecutionKey(sessionId, context.assistant.id, target.toolCallId)
+        if (approved) {
+            if (dao.approve(sessionId, context.assistant.id, target.toolCallId, clock()) != 1) {
+                return@withTransaction ExactToolApprovalDecision.Conflict
+            }
+            ExactToolApprovalDecision.Decided(key, emptyList())
+        } else {
+            val createdAt = clock()
+            val terminal = terminalMessage(
+                ToolTerminalRequest(key, target.toolName, context.assistant.thoughtSignature),
+                ToolLedgerState.REJECTED,
+                "工具执行已拒绝。",
+                createdAt,
+            )
+            if (dao.decideTerminal(
+                    sessionId = sessionId,
+                    assistantMessageId = context.assistant.id,
+                    toolCallId = target.toolCallId,
+                    allowedStatuses = setOf(ToolLedgerState.PENDING_APPROVAL),
+                    terminalStatus = ToolLedgerState.REJECTED,
+                    resultMessageId = terminal.id,
+                    error = "用户拒绝工具执行",
+                    updatedAt = createdAt,
+                ) != 1
+            ) return@withTransaction ExactToolApprovalDecision.Conflict
+            database.messageDao().insert(terminal.toEntity(sessionId))
+            ExactToolApprovalDecision.Decided(key, listOf(terminal))
+        }
+    }
+
+    override suspend fun completeExactToolApproval(
+        sessionId: String,
+        request: ApprovalRequest,
+    ): ExactToolApprovalCompletion = database.withTransaction {
+        val context = validateExactApprovalContext(sessionId, request, allowFirstDecided = true)
+            ?: return@withTransaction ExactToolApprovalCompletion.Conflict
+        val decided = context.entries.first()
+        if (decided.status == ToolLedgerState.PENDING_APPROVAL) {
+            return@withTransaction ExactToolApprovalCompletion.Conflict
+        }
+        val remainingCalls = request.calls.drop(1)
+        val nextRequest = remainingCalls.takeIf { it.isNotEmpty() }?.let {
+            ToolApprovalRequestFactory.createFromIdentities(
+                assistantMessageId = context.assistant.id,
+                calls = it,
+                reason = request.reason,
+            )
+        }
+        val nextIds = remainingCalls.map { it.toolCallId }
+        check(database.messageDao().updatePendingApprovalToolIds(
+            context.assistant.id,
+            nextIds.takeIf { it.isNotEmpty() }?.let(json::encodeToString),
+        ) == 1)
+        val nextLoopStatus = when {
+            nextRequest != null -> LoopStatus.WAITING_FOR_APPROVAL
+            decided.status == ToolLedgerState.REJECTED -> LoopStatus.PAUSED
+            else -> LoopStatus.RUNNING
+        }
+        check(database.sessionDao().updateToolApprovalState(
+            sessionId,
+            nextRequest?.let(json::encodeToString),
+            nextLoopStatus.toSerializedName(),
+            clock(),
+        ) == 1)
+        ExactToolApprovalCompletion.Completed(
+            ApprovalTransition(
+                sessionId = sessionId,
+                currentAssistantMessageId = context.assistant.id,
+                loopStatus = nextLoopStatus,
+                approvalRequest = nextRequest,
+                nextAssistantMessageId = nextRequest?.assistantMessageId,
+                nextPendingToolCallIds = nextIds,
+            ),
+        )
+    }
+
+    private data class ExactApprovalContext(
+        val assistant: com.promenar.nexara.data.local.db.entity.MessageEntity,
+        val entries: List<ToolExecutionLedgerEntity>,
+    )
+
+    private suspend fun validateExactApprovalContext(
+        sessionId: String,
+        request: ApprovalRequest,
+        allowFirstDecided: Boolean,
+    ): ExactApprovalContext? {
+        if (!ToolApprovalRequestFactory.isValid(request)) return null
+        val sessionRequest = database.sessionDao().getById(sessionId)?.approvalRequest?.let {
+            runCatching { json.decodeFromString<ApprovalRequest>(it) }.getOrNull()
+        }
+        if (sessionRequest != request) return null
+        val assistantId = request.assistantMessageId ?: return null
+        val assistant = database.messageDao().getById(assistantId)
+            ?.takeIf { it.sessionId == sessionId && it.role == "assistant" }
+            ?: return null
+        val pendingIds = assistant.pendingApprovalToolIds?.let {
+            runCatching { json.decodeFromString<List<String>>(it) }.getOrNull()
+        } ?: return null
+        if (pendingIds != request.calls.map { it.toolCallId }) return null
+        val persistedCalls = assistant.toolCalls?.let {
+            runCatching { json.decodeFromString<List<ToolCall>>(it) }.getOrNull()
+        } ?: return null
+        val byCallId = persistedCalls.associateBy { it.id }
+        val entriesById = dao.getForAssistant(sessionId, assistantId).associateBy { it.toolCallId }
+        val entries = request.calls.mapIndexed { index, approvalCall ->
+            val persistedCall = byCallId[approvalCall.toolCallId] ?: return null
+            val expectedIdentity = ToolInvocationIdentityFactory.fromLegacyToolCall(
+                persistedCall,
+                requiresApproval = true,
+            ) as? ToolInvocationIdentityResolution.Valid ?: return null
+            if (expectedIdentity.identity != approvalCall.toInvocationIdentity()) return null
+            val entry = entriesById[approvalCall.toolCallId]
+                ?.takeIf { it.matches(approvalCall.toInvocationIdentity()) }
+                ?: return null
+            val validState = entry.status == ToolLedgerState.PENDING_APPROVAL ||
+                (allowFirstDecided && index == 0 && entry.status != ToolLedgerState.PENDING_APPROVAL)
+            if (!validState) return null
+            entry
+        }
+        return ExactApprovalContext(assistant, entries)
+    }
+
     override suspend fun completeToolApproval(
         sessionId: String,
         assistantMessageId: String,
@@ -510,7 +765,24 @@ class ToolExecutionLedgerRepository(
                 val (message, entries) = remaining
                 val stableEntries = stableLedgerEntries(entries)
                 val ids = stableEntries.map { it.toolCallId }.distinct()
-                val nextRequest = recoveryApprovalRequestModel(stableEntries)
+                val nextRequest = recoveryApprovalRequestModel(message, stableEntries)
+                if (nextRequest == null) {
+                    val invalidated = invalidateApprovalGroup(entries, message)
+                    database.messageDao().updatePendingApprovalToolIds(message.id, null)
+                    database.sessionDao().updateToolApprovalState(
+                        sessionId,
+                        null,
+                        LoopStatus.PAUSED.toSerializedName(),
+                        clock(),
+                    )
+                    return@withTransaction ApprovalTransition(
+                        sessionId = sessionId,
+                        currentAssistantMessageId = assistantMessageId,
+                        loopStatus = LoopStatus.PAUSED,
+                        approvalRequest = null,
+                        terminalMessages = terminalMessages + invalidated,
+                    )
+                }
                 database.messageDao().updatePendingApprovalToolIds(message.id, json.encodeToString(ids))
                 database.sessionDao().updateToolApprovalState(
                     sessionId,
@@ -617,13 +889,26 @@ class ToolExecutionLedgerRepository(
                             message.id,
                             json.encodeToString(stableEntries.map { it.toolCallId }.distinct()),
                         )
-                        database.sessionDao().updateToolApprovalState(
-                            sessionId,
-                            recoveryApprovalRequest(stableEntries),
-                            LoopStatus.WAITING_FOR_APPROVAL.toSerializedName(),
-                            clock(),
-                        )
-                        true
+                        val request = recoveryApprovalRequestModel(message, stableEntries)
+                        if (request == null) {
+                            invalidateApprovalGroup(entries, message)
+                            database.messageDao().updatePendingApprovalToolIds(message.id, null)
+                            database.sessionDao().updateToolApprovalState(
+                                sessionId,
+                                null,
+                                LoopStatus.PAUSED.toSerializedName(),
+                                clock(),
+                            )
+                            false
+                        } else {
+                            database.sessionDao().updateToolApprovalState(
+                                sessionId,
+                                json.encodeToString(request),
+                                LoopStatus.WAITING_FOR_APPROVAL.toSerializedName(),
+                                clock(),
+                            )
+                            true
+                        }
                     }
                 }
             }.getOrDefault(false)
@@ -646,15 +931,32 @@ class ToolExecutionLedgerRepository(
         return activeSessions.size
     }
 
-    private fun recoveryApprovalRequest(entries: List<ToolExecutionLedgerEntity>): String =
-        json.encodeToString(recoveryApprovalRequestModel(stableLedgerEntries(entries)))
-
-    private fun recoveryApprovalRequestModel(entries: List<ToolExecutionLedgerEntity>) =
-        ApprovalRequest(
-            toolName = entries.firstOrNull()?.toolName,
-            reason = "恢复未完成的工具审批，请确认后继续",
-            type = "tool_approval",
-        )
+    private fun recoveryApprovalRequestModel(
+        message: com.promenar.nexara.data.local.db.entity.MessageEntity,
+        entries: List<ToolExecutionLedgerEntity>,
+    ): ApprovalRequest? {
+        val calls = message.toolCalls?.let {
+            runCatching { json.decodeFromString<List<ToolCall>>(it) }.getOrNull()
+        } ?: return null
+        val callsById = calls.associateBy { it.id }
+        val orderedEntries = stableLedgerEntries(entries)
+        val candidates = orderedEntries.map { entry ->
+            val call = callsById[entry.toolCallId] ?: return null
+            ApprovalCallCandidate(call, ToolRisk.UNKNOWN)
+        }
+        val request = runCatching {
+            ToolApprovalRequestFactory.create(
+                assistantMessageId = message.id,
+                candidates = candidates,
+                reason = "恢复未完成的工具审批，请确认后继续",
+            )
+        }.getOrNull() ?: return null
+        return request.takeIf {
+            it.calls.zip(orderedEntries).all { (identity, entry) ->
+                entry.toIdentityOrNull() == identity.toInvocationIdentity()
+            }
+        }
+    }
 
     private fun stableLedgerEntries(entries: List<ToolExecutionLedgerEntity>) =
         entries.sortedWith(compareBy<ToolExecutionLedgerEntity> { it.createdAt }.thenBy { it.toolCallId })

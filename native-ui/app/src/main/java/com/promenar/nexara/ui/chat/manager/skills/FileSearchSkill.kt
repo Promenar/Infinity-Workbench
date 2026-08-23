@@ -4,6 +4,7 @@ import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.coroutines.flow.firstOrNull
 
 class FileSearchSkill(
@@ -13,6 +14,7 @@ class FileSearchSkill(
     override val name = "search_files"
     override val description = "在工作区中搜索文件（文件名匹配 + 全文 FTS5 搜索）。"
     override val mcpServerId: String? = null
+    override val risk = ToolRisk.SAFE_READ
     override val parametersSchema = """{"type":"object","properties":{"query":{"type":"string","description":"搜索关键词"},"mode":{"type":"string","enum":["name","fts"],"default":"name"}},"required":["query"]}"""
 
     override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {

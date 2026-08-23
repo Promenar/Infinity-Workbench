@@ -43,6 +43,45 @@ class SessionManagerTest {
         assertThat(result!!.title).isEqualTo("Test")
         assertThat(result.agentId).isEqualTo("a1")
         assertThat(result.loopStatus).isEqualTo(LoopStatus.COMPLETED)
+        assertThat(result.executionMode).isEqualTo("semi")
+    }
+
+    @Test
+    fun `addSession normalizes unknown execution mode to semi before persistence`() = testScope.runTest {
+        var persisted: Session? = null
+        val recordingRepository = object : ISessionRepository by stubSessionRepo {
+            override suspend fun create(session: Session) {
+                persisted = session
+            }
+        }
+        val manager = SessionManager(store, recordingRepository)
+
+        manager.addSession(Session(id = "unknown-mode", agentId = "a1", executionMode = "future"))
+
+        assertThat(persisted!!.executionMode).isEqualTo("semi")
+        assertThat(manager.getSession("unknown-mode")!!.executionMode).isEqualTo("semi")
+    }
+
+    @Test
+    fun `updateExecutionMode persists each valid mode and normalizes invalid input`() = testScope.runTest {
+        val updates = mutableListOf<Map<String, Any?>>()
+        val recordingRepository = object : ISessionRepository by stubSessionRepo {
+            override suspend fun updatePartial(id: String, values: Map<String, Any?>) {
+                updates += values
+            }
+        }
+        val manager = SessionManager(store, recordingRepository)
+        manager.addSession(Session(id = "mode-session", agentId = "a1"))
+
+        manager.updateSessionExecutionMode("mode-session", "auto")
+        manager.updateSessionExecutionMode("mode-session", "manual")
+        manager.updateSessionExecutionMode("mode-session", "semi")
+        manager.updateSessionExecutionMode("mode-session", "invalid")
+
+        assertThat(updates.map { it["executionMode"] })
+            .containsExactly("auto", "manual", "semi", "semi")
+            .inOrder()
+        assertThat(manager.getSession("mode-session")!!.executionMode).isEqualTo("semi")
     }
 
     @Test

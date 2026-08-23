@@ -474,6 +474,14 @@
     <string name="chat_approval_required">需要审批</string>
     <string name="chat_approval_executed">已执行</string>
     <string name="chat_approval_unknown_tool">工具请求</string>
+    <string name="chat_approval_risk_safe_read">安全读取</string>
+    <string name="chat_approval_risk_file_write">文件写入</string>
+    <string name="chat_approval_risk_patch">补丁修改</string>
+    <string name="chat_approval_risk_delete">删除</string>
+    <string name="chat_approval_risk_process">进程操作</string>
+    <string name="chat_approval_risk_script">脚本执行</string>
+    <string name="chat_approval_risk_external_write">外部写入</string>
+    <string name="chat_approval_risk_unknown">未知风险</string>
     <string name="chat_approval_desc_tool">Agent 请求执行工具权限，这可能会改变系统状态或产生外部影响。</string>
     <string name="chat_copy_success">已复制到剪贴板</string>
     <string name="common_decline">拒绝</string>

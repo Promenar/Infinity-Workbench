@@ -5,6 +5,8 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.remote.parser.NormalizedError
 import com.promenar.nexara.domain.generation.GenerationFailureCode
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
+import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.serialization.json.JsonElement
 
 @Serializable
@@ -60,7 +62,8 @@ data class ProtocolFileAttachment(
 @Serializable
 data class ProtocolTool(
     val type: String = "function",
-    val function: ProtocolToolFunction
+    val function: ProtocolToolFunction,
+    @Transient val risk: ToolRisk = ToolRisk.UNKNOWN,
 )
 
 @Serializable
