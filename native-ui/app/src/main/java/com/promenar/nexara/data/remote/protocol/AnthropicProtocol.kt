@@ -209,6 +209,8 @@ class AnthropicProtocol(
                 ?.jsonArray
                 ?.mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.contentOrNull }
                 .orEmpty()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             emptyList()
         }
