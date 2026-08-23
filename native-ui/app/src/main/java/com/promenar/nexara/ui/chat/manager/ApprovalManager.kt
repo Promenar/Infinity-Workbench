@@ -16,8 +16,10 @@ import com.promenar.nexara.data.repository.ToolApprovalRequestFactory
 import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.ui.chat.ChatStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
 class ApprovalManager(
@@ -214,45 +216,42 @@ class ApprovalManager(
                     setOf(decision.key.toolCallId),
                 )
             } catch (cancelled: CancellationException) {
-                val compensated = compensateAndComplete(
-                    sessionId,
-                    request,
-                    ToolLedgerState.CANCELLED,
-                    "工具执行协程已取消",
-                )
-                if (compensated is ExactToolApprovalCompletion.Completed) {
-                    mirrorApprovalTransition(compensated.transition)
+                withContext(NonCancellable) {
+                    completeOrCompensate(
+                        sessionId,
+                        request,
+                        ToolLedgerState.CANCELLED,
+                        "工具执行协程已取消",
+                    )
                 }
                 throw cancelled
             } catch (error: Exception) {
-                val compensated = compensateAndComplete(
+                val completed = completeOrCompensate(
                     sessionId,
                     request,
                     ToolLedgerState.FAILED,
                     error.message ?: error::class.java.simpleName,
                 )
-                if (compensated is ExactToolApprovalCompletion.Completed &&
-                    compensated.transition.loopStatus != LoopStatus.WAITING_FOR_APPROVAL
-                ) {
-                    mirrorApprovalTransition(compensated.transition)
+                if (completed != null && completed.transition.loopStatus != LoopStatus.WAITING_FOR_APPROVAL) {
                     onGenerateMessage?.invoke(sessionId, intervention.orEmpty(), true)
-                } else if (compensated is ExactToolApprovalCompletion.Completed) {
-                    mirrorApprovalTransition(compensated.transition)
                 }
                 return
             }
         }
-        var completion = ledger.completeExactToolApproval(sessionId, request)
-        if (approved && completion !is ExactToolApprovalCompletion.Completed) {
-            completion = compensateAndComplete(
+        val directCompletion = ledger.completeExactToolApproval(sessionId, request)
+        val completion = if (directCompletion is ExactToolApprovalCompletion.Completed) {
+            mirrorApprovalTransition(directCompletion.transition)
+            directCompletion
+        } else if (approved) {
+            completeOrCompensate(
                 sessionId,
                 request,
                 ToolLedgerState.FAILED,
                 "工具执行未写入稳定终态",
             ) ?: return
+        } else {
+            return
         }
-        if (completion !is ExactToolApprovalCompletion.Completed) return
-        mirrorApprovalTransition(completion.transition)
         if (completion.transition.loopStatus == LoopStatus.WAITING_FOR_APPROVAL || !approved) return
         onGenerateMessage?.invoke(sessionId, intervention.orEmpty(), true)
     }
@@ -272,18 +271,25 @@ class ApprovalManager(
     private fun approvalLock(sessionId: String): Mutex =
         approvalLocks.computeIfAbsent(sessionId) { Mutex() }
 
-    private suspend fun compensateAndComplete(
+    private suspend fun completeOrCompensate(
         sessionId: String,
         request: ApprovalRequest,
         state: ToolLedgerState,
         error: String,
-    ): ExactToolApprovalCompletion? {
+    ): ExactToolApprovalCompletion.Completed? {
+        val existing = ledger.completeExactToolApproval(sessionId, request)
+        if (existing is ExactToolApprovalCompletion.Completed) {
+            mirrorApprovalTransition(existing.transition)
+            return existing
+        }
         val compensation = ledger.compensateExactToolApproval(sessionId, request, state, error)
         if (compensation !is ExactToolApprovalDecision.Decided) return null
         compensation.terminalMessages.forEach { message ->
             messageManager.mirrorPersistedMessage(sessionId, message)
         }
         val completion = ledger.completeExactToolApproval(sessionId, request)
+        if (completion !is ExactToolApprovalCompletion.Completed) return null
+        mirrorApprovalTransition(completion.transition)
         return completion
     }
 

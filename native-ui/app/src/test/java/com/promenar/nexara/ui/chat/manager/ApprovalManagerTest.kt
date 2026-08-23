@@ -24,6 +24,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -63,6 +64,7 @@ class ApprovalManagerTest {
 
     private class ApprovalLedger : ToolExecutionLedger {
         val states = mutableMapOf<ToolExecutionKey, ToolLedgerState>()
+        var suspendCompensationCancellably = false
         private val identities = mutableMapOf<ToolExecutionKey, ToolInvocationIdentity>()
         var completionTransition: com.promenar.nexara.data.repository.ApprovalTransition? = null
         override suspend fun register(
@@ -237,6 +239,7 @@ class ApprovalManagerTest {
             state: ToolLedgerState,
             error: String,
         ): ExactToolApprovalDecision {
+            if (suspendCompensationCancellably) yield()
             val current = request.calls.firstOrNull() ?: return ExactToolApprovalDecision.Conflict
             val key = ToolExecutionKey(sessionId, request.assistantMessageId!!, current.toolCallId)
             if (states[key] !in setOf(ToolLedgerState.APPROVED, ToolLedgerState.RUNNING)) {
@@ -568,6 +571,69 @@ class ApprovalManagerTest {
     }
 
     @Test
+    fun callbackExceptionAfterSucceededTerminalCompletesAndAdvancesWithoutRewritingOutcome() = testScope.runTest {
+        val calls = listOf(
+            ToolCall("succeeded", "write_file", "{}"),
+            ToolCall("next", "delete_file", "{}"),
+        )
+        seedSessionWithAssistant(toolCalls = calls, pendingApprovalToolIds = calls.map { it.id })
+        calls.forEach { ledger.register(ToolExecutionKey("s1", "m1", it.id), it.name, true) }
+        val request = ToolApprovalRequestFactory.create(
+            "m1",
+            calls.map { ApprovalCallCandidate(it, com.promenar.nexara.domain.tool.ToolRisk.FILE_WRITE) },
+        )
+        approvalManager.setApprovalRequest("s1", request)
+        val key = ToolExecutionKey("s1", "m1", calls.first().id)
+        approvalManager.setCallbacks(
+            onGenerateMessage = { _, _, _ -> },
+            onExecuteTools = { _, _, _ ->
+                ledger.states[key] = ToolLedgerState.SUCCEEDED
+                throw IllegalStateException("result mirror failed")
+            },
+        )
+
+        approvalManager.resumeGeneration("s1", request, approved = true)
+
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.SUCCEEDED)
+        assertThat(store.getSession("s1")!!.approvalRequest!!.calls.map { it.toolCallId })
+            .containsExactly("next")
+        assertThat(store.getSession("s1")!!.messages.first().pendingApprovalToolIds)
+            .containsExactly("next")
+        assertThat(store.getSession("s1")!!.messages.filter { it.role == MessageRole.TOOL }).isEmpty()
+    }
+
+    @Test
+    fun callbackExceptionAfterFailedTerminalCompletesAndAdvancesWithoutRewritingOutcome() = testScope.runTest {
+        val calls = listOf(
+            ToolCall("failed", "write_file", "{}"),
+            ToolCall("next", "delete_file", "{}"),
+        )
+        seedSessionWithAssistant(toolCalls = calls, pendingApprovalToolIds = calls.map { it.id })
+        calls.forEach { ledger.register(ToolExecutionKey("s1", "m1", it.id), it.name, true) }
+        val request = ToolApprovalRequestFactory.create(
+            "m1",
+            calls.map { ApprovalCallCandidate(it, com.promenar.nexara.domain.tool.ToolRisk.FILE_WRITE) },
+        )
+        approvalManager.setApprovalRequest("s1", request)
+        val key = ToolExecutionKey("s1", "m1", calls.first().id)
+        approvalManager.setCallbacks(
+            onGenerateMessage = { _, _, _ -> },
+            onExecuteTools = { _, _, _ ->
+                ledger.states[key] = ToolLedgerState.FAILED
+                throw IllegalStateException("result mirror failed")
+            },
+        )
+
+        approvalManager.resumeGeneration("s1", request, approved = true)
+
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(store.getSession("s1")!!.approvalRequest!!.calls.map { it.toolCallId })
+            .containsExactly("next")
+        assertThat(store.getSession("s1")!!.messages.first().pendingApprovalToolIds)
+            .containsExactly("next")
+    }
+
+    @Test
     fun callbackCancellationCompensatesThenRethrows() = testScope.runTest {
         val call = ToolCall("cancelled", "write_file", "{}")
         seedSessionWithAssistant(toolCalls = listOf(call), pendingApprovalToolIds = listOf(call.id))
@@ -588,6 +654,46 @@ class ApprovalManagerTest {
         }.exceptionOrNull()
 
         assertThat(failure).isInstanceOf(CancellationException::class.java)
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.CANCELLED)
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
+        assertThat(store.getSession("s1")!!.messages.last().content).contains("已取消")
+    }
+
+    @Test
+    fun realJobCancellationCompletesCompensationInNonCancellableContextAndRethrows() = testScope.runTest {
+        val call = ToolCall("job-cancelled", "write_file", "{}")
+        seedSessionWithAssistant(toolCalls = listOf(call), pendingApprovalToolIds = listOf(call.id))
+        val key = ToolExecutionKey("s1", "m1", call.id)
+        ledger.register(key, call.name, true)
+        ledger.suspendCompensationCancellably = true
+        val request = ToolApprovalRequestFactory.create(
+            "m1",
+            listOf(ApprovalCallCandidate(call, com.promenar.nexara.domain.tool.ToolRisk.FILE_WRITE)),
+        )
+        approvalManager.setApprovalRequest("s1", request)
+        val callbackEntered = CompletableDeferred<Unit>()
+        val propagated = CompletableDeferred<Throwable>()
+        approvalManager.setCallbacks(
+            onGenerateMessage = null,
+            onExecuteTools = { _, _, _ ->
+                callbackEntered.complete(Unit)
+                CompletableDeferred<Unit>().await()
+            },
+        )
+
+        val job = launch {
+            try {
+                approvalManager.resumeGeneration("s1", request, approved = true)
+            } catch (error: Throwable) {
+                propagated.complete(error)
+                throw error
+            }
+        }
+        callbackEntered.await()
+        job.cancel(CancellationException("real cancellation"))
+        job.join()
+
+        assertThat(propagated.await()).isInstanceOf(CancellationException::class.java)
         assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.CANCELLED)
         assertThat(store.getSession("s1")!!.approvalRequest).isNull()
         assertThat(store.getSession("s1")!!.messages.last().content).contains("已取消")
