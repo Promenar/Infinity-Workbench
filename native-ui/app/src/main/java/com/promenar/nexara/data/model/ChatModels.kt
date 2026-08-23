@@ -382,7 +382,7 @@ data class Session(
     val isPinned: Boolean = false,
     val scrollOffset: Double? = null,
     val draft: String? = null,
-    val executionMode: String = "auto",
+    val executionMode: String = "semi",
     val loopStatus: LoopStatus = LoopStatus.IDLE,
     val pendingIntervention: String? = null,
     val approvalRequest: ApprovalRequest? = null,

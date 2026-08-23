@@ -25,3 +25,14 @@ data class Agent(
     val descriptionCustomized: Boolean = false,
     val createdAt: Long = 0L
 )
+
+object ExecutionModeCodec {
+    fun parseOrSemi(raw: String?): ExecutionMode = when (raw?.trim()?.lowercase()) {
+        "auto" -> ExecutionMode.AUTO
+        "manual" -> ExecutionMode.MANUAL
+        "semi" -> ExecutionMode.SEMI
+        else -> ExecutionMode.SEMI
+    }
+
+    fun serialize(mode: ExecutionMode): String = mode.name.lowercase()
+}

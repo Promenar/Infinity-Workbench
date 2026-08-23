@@ -23,6 +23,7 @@ import com.promenar.nexara.data.local.db.dao.ToolExecutionLedgerDao
 import com.promenar.nexara.data.local.db.dao.VectorDao
 import com.promenar.nexara.data.local.db.dao.VectorizationTaskDao
 import com.promenar.nexara.data.local.db.dao.WorkspaceSeqDao
+import com.promenar.nexara.data.local.db.dao.WorkspaceMutationDao
 import com.promenar.nexara.data.local.db.entity.AgentEntity
 import com.promenar.nexara.data.local.db.entity.ArtifactEntity
 import com.promenar.nexara.data.local.db.entity.AttachmentEntity
@@ -45,6 +46,7 @@ import com.promenar.nexara.data.local.db.entity.VectorEntity
 import com.promenar.nexara.data.local.db.entity.VectorFtsEntity
 import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
 import com.promenar.nexara.data.local.db.entity.WorkspaceSeqEntity
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
 
 @Database(
     entities = [
@@ -70,8 +72,9 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceSeqEntity
         TaskNodeEntity::class,
         ToolExecutionLedgerEntity::class,
         FileVersionEntity::class,
+        WorkspaceMutationEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -96,4 +99,5 @@ abstract class NexaraDatabase : RoomDatabase() {
     abstract fun taskNodeDao(): TaskNodeDao
     abstract fun toolExecutionLedgerDao(): ToolExecutionLedgerDao
     abstract fun fileVersionDao(): FileVersionDao
+    abstract fun workspaceMutationDao(): WorkspaceMutationDao
 }

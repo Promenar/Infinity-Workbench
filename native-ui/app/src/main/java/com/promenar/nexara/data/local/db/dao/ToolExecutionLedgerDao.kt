@@ -25,6 +25,24 @@ interface ToolExecutionLedgerDao {
     ): ToolExecutionLedgerEntity?
 
     @Query(
+        """SELECT * FROM tool_execution_ledger
+            WHERE session_id = :sessionId
+              AND assistant_message_id = :assistantMessageId
+              AND tool_call_id = :toolCallId
+              AND runtime_tool_id = :runtimeToolId
+              AND arguments_digest = :argumentsDigest
+              AND definition_digest = :definitionDigest""",
+    )
+    suspend fun getByIdentity(
+        sessionId: String,
+        assistantMessageId: String,
+        toolCallId: String,
+        runtimeToolId: String,
+        argumentsDigest: String,
+        definitionDigest: String,
+    ): ToolExecutionLedgerEntity?
+
+    @Query(
         """UPDATE tool_execution_ledger
            SET status = 'APPROVED', updated_at = :updatedAt
            WHERE session_id = :sessionId
@@ -152,4 +170,7 @@ interface ToolExecutionLedgerDao {
            )""",
     )
     suspend fun deleteOrphans(): Int
+
+    @Query("DELETE FROM tool_execution_ledger WHERE session_id = :sessionId")
+    suspend fun deleteBySession(sessionId: String): Int
 }

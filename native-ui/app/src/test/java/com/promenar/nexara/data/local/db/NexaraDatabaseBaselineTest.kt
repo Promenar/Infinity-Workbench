@@ -30,8 +30,10 @@ class NexaraDatabaseBaselineTest {
     fun backupSchemaGateMatchesExportedRoomIdentityHash() {
         val schema = exportedSchema()
 
-        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V2_IDENTITY_HASH)
+        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V3_IDENTITY_HASH)
             .isEqualTo(schema.identityHash)
+        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V2_IDENTITY_HASH)
+            .isEqualTo(exportedSchema(2).identityHash)
         assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V1_IDENTITY_HASH)
             .isEqualTo(exportedSchema(1).identityHash)
     }
@@ -60,7 +62,7 @@ class NexaraDatabaseBaselineTest {
     }
 
     @Test
-    fun realDatabaseCanBeCreatedClosedAndReopenedWithSchemaV2() {
+    fun realDatabaseCanBeCreatedClosedAndReopenedWithSchemaV3() {
         val schema = exportedSchema()
         val first = openDatabase()
         val databaseFile = context.getDatabasePath(databaseName)
@@ -81,7 +83,7 @@ class NexaraDatabaseBaselineTest {
         val builder = "Room.databaseBuilder(this, NexaraDatabase::class.java, \"nexara_v2.db\")"
 
         assertThat(source).contains(builder)
-        assertThat(source).contains(".addMigrations(MIGRATION_1_2)")
+        assertThat(source).contains(".addMigrations(MIGRATION_1_2, MIGRATION_2_3)")
         assertThat(source).doesNotContain(".fallbackToDestructiveMigration")
     }
 
@@ -90,7 +92,7 @@ class NexaraDatabaseBaselineTest {
             .allowMainThreadQueries()
             .build()
 
-    private fun exportedSchema(version: Int = 2): ExportedSchema {
+    private fun exportedSchema(version: Int = 3): ExportedSchema {
         val file = File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json")
         assertThat(file.isFile).isTrue()
         val database = Json.parseToJsonElement(file.readText()).jsonObject
@@ -133,8 +135,8 @@ class NexaraDatabaseBaselineTest {
         database: SupportSQLiteDatabase,
         schema: ExportedSchema,
     ) {
-        assertThat(schema.version).isEqualTo(2)
-        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(2L)
+        assertThat(schema.version).isEqualTo(3)
+        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(3L)
         assertThat(database.longQuery("PRAGMA foreign_keys")).isEqualTo(1L)
 
         val runtimeTables = database.stringColumnQuery(
@@ -215,6 +217,9 @@ class NexaraDatabaseBaselineTest {
             "assistant_message_id",
             "tool_call_id",
             "tool_name",
+            "runtime_tool_id",
+            "arguments_digest",
+            "definition_digest",
             "requires_approval",
             "status",
             "result_message_id",

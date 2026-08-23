@@ -298,8 +298,8 @@ class RoomBackupDataSourceTest {
             val text = snapshot.database.toString(Charsets.UTF_8)
             val payload = Json.parseToJsonElement(text).jsonObject
 
-            assertThat(snapshot.databaseSchemaVersion).isEqualTo(1)
-            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("1")
+            assertThat(snapshot.databaseSchemaVersion).isEqualTo(2)
+            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("2")
 
             listOf(
                 "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",
@@ -309,6 +309,7 @@ class RoomBackupDataSourceTest {
             listOf(
                 "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_jit_cache",
                 "vectorization_tasks", "audit_logs", "tool_execution_ledger", "file_versions",
+                "workspace_mutations",
             ).forEach { assertThat(text).doesNotContain("\"$it\"") }
 
             db.clearAllTables()
@@ -324,6 +325,31 @@ class RoomBackupDataSourceTest {
             assertThat(Path.of(db.artifactDao().getById("artifact-1")!!.workspacePath!!).startsWith(restoreParent))
                 .isTrue()
         }
+    }
+
+    @Test
+    fun `restore upgrades v1 payload without agent execution mode to semi`() = runBlocking {
+        seedCompleteGraph()
+        val current = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(current.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        val legacyAgents = JsonArray(
+            tables.getValue("agents").jsonArray.map { row ->
+                JsonObject(row.jsonObject - "execution_mode")
+            },
+        )
+        val legacyDatabase = JsonObject(
+            root + mapOf(
+                "schemaVersion" to JsonPrimitive(1),
+                "tables" to JsonObject(tables + ("agents" to legacyAgents)),
+            ),
+        ).toString().toByteArray()
+
+        db.clearAllTables()
+        newDataSource().restore(validated(current, database = legacyDatabase))
+
+        assertThat(db.agentDao().getById("agent-1")!!.executionMode).isEqualTo("semi")
+        assertThat(db.sessionDao().getById("session-1")!!.executionMode).isEqualTo("semi")
     }
 
     @Test
@@ -361,7 +387,7 @@ class RoomBackupDataSourceTest {
 
             listOf(
                 "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_jit_cache",
-                "vectorization_tasks", "tool_execution_ledger", "file_versions",
+                "vectorization_tasks", "tool_execution_ledger", "file_versions", "workspace_mutations",
             ).forEach { table -> assertThat(rowCount(table)).isEqualTo(0) }
             assertThat(rowCount("audit_logs")).isEqualTo(1)
         }

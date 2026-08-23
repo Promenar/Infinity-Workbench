@@ -26,8 +26,8 @@ data class SessionEntity(
     @ColumnInfo(name = "scroll_offset")
     val scrollOffset: Double? = null,
     val draft: String? = null,
-    @ColumnInfo(name = "execution_mode", defaultValue = "auto")
-    val executionMode: String = "auto",
+    @ColumnInfo(name = "execution_mode", defaultValue = "semi")
+    val executionMode: String = "semi",
     @ColumnInfo(name = "loop_status", defaultValue = "idle")
     val loopStatus: String = "idle",
     @ColumnInfo(name = "pending_intervention")

@@ -33,6 +33,9 @@ interface FileEntryDao {
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :uuid")
     suspend fun getByUuid(workspaceRootUuid: String, uuid: String): FileEntry?
 
+    @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid IN (:uuids)")
+    suspend fun getByUuids(workspaceRootUuid: String, uuids: List<String>): List<FileEntry>
+
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :uuid")
     fun observeByUuid(workspaceRootUuid: String, uuid: String): Flow<FileEntry?>
 
@@ -85,6 +88,18 @@ interface FileEntryDao {
 
     @Query("DELETE FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid IN (:uuids)")
     suspend fun deleteByUuids(workspaceRootUuid: String, uuids: List<String>)
+
+    @Query("DELETE FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid")
+    suspend fun deleteByRoot(workspaceRootUuid: String): Int
+
+    @Query("""DELETE FROM workspace_files
+        WHERE workspace_root_uuid = :workspaceRootUuid
+          AND (
+            (:prefix = '/' AND substr(materialized_path, 1, 1) = '/')
+            OR materialized_path = :prefix
+            OR substr(materialized_path, 1, length(:prefix) + 1) = :prefix || '/'
+          )""")
+    suspend fun deleteSubtree(workspaceRootUuid: String, prefix: String): Int
 
     @Query("UPDATE workspace_files SET vectorized_at = NULL, kg_extracted_at = NULL WHERE workspace_root_uuid = :workspaceRootUuid")
     suspend fun resetAllRAGStatus(workspaceRootUuid: String)

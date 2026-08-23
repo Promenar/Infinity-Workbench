@@ -33,6 +33,7 @@ import java.util.UUID
 
 internal const val ROOM_SCHEMA_V1_IDENTITY_HASH = "1cec46d28d19744e8cb885fe6abdfcf1"
 internal const val ROOM_SCHEMA_V2_IDENTITY_HASH = "7777303c63145d5bbb9b161b38f94495"
+internal const val ROOM_SCHEMA_V3_IDENTITY_HASH = "7a7a094ee1fd1b9b144a0a241812e53f"
 
 class RoomBackupDataSource(
     private val database: NexaraDatabase,
@@ -425,13 +426,32 @@ class RoomBackupDataSource(
 
     private fun parseDatabase(bytes: ByteArray): DatabaseBackupPayload {
         if (bytes.isEmpty()) throw BackupValidationException("恢复包缺少 database.json")
-        return try {
+        val decoded: DatabaseBackupPayload = try {
             json.decodeFromString(bytes.toString(Charsets.UTF_8))
         } catch (error: SerializationException) {
             throw BackupValidationException("数据库 payload 无效", error)
         } catch (error: IllegalArgumentException) {
             throw BackupValidationException("数据库 payload 无效", error)
         }
+        return when (decoded.schemaVersion) {
+            DATABASE_SCHEMA_VERSION -> decoded
+            1 -> upgradeV1Payload(decoded)
+            else -> decoded
+        }
+    }
+
+    private fun upgradeV1Payload(payload: DatabaseBackupPayload): DatabaseBackupPayload {
+        val agents = payload.tables["agents"]
+            ?: throw BackupValidationException("数据库 payload 缺少表: agents")
+        return payload.copy(
+            schemaVersion = DATABASE_SCHEMA_VERSION,
+            tables = payload.tables + (
+                "agents" to agents.map { row ->
+                    if ("execution_mode" in row) row
+                    else JsonObject(row + ("execution_mode" to JsonPrimitive("semi")))
+                }
+            ),
+        )
     }
 
     private fun parsePreferences(bytes: ByteArray): BackupPreferenceSnapshot {
@@ -585,8 +605,8 @@ class RoomBackupDataSource(
         val identityHash = sqlite.query(
             "SELECT identity_hash FROM room_master_table WHERE id = 42"
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-        if (identityHash != ROOM_SCHEMA_V2_IDENTITY_HASH) {
-            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v2")
+        if (identityHash != ROOM_SCHEMA_V3_IDENTITY_HASH) {
+            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v3")
         }
         INSERT_ORDER.forEach { table ->
             val columns = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
@@ -1336,7 +1356,7 @@ class RoomBackupDataSource(
     }
 
     private companion object {
-        const val DATABASE_SCHEMA_VERSION = 1
+        const val DATABASE_SCHEMA_VERSION = 2
         const val FILE_TABLE = "workspace_files"
         const val OWNER_MARKER = ".restore-owner"
         const val OLD_CLEANUP_MARKER = ".restore-cleanup-owner"
@@ -1366,7 +1386,7 @@ class RoomBackupDataSource(
         )
         val DELETE_ORDER = INSERT_ORDER.reversed()
         val DERIVED_DELETE_ORDER = listOf(
-            "tool_execution_ledger", "file_versions", "vectorization_tasks",
+            "workspace_mutations", "tool_execution_ledger", "file_versions", "vectorization_tasks",
             "kg_edges", "kg_nodes", "kg_jit_cache", "vectors_fts", "vectors", "audit_logs",
         )
     }

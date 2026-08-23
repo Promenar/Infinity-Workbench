@@ -36,4 +36,6 @@ data class AgentEntity(
     val retrievalConfig: com.promenar.nexara.data.agent.AgentRetrievalConfig? = null,
     @ColumnInfo(name = "use_inherited_config")
     val useInheritedConfig: Boolean = true,
+    @ColumnInfo(name = "execution_mode", defaultValue = "semi")
+    val executionMode: String = "semi",
 )
