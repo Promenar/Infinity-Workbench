@@ -49,6 +49,40 @@ class VertexCredentialParserTest {
     }
 
     @Test
+    fun `credential fields reject every non string JSON type with typed missing reasons`() {
+        val nonStringValues = listOf("{}", "[]", "null", "7", "true")
+
+        nonStringValues.forEach { invalidValue ->
+            val emailError = assertThrows(VertexCredentialException::class.java) {
+                VertexCredentialParser.parse(
+                    """{"project_id":"project-safe","client_email":$invalidValue,"private_key":"unused"}""",
+                )
+            }
+            assertThat(emailError.reason)
+                .isEqualTo(VertexCredentialFailure.MISSING_CLIENT_EMAIL)
+
+            val privateKeyError = assertThrows(VertexCredentialException::class.java) {
+                VertexCredentialParser.parse(
+                    """{"project_id":"project-safe","client_email":"service@example.invalid","private_key":$invalidValue}""",
+                )
+            }
+            assertThat(privateKeyError.reason)
+                .isEqualTo(VertexCredentialFailure.MISSING_PRIVATE_KEY)
+
+            val fixture = validCredentialJson()
+            val malformedProject = fixture.json.replace(
+                "\"project_id\":\"project-safe\"",
+                "\"project_id\":$invalidValue",
+            )
+            val projectError = assertThrows(VertexCredentialException::class.java) {
+                VertexCredentialParser.parse(malformedProject)
+            }
+            assertThat(projectError.reason)
+                .isEqualTo(VertexCredentialFailure.MISSING_PROJECT_ID)
+        }
+    }
+
+    @Test
     fun `标准 Google PEM 末尾换行可解析`() {
         val fixture = validCredentialJson(trailingPemNewline = true)
 

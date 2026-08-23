@@ -266,6 +266,46 @@ class ProviderEndpointResolverTest {
     }
 
     @Test
+    fun `Vertex 官方 origin 拒绝 userinfo 显式端口与 query`() {
+        listOf(
+            "https://user@us-central1-aiplatform.googleapis.com",
+            "https://us-central1-aiplatform.googleapis.com:443",
+            "https://us-central1-aiplatform.googleapis.com?alt=sse",
+        ).forEach { configured ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ProviderEndpointResolver.resolve(
+                    ProtocolType.Google_VertexAI,
+                    configured,
+                    ProviderEndpointTarget.VertexInference(
+                        projectId = "project-safe",
+                        location = VERTEX_DEFAULT_LOCATION,
+                        model = "gemini-2.5-pro",
+                        streaming = false,
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `Vertex 非默认 region 使用匹配的官方 regional origin`() {
+        assertThat(
+            ProviderEndpointResolver.resolve(
+                ProtocolType.Google_VertexAI,
+                "https://europe-west4-aiplatform.googleapis.com",
+                ProviderEndpointTarget.VertexInference(
+                    projectId = "project-safe",
+                    location = "europe-west4",
+                    model = "gemini-2.5-pro",
+                    streaming = false,
+                ),
+            ),
+        ).isEqualTo(
+            "https://europe-west4-aiplatform.googleapis.com/v1/projects/project-safe/locations/europe-west4/publishers/google/models/gemini-2.5-pro:generateContent",
+        )
+    }
+
+    @Test
     fun `Vertex project location model 分别拒绝 dot segment`() {
         listOf(
             Triple(".", VERTEX_DEFAULT_LOCATION, "gemini-2.5-pro"),

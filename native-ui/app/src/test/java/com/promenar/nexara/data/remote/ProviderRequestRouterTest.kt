@@ -160,6 +160,20 @@ class ProviderRequestRouterTest {
     }
 
     @Test
+    fun `Vertex 非字符串凭证字段稳定映射为凭证错误而不异常逸出`() {
+        seedVertex(
+            "vertex-typed",
+            "gemini",
+            """{"project_id":"project","client_email":{},"private_key":"unused"}""",
+        )
+
+        val failure = router.resolve("vertex-typed::gemini") as ProviderResolution.Failure
+
+        assertThat(failure.reason).isEqualTo(ProviderResolutionError.VERTEX_CREDENTIAL_INVALID)
+        assertThat(createdConfigs).isEmpty()
+    }
+
+    @Test
     fun `Vertex 完整有效凭证在创建客户端前解析出 projectId`() {
         val privateKey = KeyPairGenerator.getInstance("RSA").apply { initialize(1024) }
             .generateKeyPair().private.encoded

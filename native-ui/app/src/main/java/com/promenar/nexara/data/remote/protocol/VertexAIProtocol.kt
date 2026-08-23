@@ -57,8 +57,21 @@ class VertexAIProtocol(
     override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = channelFlow {
         activeChannel = null
 
+        val credential = try {
+            parsedCredential()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            send(StreamChunk.Error(
+                code = com.promenar.nexara.domain.generation.GenerationFailureCode.AUTH,
+                retryable = false,
+                technical = "Vertex AI Authentication Failed: ${safeCredentialError(error)}",
+            ))
+            return@channelFlow
+        }
+
         val endpoint = try {
-            inferenceUrl(request, streaming = true)
+            inferenceUrl(request, streaming = true, credential = credential)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -182,8 +195,15 @@ class VertexAIProtocol(
     }
 
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
+        val credential = try {
+            parsedCredential()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            throw Exception("Vertex AI Authentication Failed: ${safeCredentialError(error)}")
+        }
         // 必须在创建 JWT 或交换 OAuth token 前验证 inference origin 与所有路径 segment。
-        val endpoint = inferenceUrl(request, streaming = false)
+        val endpoint = inferenceUrl(request, streaming = false, credential = credential)
         val token: String
         try {
             token = getAccessToken()
@@ -308,8 +328,11 @@ class VertexAIProtocol(
         return TokenResponse(accessToken, expiresIn)
     }
 
-    private fun inferenceUrl(request: PromptRequest, streaming: Boolean): String {
-        val credential = parsedCredential()
+    private fun inferenceUrl(
+        request: PromptRequest,
+        streaming: Boolean,
+        credential: ParsedVertexCredential,
+    ): String {
         return ProviderEndpointResolver.resolve(
             protocolType,
             baseUrl,

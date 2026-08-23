@@ -167,6 +167,36 @@ class ProviderConnectionProbeTest {
     }
 
     @Test
+    fun `Vertex 非字符串凭证字段报告 credentials invalid 而不是 endpoint invalid`() = runTest {
+        var requestCount = 0
+        val probe = ProviderConnectionProbe(
+            HttpClient(MockEngine {
+                requestCount++
+                error("非法凭证不应进入网络")
+            }),
+        )
+
+        val result = probe.probe(
+            UnifiedProviderConfig(
+                protocolType = ProtocolType.Google_VertexAI,
+                baseUrl = "https://us-central1-aiplatform.googleapis.com",
+                apiKey = "",
+                defaultModel = "gemini-2.5-pro",
+                serviceAccountJson =
+                    """{"project_id":"project-safe","client_email":{},"private_key":"unused"}""",
+                location = VERTEX_DEFAULT_LOCATION,
+            ),
+        )
+
+        assertThat(result).isEqualTo(
+            ProviderConnectionProbeResult.Failure(
+                ProviderConnectionProbeFailure.CREDENTIALS_INVALID,
+            ),
+        )
+        assertThat(requestCount).isEqualTo(0)
+    }
+
+    @Test
     fun `models probe rejects 2xx without JSON object data array`() = runTest {
         listOf(
             "" to HttpStatusCode.NoContent,

@@ -150,6 +150,8 @@ class OpenAIResponsesProtocol(
             httpClient.get(endpoint) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             return emptyList()
         }

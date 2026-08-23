@@ -179,7 +179,9 @@ class GenericOpenAICompatProtocol(
                     header("Authorization", "Bearer $apiKey")
                 }
             }
-        } catch (e: Exception) {
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
             return emptyList()
         }
 

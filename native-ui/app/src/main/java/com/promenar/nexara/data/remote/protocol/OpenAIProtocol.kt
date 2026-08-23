@@ -166,6 +166,8 @@ class OpenAIProtocol(
             response = httpClient.get(endpoint) {
                 header("Authorization", "Bearer $apiKey")
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             return emptyList()
         }

@@ -198,6 +198,8 @@ class AnthropicProtocol(
                 header("x-api-key", apiKey)
                 header("anthropic-version", anthropicVersion)
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             return emptyList()
         }

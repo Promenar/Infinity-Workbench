@@ -6,10 +6,10 @@ import java.security.Signature
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Base64
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 enum class VertexCredentialFailure {
@@ -55,17 +55,23 @@ object VertexCredentialParser {
         } catch (_: Exception) {
             throw VertexCredentialException(VertexCredentialFailure.INVALID_JSON)
         }
-        val clientEmail = root["client_email"]?.jsonPrimitive?.contentOrNull
+        val clientEmail = (root["client_email"] as? JsonPrimitive)
+            ?.takeIf(JsonPrimitive::isString)
+            ?.contentOrNull
             ?.trim()
             ?.takeIf(String::isNotEmpty)
             ?: throw VertexCredentialException(VertexCredentialFailure.MISSING_CLIENT_EMAIL)
-        val privateKeyPem = root["private_key"]?.jsonPrimitive?.contentOrNull
+        val privateKeyPem = (root["private_key"] as? JsonPrimitive)
+            ?.takeIf(JsonPrimitive::isString)
+            ?.contentOrNull
             ?.takeIf(String::isNotBlank)
             ?: throw VertexCredentialException(VertexCredentialFailure.MISSING_PRIVATE_KEY)
         val privateKey = parsePkcs8RsaKey(privateKeyPem)
 
         val requestedProjectId = explicitProjectId.trim()
-        val credentialProjectId = root["project_id"]?.jsonPrimitive?.contentOrNull
+        val credentialProjectId = (root["project_id"] as? JsonPrimitive)
+            ?.takeIf(JsonPrimitive::isString)
+            ?.contentOrNull
             ?.trim()
             ?.takeIf(String::isNotEmpty)
         if (requestedProjectId.isNotEmpty() &&
