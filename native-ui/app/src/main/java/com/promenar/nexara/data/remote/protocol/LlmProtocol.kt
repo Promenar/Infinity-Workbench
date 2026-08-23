@@ -188,7 +188,7 @@ sealed class ProtocolType(
         "Anthropic Messages", "https://api.anthropic.com", "/v1/messages", R.drawable.ic_provider_anthropic
     )
     data object Google_VertexAI : ProtocolType(
-        "Google Vertex AI", "https://generativelanguage.googleapis.com", "/v1beta/models", R.drawable.ic_provider_gemini
+        "Google Vertex AI", "https://us-central1-aiplatform.googleapis.com", "", R.drawable.ic_provider_gemini
     )
     data object Cohere_Chat : ProtocolType(
         "Cohere Chat", "https://api.cohere.ai", "/v2/chat", R.drawable.ic_provider_cohere
@@ -197,7 +197,7 @@ sealed class ProtocolType(
         "Mistral Chat", "https://api.mistral.ai", "/v1/chat/completions", R.drawable.ic_provider_mistral
     )
     data object DeepSeek : ProtocolType(
-        "DeepSeek", "https://api.deepseek.com", "/v1/chat/completions", R.drawable.ic_provider_deepseek
+        "DeepSeek", "https://api.deepseek.com", "/chat/completions", R.drawable.ic_provider_deepseek
     )
     data object Generic_OpenAI_Compat : ProtocolType(
         "OpenAI 兼容 (通用)", "", "/v1/chat/completions", R.drawable.ic_provider_custom

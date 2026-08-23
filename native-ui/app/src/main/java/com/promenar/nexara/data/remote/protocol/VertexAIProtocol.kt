@@ -1,5 +1,9 @@
 package com.promenar.nexara.data.remote.protocol
 
+import com.promenar.nexara.data.remote.provider.ParsedVertexCredential
+import com.promenar.nexara.data.remote.provider.VertexCredentialException
+import com.promenar.nexara.data.remote.provider.VertexCredentialFailure
+import com.promenar.nexara.data.remote.provider.VertexCredentialParser
 import com.promenar.nexara.data.remote.parser.ErrorNormalizer
 import com.promenar.nexara.data.remote.parser.HttpStatusException
 import io.ktor.client.*
@@ -16,17 +20,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
-import java.security.KeyFactory
-import java.security.Signature
-import java.security.interfaces.RSAPrivateCrtKey
-import java.security.spec.PKCS8EncodedKeySpec
-import java.util.Base64
 
 class VertexAIProtocol(
     private val serviceAccountJson: String,
     private val projectId: String,
-    private val location: String = "us-central1",
+    private val location: String = VERTEX_DEFAULT_LOCATION,
     private val model: String = "",
+    private val baseUrl: String = "",
     httpClient: HttpClient? = null
 ) : LlmProtocol {
 
@@ -52,12 +52,7 @@ class VertexAIProtocol(
     private var tokenExpiryMs: Long = 0L
 
     @Volatile
-    private var serviceAccountKeyData: ServiceAccountKey? = null
-
-    private data class ServiceAccountKey(
-        val clientEmail: String,
-        val privateKey: String
-    )
+    private var parsedCredential: ParsedVertexCredential? = null
 
     override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = channelFlow {
         activeChannel = null
@@ -78,7 +73,7 @@ class VertexAIProtocol(
 
         val response: HttpResponse
         try {
-            response = httpClient.post(buildStreamingUrl()) {
+            response = httpClient.post(inferenceUrl(request, streaming = true)) {
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $token")
                 setBody(buildRequestBody(request))
@@ -177,13 +172,15 @@ class VertexAIProtocol(
         val token: String
         try {
             token = getAccessToken()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             throw Exception("Vertex AI Authentication Failed: ${safeCredentialError(e)}")
         }
 
         val response: HttpResponse
         try {
-            response = httpClient.post(buildSyncUrl()) {
+            response = httpClient.post(inferenceUrl(request, streaming = false)) {
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $token")
                 setBody(buildRequestBody(request))
@@ -207,6 +204,15 @@ class VertexAIProtocol(
         return parseSyncResponse(responseText)
     }
 
+    override suspend fun listModels(): List<String> {
+        ProviderEndpointResolver.resolve(
+            protocolType,
+            baseUrl,
+            ProviderEndpointOperation.MODELS,
+        )
+        return emptyList()
+    }
+
     override fun cancel() {
         activeChannel?.cancel()
     }
@@ -218,8 +224,8 @@ class VertexAIProtocol(
             }
         }
 
-        val keyData = loadServiceAccountKey()
-        val jwt = createJwt(keyData)
+        val credential = parsedCredential()
+        val jwt = VertexCredentialParser.createJwtAssertion(credential)
         val tokenResponse = exchangeJwtForToken(jwt)
 
         cachedToken = tokenResponse.accessToken
@@ -228,59 +234,25 @@ class VertexAIProtocol(
         return tokenResponse.accessToken
     }
 
-    private fun loadServiceAccountKey(): ServiceAccountKey {
-        serviceAccountKeyData?.let { return it }
-
-        if (serviceAccountJson.isBlank()) {
-            throw IllegalStateException("Missing service account JSON")
+    private fun parsedCredential(): ParsedVertexCredential {
+        parsedCredential?.let { return it }
+        return VertexCredentialParser.parse(serviceAccountJson, projectId).also {
+            parsedCredential = it
         }
-        val keyJson = try {
-            json.parseToJsonElement(serviceAccountJson).jsonObject
-        } catch (_: Exception) {
-            throw IllegalStateException("Invalid service account JSON")
-        }
-        val key = ServiceAccountKey(
-            clientEmail = keyJson["client_email"]?.jsonPrimitive?.content
-                ?: throw IllegalStateException("Missing client_email in service account key"),
-            privateKey = keyJson["private_key"]?.jsonPrimitive?.content
-                ?: throw IllegalStateException("Missing private_key in service account key")
-        )
-
-        serviceAccountKeyData = key
-        return key
     }
 
-    private fun safeCredentialError(error: Exception): String = when (error.message) {
-        "Missing service account JSON" -> "Service account credentials are missing"
-        "Invalid service account JSON" -> "Service account credentials are invalid"
-        "Missing client_email in service account key",
-        "Missing private_key in service account key" -> "Service account credentials are incomplete"
-        else -> "Service account private key is invalid"
-    }
-
-    private fun createJwt(keyData: ServiceAccountKey): String {
-        val header = """{"alg":"RS256","typ":"JWT"}"""
-
-        val now = System.currentTimeMillis() / 1000
-        val claims = buildJsonObject {
-            put("iss", keyData.clientEmail)
-            put("scope", "https://www.googleapis.com/auth/cloud-platform")
-            put("aud", "https://oauth2.googleapis.com/token")
-            put("exp", now + 3600)
-            put("iat", now)
-        }.toString()
-
-        val headerB64 = base64UrlEncode(header.toByteArray(Charsets.UTF_8))
-        val claimsB64 = base64UrlEncode(claims.toByteArray(Charsets.UTF_8))
-        val signInput = "$headerB64.$claimsB64"
-
-        val privateKey = loadRsaPrivateKey(keyData.privateKey)
-        val sig = Signature.getInstance("SHA256withRSA")
-        sig.initSign(privateKey)
-        sig.update(signInput.toByteArray(Charsets.UTF_8))
-        val signatureBytes = sig.sign()
-
-        return "$signInput.${base64UrlEncode(signatureBytes)}"
+    private fun safeCredentialError(error: Exception): String = when (
+        (error as? VertexCredentialException)?.reason
+    ) {
+        VertexCredentialFailure.MISSING_CREDENTIALS -> "Service account credentials are missing"
+        VertexCredentialFailure.INVALID_JSON -> "Service account credentials are invalid"
+        VertexCredentialFailure.MISSING_PROJECT_ID,
+        VertexCredentialFailure.MISSING_CLIENT_EMAIL,
+        VertexCredentialFailure.MISSING_PRIVATE_KEY,
+        VertexCredentialFailure.PROJECT_ID_MISMATCH,
+        -> "Service account credentials are incomplete"
+        VertexCredentialFailure.INVALID_PRIVATE_KEY -> "Service account private key is invalid"
+        null -> "Vertex authentication request failed"
     }
 
     private data class TokenResponse(
@@ -289,7 +261,12 @@ class VertexAIProtocol(
     )
 
     private suspend fun exchangeJwtForToken(jwt: String): TokenResponse {
-        val response = httpClient.post("https://oauth2.googleapis.com/token") {
+        val endpoint = ProviderEndpointResolver.resolve(
+            protocolType,
+            baseUrl,
+            ProviderEndpointTarget.VertexOAuthToken,
+        )
+        val response = httpClient.post(endpoint) {
             contentType(ContentType.Application.FormUrlEncoded)
             setBody(
                 "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=$jwt"
@@ -299,58 +276,35 @@ class VertexAIProtocol(
         val body = try { response.bodyAsText() } catch (_: Exception) { "" }
 
         if (!response.status.isSuccess()) {
-            throw Exception(
-                "Token exchange failed: ${response.status.value} ${body.take(200)}"
-            )
+            throw IllegalStateException("Vertex token exchange failed")
         }
 
         val parsed = try {
             json.parseToJsonElement(body).jsonObject
         } catch (_: Exception) {
-            throw Exception("Token exchange returned non-JSON response: ${body.take(200)}")
+            throw IllegalStateException("Vertex token exchange response is invalid")
         }
 
         val accessToken = parsed["access_token"]?.jsonPrimitive?.contentOrNull
-            ?: throw Exception("Token exchange response missing access_token")
+            ?: throw IllegalStateException("Vertex token exchange response is invalid")
 
         val expiresIn = parsed["expires_in"]?.jsonPrimitive?.longOrNull ?: 3600L
 
         return TokenResponse(accessToken, expiresIn)
     }
 
-    private fun loadRsaPrivateKey(pem: String): RSAPrivateCrtKey {
-        val pemContent = pem
-            .replace("-----BEGIN PRIVATE KEY-----", "")
-            .replace("-----END PRIVATE KEY-----", "")
-            .replace("-----BEGIN RSA PRIVATE KEY-----", "")
-            .replace("-----END RSA PRIVATE KEY-----", "")
-            .replace("\\s".toRegex(), "")
-
-        val keyBytes = Base64.getDecoder().decode(pemContent)
-        val keySpec = PKCS8EncodedKeySpec(keyBytes)
-        return KeyFactory.getInstance("RSA").generatePrivate(keySpec) as RSAPrivateCrtKey
-    }
-
-    private fun base64UrlEncode(data: ByteArray): String {
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(data)
-    }
-
-    private fun buildHost(): String {
-        return if (location == "global") {
-            "aiplatform.googleapis.com"
-        } else {
-            "$location-aiplatform.googleapis.com"
-        }
-    }
-
-    private fun buildStreamingUrl(): String {
-        val host = buildHost()
-        return "https://$host/v1beta1/projects/$projectId/locations/$location/publishers/google/models/${model}:streamGenerateContent?alt=sse"
-    }
-
-    private fun buildSyncUrl(): String {
-        val host = buildHost()
-        return "https://$host/v1beta1/projects/$projectId/locations/$location/publishers/google/models/${model}:generateContent"
+    private fun inferenceUrl(request: PromptRequest, streaming: Boolean): String {
+        val credential = parsedCredential()
+        return ProviderEndpointResolver.resolve(
+            protocolType,
+            baseUrl,
+            ProviderEndpointTarget.VertexInference(
+                projectId = credential.projectId,
+                location = location,
+                model = request.model.ifBlank { model },
+                streaming = streaming,
+            ),
+        )
     }
 
     private fun buildRequestBody(request: PromptRequest): String {

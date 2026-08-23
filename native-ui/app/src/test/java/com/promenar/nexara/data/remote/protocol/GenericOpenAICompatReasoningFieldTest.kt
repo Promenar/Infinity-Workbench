@@ -81,7 +81,7 @@ class GenericOpenAICompatReasoningFieldTest {
         body: String,
         headers: io.ktor.http.Headers = headersOf(HttpHeaders.ContentType, "application/json"),
     ): GenericOpenAICompatProtocol = GenericOpenAICompatProtocol(
-        baseUrl = "https://example.test",
+        baseUrl = "https://example.test/v1",
         apiKey = "test-key",
         model = "test-model",
         httpClient = HttpClient(MockEngine { respond(body, status, headers) }),

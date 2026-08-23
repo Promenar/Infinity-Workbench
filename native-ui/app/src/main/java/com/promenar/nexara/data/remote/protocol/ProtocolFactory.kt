@@ -13,7 +13,7 @@ object ProtocolFactory {
         model: String = "",
         serviceAccountJson: String = "",
         projectId: String = "",
-        location: String = "us-central1",
+        location: String = VERTEX_DEFAULT_LOCATION,
         localEngine: LocalInferenceEngine? = null
     ): LlmProtocol {
         return when (type) {
@@ -23,6 +23,7 @@ object ProtocolFactory {
             ProtocolType.Anthropic_Messages -> AnthropicProtocol(baseUrl, apiKey, model)
             
             ProtocolType.Google_VertexAI -> VertexAIProtocol(
+                baseUrl = baseUrl,
                 serviceAccountJson = serviceAccountJson,
                 projectId = projectId,
                 location = location,
@@ -30,16 +31,23 @@ object ProtocolFactory {
             )
             
             ProtocolType.Cohere_Chat,
+            ProtocolType.Yi_ZeroOne,
+            -> throw UnsupportedProviderProtocolException(type)
+
             ProtocolType.Mistral_Chat,
             ProtocolType.Generic_OpenAI_Compat,
             ProtocolType.Moonshot_Kimi,
             ProtocolType.Qwen_DashScope,
             ProtocolType.Zhipu_GLM,
             ProtocolType.Doubao_ByteDance,
-            ProtocolType.Yi_ZeroOne,
-            ProtocolType.Baichuan -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
-            
-            ProtocolType.DeepSeek -> OpenAIProtocol(baseUrl, apiKey, model)
+            ProtocolType.Baichuan,
+            ProtocolType.DeepSeek,
+            -> GenericOpenAICompatProtocol(
+                baseUrl = baseUrl,
+                apiKey = apiKey,
+                model = model,
+                protocolType = type,
+            )
             
             ProtocolType.Local -> {
                 if (localEngine == null) {

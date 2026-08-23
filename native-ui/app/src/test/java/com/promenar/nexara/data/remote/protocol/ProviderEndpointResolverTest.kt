@@ -6,6 +6,173 @@ import org.junit.Test
 
 class ProviderEndpointResolverTest {
     @Test
+    fun `所有可广告 API Key 预设解析到唯一推理端点`() {
+        val cases = listOf(
+            Triple(ProtocolType.OpenAI_ChatCompletions, "https://api.openai.com", "https://api.openai.com/v1/chat/completions"),
+            Triple(ProtocolType.OpenAI_Responses, "https://api.openai.com", "https://api.openai.com/v1/responses"),
+            Triple(ProtocolType.Anthropic_Messages, "https://api.anthropic.com", "https://api.anthropic.com/v1/messages"),
+            Triple(ProtocolType.DeepSeek, "https://api.deepseek.com", "https://api.deepseek.com/chat/completions"),
+            Triple(ProtocolType.Moonshot_Kimi, "https://api.moonshot.cn", "https://api.moonshot.cn/v1/chat/completions"),
+            Triple(ProtocolType.Qwen_DashScope, "https://dashscope.aliyuncs.com/compatible-mode", "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"),
+            Triple(ProtocolType.Zhipu_GLM, "https://open.bigmodel.cn/api/paas", "https://open.bigmodel.cn/api/paas/v4/chat/completions"),
+            Triple(ProtocolType.Doubao_ByteDance, "https://ark.cn-beijing.volces.com/api", "https://ark.cn-beijing.volces.com/api/v3/chat/completions"),
+            Triple(ProtocolType.Baichuan, "https://api.baichuan-ai.com", "https://api.baichuan-ai.com/v1/chat/completions"),
+            Triple(ProtocolType.Mistral_Chat, "https://api.mistral.ai", "https://api.mistral.ai/v1/chat/completions"),
+        )
+
+        cases.forEach { (protocol, configured, expected) ->
+            assertThat(
+                ProviderEndpointResolver.resolve(
+                    protocol,
+                    configured,
+                    ProviderEndpointOperation.INFERENCE,
+                ),
+            ).isEqualTo(expected)
+        }
+    }
+
+    @Test
+    fun `仅有权威且已适配 schema 的预设暴露动态模型列表`() {
+        val cases = listOf(
+            Triple(ProtocolType.OpenAI_ChatCompletions, "https://api.openai.com", "https://api.openai.com/v1/models"),
+            Triple(ProtocolType.OpenAI_Responses, "https://api.openai.com", "https://api.openai.com/v1/models"),
+            Triple(ProtocolType.Anthropic_Messages, "https://api.anthropic.com", "https://api.anthropic.com/v1/models"),
+            Triple(ProtocolType.DeepSeek, "https://api.deepseek.com", "https://api.deepseek.com/models"),
+            Triple(ProtocolType.Mistral_Chat, "https://api.mistral.ai", "https://api.mistral.ai/v1/models"),
+        )
+
+        cases.forEach { (protocol, configured, expected) ->
+            assertThat(
+                ProviderEndpointResolver.resolve(
+                    protocol,
+                    configured,
+                    ProviderEndpointOperation.MODELS,
+                ),
+            ).isEqualTo(expected)
+        }
+    }
+
+    @Test
+    fun `没有权威 Bearer 列模适配的预设 typed unsupported 而不猜路径`() {
+        val unsupported = listOf(
+            ProtocolType.Moonshot_Kimi,
+            ProtocolType.Qwen_DashScope,
+            ProtocolType.Zhipu_GLM,
+            ProtocolType.Doubao_ByteDance,
+            ProtocolType.Baichuan,
+            ProtocolType.Google_VertexAI,
+        )
+
+        unsupported.forEach { protocol ->
+            val error = assertThrows(UnsupportedProviderOperationException::class.java) {
+                ProviderEndpointResolver.resolve(
+                    protocol,
+                    protocol.defaultBaseUrl,
+                    ProviderEndpointOperation.MODELS,
+                )
+            }
+            assertThat(error.operation).isEqualTo(ProviderEndpointOperation.MODELS)
+            assertThat(error.toString()).doesNotContain(protocol.defaultBaseUrl)
+        }
+    }
+
+    @Test
+    fun `已退役和未实现的历史协议保留解码但所有网络目标 fail closed`() {
+        listOf(ProtocolType.Cohere_Chat, ProtocolType.Yi_ZeroOne).forEach { protocol ->
+            ProviderEndpointOperation.entries.forEach { operation ->
+                assertThrows(UnsupportedProviderProtocolException::class.java) {
+                    ProviderEndpointResolver.resolve(protocol, protocol.defaultBaseUrl, operation)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `Generic host only endpoint fails closed instead of guessing v1`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            ProviderEndpointResolver.resolve(
+                ProtocolType.Generic_OpenAI_Compat,
+                "https://generic.example.invalid",
+                ProviderEndpointOperation.INFERENCE,
+            )
+        }
+
+        assertThat(error).hasMessageThat().contains("Generic OpenAI Compat")
+    }
+
+    @Test
+    fun `Generic 无版本完整推理路径不能猜测模型列表端点`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ProviderEndpointResolver.resolve(
+                ProtocolType.Generic_OpenAI_Compat,
+                "https://generic.example.invalid/chat/completions",
+                ProviderEndpointOperation.MODELS,
+            )
+        }
+    }
+
+    @Test
+    fun `DeepSeek 已保存 v1 完整路径原样使用且模型列表保持同一前缀`() {
+        val configured = "https://api.deepseek.com/v1/chat/completions"
+
+        assertThat(
+            ProviderEndpointResolver.resolve(
+                ProtocolType.DeepSeek,
+                configured,
+                ProviderEndpointOperation.INFERENCE,
+            ),
+        ).isEqualTo(configured)
+        assertThat(
+            ProviderEndpointResolver.resolve(
+                ProtocolType.DeepSeek,
+                configured,
+                ProviderEndpointOperation.MODELS,
+            ),
+        ).isEqualTo("https://api.deepseek.com/v1/models")
+    }
+
+    @Test
+    fun `Vertex sync stream 与 OAuth 使用 typed target 的官方 v1 完整端点`() {
+        val baseUrl = "https://us-central1-aiplatform.googleapis.com"
+
+        assertThat(
+            ProviderEndpointResolver.resolve(
+                ProtocolType.Google_VertexAI,
+                baseUrl,
+                ProviderEndpointTarget.VertexInference(
+                    projectId = "project-safe",
+                    location = VERTEX_DEFAULT_LOCATION,
+                    model = "gemini-2.5-pro",
+                    streaming = false,
+                ),
+            ),
+        ).isEqualTo(
+            "https://us-central1-aiplatform.googleapis.com/v1/projects/project-safe/locations/us-central1/publishers/google/models/gemini-2.5-pro:generateContent",
+        )
+        assertThat(
+            ProviderEndpointResolver.resolve(
+                ProtocolType.Google_VertexAI,
+                baseUrl,
+                ProviderEndpointTarget.VertexInference(
+                    projectId = "project-safe",
+                    location = VERTEX_DEFAULT_LOCATION,
+                    model = "gemini-2.5-pro",
+                    streaming = true,
+                ),
+            ),
+        ).isEqualTo(
+            "https://us-central1-aiplatform.googleapis.com/v1/projects/project-safe/locations/us-central1/publishers/google/models/gemini-2.5-pro:streamGenerateContent?alt=sse",
+        )
+        assertThat(
+            ProviderEndpointResolver.resolve(
+                ProtocolType.Google_VertexAI,
+                baseUrl,
+                ProviderEndpointTarget.VertexOAuthToken,
+            ),
+        ).isEqualTo("https://oauth2.googleapis.com/token")
+    }
+
+    @Test
     fun `host 与版本前缀只补齐缺失的推理路径`() {
         assertThat(
             ProviderEndpointResolver.resolve(
@@ -86,17 +253,13 @@ class ProviderEndpointResolverTest {
     }
 
     @Test
-    fun `Anthropic 连接探测在专用 probe 接线前失败关闭`() {
-        val error = assertThrows(IllegalArgumentException::class.java) {
+    fun `Anthropic 连接探测使用权威无成本端点且不依赖非空模型列表`() {
+        assertThat(
             ProviderEndpointResolver.resolve(
                 ProtocolType.Anthropic_Messages,
                 "https://api.anthropic.com",
                 ProviderEndpointOperation.CONNECTION_PROBE,
-            )
-        }
-
-        assertThat(error).hasMessageThat().isEqualTo(
-            "Anthropic 连接探测尚未接线，拒绝回退模型列表",
-        )
+            ),
+        ).isEqualTo("https://api.anthropic.com/v1/models?limit=1")
     }
 }

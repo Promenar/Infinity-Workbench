@@ -48,6 +48,9 @@ import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderRequestRouter
 import com.promenar.nexara.data.remote.provider.LlmProvider
+import com.promenar.nexara.data.remote.provider.VertexCredentialException
+import com.promenar.nexara.data.remote.provider.VertexCredentialParser
+import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import com.promenar.nexara.data.repository.FileOperationRepository
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
@@ -1059,13 +1062,23 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         val config = getSavedProviderConfig() ?: return null
         if (config.protocolType is ProtocolType.Local && !localInferenceRuntimeGate.isAvailable) return null
         if (config.apiKey.isBlank() && config.vertexServiceAccountJson.isBlank() && config.protocolType !is ProtocolType.Local) return null
+        val vertexProjectId = if (config.protocolType is ProtocolType.Google_VertexAI) {
+            try {
+                VertexCredentialParser.parse(config.vertexServiceAccountJson).projectId
+            } catch (_: VertexCredentialException) {
+                return null
+            }
+        } else {
+            ""
+        }
         return com.promenar.nexara.data.remote.UnifiedProviderConfig(
             protocolType = config.protocolType,
             baseUrl = config.baseUrl,
             apiKey = config.apiKey,
             defaultModel = config.model,
             serviceAccountJson = config.vertexServiceAccountJson,
-            projectId = extractVertexProjectId(config.vertexServiceAccountJson),
+            projectId = vertexProjectId,
+            location = VERTEX_DEFAULT_LOCATION,
         )
     }
 
@@ -1103,10 +1116,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                     buildUnavailableLocalPlaceholderProvider()
                 }
             } else if (config.protocolType is ProtocolType.Google_VertexAI) {
+                val credential = VertexCredentialParser.parse(config.vertexServiceAccountJson)
                 LlmProvider.builder()
                     .protocolType(config.protocolType)
+                    .baseUrl(config.baseUrl)
                     .serviceAccountJson(config.vertexServiceAccountJson)
-                    .projectId(extractVertexProjectId(config.vertexServiceAccountJson))
+                    .projectId(credential.projectId)
+                    .location(VERTEX_DEFAULT_LOCATION)
                     .model(config.model)
                     .build()
             } else {
@@ -1133,10 +1149,6 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     private fun readSecret(id: SecretId): String =
         secretStore.get(id)?.toString(Charsets.UTF_8).orEmpty()
-
-    private fun extractVertexProjectId(serviceAccountJson: String): String =
-        Regex("\\\"project_id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
-            .find(serviceAccountJson)?.groupValues?.get(1).orEmpty()
 
     @Suppress("DEPRECATION")
     override fun onTrimMemory(level: Int) {

@@ -1,17 +1,14 @@
 package com.promenar.nexara.data.remote.provider
 
 import com.promenar.nexara.data.local.inference.LocalInferenceEngine
-import com.promenar.nexara.data.remote.protocol.AnthropicProtocol
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.LocalProtocol
-import com.promenar.nexara.data.remote.protocol.GenericOpenAICompatProtocol
-import com.promenar.nexara.data.remote.protocol.OpenAIProtocol
-import com.promenar.nexara.data.remote.protocol.OpenAIResponsesProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.PromptResponse
+import com.promenar.nexara.data.remote.protocol.ProtocolFactory
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.protocol.StreamChunk
-import com.promenar.nexara.data.remote.protocol.VertexAIProtocol
+import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -39,7 +36,7 @@ class LlmProvider(internal val protocol: LlmProtocol) {
         private var model: String = ""
         private var serviceAccountJson: String = ""
         private var projectId: String = ""
-        private var location: String = "us-central1"
+        private var location: String = VERTEX_DEFAULT_LOCATION
 
         fun protocolId(id: ProtocolType) = apply { this.protocolType = id }
         fun protocolType(type: ProtocolType) = apply { this.protocolType = type }
@@ -74,29 +71,19 @@ class LlmProvider(internal val protocol: LlmProtocol) {
             model: String,
             serviceAccountJson: String = "",
             projectId: String = "",
-            location: String = "us-central1"
-        ): LlmProtocol = when (type) {
-            is ProtocolType.OpenAI_ChatCompletions -> OpenAIProtocol(baseUrl, apiKey, model)
-            is ProtocolType.OpenAI_Responses -> OpenAIResponsesProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Anthropic_Messages -> AnthropicProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Google_VertexAI -> VertexAIProtocol(
+            location: String = VERTEX_DEFAULT_LOCATION
+        ): LlmProtocol {
+            if (type == ProtocolType.Local) {
+                throw IllegalStateException("Use LlmProvider.local(engine) factory for local models")
+            }
+            return ProtocolFactory.create(
+                type = type,
+                baseUrl = baseUrl,
+                apiKey = apiKey,
+                model = model,
                 serviceAccountJson = serviceAccountJson,
                 projectId = projectId,
                 location = location,
-                model = model
-            )
-            is ProtocolType.Cohere_Chat -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Mistral_Chat -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
-            is ProtocolType.DeepSeek -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Moonshot_Kimi -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Qwen_DashScope -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Zhipu_GLM -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Doubao_ByteDance -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Yi_ZeroOne -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Baichuan -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Generic_OpenAI_Compat -> GenericOpenAICompatProtocol(baseUrl, apiKey, model)
-            is ProtocolType.Local -> throw IllegalStateException(
-                "Use LlmProvider.local(engine) factory for local models"
             )
         }
 

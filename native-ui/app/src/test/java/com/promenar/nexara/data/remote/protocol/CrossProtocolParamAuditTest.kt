@@ -115,7 +115,7 @@ class CrossProtocolParamAuditTest {
                 headers = headersOf(HttpHeaders.ContentType, "application/json"))
         }
         val protocol = GenericOpenAICompatProtocol(
-            baseUrl = "http://localhost", apiKey = "test-key",
+            baseUrl = "http://localhost/v1", apiKey = "test-key",
             model = "test-model", httpClient = HttpClient(mockEngine)
         )
         val request = PromptRequest(

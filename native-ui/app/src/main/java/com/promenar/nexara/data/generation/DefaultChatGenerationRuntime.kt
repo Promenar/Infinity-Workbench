@@ -707,6 +707,7 @@ internal class DefaultChatGenerationRuntime(
             ProviderResolutionError.BASE_URL_INVALID,
             ProviderResolutionError.MODEL_PROVIDER_MISMATCH,
             ProviderResolutionError.PROTOCOL_MISMATCH,
+            ProviderResolutionError.PROTOCOL_UNSUPPORTED,
             ProviderResolutionError.LOCAL_INFERENCE_UNAVAILABLE,
             -> GenerationFailureCode.INVALID_REQUEST
         }

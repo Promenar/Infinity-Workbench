@@ -64,7 +64,7 @@ class OpenAIResponsesProtocol(
     override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = channelFlow {
         activeChannel = null
         try {
-            httpClient.preparePost(buildUrl()) {
+            httpClient.preparePost(inferenceUrl()) {
                 contentType(ContentType.Application.Json)
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
                 header(HttpHeaders.Accept, "text/event-stream")
@@ -119,7 +119,7 @@ class OpenAIResponsesProtocol(
 
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
         val response: HttpResponse = try {
-            httpClient.post(buildUrl()) {
+            httpClient.post(inferenceUrl()) {
                 contentType(ContentType.Application.Json)
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
                 setBody(buildRequestBody(request, stream = false))
@@ -141,8 +141,13 @@ class OpenAIResponsesProtocol(
     }
 
     override suspend fun listModels(): List<String> {
+        val endpoint = ProviderEndpointResolver.resolve(
+            protocolType,
+            baseUrl,
+            ProviderEndpointOperation.MODELS,
+        )
         val response = try {
-            httpClient.get(baseUrl.trimEnd('/') + "/models") {
+            httpClient.get(endpoint) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
             }
         } catch (_: Exception) {
@@ -162,7 +167,11 @@ class OpenAIResponsesProtocol(
         activeChannel?.cancel()
     }
 
-    private fun buildUrl(): String = "${baseUrl.trimEnd('/')}/responses"
+    private fun inferenceUrl(): String = ProviderEndpointResolver.resolve(
+        protocolType,
+        baseUrl,
+        ProviderEndpointOperation.INFERENCE,
+    )
 
     private fun buildRequestBody(request: PromptRequest, stream: Boolean): String {
         return buildJsonObject {

@@ -32,7 +32,7 @@ class ProtocolParamTest {
         
         val client = HttpClient(mockEngine)
         val protocol = GenericOpenAICompatProtocol(
-            baseUrl = "http://localhost",
+            baseUrl = "http://localhost/v1",
             apiKey = "test-key",
             model = "test-model",
             httpClient = client

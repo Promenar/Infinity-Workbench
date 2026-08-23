@@ -2,81 +2,256 @@ package com.promenar.nexara.data.remote.protocol
 
 import java.net.URI
 
+const val VERTEX_DEFAULT_LOCATION: String = "us-central1"
+
 enum class ProviderEndpointOperation {
     INFERENCE,
     MODELS,
     CONNECTION_PROBE,
 }
 
+sealed interface ProviderEndpointTarget {
+    data class Standard(val operation: ProviderEndpointOperation) : ProviderEndpointTarget
+
+    data class VertexInference(
+        val projectId: String,
+        val location: String,
+        val model: String,
+        val streaming: Boolean,
+    ) : ProviderEndpointTarget
+
+    data object VertexOAuthToken : ProviderEndpointTarget
+}
+
+class UnsupportedProviderProtocolException(
+    val protocol: ProtocolType,
+) : UnsupportedOperationException("Provider protocol is not supported") {
+    override fun toString(): String = "UnsupportedProviderProtocolException(protocol=${protocol.displayName})"
+}
+
+class UnsupportedProviderOperationException(
+    val protocol: ProtocolType,
+    val operation: ProviderEndpointOperation,
+) : UnsupportedOperationException("Provider operation is not supported") {
+    override fun toString(): String =
+        "UnsupportedProviderOperationException(protocol=${protocol.displayName}, operation=$operation)"
+}
+
+/**
+ * Provider 网络目标的唯一解析器。
+ *
+ * 持久化层保留用户输入原值；仅在真正发起请求前由这里补齐协议路径。协议实现不得再拼接路径。
+ */
 object ProviderEndpointResolver {
+    private val unsupportedProtocols = setOf(
+        ProtocolType.Cohere_Chat,
+        ProtocolType.Yi_ZeroOne,
+    )
+
+    private val dynamicModelProtocols = setOf(
+        ProtocolType.OpenAI_ChatCompletions,
+        ProtocolType.OpenAI_Responses,
+        ProtocolType.Anthropic_Messages,
+        ProtocolType.DeepSeek,
+        ProtocolType.Mistral_Chat,
+        ProtocolType.Generic_OpenAI_Compat,
+    )
+
     fun resolve(
         protocol: ProtocolType,
         configuredBaseUrl: String,
         operation: ProviderEndpointOperation,
+    ): String = resolve(protocol, configuredBaseUrl, ProviderEndpointTarget.Standard(operation))
+
+    fun resolve(
+        protocol: ProtocolType,
+        configuredBaseUrl: String,
+        target: ProviderEndpointTarget,
     ): String {
-        val raw = configuredBaseUrl.trim().ifEmpty { protocol.defaultBaseUrl }
-        if (protocol is ProtocolType.Local) return raw.trimEnd('/')
-        require(raw.isNotEmpty()) { "Provider base URL 不能为空" }
-
-        val uri = try {
-            URI(raw)
-        } catch (error: Exception) {
-            throw IllegalArgumentException("Provider base URL 无效", error)
+        if (protocol in unsupportedProtocols) {
+            throw UnsupportedProviderProtocolException(protocol)
         }
-        require(uri.scheme == "http" || uri.scheme == "https") { "Provider base URL 必须使用 HTTP(S)" }
-        require(!uri.rawAuthority.isNullOrBlank()) { "Provider base URL 缺少 host" }
-        require(uri.rawFragment == null) { "Provider base URL 不支持 fragment" }
 
-        var basePath = normalizePath(uri.rawPath.orEmpty())
-        if (operation == ProviderEndpointOperation.CONNECTION_PROBE &&
-            protocol == ProtocolType.Anthropic_Messages
-        ) {
-            throw IllegalArgumentException("Anthropic 连接探测尚未接线，拒绝回退模型列表")
-        }
-        val operationPath = operationPath(protocol, operation)
-        if (operation != ProviderEndpointOperation.INFERENCE &&
-            protocol.defaultPath.isNotEmpty() &&
-            basePath.endsWith(normalizePath(protocol.defaultPath))
-        ) {
-            basePath = basePath.removeSuffix(normalizePath(protocol.defaultPath))
-        } else if (operation == ProviderEndpointOperation.MODELS &&
-            looksLikeAmbiguousInferenceResource(basePath, protocol.defaultPath)
-        ) {
-            throw IllegalArgumentException(
-                "Provider base URL 的完整推理路径无法无歧义转换为模型列表端点",
+        return when (target) {
+            is ProviderEndpointTarget.Standard -> resolveStandard(
+                protocol = protocol,
+                configuredBaseUrl = configuredBaseUrl,
+                operation = target.operation,
             )
+            is ProviderEndpointTarget.VertexInference -> resolveVertexInference(
+                protocol = protocol,
+                configuredBaseUrl = configuredBaseUrl,
+                target = target,
+            )
+            ProviderEndpointTarget.VertexOAuthToken -> {
+                require(protocol == ProtocolType.Google_VertexAI) {
+                    "Vertex OAuth target requires the Vertex protocol"
+                }
+                "https://oauth2.googleapis.com/token"
+            }
         }
+    }
+
+    private fun resolveStandard(
+        protocol: ProtocolType,
+        configuredBaseUrl: String,
+        operation: ProviderEndpointOperation,
+    ): String {
+        if (protocol == ProtocolType.Google_VertexAI) {
+            throw UnsupportedProviderOperationException(protocol, operation)
+        }
+
+        val raw = configuredBaseUrl.trim().ifEmpty { protocol.defaultBaseUrl }
+        if (protocol == ProtocolType.Local) return raw.trimEnd('/')
+        val uri = validatedHttpUri(raw)
+        var basePath = normalizePath(uri.rawPath.orEmpty())
+
+        if (operation != ProviderEndpointOperation.INFERENCE && protocol !in dynamicModelProtocols) {
+            throw UnsupportedProviderOperationException(protocol, operation)
+        }
+        if (protocol == ProtocolType.Generic_OpenAI_Compat) {
+            validateGenericConfiguredPath(basePath)
+        }
+
+        val operationPath = when (operation) {
+            ProviderEndpointOperation.INFERENCE -> normalizePath(protocol.defaultPath)
+            ProviderEndpointOperation.MODELS -> modelPath(protocol, basePath)
+            ProviderEndpointOperation.CONNECTION_PROBE -> {
+                if (protocol == ProtocolType.Anthropic_Messages) "/v1/models" else modelPath(protocol, basePath)
+            }
+        }
+
+        if (operation != ProviderEndpointOperation.INFERENCE) {
+            basePath = stripInferenceResource(protocol, basePath)
+        }
+
         val resolvedPath = appendWithOverlap(basePath, operationPath)
         return buildString {
-            append(uri.scheme)
+            append(uri.scheme.lowercase())
             append("://")
             append(uri.rawAuthority)
             append(resolvedPath)
-            uri.rawQuery?.let { append('?').append(it) }
+            when {
+                operation == ProviderEndpointOperation.CONNECTION_PROBE &&
+                    protocol == ProtocolType.Anthropic_Messages -> append("?limit=1")
+                uri.rawQuery != null -> append('?').append(uri.rawQuery)
+            }
         }
     }
 
-    private fun operationPath(protocol: ProtocolType, operation: ProviderEndpointOperation): String = when (operation) {
-        ProviderEndpointOperation.INFERENCE -> normalizePath(protocol.defaultPath)
-        ProviderEndpointOperation.MODELS,
-        ProviderEndpointOperation.CONNECTION_PROBE,
-        -> when (protocol) {
-            ProtocolType.Google_VertexAI -> normalizePath(protocol.defaultPath)
-            ProtocolType.Local -> ""
-            else -> apiVersionPrefix(protocol.defaultPath) + "/models"
+    private fun resolveVertexInference(
+        protocol: ProtocolType,
+        configuredBaseUrl: String,
+        target: ProviderEndpointTarget.VertexInference,
+    ): String {
+        require(protocol == ProtocolType.Google_VertexAI) {
+            "Vertex inference target requires the Vertex protocol"
+        }
+        val projectId = requireSafeVertexSegment("project", target.projectId)
+        val location = requireSafeVertexSegment("location", target.location)
+        val model = requireSafeVertexSegment("model", target.model)
+        val raw = configuredBaseUrl.trim().ifEmpty {
+            if (location == "global") {
+                "https://aiplatform.googleapis.com"
+            } else {
+                "https://$location-aiplatform.googleapis.com"
+            }
+        }
+        val uri = validatedHttpUri(raw)
+        val operation = if (target.streaming) "streamGenerateContent" else "generateContent"
+        val path = appendWithOverlap(
+            normalizePath(uri.rawPath.orEmpty()),
+            "/v1/projects/$projectId/locations/$location/publishers/google/models/$model:$operation",
+        )
+        return buildString {
+            append(uri.scheme.lowercase())
+            append("://")
+            append(uri.rawAuthority)
+            append(path)
+            if (target.streaming) append("?alt=sse")
         }
     }
 
-    private fun apiVersionPrefix(path: String): String {
-        val first = normalizePath(path).split('/').firstOrNull(String::isNotEmpty)
-        return first?.let { "/$it" }.orEmpty()
+    private fun validatedHttpUri(raw: String): URI {
+        require(raw.isNotEmpty()) { "Provider base URL 不能为空" }
+        val uri = try {
+            URI(raw)
+        } catch (_: Exception) {
+            throw IllegalArgumentException("Provider base URL 无效")
+        }
+        require(uri.scheme.equals("http", ignoreCase = true) || uri.scheme.equals("https", ignoreCase = true)) {
+            "Provider base URL 必须使用 HTTP(S)"
+        }
+        require(!uri.rawAuthority.isNullOrBlank()) { "Provider base URL 缺少 host" }
+        require(uri.rawFragment == null) { "Provider base URL 不支持 fragment" }
+        return uri
     }
 
-    private fun looksLikeAmbiguousInferenceResource(basePath: String, defaultPath: String): Boolean {
-        val defaultSegments = normalizePath(defaultPath).split('/').filter(String::isNotEmpty)
-        val resourceSegments = defaultSegments.dropWhile { it.matches(Regex("v\\d+")) }
-        val baseSegments = normalizePath(basePath).split('/').filter(String::isNotEmpty)
-        return resourceSegments.isNotEmpty() && baseSegments.takeLast(resourceSegments.size) == resourceSegments
+    private fun validateGenericConfiguredPath(path: String) {
+        val segments = normalizePath(path).split('/').filter(String::isNotEmpty)
+        val isCompleteInference = segments.takeLast(2) == listOf("chat", "completions")
+        val containsVersion = segments.any { it.matches(Regex("v\\d+")) }
+        require(isCompleteInference || containsVersion) {
+            "Generic OpenAI Compat 端点必须包含明确版本前缀或完整 chat/completions 路径"
+        }
+    }
+
+    private fun modelPath(protocol: ProtocolType, basePath: String): String = when (protocol) {
+        ProtocolType.DeepSeek -> {
+            val version = normalizePath(basePath).split('/').filter(String::isNotEmpty)
+                .lastOrNull { it.matches(Regex("v\\d+")) }
+            if (version == null) "/models" else "/$version/models"
+        }
+        ProtocolType.OpenAI_ChatCompletions,
+        ProtocolType.OpenAI_Responses,
+        ProtocolType.Anthropic_Messages,
+        ProtocolType.Mistral_Chat,
+        -> {
+            val version = normalizePath(basePath).split('/').filter(String::isNotEmpty)
+                .lastOrNull { it.matches(Regex("v\\d+")) }
+                ?: normalizePath(protocol.defaultPath).split('/').firstOrNull { it.matches(Regex("v\\d+")) }
+            if (version == null) "/models" else "/$version/models"
+        }
+        ProtocolType.Generic_OpenAI_Compat -> {
+            val version = normalizePath(basePath).split('/').filter(String::isNotEmpty)
+                .lastOrNull { it.matches(Regex("v\\d+")) }
+                ?: throw IllegalArgumentException(
+                    "Generic OpenAI Compat 模型列表端点缺少明确版本前缀",
+                )
+            "/$version/models"
+        }
+        else -> throw UnsupportedProviderOperationException(protocol, ProviderEndpointOperation.MODELS)
+    }
+
+    private fun stripInferenceResource(protocol: ProtocolType, basePath: String): String {
+        val normalized = normalizePath(basePath)
+        val defaultPath = normalizePath(protocol.defaultPath)
+        if (defaultPath.isNotEmpty() && normalized.endsWith(defaultPath)) {
+            return normalizePath(normalized.removeSuffix(defaultPath))
+        }
+
+        val resourcePath = when (protocol) {
+            ProtocolType.OpenAI_Responses -> "/responses"
+            ProtocolType.Anthropic_Messages -> "/messages"
+            else -> "/chat/completions"
+        }
+        if (!normalized.endsWith(resourcePath)) return normalized
+
+        val withoutResource = normalizePath(normalized.removeSuffix(resourcePath))
+        if (protocol == ProtocolType.DeepSeek || protocol == ProtocolType.Generic_OpenAI_Compat) {
+            return withoutResource
+        }
+        val last = withoutResource.split('/').lastOrNull(String::isNotEmpty)
+        if (last?.matches(Regex("v\\d+")) == true) return withoutResource
+        throw IllegalArgumentException(
+            "Provider base URL 的完整推理路径无法无歧义转换为模型列表端点",
+        )
+    }
+
+    private fun requireSafeVertexSegment(label: String, value: String): String {
+        val trimmed = value.trim()
+        require(trimmed.matches(Regex("[A-Za-z0-9._-]+"))) { "Vertex $label 无效" }
+        return trimmed
     }
 
     private fun normalizePath(path: String): String {

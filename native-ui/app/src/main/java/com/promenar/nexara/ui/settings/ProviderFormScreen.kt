@@ -55,8 +55,11 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.local.inference.SlotState
 import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.model.ProviderSummary
-import com.promenar.nexara.data.remote.protocol.ProtocolFactory
+import com.promenar.nexara.data.remote.UnifiedProviderConfig
+import com.promenar.nexara.data.remote.provider.ProviderConnectionProbe
+import com.promenar.nexara.data.remote.provider.ProviderConnectionProbeResult
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.SecretField
 import com.promenar.nexara.ui.common.SettingsSectionHeader
@@ -73,7 +76,7 @@ data class ProviderPreset(
     val iconRes: Int? = null,
 )
 
-internal enum class ProviderConnectionTestState { Idle, Testing, Success, Error }
+internal enum class ProviderConnectionTestState { Idle, Testing, Success, Unavailable, Error }
 
 internal data class ProviderFormUiState(
     val isEditing: Boolean = false,
@@ -146,15 +149,13 @@ val PROVIDER_PRESETS = listOf(
     ProviderPreset("OpenAI", ProtocolType.OpenAI_ChatCompletions, "https://api.openai.com", R.drawable.ic_provider_openai),
     ProviderPreset("DeepSeek", ProtocolType.DeepSeek, "https://api.deepseek.com", R.drawable.ic_provider_deepseek),
     ProviderPreset("Anthropic", ProtocolType.Anthropic_Messages, "https://api.anthropic.com", R.drawable.ic_provider_anthropic),
-    ProviderPreset("Gemini", ProtocolType.Google_VertexAI, "https://generativelanguage.googleapis.com", R.drawable.ic_provider_gemini),
+    ProviderPreset("Gemini", ProtocolType.Google_VertexAI, "https://us-central1-aiplatform.googleapis.com", R.drawable.ic_provider_gemini),
     ProviderPreset("Kimi", ProtocolType.Moonshot_Kimi, "https://api.moonshot.cn", R.drawable.ic_provider_kimi),
     ProviderPreset("通义千问", ProtocolType.Qwen_DashScope, "https://dashscope.aliyuncs.com/compatible-mode", R.drawable.ic_provider_qwen),
     ProviderPreset("智谱", ProtocolType.Zhipu_GLM, "https://open.bigmodel.cn/api/paas", R.drawable.ic_provider_zhipu),
     ProviderPreset("豆包", ProtocolType.Doubao_ByteDance, "https://ark.cn-beijing.volces.com/api", R.drawable.ic_provider_doubao),
-    ProviderPreset("零一万物", ProtocolType.Yi_ZeroOne, "https://api.lingyiwanwu.com", R.drawable.ic_provider_yi),
     ProviderPreset("百川", ProtocolType.Baichuan, "https://api.baichuan-ai.com", R.drawable.ic_provider_baichuan),
     ProviderPreset("Mistral", ProtocolType.Mistral_Chat, "https://api.mistral.ai", R.drawable.ic_provider_mistral),
-    ProviderPreset("Cohere", ProtocolType.Cohere_Chat, "https://api.cohere.ai", R.drawable.ic_provider_cohere),
     ProviderPreset("Local", ProtocolType.Local, "", R.drawable.ic_provider_local),
     ProviderPreset("Custom", ProtocolType.Generic_OpenAI_Compat, "", R.drawable.ic_provider_custom),
 )
@@ -204,6 +205,7 @@ fun ProviderFormScreen(
     var localProtocol by remember { mutableStateOf<ProtocolType>(ProtocolType.Generic_OpenAI_Compat) }
     var protocolMenuExpanded by remember { mutableStateOf(false) }
     var connectionTestState by remember { mutableStateOf(ProviderConnectionTestState.Idle) }
+    val connectionProbe = remember { ProviderConnectionProbe() }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(providerId) {
@@ -235,7 +237,9 @@ fun ProviderFormScreen(
                 selectedPreset = matched ?: availableProviderPresets.last()
                 if (selectedPreset.name == "Custom") {
                     localProtocol = config.protocolType.takeUnless {
-                        it is ProtocolType.Local && !app.localInferenceRuntimeGate.isAvailable
+                        (it is ProtocolType.Local && !app.localInferenceRuntimeGate.isAvailable) ||
+                            it == ProtocolType.Cohere_Chat ||
+                            it == ProtocolType.Yi_ZeroOne
                     } ?: ProtocolType.Generic_OpenAI_Compat
                 }
             }
@@ -288,10 +292,10 @@ fun ProviderFormScreen(
         ) {
             connectionTestState = ProviderConnectionTestState.Testing
             scope.launch {
-                val succeeded = withContext(Dispatchers.IO) {
+                val probeResult = withContext(Dispatchers.IO) {
                     try {
                         if (effectiveProtocol is ProtocolType.Local) {
-                            true
+                            ProviderConnectionProbeResult.Success
                         } else {
                             val transient = when (val update = credentialUpdate) {
                                 is CredentialUpdate.Replace -> update.value.toCharArray()
@@ -304,12 +308,16 @@ fun ProviderFormScreen(
                                 } ?: CharArray(0)
                             }
                             try {
-                                ProtocolFactory.create(
-                                    type = effectiveProtocol,
+                                val credential = transient.concatToString()
+                                connectionProbe.probe(UnifiedProviderConfig(
+                                    protocolType = effectiveProtocol,
                                     baseUrl = baseUrl,
-                                    apiKey = transient.concatToString(),
-                                    model = "",
-                                ).listModels().isNotEmpty()
+                                    apiKey = if (selectedUsesVertex) "" else credential,
+                                    defaultModel = "",
+                                    serviceAccountJson = if (selectedUsesVertex) credential else "",
+                                    projectId = "",
+                                    location = VERTEX_DEFAULT_LOCATION,
+                                ))
                             } finally {
                                 transient.fill('\u0000')
                             }
@@ -317,15 +325,17 @@ fun ProviderFormScreen(
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
-                        false
+                        ProviderConnectionProbeResult.Failure(
+                            com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.NETWORK_UNAVAILABLE,
+                        )
                     }
                 }
-                connectionTestState = if (succeeded) {
-                    ProviderConnectionTestState.Success
-                } else {
-                    ProviderConnectionTestState.Error
+                connectionTestState = when (probeResult) {
+                    ProviderConnectionProbeResult.Success -> ProviderConnectionTestState.Success
+                    ProviderConnectionProbeResult.Unsupported -> ProviderConnectionTestState.Unavailable
+                    is ProviderConnectionProbeResult.Failure -> ProviderConnectionTestState.Error
                 }
-                if (succeeded && providerId != null) {
+                if (probeResult == ProviderConnectionProbeResult.Success && providerId != null) {
                     isSaving = true
                     saveFailed = false
                     try {
@@ -558,6 +568,12 @@ internal fun ProviderFormContent(
                                 success = false,
                             )
                         }
+                        ProviderConnectionTestState.Unavailable -> item {
+                            ProviderFormStatusText(
+                                stringResource(R.string.provider_form_connection_unavailable),
+                                success = null,
+                            )
+                        }
                         else -> Unit
                     }
                 }
@@ -777,6 +793,7 @@ private fun ProviderFormActionsSection(
         ProviderConnectionTestState.Idle -> null
         ProviderConnectionTestState.Testing -> stringResource(R.string.provider_form_testing)
         ProviderConnectionTestState.Success -> stringResource(R.string.common_cd_success)
+        ProviderConnectionTestState.Unavailable -> stringResource(R.string.provider_form_connection_unavailable)
         ProviderConnectionTestState.Error -> stringResource(R.string.common_cd_failed)
     }
     Row(
@@ -886,11 +903,15 @@ private fun ProviderFormErrorText(message: String) {
 }
 
 @Composable
-private fun ProviderFormStatusText(message: String, success: Boolean) {
+private fun ProviderFormStatusText(message: String, success: Boolean?) {
     Text(
         text = message,
         style = MaterialTheme.typography.bodySmall,
-        color = if (success) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+        color = when (success) {
+            true -> MaterialTheme.colorScheme.primary
+            false -> MaterialTheme.colorScheme.error
+            null -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
     )
 }

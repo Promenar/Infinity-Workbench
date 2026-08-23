@@ -7,8 +7,11 @@ import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.provider.ProviderConnectionProbe
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -85,6 +88,38 @@ class ProviderRepositorySecretTest {
         assertThat(secrets.snapshot()).isEqualTo(secretsBefore)
         assertThat(manager.getProviderConfig("existing-extra")!!.protocolType)
             .isEqualTo(ProtocolType.OpenAI_ChatCompletions)
+    }
+
+    @Test
+    fun `Repository 连接测试复用唯一 probe 且 unsupported 不伪装连接失败`() = runTest {
+        manager.addProvider(
+            ProviderListItem(
+                id = "qwen-provider",
+                name = "Qwen",
+                typeName = ProtocolType.Qwen_DashScope.displayName,
+                baseUrl = ProtocolType.Qwen_DashScope.defaultBaseUrl,
+                model = "qwen-model",
+                protocolType = ProtocolType.Qwen_DashScope,
+            ),
+            CredentialUpdate.Replace("fake-key"),
+        )
+        var requestCount = 0
+        val repository = ProviderRepository(
+            providerManager = manager,
+            connectionProbe = ProviderConnectionProbe(
+                HttpClient(MockEngine {
+                    requestCount++
+                    error("unsupported probe 不应发出请求")
+                }),
+            ),
+        )
+
+        val result = repository.testConnection("qwen-provider")
+
+        assertThat(result.success).isFalse()
+        assertThat(result.supported).isFalse()
+        assertThat(result.error).isNull()
+        assertThat(requestCount).isEqualTo(0)
     }
 
     private class MemorySecretStore : SecretStore {

@@ -14,6 +14,46 @@ class SecureSecretUiContractTest {
     )
 
     @Test
+    fun `provider presets advertise only implemented protocols`() {
+        assertThat(PROVIDER_PRESETS.map { it.protocolType })
+            .doesNotContain(ProtocolType.Cohere_Chat)
+        assertThat(PROVIDER_PRESETS.map { it.protocolType })
+            .doesNotContain(ProtocolType.Yi_ZeroOne)
+        assertThat(PROVIDER_PRESETS.map { it.protocolType })
+            .containsAtLeast(
+                ProtocolType.OpenAI_ChatCompletions,
+                ProtocolType.DeepSeek,
+                ProtocolType.Anthropic_Messages,
+                ProtocolType.Google_VertexAI,
+                ProtocolType.Mistral_Chat,
+            )
+    }
+
+    @Test
+    fun `provider form delegates cloud connection checks to the unique no generation probe`() {
+        val form = source("ui/settings/ProviderFormScreen.kt")
+        val route = form.substringBefore("fun ProviderFormContent(")
+
+        assertThat(route).contains("ProviderConnectionProbe")
+        assertThat(route).doesNotContain("ProtocolFactory.create(")
+        assertThat(route).doesNotContain("listModels().isNotEmpty()")
+        assertThat(route).doesNotContain("Reply OK.")
+        assertThat(ProviderConnectionTestState.entries)
+            .contains(ProviderConnectionTestState.Unavailable)
+    }
+
+    @Test
+    fun `application routes Vertex credential parsing through the shared parser`() {
+        val application = source("NexaraApplication.kt")
+        val router = source("data/remote/ProviderRequestRouter.kt")
+
+        assertThat(application).contains("VertexCredentialParser")
+        assertThat(router).contains("VertexCredentialParser")
+        assertThat(application).doesNotContain("extractVertexProjectId")
+        assertThat(router).doesNotContain("parseVertexProjectId")
+    }
+
+    @Test
     fun `provider form uses typed credential mutation and never loads full config into compose state`() {
         val form = source("ui/settings/ProviderFormScreen.kt")
         val nav = source("navigation/NavGraph.kt")

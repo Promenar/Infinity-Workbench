@@ -6,14 +6,11 @@ import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.remote.middleware.LlmMiddleware
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
+import com.promenar.nexara.data.remote.provider.VertexCredentialParser
+import com.promenar.nexara.data.remote.provider.VertexCredentialException
 import com.promenar.nexara.data.model.ModelInfo
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.net.URI
-import java.security.KeyFactory
-import java.security.spec.PKCS8EncodedKeySpec
-import java.util.Base64
 
 data class ResolvedProviderModel(
     val modelId: String,
@@ -33,6 +30,7 @@ enum class ProviderResolutionError {
     BASE_URL_INVALID,
     MODEL_PROVIDER_MISMATCH,
     PROTOCOL_MISMATCH,
+    PROTOCOL_UNSUPPORTED,
     LOCAL_INFERENCE_UNAVAILABLE,
     VERTEX_CREDENTIAL_INVALID,
 }
@@ -95,6 +93,9 @@ class DefaultProviderRequestRouter(
         if (raw.protocolType::class != provider.protocolType::class) {
             return failure(ProviderResolutionError.PROTOCOL_MISMATCH, modelId, providerId)
         }
+        if (raw.protocolType == ProtocolType.Cohere_Chat || raw.protocolType == ProtocolType.Yi_ZeroOne) {
+            return failure(ProviderResolutionError.PROTOCOL_UNSUPPORTED, modelId, providerId)
+        }
         if (raw.protocolType is ProtocolType.Local && !localInferenceAvailable()) {
             return failure(ProviderResolutionError.LOCAL_INFERENCE_UNAVAILABLE, modelId, providerId)
         }
@@ -110,12 +111,15 @@ class DefaultProviderRequestRouter(
             return failure(ProviderResolutionError.API_KEY_MISSING, modelId, providerId)
         }
         val vertexProjectId = if (raw.protocolType is ProtocolType.Google_VertexAI) {
-            parseVertexProjectId(raw.vertexServiceAccountJson)
-                ?: return failure(
+            try {
+                VertexCredentialParser.parse(raw.vertexServiceAccountJson).projectId
+            } catch (_: VertexCredentialException) {
+                return failure(
                     ProviderResolutionError.VERTEX_CREDENTIAL_INVALID,
                     modelId,
                     providerId,
                 )
+            }
         } else {
             ""
         }
@@ -126,6 +130,7 @@ class DefaultProviderRequestRouter(
             defaultModel = model.remoteModelId,
             serviceAccountJson = raw.vertexServiceAccountJson,
             projectId = vertexProjectId,
+            location = VERTEX_DEFAULT_LOCATION,
         )
         return ProviderResolution.Success(
             ResolvedProviderModel(
@@ -152,36 +157,4 @@ class DefaultProviderRequestRouter(
         uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
     }.getOrDefault(false)
 
-    private fun parseVertexProjectId(credentialsJson: String): String? = runCatching {
-        val credentials = Json.parseToJsonElement(credentialsJson).jsonObject
-        fun requiredString(name: String): String = credentials[name]
-            ?.jsonPrimitive
-            ?.takeIf { it.isString }
-            ?.content
-            ?.trim()
-            .orEmpty()
-        val projectId = requiredString("project_id")
-        val clientEmail = requiredString("client_email")
-        val privateKey = requiredString("private_key")
-        projectId.takeIf {
-            it.isNotEmpty() &&
-                clientEmail.isNotEmpty() &&
-                isValidPkcs8RsaPrivateKey(privateKey)
-        }
-    }.getOrNull()
-
-    private fun isValidPkcs8RsaPrivateKey(pem: String): Boolean = runCatching {
-        val payload = pem
-            .replace("-----BEGIN PRIVATE KEY-----", "")
-            .replace("-----END PRIVATE KEY-----", "")
-            .filterNot(Char::isWhitespace)
-        require(payload.isNotEmpty())
-        val encoded = Base64.getDecoder().decode(payload)
-        try {
-            KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(encoded))
-        } finally {
-            encoded.fill(0)
-        }
-        true
-    }.getOrDefault(false)
 }

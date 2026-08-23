@@ -751,6 +751,7 @@
     <string name="provider_form_default_provider">设为默认</string>
     <string name="provider_form_btn_test">测试连接</string>
     <string name="provider_form_testing">正在测试连接…</string>
+    <string name="provider_form_connection_unavailable">此提供商暂无受支持的无成本连接探测；你仍可保存并手动填写模型。</string>
     <string name="provider_form_btn_save">保存提供商</string>
     <string name="provider_form_cd_hide">隐藏</string>
     <string name="provider_form_cd_show">显示</string>

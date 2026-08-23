@@ -4,7 +4,11 @@ import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.model.toCredentialUpdate
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import com.promenar.nexara.data.remote.provider.LlmProvider
+import com.promenar.nexara.data.remote.provider.ProviderConnectionProbe
+import com.promenar.nexara.data.remote.provider.ProviderConnectionProbeResult
+import com.promenar.nexara.data.remote.UnifiedProviderConfig
 import com.promenar.nexara.domain.model.ConnectionResult
 import com.promenar.nexara.domain.model.ModelCapability
 import com.promenar.nexara.domain.model.ModelSpec
@@ -15,7 +19,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class ProviderRepository(
-    private val providerManager: ProviderManager
+    private val providerManager: ProviderManager,
+    private val connectionProbe: ProviderConnectionProbe = ProviderConnectionProbe(),
 ) : IProviderRepository {
 
     override fun observeAll(): Flow<List<ProviderConfig>> {
@@ -29,18 +34,35 @@ class ProviderRepository(
             ?: return ConnectionResult(false, null, "Provider not found: $providerId")
         val start = System.currentTimeMillis()
         return try {
-            val provider = LlmProvider.builder()
-                .protocolType(config.protocolType)
-                .baseUrl(config.baseUrl)
-                .apiKey(config.apiKey)
-                .model(config.model)
-                .build()
-            provider.listModels()
+            val result = connectionProbe.probe(
+                UnifiedProviderConfig(
+                    protocolType = config.protocolType,
+                    baseUrl = config.baseUrl,
+                    apiKey = config.apiKey,
+                    defaultModel = config.model,
+                    serviceAccountJson = config.vertexServiceAccountJson,
+                    projectId = "",
+                    location = VERTEX_DEFAULT_LOCATION,
+                ),
+            )
             val latency = System.currentTimeMillis() - start
-            ConnectionResult(true, latency, null)
-        } catch (e: Exception) {
+            when (result) {
+                ProviderConnectionProbeResult.Success -> ConnectionResult(true, latency, null)
+                ProviderConnectionProbeResult.Unsupported -> ConnectionResult(
+                    success = false,
+                    latencyMs = latency,
+                    error = null,
+                    supported = false,
+                )
+                is ProviderConnectionProbeResult.Failure -> ConnectionResult(
+                    success = false,
+                    latencyMs = latency,
+                    error = result.reason.name,
+                )
+            }
+        } catch (_: Exception) {
             val latency = System.currentTimeMillis() - start
-            ConnectionResult(false, latency, e.message)
+            ConnectionResult(false, latency, "CONNECTION_PROBE_FAILED")
         }
     }
 
@@ -52,6 +74,9 @@ class ProviderRepository(
             .baseUrl(config.baseUrl)
             .apiKey(config.apiKey)
             .model(config.model)
+            .serviceAccountJson(config.vertexServiceAccountJson)
+            .projectId("")
+            .location(VERTEX_DEFAULT_LOCATION)
             .build()
         return try {
             provider.listModels().map { modelId ->

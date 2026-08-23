@@ -21,6 +21,7 @@ import com.promenar.nexara.data.remote.middleware.StreamTextParams
 import com.promenar.nexara.data.remote.parser.ErrorNormalizer
 import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.protocol.StreamChunk
+import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.repository.ISkillRepository
@@ -216,6 +217,7 @@ internal class ProviderModelTestCoordinator(
     }
 
     private suspend fun probe(modelId: String): ProbeOutcome {
+        // 模型级生成能力测试：与 ProviderConnectionProbe 的零推理成本连接探测严格分离。
         val resolved = when (val resolution = router.resolve(modelId)) {
             is ProviderResolution.Success -> resolution.value
             is ProviderResolution.Failure -> return ProbeOutcome.Failed(
@@ -437,6 +439,9 @@ class SettingsViewModel(
                             .baseUrl(config.baseUrl)
                             .apiKey(config.apiKey)
                             .model(config.model)
+                            .serviceAccountJson(config.vertexServiceAccountJson)
+                            .projectId("")
+                            .location(VERTEX_DEFAULT_LOCATION)
                             .build()
                     }
                     fetchedIds = tmpProvider.listModels()
@@ -487,6 +492,7 @@ class SettingsViewModel(
     }
 
     suspend fun verifyOnboardingModel(providerId: String, model: ModelInfo): ModelInfo? {
+        // 这是用户明确选择具体模型后的最小生成能力验证，不是 Provider 连接探测。
         val verified = verifyOnboardingModelCandidate(model) { remoteModelId ->
             val config = pm.getProviderConfig(providerId) ?: return@verifyOnboardingModelCandidate false
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -502,6 +508,8 @@ class SettingsViewModel(
                             .baseUrl(config.baseUrl)
                             .apiKey(config.apiKey)
                             .serviceAccountJson(config.vertexServiceAccountJson)
+                            .projectId("")
+                            .location(VERTEX_DEFAULT_LOCATION)
                             .model(remoteModelId)
                             .build()
                     }
@@ -536,7 +544,9 @@ class SettingsViewModel(
             is com.promenar.nexara.data.remote.protocol.ProtocolType.Google_VertexAI -> listOf("gemini")
             is com.promenar.nexara.data.remote.protocol.ProtocolType.DeepSeek -> listOf("deepseek")
             is com.promenar.nexara.data.remote.protocol.ProtocolType.Mistral_Chat -> listOf("mistral")
-            is com.promenar.nexara.data.remote.protocol.ProtocolType.Cohere_Chat -> listOf("command")
+            is com.promenar.nexara.data.remote.protocol.ProtocolType.Cohere_Chat,
+            is com.promenar.nexara.data.remote.protocol.ProtocolType.Yi_ZeroOne,
+            -> return emptyList()
             is com.promenar.nexara.data.remote.protocol.ProtocolType.OpenAI_ChatCompletions -> listOf("gpt", "o1", "o3", "o4")
             is com.promenar.nexara.data.remote.protocol.ProtocolType.Local -> return emptyList()
             else -> return emptyList()

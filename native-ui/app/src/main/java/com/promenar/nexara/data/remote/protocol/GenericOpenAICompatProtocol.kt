@@ -25,10 +25,9 @@ class GenericOpenAICompatProtocol(
     private val baseUrl: String,
     private val apiKey: String,
     private val model: String,
+    override val protocolType: ProtocolType = ProtocolType.Generic_OpenAI_Compat,
     httpClient: HttpClient? = null
 ) : LlmProtocol {
-
-    override val protocolType: ProtocolType = ProtocolType.Generic_OpenAI_Compat
 
     private val httpClient: HttpClient = httpClient ?: HttpClient(OkHttp) {
         install(HttpTimeout) {
@@ -52,7 +51,7 @@ class GenericOpenAICompatProtocol(
         val toolCallAccumulator = mutableMapOf<Int, AccumulatedToolCall>()
 
         try {
-            httpClient.preparePost(buildUrl()) {
+            httpClient.preparePost(inferenceUrl()) {
                 contentType(ContentType.Application.Json)
                 header("Accept", "text/event-stream")
                 header("Accept-Encoding", "identity") // 强制禁用压缩，防止 Gzip 导致流式输出攒块
@@ -141,7 +140,7 @@ class GenericOpenAICompatProtocol(
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
         val response: HttpResponse
         try {
-            response = httpClient.post(buildUrl()) {
+            response = httpClient.post(inferenceUrl()) {
                 contentType(ContentType.Application.Json)
                 if (apiKey.isNotEmpty()) {
                     header("Authorization", "Bearer $apiKey")
@@ -168,9 +167,14 @@ class GenericOpenAICompatProtocol(
     }
 
     override suspend fun listModels(): List<String> {
+        val endpoint = ProviderEndpointResolver.resolve(
+            protocolType,
+            baseUrl,
+            ProviderEndpointOperation.MODELS,
+        )
         val response: HttpResponse
         try {
-            response = httpClient.get(baseUrl.trimEnd('/') + "/models") {
+            response = httpClient.get(endpoint) {
                 if (apiKey.isNotEmpty()) {
                     header("Authorization", "Bearer $apiKey")
                 }
@@ -183,10 +187,15 @@ class GenericOpenAICompatProtocol(
 
         val responseText = response.bodyAsText()
         return try {
-            val root = json.parseToJsonElement(responseText).jsonObject
-            root["data"]?.jsonArray?.mapNotNull {
-                it.jsonObject["id"]?.jsonPrimitive?.contentOrNull
-            } ?: emptyList()
+            val root = json.parseToJsonElement(responseText)
+            val models = when (root) {
+                is JsonArray -> root
+                is JsonObject -> root["data"] as? JsonArray ?: JsonArray(emptyList())
+                else -> JsonArray(emptyList())
+            }
+            models.mapNotNull { item ->
+                (item as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull
+            }
         } catch (_: Exception) {
             emptyList()
         }
@@ -196,11 +205,11 @@ class GenericOpenAICompatProtocol(
         activeChannel?.cancel()
     }
 
-    private fun buildUrl(): String {
-        val cleanBase = baseUrl.trimEnd('/')
-        // 如果 baseUrl 已经包含完整路径（如智谱 /v4/chat/completions），直接使用
-        return if (cleanBase.endsWith("/chat/completions")) cleanBase else "$cleanBase/chat/completions"
-    }
+    private fun inferenceUrl(): String = ProviderEndpointResolver.resolve(
+        protocolType,
+        baseUrl,
+        ProviderEndpointOperation.INFERENCE,
+    )
 
     private fun buildRequestBody(request: PromptRequest, stream: Boolean): String {
         val body = buildJsonObject {

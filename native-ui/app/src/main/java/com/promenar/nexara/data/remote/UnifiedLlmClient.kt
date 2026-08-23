@@ -12,6 +12,7 @@ import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.protocol.ProtocolFactory
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.protocol.toStreamChunkError
+import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -24,7 +25,7 @@ data class UnifiedProviderConfig(
     val defaultModel: String,
     val serviceAccountJson: String = "",
     val projectId: String = "",
-    val location: String = "us-central1"
+    val location: String = VERTEX_DEFAULT_LOCATION
 ) {
     override fun toString(): String =
         "UnifiedProviderConfig(protocolType=$protocolType, " +

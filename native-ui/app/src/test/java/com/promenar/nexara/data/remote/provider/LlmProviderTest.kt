@@ -2,6 +2,9 @@ package com.promenar.nexara.data.remote.provider
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.remote.protocol.ProtocolId
+import com.promenar.nexara.data.remote.protocol.ProtocolFactory
+import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.protocol.UnsupportedProviderProtocolException
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.StreamChunk
@@ -92,6 +95,67 @@ class LlmProviderTest {
     @Nested
     @DisplayName("ProtocolId routing")
     inner class ProtocolIdTests {
+
+        @Test
+        fun `两套 factory 为所有 OpenAI 兼容预设保留实际协议身份`() {
+            val protocols = listOf(
+                ProtocolType.DeepSeek,
+                ProtocolType.Moonshot_Kimi,
+                ProtocolType.Qwen_DashScope,
+                ProtocolType.Zhipu_GLM,
+                ProtocolType.Doubao_ByteDance,
+                ProtocolType.Baichuan,
+                ProtocolType.Mistral_Chat,
+            )
+
+            protocols.forEach { type ->
+                val fromProtocolFactory = ProtocolFactory.create(
+                    type = type,
+                    baseUrl = type.defaultBaseUrl,
+                    apiKey = "fake-key",
+                    model = "fake-model",
+                )
+                val fromProviderBuilder = LlmProvider.builder()
+                    .protocolType(type)
+                    .baseUrl(type.defaultBaseUrl)
+                    .apiKey("fake-key")
+                    .model("fake-model")
+                    .build()
+
+                assertThat(fromProtocolFactory.protocolType).isEqualTo(type)
+                assertThat(fromProviderBuilder.protocolType).isEqualTo(type)
+            }
+        }
+
+        @Test
+        fun `历史 Cohere 与 Yi 配置可解码但两套 factory 都明确拒绝构造`() {
+            val historical = listOf(ProtocolType.Cohere_Chat, ProtocolType.Yi_ZeroOne)
+
+            historical.forEach { type ->
+                assertThat(ProtocolType.fromLegacyName(type::class.simpleName.orEmpty()))
+                    .isEqualTo(type)
+
+                val protocolFactoryFailure = runCatching {
+                    ProtocolFactory.create(
+                        type = type,
+                        baseUrl = type.defaultBaseUrl,
+                        apiKey = "fake-key",
+                        model = "fake-model",
+                    )
+                }.exceptionOrNull()
+                val providerFactoryFailure = runCatching {
+                    LlmProvider.builder()
+                        .protocolType(type)
+                        .baseUrl(type.defaultBaseUrl)
+                        .apiKey("fake-key")
+                        .model("fake-model")
+                        .build()
+                }.exceptionOrNull()
+
+                assertThat(protocolFactoryFailure).isInstanceOf(UnsupportedProviderProtocolException::class.java)
+                assertThat(providerFactoryFailure).isInstanceOf(UnsupportedProviderProtocolException::class.java)
+            }
+        }
 
         @Test
         fun `all protocol ids build successfully`() {

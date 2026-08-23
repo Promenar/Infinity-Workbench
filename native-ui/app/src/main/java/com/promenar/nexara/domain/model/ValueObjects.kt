@@ -50,7 +50,12 @@ data class ProviderConfig(
     val isEnabled: Boolean = true
 )
 
-data class ConnectionResult(val success: Boolean, val latencyMs: Long?, val error: String?)
+data class ConnectionResult(
+    val success: Boolean,
+    val latencyMs: Long?,
+    val error: String?,
+    val supported: Boolean = true,
+)
 
 data class ModelSpec(
     val id: String,

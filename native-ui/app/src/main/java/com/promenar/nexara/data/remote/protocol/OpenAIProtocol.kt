@@ -46,7 +46,7 @@ class OpenAIProtocol(
         val toolCallAccumulator = mutableMapOf<Int, AccumulatedToolCall>()
 
         try {
-            httpClient.preparePost(buildUrl()) {
+            httpClient.preparePost(inferenceUrl()) {
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $apiKey")
                 header("Accept", "text/event-stream")
@@ -131,7 +131,7 @@ class OpenAIProtocol(
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
         val response: HttpResponse
         try {
-            response = httpClient.post(buildUrl()) {
+            response = httpClient.post(inferenceUrl()) {
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $apiKey")
                 setBody(buildRequestBody(request, stream = false))
@@ -156,9 +156,14 @@ class OpenAIProtocol(
     }
 
     override suspend fun listModels(): List<String> {
+        val endpoint = ProviderEndpointResolver.resolve(
+            protocolType,
+            baseUrl,
+            ProviderEndpointOperation.MODELS,
+        )
         val response: HttpResponse
         try {
-            response = httpClient.get(baseUrl.trimEnd('/') + "/models") {
+            response = httpClient.get(endpoint) {
                 header("Authorization", "Bearer $apiKey")
             }
         } catch (_: Exception) {
@@ -182,10 +187,11 @@ class OpenAIProtocol(
         activeChannel?.cancel()
     }
 
-    private fun buildUrl(): String {
-        val cleanBase = baseUrl.trimEnd('/')
-        return "$cleanBase/chat/completions"
-    }
+    private fun inferenceUrl(): String = ProviderEndpointResolver.resolve(
+        protocolType,
+        baseUrl,
+        ProviderEndpointOperation.INFERENCE,
+    )
 
     private fun buildRequestBody(request: PromptRequest, stream: Boolean): String {
         val body = buildJsonObject {

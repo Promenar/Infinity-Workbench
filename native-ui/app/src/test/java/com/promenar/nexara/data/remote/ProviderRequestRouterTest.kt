@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import com.promenar.nexara.data.model.ModelInfo
 import org.junit.Test
 import java.security.KeyPairGenerator
@@ -175,6 +176,33 @@ class ProviderRequestRouterTest {
         val success = router.resolve("vertex::gemini") as ProviderResolution.Success
 
         assertThat(success.value.config.projectId).isEqualTo("project-safe")
+        assertThat(success.value.config.serviceAccountJson).contains("service@example.invalid")
+        assertThat(success.value.config.baseUrl).isEqualTo("https://vertex.invalid")
+        assertThat(success.value.config.defaultModel).isEqualTo("gemini")
+        assertThat(success.value.config.location).isEqualTo(VERTEX_DEFAULT_LOCATION)
+    }
+
+    @Test
+    fun `历史 Cohere 与 Yi 配置在路由阶段 typed fail closed`() {
+        listOf(ProtocolType.Cohere_Chat, ProtocolType.Yi_ZeroOne).forEachIndexed { index, protocol ->
+            val providerId = "historical-$index"
+            val modelId = stableModelId(providerId, "legacy-model")
+            providers[providerId] = ProviderListItem(
+                id = providerId,
+                name = providerId,
+                protocolType = protocol,
+            )
+            configs[providerId] = ProviderConfig(
+                protocolType = protocol,
+                baseUrl = protocol.defaultBaseUrl,
+                apiKey = "fake-key",
+                model = "legacy-model",
+            )
+            models[modelId] = model(providerId, "legacy-model")
+
+            assertFailure(modelId, ProviderResolutionError.PROTOCOL_UNSUPPORTED)
+        }
+        assertThat(createdConfigs).isEmpty()
     }
 
     @Test

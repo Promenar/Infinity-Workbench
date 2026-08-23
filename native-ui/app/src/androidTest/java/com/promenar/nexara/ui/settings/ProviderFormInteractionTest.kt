@@ -156,6 +156,30 @@ class ProviderFormInteractionTest {
     }
 
     @Test
+    fun unsupportedNoCostProbeIsExplainedWithoutBlockingManualSave() {
+        rule.setContent {
+            NexaraTheme {
+                ProviderFormContent(
+                    state = validCloudState(
+                        connectionTestState = ProviderConnectionTestState.Unavailable,
+                    ),
+                    actions = ProviderFormActions(),
+                )
+            }
+        }
+
+        val unavailable = resources.getString(R.string.provider_form_connection_unavailable)
+        rule.onNodeWithText(unavailable)
+            .performScrollTo()
+            .assertIsDisplayed()
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, unavailable))
+            .assertIsEnabled()
+        rule.onNodeWithText(resources.getString(R.string.provider_form_btn_save))
+            .assertIsEnabled()
+    }
+
+    @Test
     fun presetAndCustomProtocolDropdownsUseExplicitSelectionCallbacks() {
         val selectedPreset = AtomicReference<ProviderPreset?>(null)
         val selectedProtocol = AtomicReference<ProtocolType?>(null)

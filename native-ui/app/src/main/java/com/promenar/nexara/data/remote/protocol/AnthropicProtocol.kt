@@ -53,7 +53,7 @@ class AnthropicProtocol(
         toolUseAccumulator.clear()
 
         try {
-            httpClient.preparePost(buildUrl()) {
+            httpClient.preparePost(inferenceUrl()) {
                 contentType(ContentType.Application.Json)
                 header("x-api-key", apiKey)
                 header("anthropic-version", anthropicVersion)
@@ -162,7 +162,7 @@ class AnthropicProtocol(
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
         val response: HttpResponse
         try {
-            response = httpClient.post(buildUrl()) {
+            response = httpClient.post(inferenceUrl()) {
                 contentType(ContentType.Application.Json)
                 header("x-api-key", apiKey)
                 header("anthropic-version", anthropicVersion)
@@ -187,14 +187,40 @@ class AnthropicProtocol(
         return parseSyncResponse(responseText)
     }
 
+    override suspend fun listModels(): List<String> {
+        val endpoint = ProviderEndpointResolver.resolve(
+            protocolType,
+            baseUrl,
+            ProviderEndpointOperation.MODELS,
+        )
+        val response = try {
+            httpClient.get(endpoint) {
+                header("x-api-key", apiKey)
+                header("anthropic-version", anthropicVersion)
+            }
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        if (!response.status.isSuccess()) return emptyList()
+        return try {
+            json.parseToJsonElement(response.bodyAsText()).jsonObject["data"]
+                ?.jsonArray
+                ?.mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.contentOrNull }
+                .orEmpty()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     override fun cancel() {
         activeChannel?.cancel()
     }
 
-    private fun buildUrl(): String {
-        val cleanBase = baseUrl.trimEnd('/')
-        return "$cleanBase/v1/messages"
-    }
+    private fun inferenceUrl(): String = ProviderEndpointResolver.resolve(
+        protocolType,
+        baseUrl,
+        ProviderEndpointOperation.INFERENCE,
+    )
 
     private fun buildRequestBody(request: PromptRequest, stream: Boolean): String {
         val body = buildJsonObject {
