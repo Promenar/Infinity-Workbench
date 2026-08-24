@@ -342,6 +342,30 @@ class ApprovalManagerTest {
         return session
     }
 
+    @Test
+    fun `会话删除锁定后拒绝创建新的审批请求`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val gate = com.promenar.nexara.data.session.SessionExecutionGate()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val deletion = launch {
+            gate.withDeletion("s1", "root-1") {
+                entered.complete(Unit)
+                release.await()
+            }
+        }
+        entered.await()
+        val guarded = ApprovalManager(store, ledger, messageManager, stubSessionRepo, gate)
+
+        val failure = runCatching {
+            guarded.setApprovalRequest("s1", ApprovalRequest(toolName = "read"))
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(com.promenar.nexara.data.session.SessionDeletingException::class.java)
+        release.complete(Unit)
+        deletion.join()
+    }
+
     private suspend fun seedExactApproval(
         calls: List<ToolCall> = listOf(ToolCall("risk", "write_file", "{}")),
     ): ApprovalRequest {

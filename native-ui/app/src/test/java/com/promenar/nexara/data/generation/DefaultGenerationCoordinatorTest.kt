@@ -12,6 +12,7 @@ import com.promenar.nexara.domain.generation.GenerationRuntimePolicy
 import com.promenar.nexara.domain.generation.StartGenerationResult
 import com.promenar.nexara.data.remote.ProviderResolution
 import com.promenar.nexara.data.remote.ProviderResolutionError
+import com.promenar.nexara.data.session.SessionExecutionGate
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -27,6 +28,47 @@ import kotlinx.coroutines.test.TestScope
 import org.junit.Test
 
 class DefaultGenerationCoordinatorTest {
+    @Test
+    fun `deleting gate在runner创建前拒绝新生成`() = runTest {
+        val gate = SessionExecutionGate()
+        val created = AtomicInteger()
+        val coordinator = DefaultGenerationCoordinator(
+            applicationScope = backgroundScope,
+            executionGate = gate,
+            runnerFactory = GenerationRunnerFactory { _, _ ->
+                created.incrementAndGet()
+                GenerationRunner { _, _ -> Unit }
+            },
+        )
+
+        val result = gate.withDeletion("s1", "root-1") {
+            coordinator.start(request("s1", "a1"))
+        }
+
+        assertThat(result).isInstanceOf(StartGenerationResult.Rejected::class.java)
+        assertThat(created.get()).isEqualTo(0)
+    }
+
+    @Test
+    fun `cancelAndJoinSession等待runner finally结束`() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val finished = CompletableDeferred<Unit>()
+        val coordinator = coordinator { _, _ ->
+            try {
+                entered.complete(Unit)
+                awaitCancellation()
+            } finally {
+                finished.complete(Unit)
+            }
+        }
+        coordinator.start(request("s1", "a1"))
+        entered.await()
+
+        assertThat(coordinator.cancelAndJoinSession("s1")).isTrue()
+        assertThat(finished.isCompleted).isTrue()
+        assertThat(coordinator.active.value).isNull()
+    }
+
     @Test
     fun `同请求Existing不同会话Busy且只启动一个runner`() = runTest {
         val entered = CompletableDeferred<Unit>()

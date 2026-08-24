@@ -30,10 +30,11 @@ import kotlinx.coroutines.sync.withLock
 class SessionListViewModel(
     private val store: ChatStore,
     private val sessionRepository: ISessionRepository,
-    private val agentRepository: AgentRepository
+    private val agentRepository: AgentRepository,
+    coordinatedDelete: (suspend (String) -> com.promenar.nexara.data.session.SessionDeletionResult)? = null,
 ) : ViewModel() {
 
-    private val sessionManager = SessionManager(store, sessionRepository)
+    private val sessionManager = SessionManager(store, sessionRepository, coordinatedDelete)
     private val sessionMutationMutex = Mutex()
 
     private val _searchQuery = MutableStateFlow("")
@@ -192,7 +193,8 @@ class SessionListViewModel(
                     return SessionListViewModel(
                         store = app.chatStore,
                         sessionRepository = app.sessionRepository,
-                        agentRepository = app.agentRepository
+                        agentRepository = app.agentRepository,
+                        coordinatedDelete = app::deleteSessionRecoverably,
                     ) as T
                 }
             }

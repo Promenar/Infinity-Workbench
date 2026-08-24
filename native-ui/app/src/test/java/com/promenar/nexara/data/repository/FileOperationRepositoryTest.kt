@@ -20,6 +20,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
@@ -98,6 +100,33 @@ class FileOperationRepositoryTest {
         val diff = repo.diffFile("root-1", entry.uuid, entry.hash)
         assertThat(diff.hunks).isNotEmpty()
         assertThat(diff.basisHash).isEqualTo(entry.hash)
+    }
+
+    @Test
+    fun `会话删除期间文件写入在创建版本快照前被拒绝`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "old content")
+        val gate = com.promenar.nexara.data.session.SessionExecutionGate()
+        repo = FileOperationRepository(
+            db.fileEntryDao(), db.fileVersionDao(), TestWorkspaceFileOps(), executionGate = gate,
+        )
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val deleting = async {
+            gate.withDeletion("session-1", "root-1") {
+                entered.complete(Unit)
+                release.await()
+            }
+        }
+        entered.await()
+
+        val failure = runCatching {
+            repo.writeFileAtomic("root-1", entry.uuid, "new content", "session-1", entry.hash)
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(com.promenar.nexara.data.session.SessionDeletingException::class.java)
+        assertThat(db.fileVersionDao().getByFile("root-1", entry.uuid)).isEmpty()
+        release.complete(Unit)
+        deleting.await()
     }
 
     @Test

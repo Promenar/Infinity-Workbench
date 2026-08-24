@@ -1251,6 +1251,7 @@
     <string name="chat_dialog_clear_history_msg">此操作将删除当前会话中的所有消息，且无法撤回。</string>
     <string name="chat_dialog_delete_session_title">删除会话？</string>
     <string name="chat_dialog_delete_session_msg">此操作将永久删除此会话及其所有内容。</string>
+    <string name="chat_delete_session_failed">会话删除失败，数据已保留，请重试。</string>
     <string name="chat_dialog_rename_title">重命名会话</string>
     <string name="chat_dialog_rename_placeholder">输入新名称...</string>
     <string name="chat_hint_select_model">请先点击顶部配置会话模型</string>

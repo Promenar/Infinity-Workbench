@@ -549,7 +549,10 @@ fun ChatRoute(
                 title = stringResource(R.string.chat_dialog_delete_session_title),
                 message = stringResource(R.string.chat_dialog_delete_session_msg),
                 confirmText = stringResource(R.string.shared_btn_delete),
-                onConfirm = { chatViewModel.deleteSession(); activeOverlayToken = null; onNavigateBack() },
+                onConfirm = {
+                    activeOverlayToken = null
+                    chatViewModel.deleteSession(onNavigateBack)
+                },
                 onCancel = { activeOverlayToken = null },
             )
         }

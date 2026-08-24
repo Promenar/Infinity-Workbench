@@ -1,0 +1,163 @@
+package com.promenar.nexara.data.session
+
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.local.db.NexaraDatabase
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationPayload
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationPayloadCodec
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationType
+import com.promenar.nexara.infra.util.Sha256Utils
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+import java.nio.file.Paths
+import java.nio.file.Files
+
+@RunWith(AndroidJUnit4::class)
+@Config(sdk = [33])
+class RoomSessionDeletionTransactionTest {
+    private lateinit var database: NexaraDatabase
+
+    @Before
+    fun setUp() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        database = Room.inMemoryDatabaseBuilder(context, NexaraDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+    }
+
+    @After
+    fun tearDown() = database.close()
+
+    @Test
+    fun `事务显式删除会话全部关联数据并保留已提交journal`() = runBlocking {
+        seedAllRelations()
+        val payload = WorkspaceMutationPayload(
+            sourceRelativePath = "root",
+            targetRelativePath = ".nexara_session_deletions/op",
+            databaseTargetUuid = SESSION,
+            expectedSha256 = "identity",
+        )
+        val raw = WorkspaceMutationPayloadCodec.encode(payload)
+        database.workspaceMutationDao().insert(
+            WorkspaceMutationEntity(
+                operationId = "op",
+                workspaceRootUuid = ROOT,
+                operationType = WorkspaceMutationType.DELETE,
+                payload = raw,
+                payloadDigest = Sha256Utils.hash(raw),
+                createdAt = 1,
+                updatedAt = 1,
+            ),
+        )
+
+        RoomSessionDeletionTransaction(database).delete(target(), "op")
+
+        listOf(
+            "sessions", "messages", "attachments", "vectors", "vectors_fts",
+            "context_summaries", "document_tags", "kg_nodes", "kg_edges", "kg_jit_cache",
+            "vectorization_tasks", "audit_logs", "artifacts", "workspace_files", "task_nodes",
+            "tool_execution_ledger", "file_versions",
+        ).forEach { table ->
+            assertThat(count(table)).isEqualTo(0)
+        }
+        assertThat(database.workspaceMutationDao().get("op")?.state?.name)
+            .isEqualTo("DB_COMMITTED")
+    }
+
+    @Test
+    fun `不存在或身份不匹配的journal使整个删除事务回滚`() = runBlocking {
+        seedAllRelations()
+        val failure = runCatching {
+            RoomSessionDeletionTransaction(database).delete(target(), "missing-op")
+        }.exceptionOrNull()
+
+        assertThat(failure).isNotNull()
+        assertThat(count("sessions")).isEqualTo(1)
+        assertThat(count("workspace_files")).isEqualTo(2)
+        assertThat(count("tool_execution_ledger")).isEqualTo(1)
+    }
+
+    @Test
+    fun `完整journal删除同时清理工作区树及物理版本快照`() = runBlocking {
+        val parent = Files.createTempDirectory("session-delete-parent")
+        val root = Files.createDirectories(parent.resolve("root"))
+        val snapshot = Files.createDirectories(root.resolve(".nexara_versions").resolve(ROOT))
+            .resolve("version.snapshot")
+        Files.write(snapshot, "version".toByteArray())
+        Files.write(root.resolve("doc.txt"), "doc".toByteArray())
+        seedAllRelations(root.toString(), snapshot.toString())
+        val target = target(root.toString())
+        val journal = RoomSessionWorkspaceMutationJournal(
+            database = database,
+            workspaceParent = parent,
+            operationIdFactory = { "physical-op" },
+            verifyIdentity = { _, _ -> },
+        )
+
+        val staged = journal.stage(target)
+        RoomSessionDeletionTransaction(database).delete(target, staged.operationId)
+        journal.complete(staged)
+
+        assertThat(Files.exists(root)).isFalse()
+        assertThat(Files.exists(snapshot)).isFalse()
+        assertThat(database.workspaceMutationDao().get("physical-op")).isNull()
+        Files.deleteIfExists(parent.resolve(".nexara_session_deletions"))
+        Files.deleteIfExists(parent)
+        Unit
+    }
+
+    private fun seedAllRelations(
+        rootPath: String = "/tmp/root",
+        versionPath: String = "/tmp/root/.nexara_versions/version.snapshot",
+    ) {
+        val db = database.openHelper.writableDatabase
+        db.execSQL("INSERT INTO sessions(id,agent_id,title,unread,is_pinned,created_at,updated_at,workspace_path,workspace_root_uuid) VALUES('$SESSION','agent','title',0,0,1,1,'$rootPath','$ROOT')")
+        db.execSQL("INSERT INTO workspace_files(uuid,workspace_root_uuid,parent_uuid,name,hash,size_bytes,is_directory,physical_root_path,materialized_path,vector_version,kg_version,in_recycle_bin,created_at,updated_at) VALUES('$ROOT','$ROOT',NULL,'root','identity',0,1,'$rootPath','/',1,1,0,1,1)")
+        db.execSQL("INSERT INTO workspace_files(uuid,workspace_root_uuid,parent_uuid,name,hash,mime_type,size_bytes,is_directory,physical_root_path,materialized_path,vector_version,kg_version,in_recycle_bin,created_at,updated_at) VALUES('$FILE','$ROOT','$ROOT','doc.txt','hash','text/plain',4,0,'$rootPath','/doc.txt',1,1,0,1,1)")
+        db.execSQL("INSERT INTO messages(id,session_id,role,content,created_at) VALUES('$MESSAGE','$SESSION','assistant','content',1)")
+        db.execSQL("INSERT INTO attachments(id,message_id,type,uri) VALUES('attachment','$MESSAGE','file','uri')")
+        db.execSQL("INSERT INTO vectors(id,doc_id,session_id,content,embedding,metadata,start_message_id,end_message_id,created_at,file_uuid) VALUES('vector','$FILE','$SESSION','content',X'00','{}','$MESSAGE','$MESSAGE',1,'$FILE')")
+        db.execSQL("INSERT INTO context_summaries(id,session_id,start_message_id,end_message_id,summary_content,created_at) VALUES('summary','$SESSION','$MESSAGE','$MESSAGE','summary',1)")
+        db.execSQL("INSERT INTO tags(id,name,color,created_at) VALUES('tag','tag','#fff',1)")
+        db.execSQL("INSERT INTO document_tags(doc_id,tag_id,created_at) VALUES('$FILE','tag',1)")
+        db.execSQL("INSERT INTO kg_nodes(id,name,type,session_id,source_type,created_at,file_uuid) VALUES('node','node','entity','$SESSION','document',1,'$FILE')")
+        db.execSQL("INSERT INTO kg_edges(id,source_id,target_id,relation,weight,doc_id,session_id,source_type,created_at,file_uuid) VALUES('edge','node','node','rel',1.0,'$FILE','$SESSION','document',1,'$FILE')")
+        db.execSQL("INSERT INTO kg_jit_cache(cache_key,query_hash,chunk_ids_hash,result_json,created_at,expires_at) VALUES('cache','q','c','{}',1,2)")
+        db.execSQL("INSERT INTO vectorization_tasks(id,type,status,doc_id,workspace_root_uuid,session_id,last_chunk_index,progress,skip_vectorization,content_truncated,target_epoch,created_at,updated_at) VALUES('vector-task','document_reference','pending','$FILE','$ROOT','$SESSION',0,0,0,0,1,1,1)")
+        db.execSQL("INSERT INTO audit_logs(id,action,resource_type,session_id,status,created_at) VALUES('audit','delete','session','$SESSION','ok',1)")
+        db.execSQL("INSERT INTO artifacts(id,type,title,content,session_id,message_id,created_at,updated_at) VALUES('artifact','text','title','body','$SESSION','$MESSAGE',1,1)")
+        db.execSQL("INSERT INTO task_nodes(id,session_id,title,created_at,updated_at) VALUES('task','$SESSION','task',1,1)")
+        db.execSQL("INSERT INTO task_nodes(id,session_id,parent_id,title,created_at,updated_at) VALUES('step','$SESSION','task','step',1,1)")
+        db.execSQL("INSERT INTO tool_execution_ledger(session_id,assistant_message_id,tool_call_id,tool_name,runtime_tool_id,arguments_digest,definition_digest,requires_approval,status,created_at,updated_at) VALUES('$SESSION','$MESSAGE','call','tool','tool:id','args','definition',1,'PENDING_APPROVAL',1,1)")
+        db.execSQL("INSERT INTO file_versions(id,file_uuid,workspace_root_uuid,hash,content_path,created_by_session_id,created_at) VALUES('version','$FILE','$ROOT','hash','$versionPath','$SESSION',1)")
+    }
+
+    private fun target(rootPath: String = "/tmp/root") = SessionDeletionTarget(
+        sessionId = SESSION,
+        workspaceRootUuid = ROOT,
+        physicalRoot = Paths.get(rootPath),
+        rootIdentity = "identity",
+        fileUuids = listOf(ROOT, FILE),
+    )
+
+    private fun count(table: String): Long = database.openHelper.readableDatabase
+        .query("SELECT COUNT(*) FROM $table").use { cursor ->
+            check(cursor.moveToFirst())
+            cursor.getLong(0)
+        }
+
+    companion object {
+        private const val SESSION = "session-1"
+        private const val ROOT = "root-1"
+        private const val FILE = "file-1"
+        private const val MESSAGE = "message-1"
+    }
+}

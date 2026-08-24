@@ -19,6 +19,39 @@ import org.junit.Test
 
 class VectorizationQueueReferenceTest {
     @Test
+    fun `session delete barrier取消并等待memory worker且持有期间拒绝重新入队`() = runTest {
+        val taskDao = mockk<VectorizationTaskDao>(relaxed = true)
+        val embeddingStarted = CompletableDeferred<Unit>()
+        val embeddingCancelled = CompletableDeferred<Unit>()
+        val embeddingClient = mockk<EmbeddingClient>()
+        coEvery { embeddingClient.embedDocuments(any()) } coAnswers {
+            embeddingStarted.complete(Unit)
+            try { awaitCancellation() } finally { embeddingCancelled.complete(Unit) }
+        }
+        val queue = VectorizationQueue(
+            vectorStore = mockk(relaxed = true),
+            embeddingClient = embeddingClient,
+            graphExtractor = null,
+            vectorDao = mockk(relaxed = true),
+            vectorizationTaskDao = taskDao,
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+        queue.enqueueMemory("session-1", "user", "assistant", "u1", "a1")
+        runCurrent()
+        embeddingStarted.await()
+
+        val barrier = queue.acquireSessionDeleteBarrier("session-1", ROOT, emptyList())
+        barrier.awaitReady()
+
+        assertThat(embeddingCancelled.isCompleted).isTrue()
+        assertThat(runCatching {
+            queue.enqueueMemory("session-1", "late", "late", "u2", "a2")
+        }.exceptionOrNull()).isNotNull()
+        barrier.commit()
+        queue.shutdown()
+    }
+
+    @Test
     fun `状态订阅token关闭后不再接收队列变化`() = runTest {
         val taskDao = mockk<VectorizationTaskDao>(relaxed = true)
         stubTargetUpsert(taskDao)

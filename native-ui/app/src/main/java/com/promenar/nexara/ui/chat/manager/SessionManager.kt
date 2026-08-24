@@ -6,12 +6,14 @@ import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.data.repository.ISessionRepository
+import com.promenar.nexara.data.session.SessionDeletionResult
 import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.ui.chat.ChatStore
 
 class SessionManager(
     private val store: ChatStore,
-    private val sessionRepository: ISessionRepository
+    private val sessionRepository: ISessionRepository,
+    private val coordinatedDelete: (suspend (String) -> SessionDeletionResult)? = null,
 ) {
     suspend fun addSession(session: Session) {
         val enrichedSession = session.copy(
@@ -31,7 +33,12 @@ class SessionManager(
     }
 
     suspend fun deleteSession(id: String) {
-        sessionRepository.delete(id)
+        when (val result = coordinatedDelete?.invoke(id)) {
+            null -> sessionRepository.delete(id)
+            SessionDeletionResult.Deleted,
+            SessionDeletionResult.AlreadyDeleted -> Unit
+            is SessionDeletionResult.Failed -> throw SessionDeletionFailedException(result.error)
+        }
 
         store.removeSession(id)
     }
@@ -165,3 +172,6 @@ class SessionManager(
         return result
     }
 }
+
+class SessionDeletionFailedException(error: com.promenar.nexara.data.session.SessionDeletionError) :
+    IllegalStateException("会话删除失败（${error.code}），可安全重试", error.cause)

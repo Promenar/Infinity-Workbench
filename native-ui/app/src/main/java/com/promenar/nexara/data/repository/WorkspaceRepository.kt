@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 import java.io.OutputStream
+import com.promenar.nexara.data.session.SessionExecutionGate
 
 interface WorkspaceDeleteBarrierLease {
     suspend fun awaitReady()
@@ -45,11 +46,13 @@ class WorkspaceRepository(
     private val afterDeleteCommitted: suspend (String, List<String>) -> Unit = { _, _ -> },
     private val bulkDeleteSnapshotHook: suspend () -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
+    private val executionGate: SessionExecutionGate? = null,
 ) : IWorkspaceRepository {
     @Volatile
     private var defaultParentIdentity: String? = null
 
     override suspend fun ensureSessionRoot(sessionId: String): FileEntry = withContext(Dispatchers.IO) {
+        executionGate?.requireSessionWritable(sessionId)
         val session = dao.getSessionForRoot(sessionId)
             ?: throw NoSuchElementException("Session not found: $sessionId")
         val path = session.workspacePath?.takeIf { it.isNotBlank() }
@@ -67,6 +70,7 @@ class WorkspaceRepository(
         sessionId: String,
         physicalRootPath: String,
     ): FileEntry = withContext(Dispatchers.IO) {
+        executionGate?.requireSessionWritable(sessionId)
         ensureSessionRootInternal(sessionId, physicalRootPath)
     }
 
@@ -671,10 +675,12 @@ class WorkspaceRepository(
         workspaceRootUuid: String,
         block: suspend (FileEntry) -> T,
     ): T {
+        executionGate?.requireWorkspaceWritable(workspaceRootUuid)
         val initial = requireRoot(workspaceRootUuid)
         return WorkspaceMutationCoordinator.withBoundRoot(
             File(initial.physicalRootPath).toPath(), initial.hash,
         ) {
+            executionGate?.requireWorkspaceWritable(workspaceRootUuid)
             val currentRoot = requireRoot(workspaceRootUuid)
             recoverPendingTombstonesLocked(currentRoot)
             block(requireRoot(workspaceRootUuid))

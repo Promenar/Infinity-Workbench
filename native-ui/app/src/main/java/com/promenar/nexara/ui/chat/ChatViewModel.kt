@@ -254,7 +254,11 @@ class ChatViewModel(
             root.uuid to root.physicalRootPath
         }
 
-    private val sessionManager = SessionManager(store, sessionRepository)
+    private val sessionManager = SessionManager(
+        store,
+        sessionRepository,
+        (application as NexaraApplication)::deleteSessionRecoverably,
+    )
     val availableSessionCustomSkills = (application as NexaraApplication).skillRepository
         .getAllCustomSkills()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -270,6 +274,7 @@ class ChatViewModel(
         sessionToolResolver,
         (application as NexaraApplication).taskRepository,
         toolLedger,
+        (application as NexaraApplication).sessionExecutionGate,
     )
     private val summaryManager = SummaryManager(llmProvider)
     private val approvalManager = ApprovalManager(
@@ -277,6 +282,7 @@ class ChatViewModel(
         toolLedger,
         messageManager,
         sessionRepository,
+        (application as NexaraApplication).sessionExecutionGate,
     )
 
     private val _inputText = MutableStateFlow("")
@@ -1792,12 +1798,17 @@ class ChatViewModel(
         }
     }
 
-    fun deleteSession() {
+    fun deleteSession(onDeleted: () -> Unit = {}) {
         val sessionId = _currentSessionId.value ?: return
         viewModelScope.launch {
-            sessionManager.deleteSession(sessionId)
-            generationCoordinator.release(sessionId, discardTerminal = true)
-            generationPresentationStore.release(sessionId)
+            val failure = SessionDeletionUiAction {
+                sessionManager.deleteSession(sessionId)
+                generationCoordinator.release(sessionId, discardTerminal = true)
+                generationPresentationStore.release(sessionId)
+            }.run(onDeleted)
+            if (failure != null) {
+                _error.value = stringResourceResolver(R.string.chat_delete_session_failed)
+            }
         }
     }
 

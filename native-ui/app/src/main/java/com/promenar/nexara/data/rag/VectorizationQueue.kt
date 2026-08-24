@@ -17,6 +17,7 @@ import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
+import com.promenar.nexara.data.session.SessionExecutionGate
 
 class VectorizationQueue(
     private val vectorStore: VectorStore,
@@ -28,6 +29,7 @@ class VectorizationQueue(
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val fileEntryDao: com.promenar.nexara.data.local.db.dao.FileEntryDao? = null,
     private val documentIndexService: DocumentIndexService? = null,
+    private val executionGate: SessionExecutionGate? = null,
 ) : FileIndexEventSink {
     private val queue = mutableListOf<VectorizationTask>()
     private val retainedAttention = mutableListOf<VectorizationTask>()
@@ -38,6 +40,7 @@ class VectorizationQueue(
     private val enqueueMutex = Mutex()
     private val deletionBarrierMutex = Mutex()
     private val fencedTargets = mutableSetOf<WorkspaceDocKey>()
+    private val fencedSessions = mutableSetOf<String>()
     private val _state = MutableStateFlow(QueueState(emptyList(), null, false, restored = false))
     val state: StateFlow<QueueState> = _state.asStateFlow()
     @Volatile private var restored = false
@@ -115,6 +118,7 @@ class VectorizationQueue(
         kgStrategy: String? = null,
         skipVectorization: Boolean = false
     ) = enqueueMutex.withLock {
+        executionGate?.requireWorkspaceWritable(workspaceRootUuid)
         ensureTargetNotFenced(workspaceRootUuid, docId)
         val task = VectorizationTask(
             id = UUID.randomUUID().toString(),
@@ -141,7 +145,9 @@ class VectorizationQueue(
         aiContent: String,
         userMessageId: String,
         assistantMessageId: String
-    ) {
+    ) = enqueueMutex.withLock {
+        executionGate?.requireSessionWritable(sessionId)
+        ensureSessionNotFenced(sessionId)
         val sanitize: (String) -> String = { text ->
             text.replace(Regex("!\\[.*?\\]\\(data:image/.*?;base64,.*?\\)"), "[Image]")
         }
@@ -175,6 +181,7 @@ class VectorizationQueue(
         kgStrategy: String? = null,
         skipVectorization: Boolean = false,
     ): String = enqueueMutex.withLock {
+        executionGate?.requireWorkspaceWritable(workspaceRootUuid)
         requireNotNull(documentIndexService) { "document_reference 必须配置事务索引服务" }
         require(sourceMimeType in DocumentReferenceExtractor.SUPPORTED_MIME_TYPES) { "不支持索引 MIME" }
         require(targetContentHash.isNotBlank()) { "document_reference target hash 不能为空" }
@@ -652,13 +659,24 @@ class VectorizationQueue(
         targets = docIds.distinct().map { WorkspaceDocKey(workspaceRootUuid, it) }.toSet(),
     )
 
+    /** 会话删除使用的屏障，同时覆盖 memory 任务及该会话工作区内的文档任务。 */
+    suspend fun acquireSessionDeleteBarrier(
+        sessionId: String,
+        workspaceRootUuid: String,
+        docIds: List<String>,
+    ): WorkspaceDeleteBarrierLease = acquireDeleteBarrierInternal(
+        targets = docIds.distinct().map { WorkspaceDocKey(workspaceRootUuid, it) }.toSet(),
+        sessions = setOf(sessionId),
+    )
+
     private suspend fun acquireDeleteBarrierInternal(
         targets: Set<WorkspaceDocKey>,
+        sessions: Set<String> = emptySet(),
     ): WorkspaceDeleteBarrierLease {
-        if (targets.isEmpty()) return NoOpDeleteBarrierLease
+        if (targets.isEmpty() && sessions.isEmpty()) return NoOpDeleteBarrierLease
         deletionBarrierMutex.lock()
         return try {
-            enqueueMutex.withLock { createDeleteBarrierLeaseLocked(targets) }
+            enqueueMutex.withLock { createDeleteBarrierLeaseLocked(targets, sessions) }
         } catch (failure: Throwable) {
             deletionBarrierMutex.unlock()
             throw failure
@@ -667,6 +685,7 @@ class VectorizationQueue(
 
     private fun createDeleteBarrierLeaseLocked(
         targets: Set<WorkspaceDocKey>,
+        sessions: Set<String>,
     ): WorkspaceDeleteBarrierLease {
         var activeJob: Job? = null
         var activeTarget: TaskTargetKey? = null
@@ -675,9 +694,11 @@ class VectorizationQueue(
         var attentionSnapshots: List<IndexedTaskSnapshot> = emptyList()
         synchronized(queueLock) {
             check(fencedTargets.intersect(targets).isEmpty()) { "删除屏障目标已被占用" }
+            check(fencedSessions.intersect(sessions).isEmpty()) { "删除屏障会话已被占用" }
             fencedTargets.addAll(targets)
+            fencedSessions.addAll(sessions)
             val matches: (VectorizationTask) -> Boolean = { task ->
-                task.workspaceRootUuid?.let { root ->
+                task.sessionId in sessions || task.workspaceRootUuid?.let { root ->
                     task.docId?.let { doc -> WorkspaceDocKey(root, doc) in targets }
                 } == true
             }
@@ -699,6 +720,7 @@ class VectorizationQueue(
         notifyStateChangeNoThrow("DeleteBarrier.acquire")
         return DeleteBarrierLease(
             targets = targets,
+            sessions = sessions,
             activeJob = activeJob,
             activeTaskId = activeTaskId,
             queuedSnapshots = queuedSnapshots,
@@ -739,6 +761,9 @@ class VectorizationQueue(
     }
 
     private suspend fun saveTaskToDb(task: VectorizationTask) {
+        if (synchronized(queueLock) { isFencedLocked(task) }) {
+            throw TargetDeletedCancellation(task.targetKey())
+        }
         task.updatedAt = System.currentTimeMillis()
         val entity = task.toEntity()
         if (task.type == TYPE_DOCUMENT_REFERENCE) {
@@ -932,6 +957,7 @@ class VectorizationQueue(
     }
 
     private fun isFencedLocked(task: VectorizationTask): Boolean {
+        if (task.sessionId in fencedSessions) return true
         val root = task.workspaceRootUuid ?: return false
         val doc = task.docId ?: return false
         return WorkspaceDocKey(root, doc) in fencedTargets
@@ -1088,8 +1114,15 @@ class VectorizationQueue(
         ) { "文件正在永久删除，拒绝新的向量化任务" }
     }
 
+    private fun ensureSessionNotFenced(sessionId: String) {
+        check(synchronized(queueLock) { sessionId !in fencedSessions }) {
+            "会话正在永久删除，拒绝新的向量化任务"
+        }
+    }
+
     private inner class DeleteBarrierLease(
         private val targets: Set<WorkspaceDocKey>,
+        private val sessions: Set<String>,
         private val activeJob: Job?,
         private val activeTaskId: String?,
         private val queuedSnapshots: List<IndexedTaskSnapshot>,
@@ -1103,7 +1136,10 @@ class VectorizationQueue(
 
         override suspend fun commit() {
             if (!finished.compareAndSet(false, true)) return
-            synchronized(queueLock) { fencedTargets.removeAll(targets) }
+            synchronized(queueLock) {
+                fencedTargets.removeAll(targets)
+                fencedSessions.removeAll(sessions)
+            }
             deletionBarrierMutex.unlock()
             notifyStateChangeNoThrow("DeleteBarrier.commit")
         }
@@ -1125,9 +1161,13 @@ class VectorizationQueue(
                                 }
                             }
                     }
-                    val persisted = targets.groupBy { it.workspaceRootUuid }.flatMap { (root, keys) ->
-                        vectorizationTaskDao.getByWorkspaceFiles(root, keys.map { it.docId })
-                    }
+                    val persisted = (
+                        targets.groupBy { it.workspaceRootUuid }.flatMap { (root, keys) ->
+                            vectorizationTaskDao.getByWorkspaceFiles(root, keys.map { it.docId })
+                        } + sessions.flatMap { sessionId ->
+                            vectorizationTaskDao.getBySessionId(sessionId)
+                        }
+                    ).distinctBy { it.id }
                     val persistedById = persisted.associateBy { it.id }
                     val originalSnapshots = (queuedSnapshots + attentionSnapshots)
                         .distinctBy { it.task.id }
@@ -1163,6 +1203,7 @@ class VectorizationQueue(
                     }
                     synchronized(queueLock) {
                         fencedTargets.removeAll(targets)
+                        fencedSessions.removeAll(sessions)
                         restoredQueue.sortedBy { it.index }.forEach { snapshot ->
                             if (queue.none { it.id == snapshot.task.id }) {
                                 queue.add(snapshot.index.coerceAtMost(queue.size), snapshot.task)
@@ -1181,7 +1222,10 @@ class VectorizationQueue(
                     enqueueMutex.unlock()
                 }
             } finally {
-                synchronized(queueLock) { fencedTargets.removeAll(targets) }
+                synchronized(queueLock) {
+                    fencedTargets.removeAll(targets)
+                    fencedSessions.removeAll(sessions)
+                }
                 deletionBarrierMutex.unlock()
                 notifyStateChangeNoThrow("DeleteBarrier.abort")
                 if (restoredQueue.isNotEmpty()) startProcessorIfNeeded()

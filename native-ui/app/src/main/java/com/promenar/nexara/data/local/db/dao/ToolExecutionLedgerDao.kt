@@ -193,4 +193,12 @@ interface ToolExecutionLedgerDao {
 
     @Query("DELETE FROM tool_execution_ledger WHERE session_id = :sessionId")
     suspend fun deleteBySession(sessionId: String): Int
+
+    @Query("""
+        UPDATE tool_execution_ledger
+        SET status = 'CANCELLED', error = :error, updated_at = :updatedAt
+        WHERE session_id = :sessionId
+          AND status IN ('PENDING_APPROVAL', 'APPROVED', 'RUNNING')
+    """)
+    suspend fun cancelOpenForSession(sessionId: String, error: String, updatedAt: Long): Int
 }

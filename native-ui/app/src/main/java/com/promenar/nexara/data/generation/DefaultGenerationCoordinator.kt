@@ -33,6 +33,7 @@ class DefaultGenerationCoordinator(
     private val taskIdFactory: () -> String = { UUID.randomUUID().toString() },
     private val clock: () -> Long = System::currentTimeMillis,
     private val terminalRetentionLimit: Int = 32,
+    private val executionGate: com.promenar.nexara.data.session.SessionExecutionGate? = null,
 ) : GenerationCoordinator {
     private data class RunningTask(
         val taskId: String,
@@ -56,8 +57,26 @@ class DefaultGenerationCoordinator(
     override fun observe(sessionId: String): StateFlow<GenerationTaskSnapshot?> =
         sessionStates.getOrPut(sessionId) { MutableStateFlow(null) }
 
-    override suspend fun start(request: GenerationRequest): StartGenerationResult = mutex.withLock {
+    override suspend fun start(request: GenerationRequest): StartGenerationResult {
+        try {
+            executionGate?.requireSessionWritable(request.sessionId)
+        } catch (failure: com.promenar.nexara.data.session.SessionDeletingException) {
+            return StartGenerationResult.Rejected(
+                GenerationError(
+                    com.promenar.nexara.domain.generation.GenerationFailure.unknown(
+                        technical = "session_deleting",
+                        cause = failure,
+                    ),
+                ),
+            )
+        }
+        return mutex.withLock {
         synchronized(lifecycleLock) {
+        try {
+            executionGate?.requireSessionWritable(request.sessionId)
+        } catch (failure: com.promenar.nexara.data.session.SessionDeletingException) {
+            return@synchronized deletionRejected(failure)
+        }
         running?.let { current ->
             val snapshot = mutableActive.value ?: snapshotOf(current.taskId, current.request)
             return@synchronized if (
@@ -137,12 +156,34 @@ class DefaultGenerationCoordinator(
         job.start()
         StartGenerationResult.Started(taskId)
         }
+        }
     }
+
+    private fun deletionRejected(failure: com.promenar.nexara.data.session.SessionDeletingException) =
+        StartGenerationResult.Rejected(
+            GenerationError(
+                com.promenar.nexara.domain.generation.GenerationFailure.unknown(
+                    technical = "session_deleting",
+                    cause = failure,
+                ),
+            ),
+        )
 
     override fun cancel(taskId: String, reason: CancellationReason): Boolean {
         val current = running ?: return false
         if (current.taskId != taskId) return false
         current.job.cancel(CancellationException("Generation cancelled: $reason"))
+        return true
+    }
+
+    override suspend fun cancelAndJoinSession(
+        sessionId: String,
+        reason: CancellationReason,
+    ): Boolean {
+        val task = mutex.withLock { running?.takeIf { it.request.sessionId == sessionId } }
+            ?: return false
+        task.job.cancel(CancellationException("Generation cancelled: $reason"))
+        task.job.join()
         return true
     }
 

@@ -215,6 +215,95 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     val chatStore: ChatStore by lazy { ChatStore() }
+    val sessionExecutionGate by lazy { com.promenar.nexara.data.session.SessionExecutionGate() }
+    private val sessionWorkspaceParent: java.nio.file.Path
+        get() = File(filesDir, "session_workspaces").toPath()
+    private val workspaceMutationRecoveryCoordinator by lazy {
+        com.promenar.nexara.data.repository.WorkspaceMutationRecoveryCoordinator(
+            workspaceParent = sessionWorkspaceParent,
+            loadUnfinished = { database.workspaceMutationDao().getUnfinished() },
+            sessionExists = { sessionId -> database.sessionDao().getById(sessionId) != null },
+            deletePrepared = { operationId ->
+                check(database.workspaceMutationDao().deletePrepared(operationId) == 1) {
+                    "PREPARED journal 恢复清理失败"
+                }
+            },
+            deleteCommitted = { operationId ->
+                check(database.workspaceMutationDao().deleteCommitted(operationId) == 1) {
+                    "DB_COMMITTED journal 恢复清理失败"
+                }
+            },
+            verifyRootIdentity = { path, identity ->
+                com.promenar.nexara.data.repository.SecureWorkspaceFileOps().ensureRoot(
+                    path,
+                    initializeIdentity = false,
+                    expectedIdentity = identity,
+                )
+                Unit
+            },
+        )
+    }
+    private val sessionDeletionCoordinator by lazy {
+        val targetResolver = com.promenar.nexara.data.session.RoomSessionDeletionTargetResolver(
+            database,
+            sessionWorkspaceParent,
+        )
+        val journal = com.promenar.nexara.data.session.RoomSessionWorkspaceMutationJournal(
+            database,
+            sessionWorkspaceParent,
+        )
+        val transaction = com.promenar.nexara.data.session.RoomSessionDeletionTransaction(database)
+        com.promenar.nexara.data.session.SessionDeletionCoordinator(
+            gate = sessionExecutionGate,
+            resolveTarget = targetResolver::resolve,
+            cancelAndJoinGeneration = { sessionId ->
+                generationCoordinator.cancelAndJoinSession(sessionId)
+            },
+            closePendingExecution = { sessionId ->
+                database.toolExecutionLedgerDao().cancelOpenForSession(
+                    sessionId,
+                    "会话已进入删除事务",
+                    System.currentTimeMillis(),
+                )
+            },
+            acquireVectorBarrier = { target ->
+                val lease = vectorizationQueue.acquireSessionDeleteBarrier(
+                    target.sessionId,
+                    target.workspaceRootUuid,
+                    target.fileUuids,
+                )
+                object : com.promenar.nexara.data.session.SessionDeletionBarrier {
+                    override suspend fun awaitReady() = lease.awaitReady()
+                    override suspend fun commit() = lease.commit()
+                    override suspend fun abort() = lease.abort()
+                }
+            },
+            journal = journal,
+            deleteDatabase = transaction::delete,
+            afterDatabaseCommit = { target ->
+                pendingDocumentIndexCoordinator.clearCommitted(
+                    target.workspaceRootUuid,
+                    target.fileUuids,
+                )
+            },
+        )
+    }
+
+    suspend fun deleteSessionRecoverably(sessionId: String):
+        com.promenar.nexara.data.session.SessionDeletionResult = try {
+        // 重试先收敛上次 DB_COMMITTED 的物理收尾，确保 AlreadyDeleted 不是静默跳过 journal。
+        workspaceMutationRecoveryCoordinator.recoverOrThrow()
+        sessionDeletionCoordinator.delete(sessionId)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (failure: Throwable) {
+        com.promenar.nexara.data.session.SessionDeletionResult.Failed(
+            com.promenar.nexara.data.session.SessionDeletionError(
+                com.promenar.nexara.data.session.SessionDeletionErrorCode.WORKSPACE,
+                failure,
+            ),
+        )
+    }
 
     private val generationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val generationPresentationStore by lazy {
@@ -256,6 +345,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             sessionToolResolver,
             taskRepository,
             toolExecutionLedger,
+            sessionExecutionGate,
         )
     }
     private val generationPostProcessor by lazy {
@@ -296,6 +386,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             applicationScope = generationScope,
             runnerFactory = runnerFactory,
             presentationStore = generationPresentationStore,
+            executionGate = sessionExecutionGate,
         )
     }
 
@@ -323,6 +414,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             afterDeleteCommitted = { workspaceRootUuid, ids ->
                 pendingDocumentIndexCoordinator.clearCommitted(workspaceRootUuid, ids)
             },
+            executionGate = sessionExecutionGate,
         )
     }
 
@@ -349,6 +441,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             database.fileEntryDao(),
             database.fileVersionDao(),
             indexEventSink = pendingDocumentIndexCoordinator,
+            executionGate = sessionExecutionGate,
         )
     }
 
@@ -488,15 +581,39 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                     backupRuntime
                 }
                 if (runtime.recoverBeforeWriters() == BackupStartupState.Ready) {
-                    withContext(Dispatchers.IO) {
-                        // 进程中断时无法判断外部副作用是否已发生，禁止自动重放 RUNNING 调用。
-                        toolExecutionLedger.recoverInterruptedRunning("进程在工具执行期间中断，请确认结果后重新发起")
-                        toolExecutionLedger.recoverApprovalState()
-                    }
-                    _startupState.value = runCatching {
-                        initializeAfterRecoveryOnce()
-                        BackupStartupState.Ready
-                    }.getOrElse { BackupStartupState.Blocked }
+                    com.promenar.nexara.startup.PostBackupStartupRecoverySequence(
+                        recoverWorkspaceJournal = {
+                            withContext(Dispatchers.IO) {
+                                java.nio.file.Files.createDirectories(sessionWorkspaceParent)
+                                workspaceMutationRecoveryCoordinator.recoverOrThrow()
+                            }
+                        },
+                        recoverToolLedger = {
+                            withContext(Dispatchers.IO) {
+                                // 外部副作用是否已发生不可判定，禁止自动重放 RUNNING 调用。
+                                toolExecutionLedger.recoverInterruptedRunning(
+                                    "进程在工具执行期间中断，请确认结果后重新发起",
+                                )
+                                toolExecutionLedger.recoverApprovalState()
+                            }
+                        },
+                        recoverWriterTombstones = {
+                            withContext(Dispatchers.IO) {
+                                val attention = com.promenar.nexara.data.worker.RecycleBinCleanupWorker
+                                    .recoverPendingDeletions(database)
+                                check(attention.failedRoots.isEmpty() && attention.failedTombstones.isEmpty()) {
+                                    "工作区 tombstone 恢复存在冲突，拒绝进入可写态"
+                                }
+                            }
+                        },
+                        initializeWriters = { initializeAfterRecoveryOnce() },
+                        resumeVectorQueue = {
+                            withContext(Dispatchers.IO) {
+                                vectorizationQueue.resumeInterruptedTasks().getOrThrow()
+                            }
+                        },
+                    ).runOrThrow()
+                    _startupState.value = BackupStartupState.Ready
                 } else {
                     _startupState.value = BackupStartupState.Blocked
                 }
@@ -617,28 +734,6 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                         checkNotNull(prepared.inferenceEngine) { "本地推理启动计划与运行时能力不一致" }
                             .loadModel(SlotType.MAIN, modelPath).getOrThrow()
                     }
-                }
-            },
-            jobRegistration(prepared) {
-                startupBackgroundHealthMonitor.launch(
-                    scope = startupScope,
-                    task = StartupBackgroundTask.VECTOR_RESUME,
-                    start = CoroutineStart.LAZY,
-                ) {
-                    runCatching {
-                        com.promenar.nexara.data.worker.RecycleBinCleanupWorker
-                            .recoverPendingDeletions(database)
-                    }.onSuccess { attention ->
-                        if (attention.failedRoots.isNotEmpty() || attention.failedTombstones.isNotEmpty()) {
-                            NexaraLogger.log(
-                                "[WorkspaceDeleteRecovery] roots=${attention.failedRoots.size} " +
-                                    "tombstones=${attention.failedTombstones.values.sumOf { it.size }}",
-                            )
-                        }
-                    }.onFailure { failure ->
-                        NexaraLogger.logError("WorkspaceDeleteRecovery.startup", failure)
-                    }
-                    prepared.vectorizationQueue.resumeInterruptedTasks().getOrThrow()
                 }
             },
             reversibleRegistration(
@@ -968,6 +1063,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 ragConfig = config,
                 fileEntryDao = database.fileEntryDao(),
                 documentIndexService = createDocumentIndexService(config),
+                executionGate = sessionExecutionGate,
             )
         }
 

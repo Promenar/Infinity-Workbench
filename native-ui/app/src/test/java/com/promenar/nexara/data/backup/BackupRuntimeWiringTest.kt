@@ -43,7 +43,15 @@ class BackupRuntimeWiringTest {
         assertThat(recovery).contains("_startupState.value = BackupStartupState.Blocked")
         assertThat(recovery).contains("BackupStartupState.Ready")
         assertThat(recovery).contains("initializeAfterRecoveryOnce()")
+        val journal = recovery.indexOf("workspaceMutationRecoveryCoordinator.recoverOrThrow()")
+        val ledger = recovery.indexOf("toolExecutionLedger.recoverInterruptedRunning")
+        val tombstone = recovery.indexOf("recoverPendingDeletions(database)")
         val initialize = recovery.indexOf("initializeAfterRecoveryOnce()")
+        val vector = recovery.indexOf("vectorizationQueue.resumeInterruptedTasks()")
+        assertThat(journal).isLessThan(ledger)
+        assertThat(ledger).isLessThan(tombstone)
+        assertThat(tombstone).isLessThan(initialize)
+        assertThat(initialize).isLessThan(vector)
         assertThat(recovery.substring(initialize)).contains("BackupStartupState.Ready")
 
         val once = functionBody("private fun initializeAfterRecoveryOnce()")
@@ -110,7 +118,6 @@ class BackupRuntimeWiringTest {
             "prepared.providerManager.configurationChanges",
             "checkNotNull(prepared.inferenceEngine)",
             ".loadModel(SlotType.MAIN, modelPath)",
-            "prepared.vectorizationQueue.resumeInterruptedTasks()",
         )
     }
 }

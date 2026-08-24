@@ -19,6 +19,7 @@ import com.promenar.nexara.data.repository.ToolDefinitionDigestResolution
 import com.promenar.nexara.data.repository.ToolRegistrationResult
 import com.promenar.nexara.ui.chat.ChatStore
 import kotlinx.coroutines.CancellationException
+import com.promenar.nexara.data.session.SessionExecutionGate
 
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
@@ -41,6 +42,7 @@ class ToolExecutor(
     private val toolResolver: SessionToolResolver,
     private val taskRepository: ITaskRepository? = null,
     private val ledger: ToolExecutionLedger? = null,
+    private val executionGate: SessionExecutionGate? = null,
 ) {
     suspend fun executeTools(
         sessionId: String,
@@ -49,6 +51,7 @@ class ToolExecutor(
         allowedToolCallIds: Set<String> = toolCalls.mapTo(mutableSetOf()) { it.id },
         preparedTools: List<ProtocolTool>? = null,
     ) {
+        executionGate?.requireSessionWritable(sessionId)
         val session = store.getSession(sessionId) ?: return
         val targetMsgId = assistantMessageId
 
@@ -76,6 +79,7 @@ class ToolExecutor(
         val activeLedger = ledger ?: return
 
         for (tc in toolCalls.distinctBy { it.id }) {
+            executionGate?.requireSessionWritable(sessionId)
             val key = ToolExecutionKey(sessionId, targetMsgId, tc.id)
             val persistedIdentity = activeLedger.invocationIdentity(key)
             val preflight = preflight(
@@ -96,6 +100,7 @@ class ToolExecutor(
                 ?.takeIf { it == preflight.identity }
                 ?: continue
             if (!activeLedger.claim(key, expectedIdentity)) continue
+            executionGate?.requireSessionWritable(sessionId)
 
             val currentSession = store.getSession(sessionId)
             val currentResolvedTool = currentSession?.let(toolResolver::resolve)

@@ -1244,6 +1244,7 @@
     <string name="chat_dialog_clear_history_msg">This will delete all messages in this session. This action cannot be undone.</string>
     <string name="chat_dialog_delete_session_title">Delete Session?</string>
     <string name="chat_dialog_delete_session_msg">This will permanently delete this session and all its content.</string>
+    <string name="chat_delete_session_failed">Could not delete the session. Your data was kept; please try again.</string>
     <string name="chat_dialog_rename_title">Rename Session</string>
     <string name="chat_dialog_rename_placeholder">Enter new name...</string>
     <string name="chat_confirm_delete_session_message">Are you sure you want to delete this session? This action cannot be undone.</string>

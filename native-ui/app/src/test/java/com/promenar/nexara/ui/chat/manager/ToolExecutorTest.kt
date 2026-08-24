@@ -282,6 +282,34 @@ class ToolExecutorTest {
     }
 
     @Test
+    fun `会话删除锁定后工具入口在注册ledger前拒绝执行`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val gate = com.promenar.nexara.data.session.SessionExecutionGate()
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val deletion = async {
+            gate.withDeletion("s1", "workspace-root-1") {
+                entered.complete(Unit)
+                release.await()
+            }
+        }
+        entered.await()
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(
+            store, messageManager, null, testToolResolver(null), ledger = ledger,
+            executionGate = gate,
+        )
+
+        val failure = runCatching {
+            executor.executeTools("s1", "m1", emptyList())
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(com.promenar.nexara.data.session.SessionDeletingException::class.java)
+        release.complete(Unit)
+        deletion.await()
+    }
+
+    @Test
     fun executeToolsBlockedWhenDisabled() = testScope.runTest {
         seedSessionWithAssistant(toolsEnabled = false)
 

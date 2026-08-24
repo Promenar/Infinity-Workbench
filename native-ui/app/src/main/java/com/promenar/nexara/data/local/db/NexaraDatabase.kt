@@ -16,6 +16,7 @@ import com.promenar.nexara.data.local.db.dao.KgJitCacheDao
 import com.promenar.nexara.data.local.db.dao.KgNodeDao
 import com.promenar.nexara.data.local.db.dao.MessageDao
 import com.promenar.nexara.data.local.db.dao.SessionDao
+import com.promenar.nexara.data.local.db.dao.SessionDeletionDao
 import com.promenar.nexara.data.local.db.dao.SkillDao
 import com.promenar.nexara.data.local.db.dao.TagDao
 import com.promenar.nexara.data.local.db.dao.TaskNodeDao
@@ -83,6 +84,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
 abstract class NexaraDatabase : RoomDatabase() {
     abstract fun agentDao(): AgentDao
     abstract fun sessionDao(): SessionDao
+    abstract fun sessionDeletionDao(): SessionDeletionDao
     abstract fun messageDao(): MessageDao
     abstract fun attachmentDao(): AttachmentDao
     abstract fun vectorDao(): VectorDao

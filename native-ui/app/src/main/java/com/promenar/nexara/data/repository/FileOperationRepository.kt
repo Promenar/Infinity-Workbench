@@ -22,6 +22,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import com.promenar.nexara.data.session.SessionExecutionGate
 
 class FileOperationRepository(
     private val dao: FileEntryDao,
@@ -30,6 +31,7 @@ class FileOperationRepository(
     private val versionCommitter: (suspend (FileVersionEntity, FileEntry) -> Unit)? = null,
     private val indexEventSink: FileIndexEventSink = FileIndexEventSink.None,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val executionGate: SessionExecutionGate? = null,
 ) : IFileOperationRepository {
 
     override suspend fun writeFileAtomic(
@@ -39,9 +41,13 @@ class FileOperationRepository(
         sessionId: String,
         expectedHash: String,
     ): WriteResult = withContext(Dispatchers.IO) {
+        executionGate?.requireSessionWritable(sessionId)
+        executionGate?.requireWorkspaceWritable(workspaceRootUuid)
         val initial = dao.getByUuid(workspaceRootUuid, uuid) ?: return@withContext WriteResult.NotFound
         val root = bindRoot(workspaceRootUuid)
         WorkspaceMutationCoordinator.withBoundRoot(File(initial.physicalRootPath).toPath(), root.hash) {
+            executionGate?.requireSessionWritable(sessionId)
+            executionGate?.requireWorkspaceWritable(workspaceRootUuid)
             val entry = dao.getByUuid(workspaceRootUuid, uuid) ?: return@withBoundRoot WriteResult.NotFound
             if (entry.isDirectory) return@withBoundRoot WriteResult.NotFound
             if (entry.hash != expectedHash) {
@@ -118,10 +124,12 @@ class FileOperationRepository(
         operations: List<PatchOperation>,
         expectedHash: String,
     ): PatchResult = withContext(Dispatchers.IO) {
+        executionGate?.requireWorkspaceWritable(workspaceRootUuid)
         val initial = dao.getByUuid(workspaceRootUuid, uuid)
             ?: return@withContext fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
         val root = bindRoot(workspaceRootUuid)
         WorkspaceMutationCoordinator.withBoundRoot(File(initial.physicalRootPath).toPath(), root.hash) {
+            executionGate?.requireWorkspaceWritable(workspaceRootUuid)
             val entry = dao.getByUuid(workspaceRootUuid, uuid)
                 ?: return@withBoundRoot fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
             if (entry.isDirectory) return@withBoundRoot fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)

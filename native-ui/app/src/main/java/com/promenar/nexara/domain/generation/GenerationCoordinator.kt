@@ -76,6 +76,10 @@ interface GenerationCoordinator {
     fun observe(sessionId: String): StateFlow<GenerationTaskSnapshot?>
     suspend fun start(request: GenerationRequest): StartGenerationResult
     fun cancel(taskId: String, reason: CancellationReason = CancellationReason.USER): Boolean
+    suspend fun cancelAndJoinSession(
+        sessionId: String,
+        reason: CancellationReason = CancellationReason.SHUTDOWN,
+    ): Boolean = false
     fun acknowledgeTerminal(taskId: String): Boolean
     fun release(sessionId: String, discardTerminal: Boolean = false)
 }

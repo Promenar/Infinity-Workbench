@@ -21,12 +21,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
+import com.promenar.nexara.data.session.SessionExecutionGate
 
 class ApprovalManager(
     private val store: ChatStore,
     private val ledger: ToolExecutionLedger,
     private val messageManager: MessageManager,
     private val sessionRepository: ISessionRepository,
+    private val executionGate: SessionExecutionGate? = null,
 ) {
     private val approvalLocks = ConcurrentHashMap<String, Mutex>()
     private var onGenerateMessage: (suspend (sessionId: String, content: String, isResumption: Boolean) -> Unit)? = null
@@ -49,6 +51,7 @@ class ApprovalManager(
     }
 
     suspend fun setApprovalRequest(sessionId: String, request: ApprovalRequest?) {
+        if (request != null) executionGate?.requireSessionWritable(sessionId)
         sessionRepository.updatePartial(sessionId, mapOf("approvalRequest" to request))
         store.updateSession(sessionId) { s ->
             s.copy(approvalRequest = request)
@@ -61,6 +64,7 @@ class ApprovalManager(
         approved: Boolean = true,
         intervention: String? = null
     ) = approvalLock(sessionId).withLock {
+        executionGate?.requireSessionWritable(sessionId)
         resumeGenerationLocked(sessionId, expectedRequest, approved, intervention)
     }
 
