@@ -966,6 +966,11 @@
     <string name="rag_home_title">知识库</string>
     <string name="rag_home_subtitle">集中式智能知识库与向量存储。</string>
     <string name="rag_home_search">搜索文档…</string>
+    <string name="rag_search_fts_warning">全文搜索暂时不可用，当前仅展示已明确标记的标题匹配结果。</string>
+    <string name="rag_search_empty">没有匹配的文档</string>
+    <string name="rag_search_body_match">正文命中</string>
+    <string name="rag_search_title_fallback">标题回退</string>
+    <string name="rag_delete_failed_notice">部分文档未能移入回收站，已保留选择以便重试。</string>
     <string name="rag_home_documents">文档</string>
     <string name="rag_home_memory">记忆</string>
     <string name="rag_home_graph">图谱</string>
@@ -1078,6 +1083,17 @@
 
     <!-- KnowledgeGraphScreen -->
     <string name="kg_title">知识图谱</string>
+    <string name="kg_load_failed">图谱更新失败，已保留最近一次成功结果。</string>
+    <string name="kg_select_document">选择文档</string>
+    <string name="kg_document_options_empty">暂无包含图谱关系的已索引文档。</string>
+    <string name="kg_document_required">请先选择一个文档，再查看对应图谱。</string>
+    <string name="kg_open_accessibility_list">打开无障碍关系列表</string>
+    <string name="kg_accessibility_title">节点与关系</string>
+    <string name="kg_nodes_section">节点</string>
+    <string name="kg_relations_section">关系</string>
+    <string name="kg_relation_description">%1$s %2$s %3$s</string>
+    <string name="kg_canvas_gestures">单指拖动，双指平移和缩放。</string>
+    <string name="kg_canvas_summary">%1$d 个节点，%2$d 条关系，%3$s范围。%4$s</string>
     <string name="kg_stats_summary">%1$d 节点 · %2$d 边</string>
     <string name="kg_filter_all">全部</string>
     <string name="kg_filter_documents">文档</string>

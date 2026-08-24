@@ -959,6 +959,11 @@
     <string name="rag_home_title">Knowledge Base</string>
     <string name="rag_home_subtitle">Centralized intelligence repository and vector storage.</string>
     <string name="rag_home_search">Search documents…</string>
+    <string name="rag_search_fts_warning">Full-text search is temporarily unavailable. Showing clearly marked title matches.</string>
+    <string name="rag_search_empty">No matching documents</string>
+    <string name="rag_search_body_match">Body match</string>
+    <string name="rag_search_title_fallback">Title fallback</string>
+    <string name="rag_delete_failed_notice">Some documents could not be moved to the recycle bin. Your selection is preserved for retry.</string>
     <string name="rag_home_documents">Documents</string>
     <string name="rag_home_memory">Memory</string>
     <string name="rag_home_graph">Graph</string>
@@ -1071,6 +1076,17 @@
 
     <!-- KnowledgeGraphScreen -->
     <string name="kg_title">Knowledge Graph</string>
+    <string name="kg_load_failed">Couldn’t update the graph. The last successful view is preserved.</string>
+    <string name="kg_select_document">Select a document</string>
+    <string name="kg_document_options_empty">No indexed documents contain graph relationships yet.</string>
+    <string name="kg_document_required">Select a document to view its graph.</string>
+    <string name="kg_open_accessibility_list">Open accessible relationship list</string>
+    <string name="kg_accessibility_title">Nodes and relationships</string>
+    <string name="kg_nodes_section">Nodes</string>
+    <string name="kg_relations_section">Relationships</string>
+    <string name="kg_relation_description">%1$s %2$s %3$s</string>
+    <string name="kg_canvas_gestures">Drag with one finger; pan and zoom with two fingers.</string>
+    <string name="kg_canvas_summary">%1$d nodes, %2$d relationships, %3$s scope. %4$s</string>
     <string name="kg_stats_summary">%1$d nodes · %2$d edges</string>
     <string name="kg_filter_all">All</string>
     <string name="kg_filter_documents">Documents</string>

@@ -2,6 +2,15 @@ package com.promenar.nexara.data.rag
 
 import com.promenar.nexara.data.local.db.dao.VectorDao
 import com.promenar.nexara.data.local.db.entity.VectorEntity
+import kotlinx.coroutines.CancellationException
+
+enum class KeywordSearchMode { Fts, LikeFallback }
+
+data class KeywordSearchOutcome(
+    val results: List<SearchResult>,
+    val mode: KeywordSearchMode,
+    val technical: String? = null,
+)
 
 class KeywordSearcher(
     private val vectorDao: VectorDao
@@ -16,14 +25,29 @@ class KeywordSearcher(
         query: String,
         limit: Int = 5,
         options: SearchOptions = SearchOptions()
-    ): List<SearchResult> {
-        if (query.isBlank()) return emptyList()
+    ): List<SearchResult> = searchWithOutcome(query, limit, options).results
+
+    suspend fun searchWithOutcome(
+        query: String,
+        limit: Int = 5,
+        options: SearchOptions = SearchOptions(),
+    ): KeywordSearchOutcome {
+        if (query.isBlank()) return KeywordSearchOutcome(emptyList(), KeywordSearchMode.Fts)
         val effectiveQuery = if (query.length > 60) query.substring(0, 60) else query
 
         return try {
-            ftsSearch(effectiveQuery, limit, options)
-        } catch (e: Exception) {
-            fallbackLikeSearch(effectiveQuery, limit, options)
+            KeywordSearchOutcome(
+                results = ftsSearch(effectiveQuery, limit, options),
+                mode = KeywordSearchMode.Fts,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            KeywordSearchOutcome(
+                results = fallbackLikeSearch(effectiveQuery, limit, options),
+                mode = KeywordSearchMode.LikeFallback,
+                technical = failure::class.simpleName?.take(80),
+            )
         }
     }
 

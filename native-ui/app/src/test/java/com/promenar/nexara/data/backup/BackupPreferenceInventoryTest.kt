@@ -196,6 +196,25 @@ class BackupPreferenceInventoryTest {
     }
 
     @Test
+    fun `四个无runtime消费者的旧RAG字段只读识别但禁止再次导出`() {
+        val retiredKeys = listOf(
+            "jit_max_chunks",
+            "kg_domain_auto",
+            "enable_incremental_hash",
+            "enable_local_preprocess",
+        )
+
+        retiredKeys.forEach { key ->
+            assertWithMessage("$key 应被识别以便旧备份可恢复")
+                .that(BackupPreferencePolicy.isKnown("rag", key)).isTrue()
+            assertWithMessage("$key 不得进入新备份")
+                .that(BackupPreferencePolicy.isAllowed("rag", key)).isFalse()
+            assertWithMessage("$key 应按退休字段丢弃")
+                .that(BackupPreferencePolicy.isRetired("rag", key)).isTrue()
+        }
+    }
+
+    @Test
     fun `通知权限询问状态属于设备本地状态且不得进入备份`() {
         assertWithMessage("设备权限状态应登记为已知")
             .that(

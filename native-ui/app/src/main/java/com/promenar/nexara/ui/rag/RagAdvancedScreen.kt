@@ -22,7 +22,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -153,89 +152,6 @@ internal fun RagAdvancedScreenContent(
                     text = stringResource(R.string.rag_advanced_kg_timeout_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            // === JIT 提取 ===
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                SettingsSectionHeader(stringResource(R.string.rag_advanced_jit_section))
-
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.rag_advanced_jit_enable), style = MaterialTheme.typography.bodyLarge) },
-                    supportingContent = { Text(stringResource(R.string.rag_advanced_jit_desc), style = MaterialTheme.typography.bodyMedium) },
-                    trailingContent = {
-                        Switch(
-                            checked = config.jitMaxChunks > 0,
-                            onCheckedChange = { enabled ->
-                                actions.onConfigChanged { copy(jitMaxChunks = if (enabled) 128 else 0) }
-                            },
-                            enabled = false
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                if (config.jitMaxChunks > 0) {
-                    ConfigSlider(
-                        label = stringResource(R.string.rag_advanced_jit_max_blocks),
-                        value = config.jitMaxChunks.toFloat(),
-                        valueRange = 16f..512f,
-                        onValueChange = { v -> actions.onConfigChanged { copy(jitMaxChunks = v.toInt()) } }
-                    )
-                }
-
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.rag_advanced_jit_domain), style = MaterialTheme.typography.bodyLarge) },
-                    supportingContent = { Text(stringResource(R.string.rag_advanced_jit_domain_desc), style = MaterialTheme.typography.bodyMedium) },
-                    trailingContent = {
-                        Switch(
-                            checked = config.kgDomainAuto,
-                            onCheckedChange = { enabled -> actions.onConfigChanged { copy(kgDomainAuto = enabled) } },
-                            enabled = false
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            // === 性能优化 ===
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                SettingsSectionHeader(stringResource(R.string.rag_advanced_optimization_section))
-
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.rag_advanced_incremental_hash), style = MaterialTheme.typography.bodyLarge) },
-                    supportingContent = { Text(stringResource(R.string.rag_advanced_incremental_hash_desc), style = MaterialTheme.typography.bodyMedium) },
-                    trailingContent = {
-                        Switch(
-                            checked = config.enableIncrementalHash,
-                            onCheckedChange = { enabled -> actions.onConfigChanged { copy(enableIncrementalHash = enabled) } },
-                            enabled = false
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.rag_advanced_rule_prefilter), style = MaterialTheme.typography.bodyLarge) },
-                    supportingContent = { Text(stringResource(R.string.rag_advanced_rule_prefilter_desc), style = MaterialTheme.typography.bodyMedium) },
-                    trailingContent = {
-                        Switch(
-                            checked = config.enableLocalPreprocess,
-                            onCheckedChange = { enabled -> actions.onConfigChanged { copy(enableLocalPreprocess = enabled) } },
-                            enabled = false
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
                 )
             }
 

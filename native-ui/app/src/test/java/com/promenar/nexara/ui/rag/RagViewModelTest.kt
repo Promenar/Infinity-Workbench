@@ -13,6 +13,8 @@ import com.promenar.nexara.domain.repository.IVectorRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.VectorTypeCount
 import com.promenar.nexara.data.rag.KeywordSearcher
+import com.promenar.nexara.data.rag.KeywordSearchMode
+import com.promenar.nexara.data.rag.KeywordSearchOutcome
 import com.promenar.nexara.data.rag.FileIndexEventSink
 import com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator
 import com.promenar.nexara.domain.model.Document
@@ -36,12 +38,16 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -862,6 +868,128 @@ class RagViewModelTest {
         vm.search("  ")
 
         assertThat(vm.searchResults.value).isEmpty()
+        assertThat(vm.searchState.value).isEqualTo(RagSearchUiState.Idle)
+    }
+
+    @Test
+    fun `正文FTS命中展示围绕查询词的snippet并标记正文来源`() = runTest {
+        every { workspaceRepository.searchByName("rag-root", "needle") } returns flowOf(emptyList())
+        coEvery { workspaceRepository.getByUuid("rag-root", "nested-doc") } returns fileEntry(
+            uuid = "nested-doc",
+            name = "没有标题命中.md",
+            parentUuid = "nested-folder",
+            materializedPath = "/nested/没有标题命中.md",
+        )
+        coEvery { keywordSearcher.searchWithOutcome("needle", limit = 20) } returns
+            KeywordSearchOutcome(
+                results = listOf(
+                    com.promenar.nexara.data.rag.SearchResult(
+                        id = "chunk-1",
+                        docId = "nested-doc",
+                        content = "前文".repeat(30) + " needle 正文命中 " + "后文".repeat(30),
+                        createdAt = 1L,
+                        similarity = 1f,
+                    ),
+                ),
+                mode = KeywordSearchMode.Fts,
+            )
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.search("needle")
+        advanceTimeBy(RagSearchContract.DEBOUNCE_MILLIS)
+        advanceUntilIdle()
+
+        val state = vm.searchState.value as RagSearchUiState.Results
+        assertThat(state.items).hasSize(1)
+        assertThat(state.items.single().document.id).isEqualTo("nested-doc")
+        assertThat(state.items.single().matchKind).isEqualTo(RagSearchMatchKind.FtsBody)
+        assertThat(state.items.single().snippet).contains("needle")
+        assertThat(state.items.single().snippet!!.length).isAtMost(RagSearchContract.SNIPPET_MAX_CHARS)
+    }
+
+    @Test
+    fun `标题回退会显式标注且FTS异常转为typed warning`() = runTest {
+        every { workspaceRepository.searchByName("rag-root", "Alpha") } returns flowOf(
+            listOf(fileEntry(uuid = "title-doc", name = "Alpha.md", materializedPath = "/Alpha.md")),
+        )
+        coEvery { keywordSearcher.searchWithOutcome("Alpha", limit = 20) } returns
+            KeywordSearchOutcome(
+                results = listOf(searchHit("stale-like-doc", "Alpha body")),
+                mode = KeywordSearchMode.LikeFallback,
+                technical = "IllegalStateException",
+            )
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.search("Alpha")
+        advanceTimeBy(RagSearchContract.DEBOUNCE_MILLIS)
+        advanceUntilIdle()
+
+        val state = vm.searchState.value as RagSearchUiState.Warning
+        assertThat(state.code).isEqualTo(RagSearchErrorCode.FtsUnavailable)
+        assertThat(state.fallbackItems.single().matchKind).isEqualTo(RagSearchMatchKind.TitleFallback)
+        assertThat(state.fallbackItems.map { it.document.id }).doesNotContain("stale-like-doc")
+        assertThat(state.technical).doesNotContain("private fts detail")
+    }
+
+    @Test
+    fun `新搜索取消旧搜索且忽略不合作旧请求的迟到结果`() = runTest {
+        val releaseFirst = CompletableDeferred<Unit>()
+        every { workspaceRepository.searchByName("rag-root", any()) } returns flowOf(emptyList())
+        coEvery { workspaceRepository.getByUuid("rag-root", any()) } coAnswers {
+            fileEntry(uuid = secondArg(), name = "${secondArg<String>()}.md", materializedPath = "/${secondArg<String>()}.md")
+        }
+        coEvery { keywordSearcher.searchWithOutcome("first", limit = 20) } coAnswers {
+            withContext(NonCancellable) { releaseFirst.await() }
+            KeywordSearchOutcome(
+                results = listOf(searchHit("first-doc", "first body")),
+                mode = KeywordSearchMode.Fts,
+            )
+        }
+        coEvery { keywordSearcher.searchWithOutcome("second", limit = 20) } returns
+            KeywordSearchOutcome(
+                results = listOf(searchHit("second-doc", "second body")),
+                mode = KeywordSearchMode.Fts,
+            )
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.search("first")
+        advanceTimeBy(RagSearchContract.DEBOUNCE_MILLIS)
+        runCurrent()
+        vm.search("second")
+        advanceTimeBy(RagSearchContract.DEBOUNCE_MILLIS)
+        runCurrent()
+        releaseFirst.complete(Unit)
+        advanceUntilIdle()
+
+        val state = vm.searchState.value as RagSearchUiState.Results
+        assertThat(state.query).isEqualTo("second")
+        assertThat(state.items.map { it.document.id }).containsExactly("second-doc")
+    }
+
+    @Test
+    fun `输入新查询后立即离开旧结果态但仍保持debounce`() = runTest {
+        every { workspaceRepository.searchByName("rag-root", any()) } returns flowOf(emptyList())
+        coEvery { workspaceRepository.getByUuid("rag-root", "first-doc") } returns
+            fileEntry(uuid = "first-doc", name = "first.md", materializedPath = "/first.md")
+        coEvery { keywordSearcher.searchWithOutcome("first", limit = 20) } returns
+            KeywordSearchOutcome(
+                results = listOf(searchHit("first-doc", "first body")),
+                mode = KeywordSearchMode.Fts,
+            )
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.search("first")
+        advanceTimeBy(RagSearchContract.DEBOUNCE_MILLIS)
+        advanceUntilIdle()
+        assertThat(vm.searchState.value).isInstanceOf(RagSearchUiState.Results::class.java)
+
+        vm.search("second")
+
+        assertThat(vm.searchState.value).isEqualTo(RagSearchUiState.Loading("second"))
+        coVerify(exactly = 0) { keywordSearcher.searchWithOutcome("second", limit = 20) }
     }
 
     @Test
@@ -1084,6 +1212,33 @@ class RagViewModelTest {
         createdAt = 1,
         updatedAt = 1,
     )
+
+    private fun fileEntry(
+        uuid: String,
+        name: String,
+        parentUuid: String? = "rag-root",
+        materializedPath: String,
+    ) = FileEntry(
+        uuid = uuid,
+        workspaceRootUuid = "rag-root",
+        parentUuid = parentUuid,
+        name = name,
+        hash = "hash-$uuid",
+        isDirectory = false,
+        physicalRootPath = "/tmp/rag-root",
+        materializedPath = materializedPath,
+        createdAt = 1,
+        updatedAt = 1,
+    )
+
+    private fun searchHit(docId: String, content: String) =
+        com.promenar.nexara.data.rag.SearchResult(
+            id = "chunk-$docId",
+            docId = docId,
+            content = content,
+            createdAt = 1L,
+            similarity = 1f,
+        )
 
     @Test
     fun `indexingNotice is initially null`() = runTest {

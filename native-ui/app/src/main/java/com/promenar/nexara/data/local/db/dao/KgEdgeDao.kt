@@ -30,11 +30,22 @@ interface KgEdgeDao {
     @Query("SELECT * FROM kg_edges WHERE doc_id = :docId AND " + ACTIVE_KG_EDGE)
     suspend fun getByDocId(docId: String): List<KgEdgeEntity>
 
+    /** 仅供文件生命周期事务在行已回收后收集待清理节点；普通读取必须使用 active-only accessor。 */
+    @Query("SELECT * FROM kg_edges WHERE doc_id = :docId")
+    suspend fun getByDocIdForLifecycleCleanup(docId: String): List<KgEdgeEntity>
+
     @Query("SELECT * FROM kg_edges WHERE doc_id IN (:docIds) AND " + ACTIVE_KG_EDGE)
     suspend fun getByDocIds(docIds: List<String>): List<KgEdgeEntity>
 
     @Query("SELECT * FROM kg_edges WHERE doc_id IS NOT NULL AND " + ACTIVE_KG_EDGE)
     suspend fun getAllDocEdges(): List<KgEdgeEntity>
+
+    @Query(
+        "SELECT DISTINCT e.doc_id AS docId, w.name AS title " +
+            "FROM kg_edges e JOIN workspace_files w ON w.uuid = e.doc_id AND w.in_recycle_bin = 0 " +
+            "WHERE e.doc_id IS NOT NULL AND " + ACTIVE_KG_EDGE_ALIAS + " ORDER BY title",
+    )
+    suspend fun getActiveDocumentOptions(): List<DocumentOptionRow>
 
     @Query("SELECT * FROM kg_edges WHERE doc_id IS NOT NULL AND doc_id NOT IN (:docIds) AND " + ACTIVE_KG_EDGE)
     suspend fun getEdgesNotInDocIds(docIds: List<String>): List<KgEdgeEntity>
@@ -90,6 +101,11 @@ interface KgEdgeDao {
         val file_uuid: String?,
         val source_name: String,
         val target_name: String
+    )
+
+    data class DocumentOptionRow(
+        val docId: String,
+        val title: String,
     )
 
     @Query("SELECT COUNT(*) FROM kg_edges WHERE doc_id IN (:docIds) AND " + ACTIVE_KG_EDGE)

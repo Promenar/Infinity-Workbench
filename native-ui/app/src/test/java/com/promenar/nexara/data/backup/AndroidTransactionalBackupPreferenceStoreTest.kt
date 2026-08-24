@@ -54,7 +54,13 @@ class AndroidTransactionalBackupPreferenceStoreTest {
             .putString("extra_provider_0_id", "provider-zero")
             .commit()
         context.getSharedPreferences("nexara_search", 0).edit().putInt("result_count", 7).commit()
-        context.getSharedPreferences("rag_settings", 0).edit().putFloat("hybrid_alpha", 0.65f).commit()
+        context.getSharedPreferences("rag_settings", 0).edit()
+            .putFloat("hybrid_alpha", 0.65f)
+            .putInt("jit_max_chunks", 128)
+            .putBoolean("kg_domain_auto", true)
+            .putBoolean("enable_incremental_hash", true)
+            .putBoolean("enable_local_preprocess", true)
+            .commit()
         context.getSharedPreferences("nexara_prefs", 0).edit().putBoolean("has_shown_welcome", true).commit()
         context.getSharedPreferences("nexara_backup_settings", 0).edit()
             .putLong("last_backup_time", 42L)
@@ -85,14 +91,26 @@ class AndroidTransactionalBackupPreferenceStoreTest {
         assertThat(snapshot.entries.map { it.key }).doesNotContain("api_key")
         assertThat(snapshot.entries.map { it.key }).doesNotContain("webdav_pass")
         assertThat(snapshot.entries.map { it.key }).doesNotContain("auto_backup")
+        assertThat(snapshot.entries.map { it.key }).containsNoneOf(
+            "jit_max_chunks",
+            "kg_domain_auto",
+            "enable_incremental_hash",
+            "enable_local_preprocess",
+        )
     }
 
     @Test
-    fun `restore recognizes and discards retired auto backup key while preserving fail closed unknown keys`(): Unit = runBlocking {
+    fun `restore discards retired legacy keys while preserving fail closed unknown keys`(): Unit = runBlocking {
         val adapter = store()
         val before = BackupPreferenceSnapshot(emptyList(), setOf("default"))
         val legacyAfter = BackupPreferenceSnapshot(
-            entries = listOf(entry("backup", "auto_backup", PreferenceValueType.BOOLEAN, "true")),
+            entries = listOf(
+                entry("backup", "auto_backup", PreferenceValueType.BOOLEAN, "true"),
+                entry("rag", "jit_max_chunks", PreferenceValueType.INT, "128"),
+                entry("rag", "kg_domain_auto", PreferenceValueType.BOOLEAN, "true"),
+                entry("rag", "enable_incremental_hash", PreferenceValueType.BOOLEAN, "true"),
+                entry("rag", "enable_local_preprocess", PreferenceValueType.BOOLEAN, "true"),
+            ),
             providerIds = setOf("default"),
         )
 
@@ -101,6 +119,13 @@ class AndroidTransactionalBackupPreferenceStoreTest {
 
         val backupPrefs = context.getSharedPreferences("nexara_backup_settings", 0)
         assertThat(backupPrefs.contains("auto_backup")).isFalse()
+        val ragPrefs = context.getSharedPreferences("rag_settings", 0)
+        assertThat(ragPrefs.all.keys).containsNoneOf(
+            "jit_max_chunks",
+            "kg_domain_auto",
+            "enable_incremental_hash",
+            "enable_local_preprocess",
+        )
 
         val unknownAfter = BackupPreferenceSnapshot(
             entries = listOf(entry("backup", "future_unknown", PreferenceValueType.STRING, "x")),

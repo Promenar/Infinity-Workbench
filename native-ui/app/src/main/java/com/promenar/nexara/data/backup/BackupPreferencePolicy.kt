@@ -31,8 +31,8 @@ internal object BackupPreferencePolicy {
             "rerank_top_k", "rerank_final_k", "rerank_max_per_call", "enable_query_rewrite",
             "query_rewrite_strategy", "query_rewrite_count", "query_rewrite_model", "enable_hybrid_search",
             "hybrid_alpha", "hybrid_bm25_boost", "enable_memory", "enable_docs", "enable_kg", "kg_model",
-            "kg_prompt", "kg_free_mode", "kg_domain_auto", "kg_extraction_timeout", "jit_max_chunks",
-            "enable_incremental_hash", "enable_local_preprocess", "cost_strategy", "show_retrieval_progress",
+            "kg_prompt", "kg_free_mode", "kg_extraction_timeout",
+            "cost_strategy", "show_retrieval_progress",
             "show_retrieval_details", "track_retrieval_metrics", "embed_dimension",
             "max_embed_tokens_per_call", "embedding_base_url", "embedding_model", "rerank_base_url",
         ),
@@ -69,6 +69,12 @@ internal object BackupPreferencePolicy {
     // 只为读取旧备份时识别并丢弃；不得继续导出或写回设备。
     private val exactRetired = mapOf(
         "backup" to setOf("auto_backup"),
+        "rag" to setOf(
+            "jit_max_chunks",
+            "kg_domain_auto",
+            "enable_incremental_hash",
+            "enable_local_preprocess",
+        ),
     )
 
     fun isAllowed(namespace: String, key: String): Boolean {

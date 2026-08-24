@@ -25,9 +25,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -40,9 +42,13 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.promenar.nexara.ui.rag.GraphEdge
+import com.promenar.nexara.ui.testing.UiTags
 import androidx.compose.material3.MaterialTheme
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlin.math.max
@@ -52,22 +58,31 @@ import kotlin.math.sqrt
 fun InteractiveGraphCanvas(
     simulator: GraphPhysicsSimulator,
     edges: List<GraphEdge>,
+    summary: String = "",
+    gestureSummary: String = "",
     modifier: Modifier = Modifier
 ) {
     var scale by remember { mutableFloatStateOf(1.0f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
-    // 脉冲粒子流动动画周期驱动器
-    val infiniteTransition = rememberInfiniteTransition(label = "particlePulse")
-    val particlePhase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "phase"
-    )
+    val animationScope = rememberCoroutineScope()
+    val motionScale = animationScope.coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
+    val decorativePulseEnabled = shouldAnimateDecorativePulse(motionScale)
+    val particlePhase = if (decorativePulseEnabled) {
+        val infiniteTransition = rememberInfiniteTransition(label = "particlePulse")
+        val phase by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 2800, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "phase"
+        )
+        phase
+    } else {
+        0f
+    }
 
     // 矢量图标画家缓存
     val psychologyPainter = rememberVectorPainter(Icons.Rounded.Psychology)
@@ -116,6 +131,12 @@ fun InteractiveGraphCanvas(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .semantics(mergeDescendants = true) {
+                contentDescription = listOf(summary, gestureSummary)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ")
+            }
+            .testTag(UiTags.KG_CANVAS)
             // 🧠 部署极致无冲突手势控制器：单指高敏感拖曳节点/平移，多指无缝 focal-point 缩放
             .pointerInput(simulator) {
                 awaitEachGesture {
@@ -252,16 +273,18 @@ fun InteractiveGraphCanvas(
                         val length = sqrt(dx * dx + dy * dy)
                         if (length > 0f) {
                             // 绘制动态滚动的脉冲粒子流
-                            val particleCount = 2
-                            for (p in 0 until particleCount) {
-                                val fraction = (particlePhase + p.toFloat() / particleCount) % 1.0f
-                                val px = start.x + dx * fraction
-                                val py = start.y + dy * fraction
-                                drawCircle(
-                                    color = pulseColor,
-                                    radius = 2.2f,
-                                    center = Offset(px, py)
-                                )
+                            if (decorativePulseEnabled) {
+                                val particleCount = 2
+                                for (p in 0 until particleCount) {
+                                    val fraction = (particlePhase + p.toFloat() / particleCount) % 1.0f
+                                    val px = start.x + dx * fraction
+                                    val py = start.y + dy * fraction
+                                    drawCircle(
+                                        color = pulseColor,
+                                        radius = 2.2f,
+                                        center = Offset(px, py)
+                                    )
+                                }
                             }
 
                             // 渲染关系边 Label 文本
@@ -356,3 +379,6 @@ fun InteractiveGraphCanvas(
         }
     }
 }
+
+internal fun shouldAnimateDecorativePulse(motionScaleFactor: Float): Boolean =
+    motionScaleFactor > 0f

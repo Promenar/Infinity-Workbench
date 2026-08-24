@@ -66,4 +66,14 @@ class IndexingNoticeTest {
         assertThat(resolved).isNotNull()
         assertThat(resolved!!.resourceId).isEqualTo(R.string.rag_index_phase_warning)
     }
+
+    @Test
+    fun `删除失败使用RAG专用本地化typed notice而不是通用失败`() {
+        val notice = UiStatusNotice(NoticeSeverity.Error, IndexingNotice.CODE_DELETE_FAILED)
+
+        val resolved = IndexingNotice.template(notice)
+
+        assertThat(resolved).isNotNull()
+        assertThat(resolved!!.resourceId).isEqualTo(R.string.rag_delete_failed_notice)
+    }
 }

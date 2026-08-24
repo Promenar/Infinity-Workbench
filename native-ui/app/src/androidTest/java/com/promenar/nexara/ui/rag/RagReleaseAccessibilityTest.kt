@@ -696,13 +696,14 @@ class RagReleaseAccessibilityTest {
         rule.runOnIdle { assertThat(deleteCalls.get()).isEqualTo(0) }
         rule.onNodeWithTag(UiTags.RAG_HOME_DELETE_CONFIRM_BUTTON).assertHasClickAction().performClick()
         rule.runOnIdle { assertThat(selections).containsExactly("doc-b") }
+        rule.onNodeWithTag(UiTags.RAG_HOME_DELETE_CONFIRM_DIALOG).assertExists()
 
-        rule.onNodeWithTag(UiTags.RAG_HOME_DELETE_SELECTION).performClick()
         rule.onNodeWithTag(UiTags.RAG_HOME_DELETE_CONFIRM_BUTTON).performClick()
         rule.runOnIdle {
             assertThat(deleteCalls.get()).isEqualTo(2)
             assertThat(selections).isEmpty()
         }
+        rule.onNodeWithTag(UiTags.RAG_HOME_DELETE_CONFIRM_DIALOG).assertDoesNotExist()
     }
 
     @Test

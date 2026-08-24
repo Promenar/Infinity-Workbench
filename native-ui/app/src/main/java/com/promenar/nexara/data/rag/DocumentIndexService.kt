@@ -266,7 +266,7 @@ class RoomDocumentArtifacts(
     private val database: NexaraDatabase,
 ) {
     suspend fun clear(workspaceRootUuid: String, fileUuid: String, deleteTags: Boolean) {
-        val legacyNodeIds = database.kgEdgeDao().getByDocId(fileUuid)
+        val legacyNodeIds = database.kgEdgeDao().getByDocIdForLifecycleCleanup(fileUuid)
             .flatMap { listOf(it.sourceId, it.targetId) }
             .distinct()
         database.vectorDao().deleteByDocId(fileUuid)

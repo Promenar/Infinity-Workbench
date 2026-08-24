@@ -12,6 +12,7 @@ import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.data.rag.VectorStats
 import com.promenar.nexara.data.rag.VectorStatsService
 import com.promenar.nexara.data.rag.KeywordSearcher
+import com.promenar.nexara.data.rag.KeywordSearchMode
 import com.promenar.nexara.data.rag.FileIndexEvent
 import com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator
 import com.promenar.nexara.utils.NexaraLogger
@@ -32,6 +33,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
 
@@ -56,11 +59,6 @@ data class QueueState(
     val queueLength: Int = 0,
     val isProcessing: Boolean = false,
     val progress: Float = 0f
-)
-
-data class RagSearchResult(
-    val document: Document,
-    val snippet: String? = null
 )
 
 class RagViewModel(
@@ -107,6 +105,11 @@ class RagViewModel(
 
     private val _searchResults = MutableStateFlow<List<RagSearchResult>>(emptyList())
     val searchResults: StateFlow<List<RagSearchResult>> = _searchResults.asStateFlow()
+
+    private val _searchState = MutableStateFlow<RagSearchUiState>(RagSearchUiState.Idle)
+    val searchState: StateFlow<RagSearchUiState> = _searchState.asStateFlow()
+    private var searchJob: Job? = null
+    private var searchGeneration = 0L
 
     private val _memoryVectors = MutableStateFlow<List<MemoryVectorRecord>>(emptyList())
     val memoryVectors: StateFlow<List<MemoryVectorRecord>> = _memoryVectors.asStateFlow()
@@ -1069,28 +1072,88 @@ class RagViewModel(
     }
 
     fun search(query: String) {
-        viewModelScope.launch {
-            if (query.isBlank()) {
-                _searchResults.value = emptyList()
-                return@launch
-            }
+        val normalizedQuery = query.trim()
+        val generation = ++searchGeneration
+        searchJob?.cancel()
+        if (normalizedQuery.isBlank()) {
+            _searchResults.value = emptyList()
+            _searchState.value = RagSearchUiState.Idle
+            return
+        }
+        _searchResults.value = emptyList()
+        _searchState.value = RagSearchUiState.Loading(normalizedQuery)
+        searchJob = viewModelScope.launch {
+            delay(RagSearchContract.DEBOUNCE_MILLIS)
+            if (generation != searchGeneration) return@launch
+            val rootUuid = _workspaceRootUuid.value
+            var titleFallback = emptyList<RagSearchResult>()
             try {
-                val titleMatches = _documents.value.filter {
-                    it.title.contains(query, ignoreCase = true)
+                val titleMatches = if (rootUuid == null) {
+                    emptyList()
+                } else {
+                    workspaceRepository.searchByName(rootUuid, normalizedQuery).first()
+                        .filterNot { it.isDirectory }
                 }
-                val ftsResults = keywordSearcher.search(query, limit = 20)
-                val ftsDocIds = ftsResults.mapNotNull { it.docId }.toSet()
-                val ftsDocs = _documents.value.filter { it.id in ftsDocIds }
-                val titleMatchIds = titleMatches.map { it.id }.toSet()
-                val ftsOnlyDocs = ftsDocs.filter { it.id !in titleMatchIds }
-                val snippets = ftsResults.associate { it.docId to it.content.take(100) }
-                val merged = titleMatches.map { RagSearchResult(it, null) } +
-                    ftsOnlyDocs.map { RagSearchResult(it, snippets[it.id]) }
-                _searchResults.value = merged.distinctBy { it.document.id }
-            } catch (_: Exception) {
-                _searchResults.value = _documents.value.filter {
-                    it.title.contains(query, ignoreCase = true)
-                }.map { RagSearchResult(it, null) }
+                titleFallback = titleMatches.map {
+                    RagSearchResult(
+                        document = it.toDocument(),
+                        matchKind = RagSearchMatchKind.TitleFallback,
+                    )
+                }
+                val searchOutcome = if (rootUuid == null) {
+                    null
+                } else {
+                    keywordSearcher.searchWithOutcome(normalizedQuery, limit = 20)
+                }
+                if (searchOutcome?.mode == KeywordSearchMode.LikeFallback) {
+                    if (generation != searchGeneration) return@launch
+                    _searchResults.value = titleFallback
+                    _searchState.value = RagSearchUiState.Warning(
+                        query = normalizedQuery,
+                        code = RagSearchErrorCode.FtsUnavailable,
+                        fallbackItems = titleFallback,
+                        technical = searchOutcome.technical?.take(80),
+                    )
+                    return@launch
+                }
+                val ftsItems = if (searchOutcome == null) {
+                    emptyList()
+                } else {
+                    val seenDocIds = mutableSetOf<String>()
+                    buildList {
+                        searchOutcome.results.forEach { hit ->
+                            val docId = hit.docId ?: return@forEach
+                            if (!seenDocIds.add(docId)) return@forEach
+                            val activeRootUuid = rootUuid ?: return@forEach
+                            val entry = workspaceRepository.getByUuid(activeRootUuid, docId)
+                                ?.takeUnless { it.isDirectory }
+                                ?: return@forEach
+                            add(
+                                RagSearchResult(
+                                    document = entry.toDocument(),
+                                    snippet = buildRagSearchSnippet(hit.content, normalizedQuery),
+                                    matchKind = RagSearchMatchKind.FtsBody,
+                                ),
+                            )
+                        }
+                    }
+                }
+                if (generation != searchGeneration) return@launch
+                val ftsIds = ftsItems.mapTo(mutableSetOf()) { it.document.id }
+                val merged = ftsItems + titleFallback.filterNot { it.document.id in ftsIds }
+                _searchResults.value = merged
+                _searchState.value = RagSearchUiState.Results(normalizedQuery, merged)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (generation != searchGeneration) return@launch
+                _searchResults.value = titleFallback
+                _searchState.value = RagSearchUiState.Warning(
+                    query = normalizedQuery,
+                    code = RagSearchErrorCode.FtsUnavailable,
+                    fallbackItems = titleFallback,
+                    technical = failure::class.simpleName?.take(80),
+                )
             }
         }
     }

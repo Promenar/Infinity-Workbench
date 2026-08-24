@@ -194,6 +194,11 @@ class GraphStore(
         )
     }
 
+    suspend fun getDocumentOptions(): List<KgDocumentOption> =
+        kgEdgeDao.getActiveDocumentOptions().map { row ->
+            KgDocumentOption(docId = row.docId, title = row.title)
+        }
+
     private fun mergeMetadata(existingMeta: String?, newMeta: String?): String {
         val existing = try {
             existingMeta?.let { Json.decodeFromString<MutableMap<String, kotlinx.serialization.json.JsonElement>>(it) } ?: mutableMapOf()
@@ -255,6 +260,11 @@ class GraphStore(
         createdAt = createdAt
     )
 }
+
+data class KgDocumentOption(
+    val docId: String,
+    val title: String,
+)
 
 data class KgScope(
     val sessionId: String? = null,

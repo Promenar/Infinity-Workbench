@@ -97,7 +97,7 @@ object IndexingNotice {
         CODE_FAILED -> ResolvedStatus(R.string.rag_index_phase_failed)
         CODE_IMPORT_FAILED -> ResolvedStatus(R.string.rag_import_failed)
         CODE_MOVE_FAILED -> ResolvedStatus(R.string.common_cd_failed)
-        CODE_DELETE_FAILED -> ResolvedStatus(R.string.common_cd_failed)
+        CODE_DELETE_FAILED -> ResolvedStatus(R.string.rag_delete_failed_notice)
         else -> null
     }
 }

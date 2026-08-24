@@ -11,7 +11,10 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -99,5 +102,128 @@ class KnowledgeGraphViewModelTest {
 
         assertThat(vm.nodes.value).isEmpty()
         assertThat(vm.isLoading.value).isFalse()
+    }
+
+    @Test
+    fun `文档模式未选择docId时不复用全局图且明确要求选择`() = runTest {
+        coEvery { graphStore.getGraphData() } returns GraphData(
+            listOf(dataNode(id = "global")),
+            emptyList(),
+        )
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+
+        vm.setViewMode(KgViewMode.DOCUMENT)
+
+        assertThat(vm.selectedDocumentId.value).isNull()
+        assertThat(vm.nodes.value).isEmpty()
+        assertThat(vm.documentSelectionRequired.value).isTrue()
+        coVerify(exactly = 1) { graphStore.getGraphData() }
+        coVerify(exactly = 1) { graphStore.getGraphData(any(), any(), any()) }
+    }
+
+    @Test
+    fun `全局与每个文档缓存隔离且切换回来不重复串读`() = runTest {
+        coEvery { graphStore.getGraphData() } returns GraphData(
+            listOf(dataNode(id = "global")),
+            emptyList(),
+        )
+        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } returns GraphData(
+            listOf(dataNode(id = "doc-a-node")),
+            emptyList(),
+        )
+        coEvery { graphStore.getGraphData(docIds = listOf("doc-b")) } returns GraphData(
+            listOf(dataNode(id = "doc-b-node")),
+            emptyList(),
+        )
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+
+        vm.loadGraphByDoc("doc-a")
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("doc-a-node")
+        vm.loadGraphByDoc("doc-b")
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("doc-b-node")
+        vm.loadGraphByDoc("doc-a")
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("doc-a-node")
+        vm.setViewMode(KgViewMode.GLOBAL)
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("global")
+
+        coVerify(exactly = 1) { graphStore.getGraphData() }
+        coVerify(exactly = 1) { graphStore.getGraphData(docIds = listOf("doc-a")) }
+        coVerify(exactly = 1) { graphStore.getGraphData(docIds = listOf("doc-b")) }
+    }
+
+    @Test
+    fun `文档加载失败保留最近成功图并暴露可重试typed error`() = runTest {
+        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
+        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } returns GraphData(
+            listOf(dataNode(id = "last-good")),
+            emptyList(),
+        )
+        coEvery { graphStore.getGraphData(docIds = listOf("doc-b")) } throws
+            IllegalStateException("private database detail")
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+        vm.loadGraphByDoc("doc-a")
+
+        vm.loadGraphByDoc("doc-b")
+
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("last-good")
+        assertThat(vm.loadError.value?.code).isEqualTo(KgLoadErrorCode.LoadFailed)
+        assertThat(vm.loadError.value?.canRetry).isTrue()
+        assertThat(vm.loadError.value?.technical).doesNotContain("private database detail")
+    }
+
+    @Test
+    fun `迟到文档加载不会覆盖更新的文档选择`() = runTest {
+        val releaseA = CompletableDeferred<Unit>()
+        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
+        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } coAnswers {
+            withContext(NonCancellable) { releaseA.await() }
+            GraphData(listOf(dataNode(id = "doc-a-node")), emptyList())
+        }
+        coEvery { graphStore.getGraphData(docIds = listOf("doc-b")) } returns GraphData(
+            listOf(dataNode(id = "doc-b-node")),
+            emptyList(),
+        )
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+
+        vm.loadGraphByDoc("doc-a")
+        vm.loadGraphByDoc("doc-b")
+        releaseA.complete(Unit)
+
+        assertThat(vm.selectedDocumentId.value).isEqualTo("doc-b")
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("doc-b-node")
+    }
+
+    @Test
+    fun `切回已缓存全局图会取消迟到文档结果`() = runTest {
+        val releaseDocument = CompletableDeferred<Unit>()
+        coEvery { graphStore.getGraphData() } returns GraphData(
+            listOf(dataNode(id = "global-node")),
+            emptyList(),
+        )
+        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } coAnswers {
+            withContext(NonCancellable) { releaseDocument.await() }
+            GraphData(listOf(dataNode(id = "doc-a-node")), emptyList())
+        }
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+
+        vm.loadGraphByDoc("doc-a")
+        vm.setViewMode(KgViewMode.GLOBAL)
+        releaseDocument.complete(Unit)
+
+        assertThat(vm.viewMode.value).isEqualTo(KgViewMode.GLOBAL)
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("global-node")
+    }
+
+    @Test
+    fun `概念模式首次加载不会被重置为全局模式`() = runTest {
+        coEvery { graphStore.getGraphData() } returnsMany listOf(
+            GraphData(emptyList(), emptyList()),
+            GraphData(listOf(dataNode(id = "concept-node")), emptyList()),
+        )
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+
+        vm.setViewMode(KgViewMode.CONCEPT)
+
+        assertThat(vm.viewMode.value).isEqualTo(KgViewMode.CONCEPT)
     }
 }

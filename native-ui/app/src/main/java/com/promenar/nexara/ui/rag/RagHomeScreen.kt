@@ -133,6 +133,7 @@ internal fun shouldShowRagIndexSection(
 internal data class RagHomeScreenState(
     val currentTab: PortalTab,
     val searchQuery: String,
+    val searchState: RagSearchUiState = RagSearchUiState.Idle,
     val selectedIds: MutableList<String>,
     val workspaceRootUuid: String?,
     val folders: List<Folder>,
@@ -227,6 +228,7 @@ fun RagHomeScreen(
     val kgExtractionStates by viewModel.kgExtractionStates.collectAsState()
     val workspaceRootUuid by viewModel.workspaceRootUuid.collectAsState()
     val indexingFileIds by viewModel.indexingDocIds.collectAsState()
+    val searchState by viewModel.searchState.collectAsState()
 
     var currentTab by rememberSaveable { mutableStateOf(PortalTab.DOCUMENTS) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -235,6 +237,7 @@ fun RagHomeScreen(
     val routeState = remember(
         currentTab,
         searchQuery,
+        searchState,
         selectedIds,
         workspaceRootUuid,
         folders,
@@ -254,6 +257,7 @@ fun RagHomeScreen(
         RagHomeScreenState(
             currentTab = currentTab,
             searchQuery = searchQuery,
+            searchState = searchState,
             selectedIds = selectedIds,
             workspaceRootUuid = workspaceRootUuid,
             folders = folders,
@@ -321,36 +325,53 @@ fun RagHomeScreen(
         Modifier,
         MutableList<String>,
         (Collection<String>, (FileBatchOperationResult) -> Unit) -> Unit,
-    ) -> Unit = remember(onNavigateToFolder, onNavigateToGraph, workspaceRootUuid, searchQuery, indexingFileIds, kgExtractionStates) {
+    ) -> Unit = remember(
+        onNavigateToFolder,
+        onNavigateToGraph,
+        onNavigateToDocEditor,
+        workspaceRootUuid,
+        searchQuery,
+        searchState,
+        indexingFileIds,
+        kgExtractionStates,
+    ) {
         { modifier, selectedDocumentIds, requestDelete ->
             Box(modifier = modifier) {
-                FilesPanel(
-                    workspaceRootUuid = workspaceRootUuid,
-                    workspaceRepo = viewModel.getWorkspaceRepo(),
-                    searchQuery = searchQuery,
-                    useScroll = true,
-                    onReindex = { actions.onReindexFile(it) },
-                    onDelete = requestDelete,
-                    onRename = { uuid, name ->
-                        actions.onRenameFolder(uuid, name)
-                    },
-                    onMove = { uuid, targetId ->
-                        actions.onMoveFile(uuid, targetId) {}
-                    },
-                    onExtractKG = actions.onExtractKG,
-                    onViewKG = { onNavigateToGraph() },
-                    onCopy = actions.onCopyFile,
-                    indexingFileIds = indexingFileIds,
-                    kgExtractionStates = kgExtractionStates,
-                    externalSelectedIds = selectedDocumentIds,
-                    showSelectionOverlay = false,
-                    onFolderClick = onNavigateToFolder,
-                    onFileClick = { docId ->
-                        workspaceRootUuid?.let { root ->
-                            actions.onNavigateToDocEditor(root, docId)
-                        }
-                    },
-                )
+                if (searchQuery.isBlank()) {
+                    FilesPanel(
+                        workspaceRootUuid = workspaceRootUuid,
+                        workspaceRepo = viewModel.getWorkspaceRepo(),
+                        searchQuery = "",
+                        useScroll = true,
+                        onReindex = { actions.onReindexFile(it) },
+                        onDelete = requestDelete,
+                        onRename = { uuid, name -> actions.onRenameFolder(uuid, name) },
+                        onMove = { uuid, targetId -> actions.onMoveFile(uuid, targetId) {} },
+                        onExtractKG = actions.onExtractKG,
+                        onViewKG = { onNavigateToGraph() },
+                        onCopy = actions.onCopyFile,
+                        indexingFileIds = indexingFileIds,
+                        kgExtractionStates = kgExtractionStates,
+                        externalSelectedIds = selectedDocumentIds,
+                        showSelectionOverlay = false,
+                        onFolderClick = onNavigateToFolder,
+                        onFileClick = { docId ->
+                            workspaceRootUuid?.let { root ->
+                                actions.onNavigateToDocEditor(root, docId)
+                            }
+                        },
+                    )
+                } else {
+                    RagSearchResults(
+                        state = searchState,
+                        onOpenDocument = { docId ->
+                            workspaceRootUuid?.let { root ->
+                                actions.onNavigateToDocEditor(root, docId)
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }

@@ -12,12 +12,15 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.data.rag.GraphData
 import com.promenar.nexara.data.rag.GraphStore
+import com.promenar.nexara.data.rag.KgDocumentOption
 import com.promenar.nexara.data.repository.KnowledgeGraphRepository
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
 import com.promenar.nexara.NexaraApplication
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 import com.promenar.nexara.utils.NexaraLogger
@@ -27,6 +30,14 @@ import kotlinx.serialization.json.put
 import kotlin.random.Random
 
 enum class KgViewMode { GLOBAL, DOCUMENT, CONCEPT }
+
+enum class KgLoadErrorCode { LoadFailed }
+
+data class KgLoadError(
+    val code: KgLoadErrorCode,
+    val canRetry: Boolean,
+    val technical: String?,
+)
 
 data class GraphNode(
     val id: String,
@@ -61,59 +72,147 @@ class KnowledgeGraphViewModel(
     private val _viewMode = MutableStateFlow(KgViewMode.GLOBAL)
     val viewMode: StateFlow<KgViewMode> = _viewMode.asStateFlow()
 
-    private var cachedGraphData: GraphData? = null
+    private val _selectedDocumentId = MutableStateFlow<String?>(null)
+    val selectedDocumentId: StateFlow<String?> = _selectedDocumentId.asStateFlow()
+
+    private val _documentSelectionRequired = MutableStateFlow(false)
+    val documentSelectionRequired: StateFlow<Boolean> = _documentSelectionRequired.asStateFlow()
+
+    private val _loadError = MutableStateFlow<KgLoadError?>(null)
+    val loadError: StateFlow<KgLoadError?> = _loadError.asStateFlow()
+
+    private val _documentOptions = MutableStateFlow<List<KgDocumentOption>>(emptyList())
+    val documentOptions: StateFlow<List<KgDocumentOption>> = _documentOptions.asStateFlow()
+
+    private var globalCache: GraphData? = null
+    private val documentCache = mutableMapOf<String, GraphData>()
+    private var loadJob: Job? = null
+    private var loadGeneration = 0L
 
     init {
+        loadDocumentOptions()
         loadGraph()
+    }
+
+    fun loadDocumentOptions() {
+        viewModelScope.launch {
+            try {
+                _documentOptions.value = graphStore.getDocumentOptions()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                NexaraLogger.logError("[KG] loadDocumentOptions failed", failure)
+            }
+        }
     }
 
     fun setViewMode(mode: KgViewMode) {
         _viewMode.value = mode
-        renderFromCache()
+        _loadError.value = null
+        when (mode) {
+            KgViewMode.GLOBAL, KgViewMode.CONCEPT -> {
+                _documentSelectionRequired.value = false
+                globalCache?.let { renderCached(it, mode) } ?: loadGraphInternal(null)
+            }
+            KgViewMode.DOCUMENT -> {
+                val docId = _selectedDocumentId.value
+                _documentSelectionRequired.value = docId == null
+                if (docId == null) {
+                    cancelPendingLoad()
+                    _nodes.value = emptyList()
+                    _edges.value = emptyList()
+                } else {
+                    documentCache[docId]?.let { renderCached(it, KgViewMode.DOCUMENT) }
+                        ?: loadGraphByDoc(docId)
+                }
+            }
+        }
     }
 
     fun loadGraph() {
-        loadGraphInternal(null)
+        _viewMode.value = KgViewMode.GLOBAL
+        _documentSelectionRequired.value = false
+        globalCache?.let { renderCached(it, KgViewMode.GLOBAL) } ?: loadGraphInternal(null)
         NexaraLogger.log("[KG] loadGraph triggered, will query graphStore.getGraphData()")
     }
 
     fun loadGraphByDoc(docId: String) {
+        require(docId.isNotBlank()) { "docId must not be blank" }
         _viewMode.value = KgViewMode.DOCUMENT
-        loadGraphInternal(listOf(docId))
+        _selectedDocumentId.value = docId
+        _documentSelectionRequired.value = false
+        _loadError.value = null
+        documentCache[docId]?.let { renderCached(it, KgViewMode.DOCUMENT) }
+            ?: loadGraphInternal(docId)
     }
 
-    private fun loadGraphInternal(docIds: List<String>?) {
-        viewModelScope.launch {
+    fun retryLoad() {
+        when (_viewMode.value) {
+            KgViewMode.DOCUMENT -> _selectedDocumentId.value?.let {
+                documentCache.remove(it)
+                loadGraphInternal(it)
+            }
+            KgViewMode.GLOBAL, KgViewMode.CONCEPT -> {
+                globalCache = null
+                loadGraphInternal(null)
+            }
+        }
+    }
+
+    private fun loadGraphInternal(docId: String?) {
+        val generation = ++loadGeneration
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _isLoading.value = true
             try {
-                val data = graphStore.getGraphData(docIds = docIds)
-                NexaraLogger.log("[KG] graphStore returned: ${data.nodes.size} nodes, ${data.edges.size} edges (docIds=$docIds)")
+                val data = if (docId == null) {
+                    graphStore.getGraphData()
+                } else {
+                    graphStore.getGraphData(docIds = listOf(docId))
+                }
+                if (generation != loadGeneration) return@launch
+                NexaraLogger.log("[KG] graphStore returned: ${data.nodes.size} nodes, ${data.edges.size} edges (docId=$docId)")
                 if (data.nodes.isEmpty() && data.edges.isEmpty()) {
                     NexaraLogger.log("[KG] WARNING: No graph data available — KG extraction may not have been completed, or all extractions failed")
                 }
                 if (data.nodes.isNotEmpty() && data.edges.isEmpty()) {
                     NexaraLogger.log("[KG] INFO: ${data.nodes.size} orphan nodes found (no edges) — these will be displayed as isolated points")
                 }
-                cachedGraphData = data
-                renderFromCache()
+                if (docId == null) globalCache = data else documentCache[docId] = data
+                _loadError.value = null
+                render(data, if (docId == null) _viewMode.value else KgViewMode.DOCUMENT)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
+                if (generation != loadGeneration) return@launch
                 NexaraLogger.logError("[KG] loadGraphInternal failed", e)
+                _loadError.value = KgLoadError(
+                    code = KgLoadErrorCode.LoadFailed,
+                    canRetry = true,
+                    technical = e::class.simpleName?.take(80),
+                )
             } finally {
-                _isLoading.value = false
+                if (generation == loadGeneration) _isLoading.value = false
             }
         }
     }
 
-    private fun renderFromCache() {
-        val data = cachedGraphData ?: return
-        val filteredData = when (_viewMode.value) {
+    private fun renderCached(data: GraphData, mode: KgViewMode) {
+        cancelPendingLoad()
+        render(data, mode)
+    }
+
+    private fun cancelPendingLoad() {
+        loadGeneration++
+        loadJob?.cancel()
+        loadJob = null
+        _isLoading.value = false
+    }
+
+    private fun render(data: GraphData, mode: KgViewMode) {
+        val filteredData = when (mode) {
             KgViewMode.GLOBAL -> data
-            KgViewMode.DOCUMENT -> {
-                val filteredEdges = data.edges.filter { it.docId != null }
-                val nodeIds = filteredEdges.flatMap { listOf(it.sourceId, it.targetId) }.toSet()
-                val filteredNodes = data.nodes.filter { it.id in nodeIds }
-                GraphData(filteredNodes, filteredEdges)
-            }
+            KgViewMode.DOCUMENT -> data
             KgViewMode.CONCEPT -> {
                 val conceptNodes = data.nodes.filter { it.type == "concept" }
                 val conceptIds = conceptNodes.map { it.id }.toSet()
