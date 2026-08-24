@@ -117,8 +117,8 @@ class VectorizationQueue(
         content: String,
         kgStrategy: String? = null,
         skipVectorization: Boolean = false
-    ) = enqueueMutex.withLock {
-        executionGate?.requireWorkspaceWritable(workspaceRootUuid)
+    ) = withWorkspaceAdmission(workspaceRootUuid) {
+        enqueueMutex.withLock {
         ensureTargetNotFenced(workspaceRootUuid, docId)
         val task = VectorizationTask(
             id = UUID.randomUUID().toString(),
@@ -137,6 +137,7 @@ class VectorizationQueue(
         notifyStateChange()
 
         startProcessorIfNeeded()
+        }
     }
 
     suspend fun enqueueMemory(
@@ -145,8 +146,8 @@ class VectorizationQueue(
         aiContent: String,
         userMessageId: String,
         assistantMessageId: String
-    ) = enqueueMutex.withLock {
-        executionGate?.requireSessionWritable(sessionId)
+    ) = withSessionAdmission(sessionId) {
+        enqueueMutex.withLock {
         ensureSessionNotFenced(sessionId)
         val sanitize: (String) -> String = { text ->
             text.replace(Regex("!\\[.*?\\]\\(data:image/.*?;base64,.*?\\)"), "[Image]")
@@ -168,6 +169,7 @@ class VectorizationQueue(
         notifyStateChange()
 
         startProcessorIfNeeded()
+        }
     }
 
     /** 先持久化文件引用任务，再进入内存队列；返回即表示进程死亡后可恢复。 */
@@ -180,8 +182,8 @@ class VectorizationQueue(
         targetEpoch: Long,
         kgStrategy: String? = null,
         skipVectorization: Boolean = false,
-    ): String = enqueueMutex.withLock {
-        executionGate?.requireWorkspaceWritable(workspaceRootUuid)
+    ): String = withWorkspaceAdmission(workspaceRootUuid) {
+        enqueueMutex.withLock {
         requireNotNull(documentIndexService) { "document_reference 必须配置事务索引服务" }
         require(sourceMimeType in DocumentReferenceExtractor.SUPPORTED_MIME_TYPES) { "不支持索引 MIME" }
         require(targetContentHash.isNotBlank()) { "document_reference target hash 不能为空" }
@@ -264,6 +266,20 @@ class VectorizationQueue(
         notifyStateChange()
         if (added) startProcessorIfNeeded()
         active.id
+        }
+    }
+
+    private suspend fun <T> withWorkspaceAdmission(
+        workspaceRootUuid: String,
+        block: suspend () -> T,
+    ): T {
+        val gate = executionGate
+        return if (gate == null) block() else gate.withWorkspaceAdmission(workspaceRootUuid, block)
+    }
+
+    private suspend fun <T> withSessionAdmission(sessionId: String, block: suspend () -> T): T {
+        val gate = executionGate
+        return if (gate == null) block() else gate.withSessionAdmission(sessionId, block)
     }
 
     suspend fun retryDocumentReference(workspaceRootUuid: String, docId: String): Boolean {
@@ -466,7 +482,7 @@ class VectorizationQueue(
                 endMessageId = task.assistantMessageId
             )
         }
-        vectorStore.addVectorRecords(vectors)
+        withSessionAdmission(sessionId) { vectorStore.addVectorRecords(vectors) }
         NexaraLogger.log("[VectorQueue] Memory saved: ${vectors.size} vectors for session=$sessionId")
     }
 
@@ -579,7 +595,9 @@ class VectorizationQueue(
                     endMessageId = docId
                 )
             }
-            vectorStore.addVectorRecords(records)
+            withWorkspaceAdmission(
+                task.workspaceRootUuid ?: throw SecurityException("Document task missing workspaceRootUuid"),
+            ) { vectorStore.addVectorRecords(records) }
             NexaraLogger.log("[VectorQueue] Document vectors saved: ${records.size} vectors for doc=$docTitle")
         } else {
             task.subStatus = "已按配置跳过向量化，继续处理知识图谱"
@@ -617,10 +635,12 @@ class VectorizationQueue(
 
     /** 更新 FileEntry 的 vectorizedAt 时间戳 */
     private suspend fun updateFileEntryVectorizedAt(workspaceRootUuid: String, docId: String, timestamp: Long) {
-        val dao = fileEntryDao ?: throw IllegalStateException("文件索引 DAO 未配置")
-        val entry = dao.getByUuid(workspaceRootUuid, docId)
-            ?: throw IllegalStateException("索引文件不存在")
-        dao.update(entry.copy(vectorizedAt = maxOf(timestamp, entry.updatedAt)))
+        withWorkspaceAdmission(workspaceRootUuid) {
+            val dao = fileEntryDao ?: throw IllegalStateException("文件索引 DAO 未配置")
+            val entry = dao.getByUuid(workspaceRootUuid, docId)
+                ?: throw IllegalStateException("索引文件不存在")
+            dao.update(entry.copy(vectorizedAt = maxOf(timestamp, entry.updatedAt)))
+        }
     }
 
     fun getQueueLength(): Int = synchronized(queueLock) { queue.size }
@@ -761,19 +781,28 @@ class VectorizationQueue(
     }
 
     private suspend fun saveTaskToDb(task: VectorizationTask) {
-        if (synchronized(queueLock) { isFencedLocked(task) }) {
-            throw TargetDeletedCancellation(task.targetKey())
-        }
-        task.updatedAt = System.currentTimeMillis()
-        val entity = task.toEntity()
-        if (task.type == TYPE_DOCUMENT_REFERENCE) {
-            if (vectorizationTaskDao.updateForTarget(entity) != 1) {
-                throw TargetSuperseded(task.targetKey())
+        withTaskAdmission(task) {
+            if (synchronized(queueLock) { isFencedLocked(task) }) {
+                throw TargetDeletedCancellation(task.targetKey())
             }
-        } else {
-            vectorizationTaskDao.insert(entity)
+            task.updatedAt = System.currentTimeMillis()
+            val entity = task.toEntity()
+            if (task.type == TYPE_DOCUMENT_REFERENCE) {
+                if (vectorizationTaskDao.updateForTarget(entity) != 1) {
+                    throw TargetSuperseded(task.targetKey())
+                }
+            } else {
+                vectorizationTaskDao.insert(entity)
+            }
         }
     }
+
+    private suspend fun <T> withTaskAdmission(task: VectorizationTask, block: suspend () -> T): T =
+        when {
+            !task.workspaceRootUuid.isNullOrBlank() -> withWorkspaceAdmission(task.workspaceRootUuid!!, block)
+            !task.sessionId.isNullOrBlank() -> withSessionAdmission(task.sessionId!!, block)
+            else -> block()
+        }
 
     private fun VectorizationTask.toEntity() = VectorizationTaskEntity(
         id = id,

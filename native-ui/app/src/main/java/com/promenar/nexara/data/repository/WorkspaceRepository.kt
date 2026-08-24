@@ -51,8 +51,8 @@ class WorkspaceRepository(
     @Volatile
     private var defaultParentIdentity: String? = null
 
-    override suspend fun ensureSessionRoot(sessionId: String): FileEntry = withContext(Dispatchers.IO) {
-        executionGate?.requireSessionWritable(sessionId)
+    override suspend fun ensureSessionRoot(sessionId: String): FileEntry = withSessionAdmission(sessionId) {
+        withContext(Dispatchers.IO) {
         val session = dao.getSessionForRoot(sessionId)
             ?: throw NoSuchElementException("Session not found: $sessionId")
         val path = session.workspacePath?.takeIf { it.isNotBlank() }
@@ -64,14 +64,14 @@ class WorkspaceRepository(
             }
             ?: throw IllegalStateException("Session workspace path is missing: $sessionId")
         ensureSessionRootInternal(sessionId, path)
+        }
     }
 
     override suspend fun ensureSessionRoot(
         sessionId: String,
         physicalRootPath: String,
-    ): FileEntry = withContext(Dispatchers.IO) {
-        executionGate?.requireSessionWritable(sessionId)
-        ensureSessionRootInternal(sessionId, physicalRootPath)
+    ): FileEntry = withSessionAdmission(sessionId) {
+        withContext(Dispatchers.IO) { ensureSessionRootInternal(sessionId, physicalRootPath) }
     }
 
     private suspend fun ensureSessionRootInternal(sessionId: String, physicalRootPath: String): FileEntry {
@@ -675,16 +675,33 @@ class WorkspaceRepository(
         workspaceRootUuid: String,
         block: suspend (FileEntry) -> T,
     ): T {
-        executionGate?.requireWorkspaceWritable(workspaceRootUuid)
+        val gate = executionGate
+        return if (gate == null) {
+            withAdmittedRootMutation(workspaceRootUuid, block)
+        } else {
+            gate.withWorkspaceAdmission(workspaceRootUuid) {
+                withAdmittedRootMutation(workspaceRootUuid, block)
+            }
+        }
+    }
+
+    private suspend fun <T> withAdmittedRootMutation(
+        workspaceRootUuid: String,
+        block: suspend (FileEntry) -> T,
+    ): T {
         val initial = requireRoot(workspaceRootUuid)
         return WorkspaceMutationCoordinator.withBoundRoot(
             File(initial.physicalRootPath).toPath(), initial.hash,
         ) {
-            executionGate?.requireWorkspaceWritable(workspaceRootUuid)
             val currentRoot = requireRoot(workspaceRootUuid)
             recoverPendingTombstonesLocked(currentRoot)
             block(requireRoot(workspaceRootUuid))
         }
+    }
+
+    private suspend fun <T> withSessionAdmission(sessionId: String, block: suspend () -> T): T {
+        val gate = executionGate
+        return if (gate == null) block() else gate.withSessionAdmission(sessionId, block)
     }
 
     private suspend fun requireParent(root: FileEntry, parentUuid: String?): FileEntry {

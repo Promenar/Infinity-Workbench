@@ -114,6 +114,47 @@ class RoomSessionDeletionTransactionTest {
         Unit
     }
 
+    @Test
+    fun `身份marker删除后收尾IO失败仍可由DB_COMMITTED journal恢复`() = runBlocking<Unit> {
+        val parent = Files.createTempDirectory("session-delete-partial")
+        val root = Files.createDirectories(parent.resolve("root"))
+        val marker = root.resolve(".nexara_root_identity")
+        Files.write(marker, "identity".toByteArray())
+        Files.write(root.resolve("payload.txt"), "payload".toByteArray())
+        seedAllRelations(root.toString(), root.resolve("version.snapshot").toString())
+        val target = target(root.toString())
+        val journal = RoomSessionWorkspaceMutationJournal(
+            database = database,
+            workspaceParent = parent,
+            operationIdFactory = { "partial-op" },
+            verifyIdentity = { _, _ -> },
+            afterIdentityMarkerDeleted = { throw java.io.IOException("after marker") },
+        )
+        val staged = journal.stage(target)
+        RoomSessionDeletionTransaction(database).delete(target, staged.operationId)
+
+        assertThat(runCatching { journal.complete(staged) }.exceptionOrNull())
+            .isInstanceOf(java.io.IOException::class.java)
+        val stagedRoot = parent.resolve(".nexara_session_deletions/partial-op")
+        assertThat(Files.exists(stagedRoot)).isTrue()
+        assertThat(Files.exists(stagedRoot.resolve(marker.fileName))).isFalse()
+        val recovery = com.promenar.nexara.data.repository.WorkspaceMutationRecoveryCoordinator(
+            workspaceParent = parent,
+            loadUnfinished = { database.workspaceMutationDao().getUnfinished() },
+            sessionExists = { false },
+            deletePrepared = { check(database.workspaceMutationDao().deletePrepared(it) == 1) },
+            deleteCommitted = { check(database.workspaceMutationDao().deleteCommitted(it) == 1) },
+            verifyRootIdentity = { _, _ -> error("marker 已删时应使用 durable staging ownership") },
+        )
+
+        recovery.recoverOrThrow()
+
+        assertThat(Files.exists(stagedRoot)).isFalse()
+        assertThat(database.workspaceMutationDao().get("partial-op")).isNull()
+        Files.deleteIfExists(parent.resolve(".nexara_session_deletions"))
+        Files.deleteIfExists(parent)
+    }
+
     private fun seedAllRelations(
         rootPath: String = "/tmp/root",
         versionPath: String = "/tmp/root/.nexara_versions/version.snapshot",

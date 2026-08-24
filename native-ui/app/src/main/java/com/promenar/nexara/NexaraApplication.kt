@@ -1041,6 +1041,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     ): com.promenar.nexara.data.rag.DocumentIndexService =
         com.promenar.nexara.data.rag.RoomDocumentIndexService(
             database = database,
+            executionGate = sessionExecutionGate,
             candidateBuilder = com.promenar.nexara.data.rag.WorkspaceDocumentIndexCandidateBuilder(
                 fileEntryDao = database.fileEntryDao(),
                 embeddingClient = embeddingClient,

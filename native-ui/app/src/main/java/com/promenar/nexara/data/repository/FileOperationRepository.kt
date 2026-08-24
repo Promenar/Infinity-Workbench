@@ -40,14 +40,11 @@ class FileOperationRepository(
         newContent: String,
         sessionId: String,
         expectedHash: String,
-    ): WriteResult = withContext(Dispatchers.IO) {
-        executionGate?.requireSessionWritable(sessionId)
-        executionGate?.requireWorkspaceWritable(workspaceRootUuid)
+    ): WriteResult = withSessionWorkspaceAdmission(sessionId, workspaceRootUuid) {
+        withContext(Dispatchers.IO) {
         val initial = dao.getByUuid(workspaceRootUuid, uuid) ?: return@withContext WriteResult.NotFound
         val root = bindRoot(workspaceRootUuid)
         WorkspaceMutationCoordinator.withBoundRoot(File(initial.physicalRootPath).toPath(), root.hash) {
-            executionGate?.requireSessionWritable(sessionId)
-            executionGate?.requireWorkspaceWritable(workspaceRootUuid)
             val entry = dao.getByUuid(workspaceRootUuid, uuid) ?: return@withBoundRoot WriteResult.NotFound
             if (entry.isDirectory) return@withBoundRoot WriteResult.NotFound
             if (entry.hash != expectedHash) {
@@ -65,6 +62,7 @@ class FileOperationRepository(
                 indexQueued = indexQueued,
                 targetEpoch = committed?.targetEpoch ?: entry.updatedAt,
             )
+        }
         }
     }
 
@@ -123,13 +121,12 @@ class FileOperationRepository(
         uuid: String,
         operations: List<PatchOperation>,
         expectedHash: String,
-    ): PatchResult = withContext(Dispatchers.IO) {
-        executionGate?.requireWorkspaceWritable(workspaceRootUuid)
+    ): PatchResult = withWorkspaceAdmission(workspaceRootUuid) {
+        withContext(Dispatchers.IO) {
         val initial = dao.getByUuid(workspaceRootUuid, uuid)
             ?: return@withContext fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
         val root = bindRoot(workspaceRootUuid)
         WorkspaceMutationCoordinator.withBoundRoot(File(initial.physicalRootPath).toPath(), root.hash) {
-            executionGate?.requireWorkspaceWritable(workspaceRootUuid)
             val entry = dao.getByUuid(workspaceRootUuid, uuid)
                 ?: return@withBoundRoot fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
             if (entry.isDirectory) return@withBoundRoot fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
@@ -202,6 +199,25 @@ class FileOperationRepository(
                 targetEpoch = committed?.targetEpoch ?: entry.updatedAt,
             )
         }
+        }
+    }
+
+    private suspend fun <T> withSessionWorkspaceAdmission(
+        sessionId: String,
+        workspaceRootUuid: String,
+        block: suspend () -> T,
+    ): T {
+        val gate = executionGate
+        return if (gate == null) block()
+        else gate.withSessionWorkspaceAdmission(sessionId, workspaceRootUuid, block)
+    }
+
+    private suspend fun <T> withWorkspaceAdmission(
+        workspaceRootUuid: String,
+        block: suspend () -> T,
+    ): T {
+        val gate = executionGate
+        return if (gate == null) block() else gate.withWorkspaceAdmission(workspaceRootUuid, block)
     }
 
     private suspend fun publishIndexEvent(

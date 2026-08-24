@@ -55,6 +55,36 @@ class DocumentIndexServiceTest {
     }
 
     @Test
+    fun `删除关闭admission后迟到候选不能提交派生数据`() = runTest {
+        seedFileAndOldArtifacts()
+        val gate = com.promenar.nexara.data.session.SessionExecutionGate()
+        val candidateEntered = CompletableDeferred<Unit>()
+        val releaseCandidate = CompletableDeferred<Unit>()
+        val releaseDeletion = CompletableDeferred<Unit>()
+        val service = RoomDocumentIndexService(database, executionGate = gate) {
+            candidateEntered.complete(Unit)
+            releaseCandidate.await()
+            candidate()
+        }
+        val rebuild = async { service.rebuild(changed()) }
+        candidateEntered.await()
+        val deletion = async {
+            gate.withDeletion("session-1", ROOT) {
+                releaseDeletion.await()
+                database.vectorDao().deleteByDocId(FILE)
+            }
+        }
+        while (!gate.isDeleting("session-1")) kotlinx.coroutines.yield()
+
+        releaseCandidate.complete(Unit)
+        assertThat(rebuild.await()).isInstanceOf(DocumentIndexResult.Failed::class.java)
+        releaseDeletion.complete(Unit)
+        deletion.await()
+
+        assertThat(database.vectorDao().getByDocId(FILE)).isEmpty()
+    }
+
+    @Test
     fun `候选完成后文件hash变化时不切换旧索引`() = runTest {
         seedFileAndOldArtifacts()
         val service = RoomDocumentIndexService(database) {

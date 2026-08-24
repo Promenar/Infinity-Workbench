@@ -69,7 +69,20 @@ class SessionDeletionCoordinator(
             return failed(SessionDeletionErrorCode.INVALID_TARGET, failure)
         } ?: return SessionDeletionResult.AlreadyDeleted
 
-        return gate.withDeletion(sessionId, firstTarget.workspaceRootUuid) {
+        return try {
+            gate.withDeletion(
+                sessionId = sessionId,
+                workspaceRootUuid = firstTarget.workspaceRootUuid,
+                beforeAdmissionsDrained = {
+                    try {
+                        cancelAndJoinGeneration(sessionId)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Throwable) {
+                        throw DeletionPreparationException(SessionDeletionErrorCode.GENERATION, failure)
+                    }
+                },
+            ) {
             val target = try {
                 resolveTarget(sessionId)
             } catch (cancelled: CancellationException) {
@@ -77,20 +90,13 @@ class SessionDeletionCoordinator(
             } catch (failure: Throwable) {
                 return@withDeletion failed(SessionDeletionErrorCode.INVALID_TARGET, failure)
             } ?: return@withDeletion SessionDeletionResult.AlreadyDeleted
-            if (target != firstTarget) {
+            if (!target.hasSameWorkspaceOwnership(firstTarget)) {
                 return@withDeletion failed(
                     SessionDeletionErrorCode.INVALID_TARGET,
                     SecurityException("会话工作区认领在删除锁定前发生变化"),
                 )
             }
 
-            try {
-                cancelAndJoinGeneration(sessionId)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Throwable) {
-                return@withDeletion failed(SessionDeletionErrorCode.GENERATION, failure)
-            }
             try {
                 closePendingExecution(sessionId)
             } catch (cancelled: CancellationException) {
@@ -138,9 +144,27 @@ class SessionDeletionCoordinator(
             } else {
                 SessionDeletionResult.Deleted
             }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: DeletionPreparationException) {
+            failed(failure.code, checkNotNull(failure.cause))
+        } catch (failure: Throwable) {
+            failed(SessionDeletionErrorCode.EXECUTION, failure)
         }
     }
 
     private fun failed(code: SessionDeletionErrorCode, cause: Throwable) =
         SessionDeletionResult.Failed(SessionDeletionError(code, cause))
+
+    private fun SessionDeletionTarget.hasSameWorkspaceOwnership(other: SessionDeletionTarget): Boolean =
+        sessionId == other.sessionId &&
+            workspaceRootUuid == other.workspaceRootUuid &&
+            physicalRoot.toAbsolutePath().normalize() == other.physicalRoot.toAbsolutePath().normalize() &&
+            rootIdentity == other.rootIdentity
+
+    private class DeletionPreparationException(
+        val code: SessionDeletionErrorCode,
+        cause: Throwable,
+    ) : IllegalStateException(cause)
 }

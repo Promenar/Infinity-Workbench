@@ -58,25 +58,17 @@ class DefaultGenerationCoordinator(
         sessionStates.getOrPut(sessionId) { MutableStateFlow(null) }
 
     override suspend fun start(request: GenerationRequest): StartGenerationResult {
-        try {
-            executionGate?.requireSessionWritable(request.sessionId)
+        return try {
+            val gate = executionGate
+            if (gate == null) startAdmitted(request)
+            else gate.withNewSessionAdmission(request.sessionId) { startAdmitted(request) }
         } catch (failure: com.promenar.nexara.data.session.SessionDeletingException) {
-            return StartGenerationResult.Rejected(
-                GenerationError(
-                    com.promenar.nexara.domain.generation.GenerationFailure.unknown(
-                        technical = "session_deleting",
-                        cause = failure,
-                    ),
-                ),
-            )
+            deletionRejected(failure)
         }
-        return mutex.withLock {
+    }
+
+    private suspend fun startAdmitted(request: GenerationRequest): StartGenerationResult = mutex.withLock {
         synchronized(lifecycleLock) {
-        try {
-            executionGate?.requireSessionWritable(request.sessionId)
-        } catch (failure: com.promenar.nexara.data.session.SessionDeletingException) {
-            return@synchronized deletionRejected(failure)
-        }
         running?.let { current ->
             val snapshot = mutableActive.value ?: snapshotOf(current.taskId, current.request)
             return@synchronized if (
@@ -155,7 +147,6 @@ class DefaultGenerationCoordinator(
         publishSessionState(request.sessionId, initial)
         job.start()
         StartGenerationResult.Started(taskId)
-        }
         }
     }
 

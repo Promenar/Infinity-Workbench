@@ -130,6 +130,41 @@ class FileOperationRepositoryTest {
     }
 
     @Test
+    fun `已进入的文件版本写入持有租约直到索引交接完成`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "old content")
+        val gate = com.promenar.nexara.data.session.SessionExecutionGate()
+        val publishEntered = CompletableDeferred<Unit>()
+        val releasePublish = CompletableDeferred<Unit>()
+        repo = FileOperationRepository(
+            db.fileEntryDao(),
+            db.fileVersionDao(),
+            TestWorkspaceFileOps(),
+            indexEventSink = FileIndexEventSink {
+                publishEntered.complete(Unit)
+                releasePublish.await()
+            },
+            executionGate = gate,
+        )
+        val write = async {
+            repo.writeFileAtomic("root-1", entry.uuid, "new content", "session-1", entry.hash)
+        }
+        publishEntered.await()
+        var deletionEntered = false
+        val deleting = async {
+            gate.withDeletion("session-1", "root-1") { deletionEntered = true }
+        }
+        while (!gate.isDeleting("session-1")) kotlinx.coroutines.yield()
+
+        assertThat(deletionEntered).isFalse()
+        assertThat(db.fileVersionDao().getByFile("root-1", entry.uuid)).hasSize(1)
+
+        releasePublish.complete(Unit)
+        assertThat(write.await()).isInstanceOf(WriteResult.Success::class.java)
+        deleting.await()
+        assertThat(deletionEntered).isTrue()
+    }
+
+    @Test
     fun `diff rejects tampered historical snapshot`() = runBlocking<Unit> {
         val entry = insertTestFile(content = "old content")
         repo.writeFileAtomic("root-1", entry.uuid, "new content", "session-1", entry.hash)

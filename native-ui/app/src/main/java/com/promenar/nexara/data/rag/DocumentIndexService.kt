@@ -6,6 +6,7 @@ import com.promenar.nexara.data.local.db.entity.KgEdgeEntity
 import com.promenar.nexara.data.local.db.entity.KgNodeEntity
 import com.promenar.nexara.data.local.db.entity.VectorEntity
 import com.promenar.nexara.data.local.db.dao.FileEntryDao
+import com.promenar.nexara.data.session.SessionExecutionGate
 import java.io.File
 import java.nio.ByteBuffer
 import java.security.MessageDigest
@@ -149,6 +150,7 @@ class WorkspaceDocumentIndexCandidateBuilder(
 class RoomDocumentIndexService(
     private val database: NexaraDatabase,
     private val now: () -> Long = System::currentTimeMillis,
+    private val executionGate: SessionExecutionGate? = null,
     private val candidateBuilder: DocumentIndexCandidateBuilder,
 ) : DocumentIndexService {
     private val artifacts = RoomDocumentArtifacts(database)
@@ -167,7 +169,8 @@ class RoomDocumentIndexService(
             return DocumentIndexResult.Failed(failure)
         }
         return try {
-            database.withTransaction {
+            withWorkspaceAdmission(event.workspaceRootUuid) {
+                database.withTransaction {
                 val current = database.fileEntryDao().getByUuid(event.workspaceRootUuid, event.fileUuid)
                 if (current?.hash != event.contentHash || current.updatedAt != event.targetEpoch) {
                     return@withTransaction DocumentIndexResult.HashChanged(current?.hash)
@@ -193,6 +196,7 @@ class RoomDocumentIndexService(
                     kgExtractedAt = timestamp.takeIf { event.kgStrategy != null },
                 ))
                 DocumentIndexResult.Rebuilt(event.fileUuid)
+                }
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
@@ -202,10 +206,12 @@ class RoomDocumentIndexService(
     }
 
     override suspend fun delete(workspaceRootUuid: String, fileUuid: String): DocumentIndexResult = try {
-        database.withTransaction {
+        withWorkspaceAdmission(workspaceRootUuid) {
+            database.withTransaction {
             artifacts.clear(workspaceRootUuid, fileUuid, deleteTags = true)
             database.vectorizationTaskDao().deleteByWorkspaceFile(workspaceRootUuid, fileUuid)
             DocumentIndexResult.Deleted(fileUuid)
+            }
         }
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
         throw cancelled
@@ -218,7 +224,8 @@ class RoomDocumentIndexService(
         fileUuid: String,
         legacyTaskId: String,
     ): Boolean = try {
-        database.withTransaction {
+        withWorkspaceAdmission(workspaceRootUuid) {
+            database.withTransaction {
             val task = database.vectorizationTaskDao().getById(legacyTaskId)
                 ?: return@withTransaction false
             if (task.type != "document" || task.workspaceRootUuid != workspaceRootUuid || task.docId != fileUuid) {
@@ -233,11 +240,20 @@ class RoomDocumentIndexService(
                     updatedAt = now(),
                 ),
             ) == 1
+            }
         }
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
         throw cancelled
     } catch (_: Throwable) {
         false
+    }
+
+    private suspend fun <T> withWorkspaceAdmission(
+        workspaceRootUuid: String,
+        block: suspend () -> T,
+    ): T {
+        val gate = executionGate
+        return if (gate == null) block() else gate.withWorkspaceAdmission(workspaceRootUuid, block)
     }
 
 }

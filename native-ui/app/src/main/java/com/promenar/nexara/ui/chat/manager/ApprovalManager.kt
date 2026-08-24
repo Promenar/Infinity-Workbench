@@ -51,7 +51,16 @@ class ApprovalManager(
     }
 
     suspend fun setApprovalRequest(sessionId: String, request: ApprovalRequest?) {
-        if (request != null) executionGate?.requireSessionWritable(sessionId)
+        if (request != null) {
+            val gate = executionGate
+            if (gate != null) return gate.withNewSessionAdmission(sessionId) {
+                setApprovalRequestAdmitted(sessionId, request)
+            }
+        }
+        setApprovalRequestAdmitted(sessionId, request)
+    }
+
+    private suspend fun setApprovalRequestAdmitted(sessionId: String, request: ApprovalRequest?) {
         sessionRepository.updatePartial(sessionId, mapOf("approvalRequest" to request))
         store.updateSession(sessionId) { s ->
             s.copy(approvalRequest = request)
@@ -63,9 +72,14 @@ class ApprovalManager(
         expectedRequest: ApprovalRequest? = null,
         approved: Boolean = true,
         intervention: String? = null
-    ) = approvalLock(sessionId).withLock {
-        executionGate?.requireSessionWritable(sessionId)
-        resumeGenerationLocked(sessionId, expectedRequest, approved, intervention)
+    ) {
+        val action: suspend () -> Unit = {
+            approvalLock(sessionId).withLock {
+                resumeGenerationLocked(sessionId, expectedRequest, approved, intervention)
+            }
+        }
+        val gate = executionGate
+        if (gate == null) action() else gate.withNewSessionAdmission(sessionId, action)
     }
 
     private suspend fun resumeGenerationLocked(

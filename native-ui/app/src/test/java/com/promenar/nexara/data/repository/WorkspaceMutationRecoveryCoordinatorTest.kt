@@ -150,6 +150,7 @@ class WorkspaceMutationRecoveryCoordinatorTest {
                 val marker = path.resolve(".identity")
                 check(Files.readAllBytes(marker).toString(Charsets.UTF_8) == expected)
             },
+            identityMarkerName = ".identity",
         )
         return Fixture(coordinator, source, parent.resolve(".nexara_session_deletions/$operationId"), deleted)
     }

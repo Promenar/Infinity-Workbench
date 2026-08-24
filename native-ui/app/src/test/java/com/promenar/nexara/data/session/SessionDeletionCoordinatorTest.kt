@@ -4,6 +4,8 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import java.nio.file.Paths
@@ -115,6 +117,81 @@ class SessionDeletionCoordinatorTest {
         assertThat(first.await()).isEqualTo(SessionDeletionResult.Deleted)
         assertThat(second.await()).isEqualTo(SessionDeletionResult.AlreadyDeleted)
         assertThat(calls.count { it == "commit" }).isEqualTo(1)
+    }
+
+    @Test
+    fun `删除等待既有workspace写租约并使用释放后的最终target提交`() = runTest {
+        val gate = SessionExecutionGate()
+        var current = target().copy(fileUuids = listOf("root-1"))
+        var committed: SessionDeletionTarget? = null
+        val writeEntered = CompletableDeferred<Unit>()
+        val releaseWrite = CompletableDeferred<Unit>()
+        val write = launch {
+            gate.withWorkspaceAdmission("root-1") {
+                writeEntered.complete(Unit)
+                releaseWrite.await()
+                current = current.copy(fileUuids = listOf("root-1", "late-file"))
+            }
+        }
+        writeEntered.await()
+        val coordinator = SessionDeletionCoordinator(
+            gate = gate,
+            resolveTarget = { current },
+            cancelAndJoinGeneration = {},
+            closePendingExecution = {},
+            acquireVectorBarrier = { NoOpSessionDeletionBarrier },
+            journal = object : SessionWorkspaceMutationJournal {
+                override suspend fun stage(target: SessionDeletionTarget) =
+                    StagedSessionWorkspaceMutation("op", target)
+                override suspend fun rollback(staged: StagedSessionWorkspaceMutation) = Unit
+                override suspend fun complete(staged: StagedSessionWorkspaceMutation) = Unit
+            },
+            deleteDatabase = { target, _ -> committed = target },
+        )
+        val deletion = async { coordinator.delete("session-1") }
+        while (!gate.isDeleting("session-1")) yield()
+
+        assertThat(committed).isNull()
+        releaseWrite.complete(Unit)
+        write.join()
+
+        assertThat(deletion.await()).isEqualTo(SessionDeletionResult.Deleted)
+        assertThat(committed?.fileUuids).containsExactly("root-1", "late-file")
+    }
+
+    @Test
+    fun `删除关闭admission后先取消generation再等待其写租约退出`() = runTest {
+        val gate = SessionExecutionGate()
+        val generationLeaseEntered = CompletableDeferred<Unit>()
+        val releaseGenerationLease = CompletableDeferred<Unit>()
+        val generation = launch {
+            gate.withSessionAdmission("session-1") {
+                generationLeaseEntered.complete(Unit)
+                releaseGenerationLease.await()
+            }
+        }
+        generationLeaseEntered.await()
+        var databaseDeleted = false
+        val coordinator = SessionDeletionCoordinator(
+            gate = gate,
+            resolveTarget = { target() },
+            cancelAndJoinGeneration = {
+                releaseGenerationLease.complete(Unit)
+                generation.join()
+            },
+            closePendingExecution = {},
+            acquireVectorBarrier = { NoOpSessionDeletionBarrier },
+            journal = object : SessionWorkspaceMutationJournal {
+                override suspend fun stage(target: SessionDeletionTarget) =
+                    StagedSessionWorkspaceMutation("op", target)
+                override suspend fun rollback(staged: StagedSessionWorkspaceMutation) = Unit
+                override suspend fun complete(staged: StagedSessionWorkspaceMutation) = Unit
+            },
+            deleteDatabase = { _, _ -> databaseDeleted = true },
+        )
+
+        assertThat(coordinator.delete("session-1")).isEqualTo(SessionDeletionResult.Deleted)
+        assertThat(databaseDeleted).isTrue()
     }
 
     private fun target() = SessionDeletionTarget(

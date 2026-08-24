@@ -29,6 +29,7 @@ class RoomSessionWorkspaceMutationJournal(
         SecureWorkspaceFileOps().ensureRoot(path, initializeIdentity = false, expectedIdentity = identity)
         Unit
     },
+    private val afterIdentityMarkerDeleted: () -> Unit = {},
 ) : SessionWorkspaceMutationJournal {
     override suspend fun stage(target: SessionDeletionTarget): StagedSessionWorkspaceMutation =
         withContext(Dispatchers.IO) {
@@ -90,7 +91,7 @@ class RoomSessionWorkspaceMutationJournal(
         val target = stagedPath(parent, staged.operationId)
         check(!exists(source) && exists(target)) { "DB_COMMITTED 删除文件布局冲突" }
         verifyIdentity(target, staged.target.rootIdentity)
-        deleteTreeNoFollow(target)
+        deleteTreeKeepingIdentityUntilLast(target)
         check(database.workspaceMutationDao().deleteCommitted(staged.operationId) == 1) {
             "DB_COMMITTED 删除 journal 无法清理"
         }
@@ -120,17 +121,25 @@ class RoomSessionWorkspaceMutationJournal(
 
     private fun exists(path: Path) = Files.exists(path, LinkOption.NOFOLLOW_LINKS)
 
-    private fun deleteTreeNoFollow(root: Path) {
+    private fun deleteTreeKeepingIdentityUntilLast(root: Path) {
+        val identityMarker = root.resolve(ROOT_IDENTITY_MARKER)
         Files.walkFileTree(root, object : SimpleFileVisitor<Path>() {
             override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                Files.delete(file)
+                if (file != identityMarker) Files.delete(file)
                 return FileVisitResult.CONTINUE
             }
             override fun postVisitDirectory(dir: Path, exc: java.io.IOException?): FileVisitResult {
                 if (exc != null) throw exc
-                Files.delete(dir)
+                if (dir != root) Files.delete(dir)
                 return FileVisitResult.CONTINUE
             }
         })
+        Files.deleteIfExists(identityMarker)
+        afterIdentityMarkerDeleted()
+        Files.delete(root)
+    }
+
+    private companion object {
+        const val ROOT_IDENTITY_MARKER = ".nexara_root_identity"
     }
 }

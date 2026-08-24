@@ -89,6 +89,51 @@ class WorkspaceRepositoryTest {
     }
 
     @Test
+    fun `已进入的流式上传持有工作区租约直到物理写入与记录提交完成`() = runBlocking<Unit> {
+        insertSession("stream-session", rootA.absolutePath)
+        val gate = com.promenar.nexara.data.session.SessionExecutionGate()
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            fileOps = TestWorkspaceFileOps(),
+            executionGate = gate,
+        )
+        val root = repo.ensureSessionRoot("stream-session")
+        val writerEntered = CountDownLatch(1)
+        val releaseWriter = CountDownLatch(1)
+        val upload = async(Dispatchers.IO) {
+            repo.createFileInWorkspaceStreaming(
+                workspaceRootUuid = root.uuid,
+                uuid = "stream-file",
+                name = "stream.bin",
+                mimeType = "application/octet-stream",
+                parentUuid = root.uuid,
+                materializedPath = "/stream.bin",
+                maxBytes = 1024,
+            ) { output ->
+                writerEntered.countDown()
+                check(releaseWriter.await(5, TimeUnit.SECONDS)) { "测试写入未获释放" }
+                output.write("payload".toByteArray())
+            }
+        }
+        assertThat(writerEntered.await(5, TimeUnit.SECONDS)).isTrue()
+        var deletionEntered = false
+        val deleting = async {
+            gate.withDeletion("stream-session", root.uuid) { deletionEntered = true }
+        }
+        while (!gate.isDeleting("stream-session")) kotlinx.coroutines.yield()
+
+        assertThat(deletionEntered).isFalse()
+        releaseWriter.countDown()
+        val created = upload.await()
+        deleting.await()
+
+        assertThat(deletionEntered).isTrue()
+        assertThat(created.uuid).isEqualTo("stream-file")
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, "stream-file")).isNotNull()
+    }
+
+    @Test
     fun `ensureSessionRoot is concurrent idempotent and backfills session`() = runBlocking<Unit> {
         insertSession("session-a", rootA.absolutePath)
 

@@ -51,7 +51,23 @@ class ToolExecutor(
         allowedToolCallIds: Set<String> = toolCalls.mapTo(mutableSetOf()) { it.id },
         preparedTools: List<ProtocolTool>? = null,
     ) {
-        executionGate?.requireSessionWritable(sessionId)
+        val gate = executionGate
+        if (gate == null) {
+            executeToolsAdmitted(sessionId, assistantMessageId, toolCalls, allowedToolCallIds, preparedTools)
+        } else {
+            gate.withNewSessionAdmission(sessionId) {
+                executeToolsAdmitted(sessionId, assistantMessageId, toolCalls, allowedToolCallIds, preparedTools)
+            }
+        }
+    }
+
+    private suspend fun executeToolsAdmitted(
+        sessionId: String,
+        assistantMessageId: String,
+        toolCalls: List<ToolCall>,
+        allowedToolCallIds: Set<String> = toolCalls.mapTo(mutableSetOf()) { it.id },
+        preparedTools: List<ProtocolTool>? = null,
+    ) {
         val session = store.getSession(sessionId) ?: return
         val targetMsgId = assistantMessageId
 
@@ -79,7 +95,6 @@ class ToolExecutor(
         val activeLedger = ledger ?: return
 
         for (tc in toolCalls.distinctBy { it.id }) {
-            executionGate?.requireSessionWritable(sessionId)
             val key = ToolExecutionKey(sessionId, targetMsgId, tc.id)
             val persistedIdentity = activeLedger.invocationIdentity(key)
             val preflight = preflight(
@@ -100,8 +115,6 @@ class ToolExecutor(
                 ?.takeIf { it == preflight.identity }
                 ?: continue
             if (!activeLedger.claim(key, expectedIdentity)) continue
-            executionGate?.requireSessionWritable(sessionId)
-
             val currentSession = store.getSession(sessionId)
             val currentResolvedTool = currentSession?.let(toolResolver::resolve)
                 ?.singleOrNull { tool ->

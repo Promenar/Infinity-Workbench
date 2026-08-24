@@ -27,6 +27,7 @@ class WorkspaceMutationRecoveryCoordinator(
     private val deletePrepared: suspend (String) -> Unit,
     private val deleteCommitted: suspend (String) -> Unit,
     private val verifyRootIdentity: (Path, String) -> Unit,
+    private val identityMarkerName: String = ".nexara_root_identity",
 ) {
     suspend fun recoverOrThrow() = withContext(Dispatchers.IO) {
         val parent = validateParent()
@@ -55,9 +56,14 @@ class WorkspaceMutationRecoveryCoordinator(
         }
         val sourceExists = existsNoFollow(source)
         val targetExists = existsNoFollow(target)
-        if (sourceExists) verifyDirectory(source, expectedIdentity)
-        if (targetExists) verifyDirectory(target, expectedIdentity)
         val dbExists = sessionExists(sessionId)
+        if (sourceExists) verifyDirectory(source, expectedIdentity)
+        if (targetExists) {
+            verifyOrdinaryDirectory(target)
+            val durableCommittedStage = entity.state == WorkspaceMutationStage.DB_COMMITTED &&
+                !dbExists && !existsNoFollow(target.resolve(identityMarkerName))
+            if (!durableCommittedStage) verifyIdentity(target, expectedIdentity)
+        }
 
         when (entity.state) {
             WorkspaceMutationStage.PREPARED -> when {
@@ -73,14 +79,14 @@ class WorkspaceMutationRecoveryCoordinator(
                 dbExists -> conflict("DB_COMMITTED journal 的会话仍存在")
                 sourceExists && targetExists -> conflict("DB_COMMITTED journal 同时存在 source 与 target")
                 targetExists -> {
-                    deleteTreeNoFollow(target)
+                    deleteTreeKeepingIdentityUntilLast(target)
                     deleteCommitted(entity.operationId)
                 }
                 !sourceExists -> deleteCommitted(entity.operationId)
                 else -> {
                     Files.createDirectories(target.parent)
                     Files.move(source, target)
-                    deleteTreeNoFollow(target)
+                    deleteTreeKeepingIdentityUntilLast(target)
                     deleteCommitted(entity.operationId)
                 }
             }
@@ -108,9 +114,17 @@ class WorkspaceMutationRecoveryCoordinator(
     }
 
     private fun verifyDirectory(path: Path, expectedIdentity: String) {
+        verifyOrdinaryDirectory(path)
+        verifyIdentity(path, expectedIdentity)
+    }
+
+    private fun verifyOrdinaryDirectory(path: Path) {
         if (Files.isSymbolicLink(path) || !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
             conflict("journal 目标不是普通目录")
         }
+    }
+
+    private fun verifyIdentity(path: Path, expectedIdentity: String) {
         try {
             verifyRootIdentity(path, expectedIdentity)
         } catch (failure: Throwable) {
@@ -120,18 +134,21 @@ class WorkspaceMutationRecoveryCoordinator(
 
     private fun existsNoFollow(path: Path): Boolean = Files.exists(path, LinkOption.NOFOLLOW_LINKS)
 
-    private fun deleteTreeNoFollow(root: Path) {
+    private fun deleteTreeKeepingIdentityUntilLast(root: Path) {
+        val identityMarker = root.resolve(identityMarkerName)
         Files.walkFileTree(root, object : SimpleFileVisitor<Path>() {
             override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                Files.delete(file)
+                if (file != identityMarker) Files.delete(file)
                 return FileVisitResult.CONTINUE
             }
             override fun postVisitDirectory(dir: Path, exc: java.io.IOException?): FileVisitResult {
                 if (exc != null) throw exc
-                Files.delete(dir)
+                if (dir != root) Files.delete(dir)
                 return FileVisitResult.CONTINUE
             }
         })
+        Files.deleteIfExists(identityMarker)
+        Files.delete(root)
     }
 
     private fun conflict(message: String): Nothing = throw WorkspaceMutationRecoveryException(message)
