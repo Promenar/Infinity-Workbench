@@ -34,6 +34,7 @@ import java.util.UUID
 internal const val ROOM_SCHEMA_V1_IDENTITY_HASH = "1cec46d28d19744e8cb885fe6abdfcf1"
 internal const val ROOM_SCHEMA_V2_IDENTITY_HASH = "7777303c63145d5bbb9b161b38f94495"
 internal const val ROOM_SCHEMA_V4_IDENTITY_HASH = "a48dd118f5212b60e657cbb257b75d92"
+internal const val ROOM_SCHEMA_V5_IDENTITY_HASH = "3c6ffe1572c71bac7e866a33388a5a3b"
 
 class RoomBackupDataSource(
     private val database: NexaraDatabase,
@@ -629,8 +630,8 @@ class RoomBackupDataSource(
         val identityHash = sqlite.query(
             "SELECT identity_hash FROM room_master_table WHERE id = 42"
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-        if (identityHash != ROOM_SCHEMA_V4_IDENTITY_HASH) {
-            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v4")
+        if (identityHash != ROOM_SCHEMA_V5_IDENTITY_HASH) {
+            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v5")
         }
         INSERT_ORDER.forEach { table ->
             val columns = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
@@ -1410,7 +1411,7 @@ class RoomBackupDataSource(
         )
         val DELETE_ORDER = INSERT_ORDER.reversed()
         val DERIVED_DELETE_ORDER = listOf(
-            "workspace_mutations", "tool_execution_ledger", "file_versions", "vectorization_tasks",
+            "mcp_tool_snapshots", "workspace_mutations", "tool_execution_ledger", "file_versions", "vectorization_tasks",
             "kg_edges", "kg_nodes", "kg_jit_cache", "vectors_fts", "vectors", "audit_logs",
         )
     }

@@ -565,6 +565,8 @@
     <string name="sheet_tool_strict_mode">严格模式</string>
     <string name="sheet_tool_skills">Agent 技能</string>
     <string name="sheet_tool_mcp_servers">MCP 服务器</string>
+    <string name="sheet_tool_session_skills">会话自定义技能</string>
+    <string name="sheet_tool_custom_unsandboxed">选择会被保存；在安全沙箱可用前，自定义脚本不会被广告或执行。</string>
     <string name="sheet_tool_user_skills">用户技能</string>
     <string name="sheet_tool_execution_mode">执行模式</string>
     <string name="sheet_execution_mode_auto">自动：所有工具自动运行</string>
@@ -830,6 +832,10 @@
     <string name="skills_mcp_url_placeholder">服务器 URL</string>
     <string name="skills_mcp_add_btn">添加服务器</string>
     <string name="skills_mcp_call_interval">调用间隔</string>
+    <string name="skills_mcp_https_only">仅支持 MCP 2026-07-28 Streamable HTTP over HTTPS。</string>
+    <string name="skills_mcp_legacy_unsupported">旧版配置：仅可查看、迁移或删除，不能同步和执行。</string>
+    <string name="skills_mcp_sync_error">同步失败：%1$s</string>
+    <string name="skills_mcp_modern_transport">MCP 2026-07-28 · HTTPS</string>
     <string name="skills_mcp_enabled">已启用</string>
     <string name="skills_mcp_default">默认</string>
     <string name="skills_mcp_tools">工具 (%1$d)</string>

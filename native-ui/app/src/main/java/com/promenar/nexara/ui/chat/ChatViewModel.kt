@@ -253,6 +253,12 @@ class ChatViewModel(
         }
 
     private val sessionManager = SessionManager(store, sessionRepository)
+    val availableSessionCustomSkills = (application as NexaraApplication).skillRepository
+        .getAllCustomSkills()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val availableSessionMcpServers = (application as NexaraApplication).skillRepository
+        .getAllMcpServers()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private val messageManager = MessageManager(store, messageRepository, sessionRepository)
     private val toolLedger = (application as NexaraApplication).toolExecutionLedger
     private val toolExecutor = ToolExecutor(
@@ -1575,6 +1581,16 @@ class ChatViewModel(
         viewModelScope.launch {
             sessionManager.updateSessionOptions(sessionId, nextOptions)
         }
+    }
+
+    fun toggleSessionSkill(skillId: String) {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch { sessionManager.toggleSkill(sessionId, skillId) }
+    }
+
+    fun toggleSessionMcpServer(serverId: String) {
+        val sessionId = _currentSessionId.value ?: return
+        viewModelScope.launch { sessionManager.toggleMcpServer(sessionId, serverId) }
     }
 
     fun updateFontSize(size: Int) {

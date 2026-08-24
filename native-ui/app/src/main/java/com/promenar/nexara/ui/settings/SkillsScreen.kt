@@ -99,7 +99,6 @@ fun SkillsScreen(
             "search_tavily" to Icons.Rounded.Search,
             "search_searxng" to Icons.Rounded.Search,
             "calculator" to Icons.Rounded.Build,
-            "create_tool" to Icons.Rounded.Build,
             "image_generation" to Icons.Rounded.Image,
             "file_read" to Icons.Rounded.Description,
             "file_write" to Icons.Rounded.Edit,
@@ -313,7 +312,6 @@ fun SkillsScreen(
                                 onToggleEnabled = { enabled -> viewModel.toggleMcpServer(server.id, enabled) },
                                 onDelete = { viewModel.deleteMcpServer(server.id) },
                                 onSync = { viewModel.syncMcpServer(server.id) },
-                                onUpdateDefault = { isDefault -> viewModel.updateMcpServerDefault(server.id, isDefault) }
                             )
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
@@ -328,7 +326,6 @@ fun SkillsScreen(
     if (showAddMcp) {
         var mcpName by remember { mutableStateOf("") }
         var mcpUrl by remember { mutableStateOf("") }
-        var mcpType by remember { mutableStateOf("http") }
         ModalBottomSheet(
             onDismissRequest = { showAddMcp = false },
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -357,39 +354,16 @@ fun SkillsScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf("http" to "HTTP", "stdio" to "STDIO").forEach { (value, label) ->
-                        val selected = mcpType == value
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)
-                                .border(
-                                    width = 1.dp,
-                                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .clickable { mcpType = value }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
+                Text(
+                    text = stringResource(R.string.skills_mcp_https_only),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
                 Button(
                     onClick = {
-                        if (mcpName.isNotBlank() && mcpUrl.isNotBlank()) {
-                            viewModel.addMcpServer(mcpName, mcpUrl, mcpType)
+                        if (mcpName.isNotBlank() && mcpUrl.startsWith("https://", ignoreCase = true)) {
+                            viewModel.addMcpServer(mcpName, mcpUrl, "http")
                             showAddMcp = false
                         }
                     },
@@ -613,7 +587,6 @@ private fun McpServerItem(
     onToggleEnabled: (Boolean) -> Unit,
     onDelete: () -> Unit,
     onSync: () -> Unit,
-    onUpdateDefault: (Boolean) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         ListItem(
@@ -637,9 +610,17 @@ private fun McpServerItem(
                     Text(server.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = stringResource(R.string.skills_mcp_call_interval) + ": ${server.callIntervalMs}ms",
+                        text = when {
+                            !server.isSupported -> stringResource(R.string.skills_mcp_legacy_unsupported)
+                            server.syncError != null -> stringResource(R.string.skills_mcp_sync_error, server.syncError)
+                            else -> stringResource(R.string.skills_mcp_modern_transport)
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (server.isSupported && server.syncError == null) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        }
                     )
                 }
             },
@@ -648,7 +629,7 @@ private fun McpServerItem(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onSync) {
+                    IconButton(onClick = onSync, enabled = server.isSupported && server.isEnabled) {
                         Icon(Icons.Rounded.Sync, contentDescription = stringResource(R.string.common_cd_sync))
                     }
                     IconButton(onClick = onDelete) {
@@ -671,14 +652,6 @@ private fun McpServerItem(
             Spacer(modifier = Modifier.width(8.dp))
             Text(stringResource(R.string.skills_mcp_enabled), style = MaterialTheme.typography.bodyMedium)
 
-            Spacer(modifier = Modifier.width(24.dp))
-
-            Switch(
-                checked = server.isDefault,
-                onCheckedChange = onUpdateDefault
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(stringResource(R.string.skills_mcp_default), style = MaterialTheme.typography.bodyMedium)
         }
 
         if (server.tools.isNotEmpty()) {

@@ -686,6 +686,8 @@ private fun ToolsPanel(
 
     val isGeminiModel = session?.modelId?.contains("gemini", ignoreCase = true) == true
     var geminiSearchEnabled by remember(options.enableGeminiSearch) { mutableStateOf(options.enableGeminiSearch) }
+    val customSkills by chatViewModel.availableSessionCustomSkills.collectAsStateWithLifecycle()
+    val mcpServers by chatViewModel.availableSessionMcpServers.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -716,6 +718,45 @@ private fun ToolsPanel(
         ToolToggleRow(stringResource(R.string.sheet_tool_search_retrieval), Icons.Rounded.Storage, toolsEnabled) { 
             toolsEnabled = it
             onToggle("toolsEnabled", it)
+        }
+
+        if (customSkills.isNotEmpty()) {
+            Text(
+                stringResource(R.string.sheet_tool_session_skills),
+                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            customSkills.forEach { skill ->
+                ToolToggleRow(
+                    skill.name,
+                    Icons.Rounded.AutoFixHigh,
+                    skill.id in session?.activeSkillIds.orEmpty(),
+                ) { chatViewModel.toggleSessionSkill(skill.id) }
+            }
+            Text(
+                stringResource(R.string.sheet_tool_custom_unsandboxed),
+                style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        val selectableMcpServers = mcpServers.filter { server ->
+            server.enabled && server.type.equals("http", ignoreCase = true) &&
+                server.url.startsWith("https://", ignoreCase = true)
+        }
+        if (selectableMcpServers.isNotEmpty()) {
+            Text(
+                stringResource(R.string.sheet_tool_mcp_servers),
+                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            selectableMcpServers.forEach { server ->
+                ToolToggleRow(
+                    server.name,
+                    Icons.Rounded.Sync,
+                    server.id in session?.activeMcpServerIds.orEmpty(),
+                ) { chatViewModel.toggleSessionMcpServer(server.id) }
+            }
         }
 
         val executionMode = session?.executionMode?.ifEmpty { "semi" } ?: "semi"

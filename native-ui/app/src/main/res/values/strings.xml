@@ -560,6 +560,8 @@
     <string name="sheet_tool_strict_mode">Strict Mode</string>
     <string name="sheet_tool_skills">Agent Skills</string>
     <string name="sheet_tool_mcp_servers">MCP Servers</string>
+    <string name="sheet_tool_session_skills">Session custom skills</string>
+    <string name="sheet_tool_custom_unsandboxed">Selections are saved, but custom scripts are not advertised or executed until a sandbox is available.</string>
     <string name="sheet_tool_user_skills">User Skills</string>
     <string name="sheet_tool_execution_mode">Execution Mode</string>
     <string name="sheet_execution_mode_auto">Auto: All tools run automatically</string>
@@ -825,6 +827,10 @@
     <string name="skills_mcp_url_placeholder">Server URL</string>
     <string name="skills_mcp_add_btn">Add Server</string>
     <string name="skills_mcp_call_interval">Call Interval</string>
+    <string name="skills_mcp_https_only">Only MCP 2026-07-28 Streamable HTTP over HTTPS is supported.</string>
+    <string name="skills_mcp_legacy_unsupported">Legacy configuration: visible for migration or deletion, but cannot sync or execute.</string>
+    <string name="skills_mcp_sync_error">Sync failed: %1$s</string>
+    <string name="skills_mcp_modern_transport">MCP 2026-07-28 · HTTPS</string>
     <string name="skills_mcp_enabled">Enabled</string>
     <string name="skills_mcp_default">Default</string>
     <string name="skills_mcp_tools">Tools (%1$d)</string>

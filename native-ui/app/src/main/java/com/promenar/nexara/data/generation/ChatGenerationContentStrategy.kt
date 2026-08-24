@@ -117,11 +117,29 @@ class DefaultChatGenerationContentStrategy(
 
     override fun buildTools(session: Session): List<ProtocolTool> {
         knownToolRisks = emptyMap()
+        knownToolNames = emptySet()
         if (!session.options.toolsEnabled) return emptyList()
-        val enabledSkills = settings.getStringSet("enabled_skills", null)?.toSet().orEmpty()
-        if (enabledSkills.isEmpty()) return emptyList()
-        knownToolNames = null
-        return skillRegistry?.getAllTools(enabledSkills.toList()).orEmpty().also { tools ->
+        val allTools = skillRegistry?.getAllTools(null).orEmpty()
+        val configuredSkills = settings.getStringSet("enabled_skills", null)?.toSet()
+        val enabledRuntimeIds = if (configuredSkills == null) {
+            allTools.filter { it.sourceId == "builtin" }
+                .mapTo(mutableSetOf()) { it.runtimeToolId.ifBlank { it.function.name } }
+        } else {
+            configuredSkills.mapTo(mutableSetOf()) { GLOBAL_SKILL_ALIASES[it] ?: it }
+        }
+        val legacyEmptySelection = session.activeSkillIds.isEmpty() && session.activeMcpServerIds.isEmpty()
+        val resolved = allTools.filter { tool ->
+            when (tool.sourceId) {
+                "builtin" -> tool.runtimeToolId.ifBlank { tool.function.name } in enabledRuntimeIds &&
+                    (!legacyEmptySelection || tool.risk == ToolRisk.SAFE_READ)
+                // 自定义 DB/script Skill 没有隔离执行器，当前版本只能编辑，不能广告或执行。
+                "custom" -> false
+                "mcp" -> tool.mcpServerId != null && tool.mcpServerId in session.activeMcpServerIds
+                else -> false
+            }
+        }
+        knownToolNames = resolved.mapTo(mutableSetOf()) { it.function.name }
+        return resolved.also { tools ->
             knownToolRisks = tools.associate { it.function.name to it.risk }
         }
     }
@@ -253,7 +271,7 @@ class DefaultChatGenerationContentStrategy(
     private fun isKnownTool(name: String): Boolean {
         val known = knownToolNames ?: skillRegistry?.getAllTools()?.map { it.function.name }?.toSet().orEmpty()
             .also { knownToolNames = it }
-        return known.isEmpty() || name in known
+        return name in known
     }
 
     private fun stableId(prefix: String, name: String, arguments: String, index: Int): String {
@@ -301,6 +319,14 @@ class DefaultChatGenerationContentStrategy(
     }
 
     private companion object {
+        val GLOBAL_SKILL_ALIASES = mapOf(
+            "file_read" to "read_file",
+            "file_write" to "write_file",
+            "file_list" to "list_files",
+            "file_search" to "search_files",
+            "file_diff" to "diff_file",
+            "file_patch" to "patch_file",
+        )
         val XML_TOOL_CALL_PATTERN = Regex(
             """<\s*(?:FunctionCall|tool_call|function_call|func_call|tool-call|function-call)\s*([^>]*)>([\s\S]*?)</\s*(?:FunctionCall|tool_call|function_call|func_call|tool-call|function-call)\s*>""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),

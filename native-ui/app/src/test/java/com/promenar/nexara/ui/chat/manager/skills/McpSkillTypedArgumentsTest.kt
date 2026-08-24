@@ -73,4 +73,29 @@ class McpSkillTypedArgumentsTest {
 
         assertThat(thrown).isInstanceOf(CancellationException::class.java)
     }
+
+    @Test
+    fun `MCP isError与input required均映射为typed error结果`() = runTest {
+        suspend fun execute(result: String): com.promenar.nexara.data.model.ToolResult {
+            val client = HttpClient(MockEngine { request ->
+                val requestId = Json.parseToJsonElement(
+                    request.body.toByteReadPacket().readText(),
+                ).jsonObject.getValue("id")
+                respond(
+                    content = """{"jsonrpc":"2.0","id":$requestId,"result":$result}""",
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                )
+            })
+            return McpSkill(
+                name = "remote",
+                description = "remote",
+                parametersSchema = """{"type":"object"}""",
+                mcpClient = McpClient(client, "https://mcp.example.test"),
+            ).execute(Json.parseToJsonElement("{}").jsonObject, context)
+        }
+
+        assertThat(execute("""{"content":[],"isError":true}""").status).isEqualTo("error")
+        assertThat(execute("""{"content":[{"type":"input_required"}]}""").status).isEqualTo("error")
+    }
 }

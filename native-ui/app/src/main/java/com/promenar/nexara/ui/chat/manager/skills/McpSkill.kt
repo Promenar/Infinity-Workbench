@@ -10,16 +10,18 @@ import kotlinx.coroutines.CancellationException
 class McpSkill(
     override val id: String = "mcp_tool",
     override val name: String,
+    private val remoteToolName: String = name,
     override val description: String,
     override val parametersSchema: String,
     private val mcpClient: McpClient,
+    private val headerParameters: Set<String> = emptySet(),
     override val mcpServerId: String? = null
 ) : SkillDefinition {
     override val sourceId: String = "mcp"
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
         return try {
-            val result = mcpClient.callTool(name, args)
+            val result = mcpClient.callTool(remoteToolName, args, headerParameters)
             ToolResult(
                 id = "mcp_${System.currentTimeMillis()}",
                 content = result.toString(),

@@ -1,6 +1,9 @@
 package com.promenar.nexara.data.local.db.entity
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
+import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
@@ -28,4 +31,25 @@ data class McpServerEntity(
     val callIntervalMs: Long = 1000,
     val isDefault: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "mcp_tool_snapshots",
+    primaryKeys = ["server_id", "remote_tool_name"],
+    foreignKeys = [
+        ForeignKey(
+            entity = McpServerEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["server_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["server_id"])],
+)
+data class McpToolSnapshotEntity(
+    @ColumnInfo(name = "server_id") val serverId: String,
+    @ColumnInfo(name = "remote_tool_name") val remoteToolName: String,
+    val description: String,
+    @ColumnInfo(name = "input_schema_json") val inputSchemaJson: String,
+    @ColumnInfo(name = "synced_at") val syncedAt: Long,
 )

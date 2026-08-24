@@ -8,9 +8,8 @@ import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
-import com.promenar.nexara.data.remote.mcp.McpClient
-import com.promenar.nexara.data.remote.mcp.McpTool
 import com.promenar.nexara.ui.chat.manager.registry.McpSkillRegistry
+import com.promenar.nexara.ui.chat.manager.registry.McpSyncResult
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraThemePreferences
 import com.promenar.nexara.ui.theme.NexaraThemeMode
@@ -23,8 +22,6 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkConstructor
-import io.mockk.unmockkConstructor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.emptyFlow
@@ -84,6 +81,7 @@ class SettingsViewModelTest {
         every { mockApp.skillRepository } returns skillRepo
         every { skillRepo.getAllCustomSkills() } returns emptyFlow()
         every { skillRepo.getAllMcpServers() } returns emptyFlow()
+        coEvery { skillRepo.getMcpToolSnapshots(any()) } returns emptyList()
         coEvery { tokenStatsRepo.getTotalUsage() } returns com.promenar.nexara.domain.repository.TokenUsageAggregate()
         coEvery { tokenStatsRepo.getUsageByModel() } returns emptyList()
 
@@ -156,21 +154,16 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `mcp server sync calls updateMcpTools`() = runTest {
+    fun `mcp server sync uses atomic registry contract`() = runTest {
         val testServer = McpServerEntity(
-            id = "srv1", name = "TestServer", url = "http://localhost:3000"
+            id = "srv1", name = "TestServer", url = "https://mcp.example.test"
         )
         every { skillRepo.getAllMcpServers() } returns kotlinx.coroutines.flow.flowOf(listOf(testServer))
         coEvery { tokenStatsRepo.getTotalUsage() } returns TokenUsageAggregate()
         coEvery { tokenStatsRepo.getUsageByModel() } returns emptyList()
 
         val mockMcpRegistry = mockk<McpSkillRegistry>(relaxed = true)
-        every { mockApp.httpClient } returns mockk(relaxed = true)
-
-        mockkConstructor(McpClient::class)
-        coEvery { anyConstructed<McpClient>().listTools() } returns listOf(
-            McpTool("test_tool", "A test tool", """{"type":"object"}""")
-        )
+        coEvery { mockMcpRegistry.syncServer("srv1") } returns McpSyncResult.Success(0)
 
         val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo, mockMcpRegistry)
         advanceUntilIdle()
@@ -178,8 +171,25 @@ class SettingsViewModelTest {
         vm.syncMcpServer("srv1")
         advanceUntilIdle()
 
-        coVerify { mockMcpRegistry.updateMcpTools("TestServer", any(), "http://localhost:3000") }
-        unmockkConstructor(McpClient::class)
+        coVerify { mockMcpRegistry.syncServer("srv1") }
+    }
+
+    @Test
+    fun `new mcp server accepts HTTPS modern transport only`() = runTest {
+        coEvery { skillRepo.insertMcpServer(any()) } returns Unit
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+        advanceUntilIdle()
+
+        vm.addMcpServer("legacy-http", "http://legacy.example.test", "http")
+        vm.addMcpServer("legacy-stdio", "/usr/bin/server", "stdio")
+        advanceUntilIdle()
+        coVerify(exactly = 0) { skillRepo.insertMcpServer(any()) }
+
+        vm.addMcpServer("modern", "https://mcp.example.test", "http")
+        advanceUntilIdle()
+        coVerify(exactly = 1) {
+            skillRepo.insertMcpServer(match { it.url == "https://mcp.example.test" && it.type == "http" })
+        }
     }
 
     @Test

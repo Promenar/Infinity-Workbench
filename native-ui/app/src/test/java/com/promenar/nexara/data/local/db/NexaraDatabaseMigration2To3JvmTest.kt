@@ -55,7 +55,7 @@ class NexaraDatabaseMigration2To3JvmTest {
         }
 
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {
@@ -109,7 +109,7 @@ class NexaraDatabaseMigration2To3JvmTest {
         }
 
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_3_4)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {
@@ -126,6 +126,38 @@ class NexaraDatabaseMigration2To3JvmTest {
                 .isEqualTo("kept")
             assertThat(database.stringQuery("SELECT status FROM tool_execution_ledger WHERE tool_call_id='call'"))
                 .isEqualTo("SUCCEEDED")
+        } finally {
+            room.close()
+        }
+    }
+
+    @Test
+    fun migration4To5PreservesServersAndAddsOnlyDiscoverySnapshotWithCascade() {
+        createSchema(4, "a48dd118f5212b60e657cbb257b75d92").apply {
+            execSQL(
+                """INSERT INTO mcp_servers(id,name,url,type,enabled,callIntervalMs,isDefault,createdAt)
+                    VALUES('server','Modern','https://mcp.example.test','http',1,1000,0,1)""",
+            )
+            close()
+        }
+
+        val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
+            .addMigrations(MIGRATION_4_5)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val database = room.openHelper.writableDatabase
+            assertThat(database.stringQuery("SELECT url FROM mcp_servers WHERE id='server'"))
+                .isEqualTo("https://mcp.example.test")
+            database.execSQL(
+                """INSERT INTO mcp_tool_snapshots(
+                    server_id,remote_tool_name,description,input_schema_json,synced_at
+                ) VALUES('server','search','Search','{"type":"object"}',2)""",
+            )
+            assertThat(database.stringQuery("SELECT remote_tool_name FROM mcp_tool_snapshots"))
+                .isEqualTo("search")
+            database.execSQL("DELETE FROM mcp_servers WHERE id='server'")
+            assertThat(database.query("SELECT * FROM mcp_tool_snapshots").use { it.count }).isEqualTo(0)
         } finally {
             room.close()
         }

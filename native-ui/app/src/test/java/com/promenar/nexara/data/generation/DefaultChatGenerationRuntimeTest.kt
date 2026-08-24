@@ -2,6 +2,7 @@ package com.promenar.nexara.data.generation
 
 import android.content.SharedPreferences
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
@@ -960,7 +961,7 @@ class DefaultChatGenerationRuntimeTest {
     fun `CONTINUE强刷assistant后多轮Prompt保留全部工具配对`() = runTest {
         val settings = mockk<SharedPreferences>()
         every { settings.getInt(any(), any()) } answers { secondArg() }
-        every { settings.getStringSet(any(), any()) } returns setOf("test-tools")
+        every { settings.getStringSet(any(), any()) } returns setOf("search", "read_file")
         every { settings.getString(any(), any()) } returns ""
         every { settings.getFloat(any(), any()) } answers { secondArg() }
         val user = Message("u1", MessageRole.USER, "question")
@@ -1056,11 +1057,13 @@ class DefaultChatGenerationRuntimeTest {
         val advertisedTools = listOf(
             ProtocolTool(
                 function = ProtocolToolFunction("search", "search", "{\"type\":\"object\"}"),
+                risk = ToolRisk.SAFE_READ,
                 runtimeToolId = "search",
                 sourceId = "builtin",
             ),
             ProtocolTool(
                 function = ProtocolToolFunction("read_file", "read", "{\"type\":\"object\"}"),
+                risk = ToolRisk.SAFE_READ,
                 runtimeToolId = "read_file",
                 sourceId = "builtin",
             ),

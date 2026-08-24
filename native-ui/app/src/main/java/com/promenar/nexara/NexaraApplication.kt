@@ -16,6 +16,7 @@ import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.MIGRATION_1_2
 import com.promenar.nexara.data.local.db.MIGRATION_2_3
 import com.promenar.nexara.data.local.db.MIGRATION_3_4
+import com.promenar.nexara.data.local.db.MIGRATION_4_5
 import com.promenar.nexara.data.backup.BackupRuntime
 import com.promenar.nexara.data.backup.BackupStartupState
 import com.promenar.nexara.data.backup.RestoreRelayActivity
@@ -73,7 +74,6 @@ import com.promenar.nexara.ui.chat.manager.skills.WebSearchSkill
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchSearXNGSkill
 import com.promenar.nexara.ui.chat.manager.skills.WebSearchTavilySkill
 import com.promenar.nexara.ui.chat.manager.skills.WebFetchSkill
-import com.promenar.nexara.ui.chat.manager.skills.CreateToolSkill
 import com.promenar.nexara.ui.chat.manager.skills.ImageGenerationSkill
 import com.promenar.nexara.ui.chat.manager.skills.FileReadSkill
 import com.promenar.nexara.ui.chat.manager.skills.FileWriteSkill
@@ -154,7 +154,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val database: NexaraDatabase by lazy {
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
                     if (com.promenar.nexara.BuildConfig.DEBUG) {
@@ -372,7 +372,6 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             register(WebSearchTavilySkill(this@NexaraApplication, httpClient, secretStore))
             register(WebSearchSearXNGSkill(this@NexaraApplication, httpClient))
             register(WebFetchSkill(httpClient))
-            register(CreateToolSkill(database.skillDao()))
             register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance()))
             register(FileReadSkill(fileOperationRepository))
             register(FileWriteSkill(fileOperationRepository))

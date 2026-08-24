@@ -99,7 +99,9 @@ data class McpServerUiModel(
     val isEnabled: Boolean,
     val isDefault: Boolean,
     val callIntervalMs: Long,
-    val tools: List<String>
+    val tools: List<String>,
+    val isSupported: Boolean = true,
+    val syncError: String? = null,
 )
 
 data class SkillInfo(
@@ -297,6 +299,7 @@ class SettingsViewModel(
 
     private val _mcpServers = MutableStateFlow<List<McpServerUiModel>>(emptyList())
     val mcpServers: StateFlow<List<McpServerUiModel>> = _mcpServers.asStateFlow()
+    private val mcpSyncErrors = mutableMapOf<String, String>()
 
     private val _userName = MutableStateFlow(application.getString(R.string.settings_default_user_name))
     val userName: StateFlow<String> = _userName.asStateFlow()
@@ -378,24 +381,27 @@ class SettingsViewModel(
         viewModelScope.launch {
             app.skillRepository.getAllCustomSkills().collectLatest { all ->
                 // Filter out any skills that might have IDs matching preset skills to avoid duplication in UI
-                val presetIds = setOf("web_search", "calculator", "create_tool", "image_generation")
+                val presetIds = setOf("web_search", "calculator", "image_generation")
                 _userSkills.value = all.filter { it.id !in presetIds }
             }
         }
         viewModelScope.launch {
             app.skillRepository.getAllMcpServers().collectLatest { entities ->
                 _mcpServers.value = entities.map { entity ->
-                    // Map entity to UI model, for now just use defaults for connected status
+                    val snapshots = app.skillRepository.getMcpToolSnapshots(entity.id)
+                    val supported = isModernMcpServer(entity.type, entity.url)
                     McpServerUiModel(
                         id = entity.id,
                         name = entity.name,
                         url = entity.url,
                         type = entity.type,
-                        isConnected = false, // Will be updated via sync
+                        isConnected = supported && snapshots.isNotEmpty(),
                         isEnabled = entity.enabled,
                         isDefault = entity.isDefault,
                         callIntervalMs = entity.callIntervalMs,
-                        tools = emptyList() // Fetching tools would be part of sync
+                        tools = snapshots.map { it.remoteToolName },
+                        isSupported = supported,
+                        syncError = mcpSyncErrors[entity.id],
                     )
                 }
             }
@@ -628,7 +634,7 @@ class SettingsViewModel(
     private fun loadSkills() {
         val allPresetSkills = setOf(
             "web_search", "web_fetch", "search_tavily", "search_searxng",
-            "calculator", "create_tool", "image_generation",
+            "calculator", "image_generation",
             "file_read", "file_write", "file_list", "file_search", "file_diff", "file_patch",
             "exec_js", "initialize_plan", "update_plan", "get_plan", "drop_plan"
         )
@@ -646,7 +652,6 @@ class SettingsViewModel(
             SkillInfo("search_tavily", app.getString(R.string.skill_tavily), app.getString(R.string.skill_tavily_desc), enabledSet?.contains("search_tavily") ?: true),
             SkillInfo("search_searxng", app.getString(R.string.skill_searxng), app.getString(R.string.skill_searxng_desc), enabledSet?.contains("search_searxng") ?: true),
             SkillInfo("calculator", app.getString(R.string.skill_calculator), app.getString(R.string.skill_calculator_desc), enabledSet?.contains("calculator") ?: true),
-            SkillInfo("create_tool", app.getString(R.string.skill_create_tool), app.getString(R.string.skill_create_tool_desc), enabledSet?.contains("create_tool") ?: true),
             SkillInfo("image_generation", app.getString(R.string.skill_image_generation), app.getString(R.string.skill_image_generation_desc), enabledSet?.contains("image_generation") ?: true),
             SkillInfo("file_read", app.getString(R.string.skill_file_read), app.getString(R.string.skill_file_read_desc), enabledSet?.contains("file_read") ?: true),
             SkillInfo("file_write", app.getString(R.string.skill_file_write), app.getString(R.string.skill_file_write_desc), enabledSet?.contains("file_write") ?: true),
@@ -774,6 +779,7 @@ class SettingsViewModel(
     // MCP Methods
     fun addMcpServer(name: String, url: String, type: String) {
         viewModelScope.launch {
+            if (!isModernMcpServer(type, url)) return@launch
             val server = McpServerEntity(
                 id = "mcp_${IdGenerator.uuid()}",
                 name = name,
@@ -840,25 +846,27 @@ class SettingsViewModel(
     fun syncMcpServer(id: String) {
         viewModelScope.launch {
             val server = _mcpServers.value.find { it.id == id } ?: return@launch
-            try {
-                val client = com.promenar.nexara.data.remote.mcp.McpClient(app.httpClient, server.url)
-                val tools = client.listTools()
-                _mcpServers.update { list ->
-                    list.map { 
-                        if (it.id == id) it.copy(isConnected = true, tools = tools.map { t -> t.name })
-                        else it
-                    }
-                }
-                mcpSkillRegistry?.updateMcpTools(server.name, tools, server.url)
-            } catch (e: Exception) {
-                _mcpServers.update { list ->
-                    list.map { 
-                        if (it.id == id) it.copy(isConnected = false)
-                        else it
-                    }
+            val result = mcpSkillRegistry?.syncServer(id)
+                ?: com.promenar.nexara.ui.chat.manager.registry.McpSyncResult.Failure("MCP_REGISTRY_UNAVAILABLE")
+            val snapshots = app.skillRepository.getMcpToolSnapshots(id)
+            val error = (result as? com.promenar.nexara.ui.chat.manager.registry.McpSyncResult.Failure)?.code
+            if (error == null) mcpSyncErrors.remove(id) else mcpSyncErrors[id] = error
+            _mcpServers.update { list ->
+                list.map {
+                    if (it.id == id) it.copy(
+                        isConnected = result is com.promenar.nexara.ui.chat.manager.registry.McpSyncResult.Success,
+                        tools = snapshots.map { snapshot -> snapshot.remoteToolName },
+                        syncError = error,
+                    ) else it
                 }
             }
         }
+    }
+
+    private fun isModernMcpServer(type: String, url: String): Boolean {
+        if (!type.equals("http", ignoreCase = true)) return false
+        val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+        return uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank() && uri.userInfo == null
     }
 
     fun clearTokenStats() {

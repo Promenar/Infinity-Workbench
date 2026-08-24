@@ -3,6 +3,7 @@ package com.promenar.nexara.data.repository
 import com.promenar.nexara.data.local.db.dao.SkillDao
 import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
+import com.promenar.nexara.data.local.db.entity.McpToolSnapshotEntity
 import kotlinx.coroutines.flow.Flow
 
 interface ISkillRepository {
@@ -18,6 +19,17 @@ interface ISkillRepository {
     suspend fun deleteMcpServer(server: McpServerEntity)
     suspend fun updateMcpServerEnabled(id: String, enabled: Boolean)
     suspend fun updateMcpServerDefault(id: String, isDefault: Boolean)
+    suspend fun getMcpServer(id: String): McpServerEntity?
+    suspend fun getAllEnabledMcpServers(): List<McpServerEntity>
+    suspend fun getAllMcpToolSnapshots(): List<McpToolSnapshotEntity>
+    suspend fun getMcpToolSnapshots(serverId: String): List<McpToolSnapshotEntity>
+    suspend fun replaceMcpToolSnapshotsIfServerUnchanged(
+        serverId: String,
+        expectedUrl: String,
+        expectedType: String,
+        snapshots: List<McpToolSnapshotEntity>,
+    ): Boolean
+    suspend fun clearMcpToolSnapshots(serverId: String)
 }
 
 class SkillRepository(private val skillDao: SkillDao) : ISkillRepository {
@@ -31,6 +43,18 @@ class SkillRepository(private val skillDao: SkillDao) : ISkillRepository {
     override fun getAllMcpServers() = skillDao.getAllMcpServers()
     override suspend fun insertMcpServer(server: McpServerEntity) = skillDao.insertMcpServer(server)
     override suspend fun deleteMcpServer(server: McpServerEntity) = skillDao.deleteMcpServer(server)
-    override suspend fun updateMcpServerEnabled(id: String, enabled: Boolean) = skillDao.updateMcpServerEnabled(id, enabled)
+    override suspend fun updateMcpServerEnabled(id: String, enabled: Boolean) =
+        skillDao.updateMcpServerEnabledAndInvalidate(id, enabled)
     override suspend fun updateMcpServerDefault(id: String, isDefault: Boolean) = skillDao.updateMcpServerDefault(id, isDefault)
+    override suspend fun getMcpServer(id: String) = skillDao.getMcpServer(id)
+    override suspend fun getAllEnabledMcpServers() = skillDao.getAllEnabledMcpServers()
+    override suspend fun getAllMcpToolSnapshots() = skillDao.getAllMcpToolSnapshots()
+    override suspend fun getMcpToolSnapshots(serverId: String) = skillDao.getMcpToolSnapshots(serverId)
+    override suspend fun replaceMcpToolSnapshotsIfServerUnchanged(
+        serverId: String,
+        expectedUrl: String,
+        expectedType: String,
+        snapshots: List<McpToolSnapshotEntity>,
+    ) = skillDao.replaceMcpToolSnapshotsIfServerUnchanged(serverId, expectedUrl, expectedType, snapshots)
+    override suspend fun clearMcpToolSnapshots(serverId: String) = skillDao.clearMcpToolSnapshots(serverId)
 }

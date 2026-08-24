@@ -37,6 +37,7 @@ import com.promenar.nexara.data.local.db.entity.KgEdgeEntity
 import com.promenar.nexara.data.local.db.entity.KgJitCacheEntity
 import com.promenar.nexara.data.local.db.entity.KgNodeEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
+import com.promenar.nexara.data.local.db.entity.McpToolSnapshotEntity
 import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.local.db.entity.TagEntity
@@ -67,6 +68,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
         ArtifactEntity::class,
         CustomSkillEntity::class,
         McpServerEntity::class,
+        McpToolSnapshotEntity::class,
         FileEntry::class,
         WorkspaceSeqEntity::class,
         TaskNodeEntity::class,
@@ -74,7 +76,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
         FileVersionEntity::class,
         WorkspaceMutationEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

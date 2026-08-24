@@ -203,6 +203,87 @@ class ChatGenerationContentStrategyTest {
         assertThat(strategy.pendingApprovalIds(calls, "semi")).containsExactly("safe")
     }
 
+    @Test
+    fun `会话工具真值只保留全局内置与会话选中的MCP且旧空选择不等于全开`() {
+        val settings = mockk<SharedPreferences>()
+        every { settings.getStringSet("enabled_skills", any()) } returns setOf("calculator", "write_file", "custom-one")
+        val registry = mockk<SkillRegistry>()
+        every { registry.getAllTools(any()) } returns listOf(
+            protocolTool("calculator", "calculator", "builtin", null),
+            ProtocolTool(
+                function = ProtocolToolFunction("write_file", "", "{\"type\":\"object\"}"),
+                risk = ToolRisk.FILE_WRITE,
+                runtimeToolId = "write_file",
+                sourceId = "builtin",
+            ),
+            protocolTool("custom", "custom-one", "custom", null),
+            protocolTool("server-a-tool", "mcp:server-a:search", "mcp", "server-a"),
+            protocolTool("server-b-tool", "mcp:server-b:search", "mcp", "server-b"),
+        )
+        val strategy = DefaultChatGenerationContentStrategy(settings, registry)
+
+        val oldSession = Session(id = "old", agentId = "agent")
+        assertThat(strategy.buildTools(oldSession).map { it.runtimeToolId })
+            .containsExactly("calculator")
+
+        val selected = oldSession.copy(
+            activeSkillIds = listOf("custom-one"),
+            activeMcpServerIds = listOf("server-b"),
+        )
+        assertThat(strategy.buildTools(selected).map { it.runtimeToolId })
+            .containsExactly("calculator", "write_file", "mcp:server-b:search").inOrder()
+    }
+
+    @Test
+    fun `master tools off始终返回空真值`() {
+        val settings = mockk<SharedPreferences>()
+        every { settings.getStringSet(any(), any()) } returns setOf("calculator")
+        val registry = mockk<SkillRegistry>()
+        every { registry.getAllTools(any()) } returns listOf(
+            protocolTool("calculator", "calculator", "builtin", null),
+        )
+        val strategy = DefaultChatGenerationContentStrategy(settings, registry)
+
+        val session = Session(
+            id = "off",
+            agentId = "agent",
+            options = com.promenar.nexara.data.model.SessionOptions(toolsEnabled = false),
+            activeMcpServerIds = listOf("server-a"),
+        )
+
+        assertThat(strategy.buildTools(session)).isEmpty()
+    }
+
+    @Test
+    fun `全局内置全关不影响会话已选MCP`() {
+        val settings = mockk<SharedPreferences>()
+        every { settings.getStringSet("enabled_skills", any()) } returns emptySet()
+        val registry = mockk<SkillRegistry>()
+        every { registry.getAllTools(any()) } returns listOf(
+            protocolTool("remote", "mcp:server:remote", "mcp", "server"),
+        )
+        val strategy = DefaultChatGenerationContentStrategy(settings, registry)
+
+        val tools = strategy.buildTools(
+            Session(id = "mcp-only", agentId = "agent", activeMcpServerIds = listOf("server")),
+        )
+
+        assertThat(tools.map { it.runtimeToolId }).containsExactly("mcp:server:remote")
+    }
+
+    private fun protocolTool(
+        name: String,
+        runtimeToolId: String,
+        sourceId: String,
+        mcpServerId: String?,
+    ) = ProtocolTool(
+        function = ProtocolToolFunction(name, "", "{\"type\":\"object\"}"),
+        risk = ToolRisk.SAFE_READ,
+        runtimeToolId = runtimeToolId,
+        sourceId = sourceId,
+        mcpServerId = mcpServerId,
+    )
+
     private fun strategy(knownNames: Set<String>): DefaultChatGenerationContentStrategy =
         strategy(knownNames.associateWith { ToolRisk.UNKNOWN })
 
@@ -225,7 +306,9 @@ class ChatGenerationContentStrategyTest {
             )
         }
         return DefaultChatGenerationContentStrategy(settings, registry).also {
-            it.buildTools(Session(id = "risk-session", agentId = "agent"))
+            it.buildTools(
+                Session(id = "risk-session", agentId = "agent", activeSkillIds = listOf("configured")),
+            )
         }
     }
 }

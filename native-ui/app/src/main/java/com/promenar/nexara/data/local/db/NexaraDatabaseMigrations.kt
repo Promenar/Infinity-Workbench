@@ -132,3 +132,23 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         db.execSQL("ALTER TABLE agents ADD COLUMN mcp_server_ids TEXT NOT NULL DEFAULT '[]'")
     }
 }
+
+/** MCP discovery 是可重建派生缓存，v5 仅追加该表及 server_id 索引。 */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS mcp_tool_snapshots (
+                server_id TEXT NOT NULL,
+                remote_tool_name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                input_schema_json TEXT NOT NULL,
+                synced_at INTEGER NOT NULL,
+                PRIMARY KEY(server_id, remote_tool_name),
+                FOREIGN KEY(server_id) REFERENCES mcp_servers(id) ON UPDATE NO ACTION ON DELETE CASCADE
+            )""".trimIndent(),
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_mcp_tool_snapshots_server_id ON mcp_tool_snapshots(server_id)",
+        )
+    }
+}

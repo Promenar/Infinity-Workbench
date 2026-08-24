@@ -309,7 +309,7 @@ class RoomBackupDataSourceTest {
             listOf(
                 "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_jit_cache",
                 "vectorization_tasks", "audit_logs", "tool_execution_ledger", "file_versions",
-                "workspace_mutations",
+                "workspace_mutations", "mcp_tool_snapshots",
             ).forEach { assertThat(text).doesNotContain("\"$it\"") }
 
             db.clearAllTables()
@@ -445,6 +445,7 @@ class RoomBackupDataSourceTest {
             listOf(
                 "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_jit_cache",
                 "vectorization_tasks", "tool_execution_ledger", "file_versions", "workspace_mutations",
+                "mcp_tool_snapshots",
             ).forEach { table -> assertThat(rowCount(table)).isEqualTo(0) }
             assertThat(rowCount("audit_logs")).isEqualTo(1)
         }
@@ -1273,6 +1274,12 @@ class RoomBackupDataSourceTest {
 
     private fun seedDerivedRows() {
         val sqlite = db.openHelper.writableDatabase
+        sqlite.execSQL(
+            """INSERT INTO mcp_tool_snapshots(
+               server_id,remote_tool_name,description,input_schema_json,synced_at
+               ) VALUES(?,?,?,?,?)""",
+            arrayOf<Any?>("mcp-1", "search", "Search", "{\"type\":\"object\"}", 100L),
+        )
         sqlite.execSQL(
             "INSERT INTO vectors(id, session_id, content, embedding, created_at, stale, version) VALUES(?,?,?,?,?,?,?)",
             arrayOf<Any?>("vector-1", "session-1", "derived", byteArrayOf(1, 2), 100L, 0, 1),
