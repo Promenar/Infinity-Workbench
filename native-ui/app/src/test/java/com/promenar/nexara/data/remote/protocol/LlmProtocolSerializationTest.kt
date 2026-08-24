@@ -328,10 +328,14 @@ class LlmProtocolSerializationTest {
         }
 
         @Test
-        fun `Done is singleton`() {
-            val a = StreamChunk.Done
-            val b = StreamChunk.Done
-            assertThat(a).isSameInstanceAs(b)
+        fun `Completed 显式保留终止原因`() {
+            val completed = StreamChunk.Completed(
+                com.promenar.nexara.domain.generation.CompletionReason.TOOL_CALLS,
+                listOf("call-1"),
+            )
+            assertThat(completed.reason)
+                .isEqualTo(com.promenar.nexara.domain.generation.CompletionReason.TOOL_CALLS)
+            assertThat(completed.completedToolCallIds).containsExactly("call-1")
         }
     }
 

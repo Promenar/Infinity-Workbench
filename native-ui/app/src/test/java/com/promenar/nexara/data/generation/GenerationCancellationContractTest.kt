@@ -11,6 +11,7 @@ import com.promenar.nexara.domain.generation.GenerationSnapshot
 import com.promenar.nexara.domain.generation.GenerationTerminalStatus
 import com.promenar.nexara.domain.generation.GenerationToolCall
 import com.promenar.nexara.domain.generation.GenerationToolDecision
+import com.promenar.nexara.domain.generation.CompletionReason
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -39,7 +40,7 @@ class GenerationCancellationContractTest {
     fun `轮次首次flush取消不得重试或转为持久化失败`() = runTest {
         val cancellation = CancellationException("round-flush-cancel")
         val runtime = CancellationRuntime(
-            chunks = flowOf(GenerationChunk.ToolCall("tool", "search", "{}"), GenerationChunk.Done),
+            chunks = toolRound("search"),
         ).apply {
             toolDecision = GenerationToolDecision.CONTINUE
             flushCancellation = cancellation
@@ -59,7 +60,7 @@ class GenerationCancellationContractTest {
     fun `轮次重试flush取消不得转为持久化失败`() = runTest {
         val cancellation = CancellationException("round-retry-cancel")
         val runtime = CancellationRuntime(
-            chunks = flowOf(GenerationChunk.ToolCall("tool", "search", "{}"), GenerationChunk.Done),
+            chunks = toolRound("search"),
         ).apply {
             toolDecision = GenerationToolDecision.CONTINUE
             firstFlushFailure = IllegalStateException("first")
@@ -80,7 +81,7 @@ class GenerationCancellationContractTest {
     fun `等待审批cleanup取消必须传播且不得误报持久化失败`() = runTest {
         val cancellation = CancellationException("approval-flush-cancel")
         val runtime = CancellationRuntime(
-            chunks = flowOf(GenerationChunk.ToolCall("tool", "write", "{}"), GenerationChunk.Done),
+            chunks = toolRound("write"),
         ).apply {
             toolDecision = GenerationToolDecision.WAIT_FOR_APPROVAL
             flushCancellation = cancellation
@@ -197,6 +198,11 @@ class GenerationCancellationContractTest {
         return false
     }
 
+    private fun toolRound(name: String): Flow<GenerationChunk> = flowOf(
+        GenerationChunk.ToolCall("tool", name, "{}"),
+        GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("tool")),
+    )
+
     private fun Throwable?.hasSuppressedInstance(expected: Throwable): Boolean {
         var current = this
         while (current != null) {
@@ -207,7 +213,10 @@ class GenerationCancellationContractTest {
     }
 
     private class CancellationRuntime(
-        private val chunks: Flow<GenerationChunk> = flowOf(GenerationChunk.Text("ok"), GenerationChunk.Done),
+        private val chunks: Flow<GenerationChunk> = flowOf(
+            GenerationChunk.Text("ok"),
+            GenerationChunk.Completed(CompletionReason.END_TURN),
+        ),
     ) : ChatGenerationRuntime {
         var cancelled = false
         val terminals = mutableListOf<GenerationTerminalStatus>()
@@ -224,6 +233,7 @@ class GenerationCancellationContractTest {
         override suspend fun stream(request: GenerationRequest, attempt: Int): Flow<GenerationChunk> =
             chunks
         override suspend fun persist(request: GenerationRequest, snapshot: GenerationSnapshot) = Unit
+        override fun knownToolNames(request: GenerationRequest): Set<String> = setOf("search", "write")
         override suspend fun handleTools(
             request: GenerationRequest,
             toolCalls: List<GenerationToolCall>,

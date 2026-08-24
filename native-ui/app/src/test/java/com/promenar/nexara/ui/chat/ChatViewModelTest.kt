@@ -627,7 +627,7 @@ class ChatViewModelTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession(); advanceUntilIdle()
         
-        fakeStreamChunks = listOf(StreamChunk.Done)
+        fakeStreamChunks = listOf(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
 
         viewModel.sendMessage("hello"); advanceUntilIdle()
         
@@ -655,7 +655,7 @@ class ChatViewModelTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession(); advanceUntilIdle()
         
-        fakeStreamChunks = listOf(StreamChunk.Done)
+        fakeStreamChunks = listOf(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
 
         viewModel.sendMessage("hello"); advanceUntilIdle()
         
@@ -685,7 +685,7 @@ class ChatViewModelTest {
             .commit()
         seedSession()
         advanceUntilIdle()
-        fakeStreamChunks = listOf(StreamChunk.Done)
+        fakeStreamChunks = listOf(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
 
         viewModel.importFullContextDocument(android.net.Uri.parse("content://test/history"))
         advanceUntilIdle()
@@ -804,7 +804,7 @@ class ChatViewModelTest {
         fakeStreamChunks = listOf(
             StreamChunk.TextDelta("Hello"),
             StreamChunk.TextDelta(" world"),
-            StreamChunk.Done
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN)
         )
 
         viewModel.sendMessage("hi"); advanceUntilIdle()
@@ -825,7 +825,7 @@ class ChatViewModelTest {
         fakeStreamChunks = listOf(
             StreamChunk.TextDelta("response"),
             StreamChunk.Usage(ProtocolUsage(input = 10, output = 20, total = 30)),
-            StreamChunk.Done
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN)
         )
 
         viewModel.sendMessage("test"); advanceUntilIdle()
@@ -844,7 +844,10 @@ class ChatViewModelTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession()
         advanceUntilIdle()
-        fakeStreamChunks = listOf(StreamChunk.TextDelta("done"), StreamChunk.Done)
+        fakeStreamChunks = listOf(
+            StreamChunk.TextDelta("done"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+        )
 
         viewModel.sendMessage("test")
         advanceUntilIdle()
@@ -1268,7 +1271,7 @@ class ChatViewModelTest {
         
         fakeStreamChunks = listOf(
             StreamChunk.TextDelta("first response"),
-            StreamChunk.Done
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN)
         )
 
         viewModel.sendMessage("hello"); advanceUntilIdle()
@@ -1279,7 +1282,7 @@ class ChatViewModelTest {
 
         fakeStreamChunks = listOf(
             StreamChunk.TextDelta("retry response"),
-            StreamChunk.Done
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN)
         )
 
         viewModel.retryLastMessage(); advanceUntilIdle()
@@ -1300,7 +1303,10 @@ class ChatViewModelTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession("retry-target")
         advanceUntilIdle()
-        fakeStreamChunks = listOf(StreamChunk.TextDelta("existing reply"), StreamChunk.Done)
+        fakeStreamChunks = listOf(
+            StreamChunk.TextDelta("existing reply"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+        )
         viewModel.sendMessage("hello")
         advanceUntilIdle()
 
@@ -1339,7 +1345,10 @@ class ChatViewModelTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession("retry-route")
         advanceUntilIdle()
-        fakeStreamChunks = listOf(StreamChunk.TextDelta("existing reply"), StreamChunk.Done)
+        fakeStreamChunks = listOf(
+            StreamChunk.TextDelta("existing reply"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+        )
         viewModel.sendMessage("hello")
         advanceUntilIdle()
 
@@ -1366,7 +1375,10 @@ class ChatViewModelTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession("retry-permission")
         advanceUntilIdle()
-        fakeStreamChunks = listOf(StreamChunk.TextDelta("existing reply"), StreamChunk.Done)
+        fakeStreamChunks = listOf(
+            StreamChunk.TextDelta("existing reply"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+        )
         viewModel.sendMessage("hello")
         advanceUntilIdle()
         assertThat(savedMessages.map { it.first.content })
@@ -1396,7 +1408,10 @@ class ChatViewModelTest {
     fun `重试成功后删除旧回复失败时旧回复仍保留`() = runTest {
         backgroundScope.launch { viewModel.uiState.collect {} }
         seedSession(); advanceUntilIdle()
-        fakeStreamChunks = listOf(StreamChunk.TextDelta("first response"), StreamChunk.Done)
+        fakeStreamChunks = listOf(
+            StreamChunk.TextDelta("first response"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+        )
         viewModel.sendMessage("hello"); advanceUntilIdle()
         val requestsBeforeRetry = protocolRequestCount
         failScopedDelete = true

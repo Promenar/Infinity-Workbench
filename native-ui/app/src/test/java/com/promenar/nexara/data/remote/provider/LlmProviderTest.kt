@@ -25,7 +25,9 @@ class LlmProviderTest {
         var resolveCount = 0
         val delegate = mockk<LlmProtocol> {
             every { protocolType } returns ProtocolId.OPENAI
-            coEvery { sendPrompt(any()) } returns flowOf(StreamChunk.Done)
+            coEvery { sendPrompt(any()) } returns flowOf(
+                StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+            )
             every { cancel() } returns Unit
         }
         val provider = LlmProvider.resolving(ProtocolId.OPENAI) {

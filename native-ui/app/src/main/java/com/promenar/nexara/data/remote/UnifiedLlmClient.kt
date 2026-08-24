@@ -8,6 +8,7 @@ import com.promenar.nexara.data.remote.parser.ErrorNormalizer
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
+import com.promenar.nexara.data.remote.protocol.ProtocolToolCall
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.protocol.ProtocolFactory
 import com.promenar.nexara.data.remote.protocol.ProtocolType
@@ -97,27 +98,92 @@ class UnifiedLlmClient(
             knownTools = config.tools
         )
 
+        suspend fun emitTransformed(rawChunk: StreamChunk) {
+            chain.transformStreamChunk(rawChunk) { transformed ->
+                when (transformed) {
+                    is StreamChunk.ToolCallDelta -> {
+                        lifecycleHandler.handleToolInputDelta(
+                            transformed.id,
+                            transformed.arguments,
+                        )
+                        send(transformed)
+                    }
+                    else -> send(transformed)
+                }
+            }
+        }
+
+        var pendingCompletion: StreamChunk.Completed? = null
+        var terminalErrorSeen = false
+        var contractViolation = false
+        val rawToolCalls = linkedMapOf<String, ProtocolToolCall>()
         try {
             val rawFlow = protocol.sendPrompt(request)
             rawFlow.collect { rawChunk ->
-                chain.transformStreamChunk(rawChunk) { transformed ->
-                    when (transformed) {
-                        is StreamChunk.ToolCallDelta -> {
-                            lifecycleHandler.handleToolInputDelta(
-                                transformed.id,
-                                transformed.arguments
-                            )
-                            send(transformed)
+                when (rawChunk) {
+                    is StreamChunk.Completed -> {
+                        when {
+                            terminalErrorSeen -> Unit
+                            pendingCompletion != null -> contractViolation = true
+                            else -> {
+                                val structurallyValidated =
+                                    com.promenar.nexara.data.remote.protocol.validatedCompletion(
+                                        rawChunk.reason,
+                                        rawToolCalls.values.toList(),
+                                    )
+                                if (
+                                    structurallyValidated !is StreamChunk.Completed ||
+                                    structurallyValidated.completedToolCallIds != rawChunk.completedToolCallIds
+                                ) {
+                                    contractViolation = true
+                                } else {
+                                    pendingCompletion = rawChunk
+                                }
+                            }
                         }
-                        else -> send(transformed)
                     }
+                    is StreamChunk.Error -> {
+                        if (!terminalErrorSeen) {
+                            pendingCompletion = null
+                            emitTransformed(rawChunk)
+                            terminalErrorSeen = true
+                        }
+                    }
+                    else -> when {
+                        terminalErrorSeen -> Unit
+                        pendingCompletion != null -> contractViolation = true
+                        else -> {
+                            if (rawChunk is StreamChunk.ToolCallDelta) {
+                                val previous = rawToolCalls[rawChunk.id]
+                                rawToolCalls[rawChunk.id] = ProtocolToolCall(
+                                    id = rawChunk.id,
+                                    name = rawChunk.name.ifBlank { previous?.name.orEmpty() },
+                                    arguments = previous?.arguments.orEmpty() + rawChunk.arguments,
+                                )
+                            }
+                            emitTransformed(rawChunk)
+                        }
+                    }
+                }
+            }
+            if (!terminalErrorSeen) {
+                when {
+                    contractViolation -> emitTransformed(com.promenar.nexara.data.remote.protocol.streamContractError(
+                        "Provider stream emitted duplicate terminal or data after terminal",
+                    ))
+                    pendingCompletion != null -> emitTransformed(requireNotNull(pendingCompletion))
+                    else -> emitTransformed(com.promenar.nexara.data.remote.protocol.truncatedStreamError(
+                        "Provider stream ended without an explicit terminal",
+                    ))
                 }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
             NexaraLogger.logError("[UnifiedLlmClient] Stream error", e)
-            send(ErrorNormalizer.normalize(e).toStreamChunkError(e))
+            if (!terminalErrorSeen) {
+                send(ErrorNormalizer.normalize(e).toStreamChunkError(e))
+            }
         }
 
         chain.onRequestEnd(finalParams)

@@ -103,7 +103,10 @@ class ProviderModelReleaseBlockersTest {
         var captured: PromptRequest? = null
         val protocol = RecordingProtocol { request ->
             captured = request
-            flowOf(StreamChunk.TextDelta("OK"), StreamChunk.Done)
+            flowOf(
+                StreamChunk.TextDelta("OK"),
+                StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+            )
         }
         val coordinator = coordinator(this, protocol)
 
@@ -126,7 +129,7 @@ class ProviderModelReleaseBlockersTest {
                 requests.incrementAndGet()
                 release.await()
                 emit(StreamChunk.TextDelta("OK"))
-                emit(StreamChunk.Done)
+                emit(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
             }
         }
         val coordinator = coordinator(this, protocol)
@@ -151,7 +154,10 @@ class ProviderModelReleaseBlockersTest {
         val releaseStartWindow = CountDownLatch(1)
         val hookCalls = AtomicInteger()
         val protocol = RecordingProtocol {
-            flowOf(StreamChunk.TextDelta("OK"), StreamChunk.Done).also {
+            flowOf(
+                StreamChunk.TextDelta("OK"),
+                StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+            ).also {
                 requests.incrementAndGet()
             }
         }
@@ -259,12 +265,14 @@ class ProviderModelReleaseBlockersTest {
 
         val state = coordinator.states.value.getValue("provider-a::remote-a")
         assertThat(state).isInstanceOf(ModelTestState.Error::class.java)
-        assertThat((state as ModelTestState.Error).code).isEqualTo(GenerationFailureCode.UNKNOWN)
+        assertThat((state as ModelTestState.Error).code).isEqualTo(GenerationFailureCode.NETWORK)
     }
 
     @Test
     fun `done only flow becomes a structured error instead of success`() = runTest {
-        val protocol = RecordingProtocol { flowOf(StreamChunk.Done) }
+        val protocol = RecordingProtocol {
+            flowOf(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+        }
         val coordinator = coordinator(this, protocol)
 
         coordinator.test("provider-a::remote-a")
@@ -279,7 +287,7 @@ class ProviderModelReleaseBlockersTest {
         val protocol = RecordingProtocol {
             flowOf(
                 StreamChunk.Error(code = GenerationFailureCode.RATE_LIMIT, retryAfterSeconds = 17),
-                StreamChunk.Done,
+                StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
             )
         }
         val coordinator = coordinator(this, protocol)
@@ -311,7 +319,7 @@ class ProviderModelReleaseBlockersTest {
             flow {
                 emit(StreamChunk.TextDelta("OK"))
                 hold.await()
-                emit(StreamChunk.Done)
+                emit(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
             }
         }
         val coordinator = coordinator(this, protocol)

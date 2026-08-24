@@ -251,7 +251,8 @@ internal class ProviderModelTestCoordinator(
                 }
                 is StreamChunk.TextDelta -> if (chunk.content.isNotEmpty()) sawPayload = true
                 is StreamChunk.Thinking -> if (chunk.content.isNotEmpty()) sawPayload = true
-                is StreamChunk.Done -> sawDone = true
+                is StreamChunk.Completed -> sawDone = chunk.reason ==
+                    com.promenar.nexara.domain.generation.CompletionReason.END_TURN
                 else -> Unit
             }
         }

@@ -14,6 +14,7 @@ internal data class ChatProviderRoute(
     val failure: ProviderResolution.Failure?,
     val useLocalProvider: Boolean = false,
     val modelId: String? = null,
+    val supportsToolCalls: Boolean = true,
 )
 
 internal sealed interface ChatRoutePreparation<out T> {
@@ -38,6 +39,7 @@ internal class ChatProviderRouteGate(
                 failure = null,
                 useLocalProvider = local,
                 modelId = resolved.modelId,
+                supportsToolCalls = resolved.config.protocolType !is ProtocolType.Google_VertexAI,
             )
         }
     }

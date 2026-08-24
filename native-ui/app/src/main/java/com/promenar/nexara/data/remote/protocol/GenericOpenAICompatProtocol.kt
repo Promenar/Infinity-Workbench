@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
+import com.promenar.nexara.domain.generation.CompletionReason
 
 /**
  * Generic OpenAI-compatible protocol for Ollama, vLLM, LiteLLM, LocalAI etc.
@@ -63,7 +64,13 @@ class GenericOpenAICompatProtocol(
                 setBody(buildRequestBody(request, stream = true))
             }.execute { response ->
                 if (!response.status.isSuccess()) {
-                    val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
+                    val errorBody = try {
+                        response.bodyAsText()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        ""
+                    }
                     val normalized = ErrorNormalizer.normalize(
                         HttpStatusException(response.status.value, errorBody)
                     )
@@ -86,6 +93,9 @@ class GenericOpenAICompatProtocol(
                 val channel = response.body<ByteReadChannel>()
                 activeChannel = channel
                 val sb = StringBuilder()
+                var completionReason: CompletionReason? = null
+                var sawDone = false
+                var failed = false
 
                 while (!channel.isClosedForRead) {
                     sb.clear()
@@ -100,6 +110,7 @@ class GenericOpenAICompatProtocol(
                             retryable = true,
                             technical = "Streaming timeout after ${timeoutMs / 1000}s of inactivity.",
                         ))
+                        failed = true
                         break
                     }
                     if (!readSuccess) break
@@ -114,19 +125,47 @@ class GenericOpenAICompatProtocol(
                             retryable = false,
                             technical = "Received HTML response instead of JSON stream.",
                         ))
+                        failed = true
                         break
                     }
 
                     val data = extractSseData(line) ?: continue
-                    if (data.trim() == "[DONE]") break
+                    if (data.trim() == "[DONE]") {
+                        sawDone = true
+                        break
+                    }
 
                     try {
                         val chunkJson = json.parseToJsonElement(data).jsonObject
-                        processStreamChunk(chunkJson, thinkingDetector, toolCallAccumulator)
+                        val parsedReason = processStreamChunk(chunkJson, thinkingDetector, toolCallAccumulator)
+                        if (parsedReason != null) {
+                            if (completionReason != null) {
+                                throw IllegalStateException("Duplicate compatible finish_reason")
+                            }
+                            completionReason = parsedReason
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
                     } catch (_: Exception) {
+                        send(streamContractError("Malformed OpenAI-compatible stream event"))
+                        failed = true
+                        break
                     }
                 }
-                flushRemaining(thinkingDetector, toolCallAccumulator)
+                if (!failed) {
+                    flushRemaining(thinkingDetector)
+                    val reason = completionReason
+                    when {
+                        !sawDone -> send(truncatedStreamError("OpenAI-compatible stream ended before [DONE]"))
+                        reason == null -> send(streamContractError("OpenAI-compatible stream missing finish_reason"))
+                        else -> send(validatedCompletion(
+                            reason,
+                            toolCallAccumulator.toSortedMap().values.map {
+                                ProtocolToolCall(it.id, it.name, it.arguments)
+                            },
+                        ))
+                    }
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -154,7 +193,13 @@ class GenericOpenAICompatProtocol(
             throw Exception("[${normalized.category}] ${normalized.technicalMessage}")
         }
 
-        val responseText = try { response.bodyAsText() } catch (_: Exception) { "" }
+        val responseText = try {
+            response.bodyAsText()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            ""
+        }
 
         if (!response.status.isSuccess()) {
             val normalized = ErrorNormalizer.normalize(
@@ -327,9 +372,18 @@ class GenericOpenAICompatProtocol(
         chunk: JsonObject,
         thinkingDetector: ThinkingDetector,
         toolCallAccumulator: MutableMap<Int, AccumulatedToolCall>
-    ) {
-        val choice = chunk["choices"]?.jsonArray?.firstOrNull()?.jsonObject ?: return
-        val delta = choice["delta"]?.jsonObject ?: return
+    ): CompletionReason? {
+        val choice = (chunk["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
+        if (choice == null) {
+            val usageRaw = chunk["usage"] as? JsonObject
+            if (usageRaw != null) send(StreamChunk.Usage(ProtocolUsage(
+                input = usageRaw["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
+                output = usageRaw["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
+                total = usageRaw["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
+            )))
+            return null
+        }
+        val delta = choice["delta"] as? JsonObject ?: JsonObject(emptyMap())
 
         var content = delta.stringField("content")
         // 部分 OpenAI 兼容服务使用 `delta.reasoning`；标准字段仍保持优先。
@@ -393,22 +447,24 @@ class GenericOpenAICompatProtocol(
             )
             send(StreamChunk.Usage(usage))
         }
+
+        return when (val finishReason = choice.stringField("finish_reason")) {
+            "" -> null
+            "stop" -> CompletionReason.END_TURN
+            "tool_calls" -> CompletionReason.TOOL_CALLS
+            else -> throw IllegalStateException("Unknown compatible finish_reason: $finishReason")
+        }
     }
 
     private suspend fun SendChannel<StreamChunk>.flushRemaining(
         thinkingDetector: ThinkingDetector,
-        toolCallAccumulator: MutableMap<Int, AccumulatedToolCall>
     ) {
         val remaining = thinkingDetector.flush()
         if (remaining.content.isNotEmpty() || remaining.reasoning.isNotEmpty()) {
             send(StreamChunk.TextDelta(remaining.content, remaining.reasoning.ifEmpty { null }))
         }
 
-        // 工具调用已在流式过程中通过 ToolCallDelta(incremental fragment) 发送完毕
-        // ViewModel 侧已完成累积，此处不再重复发送，避免双重累积
-        // flushRemaining 仅负责清理 ThinkingDetector 残余 + 发送 Done 信号
-
-        send(StreamChunk.Done)
+        // 成功 terminal 由调用方在 [DONE] 与 finish_reason 双重确认后发出。
     }
 
     private fun parseSyncResponse(responseText: String): PromptResponse {

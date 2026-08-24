@@ -22,6 +22,8 @@ import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.PromptResponse
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.protocol.ProtocolTool
+import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.rag.MemoryManager
@@ -50,6 +52,7 @@ import com.promenar.nexara.ui.chat.manager.PostProcessor
 import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
+import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -135,7 +138,9 @@ class DefaultChatGenerationRuntimeTest {
             override val protocolType = ProtocolType.Local
             override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> {
                 providerEntered = true
-                return flow { emit(StreamChunk.Done) }
+                return flow {
+                    emit(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+                }
             }
             override suspend fun sendPromptSync(request: PromptRequest) = PromptResponse("")
             override fun cancel() = Unit
@@ -315,6 +320,23 @@ class DefaultChatGenerationRuntimeTest {
     }
 
     @Test
+    fun `文本 fallback 只清理展示标记不得升级为可执行工具调用`() = runTest {
+        val fixture = postProcessFixture()
+        every { fixture.contentStrategy.extractFallbackToolCalls("wrapped") } returns listOf(
+            com.promenar.nexara.data.model.ToolCall("fallback", "search", "{}"),
+        )
+        every { fixture.contentStrategy.stripToolCallMarkup("wrapped") } returns "clean"
+
+        val result = fixture.runtime.finalizeStream(
+            fixture.request,
+            GenerationSnapshot(content = "wrapped"),
+        )
+
+        assertThat(result.content).isEqualTo("clean")
+        assertThat(result.toolCalls).isEmpty()
+    }
+
+    @Test
     fun `重试多轮工具调用失败会回滚本轮创建的全部消息`() = runTest {
         val fixture = postProcessFixture()
         val request = fixture.request.copy(assistantMessageIdToReplace = "old-assistant")
@@ -379,6 +401,7 @@ class DefaultChatGenerationRuntimeTest {
         val ui: GenerationUiPort,
         val store: ChatStore,
         val messageManager: MessageManager,
+        val contentStrategy: ChatGenerationContentStrategy,
     )
 
     private fun postProcessFixture(
@@ -464,6 +487,7 @@ class DefaultChatGenerationRuntimeTest {
             ui,
             store,
             messageManager,
+            contentStrategy,
         )
     }
     @Test
@@ -749,7 +773,9 @@ class DefaultChatGenerationRuntimeTest {
             override val protocolType = ProtocolType.Local
             override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> {
                 reloadedAtNetworkEntry = messageRepository.getById(assistant.id)
-                return flow { emit(StreamChunk.Done) }
+                return flow {
+                    emit(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
+                }
             }
 
             override suspend fun sendPromptSync(request: PromptRequest) = PromptResponse("")
@@ -932,7 +958,7 @@ class DefaultChatGenerationRuntimeTest {
     fun `CONTINUE强刷assistant后多轮Prompt保留全部工具配对`() = runTest {
         val settings = mockk<SharedPreferences>()
         every { settings.getInt(any(), any()) } answers { secondArg() }
-        every { settings.getStringSet(any(), any()) } returns emptySet()
+        every { settings.getStringSet(any(), any()) } returns setOf("test-tools")
         every { settings.getString(any(), any()) } returns ""
         every { settings.getFloat(any(), any()) } answers { secondArg() }
         val user = Message("u1", MessageRole.USER, "question")
@@ -981,7 +1007,14 @@ class DefaultChatGenerationRuntimeTest {
                     2 -> emit(StreamChunk.ToolCallDelta("call-2", "read_file", "{}", 0))
                     else -> emit(StreamChunk.TextDelta("final"))
                 }
-                emit(StreamChunk.Done)
+                emit(StreamChunk.Completed(
+                    if (prompts.size <= 2) {
+                        com.promenar.nexara.domain.generation.CompletionReason.TOOL_CALLS
+                    } else {
+                        com.promenar.nexara.domain.generation.CompletionReason.END_TURN
+                    },
+                    if (prompts.size <= 2) listOf("call-${prompts.size}") else emptyList(),
+                ))
             }
             override suspend fun sendPromptSync(request: PromptRequest) = PromptResponse("")
             override fun cancel() = Unit
@@ -1016,6 +1049,12 @@ class DefaultChatGenerationRuntimeTest {
                 )
             }
         }
+        val advertisedTools = listOf(
+            ProtocolTool(function = ProtocolToolFunction("search", "search", "{\"type\":\"object\"}")),
+            ProtocolTool(function = ProtocolToolFunction("read_file", "read", "{\"type\":\"object\"}")),
+        )
+        val skillRegistry = mockk<SkillRegistry>()
+        every { skillRegistry.getAllTools(any()) } returns advertisedTools
         val runtime = DefaultChatGenerationRuntime(
             settings = settings,
             applicationScope = this,
@@ -1033,7 +1072,7 @@ class DefaultChatGenerationRuntimeTest {
             memoryManager = null,
             summaryManager = mockk(relaxed = true),
             sessionManager = SessionManager(store, sessionRepository),
-            contentStrategy = DefaultChatGenerationContentStrategy(settings, null),
+            contentStrategy = DefaultChatGenerationContentStrategy(settings, skillRegistry),
             ui = mockk(relaxed = true),
         )
         val request = GenerationRequest(

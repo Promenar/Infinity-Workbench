@@ -15,6 +15,7 @@ import com.promenar.nexara.domain.generation.GenerationSnapshot
 import com.promenar.nexara.domain.generation.GenerationToolDecision
 import com.promenar.nexara.domain.generation.GenerationToolCall
 import com.promenar.nexara.domain.generation.GenerationTerminalStatus
+import com.promenar.nexara.domain.generation.CompletionReason
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -32,7 +33,7 @@ class ChatGenerationRunnerTest {
             GenerationChunk.Text("A"),
             GenerationChunk.Text("B"),
             GenerationChunk.Thinking("R"),
-            GenerationChunk.Done,
+            GenerationChunk.Completed(CompletionReason.END_TURN),
         )))
         val events = mutableListOf<GenerationEvent>()
 
@@ -55,18 +56,12 @@ class ChatGenerationRunnerTest {
 
     @Test
     fun `工具等待完成后继续下一轮流`() = runTest {
-        val failure = GenerationFailure(
-            code = GenerationFailureCode.NETWORK,
-            technical = "recoverable",
-            cause = IllegalStateException("recoverable cause"),
-        )
         val runtime = FakeRuntime(listOf(
             flowOf(
                 GenerationChunk.ToolCall("tool-1", "search", "{}"),
-                GenerationChunk.Failure(failure),
-                GenerationChunk.Done,
+                GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("tool-1")),
             ),
-            flowOf(GenerationChunk.Text("continued"), GenerationChunk.Done),
+            flowOf(GenerationChunk.Text("continued"), GenerationChunk.Completed(CompletionReason.END_TURN)),
         )).apply { toolDecisions += GenerationToolDecision.CONTINUE }
         val events = mutableListOf<GenerationEvent>()
 
@@ -81,13 +76,8 @@ class ChatGenerationRunnerTest {
             GenerationPhase.POST_PROCESSING, GenerationPhase.COMPLETED,
         ).inOrder()
         assertThat(runtime.streamAttempts).isEqualTo(2)
-        val errorIndex = runtime.persisted.indexOfFirst { it.failure == failure }
-        assertThat(errorIndex).isAtLeast(0)
-        assertThat(runtime.persisted[errorIndex].failure?.code).isEqualTo(GenerationFailureCode.NETWORK)
-        assertThat(runtime.persisted[errorIndex].failure?.technical).isEqualTo("recoverable")
-        assertThat(runtime.persisted[errorIndex].failure?.retryAfterSeconds).isNull()
-        assertThat(runtime.persisted[errorIndex + 1].toolCalls).isEmpty()
-        assertThat(runtime.persisted[errorIndex + 1].failure).isNull()
+        assertThat(runtime.persisted.last().toolCalls).isEmpty()
+        assertThat(runtime.persisted.last().failure).isNull()
         assertThat(runtime.flushCount).isEqualTo(2)
         assertThat(events.filterIsInstance<GenerationEvent.TargetChanged>().map { it.assistantMessageId })
             .containsExactly("assistant-next")
@@ -96,7 +86,10 @@ class ChatGenerationRunnerTest {
     @Test
     fun `等待人工工具审批时flush并停在等待阶段`() = runTest {
         val runtime = FakeRuntime(listOf(
-            flowOf(GenerationChunk.ToolCall("tool-1", "write", "{}"), GenerationChunk.Done),
+            flowOf(
+                GenerationChunk.ToolCall("tool-1", "write", "{}"),
+                GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("tool-1")),
+            ),
         )).apply { toolDecisions += GenerationToolDecision.WAIT_FOR_APPROVAL }
         val events = mutableListOf<GenerationEvent>()
 
@@ -117,7 +110,7 @@ class ChatGenerationRunnerTest {
         val runtime = FakeRuntime(listOf(flowOf(
             GenerationChunk.Text("partial"),
             GenerationChunk.Failure(streamFailure),
-            GenerationChunk.Done,
+            GenerationChunk.Completed(CompletionReason.END_TURN),
         )))
         val events = mutableListOf<GenerationEvent>()
 
@@ -172,7 +165,10 @@ class ChatGenerationRunnerTest {
 
     @Test
     fun `成功结果终态持久化失败不得发布COMPLETED`() = runTest {
-        val runtime = FakeRuntime(listOf(flowOf(GenerationChunk.Text("done"), GenerationChunk.Done))).apply {
+        val runtime = FakeRuntime(listOf(flowOf(
+            GenerationChunk.Text("done"),
+            GenerationChunk.Completed(CompletionReason.END_TURN),
+        ))).apply {
             terminalFailure = IllegalStateException("missing row")
         }
         val events = mutableListOf<GenerationEvent>()
@@ -190,7 +186,10 @@ class ChatGenerationRunnerTest {
     @Test
     fun `CONTINUE轮次强刷重试仍失败时停止下一轮并发布PERSISTENCE_FAILED`() = runTest {
         val runtime = FakeRuntime(
-            listOf(flowOf(GenerationChunk.ToolCall("call", "search", "{}"), GenerationChunk.Done)),
+            listOf(flowOf(
+                GenerationChunk.ToolCall("call", "search", "{}"),
+                GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call")),
+            )),
         ).apply {
             toolDecisions += GenerationToolDecision.CONTINUE
             flushFailuresRemaining = 2
@@ -236,7 +235,10 @@ class ChatGenerationRunnerTest {
     @Test
     fun `observer 自身抛出 CancellationException 时必须原样传播`() = runTest {
         val observerCancellation = CancellationException("observer cancelled")
-        val runtime = FakeRuntime(listOf(flowOf(GenerationChunk.Text("done"), GenerationChunk.Done)))
+        val runtime = FakeRuntime(listOf(flowOf(
+            GenerationChunk.Text("done"),
+            GenerationChunk.Completed(CompletionReason.END_TURN),
+        )))
 
         val failure = runCatching {
             ChatGenerationRunner(runtime).run(request()) { event ->
@@ -253,7 +255,10 @@ class ChatGenerationRunnerTest {
 
     @Test
     fun `SUCCESS后COMPLETED observer异常不得重标ERROR`() = runTest {
-        val runtime = FakeRuntime(listOf(flowOf(GenerationChunk.Text("done"), GenerationChunk.Done)))
+        val runtime = FakeRuntime(listOf(flowOf(
+            GenerationChunk.Text("done"),
+            GenerationChunk.Completed(CompletionReason.END_TURN),
+        )))
 
         val failure = runCatching {
             ChatGenerationRunner(runtime).run(request()) { event ->
@@ -271,7 +276,10 @@ class ChatGenerationRunnerTest {
     @Test
     fun `成功终态严格按mark再flush再COMPLETED发布`() = runTest {
         val trace = mutableListOf<String>()
-        val runtime = FakeRuntime(listOf(flowOf(GenerationChunk.Text("done"), GenerationChunk.Done)), trace)
+        val runtime = FakeRuntime(listOf(flowOf(
+            GenerationChunk.Text("done"),
+            GenerationChunk.Completed(CompletionReason.END_TURN),
+        )), trace)
 
         ChatGenerationRunner(runtime).run(request()) { event ->
             if (event is GenerationEvent.PhaseChanged) trace += "phase:${event.phase}"
@@ -287,7 +295,7 @@ class ChatGenerationRunnerTest {
     @Test
     fun `上下文或路由错误已由adapter处理时停止连接并flush`() = runTest {
         val handledFailure = GenerationFailure.unknown(technical = "handled failure")
-        val runtime = FakeRuntime(listOf(flowOf(GenerationChunk.Done))).apply {
+        val runtime = FakeRuntime(listOf(flowOf(GenerationChunk.Completed(CompletionReason.END_TURN)))).apply {
             preparationOutcome = GenerationPreparationOutcome.Handled(handledFailure)
         }
         val events = mutableListOf<GenerationEvent>()
@@ -385,6 +393,8 @@ class ChatGenerationRunnerTest {
         override suspend fun persist(request: GenerationRequest, snapshot: GenerationSnapshot) {
             persisted += snapshot
         }
+        override fun knownToolNames(request: GenerationRequest): Set<String> =
+            setOf("search", "write", "read_file")
         override suspend fun handleTools(
             request: GenerationRequest,
             toolCalls: List<GenerationToolCall>,

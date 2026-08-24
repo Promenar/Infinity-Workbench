@@ -57,6 +57,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -201,7 +202,8 @@ internal class DefaultChatGenerationRuntime(
             messageManager.updateMessageContent(request.sessionId, assistantMessageId(request), "", it)
             messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
         }
-        val tools = contentStrategy.buildTools(session)
+        // Vertex 的多轮函数调用要求 thought signature 原样回传；夹具闭环前保持能力关闭。
+        val tools = if (route.supportsToolCalls) contentStrategy.buildTools(session) else emptyList()
         val inference = session.inferenceParams ?: InferenceParams(
             temperature = agentConfig.temperature,
             topP = agentConfig.topP,
@@ -286,8 +288,11 @@ internal class DefaultChatGenerationRuntime(
                 StreamConfig(enableWebSearch = prompt.webSearch == true),
             )
         }
-        return source.map(::toGenerationChunk)
+        return source.mapNotNull(::toGenerationChunk)
     }
+
+    override fun knownToolNames(request: GenerationRequest): Set<String> =
+        preparedTools.mapTo(linkedSetOf()) { it.function.name }
 
     override suspend fun normalize(request: GenerationRequest, snapshot: GenerationSnapshot): GenerationSnapshot {
         val calls = snapshot.toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
@@ -311,15 +316,13 @@ internal class DefaultChatGenerationRuntime(
 
     override suspend fun finalizeStream(request: GenerationRequest, snapshot: GenerationSnapshot): GenerationSnapshot {
         val current = snapshot.toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
-        if (current.isNotEmpty() && current.all { it.name.isNotEmpty() && it.arguments.isNotEmpty() }) return snapshot
+        if (current.isNotEmpty()) return snapshot
         if (snapshot.content.isBlank()) return snapshot
         val fallback = contentStrategy.extractFallbackToolCalls(snapshot.content)
         if (fallback.isEmpty()) return snapshot
+        // 文本 fallback 仅用于兼容展示清理；没有 Provider Completed IDs，绝不能转为可执行调用。
         return snapshot.copy(
             content = contentStrategy.stripToolCallMarkup(snapshot.content),
-            toolCalls = contentStrategy.mergeToolCalls(current, fallback).map {
-                GenerationToolCall(it.id, it.name, it.arguments)
-            },
         )
     }
 
@@ -628,7 +631,7 @@ internal class DefaultChatGenerationRuntime(
         }
     }
 
-    private fun toGenerationChunk(chunk: StreamChunk): GenerationChunk = when (chunk) {
+    private fun toGenerationChunk(chunk: StreamChunk): GenerationChunk? = when (chunk) {
         is StreamChunk.TextDelta -> GenerationChunk.Text(chunk.content, chunk.reasoning)
         is StreamChunk.Thinking -> GenerationChunk.Thinking(chunk.content)
         is StreamChunk.ToolCallDelta -> GenerationChunk.ToolCall(chunk.id, chunk.name, chunk.arguments)
@@ -647,7 +650,8 @@ internal class DefaultChatGenerationRuntime(
                 cause = chunk.cause,
             ),
         )
-        is StreamChunk.ToolCallLifecycle, StreamChunk.Done -> GenerationChunk.Done
+        is StreamChunk.Completed -> GenerationChunk.Completed(chunk.reason, chunk.completedToolCallIds)
+        is StreamChunk.ToolCallLifecycle -> null
     }
 
     private fun defaultRagPhases() = listOf(

@@ -52,10 +52,12 @@ class UnifiedLlmClientCancellationTest {
         val expected = (0 until 160).map { "chunk-$it" }
         val client = clientWith(FakeProtocol(flow {
             expected.forEach { emit(StreamChunk.TextDelta(it)) }
+            emit(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN))
         }))
 
         val actual = client.sendStream(params(), StreamConfig()).toList()
-            .map { (it as StreamChunk.TextDelta).content }
+            .filterIsInstance<StreamChunk.TextDelta>()
+            .map { it.content }
 
         assertThat(actual).containsExactlyElementsIn(expected).inOrder()
     }
@@ -67,17 +69,22 @@ class UnifiedLlmClientCancellationTest {
             repeat(count) { index ->
                 emit(StreamChunk.ToolCallDelta("tool-$index", "tool", "{}", index))
             }
+            emit(StreamChunk.Completed(
+                com.promenar.nexara.domain.generation.CompletionReason.TOOL_CALLS,
+                (0 until count).map { "tool-$it" },
+            ))
         }))
 
         val actual = client.sendStream(params(), StreamConfig()).toList()
 
-        assertThat(actual).hasSize(count * 2)
+        assertThat(actual).hasSize(count * 2 + 1)
         repeat(count) { index ->
             assertThat(actual[index * 2]).isInstanceOf(StreamChunk.ToolCallLifecycle::class.java)
             assertThat(actual[index * 2 + 1]).isEqualTo(
                 StreamChunk.ToolCallDelta("tool-$index", "tool", "{}", index),
             )
         }
+        assertThat(actual.last()).isInstanceOf(StreamChunk.Completed::class.java)
     }
 
     @Test
@@ -95,7 +102,7 @@ class UnifiedLlmClientCancellationTest {
     fun `onRequestEnd只在正常或错误分片终态执行而取消时不执行`() = runTest {
         var normalEndCount = 0
         val normal = clientWith(
-            FakeProtocol(flow { emit(StreamChunk.Done) }),
+            FakeProtocol(flow { emit(StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN)) }),
             listOf(object : LlmMiddleware {
                 override val name = "normal"
                 override suspend fun onRequestEnd(params: StreamTextParams) { normalEndCount++ }

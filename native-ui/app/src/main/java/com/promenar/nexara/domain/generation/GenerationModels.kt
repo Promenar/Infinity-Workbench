@@ -16,6 +16,12 @@ enum class GenerationPhase {
 
 enum class GenerationRuntimePolicy { BACKGROUND_ALLOWED, FOREGROUND_ONLY }
 
+/** Provider 明确声明的成功终止原因；不得由 EOF 或局部内容推断。 */
+enum class CompletionReason { END_TURN, TOOL_CALLS }
+
+/** 单次生成允许确认并执行的工具调用总数，与工具循环轮次上限相互独立。 */
+const val MAX_TOOL_CALLS_PER_GENERATION = 10
+
 data class GenerationRequest(
     val sessionId: String,
     val assistantMessageId: String,
@@ -54,7 +60,10 @@ sealed interface GenerationChunk {
     data class Usage(val input: Int, val output: Int, val total: Int) : GenerationChunk
     data class Citations(val citations: List<GenerationCitation>) : GenerationChunk
     data class Failure(val failure: GenerationFailure) : GenerationChunk
-    data object Done : GenerationChunk
+    data class Completed(
+        val reason: CompletionReason,
+        val completedToolCallIds: List<String> = emptyList(),
+    ) : GenerationChunk
 }
 
 enum class GenerationToolDecision { CONTINUE, WAIT_FOR_APPROVAL, COMPLETE }

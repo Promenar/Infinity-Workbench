@@ -140,7 +140,7 @@ class RealLlmProviderIntegrationTest {
                         ) payloadSeen = true
                         is StreamChunk.Thinking -> if (chunk.content.isNotBlank()) payloadSeen = true
                         is StreamChunk.Error -> errorSeen = true
-                        StreamChunk.Done -> doneSeen = true
+                        is StreamChunk.Completed -> doneSeen = true
                         else -> Unit
                     }
                 }

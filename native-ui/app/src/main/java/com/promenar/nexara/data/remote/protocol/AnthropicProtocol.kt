@@ -16,10 +16,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
+import com.promenar.nexara.domain.generation.CompletionReason
 
 private data class ToolUseAccumulator(
     val id: String,
     val name: String,
+    val initialArguments: String,
     val arguments: StringBuilder = StringBuilder()
 )
 
@@ -47,10 +49,14 @@ class AnthropicProtocol(
     private var activeChannel: ByteReadChannel? = null
 
     private val toolUseAccumulator = mutableMapOf<Int, ToolUseAccumulator>()
+    private val completedToolUses = mutableMapOf<Int, ProtocolToolCall>()
+    private var pendingStopReason: CompletionReason? = null
 
     override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = channelFlow {
         activeChannel = null
         toolUseAccumulator.clear()
+        completedToolUses.clear()
+        pendingStopReason = null
 
         try {
             httpClient.preparePost(inferenceUrl()) {
@@ -64,7 +70,13 @@ class AnthropicProtocol(
                 setBody(buildRequestBody(request, stream = true))
             }.execute { response ->
                 if (!response.status.isSuccess()) {
-                    val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
+                    val errorBody = try {
+                        response.bodyAsText()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        ""
+                    }
                     send(classifyProtocolError(
                         statusCode = response.status.value,
                         responseBody = errorBody,
@@ -90,6 +102,7 @@ class AnthropicProtocol(
                 val timeoutMs = request.streamTimeout ?: 120000L
                 var currentEvent = ""
                 var currentData = ""
+                var sawTerminal = false
 
                 while (!channel.isClosedForRead) {
                     sb.clear()
@@ -103,6 +116,7 @@ class AnthropicProtocol(
                             retryable = true,
                             technical = "Streaming timeout after ${timeoutMs / 1000}s of inactivity.",
                         ))
+                        sawTerminal = true
                         break
                     }
                     if (!readSuccess) break
@@ -110,9 +124,10 @@ class AnthropicProtocol(
                     val line = sb.toString()
                     if (line.isEmpty()) {
                         if (currentData.isNotEmpty()) {
-                            processSseEvent(currentEvent, currentData)
+                            sawTerminal = processSseEvent(currentEvent, currentData)
                             currentEvent = ""
                             currentData = ""
+                            if (sawTerminal) break
                         }
                         continue
                     }
@@ -123,6 +138,7 @@ class AnthropicProtocol(
                             retryable = true,
                             technical = "Received HTML response instead of JSON stream.",
                         ))
+                        sawTerminal = true
                         break
                     }
 
@@ -146,9 +162,11 @@ class AnthropicProtocol(
                 }
 
                 if (currentData.isNotEmpty()) {
-                    processSseEvent(currentEvent, currentData)
+                    sawTerminal = processSseEvent(currentEvent, currentData)
                 }
-                send(StreamChunk.Done)
+                if (!sawTerminal) {
+                    send(truncatedStreamError("Anthropic stream ended before message_stop"))
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -175,7 +193,13 @@ class AnthropicProtocol(
             throw Exception("[${normalized.category}] ${normalized.technicalMessage}")
         }
 
-        val responseText = try { response.bodyAsText() } catch (_: Exception) { "" }
+        val responseText = try {
+            response.bodyAsText()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            ""
+        }
 
         if (!response.status.isSuccess()) {
             val normalized = ErrorNormalizer.normalize(
@@ -240,12 +264,12 @@ class AnthropicProtocol(
             val nonSystemMessages = request.messages.filter { it.role != "system" }
             put("messages", JsonArray(nonSystemMessages.map { msg ->
                 buildJsonObject {
-                    put("role", msg.role)
+                    put("role", if (msg.role == "tool") "user" else msg.role)
                     
                     val contentParts = mutableListOf<JsonObject>()
                     
                     // 1. Handle Text Content
-                    if (msg.content.isNotEmpty()) {
+                    if (msg.content.isNotEmpty() && msg.role != "tool") {
                         contentParts.add(buildJsonObject {
                             put("type", "text")
                             put("text", msg.content)
@@ -292,6 +316,14 @@ class AnthropicProtocol(
                         }
                     }
 
+                    if (msg.role == "tool") {
+                        contentParts.add(buildJsonObject {
+                            put("type", "tool_result")
+                            put("tool_use_id", msg.toolCallId.orEmpty())
+                            put("content", msg.content)
+                        })
+                    }
+
                     // 5. Finalize Content Field
                     if (contentParts.size == 1 && contentParts[0]["type"]?.jsonPrimitive?.content == "text" && msg.role != "tool") {
                         // Optimization: plain text string if only one text part (and not a tool result which might prefer blocks)
@@ -302,10 +334,6 @@ class AnthropicProtocol(
                         put("content", "")
                     }
 
-                    // 6. Handle Tool Result metadata
-                    if (msg.role == "tool") {
-                        msg.toolCallId?.let { put("tool_use_id", it) }
-                    }
                 }
             }))
 
@@ -343,13 +371,14 @@ class AnthropicProtocol(
 
     private var inputTokenCount = 0
 
-    private suspend fun SendChannel<StreamChunk>.processSseEvent(event: String, data: String) {
-        if (data.isEmpty()) return
+    private suspend fun SendChannel<StreamChunk>.processSseEvent(event: String, data: String): Boolean {
+        if (data.isEmpty()) return false
 
         val eventData = try {
             json.parseToJsonElement(data).jsonObject
         } catch (_: Exception) {
-            return
+            send(streamContractError("Malformed Anthropic stream event"))
+            return true
         }
 
         val type = eventData["type"]?.jsonPrimitive?.contentOrNull ?: event
@@ -360,7 +389,22 @@ class AnthropicProtocol(
             "content_block_stop" -> processContentBlockStop(eventData)
             "message_delta" -> processMessageDelta(eventData)
             "message_start" -> processMessageStart(eventData)
-            "message_stop" -> { }
+            "message_stop" -> {
+                val reason = pendingStopReason
+                    ?: run {
+                        send(streamContractError("Anthropic message_stop missing stop_reason"))
+                        return true
+                    }
+                if (toolUseAccumulator.isNotEmpty()) {
+                    send(streamContractError("Anthropic message_stop has incomplete tool blocks"))
+                    return true
+                }
+                send(validatedCompletion(
+                    reason,
+                    completedToolUses.toSortedMap().values.toList(),
+                ))
+                return true
+            }
             "ping" -> { }
             "error" -> {
                 val errorObject = eventData["error"] as? JsonObject
@@ -369,8 +413,10 @@ class AnthropicProtocol(
                     code = errorObject?.stringField("code"),
                     technical = errorObject?.stringField("message")?.ifBlank { data } ?: data,
                 ))
+                return true
             }
         }
+        return false
     }
 
     private suspend fun SendChannel<StreamChunk>.processContentBlockDelta(eventData: JsonObject) {
@@ -407,6 +453,15 @@ class AnthropicProtocol(
     }
 
     private suspend fun SendChannel<StreamChunk>.processMessageDelta(eventData: JsonObject) {
+        val stopReason = (eventData["delta"] as? JsonObject)?.stringField("stop_reason").orEmpty()
+        if (stopReason.isNotEmpty()) {
+            if (pendingStopReason != null) throw IllegalStateException("Duplicate Anthropic stop_reason")
+            pendingStopReason = when (stopReason) {
+                "end_turn" -> CompletionReason.END_TURN
+                "tool_use" -> CompletionReason.TOOL_CALLS
+                else -> throw IllegalStateException("Unknown Anthropic stop_reason: $stopReason")
+            }
+        }
         val usage = eventData["usage"]?.jsonObject
         if (usage != null) {
             val outputTokens = usage["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
@@ -437,7 +492,11 @@ class AnthropicProtocol(
         val name = contentBlock["name"]?.jsonPrimitive?.contentOrNull ?: return
         val index = eventData["index"]?.jsonPrimitive?.intOrNull ?: 0
 
-        toolUseAccumulator[index] = ToolUseAccumulator(id, name)
+        check(index !in toolUseAccumulator && index !in completedToolUses) {
+            "Duplicate Anthropic content block index"
+        }
+        val initialArguments = (contentBlock["input"] as? JsonObject)?.toString().orEmpty()
+        toolUseAccumulator[index] = ToolUseAccumulator(id, name, initialArguments)
 
         send(StreamChunk.ToolCallDelta(
             id = id,
@@ -451,12 +510,15 @@ class AnthropicProtocol(
         val index = eventData["index"]?.jsonPrimitive?.intOrNull ?: return
         val acc = toolUseAccumulator.remove(index) ?: return
 
-        val argsStr = acc.arguments.toString()
-        // 验证完整 JSON 合法性（静默失败，不阻塞流）
-        try {
-            json.parseToJsonElement(argsStr)
-        } catch (_: Exception) {
+        val streamedArguments = acc.arguments.toString()
+        val argsStr = streamedArguments.ifEmpty { acc.initialArguments }
+        check(runCatching { json.parseToJsonElement(argsStr) is JsonObject }.getOrDefault(false)) {
+            "Anthropic tool input is not a JSON object"
         }
+        if (streamedArguments.isEmpty()) {
+            send(StreamChunk.ToolCallDelta(acc.id, acc.name, argsStr, index))
+        }
+        completedToolUses[index] = ProtocolToolCall(acc.id, acc.name, argsStr)
 
         // 工具调用参数已通过 input_json_delta incremental fragments 在流式过程中发送完毕
         // ViewModel 侧已完成累积，content_block_stop 不再重复发送，避免双重累积

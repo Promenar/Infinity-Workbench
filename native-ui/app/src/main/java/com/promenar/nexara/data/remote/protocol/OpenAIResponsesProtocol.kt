@@ -38,6 +38,14 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import com.promenar.nexara.domain.generation.CompletionReason
+
+private data class ResponsesToolAccumulator(
+    var itemId: String = "",
+    var callId: String = "",
+    var name: String = "",
+    var arguments: String = "",
+)
 
 class OpenAIResponsesProtocol(
     private val baseUrl: String,
@@ -72,7 +80,13 @@ class OpenAIResponsesProtocol(
                 setBody(buildRequestBody(request, stream = true))
             }.execute { response ->
                 if (!response.status.isSuccess()) {
-                    val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
+                    val errorBody = try {
+                        response.bodyAsText()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        ""
+                    }
                     send(classifyProtocolError(
                         statusCode = response.status.value,
                         responseBody = errorBody,
@@ -84,6 +98,8 @@ class OpenAIResponsesProtocol(
                 val channel = response.body<ByteReadChannel>()
                 activeChannel = channel
                 val sb = StringBuilder()
+                val toolCalls = mutableMapOf<Int, ResponsesToolAccumulator>()
+                var sawTerminal = false
                 while (!channel.isClosedForRead) {
                     sb.clear()
                     val timeoutMs = request.streamTimeout ?: 120000L
@@ -96,17 +112,30 @@ class OpenAIResponsesProtocol(
                             retryable = true,
                             technical = "Streaming timeout after ${timeoutMs / 1000}s of inactivity.",
                         ))
+                        sawTerminal = true
                         break
                     }
                     if (!readSuccess) break
 
                     val data = extractSseData(sb.toString().trim()) ?: continue
-                    if (data.trim() == "[DONE]") break
-                    val chunk = try { json.parseToJsonElement(data).jsonObject } catch (_: Exception) { continue }
-                    val shouldStop = processResponsesStreamChunk(chunk)
-                    if (shouldStop) break
+                    if (data.trim() == "[DONE]") continue
+                    val chunk = try {
+                        json.parseToJsonElement(data).jsonObject
+                    } catch (_: Exception) {
+                        send(streamContractError("Malformed OpenAI Responses stream event"))
+                        sawTerminal = true
+                        break
+                    }
+                    val terminal = processResponsesStreamChunk(chunk, toolCalls)
+                    if (terminal != null) {
+                        send(terminal)
+                        sawTerminal = true
+                        break
+                    }
                 }
-                send(StreamChunk.Done)
+                if (!sawTerminal) {
+                    send(truncatedStreamError("OpenAI Responses stream ended before response.completed"))
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -131,7 +160,13 @@ class OpenAIResponsesProtocol(
             throw Exception("[${normalized.category}] ${normalized.technicalMessage}")
         }
 
-        val responseText = try { response.bodyAsText() } catch (_: Exception) { "" }
+        val responseText = try {
+            response.bodyAsText()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            ""
+        }
         if (!response.status.isSuccess()) {
             val normalized = ErrorNormalizer.normalize(HttpStatusException(response.status.value, responseText))
             throw Exception("[HTTP ${response.status.value}][${normalized.category}] ${responseText.take(300)}")
@@ -179,7 +214,7 @@ class OpenAIResponsesProtocol(
         return buildJsonObject {
             put("model", request.model.ifEmpty { this@OpenAIResponsesProtocol.model })
             put("stream", stream)
-            put("input", JsonArray(request.messages.map { msg -> msg.toResponsesMessage() }))
+            put("input", JsonArray(request.messages.flatMap { msg -> msg.toResponsesInputItems() }))
             request.temperature?.let { put("temperature", it) }
             request.topP?.let { put("top_p", it) }
             request.maxTokens?.let { put("max_output_tokens", it) }
@@ -197,59 +232,140 @@ class OpenAIResponsesProtocol(
         }.toString()
     }
 
-    private fun ProtocolMessage.toResponsesMessage(): JsonObject {
-        return buildJsonObject {
-            put("role", when (role) {
-                "system" -> "developer"
-                "tool" -> "user"
-                else -> role
+    private fun ProtocolMessage.toResponsesInputItems(): List<JsonObject> {
+        if (role == "tool") {
+            val callId = toolCallId.orEmpty()
+            return listOf(buildJsonObject {
+                put("type", "function_call_output")
+                put("call_id", callId)
+                put("output", content)
             })
-            val hasMultimodal = imageUrls?.isNotEmpty() == true || audioData?.isNotEmpty() == true
-            if (!hasMultimodal) {
-                put("content", content)
-            } else {
-                put("content", buildJsonArray {
-                    add(buildJsonObject {
-                        put("type", "input_text")
-                        put("text", content)
-                    })
-                    imageUrls?.forEach { img ->
+        }
+        val items = mutableListOf<JsonObject>()
+        if (content.isNotEmpty() || toolCalls.isNullOrEmpty()) {
+            items += buildJsonObject {
+                put("role", if (role == "system") "developer" else role)
+                val hasMultimodal = imageUrls?.isNotEmpty() == true || audioData?.isNotEmpty() == true
+                if (!hasMultimodal) {
+                    put("content", content)
+                } else {
+                    put("content", buildJsonArray {
                         add(buildJsonObject {
-                            put("type", "input_image")
-                            put("image_url", img.url ?: "data:${img.mimeType};base64,${img.base64}")
+                            put("type", "input_text")
+                            put("text", content)
                         })
-                    }
-                })
+                        imageUrls?.forEach { img ->
+                            add(buildJsonObject {
+                                put("type", "input_image")
+                                put("image_url", img.url ?: "data:${img.mimeType};base64,${img.base64}")
+                            })
+                        }
+                    })
+                }
             }
         }
+        if (role == "assistant") {
+            toolCalls.orEmpty().forEach { call ->
+                items += buildJsonObject {
+                    put("type", "function_call")
+                    put("call_id", call.id)
+                    put("name", call.name)
+                    put("arguments", call.arguments)
+                }
+            }
+        }
+        return items
     }
 
-    private suspend fun SendChannel<StreamChunk>.processResponsesStreamChunk(chunk: JsonObject): Boolean {
+    private suspend fun SendChannel<StreamChunk>.processResponsesStreamChunk(
+        chunk: JsonObject,
+        toolCalls: MutableMap<Int, ResponsesToolAccumulator>,
+    ): StreamChunk? {
         when (val type = chunk.stringField("type")) {
             "response.output_text.delta" -> {
                 send(StreamChunk.TextDelta(chunk.stringField("delta")))
             }
+            "response.output_item.added", "response.output_item.done" -> {
+                val index = chunk["output_index"]?.jsonPrimitive?.intOrNull
+                    ?: return streamContractError("Responses function_call missing output_index")
+                val item = chunk["item"] as? JsonObject ?: return null
+                if (item.stringField("type") == "function_call") {
+                    mergeResponsesToolCall(index, item, toolCalls)
+                }
+            }
+            "response.function_call_arguments.delta" -> {
+                val index = chunk["output_index"]?.jsonPrimitive?.intOrNull
+                    ?: return streamContractError("Responses arguments delta missing output_index")
+                val accumulator = toolCalls[index]
+                    ?: return streamContractError("Responses arguments delta missing function_call")
+                val delta = chunk.stringField("delta")
+                accumulator.arguments += delta
+                send(StreamChunk.ToolCallDelta(
+                    accumulator.callId,
+                    accumulator.name,
+                    delta,
+                    index,
+                ))
+            }
+            "response.function_call_arguments.done" -> {
+                val index = chunk["output_index"]?.jsonPrimitive?.intOrNull
+                    ?: return streamContractError("Responses arguments done missing output_index")
+                val accumulator = toolCalls[index]
+                    ?: return streamContractError("Responses arguments done missing function_call")
+                val finalArguments = chunk.stringField("arguments")
+                if (finalArguments.isNotEmpty() && finalArguments != accumulator.arguments) {
+                    if (!finalArguments.startsWith(accumulator.arguments)) {
+                        return streamContractError("Responses argument fragments do not match done event")
+                    }
+                    val remainder = finalArguments.removePrefix(accumulator.arguments)
+                    accumulator.arguments = finalArguments
+                    if (remainder.isNotEmpty()) {
+                        send(StreamChunk.ToolCallDelta(
+                            accumulator.callId,
+                            accumulator.name,
+                            remainder,
+                            index,
+                        ))
+                    }
+                }
+            }
             "response.completed" -> {
                 val response = chunk["response"]?.jsonObject
+                    ?: return streamContractError("Responses completed event missing response")
+                if (response.stringField("status") != "completed") {
+                    return streamContractError("Responses completed event has unknown status")
+                }
+                (response["output"] as? JsonArray).orEmpty().forEachIndexed { index, element ->
+                    val item = element as? JsonObject ?: return@forEachIndexed
+                    if (item.stringField("type") == "function_call") {
+                        mergeResponsesToolCall(index, item, toolCalls)
+                    }
+                }
                 val usage = response?.get("usage")?.jsonObject?.toResponsesUsage()
                 if (usage != null) send(StreamChunk.Usage(usage))
-                return true
+                val calls = toolCalls.toSortedMap().values.map {
+                    ProtocolToolCall(it.callId, it.name, it.arguments)
+                }
+                return validatedCompletion(
+                    if (calls.isEmpty()) CompletionReason.END_TURN else CompletionReason.TOOL_CALLS,
+                    calls,
+                )
             }
-            "response.failed", "error" -> {
+            "response.failed", "response.incomplete", "error" -> {
                 val errorObject = when (type) {
-                    "response.failed" -> (chunk["response"] as? JsonObject)?.get("error") as? JsonObject
+                    "response.failed", "response.incomplete" ->
+                        (chunk["response"] as? JsonObject)?.get("error") as? JsonObject
                         ?: chunk["error"] as? JsonObject
                     else -> chunk["error"] as? JsonObject
                 }
-                send(ProtocolErrorClassifier.classify(
+                return ProtocolErrorClassifier.classify(
                     type = errorObject?.stringField("type"),
                     code = errorObject?.stringField("code"),
                     technical = errorObject?.stringField("message")
                         ?.ifBlank { chunk.stringField("message") }
                         ?.ifBlank { null }
                         ?: "OpenAI Responses request failed.",
-                ))
-                return true
+                )
             }
             else -> {
                 val delta = chunk.stringField("delta")
@@ -258,11 +374,54 @@ class OpenAIResponsesProtocol(
                 }
             }
         }
-        return false
+        return null
+    }
+
+    private fun mergeResponsesToolCall(
+        index: Int,
+        item: JsonObject,
+        toolCalls: MutableMap<Int, ResponsesToolAccumulator>,
+    ) {
+        val accumulator = toolCalls.getOrPut(index) { ResponsesToolAccumulator() }
+        item.stringField("id").takeIf(String::isNotEmpty)?.let { accumulator.itemId = it }
+        item.stringField("call_id").takeIf(String::isNotEmpty)?.let { accumulator.callId = it }
+        item.stringField("name").takeIf(String::isNotEmpty)?.let { accumulator.name = it }
+        val arguments = item.stringField("arguments")
+        if (arguments.isNotEmpty()) {
+            if (accumulator.arguments.isNotEmpty() && arguments != accumulator.arguments) {
+                check(arguments.startsWith(accumulator.arguments)) {
+                    "Responses function_call arguments mismatch"
+                }
+            }
+            accumulator.arguments = arguments
+        }
     }
 
     private fun parseSyncResponse(responseText: String): PromptResponse {
         val root = json.parseToJsonElement(responseText).jsonObject
+        val toolCalls = root["output"]?.jsonArray
+            ?.mapNotNull { outputItem ->
+                val item = outputItem as? JsonObject ?: return@mapNotNull null
+                if (item.stringField("type") != "function_call") return@mapNotNull null
+                ProtocolToolCall(
+                    id = item.stringField("call_id"),
+                    name = item.stringField("name"),
+                    arguments = item.stringField("arguments"),
+                )
+            }
+            .orEmpty()
+        if (toolCalls.isNotEmpty()) {
+            val ids = toolCalls.map { it.id }
+            check(
+                ids.all(String::isNotBlank) &&
+                    ids.distinct().size == ids.size &&
+                    toolCalls.all { call ->
+                        call.name.isNotBlank() &&
+                            runCatching { json.parseToJsonElement(call.arguments) is JsonObject }
+                                .getOrDefault(false)
+                    },
+            ) { "Responses sync function_call is incomplete" }
+        }
         val outputText = root.stringField("output_text").ifBlank {
             root["output"]?.jsonArray
                 ?.flatMap { outputItem ->
@@ -275,7 +434,11 @@ class OpenAIResponsesProtocol(
                 .orEmpty()
         }
         val usage = root["usage"]?.jsonObject?.toResponsesUsage()
-        return PromptResponse(content = outputText, usage = usage)
+        return PromptResponse(
+            content = outputText,
+            toolCalls = toolCalls.ifEmpty { null },
+            usage = usage,
+        )
     }
 
     private fun JsonObject.toResponsesUsage(): ProtocolUsage {

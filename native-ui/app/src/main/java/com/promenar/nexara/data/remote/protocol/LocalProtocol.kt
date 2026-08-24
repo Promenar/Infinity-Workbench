@@ -3,6 +3,7 @@ package com.promenar.nexara.data.remote.protocol
 import com.promenar.nexara.data.local.inference.LocalInferenceEngine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import com.promenar.nexara.domain.generation.CompletionReason
 
 class LocalProtocol(
     private val engine: LocalInferenceEngine,
@@ -36,7 +37,7 @@ class LocalProtocol(
             emit(StreamChunk.TextDelta(content = tokenText))
         }
 
-        emit(StreamChunk.Done)
+        emit(StreamChunk.Completed(CompletionReason.END_TURN))
     }
 
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {

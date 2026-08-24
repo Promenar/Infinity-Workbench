@@ -104,7 +104,7 @@ class OpenAIProtocolTest {
                 val chunks: List<StreamChunk> = protocol.sendPrompt(request).toList()
 
                 val textDeltas = chunks.filterIsInstance<StreamChunk.TextDelta>()
-                val doneChunks = chunks.filterIsInstance<StreamChunk.Done>()
+                val doneChunks = chunks.filterIsInstance<StreamChunk.Completed>()
                 val errorChunks = chunks.filterIsInstance<StreamChunk.Error>()
 
                 assertThat(errorChunks).isEmpty()

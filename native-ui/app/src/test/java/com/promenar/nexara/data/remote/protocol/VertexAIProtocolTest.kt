@@ -92,7 +92,7 @@ class VertexAIProtocolTest {
 
                 val chunks: List<StreamChunk> = protocol.sendPrompt(request).toList()
 
-                val doneChunks = chunks.filterIsInstance<StreamChunk.Done>()
+                val doneChunks = chunks.filterIsInstance<StreamChunk.Completed>()
                 assertThat(doneChunks).hasSize(1)
 
                 val errorChunks = chunks.filterIsInstance<StreamChunk.Error>()
@@ -126,7 +126,7 @@ class VertexAIProtocolTest {
 
                 val chunks: List<StreamChunk> = protocol.sendPrompt(request).toList()
 
-                val doneChunks = chunks.filterIsInstance<StreamChunk.Done>()
+                val doneChunks = chunks.filterIsInstance<StreamChunk.Completed>()
                 assertThat(doneChunks).hasSize(1)
 
                 val errorChunks = chunks.filterIsInstance<StreamChunk.Error>()
@@ -157,7 +157,7 @@ class VertexAIProtocolTest {
 
                 val chunks: List<StreamChunk> = protocol.sendPrompt(request).toList()
 
-                val doneChunks = chunks.filterIsInstance<StreamChunk.Done>()
+                val doneChunks = chunks.filterIsInstance<StreamChunk.Completed>()
                 val textDeltas = chunks.filterIsInstance<StreamChunk.TextDelta>()
                 val errorChunks = chunks.filterIsInstance<StreamChunk.Error>()
 

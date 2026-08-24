@@ -4,10 +4,13 @@ import kotlinx.coroutines.flow.Flow
 import com.promenar.nexara.R
 import com.promenar.nexara.data.remote.parser.NormalizedError
 import com.promenar.nexara.domain.generation.GenerationFailureCode
+import com.promenar.nexara.domain.generation.CompletionReason
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class ImageInput(
@@ -169,7 +172,11 @@ sealed class StreamChunk {
         val events: List<ToolCallLifecycleEvent>
     ) : StreamChunk()
 
-    data object Done : StreamChunk()
+    /** 仅由 Provider 的显式成功终态产生；EOF 不能映射为 Completed。 */
+    data class Completed(
+        val reason: CompletionReason,
+        val completedToolCallIds: List<String> = emptyList(),
+    ) : StreamChunk()
 }
 
 sealed class ProtocolType(
@@ -332,4 +339,38 @@ fun NormalizedError.toStreamChunkError(cause: Throwable? = null): StreamChunk.Er
         technical = failure.technical,
         cause = failure.cause,
     )
+}
+
+internal fun truncatedStreamError(technical: String): StreamChunk.Error = StreamChunk.Error(
+    code = GenerationFailureCode.NETWORK,
+    retryable = true,
+    technical = technical,
+)
+
+internal fun streamContractError(technical: String): StreamChunk.Error = StreamChunk.Error(
+    code = GenerationFailureCode.SERVER,
+    retryable = false,
+    technical = technical,
+)
+
+/** 在发出成功 terminal 前集中核验工具调用的完整性。 */
+internal fun validatedCompletion(
+    reason: CompletionReason,
+    calls: List<ProtocolToolCall>,
+): StreamChunk {
+    if (reason == CompletionReason.END_TURN) {
+        return if (calls.isEmpty()) StreamChunk.Completed(reason)
+        else streamContractError("END_TURN contained tool calls")
+    }
+    val ids = calls.map { it.id }
+    val valid = calls.isNotEmpty() &&
+        ids.all(String::isNotBlank) &&
+        ids.distinct().size == ids.size &&
+        calls.all { call ->
+            call.name.isNotBlank() && runCatching {
+                Json.parseToJsonElement(call.arguments) is JsonObject
+            }.getOrDefault(false)
+        }
+    return if (valid) StreamChunk.Completed(reason, ids)
+    else streamContractError("TOOL_CALLS terminal contained incomplete calls")
 }

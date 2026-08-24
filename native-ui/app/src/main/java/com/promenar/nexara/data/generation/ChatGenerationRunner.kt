@@ -11,11 +11,17 @@ import com.promenar.nexara.domain.generation.GenerationSnapshot
 import com.promenar.nexara.domain.generation.GenerationToolCall
 import com.promenar.nexara.domain.generation.GenerationToolDecision
 import com.promenar.nexara.domain.generation.GenerationTerminalStatus
+import com.promenar.nexara.domain.generation.CompletionReason
+import com.promenar.nexara.domain.generation.GenerationFailure
+import com.promenar.nexara.domain.generation.GenerationFailureCode
+import com.promenar.nexara.domain.generation.MAX_TOOL_CALLS_PER_GENERATION
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 interface ChatGenerationRuntime {
     suspend fun prepare(request: GenerationRequest)
@@ -24,6 +30,8 @@ interface ChatGenerationRuntime {
     suspend fun normalize(request: GenerationRequest, snapshot: GenerationSnapshot): GenerationSnapshot = snapshot
     suspend fun finalizeStream(request: GenerationRequest, snapshot: GenerationSnapshot): GenerationSnapshot = snapshot
     suspend fun persist(request: GenerationRequest, snapshot: GenerationSnapshot)
+    /** 本轮 Prompt 中实际发送给 Provider 的不可变工具名快照。 */
+    fun knownToolNames(request: GenerationRequest): Set<String> = emptySet()
     suspend fun handleTools(
         request: GenerationRequest,
         toolCalls: List<GenerationToolCall>,
@@ -158,13 +166,19 @@ class ChatGenerationRunner(
                 return
             }
             var attempt = 0
+            var confirmedToolCallCount = 0
             while (true) {
                 phase(GenerationPhase.CONNECTING)
                 val stream = runtime.stream(request, attempt)
                 phase(GenerationPhase.THINKING)
                 var streamingPhaseEmitted = false
                 val roundTools = linkedMapOf<String, GenerationToolCall>()
+                var completed: GenerationChunk.Completed? = null
+                val knownToolNames = runtime.knownToolNames(request)
                 stream.collect { chunk ->
+                    if (completed != null) {
+                        throw contractFailure("Provider emitted data after Completed")
+                    }
                     when (chunk) {
                         is GenerationChunk.Text -> {
                             if (!streamingPhaseEmitted) {
@@ -206,17 +220,27 @@ class ChatGenerationRunner(
                         is GenerationChunk.Failure -> {
                             snapshot = snapshot.copy(failure = chunk.failure)
                             snapshot = persist(request, snapshot, emit)
-                            if (snapshot.toolCalls.isEmpty() && snapshot.content.isBlank()) {
-                                throw GenerationFailedException(chunk.failure)
-                            }
+                            throw GenerationFailedException(chunk.failure)
                         }
-                        GenerationChunk.Done -> Unit
+                        is GenerationChunk.Completed -> completed = chunk
                     }
                 }
+                val terminal = completed
+                    ?: throw GenerationFailedException(GenerationFailure(
+                        code = GenerationFailureCode.NETWORK,
+                        technical = "Provider stream ended without explicit Completed",
+                    ))
                 val finalized = runtime.finalizeStream(request, snapshot)
                 if (finalized != snapshot) snapshot = persist(request, finalized, emit)
                 val effectiveTools = snapshot.toolCalls
-                if (effectiveTools.isEmpty()) break
+                validateCompletedRound(terminal, effectiveTools, knownToolNames)
+                if (terminal.reason == CompletionReason.END_TURN) break
+                confirmedToolCallCount += effectiveTools.size
+                if (confirmedToolCallCount > MAX_TOOL_CALLS_PER_GENERATION) {
+                    throw contractFailure(
+                        "Generation exceeded $MAX_TOOL_CALLS_PER_GENERATION confirmed tool calls",
+                    )
+                }
                 phase(GenerationPhase.WAITING_APPROVAL)
                 when (runtime.handleTools(request, effectiveTools)) {
                     GenerationToolDecision.CONTINUE -> {
@@ -331,4 +355,45 @@ class ChatGenerationRunner(
         }
         return normalized
     }
+
+    private fun validateCompletedRound(
+        terminal: GenerationChunk.Completed,
+        toolCalls: List<GenerationToolCall>,
+        knownToolNames: Set<String>,
+    ) {
+        val terminalIds = terminal.completedToolCallIds
+        if (terminalIds.any(String::isBlank) || terminalIds.distinct().size != terminalIds.size) {
+            throw contractFailure("Completed contains blank or duplicate tool IDs")
+        }
+        when (terminal.reason) {
+            CompletionReason.END_TURN -> {
+                if (toolCalls.isNotEmpty() || terminalIds.isNotEmpty()) {
+                    throw contractFailure("END_TURN contained executable tool calls")
+                }
+            }
+            CompletionReason.TOOL_CALLS -> {
+                if (toolCalls.isEmpty() || terminalIds != toolCalls.map { it.id }) {
+                    throw contractFailure("Completed tool IDs do not exactly match streamed calls")
+                }
+                if (toolCalls.any { call ->
+                        call.id.isBlank() ||
+                            call.name.isBlank() ||
+                            call.name !in knownToolNames ||
+                            !runCatching { Json.parseToJsonElement(call.arguments) is JsonObject }
+                                .getOrDefault(false)
+                    }
+                ) {
+                    throw contractFailure("Tool call is unknown, incomplete, or has non-object arguments")
+                }
+            }
+        }
+    }
+
+    private fun contractFailure(technical: String): GenerationFailedException =
+        GenerationFailedException(
+            GenerationFailure(
+                code = GenerationFailureCode.SERVER,
+                technical = technical,
+            ),
+        )
 }

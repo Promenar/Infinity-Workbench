@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
+import com.promenar.nexara.domain.generation.CompletionReason
 
 class VertexAIProtocol(
     private val serviceAccountJson: String,
@@ -56,6 +57,15 @@ class VertexAIProtocol(
 
     override suspend fun sendPrompt(request: PromptRequest): Flow<StreamChunk> = channelFlow {
         activeChannel = null
+
+        if (request.containsToolProtocolData()) {
+            send(StreamChunk.Error(
+                code = com.promenar.nexara.domain.generation.GenerationFailureCode.INVALID_REQUEST,
+                retryable = false,
+                technical = "Vertex tool calls are disabled until thought-signature round trips are verified",
+            ))
+            return@channelFlow
+        }
 
         val credential = try {
             parsedCredential()
@@ -112,7 +122,13 @@ class VertexAIProtocol(
         }
 
         if (!response.status.isSuccess()) {
-            val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
+            val errorBody = try {
+                response.bodyAsText()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                ""
+            }
             val normalized = ErrorNormalizer.normalize(
                 HttpStatusException(response.status.value, errorBody)
             )
@@ -137,6 +153,8 @@ class VertexAIProtocol(
         try {
             val sb = StringBuilder()
             val timeoutMs = request.streamTimeout ?: 120000L
+            var completionReason: CompletionReason? = null
+            var failed = false
 
             while (!channel.isClosedForRead) {
                 sb.clear()
@@ -150,6 +168,7 @@ class VertexAIProtocol(
                         retryable = true,
                         technical = "Streaming timeout after ${timeoutMs / 1000}s of inactivity.",
                     ))
+                    failed = true
                     return@channelFlow
                 }
                 if (!readSuccess) break
@@ -163,13 +182,18 @@ class VertexAIProtocol(
                         retryable = false,
                         technical = "Received HTML response instead of JSON stream.",
                     ))
+                    failed = true
                     return@channelFlow
                 }
 
                 if (line.startsWith("data: ")) {
                     val data = line.substring(6).trim()
                     if (data == "[DONE]") break
-                    tryProcessJsonObject(data)
+                    val reason = tryProcessJsonObject(data)
+                    if (reason != null) {
+                        check(completionReason == null) { "Duplicate Vertex finishReason" }
+                        completionReason = reason
+                    }
                     continue
                 }
 
@@ -181,10 +205,21 @@ class VertexAIProtocol(
                 if (trimmed == ",") continue
 
                 val jsonCandidate = if (trimmed.endsWith(",")) trimmed.dropLast(1) else trimmed
-                tryProcessJsonObject(jsonCandidate)
+                val reason = tryProcessJsonObject(jsonCandidate)
+                if (reason != null) {
+                    check(completionReason == null) { "Duplicate Vertex finishReason" }
+                    completionReason = reason
+                }
             }
 
-            send(StreamChunk.Done)
+            if (!failed) {
+                val reason = completionReason
+                if (reason == null) {
+                    send(truncatedStreamError("Vertex stream ended before STOP finishReason"))
+                } else {
+                    send(StreamChunk.Completed(reason))
+                }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -195,6 +230,9 @@ class VertexAIProtocol(
     }
 
     override suspend fun sendPromptSync(request: PromptRequest): PromptResponse {
+        require(!request.containsToolProtocolData()) {
+            "Vertex tool calls are disabled until thought-signature round trips are verified"
+        }
         val credential = try {
             parsedCredential()
         } catch (cancelled: CancellationException) {
@@ -227,7 +265,13 @@ class VertexAIProtocol(
             throw Exception("[${normalized.category}] ${normalized.technicalMessage}")
         }
 
-        val responseText = try { response.bodyAsText() } catch (_: Exception) { "" }
+        val responseText = try {
+            response.bodyAsText()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            ""
+        }
 
         if (!response.status.isSuccess()) {
             val normalized = ErrorNormalizer.normalize(
@@ -308,7 +352,13 @@ class VertexAIProtocol(
             )
         }
 
-        val body = try { response.bodyAsText() } catch (_: Exception) { "" }
+        val body = try {
+            response.bodyAsText()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            ""
+        }
 
         if (!response.status.isSuccess()) {
             throw IllegalStateException("Vertex token exchange failed")
@@ -578,26 +628,24 @@ class VertexAIProtocol(
         return parts
     }
 
-    private suspend fun SendChannel<StreamChunk>.tryProcessJsonObject(jsonStr: String) {
+    private suspend fun SendChannel<StreamChunk>.tryProcessJsonObject(jsonStr: String): CompletionReason? {
         val chunk = try {
             json.parseToJsonElement(jsonStr).jsonObject
         } catch (_: Exception) {
-            return
+            throw IllegalStateException("Malformed Vertex stream event")
         }
 
-        processGeminiChunk(chunk)
+        return processGeminiChunk(chunk)
     }
 
-    private suspend fun SendChannel<StreamChunk>.processGeminiChunk(chunk: JsonObject) {
+    private suspend fun SendChannel<StreamChunk>.processGeminiChunk(chunk: JsonObject): CompletionReason? {
         val candidates = chunk["candidates"]?.jsonArray
-        if (candidates.isNullOrEmpty()) return
+        if (candidates.isNullOrEmpty()) return null
 
-        val candidate = candidates.firstOrNull()?.jsonObject ?: return
+        val candidate = candidates.firstOrNull()?.jsonObject ?: return null
 
         var text = ""
         var reasoning = ""
-        val toolCalls = mutableListOf<ProtocolToolCall>()
-
         val contentParts = candidate["content"]?.jsonObject?.get("parts")?.jsonArray
         if (contentParts != null) {
             for (partElement in contentParts) {
@@ -621,15 +669,7 @@ class VertexAIProtocol(
                 } else if (part.containsKey("text")) {
                     text += part.stringField("text")
                 } else if (part.containsKey("functionCall")) {
-                    val fc = part["functionCall"]!!.jsonObject
-                    val argsStr = fc["args"]?.let { args ->
-                        json.encodeToString(JsonElement.serializer(), args)
-                    } ?: "{}"
-                    toolCalls.add(ProtocolToolCall(
-                        id = "vcall_${System.currentTimeMillis()}_${(10000..99999).random()}",
-                        name = fc.stringField("name"),
-                        arguments = argsStr
-                    ))
+                    throw IllegalStateException("Vertex returned an unsupported functionCall")
                 }
             }
         }
@@ -648,12 +688,6 @@ class VertexAIProtocol(
             send(StreamChunk.TextDelta(text, reasoning.ifEmpty { null }))
         }
 
-        if (toolCalls.isNotEmpty()) {
-            for ((index, tc) in toolCalls.withIndex()) {
-                send(StreamChunk.ToolCallDelta(tc.id, tc.name, tc.arguments, index))
-            }
-        }
-
         if (citations != null && citations.isNotEmpty()) {
             send(StreamChunk.Citations(citations))
         }
@@ -665,6 +699,12 @@ class VertexAIProtocol(
                 output = usageMetadata["candidatesTokenCount"]?.jsonPrimitive?.intOrNull ?: 0,
                 total = usageMetadata["totalTokenCount"]?.jsonPrimitive?.intOrNull ?: 0
             )))
+        }
+
+        return when (val finishReason = candidate.stringField("finishReason")) {
+            "" -> null
+            "STOP" -> CompletionReason.END_TURN
+            else -> throw IllegalStateException("Unknown Vertex finishReason: $finishReason")
         }
     }
 
@@ -700,8 +740,6 @@ class VertexAIProtocol(
 
         var textContent = ""
         var reasoningContent = ""
-        val toolCallsList = mutableListOf<ProtocolToolCall>()
-
         val contentParts = candidate["content"]?.jsonObject?.get("parts")?.jsonArray
         if (contentParts != null) {
             for (partElement in contentParts) {
@@ -718,20 +756,12 @@ class VertexAIProtocol(
                 } else if (part.containsKey("text")) {
                     textContent += part.stringField("text")
                 } else if (part.containsKey("functionCall")) {
-                    val fc = part["functionCall"]!!.jsonObject
-                    val argsStr = fc["args"]?.let { args ->
-                        json.encodeToString(JsonElement.serializer(), args)
-                    } ?: "{}"
-                    toolCallsList.add(ProtocolToolCall(
-                        id = "vcall_${System.currentTimeMillis()}_${(10000..99999).random()}",
-                        name = fc.stringField("name"),
-                        arguments = argsStr
-                    ))
+                    throw IllegalStateException("Vertex returned an unsupported functionCall")
                 }
             }
         }
 
-        if (textContent.isEmpty() && reasoningContent.isEmpty() && toolCallsList.isEmpty()) {
+        if (textContent.isEmpty() && reasoningContent.isEmpty()) {
             if (finishReason != null && finishReason != "STOP" && finishReason != "END_TURN") {
                 throw Exception("Vertex AI response finished with reason: $finishReason")
             }
@@ -759,11 +789,15 @@ class VertexAIProtocol(
         return PromptResponse(
             content = textContent,
             reasoning = reasoningContent.ifEmpty { null },
-            toolCalls = toolCallsList.ifEmpty { null },
             usage = usage,
             citations = citations?.ifEmpty { null }
         )
     }
+
+    private fun PromptRequest.containsToolProtocolData(): Boolean =
+        !tools.isNullOrEmpty() || messages.any { message ->
+            message.role == "tool" || !message.toolCalls.isNullOrEmpty()
+        }
 
     private fun normalizeError(e: Exception): StreamChunk.Error {
         val normalized = ErrorNormalizer.normalize(e)

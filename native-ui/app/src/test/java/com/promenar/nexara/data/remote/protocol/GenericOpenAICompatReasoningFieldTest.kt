@@ -30,7 +30,7 @@ class GenericOpenAICompatReasoningFieldTest {
         val sseBody = """
             data: {"choices":[{"delta":{"reasoning":"hello"}}]}
 
-            data: {"choices":[{"delta":{"reasoning":" world"}}]}
+            data: {"choices":[{"delta":{"reasoning":" world"},"finish_reason":"stop"}]}
 
             data: [DONE]
 
@@ -49,7 +49,7 @@ class GenericOpenAICompatReasoningFieldTest {
             .joinToString("")
 
         assertThat(reasoningJoined).isEqualTo("hello world")
-        assertThat(chunks.count { it == StreamChunk.Done }).isEqualTo(1)
+        assertThat(chunks.filterIsInstance<StreamChunk.Completed>()).hasSize(1)
     }
 
     @Test
@@ -58,7 +58,7 @@ class GenericOpenAICompatReasoningFieldTest {
         val protocol = protocolResponding(
             status = HttpStatusCode.OK,
             body = """
-                data: {"choices":[{"delta":{"reasoning_content":"standard","reasoning":"alternate"}}]}
+                data: {"choices":[{"delta":{"reasoning_content":"standard","reasoning":"alternate"},"finish_reason":"stop"}]}
 
                 data: [DONE]
 
@@ -73,7 +73,7 @@ class GenericOpenAICompatReasoningFieldTest {
             .joinToString("")
 
         assertThat(reasoningJoined).isEqualTo("standard")
-        assertThat(chunks.count { it == StreamChunk.Done }).isEqualTo(1)
+        assertThat(chunks.filterIsInstance<StreamChunk.Completed>()).hasSize(1)
     }
 
     private fun protocolResponding(
