@@ -3,6 +3,7 @@ package com.promenar.nexara.data.session
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.test.runTest
@@ -87,6 +88,50 @@ class SessionExecutionGateTest {
         first.await()
         sameSession.await()
         otherSession.await()
+        assertThat(gate.deletionSequenceLockCountForTesting()).isEqualTo(0)
+    }
+
+    @Test
+    fun `高基数session删除序列结束后不保留历史mutex`() = runTest {
+        val gate = SessionExecutionGate()
+
+        repeat(2_000) { index ->
+            gate.withSessionDeletionSequence("session-$index") { Unit }
+        }
+
+        assertThat(gate.deletionSequenceLockCountForTesting()).isEqualTo(0)
+    }
+
+    @Test
+    fun `取消同session等待者释放引用但不得移除仍在使用的holder`() = runTest {
+        val gate = SessionExecutionGate()
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val first = async {
+            gate.withSessionDeletionSequence("session-a") {
+                firstEntered.complete(Unit)
+                releaseFirst.await()
+            }
+        }
+        firstEntered.await()
+        val cancelledWaiter = launch {
+            gate.withSessionDeletionSequence("session-a") { error("取消后不得进入") }
+        }
+        yield()
+
+        cancelledWaiter.cancelAndJoin()
+        assertThat(gate.deletionSequenceLockCountForTesting()).isEqualTo(1)
+        val nextEntered = CompletableDeferred<Unit>()
+        val next = async {
+            gate.withSessionDeletionSequence("session-a") { nextEntered.complete(Unit) }
+        }
+        yield()
+        assertThat(nextEntered.isCompleted).isFalse()
+
+        releaseFirst.complete(Unit)
+        first.await()
+        next.await()
+        assertThat(gate.deletionSequenceLockCountForTesting()).isEqualTo(0)
     }
 
     @Test

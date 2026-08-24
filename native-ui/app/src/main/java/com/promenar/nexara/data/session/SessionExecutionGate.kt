@@ -19,8 +19,13 @@ import kotlin.coroutines.CoroutineContext
  * 已进入的写租约全部退出。
  */
 class SessionExecutionGate {
+    private class DeletionSequenceLock(
+        val mutex: Mutex = Mutex(),
+        var references: Int = 0,
+    )
+
     private val sessionLocks = ConcurrentHashMap<String, Mutex>()
-    private val deletionSequenceLocks = ConcurrentHashMap<String, Mutex>()
+    private val deletionSequenceLocks = ConcurrentHashMap<String, DeletionSequenceLock>()
     private val stateMutex = Mutex()
     private val deletingSessions = ConcurrentHashMap.newKeySet<String>()
     private val deletingWorkspaceRoots = ConcurrentHashMap<String, String>()
@@ -59,8 +64,21 @@ class SessionExecutionGate {
         block: suspend () -> T,
     ): T {
         val checkedSessionId = requireIdentifier(sessionId, "sessionId")
-        return deletionSequenceLocks.computeIfAbsent(checkedSessionId) { Mutex() }.withLock {
-            block()
+        val holder = checkNotNull(deletionSequenceLocks.compute(checkedSessionId) { _, current ->
+            (current ?: DeletionSequenceLock()).also { it.references += 1 }
+        })
+        return try {
+            holder.mutex.withLock { block() }
+        } finally {
+            deletionSequenceLocks.compute(checkedSessionId) { _, current ->
+                if (current !== holder) {
+                    current // ABA 防护：旧 holder 的释放绝不能移除同 key 的新 holder。
+                } else {
+                    check(holder.references > 0) { "删除序列锁引用计数损坏" }
+                    holder.references -= 1
+                    holder.takeIf { it.references > 0 }
+                }
+            }
         }
     }
 
@@ -115,6 +133,8 @@ class SessionExecutionGate {
     }
 
     fun isDeleting(sessionId: String): Boolean = sessionId in deletingSessions
+
+    internal fun deletionSequenceLockCountForTesting(): Int = deletionSequenceLocks.size
 
     private suspend fun <T> withAdmission(
         sessions: Set<String>,
