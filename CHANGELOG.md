@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### v0.2.1-beta 工具链、工作区与数据继承收口（2026-08-25）
+
+- **工具执行与审批失败关闭**：工具参数保留真实 JSON 类型并以规范化参数摘要、定义摘要和 runtime id 组成稳定身份；注册、审批、认领、重放恢复及取消全部按精确身份 CAS。取消发生在注册、预检、认领或执行边界时只产生一个 `CANCELLED` 终态，损坏或不一致的历史审批不会被降级执行。
+- **Provider 与 MCP 端点对齐**：生成、模型目录和连通性探测共用唯一端点解析；未知持久化协议保持零网络并以可删除的禁用行显式呈现。Generic 模型目录同时接受裸数组与 `data` envelope；MCP HTTPS Streamable HTTP 采用有界增量 SSE，首个精确 ID 响应即关闭，错 ID、错误版本、畸形、截断或超限事件全部失败关闭。[零一万物官方平台公告](https://platform.lingyiwanwu.com/) 已进入 API 停止服务窗口，因此只保留历史配置识别，不恢复不可验证的网络能力。
+- **工作区、分享与 RAG/KG 一致性**：会话/文件删除使用持久 journal、删除屏障和稳定 tombstone 处理崩溃恢复；分享导入的重试保持原操作身份。RAG 查询固定在当前 workspace root，BM25 同分使用确定性排序；知识图谱只在全局、文档和规范化概念作用域内保留同域 last-good，跨作用域切换清空旧图并提供明确重试。
+- **备份与 WebDAV 合同**：核心数据可在不导出密钥时独立加密，导出密钥强制启用密码；快照通过配置 revision 前后复核，持续变化时失败关闭。WebDAV 明确为手动上传、列表与恢复；个人和 Agent 自定义头像路径不跨设备进入备份，避免恢复无效沙箱路径。
+- **发行与数据继承门禁**：应用候选升级为 versionCode 3 / `0.2.1-beta`，新增冻结 `v0.1-beta` 同签名 APK 的 v1→v5 覆盖升级门禁。门禁写入并回读 Agent、Session、Message、Provider、用户名、工作区数据库行和物理文件哨兵，升级阶段只允许 `adb install -r`，禁止卸载或清数据回退；最终证据持续记录于 [v0.2.1-beta 验证账本](docs/release/v0.2.1-beta-validation.md)。
+- **视觉冻结边界**：底部聊天、知识库、设置三按钮导航与已经确认的设置页 Material 3/SE 视觉保持不变；本轮新增错误、禁用、加载与重试状态继续复用现有连续列表和语义 Token。
+
 ### 设置全层级向 Solid Explorer 连续列表语言收敛（2026-08-03）
 
 - **统一页面骨架**：设置首页及二、三、四级页面统一使用原生 Material 3 顶栏、背景、边距和连续分组列表；主题、Provider、默认模型、RAG、检索、技能、备份、本地模型、开发者与用量页面保持原业务与导航关系。

@@ -1,8 +1,8 @@
 # Nexara — 全局架构设计文档
 
-> **版本**: 2.2.0
-> **更新时间**: 2026-07-13
-> **状态**: 理想架构与 `v0.2-beta` 已实现发行剖面；历史差距分析见 [IMPLEMENTATION_ANALYSIS.md](./IMPLEMENTATION_ANALYSIS.md)
+> **版本**: 2.3.0
+> **更新时间**: 2026-08-25
+> **状态**: 理想架构与 `v0.2.1-beta` 本地发行候选剖面；历史差距分析见 [IMPLEMENTATION_ANALYSIS.md](./IMPLEMENTATION_ANALYSIS.md)
 > **关联**: [PRD.md](./PRD.md) — 产品需求文档
 
 ---
@@ -613,7 +613,7 @@ Step 4: 数据层迁移
 - 普通 SharedPreferences 只保存格式版本、随机 IV 和密文，不保存明文凭据。
 - UI 持久状态只保存“是否已配置”。输入框默认显示 `****`；完整值仅在当前页面经用户显式操作短暂进入可清零缓冲区，失焦或离开页面后重新隐藏。
 - `SecretCatalog` 为 Provider API Key、Vertex service account、Tavily、Embedding、WebDAV 等凭据分配稳定标识；路由层只在请求开始时解析当前 Provider 的凭据。
-- 备份默认不包含凭据。用户显式启用完整密钥备份时必须设置密码，使用 PBKDF2-HMAC-SHA256 与 AES-256-GCM 加密；自动备份密码本身不进入导出包。
+- 备份默认不包含凭据，但用户可以独立加密核心数据包；显式启用完整密钥备份时强制设置密码，使用 PBKDF2-HMAC-SHA256 与 AES-256-GCM 加密。个人与 Agent 头像路径是设备本地数据，跨设备导出时剥离；WebDAV 只提供用户触发的上传、列表与恢复，不声明后台同步。
 
 ### 6.2 数据所有权
 
@@ -625,7 +625,7 @@ Step 4: 数据层迁移
 
 ### 6.3 Release 网络与日志边界
 
-- `v0.2-beta` Release 的云端 Provider 与 WebDAV 只允许 HTTPS；私网 HTTP 只允许显式 Debug/Integration 测试，不得通过 Release Manifest 放宽。
+- `v0.2.1-beta` Release 的云端 Provider、MCP 与 WebDAV 只允许 HTTPS；私网 HTTP 只允许显式 Debug/Integration 测试，不得通过 Release Manifest 放宽。
 - Debug 日志统一经 `NexaraLogger` 与 `SensitiveDataRedactor`；Release 输出入口受编译期门禁并由 R8 剥离。
 - Release APK 验证器对包身份、单一签名者、证书指纹、ZIP 边界、GGUF/llama/ggml 制品、常见密钥/Authorization/私钥/本机路径和 SHA-256 执行 fail-closed 检查。
 
@@ -643,7 +643,7 @@ Step 4: 数据层迁移
 
 ---
 
-## 8. v0.2-beta 生成与发行剖面
+## 8. v0.2.1-beta 生成与发行剖面
 
 ### 8.1 单一生成任务源
 
@@ -659,7 +659,7 @@ flowchart LR
 ```
 
 - `GenerationCoordinator` 以 `sessionId` 管理任务、快照、取消和终态；重复提交同一任务不会创建第二条网络请求。
-- `v0.2-beta` 全局只允许一个活动生成任务，避免 Provider 重复计费、通知竞争和持久化竞态。
+- `v0.2.1-beta` 全局只允许一个活动生成任务，避免 Provider 重复计费、通知竞争和持久化竞态。
 - `ChatViewModel` 负责提交与呈现，不再以自身生命周期独占网络协程；Foreground Service 与 UI 观察同一快照，不复制请求。
 - 取消在协议、背压发送、工具审批、持久化和清理边界显式传播；普通失败映射为稳定错误码，用户界面不消费原始异常消息。
 
@@ -675,13 +675,13 @@ Foreground Service 只承接用户在可见界面发起的当前任务，支持�
 
 ### 8.4 发行构建与辅助工具
 
-- `minSdk=31`、`targetSdk=36`、`versionName=0.2-beta`；Release 使用环境变量签名并开启 R8/资源收缩。
+- `minSdk=31`、`targetSdk=36`、`versionCode=3`、`versionName=0.2.1-beta`；Release 使用环境变量签名并开启 R8/资源收缩。
 - GGUF/llama.cpp 不进入本版稳定能力，Release 关闭本地推理并由 APK 扫描器拒绝相关制品。
 - `scripts/nexara-metro-tui.js` 是 Debug Metro 事件的开发者 TUI，不是最终用户 CLI，也不承担 Android UI 的业务功能对等。
-- 最终放行证据以 [v0.2-beta validation](release/v0.2-beta-validation.md) 为准；未执行项必须保持 `PENDING`，编译或专项单测不能代替签名 APK 冷安装、minified 业务验真和视觉矩阵。
+- 最终放行证据以 [v0.2.1-beta validation](release/v0.2.1-beta-validation.md) 为准；当前签名 APK 必须同时通过冷安装和从冻结 `v0.1-beta` 同签名 APK 的 `adb install -r` 覆盖升级数据继承。未执行项必须保持 `PENDING`，编译或专项单测不能代替签名 APK、minified 业务验真和视觉矩阵。
 
 ---
 
 **文档维护者**: AI Assistant
-**最后更新**: 2026-07-13
-**下次审查**: `v0.2-beta` GitHub Release 发布后
+**最后更新**: 2026-08-25
+**下次审查**: `v0.2.1-beta` 物理真机验收后

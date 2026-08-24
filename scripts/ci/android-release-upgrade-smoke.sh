@@ -199,6 +199,10 @@ done
     echo "覆盖升级后 Room schema 不是 v5" >&2
     exit 1
 }
+[[ "$(sqlite3 "${tmp_root}/upgraded.db" "SELECT name FROM agents WHERE id='upgrade-agent';")" == "Upgrade Agent" ]] || {
+    echo "Agent 哨兵丢失" >&2
+    exit 1
+}
 [[ "$(sqlite3 "${tmp_root}/upgraded.db" "SELECT content FROM messages WHERE id='upgrade-message';")" == "UPGRADE_MESSAGE_SENTINEL" ]] || {
     echo "会话消息哨兵丢失" >&2
     exit 1
@@ -215,8 +219,16 @@ done
     echo "工作区物理文件哨兵丢失" >&2
     exit 1
 }
+workspace_sha="$(adb_cmd shell toybox sha256sum "${workspace_root}/upgrade.txt" | awk '{print $1}' | tr -d '\r')"
+[[ "${workspace_sha}" == "64124d620f1875ac448941c5c8161bfc7f4bdabdc592f0b0d53e59530623b232" ]] || {
+    echo "工作区物理文件哈希不匹配" >&2
+    exit 1
+}
 adb_cmd pull "${data_dir}/shared_prefs/nexara_provider.xml" "${tmp_root}/provider-after.xml" >/dev/null
 adb_cmd pull "${data_dir}/shared_prefs/nexara_settings.xml" "${tmp_root}/settings-after.xml" >/dev/null
+grep -Fq 'Generic_OpenAI_Compat' "${tmp_root}/provider-after.xml" || { echo "Provider 协议哨兵丢失" >&2; exit 1; }
+grep -Fq 'https://upgrade.invalid/v1/chat/completions' "${tmp_root}/provider-after.xml" || { echo "Provider 地址哨兵丢失" >&2; exit 1; }
+grep -Fq 'upgrade-model' "${tmp_root}/provider-after.xml" || { echo "Provider 模型哨兵丢失" >&2; exit 1; }
 grep -Fq 'Upgrade Provider' "${tmp_root}/provider-after.xml" || { echo "Provider 偏好哨兵丢失" >&2; exit 1; }
 grep -Fq 'UPGRADE_USER_SENTINEL' "${tmp_root}/settings-after.xml" || { echo "用户偏好哨兵丢失" >&2; exit 1; }
 

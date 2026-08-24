@@ -1,6 +1,6 @@
 # Nexara Architecture 全景
 
-> **最后更新**: 2026-07-21
+> **最后更新**: 2026-08-25
 > **注意**: 本文档为快速参考。完整架构设计见 [ARCHITECTURE_DESIGN.md](./ARCHITECTURE_DESIGN.md)（理想架构 + 技术路线择优），实现进度与差距分析见 [IMPLEMENTATION_ANALYSIS.md](./IMPLEMENTATION_ANALYSIS.md)。
 
 ## 核心架构
@@ -34,7 +34,7 @@ graph TD
 - **MainTabScaffold / AdaptiveNavigationSurface**: 主导航按 600dp 断点切换手机 `Surface + NavigationBar + NavigationBarItem` 浮动坞与大屏 `NavigationRail`；Scaffold 内边距保证业务内容和滚动末项不进入手机导航区域，导航颜色、选中指示和标签均由 MaterialTheme 提供。
 - **ChatScreenContent / AttachmentActionMenu**: 附件菜单状态由聊天内容层提升，输入栏只报告展开意图与真实按钮坐标；单一菜单作为整个聊天 `Scaffold` 的后置覆盖层，统一处理外部/顶栏/Back 关闭、退出期触摸拦截、生成/导入禁用、RTL 与受限高度滚动。首轮坐标尚未回报时使用根容器内安全位置，随后切换到实测锚点。
 - **NavGraph**: 基于 Compose Navigation 的集中式路由中心；设置首页通过稳定目的地进入 Provider 管理和默认模型二级页面，既有 Provider 表单与模型管理路由保持独立。
-- **ProviderListScreen**: 提供商管理列表页，展示状态摘要并提供 Overflow 编辑与删除入口。
+- **ProviderListScreen**: 提供商管理列表页，展示状态摘要并提供 Overflow 编辑与删除入口。持久化数据中无法识别的历史协议必须以“协议不受支持”的禁用行可见，只允许确认删除，不提供编辑、探测、模型同步或任何网络路由。
 - **ProviderFormScreen / SettingsInput / ProtocolSelector**: Provider 编辑使用无外层卡片的连续 Material 3 表单；协议以标准单选行表达，测试与保存固定在响应式底部动作区，保存是唯一 filled 主动作。密钥继续复用 `SecretField` 的掩码、短生命周期揭示和离页清理合同，测试终态语义固定在可达按钮上。
 - **ProviderModelsScreen / ModelEditorSheet**: 模型管理使用稳定 key 的摘要 LazyColumn，行内只保留精确远端 ID、能力摘要和独立 Switch；名称、类型、能力、上下文、测试/取消、错误、删除及用户覆盖来源进入独立 Sheet。选中项从最新同步列表按模型 ID 派生，避免编辑已被同步移除的旧快照。
 - **DefaultModelsScreen**: 四角色（摘要、图像、向量、重排）默认模型统一配置页面，直接触发持久化。
@@ -49,9 +49,10 @@ graph TD
 - **SharedFileImporter / DurableShareInbox**: SAF 与系统分享共用的逐项导入管线；支持去重、容量重试、部分失败、崩溃恢复及索引回执。
 - **GenerationCoordinator / ChatGenerationRunner**: 应用级唯一生成任务源。初版全局只允许一个活动任务；统一处理 Provider 路由、RAG/工具循环、流式增量持久化、取消与结构化错误终态。成功、失败与取消路径必须先把终态发布到 `GenerationPresentationStore`，再结束协调器活动状态，避免 UI 因事件顺序停留在生成中。
 - **MessageDocumentAttachment / PreparedPromptBudgetGate / BranchSessionUseCase**: 输入栏 TXT/Markdown 以版本化消息快照进入完整用户上下文，与知识库检索分离；最终路由 Prompt 在 Provider 网络前按稳定模型覆盖和远端目录容量执行 fail-closed 门禁。重试只在新回复成功后替换旧回复；导出可回传，稳定消息分支重映射历史并清空运行态与工作区身份。
-- **GenerationForegroundService**: 观察 Coordinator 的同一任务状态，通过 `dataSync` 前台服务在切后台、锁屏、旋转或 Activity 重建后继续当前生成；通知可返回准确会话或停止任务。设备重启续传、多会话并行和定时任务不在 `v0.2-beta` 范围。
+- **GenerationForegroundService**: 观察 Coordinator 的同一任务状态，通过 `dataSync` 前台服务在切后台、锁屏、旋转或 Activity 重建后继续当前生成；通知可返回准确会话或停止任务。设备重启续传、多会话并行和定时任务不在 `v0.2.1-beta` 范围。
 - **SecretStore / SecretCatalog**: Android Keystore 生成不可导出的 AES-GCM 主密钥；普通偏好只保存密文、IV 与格式版本。Provider、Vertex、搜索、Embedding 和 WebDAV 凭据由稳定 SecretId 管理，UI 只持有存在性和短生命周期 reveal 内容。
-- **BackupRepository / BackupPackageCodec**: 核心数据采用清单、逐项 SHA-256 和事务恢复；密钥默认排除，显式包含时使用备份密码派生的 AES-256-GCM 密钥加密。恢复先验证再写入，错误密码、损坏包和越界内容不得产生部分写入。
+- **BackupRepository / BackupPackageCodec**: 核心数据采用清单、逐项 SHA-256 和事务恢复；可在不导出密钥时独立加密整个备份，导出密钥则强制启用密码与 PBKDF2-HMAC-SHA256/AES-256-GCM。快照在配置 revision 前后复核，持续变化时失败关闭；个人及 Agent 头像路径属于设备本地数据，跨设备备份会剥离。恢复先验证再写入，错误密码、损坏包和越界内容不得产生部分写入。
+- **ToolExecutionLedgerRepository / McpClient / SessionToolResolver**: 工具执行以 runtime id、规范化参数摘要和定义摘要组成稳定身份，注册、审批、认领、取消及恢复均以精确身份 CAS；取消后只允许一个 `CANCELLED` 终态。MCP 仅支持 HTTPS Streamable HTTP，增量 SSE 只接受首个精确响应 ID，合法 notification 可忽略，错误版本、错 ID、畸形/截断事件及行、事件、总量上限全部失败关闭。
 - **ModelMetadataResolver / ModelCatalogRuntime**: 模型元数据唯一领域入口。运行时只读取仓库内固定的 models.dev 离线快照和 Nexara 精确修正，再按字段叠加 Provider 元数据与用户覆盖；精确名称、工作负载、三态能力、token 限制和来源可追踪，家族规则不得覆盖精确字段。
 - **ModelSelectionUiModel / ModelSelectionListItem**: 模型选择 UI 的统一投影与渲染契约。`ModelInfo` 先把 Provider 数据和 `userEditedFields` 转换为分层 override，再调用 `ModelMetadataResolver.resolve(...)`；所有选择入口消费同一冻结投影与连续 Material 3 `ListItem`。`CHAT_ENDPOINT` 不混入一般能力集合，显式不兼容优先于生成式工作负载，未知能力不得被 UI 制造为支持。
 - **MicroGraphExtractor/GraphExtractor**: 知识图谱提取引擎（JIT 缓存 + 全量提取双模式），全链路接入日志。

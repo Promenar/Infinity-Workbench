@@ -258,6 +258,26 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
             "[signed-apk-smoke, signed-apk-upgrade-smoke]",
         )
 
+    def test_upgrade_smoke_reads_back_every_required_data_sentinel(self) -> None:
+        for sentinel in (
+            "Upgrade Agent",
+            "Upgrade Session",
+            "UPGRADE_MESSAGE_SENTINEL",
+            "upgrade.txt",
+            "Generic_OpenAI_Compat",
+            "https://upgrade.invalid/v1/chat/completions",
+            "upgrade-model",
+            "Upgrade Provider",
+            "UPGRADE_USER_SENTINEL",
+            "64124d620f1875ac448941c5c8161bfc7f4bdabdc592f0b0d53e59530623b232",
+        ):
+            with self.subTest(sentinel=sentinel):
+                self.assertGreaterEqual(
+                    UPGRADE_SMOKE.count(sentinel),
+                    2,
+                    msg=f"升级脚本必须写入并回读 {sentinel}",
+                )
+
     def test_smoke_requires_modern_zip_alignment(self) -> None:
         self.assertIn('ZIPALIGN="${BUILD_TOOLS_DIR}/zipalign"', SMOKE)
         self.assertIn("zipalign", SMOKE)

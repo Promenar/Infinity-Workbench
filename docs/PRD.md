@@ -1,8 +1,8 @@
 # Nexara — 产品需求文档 (PRD)
 
-> **版本**: 2.0.0（Kotlin 原生时代）
-> **更新时间**: 2026-05-13
-> **状态**: 原生迁移中期 — 核心架构已就绪，功能迁移进行中
+> **版本**: 2.1.0（Kotlin 原生发行候选）
+> **更新时间**: 2026-08-25
+> **状态**: `v0.2.1-beta` 本地发行候选 — 核心功能与数据继承门禁已进入最终验证
 > **前身**: `.agent/docs/PRODUCT_REQUIREMENTS.md` (v1.2.1, RN 时代，已归档)
 
 ---
@@ -17,7 +17,7 @@
 | **定位** | Android 端 BYOK 开源 AI 客户端 — 对标桌面端 LobeHub / Cherry Studio |
 | **平台** | Android（Kotlin/Jetpack Compose 原生），远期渐进式迁移 CMP 跨端 |
 | **许可证** | GPL-3.0 |
-| **当前版本** | 2.0.0-alpha（native-ui 分支） |
+| **当前版本** | `0.2.1-beta`（versionCode 3，`B-native-refactor`） |
 
 ### 1.2 项目精神（Why Nexara）
 
@@ -96,9 +96,10 @@ Welcome（首次引导）
         │     └─→ RagDebugScreen（RAG 调试面板）
         │
         └─ Tab: Settings（设置）
-              ├─ App 标签：Theme / Search / Skills / Token Usage
-              └─ Providers 标签：ProviderForm → ProviderModels → LocalModels
-                    └─ BackupSettings / DeveloperPanel
+              ├─ SettingsHome（账户、通用、AI 与模型、知识与检索、工具与数据、关于）
+              ├─ ProviderList → ProviderForm / ProviderModels
+              ├─ DefaultModels / Search / Skills / Token Usage
+              └─ BackupSettings / DeveloperPanel / LocalModels
 ```
 
 ---
@@ -149,7 +150,7 @@ Welcome（首次引导）
 | **成本优化** | P0 | Summary-First 策略 + 增量更新（Hash 校验） |
 | **本地图谱存储** | P0 | SQLite kg_nodes / kg_edges |
 | **交互式可视化** | P1 | D3-Force 物理仿真，支持拖拽缩放 |
-| **多维视图** | P1 | 全局 / 会话 / 文件夹 / Agent 四级视图 |
+| **多维视图** | P1 | 全局 / 文档 / 规范化概念作用域；切换作用域时清空跨域旧图 |
 | **JIT 图缓存** | P1 | 按需构建与缓存子图 |
 
 ### 3.4 Agent 多步骤连续任务 🟢 原生版已实现 82%
@@ -189,13 +190,15 @@ Welcome（首次引导）
 | **可视化仪表盘** | P1 | 会话级 + 全局级统计 |
 | **成本估算** | P1 | 基于模型定价的金额换算 |
 
-### 3.7 数据安全与可迁移性 🟡 原生版已实现 40%
+### 3.7 数据安全与可迁移性 🟢 原生版已实现 90%
 
 | 功能 | 优先级 | 说明 |
 |------|--------|------|
 | **会话导出** | P1 | 导出为 TXT/Markdown |
-| **WebDAV 备份** | P2 | 云端自动/手动备份 |
-| **完整数据恢复** | P2 | 含配置、会话、向量、图谱的完整恢复 |
+| **WebDAV 备份** | P2 | 用户显式触发的上传、列表与恢复；不声明后台同步 |
+| **完整数据恢复** | P2 | 清单与逐项 SHA-256 验证、事务恢复；核心数据可独立加密，完整密钥备份强制密码 |
+| **跨版本数据继承** | P0 | Room v1→v5 前进迁移与同签名 `adb install -r` 覆盖升级哨兵；禁止卸载/清数据回退 |
+| **设备本地媒体边界** | P1 | 个人与 Agent 自定义头像不跨设备备份；同一安装覆盖升级由 Android 私有目录保留 |
 | **开发中面板** | P1 | 日志导出、崩溃诊断 |
 
 ---
@@ -216,7 +219,7 @@ Welcome（首次引导）
 | **导航** | Compose Navigation | 类型安全路由（NavDestinations 密封类模式） |
 | **Markdown 渲染** | 自定义 Compose Markdown（mikepenz 库深度定制） | 需要 CJK 排版、流式平滑等特殊优化 |
 | **RAG 向量化** | 远程 Embedding API 为主 + 本地降级 | 平衡精度与性能 |
-| **本地推理** | llama.cpp (JNI) | 为离线场景和隐私敏感场景保留选项 |
+| **本地推理** | 暂不进入稳定版 | `v0.2.1-beta` Release 明确排除 GGUF/llama.cpp 制品，后续独立验收 |
 
 ### 4.2 跨端路线图
 
@@ -320,7 +323,7 @@ Kotlin/Compose 原生 Android    抽取 commonMain 公共层        CMP 全平�
 - [x] 会话管理基础
 - [x] Markdown 渲染基础
 
-### Phase 2: RAG + 知识图谱 🚧 进行中（70%）
+### Phase 2: RAG + 知识图谱 ✅ 当前稳定范围已完成
 - [x] 文档管理（文件夹、导入 TXT/MD）
 - [x] 向量存储与检索
 - [x] Embedding 客户端（远程 API）
@@ -329,26 +332,27 @@ Kotlin/Compose 原生 Android    抽取 commonMain 公共层        CMP 全平�
 - [x] RAG 检索指示器
 - [ ] 本地 Embedding 降级方案
 - [ ] PDF/Word/HTML 导入
-- [ ] RAG 配置阈值滑块 UI
-- [ ] 混合检索（向量 + FTS5）
-- [ ] 知识图谱可视化
+- [x] RAG 配置阈值与作用域 UI
+- [x] 混合检索（向量 + BM25/FTS）
+- [x] 知识图谱可视化与全局/文档/概念作用域
 
-### Phase 3: Agent 能力增强 🚧 进行中（30%）
+### Phase 3: Agent 能力增强 ✅ 当前稳定范围已完成
 - [x] Function Calling 基础
 - [x] 工具管线（搜索、代码执行）
 - [x] 审批循环（Semi-Automatic）
-- [ ] MCP 协议客户端
-- [ ] 执行时间轴 UI
-- [ ] Skill/插件管理 UI
+- [x] MCP HTTPS Streamable HTTP 客户端与持久化工具快照
+- [x] 工具调用状态与审批 UI
+- [x] Skill/MCP 管理 UI
 - [ ] HTML Artifacts 预览与编辑
 
-### Phase 4: 打磨发布 🔜 计划中
-- [ ] Markdown 渲染行业对齐（GFM Alert / LaTeX 定界符 / 流式平滑 / 标题锚点）
-- [ ] CJK 排版专项优化
-- [ ] Token 统计仪表盘
-- [ ] WebDAV 备份恢复
-- [ ] 性能 Profile 与优化
-- [ ] 正式版 APK 签名发布
+### Phase 4: 打磨发布 🚧 `v0.2.1-beta` 最终验证中
+- [x] Markdown 渲染行业对齐（GFM Alert / LaTeX / 流式平滑）
+- [x] CJK 排版与全层级 Material 3 设置视觉收敛
+- [x] Token 统计仪表盘
+- [x] WebDAV 手动备份恢复与加密包
+- [x] 性能、截图、Lint、设备与 minified 自动门禁
+- [ ] `v0.2.1-beta` 物理真机人工体验
+- [ ] 用户另行授权后的 GitHub tag / Release；当前任务不包含公开发布
 
 ---
 
@@ -378,5 +382,5 @@ Kotlin/Compose 原生 Android    抽取 commonMain 公共层        CMP 全平�
 ---
 
 **文档维护者**: AI Assistant
-**最后更新**: 2026-05-13
-**下次审查**: Phase 3 完成时
+**最后更新**: 2026-08-25
+**下次审查**: `v0.2.1-beta` 物理真机验收后
