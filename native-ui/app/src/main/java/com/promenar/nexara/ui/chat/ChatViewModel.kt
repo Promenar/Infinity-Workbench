@@ -223,6 +223,8 @@ class ChatViewModel(
     private val memoryManager: MemoryManager? = null,
     private val kgProvider: KgProvider? = null,
     private val skillRegistry: com.promenar.nexara.ui.chat.manager.registry.SkillRegistry? = null,
+    private val sessionToolResolver: com.promenar.nexara.data.generation.SessionToolResolver =
+        (application as NexaraApplication).sessionToolResolver,
     private val exportSessionUseCase: ExportSessionUseCase? = null,
     private val fullContextDocumentReader: FullContextDocumentReader =
         FullContextDocumentReader(application.contentResolver),
@@ -265,6 +267,7 @@ class ChatViewModel(
         store,
         messageManager,
         skillRegistry,
+        sessionToolResolver,
         (application as NexaraApplication).taskRepository,
         toolLedger,
     )

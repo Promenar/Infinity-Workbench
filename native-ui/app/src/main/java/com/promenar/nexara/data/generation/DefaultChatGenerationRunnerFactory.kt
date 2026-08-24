@@ -36,10 +36,11 @@ internal class DefaultChatGenerationRunnerFactory(
     private val summaryManager: SummaryManager,
     private val sessionManager: SessionManager,
     private val skillRegistry: SkillRegistry?,
+    private val toolResolver: SessionToolResolver,
     private val presentationStore: GenerationPresentationStore,
 ) : GenerationRunnerFactory {
     override fun create(request: GenerationRequest, taskId: String): GenerationRunner {
-        val contentStrategy = DefaultChatGenerationContentStrategy(settings, skillRegistry)
+        val contentStrategy = DefaultChatGenerationContentStrategy(settings, skillRegistry, toolResolver)
         val runtime = DefaultChatGenerationRuntime(
             settings = settings,
             applicationScope = applicationScope,

@@ -454,10 +454,15 @@ class ChatViewModelTest {
             generationScope,
         )
         val generationToolLedger = io.mockk.mockk<com.promenar.nexara.data.repository.ToolExecutionLedger>(relaxed = true)
+        val generationToolResolver = com.promenar.nexara.data.generation.DefaultSessionToolResolver(
+            app.getSharedPreferences("nexara_settings", 0),
+            null,
+        )
         val generationToolExecutor = com.promenar.nexara.ui.chat.manager.ToolExecutor(
             app.chatStore,
             generationMessageManager,
             null,
+            generationToolResolver,
             fakeTaskRepository,
             generationToolLedger,
         )
@@ -483,6 +488,7 @@ class ChatViewModelTest {
             summaryManager = com.promenar.nexara.ui.chat.manager.SummaryManager(fakeLlmProvider),
             sessionManager = generationSessionManager,
             skillRegistry = null,
+            toolResolver = generationToolResolver,
             presentationStore = presentationStore,
         )
         val generationCoordinator = com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
@@ -502,6 +508,7 @@ class ChatViewModelTest {
             providerResolutionDispatcher = testDispatcher,
             localLlmProviderFactory = { fakeLlmProvider },
             configResolver = configResolver,
+            sessionToolResolver = generationToolResolver,
             fullContextDocumentReader = documentReader,
             generationCoordinatorOverride = generationCoordinator,
             generationPresentationStoreOverride = presentationStore,

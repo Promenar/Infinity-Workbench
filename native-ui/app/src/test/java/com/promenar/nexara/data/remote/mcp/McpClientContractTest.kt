@@ -23,6 +23,16 @@ class McpClientContractTest {
             bodies += body
             assertThat(request.headers["MCP-Protocol-Version"]).isEqualTo("2026-07-28")
             assertThat(request.headers["Mcp-Method"]).isEqualTo("tools/list")
+            assertThat(request.headers[HttpHeaders.Accept])
+                .isEqualTo("application/json, text/event-stream")
+            val meta = Json.parseToJsonElement(body).jsonObject
+                .getValue("params").jsonObject.getValue("_meta").jsonObject
+            assertThat(meta.getValue("protocolVersion").toString()).isEqualTo("\"2026-07-28\"")
+            assertThat(meta.getValue("clientInfo").jsonObject.getValue("name").toString())
+                .isEqualTo("\"Nexara\"")
+            assertThat(meta.getValue("clientInfo").jsonObject.getValue("version").toString())
+                .isEqualTo("\"0.2-beta\"")
+            assertThat(meta.getValue("clientCapabilities").jsonObject).isEmpty()
             val id = Json.parseToJsonElement(body).jsonObject.getValue("id").toString()
             if (bodies.size == 1) {
                 respond(json(id, """{"tools":[{"name":"one","inputSchema":{"type":"object"}}],"nextCursor":"next"}"""))
@@ -35,7 +45,6 @@ class McpClientContractTest {
 
         assertThat(tools.map { it.name }).containsExactly("one", "two").inOrder()
         assertThat(bodies).hasSize(2)
-        assertThat(bodies[0]).contains("\"_meta\":{}")
         assertThat(bodies[1]).contains("\"cursor\":\"next\"")
     }
 
@@ -97,7 +106,15 @@ class McpClientContractTest {
                     assertThat(request.headers["MCP-Protocol-Version"]).isEqualTo("2026-07-28")
                     assertThat(request.headers["Mcp-Method"]).isEqualTo("tools/call")
                     assertThat(request.headers["Mcp-Name"]).isEqualTo("search")
-                    assertThat(root.getValue("params").jsonObject.getValue("_meta").jsonObject).isEmpty()
+                    assertThat(request.headers[HttpHeaders.Accept])
+                        .isEqualTo("application/json, text/event-stream")
+                    val meta = root.getValue("params").jsonObject.getValue("_meta").jsonObject
+                    assertThat(meta.getValue("protocolVersion").toString()).isEqualTo("\"2026-07-28\"")
+                    assertThat(meta.getValue("clientInfo").jsonObject.getValue("name").toString())
+                        .isEqualTo("\"Nexara\"")
+                    assertThat(meta.getValue("clientInfo").jsonObject.getValue("version").toString())
+                        .isEqualTo("\"0.2-beta\"")
+                    assertThat(meta.getValue("clientCapabilities").jsonObject).isEmpty()
                     assertThat(root.getValue("params").jsonObject.getValue("name").toString())
                         .isEqualTo("\"search\"")
                     respond(json(id, """{"content":[{"type":"text","text":"ok"}]}"""))

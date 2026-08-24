@@ -253,6 +253,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             chatStore,
             generationMessageManager,
             skillRegistry,
+            sessionToolResolver,
             taskRepository,
             toolExecutionLedger,
         )
@@ -288,6 +289,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             summaryManager = com.promenar.nexara.ui.chat.manager.SummaryManager(provider),
             sessionManager = generationSessionManager,
             skillRegistry = skillRegistry,
+            toolResolver = sessionToolResolver,
             presentationStore = generationPresentationStore,
         )
         com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
@@ -392,12 +394,19 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     val mcpSkillRegistry: McpSkillRegistry by lazy {
-        McpSkillRegistry(skillRepository as SkillRepository, httpClient)
+        McpSkillRegistry(skillRepository as SkillRepository, httpClient, generationScope)
     }
 
     val skillRegistry: SkillRegistry by lazy {
         ModularSkillRegistry(
             listOf(presetSkillRegistry, userSkillRegistry, mcpSkillRegistry)
+        )
+    }
+
+    val sessionToolResolver: com.promenar.nexara.data.generation.SessionToolResolver by lazy {
+        com.promenar.nexara.data.generation.DefaultSessionToolResolver(
+            getSharedPreferences("nexara_settings", MODE_PRIVATE),
+            skillRegistry,
         )
     }
 

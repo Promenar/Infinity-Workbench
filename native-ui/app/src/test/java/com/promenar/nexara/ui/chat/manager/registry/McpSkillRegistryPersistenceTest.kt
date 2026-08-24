@@ -18,8 +18,16 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.utils.io.core.readText
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.After
@@ -27,6 +35,11 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.mockk
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
@@ -53,8 +66,14 @@ class McpSkillRegistryPersistenceTest {
         seedSnapshot("a", "search")
         seedSnapshot("b", "search")
 
-        val first = registry(MockEngine { error("不应联网") }).getAllTools(null)
-        val restarted = registry(MockEngine { error("不应联网") }).getAllTools(null)
+        val firstRegistry = registry(MockEngine { error("不应联网") }, backgroundScope)
+        val restartedRegistry = registry(
+            MockEngine { error("不应联网") },
+            backgroundScope,
+            SkillRepository(database.skillDao()),
+        )
+        val first = awaitToolCount(firstRegistry, 2)
+        val restarted = awaitToolCount(restartedRegistry, 2)
 
         assertThat(first.map { it.runtimeToolId })
             .containsExactly("mcp:a:search", "mcp:b:search")
@@ -63,9 +82,9 @@ class McpSkillRegistryPersistenceTest {
         assertThat(McpSkillRegistry.providerAlias("a", "same/path"))
             .isNotEqualTo(McpSkillRegistry.providerAlias("a", "same.path"))
         repository.updateMcpServerEnabled("a", false)
-        assertThat(registry(MockEngine { error("不应联网") }).getAllTools(null).map { it.runtimeToolId })
+        assertThat(firstRegistry.getAllTools(null).map { it.runtimeToolId })
             .containsExactly("mcp:b:search")
-        assertThat(registry(MockEngine { error("不应联网") }).getSkillByRuntimeToolId("mcp:a:search"))
+        assertThat(firstRegistry.getSkillByRuntimeToolId("mcp:a:search"))
             .isNull()
     }
 
@@ -73,13 +92,16 @@ class McpSkillRegistryPersistenceTest {
     fun `empty成功原子清除且失败保留旧批`() = runTest {
         seedServer("a")
         seedSnapshot("a", "old")
-        val emptyRegistry = registry(rpcEngine("""{"tools":[]}"""))
+        val emptyRegistry = registry(rpcEngine("""{"tools":[]}"""), backgroundScope)
 
         assertThat(emptyRegistry.syncServer("a")).isEqualTo(McpSyncResult.Success(0))
         assertThat(repository.getMcpToolSnapshots("a")).isEmpty()
 
         seedSnapshot("a", "kept")
-        val failed = registry(MockEngine { respond("bad", HttpStatusCode.BadGateway) }).syncServer("a")
+        val failed = registry(
+            MockEngine { respond("bad", HttpStatusCode.BadGateway) },
+            backgroundScope,
+        ).syncServer("a")
         assertThat(failed).isInstanceOf(McpSyncResult.Failure::class.java)
         assertThat(repository.getMcpToolSnapshots("a").map { it.remoteToolName }).containsExactly("kept")
     }
@@ -99,7 +121,7 @@ class McpSkillRegistryPersistenceTest {
                 HttpStatusCode.OK,
                 headersOf(HttpHeaders.ContentType, "application/json"),
             )
-        })
+        }, backgroundScope)
 
         val sync = async { registry.syncServer("a") }
         entered.await()
@@ -110,6 +132,92 @@ class McpSkillRegistryPersistenceTest {
 
         assertThat(sync.await()).isEqualTo(McpSyncResult.Failure("MCP_SERVER_CHANGED_DURING_SYNC"))
         assertThat(repository.getMcpToolSnapshots("a")).isEmpty()
+    }
+
+    @Test
+    fun `disable enable ABA期间返回的旧sync不得提交`() = runTest {
+        seedServer("a")
+        seedSnapshot("a", "old")
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val registry = registry(MockEngine { request ->
+            entered.complete(Unit)
+            release.await()
+            val id = Json.parseToJsonElement(request.body.toByteReadPacket().readText()).jsonObject["id"]
+            respond(
+                """{"jsonrpc":"2.0","id":$id,"result":{"tools":[{"name":"late","inputSchema":{"type":"object"}}]}}""",
+                HttpStatusCode.OK,
+                headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }, backgroundScope)
+
+        val sync = async { registry.syncServer("a") }
+        entered.await()
+        repository.updateMcpServerEnabled("a", false)
+        repository.updateMcpServerEnabled("a", true)
+        release.complete(Unit)
+
+        assertThat(sync.await()).isEqualTo(McpSyncResult.Failure("MCP_SERVER_CHANGED_DURING_SYNC"))
+        assertThat(repository.getMcpToolSnapshots("a")).isEmpty()
+    }
+
+    @Test
+    fun `同server并发sync逆序返回时旧代际不得覆盖新批`() = runTest {
+        seedServer("a")
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        var calls = 0
+        val registry = registry(MockEngine { request ->
+            calls++
+            val call = calls
+            if (call == 1) {
+                firstEntered.complete(Unit)
+                releaseFirst.await()
+            }
+            val id = Json.parseToJsonElement(request.body.toByteReadPacket().readText()).jsonObject["id"]
+            val name = if (call == 1) "older" else "newer"
+            respond(
+                """{"jsonrpc":"2.0","id":$id,"result":{"tools":[{"name":"$name","inputSchema":{"type":"object"}}]}}""",
+                HttpStatusCode.OK,
+                headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }, backgroundScope)
+
+        val first = async { registry.syncServer("a") }
+        firstEntered.await()
+        val second = async { registry.syncServer("a") }
+        assertThat(second.await()).isEqualTo(McpSyncResult.Success(1))
+        releaseFirst.complete(Unit)
+
+        assertThat(first.await()).isEqualTo(McpSyncResult.Failure("MCP_SYNC_SUPERSEDED"))
+        assertThat(repository.getMcpToolSnapshots("a").map { it.remoteToolName })
+            .containsExactly("newer")
+    }
+
+    @Test
+    fun `同步广告读取不得等待挂起DAO或阻塞调用线程`() {
+        val hangingRepository = mockk<SkillRepository>()
+        coEvery { hangingRepository.getAllEnabledMcpServers() } coAnswers { awaitCancellation() }
+        every { hangingRepository.observeMcpDiscoveryRows() } returns flow { awaitCancellation() }
+        val registryScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val registry = McpSkillRegistry(
+            hangingRepository,
+            HttpClient(MockEngine { error("不应联网") }),
+            registryScope,
+        )
+        val executor = Executors.newSingleThreadExecutor()
+        val future = executor.submit<List<com.promenar.nexara.data.remote.protocol.ProtocolTool>> {
+            registry.getAllTools(null)
+        }
+        try {
+            val result = runCatching { future.get(200, TimeUnit.MILLISECONDS) }.getOrNull()
+            assertThat(result).isNotNull()
+            assertThat(result).isEmpty()
+        } finally {
+            future.cancel(true)
+            executor.shutdownNow()
+            registryScope.cancel()
+        }
     }
 
     @Test
@@ -138,7 +246,8 @@ class McpSkillRegistryPersistenceTest {
                 HttpStatusCode.OK,
                 headersOf(HttpHeaders.ContentType, "application/json"),
             )
-        })
+        }, backgroundScope, SkillRepository(database.skillDao()))
+        awaitToolCount(registry, 1)
         val skill = registry.getSkillByRuntimeToolId("mcp:a:search")!!
 
         val result = skill.execute(
@@ -169,7 +278,7 @@ class McpSkillRegistryPersistenceTest {
                 McpToolSnapshotEntity("stdio", "legacy", "", """{"type":"object"}""", 1),
             ),
         )
-        val registry = registry(MockEngine { error("旧配置不应联网") })
+        val registry = registry(MockEngine { error("旧配置不应联网") }, backgroundScope)
 
         assertThat(registry.getAllTools(null)).isEmpty()
         assertThat(registry.getSkillByRuntimeToolId("mcp:http:legacy")).isNull()
@@ -192,7 +301,16 @@ class McpSkillRegistryPersistenceTest {
         )).isTrue()
     }
 
-    private fun registry(engine: MockEngine) = McpSkillRegistry(repository, HttpClient(engine), now = { 2 })
+    private fun registry(
+        engine: MockEngine,
+        scope: CoroutineScope,
+        sourceRepository: SkillRepository = repository,
+    ) = McpSkillRegistry(sourceRepository, HttpClient(engine), scope, now = { 2 })
+
+    private suspend fun awaitToolCount(registry: McpSkillRegistry, count: Int) = withTimeout(2_000) {
+        while (registry.getAllTools(null).size != count) delay(1)
+        registry.getAllTools(null)
+    }
 
     private fun rpcEngine(result: String) = MockEngine { request ->
         val id = Json.parseToJsonElement(request.body.toByteReadPacket().readText()).jsonObject["id"]

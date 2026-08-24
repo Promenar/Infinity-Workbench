@@ -6,6 +6,16 @@ import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.local.db.entity.McpToolSnapshotEntity
 import kotlinx.coroutines.flow.Flow
 
+data class McpDiscoveryRow(
+    @ColumnInfo(name = "server_id") val serverId: String,
+    @ColumnInfo(name = "server_url") val serverUrl: String,
+    @ColumnInfo(name = "server_type") val serverType: String,
+    @ColumnInfo(name = "remote_tool_name") val remoteToolName: String,
+    val description: String,
+    @ColumnInfo(name = "input_schema_json") val inputSchemaJson: String,
+    @ColumnInfo(name = "synced_at") val syncedAt: Long,
+)
+
 @Dao
 interface SkillDao {
     // Custom Skills
@@ -51,6 +61,21 @@ interface SkillDao {
 
     @Query("SELECT * FROM mcp_tool_snapshots ORDER BY server_id, remote_tool_name")
     suspend fun getAllMcpToolSnapshots(): List<McpToolSnapshotEntity>
+
+    @Query(
+        """SELECT servers.id AS server_id,
+                  servers.url AS server_url,
+                  servers.type AS server_type,
+                  snapshots.remote_tool_name AS remote_tool_name,
+                  snapshots.description AS description,
+                  snapshots.input_schema_json AS input_schema_json,
+                  snapshots.synced_at AS synced_at
+           FROM mcp_servers AS servers
+           INNER JOIN mcp_tool_snapshots AS snapshots ON snapshots.server_id = servers.id
+           WHERE servers.enabled = 1
+           ORDER BY servers.id, snapshots.remote_tool_name""",
+    )
+    fun observeMcpDiscoveryRows(): Flow<List<McpDiscoveryRow>>
 
     @Query("SELECT * FROM mcp_tool_snapshots WHERE server_id = :serverId ORDER BY remote_tool_name")
     suspend fun getMcpToolSnapshots(serverId: String): List<McpToolSnapshotEntity>

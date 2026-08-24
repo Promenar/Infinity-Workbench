@@ -6,6 +6,7 @@ import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.data.model.UpdateMessageOptions
+import com.promenar.nexara.data.generation.SessionToolResolver
 import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.data.repository.ToolExecutionKey
 import com.promenar.nexara.data.repository.ToolExecutionLedger
@@ -37,6 +38,7 @@ class ToolExecutor(
     private val store: ChatStore,
     private val messageManager: MessageManager,
     private val skillRegistry: SkillRegistry?,
+    private val toolResolver: SessionToolResolver,
     private val taskRepository: ITaskRepository? = null,
     private val ledger: ToolExecutionLedger? = null,
 ) {
@@ -95,23 +97,21 @@ class ToolExecutor(
                 ?: continue
             if (!activeLedger.claim(key, expectedIdentity)) continue
 
-            val stepId = "step_${System.currentTimeMillis()}_${tc.id}"
-            val currentFocusId = session.activeTask?.currentFocusStepId
-
-            appendStep(sessionId, targetMsgId, ExecutionStep(
-                id = stepId,
-                type = "tool_call",
-                toolName = tc.name,
-                toolArgs = tc.arguments,
-                toolCallId = tc.id,
-                timestamp = System.currentTimeMillis(),
-                taskStepId = currentFocusId
-            ))
-
+            val currentSession = store.getSession(sessionId)
+            val currentResolvedTool = currentSession?.let(toolResolver::resolve)
+                ?.singleOrNull { tool ->
+                    tool.runtimeToolId == expectedIdentity.runtimeToolId &&
+                        tool.function.name == expectedIdentity.toolName
+                }
+            val currentResolvedDigest = currentResolvedTool
+                ?.let(ToolInvocationIdentityFactory::definitionDigest)
             val currentSkill = skillRegistry?.getSkillByRuntimeToolId(expectedIdentity.runtimeToolId)
             val currentDefinition = currentSkill?.toProtocolTool()
                 ?.let(ToolInvocationIdentityFactory::definitionDigest)
-            if (currentSkill == null || currentSkill.name != expectedIdentity.toolName ||
+            if (currentSession == null || currentResolvedTool == null ||
+                currentResolvedDigest !is ToolDefinitionDigestResolution.Valid ||
+                currentResolvedDigest.digest != expectedIdentity.definitionDigest ||
+                currentSkill == null || currentSkill.name != expectedIdentity.toolName ||
                 currentDefinition !is ToolDefinitionDigestResolution.Valid ||
                 currentDefinition.digest != expectedIdentity.definitionDigest
             ) {
@@ -124,7 +124,20 @@ class ToolExecutor(
                 continue
             }
 
-            val result: ToolResult = executeSkill(currentSkill, preflight.arguments, tc, session)
+            val stepId = "step_${System.currentTimeMillis()}_${tc.id}"
+            val currentFocusId = currentSession.activeTask?.currentFocusStepId
+
+            appendStep(sessionId, targetMsgId, ExecutionStep(
+                id = stepId,
+                type = "tool_call",
+                toolName = tc.name,
+                toolArgs = tc.arguments,
+                toolCallId = tc.id,
+                timestamp = System.currentTimeMillis(),
+                taskStepId = currentFocusId
+            ))
+
+            val result: ToolResult = executeSkill(currentSkill, preflight.arguments, tc, currentSession)
             val failed = result.status != "success"
             val safeResultData = sanitizeResultData(result.data, failed)
 

@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.remote.mcp
 
+import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.domain.tool.ToolSchemaValidation
 import com.promenar.nexara.domain.tool.ToolSchemaValidator
 import io.ktor.client.HttpClient
@@ -9,6 +10,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import java.net.URI
@@ -128,11 +130,12 @@ class McpClient(
         parameterHeaders: Map<String, String> = emptyMap(),
     ): JsonElement {
         val id = requestId.getAndIncrement()
-        val params = JsonObject(rawParams + ("_meta" to (rawParams["_meta"] ?: JsonObject(emptyMap()))))
+        val params = JsonObject(rawParams + ("_meta" to requestMetadata()))
         val request = JsonRpcRequest(method = method, params = params, id = id)
         val response: HttpResponse = try {
             httpClient.post(serverUrl) {
                 contentType(ContentType.Application.Json)
+                header(HttpHeaders.Accept, ACCEPT)
                 header(HEADER_PROTOCOL_VERSION, PROTOCOL_VERSION)
                 header(HEADER_METHOD, method)
                 toolName?.let { header(HEADER_NAME, it) }
@@ -187,6 +190,15 @@ class McpClient(
         else -> false
     }
 
+    private fun requestMetadata(): JsonObject = buildJsonObject {
+        put("protocolVersion", PROTOCOL_VERSION)
+        put("clientInfo", buildJsonObject {
+            put("name", CLIENT_NAME)
+            put("version", BuildConfig.VERSION_NAME)
+        })
+        put("clientCapabilities", JsonObject(emptyMap()))
+    }
+
     private fun requiredString(element: JsonElement): String {
         val primitive = element as? JsonPrimitive ?: throw McpProtocolException("MCP_STRING_EXPECTED")
         if (!primitive.isString) throw McpProtocolException("MCP_STRING_EXPECTED")
@@ -202,6 +214,8 @@ class McpClient(
 
     private companion object {
         const val PROTOCOL_VERSION = "2026-07-28"
+        const val CLIENT_NAME = "Nexara"
+        const val ACCEPT = "application/json, text/event-stream"
         const val HEADER_PROTOCOL_VERSION = "MCP-Protocol-Version"
         const val HEADER_METHOD = "Mcp-Method"
         const val HEADER_NAME = "Mcp-Name"

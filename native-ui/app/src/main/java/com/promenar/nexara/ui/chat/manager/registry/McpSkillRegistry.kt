@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.manager.registry
 
 import com.promenar.nexara.data.local.db.entity.McpToolSnapshotEntity
+import com.promenar.nexara.data.local.db.dao.McpDiscoveryRow
 import com.promenar.nexara.data.remote.mcp.McpClient
 import com.promenar.nexara.data.remote.mcp.McpInputSchemaPolicy
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
@@ -9,9 +10,19 @@ import com.promenar.nexara.ui.chat.manager.skills.McpSkill
 import io.ktor.client.HttpClient
 import java.net.URI
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.coroutineContext
 
 sealed interface McpSyncResult {
     data class Success(val toolCount: Int) : McpSyncResult
@@ -21,8 +32,29 @@ sealed interface McpSyncResult {
 class McpSkillRegistry(
     private val repository: SkillRepository,
     private val httpClient: HttpClient,
+    scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
 ) : SkillRegistry {
+    private data class PublishedSkill(
+        val skill: McpSkill,
+        val serverUrl: String,
+        val serverType: String,
+    )
+
+    private val published = AtomicReference<List<PublishedSkill>>(emptyList())
+    private val syncGenerations = ConcurrentHashMap<String, AtomicLong>()
+    private val syncCommitLocks = ConcurrentHashMap<String, Mutex>()
+
+    init {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            repository.observeMcpDiscoveryRows()
+                .catch { emit(emptyList()) }
+                .collectLatest { rows ->
+                    published.set(buildPublishedSkills(rows))
+                }
+        }
+    }
+
     override fun getSkill(name: String): SkillDefinition? = currentSkills()
         .singleOrNull { it.name == name }
 
@@ -40,6 +72,9 @@ class McpSkillRegistry(
     }
 
     suspend fun syncServer(serverId: String): McpSyncResult {
+        val syncGeneration = syncGenerations.computeIfAbsent(serverId) { AtomicLong() }
+            .incrementAndGet()
+        val configRevision = repository.currentMcpConfigRevision(serverId)
         val server = repository.getMcpServer(serverId)
             ?: return McpSyncResult.Failure("MCP_SERVER_NOT_FOUND")
         if (!isSupported(server.type, server.url)) {
@@ -58,16 +93,23 @@ class McpSkillRegistry(
                     syncedAt = timestamp,
                 )
             }
-            if (!repository.replaceMcpToolSnapshotsIfServerUnchanged(
-                    serverId = server.id,
-                    expectedUrl = server.url,
-                    expectedType = server.type,
-                    snapshots = snapshots,
-                )
-            ) {
-                McpSyncResult.Failure("MCP_SERVER_CHANGED_DURING_SYNC")
-            } else {
-                McpSyncResult.Success(snapshots.size)
+            syncCommitLocks.computeIfAbsent(serverId) { Mutex() }.withLock {
+                if (syncGenerations[serverId]?.get() != syncGeneration) {
+                    return@withLock McpSyncResult.Failure("MCP_SYNC_SUPERSEDED")
+                }
+                if (!repository.replaceMcpToolSnapshotsAtRevision(
+                        serverId = server.id,
+                        expectedUrl = server.url,
+                        expectedType = server.type,
+                        snapshots = snapshots,
+                        expectedConfigRevision = configRevision,
+                    )
+                ) {
+                    McpSyncResult.Failure("MCP_SERVER_CHANGED_DURING_SYNC")
+                } else {
+                    replacePublishedServer(server.id, server.url, server.type, snapshots)
+                    McpSyncResult.Success(snapshots.size)
+                }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -76,40 +118,70 @@ class McpSkillRegistry(
         }
     }
 
-    private fun currentSkills(): List<SkillDefinition> = try {
-        runBlocking(Dispatchers.IO) {
-            val servers = repository.getAllEnabledMcpServers()
-                .filter { isSupported(it.type, it.url) }
-                .associateBy { it.id }
-            repository.getAllMcpToolSnapshots()
-                .filter { it.serverId in servers }
-                .groupBy { it.serverId }
-                .toSortedMap()
-                .flatMap { (serverId, snapshots) ->
-                    val server = servers.getValue(serverId)
-                    val parsed = runCatching {
-                        snapshots.map { snapshot ->
-                            val schema = McpInputSchemaPolicy.parse(snapshot.inputSchemaJson)
-                            McpSkill(
-                                id = runtimeToolId(serverId, snapshot.remoteToolName),
-                                name = providerAlias(serverId, snapshot.remoteToolName),
-                                remoteToolName = snapshot.remoteToolName,
-                                description = snapshot.description,
-                                parametersSchema = schema.schema.toString(),
-                                headerParameters = schema.headerParameters,
-                                mcpClient = McpClient(httpClient, server.url),
-                                mcpServerId = serverId,
-                            )
-                        }
-                    }
-                    // 快照由同一批原子写入；任一行异常时整个 server 均不广告。
-                    parsed.getOrElse { emptyList() }
-                }
+    private fun currentSkills(): List<SkillDefinition> = published.get()
+        .filter { record ->
+            repository.isMcpSnapshotCurrent(
+                record.skill.mcpServerId ?: return@filter false,
+                record.serverUrl,
+                record.serverType,
+            )
         }
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        emptyList()
+        .map { it.skill }
+
+    private suspend fun buildPublishedSkills(rows: List<McpDiscoveryRow>): List<PublishedSkill> =
+        rows.groupBy { it.serverId }
+            .toSortedMap()
+            .flatMap { (_, serverRows) ->
+                coroutineContext.ensureActive()
+                runCatching { serverRows.map(::publishedSkill) }.getOrElse { emptyList() }
+            }
+
+    private fun publishedSkill(row: McpDiscoveryRow): PublishedSkill {
+        if (!isSupported(row.serverType, row.serverUrl)) {
+            throw IllegalArgumentException("MCP_LEGACY_TRANSPORT_UNSUPPORTED")
+        }
+        val schema = McpInputSchemaPolicy.parse(row.inputSchemaJson)
+        return PublishedSkill(
+            skill = McpSkill(
+                id = runtimeToolId(row.serverId, row.remoteToolName),
+                name = providerAlias(row.serverId, row.remoteToolName),
+                remoteToolName = row.remoteToolName,
+                description = row.description,
+                parametersSchema = schema.schema.toString(),
+                headerParameters = schema.headerParameters,
+                mcpClient = McpClient(httpClient, row.serverUrl),
+                mcpServerId = row.serverId,
+            ),
+            serverUrl = row.serverUrl,
+            serverType = row.serverType,
+        )
+    }
+
+    private fun replacePublishedServer(
+        serverId: String,
+        serverUrl: String,
+        serverType: String,
+        snapshots: List<McpToolSnapshotEntity>,
+    ) {
+        val replacement = runCatching {
+            snapshots.map { snapshot ->
+                publishedSkill(
+                    McpDiscoveryRow(
+                        serverId = serverId,
+                        serverUrl = serverUrl,
+                        serverType = serverType,
+                        remoteToolName = snapshot.remoteToolName,
+                        description = snapshot.description,
+                        inputSchemaJson = snapshot.inputSchemaJson,
+                        syncedAt = snapshot.syncedAt,
+                    ),
+                )
+            }
+        }.getOrElse { emptyList() }
+        published.updateAndGet { existing ->
+            (existing.filterNot { it.skill.mcpServerId == serverId } + replacement)
+                .sortedWith(compareBy({ it.skill.mcpServerId }, { it.skill.runtimeToolId }))
+        }
     }
 
     private fun isSupported(type: String, url: String): Boolean {
