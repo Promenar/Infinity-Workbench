@@ -27,12 +27,7 @@ class McpClientContractTest {
                 .isEqualTo("application/json, text/event-stream")
             val meta = Json.parseToJsonElement(body).jsonObject
                 .getValue("params").jsonObject.getValue("_meta").jsonObject
-            assertThat(meta.getValue("protocolVersion").toString()).isEqualTo("\"2026-07-28\"")
-            assertThat(meta.getValue("clientInfo").jsonObject.getValue("name").toString())
-                .isEqualTo("\"Nexara\"")
-            assertThat(meta.getValue("clientInfo").jsonObject.getValue("version").toString())
-                .isEqualTo("\"0.2-beta\"")
-            assertThat(meta.getValue("clientCapabilities").jsonObject).isEmpty()
+            assertModernMetadata(meta)
             val id = Json.parseToJsonElement(body).jsonObject.getValue("id").toString()
             if (bodies.size == 1) {
                 respond(json(id, """{"tools":[{"name":"one","inputSchema":{"type":"object"}}],"nextCursor":"next"}"""))
@@ -109,12 +104,7 @@ class McpClientContractTest {
                     assertThat(request.headers[HttpHeaders.Accept])
                         .isEqualTo("application/json, text/event-stream")
                     val meta = root.getValue("params").jsonObject.getValue("_meta").jsonObject
-                    assertThat(meta.getValue("protocolVersion").toString()).isEqualTo("\"2026-07-28\"")
-                    assertThat(meta.getValue("clientInfo").jsonObject.getValue("name").toString())
-                        .isEqualTo("\"Nexara\"")
-                    assertThat(meta.getValue("clientInfo").jsonObject.getValue("version").toString())
-                        .isEqualTo("\"0.2-beta\"")
-                    assertThat(meta.getValue("clientCapabilities").jsonObject).isEmpty()
+                    assertModernMetadata(meta)
                     assertThat(root.getValue("params").jsonObject.getValue("name").toString())
                         .isEqualTo("\"search\"")
                     respond(json(id, """{"content":[{"type":"text","text":"ok"}]}"""))
@@ -162,6 +152,28 @@ class McpClientContractTest {
     }
 
     private fun json(id: String, result: String) = """{"jsonrpc":"2.0","id":$id,"result":$result}"""
+
+    private fun assertModernMetadata(meta: kotlinx.serialization.json.JsonObject) {
+        assertThat(meta.keys).containsExactly(
+            "io.modelcontextprotocol/protocolVersion",
+            "io.modelcontextprotocol/clientInfo",
+            "io.modelcontextprotocol/clientCapabilities",
+        )
+        assertThat(meta.containsKey("protocolVersion")).isFalse()
+        assertThat(meta.containsKey("clientInfo")).isFalse()
+        assertThat(meta.containsKey("clientCapabilities")).isFalse()
+        assertThat(meta.getValue("io.modelcontextprotocol/protocolVersion").toString())
+            .isEqualTo("\"2026-07-28\"")
+        assertThat(
+            meta.getValue("io.modelcontextprotocol/clientInfo").jsonObject
+                .getValue("name").toString(),
+        ).isEqualTo("\"Nexara\"")
+        assertThat(
+            meta.getValue("io.modelcontextprotocol/clientInfo").jsonObject
+                .getValue("version").toString(),
+        ).isEqualTo("\"0.2-beta\"")
+        assertThat(meta.getValue("io.modelcontextprotocol/clientCapabilities").jsonObject).isEmpty()
+    }
 
     private fun io.ktor.client.engine.mock.MockRequestHandleScope.respond(body: String) = respond(
         body,

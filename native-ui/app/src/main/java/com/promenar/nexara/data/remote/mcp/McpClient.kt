@@ -191,12 +191,12 @@ class McpClient(
     }
 
     private fun requestMetadata(): JsonObject = buildJsonObject {
-        put("protocolVersion", PROTOCOL_VERSION)
-        put("clientInfo", buildJsonObject {
+        put(META_PROTOCOL_VERSION, PROTOCOL_VERSION)
+        put(META_CLIENT_INFO, buildJsonObject {
             put("name", CLIENT_NAME)
             put("version", BuildConfig.VERSION_NAME)
         })
-        put("clientCapabilities", JsonObject(emptyMap()))
+        put(META_CLIENT_CAPABILITIES, JsonObject(emptyMap()))
     }
 
     private fun requiredString(element: JsonElement): String {
@@ -216,6 +216,9 @@ class McpClient(
         const val PROTOCOL_VERSION = "2026-07-28"
         const val CLIENT_NAME = "Nexara"
         const val ACCEPT = "application/json, text/event-stream"
+        const val META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion"
+        const val META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo"
+        const val META_CLIENT_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
         const val HEADER_PROTOCOL_VERSION = "MCP-Protocol-Version"
         const val HEADER_METHOD = "Mcp-Method"
         const val HEADER_NAME = "Mcp-Name"
