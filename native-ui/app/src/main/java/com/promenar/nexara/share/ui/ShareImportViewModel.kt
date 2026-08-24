@@ -24,6 +24,14 @@ import java.io.IOException
 
 enum class SharePresentationState { Idle, Presenting, Visible }
 
+enum class ShareImportErrorCode {
+    PRESENT_FAILED,
+    IMPORT_FAILED,
+    INDEX_RETRY_FAILED,
+    POSTPONE_FAILED,
+    CANCEL_FAILED,
+}
+
 data class ShareImportUiState(
     val visible: Boolean = false,
     val items: List<ShareImportItem> = emptyList(),
@@ -32,7 +40,7 @@ data class ShareImportUiState(
     val importing: Boolean = false,
     val presentation: SharePresentationState = SharePresentationState.Idle,
     val pendingCount: Int = 0,
-    val errorMessage: String? = null,
+    val error: ShareImportErrorCode? = null,
 )
 
 class ShareImportViewModel(
@@ -96,7 +104,7 @@ class ShareImportViewModel(
                     _state.value = _state.value.copy(
                         visible = false,
                         presentation = SharePresentationState.Idle,
-                        errorMessage = failure.toShareError(),
+                        error = ShareImportErrorCode.PRESENT_FAILED,
                     )
                 }
             }
@@ -112,7 +120,7 @@ class ShareImportViewModel(
         val active = lease ?: return
         val root = _state.value.selectedWorkspaceRootUuid ?: return
         if (_state.value.importing) return
-        _state.value = _state.value.copy(importing = true, errorMessage = null)
+        _state.value = _state.value.copy(importing = true, error = null)
         viewModelScope.launch {
             try {
                 queue.recordTargetDurably(active.request.requestId, root)
@@ -130,7 +138,7 @@ class ShareImportViewModel(
                 nackAfterCancellation(active)
                 throw cancelled
             } catch (failure: Exception) {
-                _state.value = _state.value.copy(errorMessage = failure.toShareError())
+                _state.value = _state.value.copy(error = ShareImportErrorCode.IMPORT_FAILED)
             } finally {
                 _state.value = _state.value.copy(importing = false)
             }
@@ -150,7 +158,7 @@ class ShareImportViewModel(
         }
         if (_state.value.importing) return
         if (failed.isEmpty() && failedIndexes.isNotEmpty()) {
-            _state.value = _state.value.copy(importing = true, errorMessage = null)
+            _state.value = _state.value.copy(importing = true, error = null)
             viewModelScope.launch {
                 try {
                     val retried = failedIndexes.all { item -> retryIndex(root, item.fileUuid!!) }
@@ -163,7 +171,7 @@ class ShareImportViewModel(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
-                    _state.value = _state.value.copy(errorMessage = failure.toShareError())
+                    _state.value = _state.value.copy(error = ShareImportErrorCode.INDEX_RETRY_FAILED)
                 } finally {
                     _state.value = _state.value.copy(importing = false)
                 }
@@ -175,7 +183,7 @@ class ShareImportViewModel(
             importAll()
             return
         }
-        _state.value = _state.value.copy(importing = true, errorMessage = null)
+        _state.value = _state.value.copy(importing = true, error = null)
         viewModelScope.launch {
             try {
                 val retried = importer.import(request, root, failed)
@@ -192,7 +200,7 @@ class ShareImportViewModel(
                 lease?.let { nackAfterCancellation(it) }
                 throw cancelled
             } catch (failure: Exception) {
-                _state.value = _state.value.copy(errorMessage = failure.toShareError())
+                _state.value = _state.value.copy(error = ShareImportErrorCode.IMPORT_FAILED)
             } finally {
                 _state.value = _state.value.copy(importing = false)
             }
@@ -210,12 +218,12 @@ class ShareImportViewModel(
                     completedRequest = null
                     _state.value = ShareImportUiState(pendingCount = queue.durablePendingCount.value)
                 } else {
-                    _state.value = _state.value.copy(errorMessage = "暂时无法保存稍后处理状态，请重试")
+                    _state.value = _state.value.copy(error = ShareImportErrorCode.POSTPONE_FAILED)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _state.value = _state.value.copy(errorMessage = failure.toShareError())
+                _state.value = _state.value.copy(error = ShareImportErrorCode.POSTPONE_FAILED)
             }
         }
         return shouldAdvance
@@ -231,12 +239,12 @@ class ShareImportViewModel(
                     completedRequest = null
                     _state.value = ShareImportUiState(pendingCount = queue.durablePendingCount.value)
                 } else {
-                    _state.value = _state.value.copy(errorMessage = "取消导入失败，请重试")
+                    _state.value = _state.value.copy(error = ShareImportErrorCode.CANCEL_FAILED)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                _state.value = _state.value.copy(errorMessage = failure.toShareError())
+                _state.value = _state.value.copy(error = ShareImportErrorCode.CANCEL_FAILED)
             }
         }
     }
@@ -273,10 +281,6 @@ class ShareImportViewModel(
     } catch (_: IllegalStateException) {
         false
     }
-
-    private fun Exception.toShareError(): String = message?.takeIf { it.isNotBlank() }
-        ?.let { "导入状态保存失败：${it.take(120)}" }
-        ?: "导入状态保存失败，请重试"
 
     private fun reconcileIndexState(queueState: VectorizationQueue.QueueState) {
         if (!queueState.restored && queueState.queue.isEmpty()) return

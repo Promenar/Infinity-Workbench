@@ -44,6 +44,14 @@
     <string name="common_cd_back">返回</string>
     <string name="common_cd_save">保存</string>
     <string name="common_cd_clear">清除</string>
+    <string name="common_retry">重试</string>
+    <string name="agent_edit_error_load">无法加载此 Agent。</string>
+    <string name="agent_edit_error_save">无法保存此 Agent。</string>
+    <string name="agent_edit_error_delete">无法删除此 Agent。</string>
+    <string name="agent_edit_error_avatar">无法将此图片设为头像。</string>
+    <string name="settings_error_token_load">无法刷新 Token 用量。</string>
+    <string name="settings_error_token_clear">无法清除 Token 用量。</string>
+    <string name="settings_error_avatar">无法保存此头像图片。</string>
     <string name="common_cd_collapse">收起</string>
     <string name="common_cd_expand">展开</string>
     <string name="common_state_collapsed">已折叠</string>
@@ -142,6 +150,11 @@
     <string name="share_import_status_rejected">已拒绝</string>
     <string name="share_import_reason_target">请先选择导入位置</string>
     <string name="share_import_reason_mime">不支持此文件类型</string>
+    <string name="share_import_error_present">无法打开分享内容，请重试。</string>
+    <string name="share_import_error_import">无法完成导入，请重试。</string>
+    <string name="share_import_error_index_retry">暂时无法重试索引，请稍后再试。</string>
+    <string name="share_import_error_postpone">无法保存稍后处理状态，请重试。</string>
+    <string name="share_import_error_cancel">无法取消导入，请重试。</string>
     <string name="share_import_reason_mismatch">文件内容与声明类型不一致</string>
     <string name="share_import_reason_name">文件名不安全</string>
     <string name="share_import_reason_permission">Nexara 无法读取此文件</string>
@@ -655,7 +668,6 @@
     <string name="backup_webdav_sync">WebDAV 同步</string>
     <string name="backup_webdav_configured">已配置</string>
     <string name="backup_webdav_not_configured">未配置</string>
-    <string name="backup_auto_backup">自动备份</string>
     <string name="backup_upload_cloud">上传到云端</string>
     <string name="backup_restore_cloud">从云端恢复</string>
     <string name="backup_config_webdav">配置 WebDAV</string>
@@ -940,6 +952,8 @@
     <string name="token_est_cost">预估费用: $%.4f</string>
     <string name="token_pricing_unavailable">暂无定价信息</string>
     <string name="token_clear_confirm_title">清除 Token 历史</string>
+    <string name="token_load_failed">无法加载 Token 用量。</string>
+    <string name="token_clear_failed">无法清除 Token 历史。</string>
     <string name="token_clear_confirm_desc">此操作将永久删除所有 Token 用量统计数据，且不可恢复。</string>
     <string name="common_cancel">取消</string>
 

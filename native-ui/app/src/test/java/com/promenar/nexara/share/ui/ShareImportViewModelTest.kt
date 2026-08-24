@@ -42,6 +42,14 @@ class ShareImportViewModelTest {
     fun tearDown() = Dispatchers.resetMain()
 
     @Test
+    fun `分享错误状态只暴露稳定类型而不暴露运行时字符串`() {
+        val fields = ShareImportUiState::class.java.declaredFields.map { it.name }
+
+        assertThat(fields).contains("error")
+        assertThat(fields).doesNotContain("errorMessage")
+    }
+
+    @Test
     fun `持久化结果完成前不ack且导入中不可关闭`() = runTest(dispatcher) {
         val uri = Uri.parse("content://fixture/shared.txt")
         val queue = mockk<ShareIntentQueue>()
@@ -98,7 +106,7 @@ class ShareImportViewModelTest {
             fixture.viewModel.importAll()
 
             assertThat(fixture.viewModel.state.value.importing).isFalse()
-            assertThat(fixture.viewModel.state.value.errorMessage).isNotNull()
+            assertThat(fixture.viewModel.state.value.error).isEqualTo(ShareImportErrorCode.IMPORT_FAILED)
             assertThat(fixture.viewModel.state.value.visible).isTrue()
         }
     }
@@ -109,12 +117,12 @@ class ShareImportViewModelTest {
         fixture.viewModel.presentNext()
         fixture.viewModel.importAll()
         assertThat(fixture.viewModel.state.value.items.single().status).isEqualTo(ShareImportStatus.Created)
-        assertThat(fixture.viewModel.state.value.errorMessage).isNotNull()
+        assertThat(fixture.viewModel.state.value.error).isEqualTo(ShareImportErrorCode.IMPORT_FAILED)
 
         coEvery { fixture.queue.ackDurably("lease") } returns true
         fixture.viewModel.retryRejected()
 
-        assertThat(fixture.viewModel.state.value.errorMessage).isNull()
+        assertThat(fixture.viewModel.state.value.error).isNull()
         assertThat(fixture.viewModel.state.value.items.single().status).isEqualTo(ShareImportStatus.Created)
         coVerify(exactly = 2) { fixture.queue.recordCreatedDurably("request", any()) }
         coVerify(exactly = 2) { fixture.queue.ackDurably("lease") }

@@ -738,9 +738,7 @@ class BackupViewModelTest {
         assertThat(operations.pending).isTrue()
         assertThat(operations.discardCalls).isEqualTo(0)
         assertThat(vm.uiState.value.operation).isInstanceOf(BackupOperation.Blocked::class.java)
-        vm.setAutoBackup(true)
         vm.setIncludeKeys(true)
-        assertThat(vm.uiState.value.autoBackup).isFalse()
         assertThat(vm.uiState.value.includeKeys).isFalse()
         assertThat(vm.saveWebDavConfig("https://new.invalid/", "u", "p".toCharArray())).isFalse()
         vm.cancelOperation()
@@ -1274,7 +1272,6 @@ class BackupViewModelTest {
 
     private class FakeSettings(
         webDavEnabled: Boolean = false,
-        override var autoBackup: Boolean = false,
         webDavUrl: String = "",
         webDavUser: String = "",
         override var lastBackupTime: Long = 0,

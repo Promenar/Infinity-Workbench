@@ -365,12 +365,6 @@ internal fun BackupSettingsScreen(
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            SettingsToggle(
-                                title = stringResource(R.string.backup_auto_backup),
-                                checked = uiState.autoBackup,
-                                onCheckedChange = { viewModel.setAutoBackup(it) }
-                            )
-
                             Button(
                                 onClick = {
                                     if (uiState.includeKeys) showUploadPasswordDialog = true

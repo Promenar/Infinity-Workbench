@@ -8,7 +8,6 @@ import org.junit.Test
 class RagSettingsMaterialContractTest {
     private val sources = mapOf(
         "global" to source("ui/rag/GlobalRagConfigScreen.kt"),
-        "search" to source("ui/settings/SearchConfigScreen.kt"),
         "advanced" to source("ui/rag/AdvancedRetrievalScreen.kt"),
         "ragAdvanced" to source("ui/rag/RagAdvancedScreen.kt"),
         "debug" to source("ui/rag/RagDebugScreen.kt"),
@@ -35,7 +34,7 @@ class RagSettingsMaterialContractTest {
 
     @Test
     fun `settings-owned retrieval pages use the dedicated se settings page layout`() {
-        listOf("global", "search", "advanced", "ragAdvanced", "debug", "graph").forEach { key ->
+        listOf("global", "advanced", "ragAdvanced", "debug", "graph").forEach { key ->
             val screen = sources.getValue(key)
             assertThat(screen).contains("NexaraSettingsPageLayout(")
             assertThat(screen).doesNotContain("NexaraPageLayout(")
@@ -61,19 +60,6 @@ class RagSettingsMaterialContractTest {
         assertThat(screen).contains("Slider(")
         assertThat(screen).contains("AlertDialog(")
         assertThat(screen).contains("TextButton(")
-    }
-
-    @Test
-    fun `search configuration uses standard list toggles engine choice and sliders`() {
-        val screen = sources.getValue("search")
-        assertThat(screen).contains("ListItem(")
-        assertThat(screen).contains("Switch(")
-        assertThat(screen).contains("RadioButton(")
-        assertThat(screen).contains("Slider(")
-        assertThat(screen).contains(".toggleable(")
-        assertThat(screen).contains(".selectable(")
-        assertThat(screen).contains("onCheckedChange = null")
-        assertThat(screen).contains("onClick = null")
     }
 
     @Test

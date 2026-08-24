@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
@@ -45,8 +46,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.welcome.runOnboardingEndpointProbe
@@ -110,6 +111,8 @@ data class SkillInfo(
     val description: String,
     val enabled: Boolean
 )
+
+enum class SettingsAsyncErrorCode { TOKEN_STATS_LOAD_FAILED, TOKEN_STATS_CLEAR_FAILED, AVATAR_IMPORT_FAILED }
 
 internal fun UiStatusNotice.withFallbackWarning(usedFallback: Boolean): UiStatusNotice =
     if (usedFallback) {
@@ -282,6 +285,14 @@ class SettingsViewModel(
     private val app = application as NexaraApplication
     private val prefs: SharedPreferences =
         application.getSharedPreferences("nexara_settings", 0)
+    private val avatarStore by lazy { AvatarStore(
+        directory = File(application.filesDir, "avatars"),
+        mimeTypeOf = { uri: Uri ->
+            application.contentResolver.getType(uri)
+                ?: java.net.URLConnection.guessContentTypeFromName(uri.path)
+        },
+        openInput = { uri: Uri -> application.contentResolver.openInputStream(uri) },
+    ) }
 
     /** 统一单例数据源 — 所有提供商/模型操作均通过 ProviderManager */
     private val pm: ProviderManager = ProviderManager.getInstance()
@@ -290,6 +301,9 @@ class SettingsViewModel(
 
     private val _tokenStats = MutableStateFlow<List<ProviderStats>>(emptyList())
     val tokenStats: StateFlow<List<ProviderStats>> = _tokenStats.asStateFlow()
+    private val _settingsError = MutableStateFlow<SettingsAsyncErrorCode?>(null)
+    val settingsError: StateFlow<SettingsAsyncErrorCode?> = _settingsError.asStateFlow()
+    private var avatarRetryUri: Uri? = null
 
     private val _skills = MutableStateFlow<List<SkillInfo>>(emptyList())
     val skills: StateFlow<List<SkillInfo>> = _skills.asStateFlow()
@@ -625,8 +639,13 @@ class SettingsViewModel(
                     )
                 }
                 _tokenCostThisMonth.value = "$%.2f".format(0.0)
+                if (_settingsError.value == SettingsAsyncErrorCode.TOKEN_STATS_LOAD_FAILED) {
+                    _settingsError.value = null
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
-                _tokenStats.value = emptyList()
+                _settingsError.value = SettingsAsyncErrorCode.TOKEN_STATS_LOAD_FAILED
             }
         }
     }
@@ -684,32 +703,27 @@ class SettingsViewModel(
         }
 
         viewModelScope.launch {
-            val localPath = saveAvatarToInternalStorage(Uri.parse(uriStr))
+            val source = Uri.parse(uriStr)
+            val localPath = try {
+                withContext(Dispatchers.IO) {
+                    avatarStore.save(source, "user-avatar")
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
             if (localPath != null) {
                 _userAvatar.value = localPath
                 prefs.edit().putString("user_avatar", localPath).apply()
-            }
-        }
-    }
-
-    private fun saveAvatarToInternalStorage(uri: Uri): String? {
-        return try {
-            val avatarDir = File(app.filesDir, "avatars")
-            if (!avatarDir.exists()) avatarDir.mkdirs()
-            
-            val outFile = File(avatarDir, "user_avatar_${System.currentTimeMillis()}.jpg")
-            
-            // 清理旧头像
-            avatarDir.listFiles()?.forEach { it.delete() }
-
-            app.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(outFile).use { output ->
-                    input.copyTo(output)
+                avatarRetryUri = null
+                if (_settingsError.value == SettingsAsyncErrorCode.AVATAR_IMPORT_FAILED) {
+                    _settingsError.value = null
                 }
+            } else {
+                avatarRetryUri = source
+                _settingsError.value = SettingsAsyncErrorCode.AVATAR_IMPORT_FAILED
             }
-            outFile.absolutePath
-        } catch (e: Exception) {
-            null
         }
     }
 
@@ -874,9 +888,21 @@ class SettingsViewModel(
             try {
                 tokenStatsRepository.resetStats()
                 _tokenStats.value = emptyList()
+                _settingsError.value = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
-                _tokenStats.value = emptyList()
+                _settingsError.value = SettingsAsyncErrorCode.TOKEN_STATS_CLEAR_FAILED
             }
+        }
+    }
+
+    fun retryLastError() {
+        when (_settingsError.value) {
+            SettingsAsyncErrorCode.TOKEN_STATS_LOAD_FAILED -> loadTokenStats()
+            SettingsAsyncErrorCode.TOKEN_STATS_CLEAR_FAILED -> clearTokenStats()
+            SettingsAsyncErrorCode.AVATAR_IMPORT_FAILED -> avatarRetryUri?.let { updateUserAvatar(it.toString()) }
+            null -> Unit
         }
     }
 

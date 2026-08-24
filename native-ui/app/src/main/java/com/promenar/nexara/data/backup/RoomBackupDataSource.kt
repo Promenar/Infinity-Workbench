@@ -60,6 +60,7 @@ class RoomBackupDataSource(
 
     override suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot = withContext(Dispatchers.IO) {
         requireCanonicalSnapshotContent(content)
+        requireWorkspaceMutationJournalRecovered()
         val safePreferences = sanitizePreferences(preferences.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES))
         val preferenceBytes = json.encodeToString(safePreferences).toByteArray(Charsets.UTF_8)
         if (preferenceBytes.size.toLong() > BackupPackageLimits.MAX_IN_MEMORY_BYTES) {
@@ -77,6 +78,7 @@ class RoomBackupDataSource(
             val secretBytes = secretSnapshot.values.sumOf { it.size.toLong() }
             val databaseAndFiles =
             database.withTransaction {
+                requireWorkspaceMutationJournalRecovered()
                 val payload = readDatabasePayload()
                 val preliminaryDatabase = json.encodeToString(payload).toByteArray(Charsets.UTF_8)
                 val nonDirectoryCount = payload.rows(FILE_TABLE).count { !it.requiredBoolean("is_directory") }
@@ -117,6 +119,7 @@ class RoomBackupDataSource(
             lockAcquired = true
             withContext(Dispatchers.IO) {
         if (hasCompletedRestoreLocked(operationId)) return@withContext
+        requireWorkspaceMutationJournalRecovered()
         requireCanonicalRestoreContent(validated)
         if (journal.read() != null) throw BackupValidationException("存在未恢复的 restore journal，请先执行 recoverInterruptedRestore")
         val payload = parseDatabase(validated.database)
@@ -164,6 +167,9 @@ class RoomBackupDataSource(
 
             // Task 8 仍须在应用层冻结其它 DB/文件 writer；本地 mutex 只串行化 restore/recovery。
             restoreFileOperations.verifyAndSync(finalRoot, expectedTree)
+            if (currentOldRootIdentity() != record.oldRootIdentity) {
+                throw BackupValidationException("恢复期间旧 managed root 身份发生变化")
+            }
             database.withTransaction {
                 clearAllRestorableTables()
                 insertPayload(transformed)
@@ -1038,6 +1044,12 @@ class RoomBackupDataSource(
             val encodedKey = java.util.Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(fileKey(managed.path).toByteArray())
             "${managed.baseIndex}:$encodedKey:${inventoryToken(expected)}"
+        }
+    }
+
+    private suspend fun requireWorkspaceMutationJournalRecovered() {
+        if (database.workspaceMutationDao().getPrepared().isNotEmpty()) {
+            throw BackupValidationException("存在未恢复的 workspace mutation journal")
         }
     }
 

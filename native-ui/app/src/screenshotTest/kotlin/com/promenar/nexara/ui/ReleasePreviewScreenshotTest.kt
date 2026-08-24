@@ -128,9 +128,6 @@ import com.promenar.nexara.data.model.catalog.SupportState
 import com.promenar.nexara.ui.common.ModelSelectionUiModel
 import com.promenar.nexara.ui.common.ModelPickerSheetContent
 import com.promenar.nexara.ui.settings.ModelTestState
-import com.promenar.nexara.ui.settings.SearchConfigScreenActions
-import com.promenar.nexara.ui.settings.SearchConfigScreenContent
-import com.promenar.nexara.ui.settings.SearchConfigState
 import com.promenar.nexara.ui.settings.ThemeScreenContent
 import com.promenar.nexara.ui.settings.ThemeUiState
 import com.promenar.nexara.ui.settings.BackupOperations
@@ -3387,30 +3384,6 @@ fun ragGlobalChineseDarkLargeFontReleasePreview() {
 
 @PreviewTest
 @Preview(
-    name = "Search settings English light landscape",
-    widthDp = LANDSCAPE_WIDTH_DP,
-    heightDp = LANDSCAPE_HEIGHT_DP,
-    locale = "en",
-    uiMode = Configuration.UI_MODE_NIGHT_NO,
-)
-@Composable
-fun searchSettingsEnglishLightLandscapeReleasePreview() {
-    RagSettingsPreviewSurface(dark = false) {
-        SearchConfigScreenContent(
-            state = SearchConfigState(
-                searchEngine = "searxng",
-                searXngUrl = "https://search.nexara.example/api",
-                resultCount = 12,
-                includeDomains = listOf("developer.android.com", "kotlinlang.org"),
-                excludeDomains = listOf("example.invalid"),
-            ),
-            actions = SearchConfigScreenActions(),
-        )
-    }
-}
-
-@PreviewTest
-@Preview(
     name = "Advanced retrieval Chinese light",
     widthDp = PHONE_WIDTH_DP,
     heightDp = PHONE_HEIGHT_DP,
@@ -3547,7 +3520,6 @@ private object PreviewBackupOperations : BackupOperations {
 
 private object PreviewBackupSettings : BackupSettingsStore {
     override var webDavEnabled = false
-    override var autoBackup = false
     override var webDavUrl = ""
     override var webDavUser = ""
     override var lastBackupTime = 0L

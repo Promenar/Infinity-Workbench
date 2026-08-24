@@ -18,5 +18,11 @@ class ReleaseNavigationDeadRouteContractTest {
         assertThat(source).doesNotContain("session_settings_sheet/{sessionId}")
         assertThat(source).doesNotContain("workspace_sheet/{sessionId}")
         assertThat(source).doesNotContain("PlaceholderScreen")
+        assertThat(source).doesNotContain("SESSION_SETTINGS")
+        assertThat(source).doesNotContain("SEARCH_CONFIG")
+        assertThat(source).doesNotContain("DEVELOPER_PANEL")
+        assertThat(source).doesNotContain("SessionSettingsScreen")
+        assertThat(source).doesNotContain("SearchConfigScreen")
+        assertThat(source).doesNotContain("DeveloperScreen")
     }
 }

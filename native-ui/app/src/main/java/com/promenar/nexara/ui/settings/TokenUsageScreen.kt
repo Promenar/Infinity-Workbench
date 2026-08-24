@@ -88,6 +88,30 @@ fun TokenUsageScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        state.error?.let { error ->
+            Text(
+                text = stringResource(
+                    when (error) {
+                        TokenStatsErrorCode.LOAD_FAILED -> R.string.token_load_failed
+                        TokenStatsErrorCode.CLEAR_FAILED -> R.string.token_clear_failed
+                    },
+                ),
+                color = MaterialTheme.colorScheme.error,
+            )
+            OutlinedButton(
+                onClick = {
+                    when (error) {
+                        TokenStatsErrorCode.LOAD_FAILED -> viewModel.loadStats()
+                        TokenStatsErrorCode.CLEAR_FAILED -> viewModel.clearStats()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Text(stringResource(R.string.common_retry))
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         if (state.isLoading) {
             Box(
                 modifier = Modifier

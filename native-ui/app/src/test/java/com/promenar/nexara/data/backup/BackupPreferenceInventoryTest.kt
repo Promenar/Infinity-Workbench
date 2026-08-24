@@ -190,6 +190,12 @@ class BackupPreferenceInventoryTest {
     }
 
     @Test
+    fun `退役自动备份键只用于识别旧包且不得继续导出`() {
+        assertThat(BackupPreferencePolicy.isKnown("backup", "auto_backup")).isTrue()
+        assertThat(BackupPreferencePolicy.isAllowed("backup", "auto_backup")).isFalse()
+    }
+
+    @Test
     fun `通知权限询问状态属于设备本地状态且不得进入备份`() {
         assertWithMessage("设备权限状态应登记为已知")
             .that(

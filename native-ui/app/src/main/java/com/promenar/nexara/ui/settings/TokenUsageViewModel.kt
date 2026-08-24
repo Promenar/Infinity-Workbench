@@ -27,6 +27,8 @@ data class ModelCostInfo(
     val pricingAvailable: Boolean
 )
 
+enum class TokenStatsErrorCode { LOAD_FAILED, CLEAR_FAILED }
+
 data class TokenStatsState(
     val globalInput: Long = 0,
     val globalOutput: Long = 0,
@@ -36,7 +38,7 @@ data class TokenStatsState(
     val topSessions: List<SessionTokenUsage> = emptyList(),
     val dailyTrend: List<DailyTokenStats> = emptyList(),
     val isLoading: Boolean = true,
-    val error: String? = null,
+    val error: TokenStatsErrorCode? = null,
     val showClearConfirm: Boolean = false
 )
 
@@ -94,7 +96,7 @@ class TokenUsageViewModel(
                 throw cancelled
             } catch (e: Exception) {
                 NexaraLogger.logError("$TAG.loadStats", e)
-                _state.value = _state.value.copy(isLoading = false, error = e.message)
+                _state.value = _state.value.copy(isLoading = false, error = TokenStatsErrorCode.LOAD_FAILED)
             }
         }
     }
@@ -116,8 +118,10 @@ class TokenUsageViewModel(
                 throw cancelled
             } catch (e: Exception) {
                 NexaraLogger.logError("$TAG.clearStats", e)
-            } finally {
-                _state.value = _state.value.copy(showClearConfirm = false)
+                _state.value = _state.value.copy(
+                    error = TokenStatsErrorCode.CLEAR_FAILED,
+                    showClearConfirm = false,
+                )
             }
         }
     }

@@ -14,7 +14,7 @@ class ReleaseAboutSurfaceContractTest {
         assertThat(settings).contains("R.string.settings_about_nexara")
         assertThat(settings).doesNotContain("R.string.settings_version, state.versionName")
         assertThat(settings).doesNotContain("onNavigateToSecondary(\"developer_panel\")")
-        assertThat(navGraph).contains("if (BuildConfig.DEBUG) {\n            composable(NavDestinations.DEVELOPER_PANEL)")
+        assertThat(navGraph).doesNotContain("DEVELOPER_PANEL")
     }
 
     private fun source(relative: String): String = Files.readAllBytes(

@@ -60,6 +60,7 @@ import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.settings.SettingsViewModel
+import com.promenar.nexara.ui.settings.SettingsAsyncErrorCode
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.yalantis.ucrop.UCrop
@@ -75,6 +76,7 @@ fun UserSettingsHomeScreen(
     val userName by viewModel.userName.collectAsState()
     val userAvatar by viewModel.userAvatar.collectAsState()
     val language by viewModel.language.collectAsState()
+    val settingsError by viewModel.settingsError.collectAsState()
 
     var showNameEditor by remember { mutableStateOf(false) }
     var editingName by remember { mutableStateOf(userName) }
@@ -118,17 +120,18 @@ fun UserSettingsHomeScreen(
         }
     }
 
-    val state = remember(userName, userAvatar) {
+    val state = remember(userName, userAvatar, settingsError) {
         UserSettingsHomeScreenState(
             userName = userName,
             userAvatar = userAvatar,
+            error = settingsError,
             localInferenceAvailable = BuildConfig.LOCAL_INFERENCE_AVAILABLE
         )
     }
 
     val actions = UserSettingsHomeScreenActions(
             onChangeAvatar = {
-                photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             },
             onEditName = {
                 editingName = userName
@@ -151,7 +154,8 @@ fun UserSettingsHomeScreen(
                         android.net.Uri.parse("https://github.com/promenar/nexara"),
                     ),
                 )
-            }
+            },
+            onRetryError = viewModel::retryLastError,
         )
 
     UserSettingsHomeScreenContent(state = state, actions = actions)
@@ -185,6 +189,7 @@ internal data class UserSettingsHomeScreenState(
     val userName: String = "",
     val userAvatar: String? = null,
     val localInferenceAvailable: Boolean = false,
+    val error: SettingsAsyncErrorCode? = null,
 )
 
 internal data class UserSettingsHomeScreenActions(
@@ -194,6 +199,7 @@ internal data class UserSettingsHomeScreenActions(
     val onNavigateToSecondary: (String) -> Unit = {},
     val onAboutClick: () -> Unit = {},
     val onOpenGithub: () -> Unit = {},
+    val onRetryError: () -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -224,6 +230,25 @@ internal fun UserSettingsHomeScreenContent(
                         onEditName = actions.onEditName,
                         onChangeAvatar = actions.onChangeAvatar,
                     )
+                    state.error?.let { error ->
+                        Text(
+                            text = stringResource(
+                                when (error) {
+                                    SettingsAsyncErrorCode.TOKEN_STATS_LOAD_FAILED -> R.string.settings_error_token_load
+                                    SettingsAsyncErrorCode.TOKEN_STATS_CLEAR_FAILED -> R.string.settings_error_token_clear
+                                    SettingsAsyncErrorCode.AVATAR_IMPORT_FAILED -> R.string.settings_error_avatar
+                                },
+                            ),
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = NexaraSpacing.ScreenHorizontal),
+                        )
+                        TextButton(
+                            onClick = actions.onRetryError,
+                            modifier = Modifier.padding(horizontal = NexaraSpacing.ScreenHorizontal),
+                        ) {
+                            Text(stringResource(R.string.common_retry))
+                        }
+                    }
                 }
             }
 

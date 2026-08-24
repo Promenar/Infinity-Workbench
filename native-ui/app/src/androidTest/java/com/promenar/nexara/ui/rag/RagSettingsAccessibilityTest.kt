@@ -41,11 +41,10 @@ import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenActions
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenContent
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenState
-import com.promenar.nexara.ui.settings.SearchConfigScreenActions
-import com.promenar.nexara.ui.settings.SearchConfigScreenContent
 import com.promenar.nexara.ui.settings.SearchConfigState
 import com.promenar.nexara.ui.settings.SearchSecretOperation
 import com.promenar.nexara.ui.settings.TavilySecretEditor
+import com.promenar.nexara.ui.settings.TavilySecretActions
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraThemeMode
@@ -146,86 +145,6 @@ class RagSettingsAccessibilityTest {
     }
 
     @Test
-    fun searchControlsDispatchTotalEngineAndDomainChangesInLandscapeLightTheme() {
-        var state by mutableStateOf(
-            SearchConfigState(
-                webSearchEnabled = true,
-                searchEngine = "duckduckgo",
-                includeDomains = listOf("docs.example.com"),
-            ),
-        )
-        rule.setContent {
-            DeviceConfigurationOverride(
-                DeviceConfigurationOverride.WindowSize(DpSize(800.dp, 360.dp)),
-            ) {
-                NexaraTheme(
-                    preferences = NexaraThemePreferences(
-                        mode = NexaraThemeMode.LIGHT,
-                        colorSource = NexaraColorSource.NEXARA,
-                    ),
-                ) {
-                    SearchConfigScreenContent(
-                        state = state,
-                        actions = SearchConfigScreenActions(
-                            onWebSearchEnabledChange = { state = state.copy(webSearchEnabled = it) },
-                            onSearchEngineChange = { state = state.copy(searchEngine = it) },
-                            onAddIncludeDomain = { domain ->
-                                state = state.copy(includeDomains = state.includeDomains + domain)
-                            },
-                            onRemoveIncludeDomain = { domain ->
-                                state = state.copy(includeDomains = state.includeDomains - domain)
-                            },
-                        ),
-                    )
-                }
-            }
-        }
-
-        rule.onNodeWithTag("search_web_enabled_row")
-            .assertWidthIsAtLeast(48.dp)
-            .assertHeightIsAtLeast(48.dp)
-            .assertIsToggleable()
-            .assertIsOn()
-            .performClick()
-        rule.runOnIdle { assertThat(state.webSearchEnabled).isFalse() }
-        rule.onNodeWithTag("search_web_enabled_switch", useUnmergedTree = true)
-            .assert(!hasClickAction())
-        rule.onNodeWithTag("search_engine_row_searxng")
-            .performScrollTo()
-            .assertIsSelectable()
-            .assertHasClickAction()
-            .performClick()
-        rule.runOnIdle { assertThat(state.searchEngine).isEqualTo("searxng") }
-        rule.onNodeWithTag("search_engine_row_searxng").assertIsSelected()
-        rule.onNodeWithTag("search_engine_searxng", useUnmergedTree = true)
-            .assert(!hasClickAction())
-
-        rule.onNodeWithTag("search_include_domain_input")
-            .performScrollTo()
-            .assertIsDisplayed()
-            .performTextInput("developer.android.com")
-        Espresso.closeSoftKeyboard()
-        rule.waitForIdle()
-        rule.onNodeWithTag("search_include_domain_add", useUnmergedTree = true)
-            .assertIsDisplayed()
-            .assertIsEnabled()
-            .assertHasClickAction()
-            .performClick()
-        rule.runOnIdle { assertThat(state.includeDomains).contains("developer.android.com") }
-        rule.onNodeWithText("docs.example.com")
-            .performScrollTo()
-            .assertIsDisplayed()
-        rule.onNodeWithTag(
-            "search_include_domain_remove_docs.example.com",
-            useUnmergedTree = true,
-        )
-            .assertIsDisplayed()
-            .assertHasClickAction()
-            .performClick()
-        rule.runOnIdle { assertThat(state.includeDomains).doesNotContain("docs.example.com") }
-    }
-
-    @Test
     fun tavilySecretEditorSavesRevealsAndClearsWithoutPersistingPlaintextInState() {
         val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
         var state by mutableStateOf(
@@ -241,16 +160,16 @@ class RagSettingsAccessibilityTest {
             NexaraTheme(dynamicColor = false) {
                 TavilySecretEditor(
                     state = state,
-                    actions = SearchConfigScreenActions(
-                        onSaveTavilySecret = { secret ->
+                    actions = TavilySecretActions(
+                        onSave = { secret ->
                             savedSecret.set(secret.concatToString())
                             state = state.copy(
                                 hasTavilyApiKey = true,
                                 secretOperation = SearchSecretOperation.Saved,
                             )
                         },
-                        onRevealTavilySecret = { "runtime-only-key".toCharArray() },
-                        onClearTavilySecret = {
+                        onReveal = { "runtime-only-key".toCharArray() },
+                        onClear = {
                             cleared.set(true)
                             state = state.copy(
                                 hasTavilyApiKey = false,

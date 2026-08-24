@@ -147,7 +147,10 @@ internal class AndroidTransactionalBackupPreferenceStore(
         namespaceSpecs.forEach { spec ->
             val prefs = appContext.getSharedPreferences(spec.physicalName, Context.MODE_PRIVATE)
             val editor = prefs.edit()
-            prefs.all.keys.filter { BackupPreferencePolicy.isAllowed(spec.logicalName, it) }
+            prefs.all.keys.filter {
+                BackupPreferencePolicy.isAllowed(spec.logicalName, it) ||
+                    BackupPreferencePolicy.isRetired(spec.logicalName, it)
+            }
                 .forEach(editor::remove)
             byNamespace[spec.logicalName].orEmpty().forEach { entry -> editor.put(entry) }
             if (!editor.commit()) throw BackupValidationException("偏好命名空间写入失败: ${spec.logicalName}")
@@ -193,16 +196,22 @@ internal class AndroidTransactionalBackupPreferenceStore(
         val seen = mutableSetOf<Pair<String, String>>()
         canonical.entries.forEach { entry ->
             if (entry.namespace !in logicalNamespaces) throw BackupValidationException("偏好 namespace 不受支持")
-            if (!BackupPreferencePolicy.isAllowed(entry.namespace, entry.key)) {
+            if (!BackupPreferencePolicy.isKnown(entry.namespace, entry.key)) {
                 throw BackupValidationException("偏好键不在白名单")
             }
             if (!seen.add(entry.namespace to entry.key)) throw BackupValidationException("偏好键重复")
             validateEntryType(entry)
         }
-        if (canonical.providerIds != deriveProviderIds(canonical.entries)) {
+        val retained = canonical.entries.filterNot {
+            BackupPreferencePolicy.isRetired(it.namespace, it.key)
+        }
+        if (retained.any { !BackupPreferencePolicy.isAllowed(it.namespace, it.key) }) {
+            throw BackupValidationException("偏好键不在白名单")
+        }
+        if (canonical.providerIds != deriveProviderIds(retained)) {
             throw BackupValidationException("Provider ID 清单与偏好内容不一致")
         }
-        return canonical
+        return canonicalSnapshot(retained, canonical.providerIds)
     }
 
     private fun validateEntryType(entry: BackupPreferenceEntry) {

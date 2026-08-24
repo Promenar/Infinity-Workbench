@@ -44,6 +44,14 @@
     <string name="common_cd_back">Back</string>
     <string name="common_cd_save">Save</string>
     <string name="common_cd_clear">Clear</string>
+    <string name="common_retry">Retry</string>
+    <string name="agent_edit_error_load">Unable to load this agent.</string>
+    <string name="agent_edit_error_save">Unable to save this agent.</string>
+    <string name="agent_edit_error_delete">Unable to delete this agent.</string>
+    <string name="agent_edit_error_avatar">Unable to use this image as the avatar.</string>
+    <string name="settings_error_token_load">Unable to refresh token usage.</string>
+    <string name="settings_error_token_clear">Unable to clear token usage.</string>
+    <string name="settings_error_avatar">Unable to save this avatar image.</string>
     <string name="common_cd_collapse">Collapse</string>
     <string name="common_cd_expand">Expand</string>
     <string name="common_state_collapsed">Collapsed</string>
@@ -142,6 +150,11 @@
     <string name="share_import_status_rejected">Rejected</string>
     <string name="share_import_reason_target">Select a destination first</string>
     <string name="share_import_reason_mime">This file type is not supported</string>
+    <string name="share_import_error_present">Unable to open the shared items. Try again.</string>
+    <string name="share_import_error_import">Unable to finish importing. Try again.</string>
+    <string name="share_import_error_index_retry">Unable to retry indexing right now. Try again later.</string>
+    <string name="share_import_error_postpone">Unable to save this item for later. Try again.</string>
+    <string name="share_import_error_cancel">Unable to cancel this import. Try again.</string>
     <string name="share_import_reason_mismatch">The file contents do not match its type</string>
     <string name="share_import_reason_name">The file name is unsafe</string>
     <string name="share_import_reason_permission">Nexara cannot read this file</string>
@@ -650,7 +663,6 @@
     <string name="backup_webdav_sync">WebDAV Sync</string>
     <string name="backup_webdav_configured">Configured</string>
     <string name="backup_webdav_not_configured">Not Configured</string>
-    <string name="backup_auto_backup">Auto Backup</string>
     <string name="backup_upload_cloud">Upload to Cloud</string>
     <string name="backup_restore_cloud">Restore from Cloud</string>
     <string name="backup_config_webdav">Configure WebDAV</string>
@@ -933,6 +945,8 @@
     <string name="token_est_cost">Est. Cost: $%.4f</string>
     <string name="token_pricing_unavailable">Pricing unavailable</string>
     <string name="token_clear_confirm_title">Clear Token History</string>
+    <string name="token_load_failed">Unable to load token usage.</string>
+    <string name="token_clear_failed">Unable to clear token history.</string>
     <string name="token_clear_confirm_desc">This will permanently erase all token usage statistics. This action cannot be undone.</string>
     <string name="common_cancel">Cancel</string>
 

@@ -122,9 +122,9 @@ fun ShareImportSheet(
             ) {
                 items(state.items, key = { it.uri.toString() }) { item -> ShareImportItemRow(item) }
             }
-            state.errorMessage?.let { message ->
+            state.error?.let { error ->
                 Text(
-                    text = message,
+                    text = stringResource(error.stringResource()),
                     color = androidx.compose.material3.MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(top = 8.dp),
                 )
@@ -149,7 +149,7 @@ fun ShareImportSheet(
                 ) {
                     Text(stringResource(R.string.share_import_cancel))
                 }
-                if (state.errorMessage != null ||
+                if (state.error != null ||
                     state.items.any { it.status == ShareImportStatus.Rejected && it.reason?.retryable == true } ||
                     state.items.any { it.indexStatus in setOf(ShareIndexStatus.Failed, ShareIndexStatus.Partial) }
                 ) {
@@ -174,6 +174,14 @@ fun ShareImportSheet(
             Spacer(Modifier.height(12.dp))
         }
     }
+}
+
+private fun ShareImportErrorCode.stringResource(): Int = when (this) {
+    ShareImportErrorCode.PRESENT_FAILED -> R.string.share_import_error_present
+    ShareImportErrorCode.IMPORT_FAILED -> R.string.share_import_error_import
+    ShareImportErrorCode.INDEX_RETRY_FAILED -> R.string.share_import_error_index_retry
+    ShareImportErrorCode.POSTPONE_FAILED -> R.string.share_import_error_postpone
+    ShareImportErrorCode.CANCEL_FAILED -> R.string.share_import_error_cancel
 }
 
 @Composable

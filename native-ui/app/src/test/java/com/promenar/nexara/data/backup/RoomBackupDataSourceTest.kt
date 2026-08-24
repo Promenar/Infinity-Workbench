@@ -18,6 +18,8 @@ import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.local.db.entity.TagEntity
 import com.promenar.nexara.data.local.db.entity.TaskNodeEntity
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationType
 import com.promenar.nexara.data.model.KgNode
 import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.toDomain
@@ -93,6 +95,44 @@ class RoomBackupDataSourceTest {
     fun tearDown() {
         db.close()
         sourceBase.parent.toFile().deleteRecursively()
+    }
+
+    @Test
+    fun `snapshot refuses to begin while workspace mutation journal is unfinished`() = runBlocking {
+        seedCompleteGraph()
+        insertPreparedWorkspaceMutation("snapshot-pending")
+
+        assertFails { newDataSource().snapshot(CANONICAL_CONTENT) }
+
+        assertThat(db.workspaceMutationDao().get("snapshot-pending")).isNotNull()
+    }
+
+    @Test
+    fun `restore refuses to begin while workspace mutation journal is unfinished`() = runBlocking {
+        seedCompleteGraph()
+        val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+        insertPreparedWorkspaceMutation("restore-pending")
+
+        assertFails { newDataSource().restore(validated(backup)) }
+
+        assertThat(db.workspaceMutationDao().get("restore-pending")).isNotNull()
+    }
+
+    @Test
+    fun `restore revalidates old managed root immediately before database commit`() = runBlocking {
+        seedCompleteGraph()
+        val backup = newDataSource().snapshot(CANONICAL_CONTENT)
+        db.openHelper.writableDatabase.execSQL(
+            "UPDATE agents SET name = ? WHERE id = ?",
+            arrayOf<Any?>("Current", "agent-1"),
+        )
+        val racingOps = SourceMutatingRestoreFileOperations(sourceRoot)
+
+        assertFails {
+            newDataSource(fileOperations = racingOps).restore(validated(backup))
+        }
+
+        assertThat(db.agentDao().getAll().single().name).isEqualTo("Current")
     }
 
     @Test
@@ -1272,6 +1312,20 @@ class RoomBackupDataSourceTest {
         return SeededGraph(filePath)
     }
 
+    private suspend fun insertPreparedWorkspaceMutation(operationId: String) {
+        db.workspaceMutationDao().insert(
+            WorkspaceMutationEntity(
+                operationId = operationId,
+                workspaceRootUuid = "root-1",
+                operationType = WorkspaceMutationType.CREATE,
+                payload = "{}",
+                payloadDigest = "digest",
+                createdAt = 100L,
+                updatedAt = 100L,
+            ),
+        )
+    }
+
     private fun seedDerivedRows() {
         val sqlite = db.openHelper.writableDatabase
         sqlite.execSQL(
@@ -1653,6 +1707,39 @@ private class TestRestoreFileOperations : RestoreFileOperations {
         Files.walk(root).use { stream ->
             stream.filter { Files.isDirectory(it, java.nio.file.LinkOption.NOFOLLOW_LINKS) }
                 .forEach(FileRestoreJournal::syncDirectory)
+        }
+    }
+}
+
+private class SourceMutatingRestoreFileOperations(
+    private val sourceRoot: Path,
+) : RestoreFileOperations {
+    private val delegate = TestRestoreFileOperations()
+    private var verificationCount = 0
+
+    override fun createTransactionRoot(parent: Path, name: String) = delegate.createTransactionRoot(parent, name)
+    override fun createDirectory(root: Path, relative: List<String>) = delegate.createDirectory(root, relative)
+    override fun writeNew(root: Path, relative: List<String>, bytes: ByteArray) =
+        delegate.writeNew(root, relative, bytes)
+    override fun initializeWorkspaceRootIdentity(root: Path, relative: List<String>, nonce: String): String =
+        delegate.initializeWorkspaceRootIdentity(root, relative, nonce)
+    override fun moveTree(parent: Path, sourceName: String, targetName: String) =
+        delegate.moveTree(parent, sourceName, targetName)
+    override fun inventory(parent: Path, childName: String): Set<RestoreTreeEntry> =
+        delegate.inventory(parent, childName)
+    override fun deleteTree(
+        parent: Path,
+        childName: String,
+        expectedFileKey: String,
+        marker: Pair<String, String>?,
+        expectedInventory: Set<RestoreTreeEntry>?,
+    ) = delegate.deleteTree(parent, childName, expectedFileKey, marker, expectedInventory)
+
+    override fun verifyAndSync(root: Path, expected: Set<RestoreTreeEntry>) {
+        delegate.verifyAndSync(root, expected)
+        verificationCount += 1
+        if (verificationCount == 2) {
+            Files.write(sourceRoot.resolve("raced.txt"), byteArrayOf(1))
         }
     }
 }

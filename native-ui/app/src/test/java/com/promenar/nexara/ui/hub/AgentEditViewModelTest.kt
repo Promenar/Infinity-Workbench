@@ -350,12 +350,20 @@ class AgentEditViewModelTest {
         vm.setName("用户文本")
         vm.saveAgent("coder")
 
-        assertThat(vm.saveError.value).contains("room failed")
+        assertThat(vm.saveError.value).isEqualTo(AgentEditErrorCode.SAVE_FAILED)
         coVerify(exactly = 1) {
             repo.update(match { it.name == "用户文本" && it.nameCustomized })
         }
         assertThat(agent.name).isEqualTo("Coding Expert")
         assertThat(agent.nameCustomized).isFalse()
+
+        coEvery { repo.update(any()) } returns Unit
+        vm.retryLastFailure()
+
+        assertThat(vm.saveError.value).isNull()
+        coVerify(exactly = 2) {
+            repo.update(match { it.name == "用户文本" && it.nameCustomized })
+        }
     }
 
     @Test

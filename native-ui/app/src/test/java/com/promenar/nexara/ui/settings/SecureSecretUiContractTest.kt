@@ -145,7 +145,7 @@ class SecureSecretUiContractTest {
 
     @Test
     fun `search and skills share SecretField and persistent state exposes only secret presence`() {
-        val screen = source("ui/settings/SearchConfigScreen.kt")
+        val screen = source("ui/settings/TavilySecretEditor.kt")
         val skills = source("ui/settings/SkillsScreen.kt")
         val stateFields = SearchConfigState::class.java.declaredFields.map { it.name }
 
@@ -257,7 +257,7 @@ class SecureSecretUiContractTest {
 
     @Test
     fun `search editors persist only on explicit save`() {
-        val screen = source("ui/settings/SearchConfigScreen.kt")
+        val screen = source("ui/settings/TavilySecretEditor.kt")
         val skills = source("ui/settings/SkillsScreen.kt")
 
         assertThat(screen).contains("saveTavilyApiKey(")

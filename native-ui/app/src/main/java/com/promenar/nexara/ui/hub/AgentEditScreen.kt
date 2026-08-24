@@ -149,13 +149,25 @@ fun AgentEditScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            saveError?.let { message ->
+            saveError?.let { error ->
                 item {
-                    Text(
-                        text = message,
-                        color = MaterialTheme.colorScheme.error,
-                        style = NexaraTypography.bodyMedium,
-                    )
+                    Column {
+                        Text(
+                            text = stringResource(
+                                when (error) {
+                                    AgentEditErrorCode.LOAD_FAILED -> R.string.agent_edit_error_load
+                                    AgentEditErrorCode.SAVE_FAILED -> R.string.agent_edit_error_save
+                                    AgentEditErrorCode.DELETE_FAILED -> R.string.agent_edit_error_delete
+                                    AgentEditErrorCode.AVATAR_IMPORT_FAILED -> R.string.agent_edit_error_avatar
+                                },
+                            ),
+                            color = MaterialTheme.colorScheme.error,
+                            style = NexaraTypography.bodyMedium,
+                        )
+                        TextButton(onClick = viewModel::retryLastFailure) {
+                            Text(stringResource(R.string.common_retry))
+                        }
+                    }
                 }
             }
             item {
@@ -213,7 +225,7 @@ fun AgentEditScreen(
                     val imagePickerLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.GetContent()
                     ) { uri ->
-                        uri?.let { viewModel.setAvatarPath(it.toString()) }
+                        uri?.let(viewModel::importAvatar)
                     }
 
                     Column(

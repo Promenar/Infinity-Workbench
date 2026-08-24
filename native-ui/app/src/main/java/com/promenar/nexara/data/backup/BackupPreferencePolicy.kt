@@ -40,7 +40,7 @@ internal object BackupPreferencePolicy {
             "has_shown_welcome", "language", "theme_mode", "theme_color_source", "haptic_enabled",
             "loop_limit", "user_name",
         ),
-        "backup" to setOf("webdav_enabled", "auto_backup", "webdav_url", "webdav_user", "last_backup_time"),
+        "backup" to setOf("webdav_enabled", "webdav_url", "webdav_user", "last_backup_time"),
     )
 
     private val dynamicAllowed = mapOf(
@@ -66,6 +66,11 @@ internal object BackupPreferencePolicy {
         ),
     )
 
+    // 只为读取旧备份时识别并丢弃；不得继续导出或写回设备。
+    private val exactRetired = mapOf(
+        "backup" to setOf("auto_backup"),
+    )
+
     fun isAllowed(namespace: String, key: String): Boolean {
         val normalizedNamespace = normalizeNamespace(namespace)
         val normalizedKey = normalize(key)
@@ -79,7 +84,14 @@ internal object BackupPreferencePolicy {
         val normalizedKey = normalize(key)
         return isAllowed(namespace, key) ||
             normalizedKey in exactDenied[normalizedNamespace].orEmpty() ||
+            normalizedKey in exactRetired[normalizedNamespace].orEmpty() ||
             isDenied(key)
+    }
+
+    fun isRetired(namespace: String, key: String): Boolean {
+        val normalizedNamespace = normalizeNamespace(namespace)
+        val normalizedKey = normalize(key)
+        return normalizedKey in exactRetired[normalizedNamespace].orEmpty()
     }
 
     fun isDenied(key: String): Boolean {

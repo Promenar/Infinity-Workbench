@@ -37,6 +37,14 @@ class DefaultModelsScreenContractTest {
     }
 
     @Test
+    fun `each configured default model exposes explicit persistent clear`() {
+        assertThat(screenSource).contains("onClearModel = { role ->")
+        assertThat(screenSource).contains("viewModel.setPresetModel(role.type, \"\")")
+        assertThat(screenSource).contains("default_model_clear:")
+        assertThat(screenSource).contains("R.string.common_cd_clear")
+    }
+
+    @Test
     fun `default models screen follows route content state action seam`() {
         assertThat(screenSource).contains("data class DefaultModelsScreenState(")
         assertThat(screenSource).contains("data class DefaultModelsScreenActions(")

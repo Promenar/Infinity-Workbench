@@ -30,7 +30,6 @@ import com.promenar.nexara.onboarding.OnboardingLanguageSelectionCoordinator
 import com.promenar.nexara.onboarding.createOnboardingAgentSession
 import com.promenar.nexara.onboarding.isSuccessfulOnboardingAssistant
 import com.promenar.nexara.ui.chat.ChatRoute
-import com.promenar.nexara.ui.chat.SessionSettingsScreen
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreen
 import com.promenar.nexara.ui.hub.AgentEditScreen
 import com.promenar.nexara.ui.hub.AgentRagConfigScreen
@@ -43,7 +42,6 @@ import com.promenar.nexara.ui.rag.RagDebugScreen
 import com.promenar.nexara.ui.rag.RagFolderScreen
 import com.promenar.nexara.ui.rag.AdvancedRetrievalScreen
 import com.promenar.nexara.ui.settings.BackupSettingsScreen
-import com.promenar.nexara.ui.settings.DeveloperScreen
 import com.promenar.nexara.ui.settings.LocalModelsScreen
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.settings.ProviderFormScreen
@@ -51,7 +49,6 @@ import com.promenar.nexara.ui.settings.ProviderModelsScreen
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.settings.ProviderListScreen
 import com.promenar.nexara.ui.settings.DefaultModelsScreen
-import com.promenar.nexara.ui.settings.SearchConfigScreen
 import com.promenar.nexara.ui.settings.SkillsScreen
 import com.promenar.nexara.ui.settings.ThemeScreen
 import com.promenar.nexara.ui.settings.TokenUsageScreen
@@ -66,7 +63,6 @@ object NavDestinations {
     const val MAIN_TAB_SCAFFOLD = "main_tab_scaffold"
     const val SESSION_LIST = "session_list/{agentId}"
     const val CHAT_HERO = "chat_hero/{sessionId}"
-    const val SESSION_SETTINGS = "session_settings/{sessionId}"
     const val PROVIDER_FORM = "provider_form?providerId={providerId}"
     const val PROVIDER_MODELS = "provider_models/{providerId}"
     const val AGENT_EDIT = "agent_edit/{agentId}"
@@ -80,18 +76,15 @@ object NavDestinations {
     const val RAG_FOLDER = "rag_folder/{folderId}"
     const val RAG_DEBUG = "rag_debug"
     const val TOKEN_USAGE = "token_usage"
-    const val SEARCH_CONFIG = "search_config"
     const val SKILLS_CONFIG = "skills_config"
     const val THEME_CONFIG = "theme_config"
     const val BACKUP_SETTINGS = "backup_settings"
     const val LOCAL_MODELS = "local_models"
-    const val DEVELOPER_PANEL = "developer_panel"
     const val PROVIDER_LIST = "provider_list"
     const val DEFAULT_MODELS = "default_models"
 
     fun sessionList(agentId: String) = "session_list/$agentId"
     fun chatHero(sessionId: String) = "chat_hero/$sessionId"
-    fun sessionSettings(sessionId: String) = "session_settings/$sessionId"
     fun agentEdit(agentId: String) = "agent_edit/$agentId"
     fun agentRagConfig(agentId: String) = "agent_rag_config/$agentId"
     fun agentAdvancedRetrieval(agentId: String) = "agent_advanced_retrieval/$agentId"
@@ -356,17 +349,6 @@ fun NexaraNavGraph(
         }
 
         composable(
-            route = NavDestinations.SESSION_SETTINGS,
-            arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val sessionId = backStackEntry.arguments?.getString("sessionId") ?: ""
-            SessionSettingsScreen(
-                sessionId = sessionId,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(
             route = NavDestinations.AGENT_EDIT,
             arguments = listOf(navArgument("agentId") { type = NavType.StringType })
         ) { backStackEntry ->
@@ -596,12 +578,6 @@ fun NexaraNavGraph(
             )
         }
 
-        composable(NavDestinations.SEARCH_CONFIG) {
-            SearchConfigScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
         composable(NavDestinations.SKILLS_CONFIG) {
             SkillsScreen(
                 onNavigateBack = { navController.popBackStack() }
@@ -641,12 +617,5 @@ fun NexaraNavGraph(
             }
         }
 
-        if (BuildConfig.DEBUG) {
-            composable(NavDestinations.DEVELOPER_PANEL) {
-                DeveloperScreen(
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
-        }
     }
 }

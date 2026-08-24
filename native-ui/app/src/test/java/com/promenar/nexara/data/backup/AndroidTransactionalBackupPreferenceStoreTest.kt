@@ -58,6 +58,7 @@ class AndroidTransactionalBackupPreferenceStoreTest {
         context.getSharedPreferences("nexara_prefs", 0).edit().putBoolean("has_shown_welcome", true).commit()
         context.getSharedPreferences("nexara_backup_settings", 0).edit()
             .putLong("last_backup_time", 42L)
+            .putBoolean("auto_backup", true)
             .putString("webdav_pass", "must-not-leak")
             .commit()
 
@@ -83,6 +84,29 @@ class AndroidTransactionalBackupPreferenceStoreTest {
             ))
         assertThat(snapshot.entries.map { it.key }).doesNotContain("api_key")
         assertThat(snapshot.entries.map { it.key }).doesNotContain("webdav_pass")
+        assertThat(snapshot.entries.map { it.key }).doesNotContain("auto_backup")
+    }
+
+    @Test
+    fun `restore recognizes and discards retired auto backup key while preserving fail closed unknown keys`(): Unit = runBlocking {
+        val adapter = store()
+        val before = BackupPreferenceSnapshot(emptyList(), setOf("default"))
+        val legacyAfter = BackupPreferenceSnapshot(
+            entries = listOf(entry("backup", "auto_backup", PreferenceValueType.BOOLEAN, "true")),
+            providerIds = setOf("default"),
+        )
+
+        adapter.prepare("tx-legacy-auto", before, legacyAfter)
+        adapter.commitPrepared("tx-legacy-auto")
+
+        val backupPrefs = context.getSharedPreferences("nexara_backup_settings", 0)
+        assertThat(backupPrefs.contains("auto_backup")).isFalse()
+
+        val unknownAfter = BackupPreferenceSnapshot(
+            entries = listOf(entry("backup", "future_unknown", PreferenceValueType.STRING, "x")),
+            providerIds = setOf("default"),
+        )
+        assertFails { adapter.prepare("tx-unknown", before, unknownAfter) }
     }
 
     @Test

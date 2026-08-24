@@ -96,6 +96,54 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `settings asynchronous failures expose typed retry state`() {
+        val getters = SettingsViewModel::class.java.methods.map { it.name }
+
+        assertThat(getters).contains("getSettingsError")
+        assertThat(getters).contains("retryLastError")
+    }
+
+    @Test
+    fun `token load failure is typed and retry clears it only after success`() = runTest {
+        coEvery { tokenStatsRepo.getTotalUsage() } throws IllegalStateException("runtime detail")
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+        advanceUntilIdle()
+
+        assertThat(vm.settingsError.value).isEqualTo(SettingsAsyncErrorCode.TOKEN_STATS_LOAD_FAILED)
+
+        coEvery { tokenStatsRepo.getTotalUsage() } returns TokenUsageAggregate(inputTokens = 9)
+        vm.retryLastError()
+        advanceUntilIdle()
+
+        assertThat(vm.settingsError.value).isNull()
+    }
+
+    @Test
+    fun `token clear failure preserves visible state until repository succeeds`() = runTest {
+        val usage = TokenUsageAggregate(inputTokens = 30, outputTokens = 2)
+        coEvery { tokenStatsRepo.getTotalUsage() } returns usage
+        coEvery { tokenStatsRepo.getUsageByModel() } returns listOf(
+            com.promenar.nexara.domain.repository.ModelTokenStats("gpt-4", usage),
+        )
+        coEvery { tokenStatsRepo.resetStats() } throws IllegalStateException("runtime detail")
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+        advanceUntilIdle()
+
+        vm.clearTokenStats()
+        advanceUntilIdle()
+
+        assertThat(vm.tokenStats.value.single().totalTokens).isEqualTo(32)
+        assertThat(vm.settingsError.value).isEqualTo(SettingsAsyncErrorCode.TOKEN_STATS_CLEAR_FAILED)
+
+        coEvery { tokenStatsRepo.resetStats() } returns Unit
+        vm.retryLastError()
+        advanceUntilIdle()
+
+        assertThat(vm.tokenStats.value).isEmpty()
+        assertThat(vm.settingsError.value).isNull()
+    }
+
+    @Test
     fun `loadTokenStats uses tokenStatsRepository`() = runTest {
         coEvery { tokenStatsRepo.getTotalUsage() } returns TokenUsageAggregate(inputTokens = 100, outputTokens = 50)
         coEvery { tokenStatsRepo.getUsageByModel() } returns emptyList()

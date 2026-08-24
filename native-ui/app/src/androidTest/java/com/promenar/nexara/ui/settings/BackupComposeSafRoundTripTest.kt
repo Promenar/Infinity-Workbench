@@ -252,7 +252,6 @@ class BackupComposeSafRoundTripTest {
 
     private class MemorySettings : BackupSettingsStore {
         override var webDavEnabled = false
-        override var autoBackup = false
         override var webDavUrl = ""
         override var webDavUser = ""
         override var lastBackupTime = 0L

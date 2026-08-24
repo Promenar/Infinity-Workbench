@@ -88,7 +88,6 @@ val BackupOperation.isCancellable: Boolean
 data class BackupUiState(
     val includeKeys: Boolean = false,
     val webdavEnabled: Boolean = false,
-    val autoBackup: Boolean = false,
     val webdavUrl: String = "",
     val webdavUser: String = "",
     val hasWebDavPassword: Boolean = false,
@@ -114,7 +113,6 @@ data class BackupUiState(
 
 interface BackupSettingsStore {
     var webDavEnabled: Boolean
-    var autoBackup: Boolean
     var webDavUrl: String
     var webDavUser: String
     var lastBackupTime: Long
@@ -264,14 +262,6 @@ class BackupViewModel internal constructor(
             handleWebDavMutationFailure(reservation.revision, error)
             throw error
         }
-    }
-
-    fun setAutoBackup(enabled: Boolean) {
-        synchronized(operationLock) {
-            if (!initialized || restoreControl?.restartAuthorized == true || restoreBlocked || cleared) return
-        }
-        settings.autoBackup = enabled
-        _uiState.update { it.copy(autoBackup = enabled) }
     }
 
     fun setIncludeKeys(include: Boolean) {
@@ -1250,7 +1240,6 @@ class BackupViewModel internal constructor(
     private fun initializeCanonicalWebDavAuth() {
         _uiState.update { it.copy(
             webdavEnabled = settings.webDavEnabled,
-            autoBackup = settings.autoBackup,
             lastBackupTime = settings.lastBackupTime,
         ) }
         try {
@@ -1502,9 +1491,6 @@ private class SharedPreferencesBackupSettingsStore(private val prefs: SharedPref
     override var webDavEnabled: Boolean
         get() = prefs.getBoolean("webdav_enabled", false)
         set(value) { prefs.edit().putBoolean("webdav_enabled", value).apply() }
-    override var autoBackup: Boolean
-        get() = prefs.getBoolean("auto_backup", false)
-        set(value) { prefs.edit().putBoolean("auto_backup", value).apply() }
     override var webDavUrl: String
         get() = prefs.getString("webdav_url", "").orEmpty()
         set(value) { prefs.edit().putString("webdav_url", value).apply() }

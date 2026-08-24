@@ -13,8 +13,6 @@ class SettingsToolsDataVisualContractTest {
             "TokenUsageScreen.kt",
             "BackupSettingsScreen.kt",
             "LocalModelsScreen.kt",
-            "SearchConfigScreen.kt",
-            "DeveloperScreen.kt",
         ).forEach { fileName ->
             val source = source(fileName)
 
@@ -31,20 +29,9 @@ class SettingsToolsDataVisualContractTest {
             "TokenUsageScreen.kt",
             "BackupSettingsScreen.kt",
             "LocalModelsScreen.kt",
-            "SearchConfigScreen.kt",
-            "DeveloperScreen.kt",
         ).forEach { fileName ->
             assertThat(source(fileName)).contains("SettingsSectionHeader(")
         }
-    }
-
-    @Test
-    fun `开发者深层页不使用装饰性前导图标`() {
-        val source = source("DeveloperScreen.kt")
-
-        assertThat(source).contains("NexaraSettingsItem(")
-        assertThat(source).doesNotContain("leadingContent")
-        assertThat(source).doesNotContain("Icons.Rounded")
     }
 
     private fun source(fileName: String): String = Files.readAllBytes(

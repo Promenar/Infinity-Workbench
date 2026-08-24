@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.hub
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -13,6 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,10 +24,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+enum class AgentEditErrorCode { LOAD_FAILED, SAVE_FAILED, DELETE_FAILED, AVATAR_IMPORT_FAILED }
 
 class AgentEditViewModel(
     private val agentRepository: AgentRepository,
     private val ragConfigPersistence: RagConfigPersistence,
+    private val avatarImporter: suspend (Uri, String) -> String? = { _, _ -> null },
 ) : ViewModel() {
 
     private val _initialAgent = MutableStateFlow<Agent?>(null)
@@ -44,7 +50,7 @@ class AgentEditViewModel(
     private val _useInheritedConfig = MutableStateFlow(true)
     private val _ragConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRagConfig())
     private val _retrievalConfig = MutableStateFlow(com.promenar.nexara.data.agent.AgentRetrievalConfig())
-    private val _saveError = MutableStateFlow<String?>(null)
+    private val _saveError = MutableStateFlow<AgentEditErrorCode?>(null)
 
     val name: StateFlow<String> = _name.asStateFlow()
     val description: StateFlow<String> = _description.asStateFlow()
@@ -59,7 +65,7 @@ class AgentEditViewModel(
     val useInheritedConfig: StateFlow<Boolean> = _useInheritedConfig.asStateFlow()
     val ragConfig: StateFlow<com.promenar.nexara.data.agent.AgentRagConfig> = _ragConfig.asStateFlow()
     val retrievalConfig: StateFlow<com.promenar.nexara.data.agent.AgentRetrievalConfig> = _retrievalConfig.asStateFlow()
-    val saveError: StateFlow<String?> = _saveError.asStateFlow()
+    val saveError: StateFlow<AgentEditErrorCode?> = _saveError.asStateFlow()
 
     val hasChanges: StateFlow<Boolean> = combine(
         combine(
@@ -85,6 +91,7 @@ class AgentEditViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private var saveJob: Job? = null
+    private var retryAction: (() -> Unit)? = null
 
     fun loadAgent(
         agentId: String,
@@ -92,8 +99,9 @@ class AgentEditViewModel(
         localizedPresetDescription: String? = null,
     ) {
         viewModelScope.launch {
-            val agent = agentRepository.observeById(agentId).first()
-            if (agent != null) {
+            try {
+                val agent = agentRepository.observeById(agentId).first()
+                if (agent != null) {
                 val displayName = if (
                     PresetAgents.isPreset(agentId) && !agent.nameCustomized
                 ) localizedPresetName ?: agent.name else agent.name
@@ -122,6 +130,14 @@ class AgentEditViewModel(
                     _ragConfig.value = agent.ragConfig ?: getGlobalRagConfig()
                     _retrievalConfig.value = agent.retrievalConfig ?: getGlobalRetrievalConfig()
                 }
+                    _saveError.value = null
+                    retryAction = null
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _saveError.value = AgentEditErrorCode.LOAD_FAILED
+                retryAction = { loadAgent(agentId, localizedPresetName, localizedPresetDescription) }
             }
         }
     }
@@ -170,6 +186,26 @@ class AgentEditViewModel(
         scheduleSave()
     }
 
+    fun importAvatar(uri: Uri) {
+        val agentId = _initialAgent.value?.id ?: return
+        viewModelScope.launch {
+            val saved = try {
+                avatarImporter(uri, "agent-$agentId")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            if (saved == null) {
+                _saveError.value = AgentEditErrorCode.AVATAR_IMPORT_FAILED
+                retryAction = { importAvatar(uri) }
+                return@launch
+            }
+            _avatarPath.value = saved
+            scheduleSave()
+        }
+    }
+
     fun setTemperature(value: Float) {
         _temperature.value = value
         scheduleSave()
@@ -215,9 +251,22 @@ class AgentEditViewModel(
 
     fun deleteAgent(agentId: String, onDeleted: () -> Unit) {
         viewModelScope.launch {
-            agentRepository.delete(agentId)
-            onDeleted()
+            try {
+                agentRepository.delete(agentId)
+                _saveError.value = null
+                retryAction = null
+                onDeleted()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _saveError.value = AgentEditErrorCode.DELETE_FAILED
+                retryAction = { deleteAgent(agentId, onDeleted) }
+            }
         }
+    }
+
+    fun retryLastFailure() {
+        retryAction?.invoke()
     }
 
     fun saveAgent(agentId: String) {
@@ -296,11 +345,13 @@ class AgentEditViewModel(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            _saveError.value = error.message ?: "Agent 保存失败"
+            _saveError.value = AgentEditErrorCode.SAVE_FAILED
+            retryAction = { saveAgent(agent.id) }
             return Result.failure(error)
         }
         commitLocalState()
         _saveError.value = null
+        retryAction = null
         _initialAgent.value = agent
         _initialDisplayName.value = _name.value
         _initialDisplayDescription.value = _description.value
@@ -338,6 +389,18 @@ class AgentEditViewModel(
                         ragConfigPersistence = RagConfigPersistence(
                             app.getSharedPreferences("rag_settings", 0)
                         ),
+                        avatarImporter = { uri, slot ->
+                            withContext(Dispatchers.IO) {
+                                com.promenar.nexara.ui.settings.AvatarStore(
+                                    directory = java.io.File(app.filesDir, "avatars"),
+                                    mimeTypeOf = { source ->
+                                        app.contentResolver.getType(source)
+                                            ?: java.net.URLConnection.guessContentTypeFromName(source.path)
+                                    },
+                                    openInput = app.contentResolver::openInputStream,
+                                ).save(uri, slot)
+                            }
+                        },
                     ) as T
                 }
             }

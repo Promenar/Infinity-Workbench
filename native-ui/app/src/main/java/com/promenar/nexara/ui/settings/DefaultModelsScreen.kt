@@ -11,6 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
@@ -71,7 +73,8 @@ fun DefaultModelsScreen(
             onNavigateBack = onNavigateBack,
             onShowModelPicker = { role ->
                 activePickerRole = role
-            }
+            },
+            onClearModel = { role -> viewModel.setPresetModel(role.type, "") },
         )
     }
 
@@ -118,7 +121,8 @@ internal data class DefaultModelsScreenState(
 
 internal data class DefaultModelsScreenActions(
     val onNavigateBack: () -> Unit = {},
-    val onShowModelPicker: (DefaultModelRole) -> Unit = {}
+    val onShowModelPicker: (DefaultModelRole) -> Unit = {},
+    val onClearModel: (DefaultModelRole) -> Unit = {},
 )
 
 @Composable
@@ -128,6 +132,7 @@ internal fun DefaultModelsScreenContent(
 ) {
     val notSet = stringResource(R.string.settings_not_set)
     val selectModelLabel = stringResource(R.string.common_model_picker_title)
+    val clearLabel = stringResource(R.string.common_cd_clear)
     NexaraSettingsPageLayout(
         title = stringResource(R.string.settings_default_models),
         onBack = actions.onNavigateBack,
@@ -136,12 +141,13 @@ internal fun DefaultModelsScreenContent(
             item("models") {
                 NexaraSettingsSection(title = stringResource(R.string.settings_section_ai_models)) {
                     DefaultModelRole.entries.forEach { role ->
-                        val subtitle = when (role) {
+                        val selectedModelName = when (role) {
                             DefaultModelRole.SUMMARY -> state.summaryModelName
                             DefaultModelRole.IMAGE -> state.imageModelName
                             DefaultModelRole.EMBEDDING -> state.embeddingModelName
                             DefaultModelRole.RERANK -> state.rerankModelName
-                        }.ifEmpty { notSet }
+                        }
+                        val subtitle = selectedModelName.ifEmpty { notSet }
 
                         NexaraSettingsItem(
                             icon = null,
@@ -151,6 +157,16 @@ internal fun DefaultModelsScreenContent(
                             modifier = Modifier
                                 .testTag("default_model_role:${role.type}"),
                             onClickLabel = selectModelLabel,
+                            trailingContent = if (selectedModelName.isEmpty()) null else {
+                                {
+                                    TextButton(
+                                        onClick = { actions.onClearModel(role) },
+                                        modifier = Modifier.testTag("default_model_clear:${role.type}"),
+                                    ) {
+                                        Text(clearLabel)
+                                    }
+                                }
+                            },
                         )
                     }
                 }
