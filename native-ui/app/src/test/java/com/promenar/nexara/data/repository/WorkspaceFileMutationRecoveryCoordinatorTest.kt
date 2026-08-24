@@ -105,8 +105,19 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
     }
 
     @Test
-    fun `PREPARED create在DB无记录时删除孤儿文件并清理journal`() = runTest {
-        fileOps.createFile(root, listOf("orphan.txt"), "orphan".toByteArray())
+    fun `PREPARED create仅在operation归属目录存在时删除孤儿文件并清理journal`() = runTest {
+        fileOps.ensureDirectory(root, listOf(".nexara_create_operations"))
+        fileOps.createDirectory(root, listOf(".nexara_create_operations", "op-1"))
+        val staged = listOf(".nexara_create_operations", "op-1", CREATE_STAGED_NODE)
+        fileOps.createFile(root, staged, "orphan".toByteArray())
+        fileOps.createFile(
+            root,
+            listOf(".nexara_create_operations", "op-1", CREATE_MANIFEST),
+            encodeCreateOwnershipManifest(
+                WorkspaceCreateOwnershipManifest("orphan.txt", fileOps.inspect(root, staged)),
+            ),
+        )
+        fileOps.move(root, staged, listOf("orphan.txt"))
         insertJournal(
             WorkspaceMutationType.CREATE,
             WorkspaceMutationStage.PREPARED,
@@ -118,6 +129,74 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
         coordinator().recoverOrThrow()
 
         assertThat(Files.exists(root.resolve("orphan.txt"))).isFalse()
+        assertThat(database.workspaceMutationDao().get("op-1")).isNull()
+    }
+
+    @Test
+    fun `PREPARED create在物理目标预先存在且无operation归属时绝不删除`() = runTest {
+        fileOps.createFile(root, listOf("existing.txt"), "keep".toByteArray())
+        insertJournal(
+            WorkspaceMutationType.CREATE,
+            WorkspaceMutationStage.PREPARED,
+            "existing.txt",
+            "existing.txt",
+            targetUuid = "missing-row",
+        )
+
+        assertThat(runCatching { coordinator().recoverOrThrow() }.exceptionOrNull())
+            .isInstanceOf(WorkspaceMutationRecoveryException::class.java)
+        assertThat(Files.readAllBytes(root.resolve("existing.txt")).toString(Charsets.UTF_8)).isEqualTo("keep")
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+    }
+
+    @Test
+    fun `PREPARED create仅有owner目录但无manifest时保留外部同名目标`() = runTest {
+        fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        fileOps.createDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1"))
+        fileOps.createFile(root, listOf("external.txt"), "external".toByteArray())
+        insertJournal(
+            WorkspaceMutationType.CREATE,
+            WorkspaceMutationStage.PREPARED,
+            "external.txt",
+            "external.txt",
+            targetUuid = "missing-row",
+        )
+
+        assertThat(runCatching { coordinator().recoverOrThrow() }.exceptionOrNull())
+            .isInstanceOf(WorkspaceMutationRecoveryException::class.java)
+        assertThat(Files.readAllBytes(root.resolve("external.txt")).toString(Charsets.UTF_8)).isEqualTo("external")
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+    }
+
+    @Test
+    fun `DB_COMMITTED create从manifest匹配的staged node补齐final并清理journal`() = runTest {
+        database.fileEntryDao().insertAbort(
+            entry("created", "/created.txt", "created.txt", "root").copy(
+                sizeBytes = "payload".toByteArray().size.toLong(),
+            ),
+        )
+        fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        fileOps.createDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1"))
+        val staged = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1", CREATE_STAGED_NODE)
+        fileOps.createFile(root, staged, "payload".toByteArray())
+        fileOps.createFile(
+            root,
+            listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1", CREATE_MANIFEST),
+            encodeCreateOwnershipManifest(
+                WorkspaceCreateOwnershipManifest("created.txt", fileOps.inspect(root, staged)),
+            ),
+        )
+        insertJournal(
+            WorkspaceMutationType.CREATE,
+            WorkspaceMutationStage.DB_COMMITTED,
+            "created.txt",
+            "created.txt",
+            targetUuid = "created",
+        )
+
+        coordinator().recoverOrThrow()
+
+        assertThat(Files.readAllBytes(root.resolve("created.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
         assertThat(database.workspaceMutationDao().get("op-1")).isNull()
     }
 

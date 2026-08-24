@@ -265,6 +265,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             cancelAndJoinGeneration = { sessionId ->
                 generationCoordinator.cancelAndJoinSession(sessionId)
             },
+            recoverFileMutations = { target ->
+                workspaceFileMutationRecoveryCoordinator.recoverRootOrThrow(target.workspaceRootUuid)
+            },
             closePendingExecution = { sessionId ->
                 database.toolExecutionLedgerDao().cancelOpenForSession(
                     sessionId,
@@ -297,8 +300,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     suspend fun deleteSessionRecoverably(sessionId: String):
         com.promenar.nexara.data.session.SessionDeletionResult = try {
-        // 重试先收敛上次 DB_COMMITTED 的物理收尾，确保 AlreadyDeleted 不是静默跳过 journal。
-        workspaceMutationRecoveryCoordinator.recoverOrThrow()
+        // 首次 resolve 前只收敛该会话遗留的 session DELETE；其它会话 journal 不受触碰。
+        workspaceMutationRecoveryCoordinator.recoverSessionOrThrow(sessionId)
         sessionDeletionCoordinator.delete(sessionId)
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
         throw cancelled

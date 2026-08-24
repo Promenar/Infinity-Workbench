@@ -22,6 +22,7 @@ import java.util.UUID
 import java.io.OutputStream
 import com.promenar.nexara.data.session.SessionExecutionGate
 
+
 interface WorkspaceDeleteBarrierLease {
     suspend fun awaitReady()
     suspend fun commit()
@@ -37,6 +38,7 @@ private object NoOpWorkspaceDeleteBarrierLease : WorkspaceDeleteBarrierLease {
 enum class WorkspaceLifecycleErrorCode {
     ACTIVE_PERMANENT_DELETE_FORBIDDEN,
     CREATION_ROLLBACK_NOT_AUTHORIZED,
+    TARGET_COLLISION,
 }
 
 class WorkspaceLifecycleException(
@@ -296,13 +298,18 @@ class WorkspaceRepository(
         }
         val rootPath = File(root.physicalRootPath).toPath()
         val relative = relative(normalizedPath)
+        requirePhysicalTargetAbsent(rootPath, relative, normalizedPath)
         val staged = prepareMutation(root, WorkspaceMutationType.CREATE, normalizedPath, normalizedPath, uuid)
+        prepareCreateOwnership(rootPath, staged)
         val bytes = content.toByteArray(Charsets.UTF_8)
         var databaseCommitted = false
+        var placement: WorkspaceFileRollback? = null
         try {
-            fileOps.createFile(rootPath, relative, bytes)
+            placement = createAndPlace(rootPath, relative, staged) { location ->
+                fileOps.createFile(rootPath, location, bytes)
+            }.second
         } catch (failure: Throwable) {
-            cleanupCreatedNodeOrPreserveJournal(rootPath, relative, staged, failure)
+            handleCreateAttemptFailure(rootPath, relative, staged, failure)
             throw failure
         }
         val now = System.currentTimeMillis()
@@ -322,11 +329,12 @@ class WorkspaceRepository(
         try {
             commitDatabaseMutation(staged) { (insertCommitter ?: dao::insertAbort).invoke(entry) }
             databaseCommitted = true
-            completeMutation(staged)
+            placement?.commit()
+            completeCreatedMutation(rootPath, staged)
             entry
         } catch (failure: Throwable) {
             if (!databaseCommitted) {
-                cleanupCreatedNodeOrPreserveJournal(rootPath, relative, staged, failure)
+                rollbackCreatedPlacement(rootPath, relative, staged, placement, failure)
             }
             throw failure
         }
@@ -355,11 +363,16 @@ class WorkspaceRepository(
         }
         val rootPath = File(root.physicalRootPath).toPath()
         val relative = relative(normalizedPath)
+        requirePhysicalTargetAbsent(rootPath, relative, normalizedPath)
         val staged = prepareMutation(root, WorkspaceMutationType.CREATE_STREAMING, normalizedPath, normalizedPath, uuid)
+        prepareCreateOwnership(rootPath, staged)
+        var placement: WorkspaceFileRollback? = null
         val writeResult = try {
-            fileOps.createFileStreaming(rootPath, relative, maxBytes, writer)
+            createAndPlace(rootPath, relative, staged) { location ->
+                fileOps.createFileStreaming(rootPath, location, maxBytes, writer)
+            }.also { placement = it.second }.first
         } catch (failure: Throwable) {
-            cleanupCreatedNodeOrPreserveJournal(rootPath, relative, staged, failure)
+            handleCreateAttemptFailure(rootPath, relative, staged, failure)
             throw failure
         }
         val now = System.currentTimeMillis()
@@ -383,12 +396,13 @@ class WorkspaceRepository(
                 creationRollbackAuthorizations += creationRollbackKey(workspaceRootUuid, entry.uuid)
             }
             databaseCommitted = true
-            completeMutation(staged)
+            placement?.commit()
+            completeCreatedMutation(rootPath, staged)
             entry
         } catch (failure: Throwable) {
             if (!databaseCommitted) {
                 creationRollbackAuthorizations.remove(creationRollbackKey(workspaceRootUuid, entry.uuid))
-                cleanupCreatedNodeOrPreserveJournal(rootPath, relative, staged, failure)
+                rollbackCreatedPlacement(rootPath, relative, staged, placement, failure)
             }
             throw failure
         }
@@ -413,11 +427,16 @@ class WorkspaceRepository(
         }
         val rootPath = File(root.physicalRootPath).toPath()
         val relative = relative(normalizedPath)
+        requirePhysicalTargetAbsent(rootPath, relative, normalizedPath)
         val staged = prepareMutation(root, WorkspaceMutationType.MKDIR, normalizedPath, normalizedPath, uuid)
+        prepareCreateOwnership(rootPath, staged)
+        var placement: WorkspaceFileRollback? = null
         try {
-            fileOps.createDirectory(rootPath, relative)
+            placement = createAndPlace(rootPath, relative, staged) { location ->
+                fileOps.createDirectory(rootPath, location)
+            }.second
         } catch (failure: Throwable) {
-            cleanupCreatedNodeOrPreserveJournal(rootPath, relative, staged, failure)
+            handleCreateAttemptFailure(rootPath, relative, staged, failure)
             throw failure
         }
         val now = System.currentTimeMillis()
@@ -437,11 +456,12 @@ class WorkspaceRepository(
         try {
             commitDatabaseMutation(staged) { (insertCommitter ?: dao::insertAbort).invoke(entry) }
             databaseCommitted = true
-            completeMutation(staged)
+            placement?.commit()
+            completeCreatedMutation(rootPath, staged)
             entry
         } catch (failure: Throwable) {
             if (!databaseCommitted) {
-                cleanupCreatedNodeOrPreserveJournal(rootPath, relative, staged, failure)
+                rollbackCreatedPlacement(rootPath, relative, staged, placement, failure)
             }
             throw failure
         }
@@ -486,11 +506,49 @@ class WorkspaceRepository(
     override suspend fun restoreFromRecycleBin(workspaceRootUuid: String, uuid: String) = withContext(Dispatchers.IO) { withRootMutation(workspaceRootUuid) {
         val entry = dao.getAnyStateByUuidForLifecycle(workspaceRootUuid, uuid) ?: return@withRootMutation
         if (!entry.inRecycleBin) return@withRootMutation
-        val originalPath = entry.originalMaterializedPath ?: return@withRootMutation
+        val originalPath = entry.originalMaterializedPath
+            ?: throw IllegalStateException("回收站记录缺少原始路径，无法恢复。")
         val originalParent = entry.originalParentUuid
-        if (originalParent != null && dao.getActiveByUuid(workspaceRootUuid, originalParent) == null) {
+            ?: throw IllegalStateException("回收站记录缺少原父目录，无法恢复。")
+        if (dao.getActiveByUuid(workspaceRootUuid, originalParent) == null) {
             throw SecurityException("原父目录不属于当前工作区")
         }
+        val recycledSubtree = if (entry.isDirectory) {
+            dao.getSubtree(workspaceRootUuid, entry.materializedPath, true)
+        } else listOf(entry)
+        val subtreeIds = recycledSubtree.mapTo(mutableSetOf()) { it.uuid }
+        val workspaceRoot = requireRoot(workspaceRootUuid)
+        val validatedRootOriginal = validateMaterializedPath(workspaceRoot, originalPath)
+        val originalPaths = recycledSubtree.associate { child ->
+            val raw = child.originalMaterializedPath
+                ?: throw IllegalStateException("回收子树缺少原始路径，无法恢复。")
+            val validated = validateMaterializedPath(workspaceRoot, raw)
+            val expected = if (child.uuid == entry.uuid) {
+                validatedRootOriginal
+            } else {
+                validatedRootOriginal + child.materializedPath.removePrefix(entry.materializedPath)
+            }
+            if (validated != expected || !validated.startsWith(validatedRootOriginal.trimEnd('/') + "/") && child.uuid != entry.uuid) {
+                throw IllegalStateException("回收子树原始路径结构不一致，无法恢复。")
+            }
+            val originalParentUuid = child.originalParentUuid
+                ?: throw IllegalStateException("回收子树缺少原父目录，无法恢复。")
+            if (originalParentUuid !in subtreeIds && dao.getActiveByUuid(workspaceRootUuid, originalParentUuid) == null) {
+                throw IllegalStateException("回收子树原父目录无效，无法恢复。")
+            }
+            child.uuid to validated
+        }
+        if (originalPaths.values.toSet().size != originalPaths.size) {
+            throw IllegalStateException("回收子树原始路径重复，无法恢复。")
+        }
+        originalPaths.values.forEach { path ->
+            val occupied = dao.getActiveByMaterializedPath(workspaceRootUuid, path)
+            if (occupied != null && occupied.uuid !in subtreeIds) throw WorkspaceLifecycleException(
+                WorkspaceLifecycleErrorCode.TARGET_COLLISION,
+                "恢复目标路径已被占用。",
+            )
+        }
+        requireMoveTargetAbsent(entry, originalPath)
         val now = System.currentTimeMillis()
         val updates = mutableListOf(entry.copy(
             inRecycleBin = false,
@@ -502,10 +560,10 @@ class WorkspaceRepository(
             updatedAt = now,
         ))
         if (entry.isDirectory) {
-            dao.getSubtree(workspaceRootUuid, entry.materializedPath, true)
+            recycledSubtree
                 .filterNot { it.uuid == uuid }
                 .forEach { child ->
-                    val childOriginal = child.originalMaterializedPath ?: return@forEach
+                    val childOriginal = originalPaths.getValue(child.uuid)
                     updates += child.copy(
                         inRecycleBin = false,
                         recycledAt = null,
@@ -692,6 +750,7 @@ class WorkspaceRepository(
                 throw SecurityException("不允许形成循环目录关系")
             }
             val newPath = joinMaterializedPath(parent.materializedPath, entry.name)
+            requireMoveTargetAbsent(entry, newPath)
             val now = System.currentTimeMillis()
             val oldPrefix = entry.materializedPath
             val updates = mutableListOf(entry.copy(parentUuid = newParentUuid, materializedPath = newPath, updatedAt = now))
@@ -846,6 +905,12 @@ class WorkspaceRepository(
         val uuid = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         val root = File(entry.physicalRootPath).toPath()
+        if (fileOps.exists(root, listOf(".recycle_bin"))) {
+            throw WorkspaceLifecycleException(
+                WorkspaceLifecycleErrorCode.TARGET_COLLISION,
+                "回收站物理目录缺少数据库归属，已拒绝自动收养。",
+            )
+        }
         val staged = prepareMutation(
             rootEntry,
             WorkspaceMutationType.MKDIR,
@@ -853,10 +918,14 @@ class WorkspaceRepository(
             "/.recycle_bin",
             uuid,
         )
+        prepareCreateOwnership(root, staged)
+        var placement: WorkspaceFileRollback? = null
         try {
-            fileOps.ensureDirectory(root, listOf(".recycle_bin"))
+            placement = createAndPlace(root, listOf(".recycle_bin"), staged) { location ->
+                fileOps.createDirectory(root, location)
+            }.second
         } catch (failure: Throwable) {
-            // ensureDirectory 可能在创建后的验证阶段失败；保留 PREPARED 供启动恢复判定。
+            handleCreateAttemptFailure(root, listOf(".recycle_bin"), staged, failure)
             throw failure
         }
         val recycleEntry = FileEntry(
@@ -876,13 +945,15 @@ class WorkspaceRepository(
         try {
             commitDatabaseMutation(staged) { (insertCommitter ?: dao::insertAbort).invoke(recycleEntry) }
             databaseCommitted = true
-            completeMutation(staged)
+            placement?.commit()
+            completeCreatedMutation(root, staged)
         } catch (failure: Throwable) {
             // 并发赢家存在时复用；其它失败保留系统目录但不继续业务移动。
             dao.getAnyStateByMaterializedPathForLifecycle(entry.workspaceRootUuid, "/.recycle_bin")?.let { winner ->
-                abortMutation(staged, failure)
+                rollbackCreatedPlacement(root, listOf(".recycle_bin"), staged, placement, failure)
                 return winner.uuid
             }
+            if (!databaseCommitted) rollbackCreatedPlacement(root, listOf(".recycle_bin"), staged, placement, failure)
             throw failure
         }
         return uuid
@@ -895,6 +966,7 @@ class WorkspaceRepository(
         targetPath: String,
         updates: List<FileEntry>,
     ) {
+        requireMoveTargetAbsent(entry, targetPath)
         reconcileEntryTree(entry)
         val root = requireRoot(entry.workspaceRootUuid)
         val staged = prepareMutation(root, type, sourcePath, targetPath, entry.uuid)
@@ -928,6 +1000,7 @@ class WorkspaceRepository(
         targetPath: String,
         updates: List<FileEntry>,
     ) {
+        requireMoveTargetAbsent(entry, targetPath)
         val ids = updates.map { it.uuid }
         val root = requireRoot(entry.workspaceRootUuid)
         val staged = prepareMutation(
@@ -986,6 +1059,7 @@ class WorkspaceRepository(
         targetPath: String,
         updates: List<FileEntry>,
     ) {
+        requireMoveTargetAbsent(entry, targetPath)
         reconcileEntryTree(entry)
         val root = requireRoot(entry.workspaceRootUuid)
         val staged = prepareMutation(
@@ -1062,19 +1136,109 @@ class WorkspaceRepository(
         }
     }
 
-    private suspend fun cleanupCreatedNodeOrPreserveJournal(
+    private fun <T> createAndPlace(
         root: java.nio.file.Path,
-        relative: List<String>,
+        target: List<String>,
+        staged: StagedWorkspaceFileMutation?,
+        create: (List<String>) -> T,
+    ): Pair<T, WorkspaceFileRollback?> {
+        if (staged == null) return create(target) to null
+        val stagedNode = createOwnershipRelative(staged) + CREATE_STAGED_NODE
+        val result = create(stagedNode)
+        val identity = fileOps.inspect(root, stagedNode)
+        val manifest = WorkspaceCreateOwnershipManifest(target.joinToString("/"), identity)
+        fileOps.createFile(
+            root,
+            createOwnershipRelative(staged) + CREATE_MANIFEST,
+            encodeCreateOwnershipManifest(manifest),
+        )
+        return result to fileOps.move(root, stagedNode, target)
+    }
+
+    private suspend fun handleCreateAttemptFailure(
+        root: java.nio.file.Path,
+        target: List<String>,
         staged: StagedWorkspaceFileMutation?,
         failure: Throwable,
     ) {
+        if (staged == null) return
+        val targetExists = runCatching { fileOps.exists(root, target) }.getOrDefault(true)
+        if (targetExists) return // 物理布局有歧义，保留 journal 交由恢复器按 manifest 身份核验。
+        val cleanupFailure = runCatching { cleanupCreateOwnership(root, staged) }.exceptionOrNull()
+        if (cleanupFailure == null) abortMutation(staged, failure) else failure.addSuppressed(cleanupFailure)
+    }
+
+    private suspend fun rollbackCreatedPlacement(
+        root: java.nio.file.Path,
+        target: List<String>,
+        staged: StagedWorkspaceFileMutation?,
+        placement: WorkspaceFileRollback?,
+        failure: Throwable,
+    ) {
         val cleanupFailure = runCatching {
-            if (fileOps.exists(root, relative)) fileOps.delete(root, relative)
+            if (placement != null) placement.rollback()
+            else if (staged == null && fileOps.exists(root, target)) fileOps.delete(root, target)
+            cleanupCreateOwnership(root, staged)
         }.exceptionOrNull()
-        if (cleanupFailure == null) {
-            abortMutation(staged, failure)
-        } else {
-            failure.addSuppressed(cleanupFailure)
+        if (cleanupFailure == null) abortMutation(staged, failure) else failure.addSuppressed(cleanupFailure)
+    }
+
+    private suspend fun prepareCreateOwnership(
+        root: java.nio.file.Path,
+        staged: StagedWorkspaceFileMutation?,
+    ) {
+        if (staged == null) return
+        try {
+            fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+            fileOps.createDirectory(root, createOwnershipRelative(staged))
+        } catch (failure: Throwable) {
+            runCatching { mutationJournal?.abort(staged) }.exceptionOrNull()?.let(failure::addSuppressed)
+            throw failure
+        }
+    }
+
+    private suspend fun completeCreatedMutation(
+        root: java.nio.file.Path,
+        staged: StagedWorkspaceFileMutation?,
+    ) {
+        if (staged == null) return
+        cleanupCreateOwnership(root, staged)
+        completeMutation(staged)
+    }
+
+    private fun cleanupCreateOwnership(root: java.nio.file.Path, staged: StagedWorkspaceFileMutation?) {
+        if (staged == null) return
+        val ownership = createOwnershipRelative(staged)
+        if (fileOps.exists(root, ownership)) fileOps.delete(root, ownership)
+    }
+
+    private fun createOwnershipRelative(staged: StagedWorkspaceFileMutation): List<String> =
+        listOf(CREATE_OWNERSHIP_DIRECTORY, staged.operationId)
+
+    private fun requirePhysicalTargetAbsent(
+        root: java.nio.file.Path,
+        target: List<String>,
+        displayPath: String,
+    ) {
+        if (fileOps.exists(root, target)) throw WorkspaceLifecycleException(
+            WorkspaceLifecycleErrorCode.TARGET_COLLISION,
+            "目标路径已存在，未执行文件操作: $displayPath",
+        )
+    }
+
+    private suspend fun requireMoveTargetAbsent(entry: FileEntry, targetPath: String) {
+        val databaseTarget = dao.getActiveByMaterializedPath(entry.workspaceRootUuid, targetPath)
+        if (databaseTarget != null && databaseTarget.uuid != entry.uuid) throw WorkspaceLifecycleException(
+            WorkspaceLifecycleErrorCode.TARGET_COLLISION,
+            "目标路径已被占用，未执行移动。",
+        )
+        val root = File(entry.physicalRootPath).toPath()
+        val target = relative(targetPath)
+        if (fileOps.exists(root, target) && normalizeMaterializedPath(entry.materializedPath) != normalizeMaterializedPath(targetPath)) {
+            throw WorkspaceLifecycleException(
+                WorkspaceLifecycleErrorCode.TARGET_COLLISION,
+                "目标物理路径已存在，未执行移动。",
+            )
         }
     }
 

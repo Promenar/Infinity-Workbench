@@ -186,6 +186,39 @@ class DocumentIndexServiceTest {
     }
 
     @Test
+    fun `仅docId关联的遗留派生行按活动文件隔离而真正全局数据仍可见`() = runTest {
+        seedFileAndOldArtifacts()
+        database.vectorDao().insert(VectorEntity(
+            id = "legacy-vector", docId = FILE, content = "legacy searchable",
+            sessionId = "session", embedding = byteArrayOf(0, 0, 0, 0), metadata = "{}", createdAt = 1,
+        ))
+        database.vectorDao().insert(VectorEntity(
+            id = "global-vector", content = "global searchable",
+            embedding = byteArrayOf(0, 0, 0, 0), metadata = "{}", createdAt = 1,
+        ))
+        database.kgNodeDao().insert(KgNodeEntity(id = "legacy-a", name = "legacy-a", createdAt = 1))
+        database.kgNodeDao().insert(KgNodeEntity(id = "legacy-b", name = "legacy-b", createdAt = 1))
+        database.kgNodeDao().insert(KgNodeEntity(id = "global-node", name = "global", createdAt = 1))
+        database.kgEdgeDao().insert(KgEdgeEntity(
+            id = "legacy-edge", sourceId = "legacy-a", targetId = "legacy-b",
+            relation = "rel", docId = FILE, sessionId = "session", createdAt = 1,
+        ))
+
+        assertThat(database.vectorDao().getById("legacy-vector")).isNotNull()
+        assertThat(database.kgEdgeDao().getById("legacy-edge")).isNotNull()
+        val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+        database.fileEntryDao().update(current.copy(inRecycleBin = true))
+
+        assertThat(database.vectorDao().getById("legacy-vector")).isNull()
+        assertThat(database.vectorDao().searchByKeyword("legacy searchable")).isEmpty()
+        assertThat(database.vectorDao().searchFts("legacy")).isEmpty()
+        assertThat(database.kgEdgeDao().getById("legacy-edge")).isNull()
+        assertThat(database.kgNodeDao().getById("legacy-a")).isNull()
+        assertThat(database.vectorDao().getById("global-vector")).isNotNull()
+        assertThat(database.kgNodeDao().getById("global-node")).isNotNull()
+    }
+
+    @Test
     fun `候选完成后活动任务目标变化时拒绝旧目标提交`() = runTest {
         seedFileAndOldArtifacts()
         val service = RoomDocumentIndexService(database) {

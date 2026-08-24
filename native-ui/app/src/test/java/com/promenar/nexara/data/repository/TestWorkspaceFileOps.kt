@@ -53,6 +53,25 @@ class TestWorkspaceFileOps(
     override fun exists(root: Path, relative: List<String>): Boolean =
         Files.exists(resolve(root, relative, requireTarget = true), LinkOption.NOFOLLOW_LINKS)
 
+    override fun inspect(root: Path, relative: List<String>): WorkspaceNodeIdentity {
+        val target = resolve(root, relative, requireTarget = true)
+        val fileKey = Files.readAttributes(
+            target,
+            java.nio.file.attribute.BasicFileAttributes::class.java,
+            LinkOption.NOFOLLOW_LINKS,
+        ).fileKey()?.toString() ?: throw SecurityException("测试节点缺少 fileKey")
+        return if (Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS)) {
+            WorkspaceNodeIdentity("directory", 0, null, fileKey)
+        } else {
+            WorkspaceNodeIdentity(
+                "file",
+                Files.size(target),
+                com.promenar.nexara.infra.util.Sha256Utils.hashFile(target.toFile()),
+                fileKey,
+            )
+        }
+    }
+
     override fun createFile(root: Path, relative: List<String>, bytes: ByteArray) {
         val target = resolve(root, relative)
         if (!Files.isDirectory(target.parent, LinkOption.NOFOLLOW_LINKS)) {

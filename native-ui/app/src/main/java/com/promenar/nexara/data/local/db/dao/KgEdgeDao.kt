@@ -7,6 +7,9 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.promenar.nexara.data.local.db.entity.KgEdgeEntity
 
+private const val ACTIVE_KG_EDGE = "((file_uuid IS NOT NULL AND file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0)) OR (file_uuid IS NULL AND (doc_id IS NULL OR doc_id NOT IN (SELECT uuid FROM workspace_files) OR doc_id IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))))"
+private const val ACTIVE_KG_EDGE_ALIAS = "((e.file_uuid IS NOT NULL AND e.file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0)) OR (e.file_uuid IS NULL AND (e.doc_id IS NULL OR e.doc_id NOT IN (SELECT uuid FROM workspace_files) OR e.doc_id IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))))"
+
 @Dao
 interface KgEdgeDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -15,25 +18,25 @@ interface KgEdgeDao {
     @Delete
     suspend fun delete(edge: KgEdgeEntity)
 
-    @Query("SELECT * FROM kg_edges WHERE id = :edgeId AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
+    @Query("SELECT * FROM kg_edges WHERE id = :edgeId AND " + ACTIVE_KG_EDGE)
     suspend fun getById(edgeId: String): KgEdgeEntity?
 
-    @Query("SELECT * FROM kg_edges WHERE (source_id = :nodeId OR target_id = :nodeId) AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
+    @Query("SELECT * FROM kg_edges WHERE (source_id = :nodeId OR target_id = :nodeId) AND " + ACTIVE_KG_EDGE)
     suspend fun getByNodeId(nodeId: String): List<KgEdgeEntity>
 
-    @Query("SELECT * FROM kg_edges WHERE session_id = :sessionId AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
+    @Query("SELECT * FROM kg_edges WHERE session_id = :sessionId AND " + ACTIVE_KG_EDGE)
     suspend fun getBySessionId(sessionId: String): List<KgEdgeEntity>
 
-    @Query("SELECT * FROM kg_edges WHERE doc_id = :docId AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
+    @Query("SELECT * FROM kg_edges WHERE doc_id = :docId AND " + ACTIVE_KG_EDGE)
     suspend fun getByDocId(docId: String): List<KgEdgeEntity>
 
-    @Query("SELECT * FROM kg_edges WHERE doc_id IN (:docIds) AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
+    @Query("SELECT * FROM kg_edges WHERE doc_id IN (:docIds) AND " + ACTIVE_KG_EDGE)
     suspend fun getByDocIds(docIds: List<String>): List<KgEdgeEntity>
 
-    @Query("SELECT * FROM kg_edges WHERE doc_id IS NOT NULL AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
+    @Query("SELECT * FROM kg_edges WHERE doc_id IS NOT NULL AND " + ACTIVE_KG_EDGE)
     suspend fun getAllDocEdges(): List<KgEdgeEntity>
 
-    @Query("SELECT * FROM kg_edges WHERE doc_id IS NOT NULL AND doc_id NOT IN (:docIds)")
+    @Query("SELECT * FROM kg_edges WHERE doc_id IS NOT NULL AND doc_id NOT IN (:docIds) AND " + ACTIVE_KG_EDGE)
     suspend fun getEdgesNotInDocIds(docIds: List<String>): List<KgEdgeEntity>
 
     @Query("DELETE FROM kg_edges WHERE id = :edgeId")
@@ -66,10 +69,10 @@ interface KgEdgeDao {
     @Query("UPDATE kg_edges SET weight = :weight, created_at = :createdAt, source_type = :sourceType WHERE id = :id")
     suspend fun updateWeight(id: String, weight: Double, createdAt: Long, sourceType: String)
 
-    @Query("SELECT * FROM kg_edges WHERE source_id = :sourceId AND target_id = :targetId AND relation = :relation AND (doc_id = :docId OR (doc_id IS NULL AND :docId IS NULL)) AND (session_id = :sessionId OR (session_id IS NULL AND :sessionId IS NULL))")
+    @Query("SELECT * FROM kg_edges WHERE source_id = :sourceId AND target_id = :targetId AND relation = :relation AND (doc_id = :docId OR (doc_id IS NULL AND :docId IS NULL)) AND (session_id = :sessionId OR (session_id IS NULL AND :sessionId IS NULL)) AND " + ACTIVE_KG_EDGE)
     suspend fun findEdge(sourceId: String, targetId: String, relation: String, docId: String?, sessionId: String?): KgEdgeEntity?
 
-    @Query("SELECT e.*, n1.name as source_name, n2.name as target_name FROM kg_edges e JOIN kg_nodes n1 ON e.source_id = n1.id JOIN kg_nodes n2 ON e.target_id = n2.id WHERE (e.source_id IN (:nodeIds) OR e.target_id IN (:nodeIds)) AND (:docFilter) LIMIT :limit")
+    @Query("SELECT e.*, n1.name as source_name, n2.name as target_name FROM kg_edges e JOIN kg_nodes n1 ON e.source_id = n1.id JOIN kg_nodes n2 ON e.target_id = n2.id WHERE (e.source_id IN (:nodeIds) OR e.target_id IN (:nodeIds)) AND (:docFilter) AND " + ACTIVE_KG_EDGE_ALIAS + " LIMIT :limit")
     suspend fun getEdgesWithNamesByNodeIds(nodeIds: List<String>, docFilter: String, limit: Int = 20): List<EdgeWithNames>
 
     data class EdgeWithNames(
@@ -89,13 +92,13 @@ interface KgEdgeDao {
         val target_name: String
     )
 
-    @Query("SELECT COUNT(*) FROM kg_edges WHERE doc_id IN (:docIds)")
+    @Query("SELECT COUNT(*) FROM kg_edges WHERE doc_id IN (:docIds) AND " + ACTIVE_KG_EDGE)
     suspend fun countByDocIds(docIds: List<String>): Int
 
-    @Query("SELECT COUNT(*) FROM kg_edges")
+    @Query("SELECT COUNT(*) FROM kg_edges WHERE " + ACTIVE_KG_EDGE)
     suspend fun getCount(): Int
 
-    @Query("SELECT * FROM kg_edges WHERE file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0)")
+    @Query("SELECT * FROM kg_edges WHERE " + ACTIVE_KG_EDGE)
     suspend fun getAll(): List<KgEdgeEntity>
 
     @Query("DELETE FROM kg_edges")

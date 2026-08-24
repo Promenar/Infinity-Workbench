@@ -50,7 +50,7 @@ class FileOperationRepository(
             val entry = dao.getActiveByUuid(workspaceRootUuid, uuid)
                 ?: return@withBoundRoot WriteResult.NotFound
             if (entry.isDirectory) return@withBoundRoot WriteResult.NotFound
-            textPolicy.validate(
+            val validated = textPolicy.validate(
                 entry.name,
                 entry.mimeType,
                 newContent.toByteArray(Charsets.UTF_8),
@@ -63,7 +63,7 @@ class FileOperationRepository(
                     message = "文件已被其他会话修改。请先读取最新版本再重试。",
                 )
             }
-            val committed = commitContentChange(entry, newContent, sessionId)
+            val committed = commitContentChange(entry, validated.text, sessionId)
             val indexTarget = committed ?: entry.currentIndexTargetIfStale()
             val indexQueued = indexTarget == null || publishIndexEvent(workspaceRootUuid, uuid, indexTarget)
             WriteResult.Success(
@@ -249,19 +249,21 @@ class FileOperationRepository(
         sessionId: String?,
     ): CommittedIndexTarget? {
         val root = File(entry.physicalRootPath).toPath()
-        val oldContent = readContent(entry, WorkspaceTextOperation.WRITE)
-        val physicalHash = Sha256Utils.hash(oldContent)
+        val old = readRawText(entry, WorkspaceTextOperation.WRITE)
+        val oldContent = old.text
+        val physicalHash = Sha256Utils.hash(old.bytes)
         if (physicalHash != entry.hash) {
             throw IllegalStateException("文件内容与数据库哈希不一致，已拒绝覆盖: ${entry.uuid}")
         }
-        val newHash = Sha256Utils.hash(newContent)
-        if (newHash == entry.hash && oldContent == newContent) return null
+        val newBytes = newContent.toByteArray(Charsets.UTF_8)
+        val newHash = Sha256Utils.hash(newBytes)
+        if (newHash == entry.hash && old.bytes.contentEquals(newBytes)) return null
         val targetEpoch = nextMutationEpoch(entry.updatedAt)
 
         val versionId = UUID.randomUUID().toString()
         val snapshotRelative = snapshotRelative(entry, versionId)
         ensureDirectories(root, snapshotRelative.dropLast(1))
-        fileOps.createFile(root, snapshotRelative, oldContent.toByteArray(Charsets.UTF_8))
+        fileOps.createFile(root, snapshotRelative, old.bytes)
         val snapshot = root.resolve(snapshotRelative.joinToString(File.separator)).toFile()
         val version = FileVersionEntity(
             id = versionId,
@@ -274,7 +276,7 @@ class FileOperationRepository(
         )
         val updated = entry.copy(
             hash = newHash,
-            sizeBytes = newContent.toByteArray(Charsets.UTF_8).size.toLong(),
+            sizeBytes = newBytes.size.toLong(),
             lastWriteSessionId = sessionId,
             vectorizedAt = null,
             kgExtractedAt = null,
@@ -287,7 +289,7 @@ class FileOperationRepository(
             val activeReplacement = fileOps.replaceFile(
                 root,
                 relative(entry.materializedPath),
-                newContent.toByteArray(Charsets.UTF_8),
+                newBytes,
             )
             replacement = activeReplacement
             (versionCommitter ?: versionDao::commitVersionAndFile).invoke(version, updated)
@@ -346,27 +348,27 @@ class FileOperationRepository(
                 "历史版本超过差异操作上限，请缩小文件后重试。",
             )
         }
+        val bytes = try {
+            fileOps.readLimited(
+                rootPath,
+                relative,
+                WorkspaceTextContentPolicy.DEFAULT_TOOL_BUDGET.maxInputBytes,
+            )
+        } catch (_: WorkspaceFileTooLargeException) {
+            throw WorkspaceTextPolicyException(
+                WorkspaceTextErrorCode.INPUT_TOO_LARGE,
+                "历史版本超过差异操作上限，请缩小文件后重试。",
+            )
+        }
+        if (Sha256Utils.hash(bytes) != version.hash) {
+            throw SecurityException("文件版本快照哈希校验失败")
+        }
         return textPolicy.validate(
             entry.name,
             entry.mimeType,
-            try {
-                fileOps.readLimited(
-                    rootPath,
-                    relative,
-                    WorkspaceTextContentPolicy.DEFAULT_TOOL_BUDGET.maxInputBytes,
-                )
-            } catch (_: WorkspaceFileTooLargeException) {
-                throw WorkspaceTextPolicyException(
-                    WorkspaceTextErrorCode.INPUT_TOO_LARGE,
-                    "历史版本超过差异操作上限，请缩小文件后重试。",
-                )
-            },
+            bytes,
             WorkspaceTextOperation.DIFF,
-        ).text.also { content ->
-            if (Sha256Utils.hash(content) != version.hash) {
-                throw SecurityException("文件版本快照哈希校验失败")
-            }
-        }
+        ).text
     }
 
     private fun snapshotRelative(entry: FileEntry, versionId: String): List<String> =
@@ -376,7 +378,12 @@ class FileOperationRepository(
         directories.indices.forEach { index -> fileOps.ensureDirectory(root, directories.take(index + 1)) }
     }
 
-    private fun readContent(entry: FileEntry, operation: WorkspaceTextOperation): String {
+    private data class RawText(val bytes: ByteArray, val text: String)
+
+    private fun readContent(entry: FileEntry, operation: WorkspaceTextOperation): String =
+        readRawText(entry, operation).text
+
+    private fun readRawText(entry: FileEntry, operation: WorkspaceTextOperation): RawText {
         textPolicy.requireSupportedType(entry.name, entry.mimeType)
         val budget = WorkspaceTextContentPolicy.budgetFor(operation)
         if (entry.sizeBytes > budget.maxInputBytes) {
@@ -396,7 +403,7 @@ class FileOperationRepository(
                 "文件超过本次操作的读取上限，请缩小读取范围或使用专用文件处理能力。",
             )
         }
-        return textPolicy.validate(entry.name, entry.mimeType, bytes, operation, budget).text
+        return RawText(bytes, textPolicy.validate(entry.name, entry.mimeType, bytes, operation, budget).text)
     }
 
     private fun relative(materializedPath: String): List<String> =

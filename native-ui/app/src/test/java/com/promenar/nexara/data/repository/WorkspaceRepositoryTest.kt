@@ -1478,7 +1478,7 @@ class WorkspaceRepositoryTest {
         assertThat(File(rootA, ".recycle_bin/file").readText()).isEqualTo("A")
         assertThat(db.fileEntryDao().getByUuid(root.uuid, file.uuid)).isNotNull()
         assertThat(db.vectorDao().getByDocId(file.uuid)).isEmpty()
-        assertThat(db.documentTagDao().getByDocId(file.uuid)).hasSize(1)
+        assertThat(db.documentTagDao().getByDocIdForLifecycleCleanup(file.uuid)).hasSize(1)
         assertThat(db.vectorizationTaskDao().getByDocId(file.uuid)).isEmpty()
         assertThat(abortObservedPhysicalRollback).isTrue()
     }
@@ -1740,6 +1740,64 @@ class WorkspaceRepositoryTest {
         assertThat(results.count { it.isSuccess }).isEqualTo(1)
         assertThat(repo.getSubtree(root.uuid, "/").count { it.materializedPath == "/same.txt" }).isEqualTo(1)
         assertThat(File(rootA, "same.txt").isFile).isTrue()
+    }
+
+    @Test
+    fun `三类create遇到未登记物理同名节点时fail fast且不删除原节点`() = runBlocking<Unit> {
+        insertSession("create-collision", rootA.absolutePath)
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            mutationJournal = RoomWorkspaceFileMutationJournal(db),
+        )
+        val root = repo.ensureSessionRoot("create-collision")
+        File(rootA, "plain.txt").writeText("keep-plain")
+        File(rootA, "stream.bin").writeBytes(byteArrayOf(7, 8, 9))
+        File(rootA, "folder").apply { mkdir(); resolve("child.txt").writeText("keep-child") }
+
+        val failures = listOf(
+            runCatching { repo.createFileInWorkspace(root.uuid, "plain", "plain.txt", "new", root.uuid, "/plain.txt") },
+            runCatching {
+                repo.createFileInWorkspaceStreaming(
+                    root.uuid, "stream", "stream.bin", "application/octet-stream",
+                    root.uuid, "/stream.bin", 100,
+                ) { it.write(byteArrayOf(1, 2, 3)) }
+            },
+            runCatching { repo.createDirectoryInWorkspace(root.uuid, "folder", "folder", root.uuid, "/folder") },
+        )
+
+        assertThat(failures.all { it.isFailure }).isTrue()
+        assertThat(File(rootA, "plain.txt").readText()).isEqualTo("keep-plain")
+        assertThat(File(rootA, "stream.bin").readBytes()).isEqualTo(byteArrayOf(7, 8, 9))
+        assertThat(File(rootA, "folder/child.txt").readText()).isEqualTo("keep-child")
+        assertThat(db.fileEntryDao().getAnyStateByMaterializedPathForLifecycle(root.uuid, "/plain.txt")).isNull()
+        assertThat(db.workspaceMutationDao().getUnfinished()).isEmpty()
+    }
+
+    @Test
+    fun `restore与move目标同名冲突在prepare前拒绝且重启恢复无悬挂`() = runBlocking<Unit> {
+        insertSession("move-collision", rootA.absolutePath)
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            mutationJournal = RoomWorkspaceFileMutationJournal(db),
+        )
+        val root = repo.ensureSessionRoot("move-collision")
+        val recycled = repo.createFileInWorkspace(root.uuid, "old", "same.txt", "old", root.uuid, "/same.txt")
+        repo.moveToRecycleBin(root.uuid, recycled.uuid)
+        repo.createFileInWorkspace(root.uuid, "new", "same.txt", "new", root.uuid, "/same.txt")
+
+        assertThat(runCatching { repo.restoreFromRecycleBin(root.uuid, recycled.uuid) }.isFailure).isTrue()
+        assertThat(File(rootA, "same.txt").readText()).isEqualTo("new")
+        assertThat(db.fileEntryDao().getAnyStateByUuidForLifecycle(root.uuid, recycled.uuid)?.inRecycleBin).isTrue()
+        val left = repo.createDirectoryInWorkspace(root.uuid, "left", "left", root.uuid, "/left")
+        val right = repo.createDirectoryInWorkspace(root.uuid, "right", "right", root.uuid, "/right")
+        val moving = repo.createFileInWorkspace(root.uuid, "moving", "dup.txt", "left", left.uuid, "/left/dup.txt")
+        repo.createFileInWorkspace(root.uuid, "occupied", "dup.txt", "right", right.uuid, "/right/dup.txt")
+
+        assertThat(runCatching { repo.updateParent(root.uuid, moving.uuid, right.uuid) }.isFailure).isTrue()
+        assertThat(File(rootA, "left/dup.txt").readText()).isEqualTo("left")
+        assertThat(File(rootA, "right/dup.txt").readText()).isEqualTo("right")
+        assertThat(db.workspaceMutationDao().getUnfinished()).isEmpty()
+        WorkspaceFileMutationRecoveryCoordinator(db, TestWorkspaceFileOps()).recoverOrThrow()
     }
 
     @Test

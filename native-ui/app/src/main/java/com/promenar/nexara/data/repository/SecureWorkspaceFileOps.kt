@@ -32,6 +32,7 @@ interface WorkspaceFileOps {
     fun read(root: Path, relative: List<String>): ByteArray
     fun readLimited(root: Path, relative: List<String>, maxBytes: Long): ByteArray
     fun exists(root: Path, relative: List<String>): Boolean
+    fun inspect(root: Path, relative: List<String>): WorkspaceNodeIdentity
     fun createFile(root: Path, relative: List<String>, bytes: ByteArray)
     fun createFileStreaming(
         root: Path,
@@ -49,6 +50,13 @@ interface WorkspaceFileOps {
     fun delete(root: Path, source: List<String>)
     fun cleanupTombstones(root: Path)
 }
+
+data class WorkspaceNodeIdentity(
+    val kind: String,
+    val sizeBytes: Long,
+    val sha256: String?,
+    val fileKey: String,
+)
 
 data class WorkspaceStreamWriteResult(val sizeBytes: Long, val sha256: String)
 data class TombstoneRecoveryReport(val attentionTokens: List<String> = emptyList())
@@ -124,6 +132,47 @@ class SecureWorkspaceFileOps(
         } catch (_: java.nio.file.NoSuchFileException) {
             false
         }
+
+    override fun inspect(root: Path, relative: List<String>): WorkspaceNodeIdentity =
+        try {
+            withParent(root, relative) { parent, name ->
+                parent.newDirectoryStream(name, LinkOption.NOFOLLOW_LINKS).use { }
+                WorkspaceNodeIdentity("directory", 0, null, nodeFileKey(root, relative))
+            }
+        } catch (_: java.nio.file.NotDirectoryException) {
+            withParent(root, relative) { parent, name ->
+                parent.newByteChannel(
+                    name,
+                    setOf<OpenOption>(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
+                ).use { channel ->
+                    val digest = java.security.MessageDigest.getInstance("SHA-256")
+                    val buffer = ByteBuffer.allocate(DEFAULT_BUFFER_SIZE)
+                    var size = 0L
+                    while (true) {
+                        buffer.clear()
+                        val count = channel.read(buffer)
+                        if (count < 0) break
+                        digest.update(buffer.array(), 0, count)
+                        size += count
+                    }
+                    WorkspaceNodeIdentity(
+                        "file",
+                        size,
+                        digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) },
+                        nodeFileKey(root, relative),
+                    )
+                }
+            }
+        }
+
+    private fun nodeFileKey(root: Path, relative: List<String>): String {
+        val target = relative.fold(root) { current, part -> current.resolve(part) }.normalize()
+        return Files.readAttributes(
+            target,
+            java.nio.file.attribute.BasicFileAttributes::class.java,
+            LinkOption.NOFOLLOW_LINKS,
+        ).fileKey()?.toString() ?: throw SecurityException("工作区节点缺少 fileKey")
+    }
 
     override fun createFile(root: Path, relative: List<String>, bytes: ByteArray) {
         withParent(root, relative) { parent, name ->

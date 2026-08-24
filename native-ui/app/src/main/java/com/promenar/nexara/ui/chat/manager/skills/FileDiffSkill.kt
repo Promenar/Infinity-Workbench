@@ -8,6 +8,9 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class FileDiffSkill(
     private val fileOpRepo: IFileOperationRepository
@@ -30,33 +33,32 @@ class FileDiffSkill(
             return workspaceTextFailureResult("diff_file", failure)
         }
 
-        return ToolResult(
-            "diff_file_${System.currentTimeMillis()}",
-            buildString {
-                appendLine("{")
-                appendLine("  \"uuid\": \"${result.uuid}\",")
-                appendLine("  \"basisHash\": \"${result.basisHash}\",")
-                appendLine("  \"currentHash\": \"${result.currentHash}\",")
-                appendLine("  \"hunks\": [")
-                result.hunks.forEachIndexed { i, hunk ->
-                    appendLine("    {")
-                    appendLine("      \"oldStart\": ${hunk.oldStart}, \"oldCount\": ${hunk.oldCount},")
-                    appendLine("      \"newStart\": ${hunk.newStart}, \"newCount\": ${hunk.newCount},")
-                    appendLine("      \"lines\": [")
-                    hunk.lines.forEach { line ->
-                        appendLine("        {\"type\": \"${line.type}\", \"content\": ${escapeJson(line.content)}},")
-                    }
-                    appendLine("      ]")
-                    append("    }")
-                    if (i < result.hunks.lastIndex) append(",")
-                    appendLine()
+        val content = buildJsonObject {
+            put("uuid", result.uuid)
+            put("basisHash", result.basisHash)
+            put("currentHash", result.currentHash)
+            put("hunks", buildJsonArray {
+                result.hunks.forEach { hunk ->
+                    add(buildJsonObject {
+                        put("oldStart", hunk.oldStart)
+                        put("oldCount", hunk.oldCount)
+                        put("newStart", hunk.newStart)
+                        put("newCount", hunk.newCount)
+                        put("lines", buildJsonArray {
+                            hunk.lines.forEach { line ->
+                                add(buildJsonObject {
+                                    put("type", line.type)
+                                    put("content", line.content)
+                                })
+                            }
+                        })
+                    })
                 }
-                appendLine("  ]")
-                append("}")
-            }
-        )
+            })
+        }.toString()
+        return enforceWorkspaceToolResultBudget("diff_file", ToolResult(
+            "diff_file_${System.currentTimeMillis()}",
+            content,
+        ))
     }
-
-    private fun escapeJson(s: String): String =
-        "\"${s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")}\""
 }

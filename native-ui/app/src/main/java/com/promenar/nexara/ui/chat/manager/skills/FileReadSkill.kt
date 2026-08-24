@@ -2,6 +2,8 @@ package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.data.repository.WorkspaceTextPolicyException
+import com.promenar.nexara.data.repository.WorkspaceTextContentPolicy
+import com.promenar.nexara.data.repository.WorkspaceTextErrorCode
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
@@ -9,6 +11,8 @@ import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.chat.manager.registry.intArgument
 import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -49,7 +53,7 @@ class FileReadSkill(
             return workspaceTextFailureResult("read_file", failure)
         }
 
-        return ToolResult(
+        return enforceWorkspaceToolResultBudget("read_file", ToolResult(
             "read_file_${System.currentTimeMillis()}",
             buildString {
                 appendLine("文件: ${result.name}")
@@ -58,7 +62,7 @@ class FileReadSkill(
                 appendLine("---")
                 append(result.content)
             }
-        )
+        ))
     }
 }
 
@@ -75,3 +79,18 @@ internal fun workspaceTextFailureResult(
         put("retrySuggestion", "请缩小读取或差异范围，或使用兼容该文件类型的专用工具。")
     }.toString(),
 )
+
+internal fun enforceWorkspaceToolResultBudget(operation: String, result: ToolResult): ToolResult {
+    val serializedBytes = Json.encodeToString(result).toByteArray(Charsets.UTF_8).size.toLong()
+    return if (serializedBytes <= WorkspaceTextContentPolicy.DEFAULT_TOOL_BUDGET.maxOutputBytes) {
+        result
+    } else {
+        workspaceTextFailureResult(
+            operation,
+            WorkspaceTextPolicyException(
+                WorkspaceTextErrorCode.OUTPUT_TOO_LARGE,
+                "结果超过输出上限，请缩小读取或差异范围后重试。",
+            ),
+        )
+    }
+}

@@ -34,6 +34,30 @@ class WorkspaceMutationRecoveryCoordinator(
         loadUnfinished().filter(::isSessionDelete).forEach { entity -> recoverOne(parent, entity) }
     }
 
+    suspend fun recoverSessionOrThrow(sessionId: String) = withContext(Dispatchers.IO) {
+        require(sessionId.isNotBlank()) { "会话标识不能为空" }
+        val parent = validateParent()
+        loadUnfinished().forEach { entity ->
+            if (validatedSessionId(entity) == sessionId) recoverOne(parent, entity)
+        }
+    }
+
+    private fun validatedSessionId(entity: WorkspaceMutationEntity): String? {
+        if (entity.operationType != WorkspaceMutationType.DELETE) return null
+        if (Sha256Utils.hash(entity.payload) != entity.payloadDigest) conflict("journal payload 摘要不匹配")
+        val payload = when (val decoded = WorkspaceMutationPayloadCodec.decode(entity.payloadVersion, entity.payload)) {
+            is WorkspaceMutationPayloadResult.Valid -> decoded.payload
+            is WorkspaceMutationPayloadResult.Invalid -> conflict(decoded.error.message)
+        }
+        val target = payload.targetRelativePath ?: return null
+        if (!target.startsWith("$STAGING_DIRECTORY/")) return null
+        if (target != "$STAGING_DIRECTORY/${entity.operationId}") {
+            conflict("journal stage 目标与 operationId 不匹配")
+        }
+        return payload.databaseTargetUuid?.takeIf(String::isNotBlank)
+            ?: conflict("journal 缺少会话标识")
+    }
+
     private fun isSessionDelete(entity: WorkspaceMutationEntity): Boolean {
         if (entity.operationType != WorkspaceMutationType.DELETE) return false
         val payload = (WorkspaceMutationPayloadCodec.decode(entity.payloadVersion, entity.payload)

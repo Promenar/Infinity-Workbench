@@ -6,8 +6,12 @@ import java.security.MessageDigest
 object Sha256Utils {
 
     fun hash(content: String): String {
+        return hash(content.toByteArray(Charsets.UTF_8))
+    }
+
+    fun hash(content: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(content.toByteArray(Charsets.UTF_8))
+        return digest.digest(content)
             .joinToString("") { "%02x".format(it) }
     }
 

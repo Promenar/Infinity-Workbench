@@ -51,10 +51,11 @@ class FileOperationRepositoryTest {
         uuid: String = "file-1",
         workspaceRootUuid: String = "root-1",
         content: String = "hello world",
+        physicalBytes: ByteArray = content.toByteArray(Charsets.UTF_8),
     ): FileEntry {
         val file = File(testDir, "test.txt")
-        file.writeText(content)
-        val hash = Sha256Utils.hash(content)
+        file.writeBytes(physicalBytes)
+        val hash = Sha256Utils.hashFile(file)
         db.fileEntryDao().insert(
             FileEntry(
                 uuid = workspaceRootUuid,
@@ -75,7 +76,7 @@ class FileOperationRepositoryTest {
             parentUuid = workspaceRootUuid,
             name = "test.txt",
             hash = hash,
-            sizeBytes = content.toByteArray().size.toLong(),
+            sizeBytes = physicalBytes.size.toLong(),
             physicalRootPath = testDir.absolutePath,
             materializedPath = "/test.txt",
             createdAt = System.currentTimeMillis(),
@@ -83,6 +84,61 @@ class FileOperationRepositoryTest {
         )
         db.fileEntryDao().insert(entry)
         return entry
+    }
+
+    @Test
+    fun `UTF8 BOM read显示文本不含BOM但保留物理hash`() = runBlocking<Unit> {
+        val bytes = UTF8_BOM + "line1\nline2".toByteArray(Charsets.UTF_8)
+        val entry = insertTestFile(content = "line1\nline2", physicalBytes = bytes)
+
+        val result = repo.readFileRange(ROOT, entry.uuid)
+
+        assertThat(result.content).isEqualTo("line1\nline2")
+        assertThat(result.content).doesNotContain("\uFEFF")
+        assertThat(result.hash).isEqualTo(Sha256Utils.hashFile(File(testDir, "test.txt")))
+        assertThat(File(testDir, "test.txt").readBytes().toList()).containsExactlyElementsIn(bytes.toList()).inOrder()
+    }
+
+    @Test
+    fun `UTF8 BOM write规范化新文本并以原始bytes保存可验证历史版本`() = runBlocking<Unit> {
+        val oldBytes = UTF8_BOM + "old\ncontent".toByteArray(Charsets.UTF_8)
+        val entry = insertTestFile(content = "old\ncontent", physicalBytes = oldBytes)
+
+        val result = repo.writeFileAtomic(ROOT, entry.uuid, "new\ncontent", "session", entry.hash)
+
+        assertThat(result).isInstanceOf(WriteResult.Success::class.java)
+        val current = db.fileEntryDao().getByUuid(ROOT, entry.uuid)!!
+        val currentBytes = File(testDir, "test.txt").readBytes()
+        assertThat(currentBytes.toList())
+            .containsExactlyElementsIn("new\ncontent".toByteArray(Charsets.UTF_8).toList()).inOrder()
+        assertThat(current.hash).isEqualTo(Sha256Utils.hashFile(File(testDir, "test.txt")))
+        val version = db.fileVersionDao().getByFile(ROOT, entry.uuid).single()
+        assertThat(File(version.contentPath).readBytes().toList()).containsExactlyElementsIn(oldBytes.toList()).inOrder()
+        val diff = repo.diffFile(ROOT, entry.uuid, entry.hash)
+        assertThat(diff.hunks.flatMap { it.lines }.map { it.content }).containsAtLeast("old", "new")
+        assertThat(diff.hunks.flatMap { it.lines }.map { it.content }.any { '\uFEFF' in it }).isFalse()
+    }
+
+    @Test
+    fun `UTF8 BOM patch以显示文本坐标修改且快照hash仍按原始bytes`() = runBlocking<Unit> {
+        val oldBytes = UTF8_BOM + "line1\nline2".toByteArray(Charsets.UTF_8)
+        val entry = insertTestFile(content = "line1\nline2", physicalBytes = oldBytes)
+
+        val result = repo.patchFile(
+            ROOT,
+            entry.uuid,
+            listOf(PatchOperation("replace_lines", startLine = 2, endLine = 2, newContent = "patched")),
+            entry.hash,
+        )
+
+        assertThat(result).isInstanceOf(PatchResult.Success::class.java)
+        assertThat(File(testDir, "test.txt").readBytes().toList())
+            .containsExactlyElementsIn("line1\npatched".toByteArray(Charsets.UTF_8).toList()).inOrder()
+        val current = db.fileEntryDao().getByUuid(ROOT, entry.uuid)!!
+        assertThat(current.hash).isEqualTo(Sha256Utils.hashFile(File(testDir, "test.txt")))
+        val version = db.fileVersionDao().getByFile(ROOT, entry.uuid).single()
+        assertThat(version.hash).isEqualTo(entry.hash)
+        assertThat(File(version.contentPath).readBytes().toList()).containsExactlyElementsIn(oldBytes.toList()).inOrder()
     }
 
     @Test
@@ -656,6 +712,7 @@ class FileOperationRepositoryTest {
 
     private companion object {
         const val ROOT = "root-1"
+        val UTF8_BOM = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
     }
 
     private fun assertCancellationPreserved(

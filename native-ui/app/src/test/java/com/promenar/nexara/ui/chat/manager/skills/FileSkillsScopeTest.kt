@@ -2,6 +2,8 @@ package com.promenar.nexara.ui.chat.manager.skills
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.domain.repository.DiffResult
+import com.promenar.nexara.domain.repository.DiffHunk
+import com.promenar.nexara.domain.repository.DiffLine
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.PatchResult
@@ -107,6 +109,52 @@ class FileSkillsScopeTest {
             assertThat(json.parseToJsonElement(result.data!!).jsonObject["errorCode"]?.jsonPrimitive?.content)
                 .isEqualTo("INPUT_TOO_LARGE")
         }
+    }
+
+    @Test
+    fun `read输出预算包含最终ToolResult的JSON转义开销`() = runTest {
+        val operations = mockk<IFileOperationRepository>()
+        val shortLines = "123456789012\n".repeat(20_000).trimEnd()
+        coEvery { operations.readFileRange(any(), any(), any(), any()) } returns
+            ReadResult("file", "large.txt", 1, 20_000, 20_000, shortLines, "hash", shortLines.length.toLong())
+
+        val result = FileReadSkill(operations).execute(skillArgs("uuid" to "file"), context)
+
+        assertThat(result.status).isEqualTo("error")
+        assertThat(json.parseToJsonElement(result.data!!).jsonObject["errorCode"]?.jsonPrimitive?.content)
+            .isEqualTo("OUTPUT_TOO_LARGE")
+    }
+
+    @Test
+    fun `diff输出预算包含每行JSON元数据与转义开销`() = runTest {
+        val operations = mockk<IFileOperationRepository>()
+        val lines = List(20_000) { DiffLine("context", "") }
+        coEvery { operations.diffFile(any(), any(), any()) } returns
+            DiffResult("file", "base", "current", listOf(DiffHunk(1, 20_000, 1, 20_000, lines)))
+
+        val result = FileDiffSkill(operations).execute(skillArgs("uuid" to "file"), context)
+
+        assertThat(result.status).isEqualTo("error")
+        assertThat(json.parseToJsonElement(result.data!!).jsonObject["errorCode"]?.jsonPrimitive?.content)
+            .isEqualTo("OUTPUT_TOO_LARGE")
+    }
+
+    @Test
+    fun `diff使用标准JSON编码控制字符并可完整round trip`() = runTest {
+        val operations = mockk<IFileOperationRepository>()
+        val controlText = "prefix\bsuffix\u0001"
+        coEvery { operations.diffFile(any(), any(), any()) } returns
+            DiffResult("file", "base", "current", listOf(
+                DiffHunk(1, 1, 1, 1, listOf(DiffLine("context", controlText))),
+            ))
+
+        val result = FileDiffSkill(operations).execute(skillArgs("uuid" to "file"), context)
+
+        val decoded = json.parseToJsonElement(result.content).jsonObject
+            .getValue("hunks").jsonArray[0].jsonObject
+            .getValue("lines").jsonArray[0].jsonObject
+            .getValue("content").jsonPrimitive.content
+        assertThat(decoded).isEqualTo(controlText)
     }
 
     @Test

@@ -54,6 +54,7 @@ class SessionDeletionCoordinator(
     private val gate: SessionExecutionGate,
     private val resolveTarget: suspend (String) -> SessionDeletionTarget?,
     private val cancelAndJoinGeneration: suspend (String) -> Unit,
+    private val recoverFileMutations: suspend (SessionDeletionTarget) -> Unit = {},
     private val closePendingExecution: suspend (String) -> Unit,
     private val acquireVectorBarrier: suspend (SessionDeletionTarget) -> SessionDeletionBarrier,
     private val journal: SessionWorkspaceMutationJournal,
@@ -95,6 +96,14 @@ class SessionDeletionCoordinator(
                     SessionDeletionErrorCode.INVALID_TARGET,
                     SecurityException("会话工作区认领在删除锁定前发生变化"),
                 )
+            }
+
+            try {
+                recoverFileMutations(target)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                return@withDeletion failed(SessionDeletionErrorCode.WORKSPACE, failure)
             }
 
             try {

@@ -123,9 +123,19 @@ class WorkspaceFileMutationRecoveryCoordinator(
     private val fileOps: WorkspaceFileOps = SecureWorkspaceFileOps(),
 ) {
     suspend fun recoverOrThrow() = withContext(Dispatchers.IO) {
-        database.workspaceMutationDao().getUnfinished()
-            .filterNot(::isSessionDelete)
-            .forEach { entity ->
+        recoverEntities(database.workspaceMutationDao().getUnfinished().filterNot(::isSessionDelete))
+    }
+
+    suspend fun recoverRootOrThrow(workspaceRootUuid: String) = withContext(Dispatchers.IO) {
+        recoverEntities(
+            database.workspaceMutationDao().getUnfinished()
+                .filter { it.workspaceRootUuid == workspaceRootUuid }
+                .filterNot(::isSessionDelete),
+        )
+    }
+
+    private suspend fun recoverEntities(entities: List<WorkspaceMutationEntity>) {
+        entities.forEach { entity ->
                 try {
                     recoverOne(entity)
                 } catch (known: WorkspaceMutationRecoveryException) {
@@ -193,14 +203,52 @@ class WorkspaceFileMutationRecoveryCoordinator(
         target: List<String>,
     ) {
         val targetExists = fileOps.exists(root, target)
-        when {
-            databaseTarget == null && targetExists -> {
-                fileOps.delete(root, target)
+        val ownership = listOf(CREATE_OWNERSHIP_DIRECTORY, entity.operationId)
+        val hasOwnership = fileOps.exists(root, ownership)
+        val stagedNode = ownership + CREATE_STAGED_NODE
+        val stagedExists = hasOwnership && fileOps.exists(root, stagedNode)
+        val manifest = if (hasOwnership && fileOps.exists(root, ownership + CREATE_MANIFEST)) {
+            decodeCreateOwnershipManifest(fileOps.read(root, ownership + CREATE_MANIFEST))
+                ?: conflict("创建类 journal 的 ownership manifest 损坏")
+        } else null
+        if (manifest != null && normalize(manifest.targetRelativePath) != normalize(targetRaw)) {
+            conflict("创建类 journal 的 ownership target 不匹配")
+        }
+        fun matches(relative: List<String>): Boolean =
+            manifest != null && runCatching { fileOps.inspect(root, relative) }.getOrNull() == manifest.identity
+        when (entity.state) {
+            WorkspaceMutationStage.PREPARED -> when {
+                databaseTarget != null -> conflict("PREPARED 创建 journal 意外存在数据库目标")
+                targetExists && !stagedExists && matches(target) -> {
+                    fileOps.delete(root, target)
+                    fileOps.delete(root, ownership)
+                    deleteForState(entity)
+                }
+                targetExists -> conflict("创建类 journal 的物理目标缺少 operation 归属证明")
+                else -> {
+                    if (hasOwnership) fileOps.delete(root, ownership)
+                    deleteForState(entity)
+                }
+            }
+            WorkspaceMutationStage.DB_COMMITTED -> {
+                val committed = databaseTarget ?: conflict("DB_COMMITTED 创建 journal 缺少数据库目标")
+                if (normalize(committed.materializedPath) != normalize(targetRaw)) {
+                    conflict("DB_COMMITTED 创建 journal 数据库路径不匹配")
+                }
+                if (!targetExists) {
+                    if (!stagedExists || !matches(stagedNode)) conflict("DB_COMMITTED 创建 journal 缺少物理目标")
+                    fileOps.move(root, stagedNode, target).commit()
+                }
+                val actual = fileOps.inspect(root, target)
+                val databaseMatches = if (committed.isDirectory) {
+                    actual.kind == "directory"
+                } else {
+                    actual.kind == "file" && actual.sizeBytes == committed.sizeBytes && actual.sha256 == committed.hash
+                }
+                if (!databaseMatches) conflict("DB_COMMITTED 创建 journal 物理身份与数据库不匹配")
+                if (hasOwnership) fileOps.delete(root, ownership)
                 deleteForState(entity)
             }
-            databaseTarget == null -> deleteForState(entity)
-            normalize(databaseTarget.materializedPath) == normalize(targetRaw) && targetExists -> deleteForState(entity)
-            else -> conflict("创建类 journal 的数据库与文件布局冲突")
         }
     }
 
@@ -281,4 +329,40 @@ class WorkspaceFileMutationRecoveryCoordinator(
     }
 
     private fun conflict(message: String): Nothing = throw WorkspaceMutationRecoveryException(message)
+}
+
+internal const val CREATE_OWNERSHIP_DIRECTORY = ".nexara_create_operations"
+internal const val CREATE_STAGED_NODE = "staged-node"
+internal const val CREATE_MANIFEST = "ownership-v1"
+
+internal data class WorkspaceCreateOwnershipManifest(
+    val targetRelativePath: String,
+    val identity: WorkspaceNodeIdentity,
+)
+
+internal fun encodeCreateOwnershipManifest(value: WorkspaceCreateOwnershipManifest): ByteArray =
+    listOf(
+        "v1",
+        value.identity.kind,
+        value.identity.sizeBytes.toString(),
+        value.identity.sha256.orEmpty(),
+        java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(value.identity.fileKey.toByteArray(Charsets.UTF_8)),
+        java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(value.targetRelativePath.toByteArray(Charsets.UTF_8)),
+    ).joinToString("\n").toByteArray(Charsets.UTF_8)
+
+internal fun decodeCreateOwnershipManifest(bytes: ByteArray): WorkspaceCreateOwnershipManifest? {
+    val parts = bytes.toString(Charsets.UTF_8).split('\n')
+    if (parts.size != 6 || parts[0] != "v1" || parts[1] !in setOf("file", "directory")) return null
+    val size = parts[2].toLongOrNull()?.takeIf { it >= 0 } ?: return null
+    val target = runCatching {
+        java.util.Base64.getUrlDecoder().decode(parts[5]).toString(Charsets.UTF_8)
+    }.getOrNull()?.takeIf(String::isNotBlank) ?: return null
+    val hash = parts[3].takeIf(String::isNotBlank)
+    if ((parts[1] == "file") != (hash != null)) return null
+    val fileKey = runCatching {
+        java.util.Base64.getUrlDecoder().decode(parts[4]).toString(Charsets.UTF_8)
+    }.getOrNull()?.takeIf(String::isNotBlank) ?: return null
+    return WorkspaceCreateOwnershipManifest(target, WorkspaceNodeIdentity(parts[1], size, hash, fileKey))
 }

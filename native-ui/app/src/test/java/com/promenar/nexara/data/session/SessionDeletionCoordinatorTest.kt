@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.session
 
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.repository.WorkspaceMutationRecoveryException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -32,6 +33,38 @@ class SessionDeletionCoordinatorTest {
             "journal-complete",
             "post-commit",
         ).inOrder()
+    }
+
+    @Test
+    fun `同root文件journal必须在session stage前收敛失败则会话保持可重试`() = runTest {
+        val events = mutableListOf<String>()
+        val failure = WorkspaceMutationRecoveryException("injected file journal conflict")
+        val coordinator = SessionDeletionCoordinator(
+            gate = SessionExecutionGate(),
+            resolveTarget = { target() },
+            cancelAndJoinGeneration = { events += "generation" },
+            recoverFileMutations = {
+                events += "file-recovery"
+                throw failure
+            },
+            closePendingExecution = { events += "execution-close" },
+            acquireVectorBarrier = { events += "vector"; NoOpSessionDeletionBarrier },
+            journal = object : SessionWorkspaceMutationJournal {
+                override suspend fun stage(target: SessionDeletionTarget): StagedSessionWorkspaceMutation {
+                    events += "session-stage"
+                    return StagedSessionWorkspaceMutation("op", target)
+                }
+                override suspend fun rollback(staged: StagedSessionWorkspaceMutation) = Unit
+                override suspend fun complete(staged: StagedSessionWorkspaceMutation) = Unit
+            },
+            deleteDatabase = { _, _ -> events += "database-delete" },
+        )
+
+        val result = coordinator.delete("session-1")
+
+        assertThat(result).isInstanceOf(SessionDeletionResult.Failed::class.java)
+        assertThat((result as SessionDeletionResult.Failed).error.code).isEqualTo(SessionDeletionErrorCode.WORKSPACE)
+        assertThat(events).containsExactly("generation", "file-recovery").inOrder()
     }
 
     @Test
