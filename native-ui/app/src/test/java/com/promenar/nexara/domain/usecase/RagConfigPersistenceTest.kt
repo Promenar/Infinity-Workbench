@@ -6,6 +6,7 @@ import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.google.common.truth.Truth.assertThat
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.Test
 
 class RagConfigPersistenceTest {
@@ -112,5 +113,44 @@ class RagConfigPersistenceTest {
             RagConfigPersistence.KEY_SHOW_RETRIEVAL_DETAILS, RagConfigPersistence.KEY_TRACK_RETRIEVAL_METRICS
         )
         assertThat(allKeys).hasSize(32)
+    }
+
+    @Test
+    fun `saving current config removes retired and unused embedding keys instead of rewriting them`() {
+        val prefs = emptyPrefs()
+        val editor = mockk<SharedPreferences.Editor>(relaxed = true)
+        every { prefs.edit() } returns editor
+        every { editor.remove(any()) } returns editor
+        every { editor.putInt(any(), any()) } returns editor
+        every { editor.putFloat(any(), any()) } returns editor
+        every { editor.putBoolean(any(), any()) } returns editor
+        every { editor.putString(any(), any()) } returns editor
+
+        val persistence = RagConfigPersistence(prefs)
+        persistence.saveRagConfig(AgentRagConfig())
+        persistence.saveRetrievalConfig(AgentRetrievalConfig())
+
+        verify {
+            editor.remove(RagConfigPersistence.KEY_ENABLE_INCREMENTAL_HASH)
+            editor.remove(RagConfigPersistence.KEY_ENABLE_LOCAL_PREPROCESS)
+            editor.remove(RagConfigPersistence.KEY_KG_DOMAIN_AUTO)
+            editor.remove(RagConfigPersistence.KEY_JIT_MAX_CHUNKS)
+            editor.remove(RagConfigPersistence.KEY_EMBED_DIMENSION)
+            editor.remove(RagConfigPersistence.KEY_MAX_EMBED_TOKENS_PER_CALL)
+        }
+        verify(exactly = 0) {
+            editor.putBoolean(RagConfigPersistence.KEY_ENABLE_INCREMENTAL_HASH, any())
+            editor.putBoolean(RagConfigPersistence.KEY_ENABLE_LOCAL_PREPROCESS, any())
+            editor.putBoolean(RagConfigPersistence.KEY_KG_DOMAIN_AUTO, any())
+            editor.putInt(RagConfigPersistence.KEY_JIT_MAX_CHUNKS, any())
+            editor.putInt(RagConfigPersistence.KEY_EMBED_DIMENSION, any())
+            editor.putInt(RagConfigPersistence.KEY_MAX_EMBED_TOKENS_PER_CALL, any())
+        }
+    }
+
+    @Test
+    fun `RagConfiguration schema no longer exposes unused embedding knobs`() {
+        assertThat(com.promenar.nexara.data.rag.RagConfiguration::class.java.declaredFields.map { it.name })
+            .containsNoneOf("embedDimension", "maxEmbedTokensPerCall")
     }
 }

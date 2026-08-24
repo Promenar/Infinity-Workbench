@@ -9,6 +9,8 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -167,6 +169,7 @@ class RagKnowledgeGraphTask10AccessibilityTest {
             NexaraTheme {
                 KnowledgeGraphDocumentOptionsContent(
                     options = listOf(KgDocumentOption("doc-a", "Alpha")),
+                    selectedDocumentId = "doc-a",
                     loadError = null,
                     onRetry = {},
                     onSelect = selected::set,
@@ -174,8 +177,41 @@ class RagKnowledgeGraphTask10AccessibilityTest {
             }
         }
 
-        rule.onNodeWithText("Alpha").assertIsDisplayed().performClick()
+        rule.onNodeWithTag(UiTags.kgDocumentOption("doc-a"))
+            .assertIsDisplayed()
+            .assertIsSelected()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
         assertThat(selected.get()).isEqualTo("doc-a")
+    }
+
+    @Test
+    fun graphModeSelectorUsesSelectableSemanticsAndRefreshAction() {
+        val selected = AtomicReference<KgViewMode?>(null)
+        val refreshes = AtomicInteger(0)
+        rule.setContent {
+            NexaraTheme {
+                KnowledgeGraphModeSelector(
+                    viewMode = KgViewMode.GLOBAL,
+                    onModeSelected = selected::set,
+                    onRefresh = { refreshes.incrementAndGet() },
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.kgMode(KgViewMode.GLOBAL.name))
+            .assertIsSelected()
+            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag(UiTags.kgMode(KgViewMode.DOCUMENT.name))
+            .assertIsNotSelected()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        rule.onNodeWithTag(UiTags.KG_REFRESH)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        assertThat(selected.get()).isEqualTo(KgViewMode.DOCUMENT)
+        assertThat(refreshes.get()).isEqualTo(1)
     }
 
     @Test

@@ -65,6 +65,10 @@ class RagConfigPersistence(
             .putInt(KEY_MEMORY_CHUNK_SIZE, config.memoryChunkSize)
             .putString(KEY_SUMMARY_TEMPLATE, config.summaryTemplate)
             .putString(KEY_CURRENT_PRESET, config.currentPreset)
+            .remove(KEY_ENABLE_INCREMENTAL_HASH)
+            .remove(KEY_ENABLE_LOCAL_PREPROCESS)
+            .remove(KEY_EMBED_DIMENSION)
+            .remove(KEY_MAX_EMBED_TOKENS_PER_CALL)
             .apply()
     }
 
@@ -121,9 +125,9 @@ class RagConfigPersistence(
             .putString(KEY_KG_MODEL, config.kgExtractionModel)
             .putString(KEY_KG_PROMPT, config.kgExtractionPrompt)
             .putBoolean(KEY_KG_FREE_MODE, config.kgFreeMode)
-            .putBoolean(KEY_KG_DOMAIN_AUTO, config.kgDomainAuto)
+            .remove(KEY_KG_DOMAIN_AUTO)
             .putInt(KEY_KG_EXTRACTION_TIMEOUT, config.kgExtractionTimeoutSeconds)
-            .putInt(KEY_JIT_MAX_CHUNKS, config.jitMaxChunks)
+            .remove(KEY_JIT_MAX_CHUNKS)
             .apply()
     }
 
@@ -159,6 +163,8 @@ class RagConfigPersistence(
         const val KEY_JIT_MAX_CHUNKS = "jit_max_chunks"
         const val KEY_ENABLE_INCREMENTAL_HASH = "enable_incremental_hash"
         const val KEY_ENABLE_LOCAL_PREPROCESS = "enable_local_preprocess"
+        const val KEY_EMBED_DIMENSION = "embed_dimension"
+        const val KEY_MAX_EMBED_TOKENS_PER_CALL = "max_embed_tokens_per_call"
         const val KEY_COST_STRATEGY = "cost_strategy"
         const val KEY_SHOW_RETRIEVAL_PROGRESS = "show_retrieval_progress"
         const val KEY_SHOW_RETRIEVAL_DETAILS = "show_retrieval_details"

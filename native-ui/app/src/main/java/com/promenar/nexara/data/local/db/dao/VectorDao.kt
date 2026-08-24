@@ -54,6 +54,21 @@ interface VectorDao {
     @Query("SELECT * FROM vectors WHERE " + ACTIVE_VECTOR)
     suspend fun getAll(): List<VectorEntity>
 
+    @Query("""
+        SELECT vectors.* FROM vectors
+        WHERE vectors.stale = 0
+          AND EXISTS (
+            SELECT 1 FROM workspace_files AS file
+            WHERE file.workspace_root_uuid = :workspaceRootUuid
+              AND file.in_recycle_bin = 0
+              AND file.uuid = CASE
+                  WHEN vectors.file_uuid IS NOT NULL THEN vectors.file_uuid
+                  ELSE vectors.doc_id
+              END
+        )
+    """)
+    suspend fun getByWorkspaceRoot(workspaceRootUuid: String): List<VectorEntity>
+
     @Query("SELECT * FROM vectors WHERE doc_id IN (:docIds) AND " + ACTIVE_VECTOR)
     suspend fun getByDocIds(docIds: List<String>): List<VectorEntity>
 
@@ -70,6 +85,27 @@ interface VectorDao {
 
     @Query("SELECT vectors.* FROM vectors_fts JOIN vectors ON vectors.rowid = vectors_fts.rowid WHERE vectors_fts MATCH :query AND " + ACTIVE_VECTOR_ALIAS)
     suspend fun searchFts(query: String): List<VectorEntity>
+
+    @Query("""
+        SELECT vectors.*
+        FROM vectors_fts
+        JOIN vectors ON vectors.rowid = vectors_fts.rowid
+        WHERE vectors_fts MATCH :query
+          AND vectors.stale = 0
+          AND EXISTS (
+              SELECT 1 FROM workspace_files AS file
+              WHERE file.workspace_root_uuid = :workspaceRootUuid
+                AND file.in_recycle_bin = 0
+                AND file.uuid = CASE
+                    WHEN vectors.file_uuid IS NOT NULL THEN vectors.file_uuid
+                    ELSE vectors.doc_id
+                END
+          )
+    """)
+    suspend fun searchFtsByWorkspaceRoot(
+        query: String,
+        workspaceRootUuid: String,
+    ): List<VectorEntity>
 
     @Query("SELECT vectors.* FROM vectors_fts JOIN vectors ON vectors.rowid = vectors_fts.rowid WHERE vectors_fts MATCH :query AND vectors.session_id = :sessionId AND " + ACTIVE_VECTOR_ALIAS)
     suspend fun searchFtsBySession(query: String, sessionId: String): List<VectorEntity>

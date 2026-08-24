@@ -47,6 +47,12 @@ data class KgDocumentOptionsError(
     val technical: String?,
 )
 
+data class KgGraphState(
+    val scopeKey: String? = null,
+    val isLoading: Boolean = false,
+    val isStale: Boolean = false,
+)
+
 data class GraphNode(
     val id: String,
     val label: String,
@@ -77,6 +83,9 @@ class KnowledgeGraphViewModel(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _graphState = MutableStateFlow(KgGraphState())
+    val graphState: StateFlow<KgGraphState> = _graphState.asStateFlow()
+
     private val _viewMode = MutableStateFlow(KgViewMode.GLOBAL)
     val viewMode: StateFlow<KgViewMode> = _viewMode.asStateFlow()
 
@@ -96,10 +105,9 @@ class KnowledgeGraphViewModel(
     val documentOptionsError: StateFlow<KgDocumentOptionsError?> =
         _documentOptionsError.asStateFlow()
 
-    private var globalCache: GraphData? = null
-    private val documentCache = mutableMapOf<String, GraphData>()
     private var loadJob: Job? = null
     private var loadGeneration = 0L
+    private var lastSuccessfulScopeKey: String? = null
     private var documentOptionsJob: Job? = null
     private var documentOptionsGeneration = 0L
 
@@ -139,7 +147,7 @@ class KnowledgeGraphViewModel(
         when (mode) {
             KgViewMode.GLOBAL, KgViewMode.CONCEPT -> {
                 _documentSelectionRequired.value = false
-                globalCache?.let { renderCached(it, mode) } ?: loadGraphInternal(null)
+                loadGraphInternal(docId = null, mode = mode, preserveSameScope = false)
             }
             KgViewMode.DOCUMENT -> {
                 val docId = _selectedDocumentId.value
@@ -148,9 +156,14 @@ class KnowledgeGraphViewModel(
                     cancelPendingLoad()
                     _nodes.value = emptyList()
                     _edges.value = emptyList()
+                    lastSuccessfulScopeKey = null
+                    _graphState.value = KgGraphState()
                 } else {
-                    documentCache[docId]?.let { renderCached(it, KgViewMode.DOCUMENT) }
-                        ?: loadGraphByDoc(docId)
+                    loadGraphInternal(
+                        docId = docId,
+                        mode = KgViewMode.DOCUMENT,
+                        preserveSameScope = false,
+                    )
                 }
             }
         }
@@ -159,7 +172,11 @@ class KnowledgeGraphViewModel(
     fun loadGraph() {
         _viewMode.value = KgViewMode.GLOBAL
         _documentSelectionRequired.value = false
-        globalCache?.let { renderCached(it, KgViewMode.GLOBAL) } ?: loadGraphInternal(null)
+        loadGraphInternal(
+            docId = null,
+            mode = KgViewMode.GLOBAL,
+            preserveSameScope = false,
+        )
         NexaraLogger.log("[KG] loadGraph triggered, will query graphStore.getGraphData()")
     }
 
@@ -169,28 +186,59 @@ class KnowledgeGraphViewModel(
         _selectedDocumentId.value = docId
         _documentSelectionRequired.value = false
         _loadError.value = null
-        documentCache[docId]?.let { renderCached(it, KgViewMode.DOCUMENT) }
-            ?: loadGraphInternal(docId)
+        loadGraphInternal(
+            docId = docId,
+            mode = KgViewMode.DOCUMENT,
+            preserveSameScope = false,
+        )
     }
 
     fun retryLoad() {
-        when (_viewMode.value) {
-            KgViewMode.DOCUMENT -> _selectedDocumentId.value?.let {
-                documentCache.remove(it)
-                loadGraphInternal(it)
-            }
-            KgViewMode.GLOBAL, KgViewMode.CONCEPT -> {
-                globalCache = null
-                loadGraphInternal(null)
-            }
-        }
+        reloadCurrentScope(preserveSameScope = _graphState.value.isStale)
     }
 
-    private fun loadGraphInternal(docId: String?) {
+    fun refreshCurrentScope() {
+        reloadCurrentScope(preserveSameScope = true)
+    }
+
+    private fun reloadCurrentScope(preserveSameScope: Boolean) {
+        val mode = _viewMode.value
+        val docId = if (mode == KgViewMode.DOCUMENT) _selectedDocumentId.value else null
+        if (mode == KgViewMode.DOCUMENT && docId == null) {
+            _documentSelectionRequired.value = true
+            return
+        }
+        loadGraphInternal(
+            docId = docId,
+            mode = mode,
+            preserveSameScope = preserveSameScope,
+        )
+    }
+
+    private fun loadGraphInternal(
+        docId: String?,
+        mode: KgViewMode,
+        preserveSameScope: Boolean,
+    ) {
+        val scopeKey = scopeKey(mode, docId)
+        val preserveLastGood = preserveSameScope &&
+            _graphState.value.scopeKey == scopeKey &&
+            lastSuccessfulScopeKey == scopeKey
         val generation = ++loadGeneration
         loadJob?.cancel()
+        if (!preserveLastGood) {
+            _nodes.value = emptyList()
+            _edges.value = emptyList()
+            lastSuccessfulScopeKey = null
+        }
+        _loadError.value = null
+        _isLoading.value = true
+        _graphState.value = KgGraphState(
+            scopeKey = scopeKey,
+            isLoading = true,
+            isStale = false,
+        )
         loadJob = viewModelScope.launch {
-            _isLoading.value = true
             try {
                 val data = if (docId == null) {
                     graphStore.getGraphData()
@@ -205,9 +253,10 @@ class KnowledgeGraphViewModel(
                 if (data.nodes.isNotEmpty() && data.edges.isEmpty()) {
                     NexaraLogger.log("[KG] INFO: ${data.nodes.size} orphan nodes found (no edges) — these will be displayed as isolated points")
                 }
-                if (docId == null) globalCache = data else documentCache[docId] = data
                 _loadError.value = null
-                render(data, if (docId == null) _viewMode.value else KgViewMode.DOCUMENT)
+                render(data, mode)
+                lastSuccessfulScopeKey = scopeKey
+                _graphState.value = KgGraphState(scopeKey = scopeKey)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
@@ -218,15 +267,26 @@ class KnowledgeGraphViewModel(
                     canRetry = true,
                     technical = e::class.simpleName?.take(80),
                 )
+                _graphState.value = KgGraphState(
+                    scopeKey = scopeKey,
+                    isLoading = false,
+                    isStale = preserveLastGood,
+                )
             } finally {
-                if (generation == loadGeneration) _isLoading.value = false
+                if (generation == loadGeneration) {
+                    _isLoading.value = false
+                    if (_graphState.value.isLoading) {
+                        _graphState.value = _graphState.value.copy(isLoading = false)
+                    }
+                }
             }
         }
     }
 
-    private fun renderCached(data: GraphData, mode: KgViewMode) {
-        cancelPendingLoad()
-        render(data, mode)
+    private fun scopeKey(mode: KgViewMode, docId: String?): String = when (mode) {
+        KgViewMode.GLOBAL -> "global"
+        KgViewMode.DOCUMENT -> "document:${requireNotNull(docId)}"
+        KgViewMode.CONCEPT -> "concept:mode"
     }
 
     private fun cancelPendingLoad() {
@@ -234,6 +294,7 @@ class KnowledgeGraphViewModel(
         loadJob?.cancel()
         loadJob = null
         _isLoading.value = false
+        _graphState.value = _graphState.value.copy(isLoading = false)
     }
 
     private fun render(data: GraphData, mode: KgViewMode) {
@@ -276,7 +337,7 @@ class KnowledgeGraphViewModel(
 
         _nodes.value = mappedNodes
         _edges.value = mappedEdges
-        NexaraLogger.log("[KG] renderFromCache success: mapped ${mappedNodes.size} nodes, ${mappedEdges.size} edges")
+        NexaraLogger.log("[KG] render success: mapped ${mappedNodes.size} nodes, ${mappedEdges.size} edges")
     }
 
 

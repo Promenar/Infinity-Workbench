@@ -478,8 +478,6 @@ class RagViewModel(
                 RagConfiguration().summaryTemplate
             },
             currentPreset = rag.currentPreset,
-            embedDimension = prefs.getInt("embed_dimension", -1).takeIf { it > 0 },
-            maxEmbedTokensPerCall = prefs.getInt("max_embed_tokens_per_call", 8192),
             rerankMaxPerCall = prefs.getInt("rerank_max_per_call", 100)
         )
     }
@@ -516,20 +514,20 @@ class RagViewModel(
                 kgExtractionModel = config.kgExtractionModel,
                 kgExtractionPrompt = config.kgExtractionPrompt,
                 kgFreeMode = config.kgFreeMode,
-                kgDomainAuto = config.kgDomainAuto,
                 kgExtractionTimeoutSeconds = config.kgExtractionTimeoutSeconds,
-                jitMaxChunks = config.jitMaxChunks
             )
         )
         prefs.edit()
-            .putBoolean(RagConfigPersistence.KEY_ENABLE_INCREMENTAL_HASH, config.enableIncrementalHash)
-            .putBoolean(RagConfigPersistence.KEY_ENABLE_LOCAL_PREPROCESS, config.enableLocalPreprocess)
+            .remove(RagConfigPersistence.KEY_ENABLE_INCREMENTAL_HASH)
+            .remove(RagConfigPersistence.KEY_ENABLE_LOCAL_PREPROCESS)
+            .remove(RagConfigPersistence.KEY_KG_DOMAIN_AUTO)
+            .remove(RagConfigPersistence.KEY_JIT_MAX_CHUNKS)
+            .remove(RagConfigPersistence.KEY_EMBED_DIMENSION)
+            .remove(RagConfigPersistence.KEY_MAX_EMBED_TOKENS_PER_CALL)
             .putString(RagConfigPersistence.KEY_COST_STRATEGY, config.costStrategy)
             .putBoolean(RagConfigPersistence.KEY_SHOW_RETRIEVAL_PROGRESS, config.showRetrievalProgress)
             .putBoolean(RagConfigPersistence.KEY_SHOW_RETRIEVAL_DETAILS, config.showRetrievalDetails)
             .putBoolean(RagConfigPersistence.KEY_TRACK_RETRIEVAL_METRICS, config.trackRetrievalMetrics)
-            .putInt("embed_dimension", config.embedDimension ?: -1)
-            .putInt("max_embed_tokens_per_call", config.maxEmbedTokensPerCall)
             .putInt("rerank_max_per_call", config.rerankMaxPerCall)
             .apply()
 
@@ -1103,7 +1101,11 @@ class RagViewModel(
                 val searchOutcome = if (rootUuid == null) {
                     null
                 } else {
-                    keywordSearcher.searchWithOutcome(normalizedQuery, limit = 20)
+                    keywordSearcher.searchWithOutcome(
+                        normalizedQuery,
+                        limit = 20,
+                        options = KeywordSearcher.SearchOptions(workspaceRootUuid = rootUuid),
+                    )
                 }
                 if (searchOutcome?.mode == KeywordSearchMode.LikeFallback) {
                     if (generation != searchGeneration) return@launch

@@ -343,6 +343,21 @@ class RagViewModelTest {
     }
 
     @Test
+    fun `RAG configuration UI and debug screen do not expose unused embedding or no-op cleanup controls`() {
+        val configScreen = java.nio.file.Files.readAllBytes(
+            java.nio.file.Path.of("app/src/main/java/com/promenar/nexara/ui/rag/GlobalRagConfigScreen.kt"),
+        ).toString(Charsets.UTF_8)
+        val debugScreen = java.nio.file.Files.readAllBytes(
+            java.nio.file.Path.of("app/src/main/java/com/promenar/nexara/ui/rag/RagDebugScreen.kt"),
+        ).toString(Charsets.UTF_8)
+
+        assertThat(configScreen).doesNotContain("rag_global_embed_dimension_slider")
+        assertThat(configScreen).doesNotContain("rag_global_embed_tokens_slider")
+        assertThat(debugScreen).doesNotContain(".clickable { }")
+        assertThat(debugScreen).doesNotContain("R.string.rag_debug_cleanup")
+    }
+
+    @Test
     fun `Home重命名失败会让新建Folder ViewModel看到共享pending并完成重试`() = runTest {
         var shouldFail = true
         val coordinator = PendingDocumentIndexCoordinator(
@@ -880,7 +895,13 @@ class RagViewModelTest {
             parentUuid = "nested-folder",
             materializedPath = "/nested/没有标题命中.md",
         )
-        coEvery { keywordSearcher.searchWithOutcome("needle", limit = 20) } returns
+        coEvery {
+            keywordSearcher.searchWithOutcome(
+                "needle",
+                limit = 20,
+                options = KeywordSearcher.SearchOptions(workspaceRootUuid = "rag-root"),
+            )
+        } returns
             KeywordSearchOutcome(
                 results = listOf(
                     com.promenar.nexara.data.rag.SearchResult(
@@ -906,6 +927,13 @@ class RagViewModelTest {
         assertThat(state.items.single().matchKind).isEqualTo(RagSearchMatchKind.FtsBody)
         assertThat(state.items.single().snippet).contains("needle")
         assertThat(state.items.single().snippet!!.length).isAtMost(RagSearchContract.SNIPPET_MAX_CHARS)
+        coVerify(exactly = 1) {
+            keywordSearcher.searchWithOutcome(
+                "needle",
+                limit = 20,
+                options = KeywordSearcher.SearchOptions(workspaceRootUuid = "rag-root"),
+            )
+        }
     }
 
     @Test
@@ -913,7 +941,13 @@ class RagViewModelTest {
         every { workspaceRepository.searchByName("rag-root", "Alpha") } returns flowOf(
             listOf(fileEntry(uuid = "title-doc", name = "Alpha.md", materializedPath = "/Alpha.md")),
         )
-        coEvery { keywordSearcher.searchWithOutcome("Alpha", limit = 20) } returns
+        coEvery {
+            keywordSearcher.searchWithOutcome(
+                "Alpha",
+                limit = 20,
+                options = KeywordSearcher.SearchOptions(workspaceRootUuid = "rag-root"),
+            )
+        } returns
             KeywordSearchOutcome(
                 results = listOf(searchHit("stale-like-doc", "Alpha body")),
                 mode = KeywordSearchMode.LikeFallback,
@@ -940,14 +974,22 @@ class RagViewModelTest {
         coEvery { workspaceRepository.getByUuid("rag-root", any()) } coAnswers {
             fileEntry(uuid = secondArg(), name = "${secondArg<String>()}.md", materializedPath = "/${secondArg<String>()}.md")
         }
-        coEvery { keywordSearcher.searchWithOutcome("first", limit = 20) } coAnswers {
+        coEvery {
+            keywordSearcher.searchWithOutcome(
+                "first", 20, KeywordSearcher.SearchOptions(workspaceRootUuid = "rag-root"),
+            )
+        } coAnswers {
             withContext(NonCancellable) { releaseFirst.await() }
             KeywordSearchOutcome(
                 results = listOf(searchHit("first-doc", "first body")),
                 mode = KeywordSearchMode.Fts,
             )
         }
-        coEvery { keywordSearcher.searchWithOutcome("second", limit = 20) } returns
+        coEvery {
+            keywordSearcher.searchWithOutcome(
+                "second", 20, KeywordSearcher.SearchOptions(workspaceRootUuid = "rag-root"),
+            )
+        } returns
             KeywordSearchOutcome(
                 results = listOf(searchHit("second-doc", "second body")),
                 mode = KeywordSearchMode.Fts,
@@ -974,7 +1016,11 @@ class RagViewModelTest {
         every { workspaceRepository.searchByName("rag-root", any()) } returns flowOf(emptyList())
         coEvery { workspaceRepository.getByUuid("rag-root", "first-doc") } returns
             fileEntry(uuid = "first-doc", name = "first.md", materializedPath = "/first.md")
-        coEvery { keywordSearcher.searchWithOutcome("first", limit = 20) } returns
+        coEvery {
+            keywordSearcher.searchWithOutcome(
+                "first", 20, KeywordSearcher.SearchOptions(workspaceRootUuid = "rag-root"),
+            )
+        } returns
             KeywordSearchOutcome(
                 results = listOf(searchHit("first-doc", "first body")),
                 mode = KeywordSearchMode.Fts,
@@ -989,7 +1035,11 @@ class RagViewModelTest {
         vm.search("second")
 
         assertThat(vm.searchState.value).isEqualTo(RagSearchUiState.Loading("second"))
-        coVerify(exactly = 0) { keywordSearcher.searchWithOutcome("second", limit = 20) }
+        coVerify(exactly = 0) {
+            keywordSearcher.searchWithOutcome(
+                "second", 20, KeywordSearcher.SearchOptions(workspaceRootUuid = "rag-root"),
+            )
+        }
     }
 
     @Test

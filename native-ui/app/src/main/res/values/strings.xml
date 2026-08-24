@@ -1079,7 +1079,8 @@
 
     <!-- KnowledgeGraphScreen -->
     <string name="kg_title">Knowledge Graph</string>
-    <string name="kg_load_failed">Couldn’t update the graph. The last successful view is preserved.</string>
+    <string name="kg_load_failed">Couldn’t load the graph. Try again.</string>
+    <string name="kg_load_failed_stale">Couldn’t refresh the graph. The last successful view remains visible.</string>
     <string name="kg_select_document">Select a document</string>
     <string name="kg_document_options_empty">No indexed documents contain graph relationships yet.</string>
     <string name="kg_document_options_load_failed">Couldn’t load the document list. Try again.</string>

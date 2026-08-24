@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.entity.VectorEntity
+import com.promenar.nexara.data.local.db.entity.FileEntry
 import java.nio.ByteBuffer
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -44,10 +45,55 @@ class VectorDaoCrossSqliteTest {
             .containsExactly("document")
     }
 
-    private fun vector(id: String, docId: String?, metadata: String) = VectorEntity(
+    @Test
+    fun `workspace FTS candidate set is root scoped and active only`() = runTest {
+        listOf(
+                file("root-a", "root-a", "/"),
+                file("doc-a-low", "root-a", "/low.md"),
+                file("doc-a-high", "root-a", "/high.md"),
+                file("doc-a-recycled", "root-a", "/.recycle_bin/recycled.md", recycled = true),
+                file("root-b", "root-b", "/"),
+                file("doc-b", "root-b", "/other.md"),
+            ).forEach { database.fileEntryDao().insert(it) }
+        database.vectorDao().insertAll(
+            listOf(
+                vector("low", "doc-a-low", "{}", "needle once"),
+                vector("high", "doc-a-high", "{}", "needle needle needle needle"),
+                vector("stale", "doc-a-high", "{}", "needle stale").copy(stale = true),
+                vector("recycled", "doc-a-recycled", "{}", "needle needle needle needle needle"),
+                vector("other-root", "doc-b", "{}", "needle needle needle needle needle needle"),
+            ),
+        )
+
+        val rows = database.vectorDao().searchFtsByWorkspaceRoot("needle", "root-a")
+        val fallbackRows = database.vectorDao().getByWorkspaceRoot("root-a")
+
+        assertThat(rows.map { it.id }).containsExactly("high", "low")
+        assertThat(fallbackRows.map { it.id }).containsExactly("high", "low")
+    }
+
+    private fun file(uuid: String, root: String, path: String, recycled: Boolean = false) = FileEntry(
+        uuid = uuid,
+        workspaceRootUuid = root,
+        parentUuid = if (uuid == root) null else root,
+        name = path.substringAfterLast('/').ifEmpty { "root" },
+        hash = uuid,
+        physicalRootPath = "/tmp/$root",
+        materializedPath = path,
+        inRecycleBin = recycled,
+        createdAt = 1,
+        updatedAt = 1,
+    )
+
+    private fun vector(
+        id: String,
+        docId: String?,
+        metadata: String,
+        content: String = id,
+    ) = VectorEntity(
         id = id,
         docId = docId,
-        content = id,
+        content = content,
         embedding = ByteBuffer.allocate(8).also { it.asFloatBuffer().put(floatArrayOf(1f, 0f)) }.array(),
         metadata = metadata,
         createdAt = 1,

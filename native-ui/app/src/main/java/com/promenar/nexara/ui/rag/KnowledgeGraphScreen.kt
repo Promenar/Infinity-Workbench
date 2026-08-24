@@ -4,7 +4,8 @@ import android.app.Application
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -67,6 +69,7 @@ fun KnowledgeGraphScreen(
     val documentOptions by viewModel.documentOptions.collectAsState()
     val documentOptionsError by viewModel.documentOptionsError.collectAsState()
     val loadError by viewModel.loadError.collectAsState()
+    val graphState by viewModel.graphState.collectAsState()
     var showDocumentSelector by remember { mutableStateOf(false) }
     var showAccessibilityList by remember { mutableStateOf(false) }
 
@@ -101,59 +104,16 @@ fun KnowledgeGraphScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 12.dp),
             )
-            FlowRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                listOf(
-                    KgViewMode.GLOBAL to stringResource(R.string.kg_view_global),
-                    KgViewMode.DOCUMENT to stringResource(R.string.kg_view_document),
-                    KgViewMode.CONCEPT to stringResource(R.string.kg_filter_concepts),
-                ).forEach { (mode, label) ->
-                    val isActive = viewMode == mode
-                    val backgroundColor by animateColorAsState(
-                        if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                        label = "graphModeBackground",
-                    )
-                    val contentColor by animateColorAsState(
-                        if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                        label = "graphModeContent",
-                    )
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(backgroundColor)
-                            .then(
-                                if (isActive) {
-                                    Modifier.border(
-                                        width = 0.5.dp,
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                                        shape = RoundedCornerShape(8.dp),
-                                    )
-                                } else {
-                                    Modifier
-                                },
-                            )
-                            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-                            .clickable {
-                                viewModel.setViewMode(mode)
-                                if (mode == KgViewMode.DOCUMENT && selectedDocumentId == null) {
-                                    showDocumentSelector = true
-                                }
-                            }
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
-                    ) {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = contentColor,
-                        )
+            KnowledgeGraphModeSelector(
+                viewMode = viewMode,
+                onModeSelected = { mode ->
+                    viewModel.setViewMode(mode)
+                    if (mode == KgViewMode.DOCUMENT && selectedDocumentId == null) {
+                        showDocumentSelector = true
                     }
-                }
-            }
+                },
+                onRefresh = viewModel::refreshCurrentScope,
+            )
             if (viewMode == KgViewMode.DOCUMENT) {
                 TextButton(
                     onClick = { showDocumentSelector = true },
@@ -177,7 +137,7 @@ fun KnowledgeGraphScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = stringResource(R.string.kg_load_failed),
+                        text = stringResource(kgLoadErrorMessageRes(graphState.isStale)),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.weight(1f),
@@ -262,6 +222,7 @@ fun KnowledgeGraphScreen(
             )
             KnowledgeGraphDocumentOptionsContent(
                 options = documentOptions,
+                selectedDocumentId = selectedDocumentId,
                 loadError = documentOptionsError,
                 onRetry = viewModel::retryDocumentOptions,
                 onSelect = { docId ->
@@ -280,14 +241,100 @@ fun KnowledgeGraphScreen(
     }
 }
 
+internal fun kgLoadErrorMessageRes(isStale: Boolean): Int =
+    if (isStale) R.string.kg_load_failed_stale else R.string.kg_load_failed
+
+@Composable
+internal fun KnowledgeGraphModeSelector(
+    viewMode: KgViewMode,
+    onModeSelected: (KgViewMode) -> Unit,
+    onRefresh: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FlowRow(
+            modifier = Modifier
+                .weight(1f)
+                .selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            listOf(
+                KgViewMode.GLOBAL to stringResource(R.string.kg_view_global),
+                KgViewMode.DOCUMENT to stringResource(R.string.kg_view_document),
+                KgViewMode.CONCEPT to stringResource(R.string.kg_filter_concepts),
+            ).forEach { (mode, label) ->
+                val isActive = viewMode == mode
+                val backgroundColor by animateColorAsState(
+                    if (isActive) MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.surfaceVariant,
+                    label = "graphModeBackground",
+                )
+                val contentColor by animateColorAsState(
+                    if (isActive) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    label = "graphModeContent",
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(backgroundColor)
+                        .then(
+                            if (isActive) {
+                                Modifier.border(
+                                    width = 0.5.dp,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                                    shape = RoundedCornerShape(8.dp),
+                                )
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+                        .selectable(
+                            selected = isActive,
+                            role = Role.RadioButton,
+                            onClick = { onModeSelected(mode) },
+                        )
+                        .testTag(UiTags.kgMode(mode.name))
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = contentColor,
+                    )
+                }
+            }
+        }
+        TextButton(
+            onClick = onRefresh,
+            modifier = Modifier
+                .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+                .testTag(UiTags.KG_REFRESH),
+        ) {
+            Text(stringResource(R.string.workbench_refresh))
+        }
+    }
+}
+
 @Composable
 internal fun KnowledgeGraphDocumentOptionsContent(
     options: List<KgDocumentOption>,
+    selectedDocumentId: String? = null,
     loadError: KgDocumentOptionsError?,
     onRetry: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
-    LazyColumn(modifier = Modifier.fillMaxWidth()) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectableGroup(),
+    ) {
         when {
             loadError != null -> item {
                 Column(
@@ -328,7 +375,12 @@ internal fun KnowledgeGraphDocumentOptionsContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-                        .clickable { onSelect(option.docId) },
+                        .selectable(
+                            selected = option.docId == selectedDocumentId,
+                            role = Role.RadioButton,
+                            onClick = { onSelect(option.docId) },
+                        )
+                        .testTag(UiTags.kgDocumentOption(option.docId)),
                     headlineContent = { Text(option.title) },
                 )
             }

@@ -223,6 +223,12 @@ object UiTags {
     const val KG_DOCUMENT_OPTIONS_ERROR = "KG_DOCUMENT_OPTIONS_ERROR"
     const val KG_DOCUMENT_OPTIONS_RETRY = "KG_DOCUMENT_OPTIONS_RETRY"
     const val KG_DOCUMENT_OPTIONS_EMPTY = "KG_DOCUMENT_OPTIONS_EMPTY"
+    const val KG_REFRESH = "KG_REFRESH"
+    private const val KG_MODE_PREFIX = "KG_MODE:"
+    private const val KG_DOCUMENT_OPTION_PREFIX = "KG_DOCUMENT_OPTION:"
+
+    fun kgMode(mode: String): String = "$KG_MODE_PREFIX$mode"
+    fun kgDocumentOption(documentId: String): String = "$KG_DOCUMENT_OPTION_PREFIX$documentId"
     const val RAG_FOLDER_DOCUMENT_ITEM = "RAG_FOLDER_DOCUMENT_ITEM"
     const val RAG_FOLDER_ROOT = "RAG_FOLDER_ROOT"
     const val RAG_FOLDER_CONTENT = "RAG_FOLDER_CONTENT"

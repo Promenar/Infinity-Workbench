@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.rag
 
+import com.promenar.nexara.R
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.rag.GraphData
 import com.promenar.nexara.data.rag.GraphStore
@@ -47,6 +48,14 @@ class KnowledgeGraphViewModelTest {
         name: String = "Node1",
         type: String = "concept"
     ) = KgNode(id = id, name = name, type = type, createdAt = 100L)
+
+    @Test
+    fun `图谱失败文案按同scope stale与跨scope generic精确区分`() {
+        assertThat(kgLoadErrorMessageRes(isStale = false))
+            .isEqualTo(R.string.kg_load_failed)
+        assertThat(kgLoadErrorMessageRes(isStale = true))
+            .isEqualTo(R.string.kg_load_failed_stale)
+    }
 
     private fun dataEdge(
         id: String = "e1",
@@ -154,14 +163,14 @@ class KnowledgeGraphViewModelTest {
     }
 
     @Test
-    fun `全局与每个文档缓存隔离且切换回来不重复串读`() = runTest {
-        coEvery { graphStore.getGraphData() } returns GraphData(
-            listOf(dataNode(id = "global")),
-            emptyList(),
+    fun `全局与文档scope切换每次重读GraphStore且不复用跨scope缓存`() = runTest {
+        coEvery { graphStore.getGraphData() } returnsMany listOf(
+            GraphData(listOf(dataNode(id = "global-1")), emptyList()),
+            GraphData(listOf(dataNode(id = "global-2")), emptyList()),
         )
-        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } returns GraphData(
-            listOf(dataNode(id = "doc-a-node")),
-            emptyList(),
+        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } returnsMany listOf(
+            GraphData(listOf(dataNode(id = "doc-a-1")), emptyList()),
+            GraphData(listOf(dataNode(id = "doc-a-2")), emptyList()),
         )
         coEvery { graphStore.getGraphData(docIds = listOf("doc-b")) } returns GraphData(
             listOf(dataNode(id = "doc-b-node")),
@@ -170,21 +179,23 @@ class KnowledgeGraphViewModelTest {
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
         vm.loadGraphByDoc("doc-a")
-        assertThat(vm.nodes.value.map { it.id }).containsExactly("doc-a-node")
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("doc-a-1")
+        assertThat(vm.graphState.value.scopeKey).isEqualTo("document:doc-a")
         vm.loadGraphByDoc("doc-b")
         assertThat(vm.nodes.value.map { it.id }).containsExactly("doc-b-node")
         vm.loadGraphByDoc("doc-a")
-        assertThat(vm.nodes.value.map { it.id }).containsExactly("doc-a-node")
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("doc-a-2")
         vm.setViewMode(KgViewMode.GLOBAL)
-        assertThat(vm.nodes.value.map { it.id }).containsExactly("global")
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("global-2")
+        assertThat(vm.graphState.value.scopeKey).isEqualTo("global")
 
-        coVerify(exactly = 1) { graphStore.getGraphData() }
-        coVerify(exactly = 1) { graphStore.getGraphData(docIds = listOf("doc-a")) }
+        coVerify(exactly = 2) { graphStore.getGraphData() }
+        coVerify(exactly = 2) { graphStore.getGraphData(docIds = listOf("doc-a")) }
         coVerify(exactly = 1) { graphStore.getGraphData(docIds = listOf("doc-b")) }
     }
 
     @Test
-    fun `文档加载失败保留最近成功图并暴露可重试typed error`() = runTest {
+    fun `跨文档scope加载失败不会泄露上一文档图`() = runTest {
         coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
         coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } returns GraphData(
             listOf(dataNode(id = "last-good")),
@@ -197,10 +208,52 @@ class KnowledgeGraphViewModelTest {
 
         vm.loadGraphByDoc("doc-b")
 
-        assertThat(vm.nodes.value.map { it.id }).containsExactly("last-good")
+        assertThat(vm.nodes.value).isEmpty()
+        assertThat(vm.graphState.value.scopeKey).isEqualTo("document:doc-b")
+        assertThat(vm.graphState.value.isStale).isFalse()
         assertThat(vm.loadError.value?.code).isEqualTo(KgLoadErrorCode.LoadFailed)
         assertThat(vm.loadError.value?.canRetry).isTrue()
         assertThat(vm.loadError.value?.technical).doesNotContain("private database detail")
+    }
+
+    @Test
+    fun `同scope显式刷新失败保留last good并标记stale`() = runTest {
+        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
+        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } returns
+            GraphData(listOf(dataNode(id = "last-good")), emptyList()) andThenThrows
+            IllegalStateException("refresh failed")
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+        vm.loadGraphByDoc("doc-a")
+
+        vm.refreshCurrentScope()
+
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("last-good")
+        assertThat(vm.graphState.value.scopeKey).isEqualTo("document:doc-a")
+        assertThat(vm.graphState.value.isStale).isTrue()
+        assertThat(vm.loadError.value?.code).isEqualTo(KgLoadErrorCode.LoadFailed)
+        coVerify(exactly = 2) { graphStore.getGraphData(docIds = listOf("doc-a")) }
+    }
+
+    @Test
+    fun `切换scope立即清空画布并进入新scope loading`() = runTest {
+        val releaseB = CompletableDeferred<Unit>()
+        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
+        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } returns
+            GraphData(listOf(dataNode(id = "doc-a-node")), emptyList())
+        coEvery { graphStore.getGraphData(docIds = listOf("doc-b")) } coAnswers {
+            releaseB.await()
+            GraphData(listOf(dataNode(id = "doc-b-node")), emptyList())
+        }
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+        vm.loadGraphByDoc("doc-a")
+
+        vm.loadGraphByDoc("doc-b")
+
+        assertThat(vm.nodes.value).isEmpty()
+        assertThat(vm.graphState.value.scopeKey).isEqualTo("document:doc-b")
+        assertThat(vm.graphState.value.isLoading).isTrue()
+        releaseB.complete(Unit)
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("doc-b-node")
     }
 
     @Test
@@ -257,5 +310,7 @@ class KnowledgeGraphViewModelTest {
         vm.setViewMode(KgViewMode.CONCEPT)
 
         assertThat(vm.viewMode.value).isEqualTo(KgViewMode.CONCEPT)
+        assertThat(vm.graphState.value.scopeKey).isEqualTo("concept:mode")
+        coVerify(exactly = 2) { graphStore.getGraphData() }
     }
 }

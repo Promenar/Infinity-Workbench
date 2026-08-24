@@ -18,7 +18,8 @@ class KeywordSearcher(
     data class SearchOptions(
         val sessionId: String? = null,
         val docIds: Set<String>? = null,
-        val excludeDocs: Boolean = false
+        val excludeDocs: Boolean = false,
+        val workspaceRootUuid: String? = null,
     )
 
     suspend fun search(
@@ -57,6 +58,10 @@ class KeywordSearcher(
         options: SearchOptions
     ): List<SearchResult> {
         val rows = when {
+            options.workspaceRootUuid != null -> vectorDao.searchFtsByWorkspaceRoot(
+                query,
+                options.workspaceRootUuid,
+            )
             options.excludeDocs -> vectorDao.searchFtsExcludeDocs(query)
             options.docIds != null && options.docIds.isNotEmpty() && options.docIds.size < 100 ->
                 vectorDao.searchFtsByDocIds(query, options.docIds.toList())
@@ -64,7 +69,11 @@ class KeywordSearcher(
             else -> vectorDao.searchFts(query)
         }
 
-        var candidates = rows.map { row -> rowToSearchResult(row, 1.0f) }
+        var candidates = if (options.workspaceRootUuid != null) {
+            rankByBm25(rows, query)
+        } else {
+            rows.map { row -> rowToSearchResult(row, 1.0f) }
+        }
 
         if (options.docIds != null && options.docIds.size >= 100) {
             candidates = candidates.filter { it.docId != null && options.docIds.contains(it.docId) }
@@ -72,6 +81,42 @@ class KeywordSearcher(
 
         return candidates.take(limit)
     }
+
+    /** FTS4 没有跨 Android SQLite 版本稳定可用的 bm25()，因此只让 FTS 缩小候选集，
+     * 再对当前 workspace 的命中候选执行确定性的 BM25 排序。 */
+    private fun rankByBm25(rows: List<VectorEntity>, query: String): List<SearchResult> {
+        if (rows.isEmpty()) return emptyList()
+        val queryTerms = tokenize(query).distinct()
+        if (queryTerms.isEmpty()) return rows.map { rowToSearchResult(it, 0f) }
+        val tokenized = rows.map { it to tokenize(it.content) }
+        val averageLength = tokenized.map { it.second.size }.average().coerceAtLeast(1.0)
+        val documentCount = rows.size.toDouble()
+        val documentFrequencies = queryTerms.associateWith { term ->
+            tokenized.count { (_, candidate) -> term in candidate }.toDouble()
+        }
+        return tokenized.map { (row, terms) ->
+            val score = queryTerms.sumOf { term ->
+                val frequency = terms.count { it == term }.toDouble()
+                if (frequency == 0.0) return@sumOf 0.0
+                val documentFrequency = documentFrequencies.getValue(term)
+                val inverseFrequency = kotlin.math.ln(
+                    1.0 + (documentCount - documentFrequency + 0.5) / (documentFrequency + 0.5),
+                )
+                val denominator = frequency + BM25_K1 * (
+                    1.0 - BM25_B + BM25_B * terms.size / averageLength
+                )
+                inverseFrequency * frequency * (BM25_K1 + 1.0) / denominator
+            }
+            rowToSearchResult(row, score.toFloat())
+        }.sortedWith(
+            compareByDescending<SearchResult> { it.similarity }
+                .thenBy { it.docId.orEmpty() }
+                .thenBy { it.id },
+        )
+    }
+
+    private fun tokenize(value: String): List<String> =
+        TOKEN.findAll(value.lowercase()).map { it.value }.toList()
 
     private suspend fun fallbackLikeSearch(
         query: String,
@@ -81,7 +126,8 @@ class KeywordSearcher(
         val keywords = query.split(Regex("\\s+")).filter { it.length > 1 }
         if (keywords.isEmpty()) return emptyList()
 
-        val rows = vectorDao.getAll()
+        val rows = options.workspaceRootUuid?.let { vectorDao.getByWorkspaceRoot(it) }
+            ?: vectorDao.getAll()
         var candidates = rows.mapNotNull { row ->
             val contentLower = row.content.lowercase()
             var score = 0f
@@ -120,5 +166,11 @@ class KeywordSearcher(
             createdAt = row.createdAt,
             similarity = similarity
         )
+    }
+
+    private companion object {
+        val TOKEN = Regex("[\\p{L}\\p{N}_]+")
+        const val BM25_K1 = 1.2
+        const val BM25_B = 0.75
     }
 }
