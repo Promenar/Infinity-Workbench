@@ -169,6 +169,11 @@ class ApprovalManagerTest {
         }
         override suspend fun state(key: ToolExecutionKey) = states[key]
         override suspend fun invocationIdentity(key: ToolExecutionKey) = identities[key]
+        override suspend fun failAwaitingIdentityConflict(
+            key: ToolExecutionKey,
+            expectedIdentity: ToolInvocationIdentity,
+            thoughtSignature: String?,
+        ): Message? = null
         override suspend fun recoverInterruptedRunning(error: String) = 0
         override suspend fun createToolApproval(
             keySessionId: String,

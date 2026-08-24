@@ -92,6 +92,50 @@ class ToolExecutionLedgerRepositoryTest {
     }
 
     @Test
+    fun identityConflictCASComparesAllFieldsAndTerminalizesAwaitingOnlyOnce() = runBlocking {
+        val pendingCall = ToolCall("pending-cas", "write_file", """{"path":"safe.txt"}""")
+        val pendingIdentity = preparedIdentity(pendingCall, requiresApproval = true)
+        val pendingKey = key(pendingCall.id)
+        repository.register(pendingKey, pendingIdentity)
+
+        listOf(
+            pendingIdentity.copy(runtimeToolId = "different-runtime"),
+            pendingIdentity.copy(toolName = "different-name"),
+            pendingIdentity.copy(argumentsDigest = "different-arguments"),
+            pendingIdentity.copy(definitionDigest = "different-definition"),
+            pendingIdentity.copy(requiresApproval = false),
+        ).forEach { wrongIdentity ->
+            assertThat(repository.failAwaitingIdentityConflict(pendingKey, wrongIdentity, null)).isNull()
+            assertThat(repository.state(pendingKey)).isEqualTo(ToolLedgerState.PENDING_APPROVAL)
+        }
+
+        val pendingTerminal = repository.failAwaitingIdentityConflict(
+            pendingKey,
+            pendingIdentity,
+            "thought-signature",
+        )
+        assertThat(pendingTerminal!!.content)
+            .isEqualTo("工具调用与已登记身份不一致，已安全终止。")
+        assertThat(pendingTerminal.thoughtSignature).isEqualTo("thought-signature")
+        assertThat(repository.state(pendingKey)).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(repository.failAwaitingIdentityConflict(pendingKey, pendingIdentity, null)).isNull()
+
+        val approvedCall = ToolCall("approved-cas", "delete_file", "{}")
+        val approvedIdentity = preparedIdentity(approvedCall, requiresApproval = true)
+        val approvedKey = key(approvedCall.id)
+        repository.register(approvedKey, approvedIdentity)
+        repository.approve(setOf(approvedKey))
+        assertThat(repository.failAwaitingIdentityConflict(approvedKey, approvedIdentity, null))
+            .isNotNull()
+        assertThat(repository.state(approvedKey)).isEqualTo(ToolLedgerState.FAILED)
+
+        assertThat(database.messageDao().getBySession("s1").filter { it.role == "tool" }
+            .mapNotNull { it.toolCallId })
+            .containsExactly(pendingCall.id, approvedCall.id)
+        Unit
+    }
+
+    @Test
     fun `历史空 digest 账本无法证明 identity 时注册失败关闭`() = runBlocking {
         database.openHelper.writableDatabase.execSQL(
             """INSERT INTO tool_execution_ledger(
@@ -561,7 +605,12 @@ class ToolExecutionLedgerRepositoryTest {
         database.openHelper.writableDatabase.execSQL(
             "UPDATE tool_execution_ledger SET created_at=42, updated_at=42 WHERE assistant_message_id='m1'",
         )
-        database.sessionDao().updateToolApprovalState("s1", null, "paused", now++)
+        database.sessionDao().updateToolApprovalState(
+            "s1",
+            com.promenar.nexara.data.model.json.encodeToString(ApprovalRequest.serializer(), request),
+            "paused",
+            now++,
+        )
 
         assertThat(repository.recoverApprovalState()).isEqualTo(1)
 
@@ -569,6 +618,70 @@ class ToolExecutionLedgerRepositoryTest {
             database.sessionDao().getById("s1")!!.approvalRequest!!,
         )
         assertThat(restored.calls.map { it.toolCallId }).containsExactly("z-first", "a-second").inOrder()
+    }
+
+    @Test
+    fun recoveryPreservesExactRiskSummaryReasonAndIdentityHash() = runBlocking {
+        val call = ToolCall(
+            "exact-recovery",
+            "delete_file",
+            """{"path":"archive/important.txt","recursive":false}""",
+        )
+        val request = ToolApprovalRequestFactory.create(
+            assistantMessageId = "m1",
+            candidates = listOf(
+                ApprovalCallCandidate(
+                    call,
+                    com.promenar.nexara.domain.tool.ToolRisk.DELETE,
+                ),
+            ),
+            reason = "用户要求删除归档文件",
+        )
+        repository.createToolApproval("s1", "m1", listOf(call), setOf(call.id), request)
+        database.sessionDao().updateToolApprovalState(
+            "s1",
+            com.promenar.nexara.data.model.json.encodeToString(ApprovalRequest.serializer(), request),
+            "paused",
+            now++,
+        )
+
+        assertThat(repository.recoverApprovalState()).isEqualTo(1)
+
+        val restored = com.promenar.nexara.data.model.json.decodeFromString<ApprovalRequest>(
+            database.sessionDao().getById("s1")!!.approvalRequest!!,
+        )
+        assertThat(restored).isEqualTo(request)
+        assertThat(restored.calls.single().risk).isEqualTo("delete")
+        assertThat(restored.calls.single().argumentsSummary)
+            .isEqualTo("{\"path\":\"archive/important.txt\",\"recursive\":false}")
+        assertThat(restored.reason).isEqualTo("用户要求删除归档文件")
+        assertThat(restored.identityHash).isEqualTo(request.identityHash)
+    }
+
+    @Test
+    fun recoveryWithoutExactPersistedApprovalFailsClosedInsteadOfRebuildingUnknownRisk() = runBlocking {
+        val call = ToolCall("missing-exact", "delete_file", """{"path":"archive.txt"}""")
+        val request = ToolApprovalRequestFactory.create(
+            assistantMessageId = "m1",
+            candidates = listOf(
+                ApprovalCallCandidate(call, com.promenar.nexara.domain.tool.ToolRisk.DELETE),
+            ),
+            reason = "精确审批原因",
+        )
+        repository.createToolApproval("s1", "m1", listOf(call), setOf(call.id), request)
+        database.sessionDao().updateToolApprovalState("s1", null, "paused", now++)
+
+        assertThat(repository.recoverApprovalState()).isEqualTo(0)
+
+        assertThat(repository.state(key(call.id))).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(database.sessionDao().getById("s1")!!.approvalRequest).isNull()
+        assertThat(database.sessionDao().getById("s1")!!.loopStatus).isEqualTo("paused")
+        val terminal = database.messageDao().getBySession("s1").single {
+            it.role == "tool" && it.toolCallId == call.id
+        }
+        assertThat(terminal.content).isEqualTo("工具审批状态无效，已安全终止，请重新发起。")
+        assertThat(terminal.content).doesNotContain("archive.txt")
+        assertThat(terminal.content).doesNotContain("精确审批原因")
     }
 
     @Test
@@ -801,7 +914,7 @@ class ToolExecutionLedgerRepositoryTest {
     }
 
     @Test
-    fun completingCurrentGroupSwitchesNextExactIdentityGroupToWaiting(): Unit = runBlocking {
+    fun completingCurrentGroupFailsClosedNextGroupWithoutItsExactPersistedApproval(): Unit = runBlocking {
         val first = com.promenar.nexara.data.model.ToolCall("first", "write_file", "{}")
         val second = com.promenar.nexara.data.model.ToolCall("second", "write_file", "{}")
         val secondIdentity = preparedIdentity(second, requiresApproval = true)
@@ -837,13 +950,12 @@ class ToolExecutionLedgerRepositoryTest {
 
         val transition = repository.completeToolApproval("s1", "m1")
 
-        assertThat(database.sessionDao().getById("s1")!!.loopStatus)
-            .isEqualTo("waiting_for_approval")
-        assertThat(database.messageDao().getById("m2")!!.pendingApprovalToolIds)
-            .contains("second")
-        assertThat(transition.loopStatus).isEqualTo(com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_APPROVAL)
-        assertThat(transition.nextAssistantMessageId).isEqualTo("m2")
-        assertThat(transition.nextPendingToolCallIds).containsExactly("second")
+        assertThat(database.sessionDao().getById("s1")!!.loopStatus).isEqualTo("paused")
+        assertThat(database.messageDao().getById("m2")!!.pendingApprovalToolIds).isNull()
+        assertThat(repository.state(key("second", "m2"))).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(transition.loopStatus).isEqualTo(com.promenar.nexara.data.model.LoopStatus.PAUSED)
+        assertThat(transition.nextAssistantMessageId).isNull()
+        assertThat(transition.nextPendingToolCallIds).isEmpty()
         Unit
     }
 

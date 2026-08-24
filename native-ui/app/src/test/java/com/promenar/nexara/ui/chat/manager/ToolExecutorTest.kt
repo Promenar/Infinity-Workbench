@@ -144,6 +144,28 @@ class ToolExecutorTest {
         override suspend fun invocationIdentity(key: ToolExecutionKey): ToolInvocationIdentity? =
             synchronized(states) { identities[key] }
 
+        override suspend fun failAwaitingIdentityConflict(
+            key: ToolExecutionKey,
+            expectedIdentity: ToolInvocationIdentity,
+            thoughtSignature: String?,
+        ): Message? = synchronized(states) {
+            if (identities[key] != expectedIdentity || states[key] !in setOf(
+                    ToolLedgerState.PENDING_APPROVAL,
+                    ToolLedgerState.APPROVED,
+                )
+            ) return@synchronized null
+            states[key] = ToolLedgerState.FAILED
+            Message(
+                id = "tool-conflict-${key.toolCallId}",
+                role = MessageRole.TOOL,
+                toolCallId = key.toolCallId,
+                parentMessageId = key.assistantMessageId,
+                name = expectedIdentity.toolName,
+                content = "工具调用与已登记身份不一致，已安全终止。",
+                thoughtSignature = thoughtSignature,
+            )
+        }
+
         override suspend fun recoverInterruptedRunning(error: String): Int = synchronized(states) {
             val running = states.filterValues { it == ToolLedgerState.RUNNING }.keys
             running.forEach { states[it] = ToolLedgerState.FAILED }
@@ -361,6 +383,130 @@ class ToolExecutorTest {
         }).isEqualTo(1)
         assertThat(ledger.state(ToolExecutionKey("s1", "m1", invalid.id)))
             .isEqualTo(ToolLedgerState.FAILED)
+    }
+
+    @Test
+    fun persistedPendingParameterMismatchFailsClosedWithoutExecutionOrSensitiveEcho() = testScope.runTest {
+        seedSessionWithAssistant()
+        var executions = 0
+        val skill = testSkill(
+            name = "write_file",
+            schema = """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}""",
+        ) {
+            executions++
+            ToolResult("unexpected", "unexpected")
+        }
+        val prepared = skill.toPreparedTool()
+        val original = ToolCall("persisted-pending", "write_file", """{"path":"safe.txt"}""")
+        val identity = (ToolInvocationIdentityFactory.fromPreparedToolCall(
+            original,
+            prepared,
+            requiresApproval = true,
+        ) as ToolInvocationIdentityResolution.Valid).identity
+        val ledger = RecordingLedger()
+        val key = ToolExecutionKey("s1", "m1", original.id)
+        ledger.register(key, identity)
+        val executor = ToolExecutor(store, messageManager, singleSkillRegistry(skill), ledger = ledger)
+
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(original.copy(arguments = """{"path":"sk-sensitive-token"}""")),
+            allowedToolCallIds = emptySet(),
+            preparedTools = listOf(prepared),
+        )
+        advanceUntilIdle()
+
+        assertThat(executions).isEqualTo(0)
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(ledger.approve(setOf(key))).isEqualTo(0)
+        val terminal = store.getSession("s1")!!.messages.single {
+            it.role == MessageRole.TOOL && it.toolCallId == original.id
+        }
+        assertThat(terminal.content).isEqualTo("工具调用与已登记身份不一致，已安全终止。")
+        assertThat(terminal.content).doesNotContain("sk-sensitive-token")
+    }
+
+    @Test
+    fun persistedApprovedNameMismatchFailsClosedWithoutExecutingReplacement() = testScope.runTest {
+        seedSessionWithAssistant()
+        var executions = 0
+        val originalSkill = testSkill("write_file") { ToolResult("unused", "unused") }
+        val replacementSkill = testSkill("delete_file") {
+            executions++
+            ToolResult("unexpected", "unexpected")
+        }
+        val original = ToolCall("persisted-approved", "write_file", "{}")
+        val identity = (ToolInvocationIdentityFactory.fromPreparedToolCall(
+            original,
+            originalSkill.toPreparedTool(),
+            requiresApproval = true,
+        ) as ToolInvocationIdentityResolution.Valid).identity
+        val ledger = RecordingLedger()
+        val key = ToolExecutionKey("s1", "m1", original.id)
+        ledger.register(key, identity)
+        ledger.approve(setOf(key))
+        val executor = ToolExecutor(store, messageManager, singleSkillRegistry(replacementSkill), ledger = ledger)
+
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(original.copy(name = "delete_file")),
+            allowedToolCallIds = setOf(original.id),
+            preparedTools = listOf(replacementSkill.toPreparedTool()),
+        )
+        advanceUntilIdle()
+
+        assertThat(executions).isEqualTo(0)
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(store.getSession("s1")!!.messages.single {
+            it.role == MessageRole.TOOL && it.toolCallId == original.id
+        }.content).isEqualTo("工具调用与已登记身份不一致，已安全终止。")
+    }
+
+    @Test
+    fun concurrentPersistedApprovalAttributeMismatchCreatesOneRedactedTerminal() = testScope.runTest {
+        seedSessionWithAssistant()
+        var executions = 0
+        val skill = testSkill("read_file") {
+            executions++
+            ToolResult("unexpected", "unexpected")
+        }
+        val prepared = skill.toPreparedTool()
+        val original = ToolCall("persisted-safe", "read_file", """{"secret":"sk-sensitive-token"}""")
+        val identity = (ToolInvocationIdentityFactory.fromPreparedToolCall(
+            original,
+            prepared,
+            requiresApproval = false,
+        ) as ToolInvocationIdentityResolution.Valid).identity
+        val ledger = RecordingLedger()
+        val key = ToolExecutionKey("s1", "m1", original.id)
+        ledger.register(key, identity)
+        val executor = ToolExecutor(store, messageManager, singleSkillRegistry(skill), ledger = ledger)
+
+        listOf(
+            async {
+                executor.executeTools(
+                    "s1", "m1", listOf(original), emptySet(), listOf(prepared),
+                )
+            },
+            async {
+                executor.executeTools(
+                    "s1", "m1", listOf(original), emptySet(), listOf(prepared),
+                )
+            },
+        ).awaitAll()
+        advanceUntilIdle()
+
+        assertThat(executions).isEqualTo(0)
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.FAILED)
+        val terminals = store.getSession("s1")!!.messages.filter {
+            it.role == MessageRole.TOOL && it.toolCallId == original.id
+        }
+        assertThat(terminals).hasSize(1)
+        assertThat(terminals.single().content)
+            .isEqualTo("工具调用与已登记身份不一致，已安全终止。")
+        assertThat(terminals.single().content).doesNotContain("sk-sensitive-token")
     }
 
     @Test

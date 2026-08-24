@@ -152,6 +152,34 @@ interface ToolExecutionLedgerDao {
     ): Int
 
     @Query(
+        """UPDATE tool_execution_ledger
+           SET status = 'FAILED', result_message_id = :resultMessageId,
+               error = :error, updated_at = :updatedAt
+           WHERE session_id = :sessionId
+             AND assistant_message_id = :assistantMessageId
+             AND tool_call_id = :toolCallId
+             AND runtime_tool_id = :runtimeToolId
+             AND tool_name = :toolName
+             AND arguments_digest = :argumentsDigest
+             AND definition_digest = :definitionDigest
+             AND requires_approval = :requiresApproval
+             AND status IN ('PENDING_APPROVAL', 'APPROVED')""",
+    )
+    suspend fun failAwaitingIdentityConflict(
+        sessionId: String,
+        assistantMessageId: String,
+        toolCallId: String,
+        runtimeToolId: String,
+        toolName: String,
+        argumentsDigest: String,
+        definitionDigest: String,
+        requiresApproval: Boolean,
+        resultMessageId: String,
+        error: String,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
         """DELETE FROM tool_execution_ledger
            WHERE NOT EXISTS (
                SELECT 1 FROM sessions WHERE sessions.id = tool_execution_ledger.session_id

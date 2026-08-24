@@ -83,7 +83,7 @@ class ToolExecutor(
                 requiresApproval = tc.id !in allowedToolCallIds,
             )
             if (preflight is ToolPreflight.Invalid) {
-                finishInvalidCall(activeLedger, key, targetMsg, preflight.identity)
+                finishInvalidCall(activeLedger, key, targetMsg, preflight)
                 continue
             }
             preflight as ToolPreflight.Valid
@@ -211,8 +211,17 @@ class ToolExecutor(
         activeLedger: ToolExecutionLedger,
         key: ToolExecutionKey,
         targetMessage: Message,
-        identity: ToolInvocationIdentity,
+        preflight: ToolPreflight.Invalid,
     ) {
+        preflight.persistedIdentity?.let { persistedIdentity ->
+            activeLedger.failAwaitingIdentityConflict(
+                key,
+                persistedIdentity,
+                targetMessage.thoughtSignature,
+            )?.let { messageManager.mirrorPersistedMessage(key.sessionId, it) }
+            return
+        }
+        val identity = preflight.identity
         val registration = activeLedger.register(key, identity)
         if (registration == ToolRegistrationResult.Conflict) return
         if (!activeLedger.claim(key, identity)) return
@@ -255,7 +264,11 @@ class ToolExecutor(
                 arguments.sha256 != persistedIdentity.argumentsDigest ||
                 (requiresApproval && !persistedIdentity.requiresApproval)
             ) {
-                return invalidPreflight(call, ToolInvocationIdentityErrorCode.MALFORMED_ARGUMENTS)
+                return invalidPreflight(
+                    call,
+                    ToolInvocationIdentityErrorCode.MALFORMED_ARGUMENTS,
+                    persistedIdentity,
+                )
             }
             return ToolPreflight.Valid(persistedIdentity, arguments.arguments)
         }
@@ -280,8 +293,9 @@ class ToolExecutor(
     private fun invalidPreflight(
         call: ToolCall,
         code: ToolInvocationIdentityErrorCode,
+        persistedIdentity: ToolInvocationIdentity? = null,
     ): ToolPreflight.Invalid = ToolPreflight.Invalid(
-        ToolInvocationIdentity(
+        identity = ToolInvocationIdentity(
             runtimeToolId = "invalid_tool",
             toolName = "invalid_tool",
             argumentsDigest = sha256(
@@ -290,6 +304,7 @@ class ToolExecutor(
             definitionDigest = sha256("nexara:invalid-tool-definition:v1\u0000${code.name}"),
             requiresApproval = false,
         ),
+        persistedIdentity = persistedIdentity,
     )
 
     private sealed interface ToolPreflight {
@@ -298,7 +313,10 @@ class ToolExecutor(
             val arguments: JsonObject,
         ) : ToolPreflight
 
-        data class Invalid(val identity: ToolInvocationIdentity) : ToolPreflight
+        data class Invalid(
+            val identity: ToolInvocationIdentity,
+            val persistedIdentity: ToolInvocationIdentity?,
+        ) : ToolPreflight
     }
 
     private fun sha256(raw: String): String = MessageDigest.getInstance("SHA-256")
