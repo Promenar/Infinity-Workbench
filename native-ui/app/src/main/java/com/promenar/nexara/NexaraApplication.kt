@@ -261,6 +261,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         val transaction = com.promenar.nexara.data.session.RoomSessionDeletionTransaction(database)
         com.promenar.nexara.data.session.SessionDeletionCoordinator(
             gate = sessionExecutionGate,
+            recoverSessionDeletion = workspaceMutationRecoveryCoordinator::recoverSessionOrThrow,
             resolveTarget = targetResolver::resolve,
             cancelAndJoinGeneration = { sessionId ->
                 generationCoordinator.cancelAndJoinSession(sessionId)
@@ -299,20 +300,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     suspend fun deleteSessionRecoverably(sessionId: String):
-        com.promenar.nexara.data.session.SessionDeletionResult = try {
-        // 首次 resolve 前只收敛该会话遗留的 session DELETE；其它会话 journal 不受触碰。
-        workspaceMutationRecoveryCoordinator.recoverSessionOrThrow(sessionId)
+        com.promenar.nexara.data.session.SessionDeletionResult =
         sessionDeletionCoordinator.delete(sessionId)
-    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-        throw cancelled
-    } catch (failure: Throwable) {
-        com.promenar.nexara.data.session.SessionDeletionResult.Failed(
-            com.promenar.nexara.data.session.SessionDeletionError(
-                com.promenar.nexara.data.session.SessionDeletionErrorCode.WORKSPACE,
-                failure,
-            ),
-        )
-    }
 
     private val generationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val generationPresentationStore by lazy {

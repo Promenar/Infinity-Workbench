@@ -510,19 +510,27 @@ class WorkspaceRepository(
             ?: throw IllegalStateException("回收站记录缺少原始路径，无法恢复。")
         val originalParent = entry.originalParentUuid
             ?: throw IllegalStateException("回收站记录缺少原父目录，无法恢复。")
-        if (dao.getActiveByUuid(workspaceRootUuid, originalParent) == null) {
-            throw SecurityException("原父目录不属于当前工作区")
-        }
+        val activeOriginalParent = dao.getActiveByUuid(workspaceRootUuid, originalParent)
+            ?.takeIf { it.isDirectory }
+            ?: throw SecurityException("原父目录不属于当前工作区")
         val recycledSubtree = if (entry.isDirectory) {
             dao.getSubtree(workspaceRootUuid, entry.materializedPath, true)
         } else listOf(entry)
         val subtreeIds = recycledSubtree.mapTo(mutableSetOf()) { it.uuid }
+        val subtreeById = recycledSubtree.associateBy { it.uuid }
         val workspaceRoot = requireRoot(workspaceRootUuid)
         val validatedRootOriginal = validateMaterializedPath(workspaceRoot, originalPath)
+        validateName(entry.name)
+        if (validatedRootOriginal != joinMaterializedPath(activeOriginalParent.materializedPath, entry.name)) {
+            throw IllegalStateException("回收根原父目录、名称与原始路径不一致，无法恢复。")
+        }
         val originalPaths = recycledSubtree.associate { child ->
             val raw = child.originalMaterializedPath
                 ?: throw IllegalStateException("回收子树缺少原始路径，无法恢复。")
-            val validated = validateMaterializedPath(workspaceRoot, raw)
+            child.uuid to validateMaterializedPath(workspaceRoot, raw)
+        }
+        recycledSubtree.forEach { child ->
+            val validated = originalPaths.getValue(child.uuid)
             val expected = if (child.uuid == entry.uuid) {
                 validatedRootOriginal
             } else {
@@ -533,10 +541,24 @@ class WorkspaceRepository(
             }
             val originalParentUuid = child.originalParentUuid
                 ?: throw IllegalStateException("回收子树缺少原父目录，无法恢复。")
-            if (originalParentUuid !in subtreeIds && dao.getActiveByUuid(workspaceRootUuid, originalParentUuid) == null) {
-                throw IllegalStateException("回收子树原父目录无效，无法恢复。")
+            val restoredParentPath = if (originalParentUuid in subtreeIds) {
+                val parent = subtreeById[originalParentUuid]
+                    ?.takeIf { it.isDirectory }
+                    ?: throw IllegalStateException("回收子树原父目录无效，无法恢复。")
+                if (child.uuid != entry.uuid && child.parentUuid != originalParentUuid) {
+                    throw IllegalStateException("回收子树 parentUuid 层级不一致，无法恢复。")
+                }
+                originalPaths.getValue(parent.uuid)
+            } else {
+                dao.getActiveByUuid(workspaceRootUuid, originalParentUuid)
+                    ?.takeIf { it.isDirectory }
+                    ?.materializedPath
+                    ?: throw IllegalStateException("回收子树原父目录无效，无法恢复。")
             }
-            child.uuid to validated
+            validateName(child.name)
+            if (validated != joinMaterializedPath(restoredParentPath, child.name)) {
+                throw IllegalStateException("回收子树 parent、name 与原始路径不一致，无法恢复。")
+            }
         }
         if (originalPaths.values.toSet().size != originalPaths.size) {
             throw IllegalStateException("回收子树原始路径重复，无法恢复。")
@@ -1202,8 +1224,9 @@ class WorkspaceRepository(
         staged: StagedWorkspaceFileMutation?,
     ) {
         if (staged == null) return
-        cleanupCreateOwnership(root, staged)
         completeMutation(staged)
+        runCatching { cleanupCreateOwnership(root, staged) }
+            .onFailure { NexaraLogger.logError("WorkspaceCreate.cleanupOwnership", it) }
     }
 
     private fun cleanupCreateOwnership(root: java.nio.file.Path, staged: StagedWorkspaceFileMutation?) {

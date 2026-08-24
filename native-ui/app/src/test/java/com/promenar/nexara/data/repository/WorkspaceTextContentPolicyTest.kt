@@ -114,4 +114,54 @@ class WorkspaceTextContentPolicyTest {
         assertThat(empty.text).isEmpty()
         assertThat(empty.lineCount).isEqualTo(0)
     }
+
+    @Test
+    fun `LF CRLF CR的20001行均以TOO_MANY_LINES拒绝且CRLF只计一次`() {
+        listOf("\n", "\r\n", "\r").forEach { separator ->
+            val content = (1..20_001).joinToString(separator) { "x" }
+
+            val failure = runCatching {
+                policy.validate(
+                    "large.txt",
+                    "text/plain",
+                    content.toByteArray(),
+                    WorkspaceTextOperation.READ,
+                )
+            }.exceptionOrNull()
+
+            assertThat(failure).isInstanceOf(WorkspaceTextPolicyException::class.java)
+            assertThat((failure as WorkspaceTextPolicyException).code)
+                .isEqualTo(WorkspaceTextErrorCode.TOO_MANY_LINES)
+        }
+
+        val crlf = policy.validate(
+            "two-lines.txt",
+            "text/plain",
+            "a\r\nb".toByteArray(),
+            WorkspaceTextOperation.READ,
+            WorkspaceTextBudget(maxInputBytes = 20, maxLines = 2, maxOutputBytes = 20),
+        )
+        assertThat(crlf.lineCount).isEqualTo(2)
+    }
+
+    @Test
+    fun `尾部LF CRLF CR都保留末尾空行且空文本仍为零行`() {
+        val fixtures = listOf(
+            "a\n" to 2,
+            "a\r\n" to 2,
+            "a\r" to 2,
+            "a\rb\r" to 3,
+            "" to 0,
+        )
+
+        fixtures.forEach { (content, expected) ->
+            val result = policy.validate(
+                "lines.txt",
+                "text/plain",
+                content.toByteArray(),
+                WorkspaceTextOperation.READ,
+            )
+            assertThat(result.lineCount).isEqualTo(expected)
+        }
+    }
 }

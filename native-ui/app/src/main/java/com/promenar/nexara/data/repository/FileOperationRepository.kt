@@ -84,8 +84,7 @@ class FileOperationRepository(
         val root = bindRoot(workspaceRootUuid)
         WorkspaceMutationCoordinator.withBoundRoot(File(root.physicalRootPath).toPath(), root.hash) {
             val entry = requireFile(workspaceRootUuid, uuid)
-            val allLines = readContent(entry, WorkspaceTextOperation.READ)
-                .lines().let { if (it == listOf("")) emptyList() else it }
+            val allLines = workspaceTextLines(readContent(entry, WorkspaceTextOperation.READ))
             val total = allLines.size
             val start = startLine?.coerceIn(1, total.coerceAtLeast(1)) ?: 1
             val end = endLine?.coerceIn(1, total.coerceAtLeast(1)) ?: total
@@ -109,7 +108,10 @@ class FileOperationRepository(
                 else -> readVersionContent(entry, basisHash)
             }
             val effectiveBasisHash = basisHash ?: entry.hash
-            val hunks = MyersDiff.computeHunks(basisContent.lines(), currentContent.lines())
+            val hunks = MyersDiff.computeHunks(
+                workspaceTextLines(basisContent),
+                workspaceTextLines(currentContent),
+            )
             textPolicy.validateOutput(
                 hunks.asSequence().flatMap { it.lines.asSequence() }.joinToString("\n") { it.content },
                 WorkspaceTextContentPolicy.DEFAULT_TOOL_BUDGET,
@@ -160,7 +162,7 @@ class FileOperationRepository(
             } catch (failure: WorkspaceTextPolicyException) {
                 return@withBoundRoot policyFailure(failure, uuid)
             }
-            val lines = currentContent.lines().let { if (it == listOf("")) emptyList() else it }.toMutableList()
+            val lines = workspaceTextLines(currentContent).toMutableList()
             val originalTotal = lines.size
             validatePatchOperations(operations, lines, uuid)?.let { return@withBoundRoot it }
             operations.withIndex().sortedByDescending { (_, operation) ->
@@ -514,6 +516,6 @@ class FileOperationRepository(
     }
 
     private fun contentLines(content: String): List<String> =
-        if (content.isEmpty()) emptyList() else content.lines()
+        workspaceTextLines(content)
 
 }

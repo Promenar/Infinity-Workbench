@@ -37,6 +37,43 @@ data class ValidatedWorkspaceText(
     val lineCount: Int,
 )
 
+private inline fun scanWorkspaceTextLines(
+    text: String,
+    visit: (lineNumber: Int, start: Int, endExclusive: Int) -> Boolean,
+): Int {
+    if (text.isEmpty()) return 0
+    var lineNumber = 0
+    var lineStart = 0
+    var index = 0
+    while (index < text.length) {
+        val current = text[index]
+        if (current != '\n' && current != '\r') {
+            index += 1
+            continue
+        }
+        lineNumber += 1
+        if (!visit(lineNumber, lineStart, index)) return lineNumber
+        index += if (current == '\r' && index + 1 < text.length && text[index + 1] == '\n') 2 else 1
+        lineStart = index
+    }
+    lineNumber += 1
+    visit(lineNumber, lineStart, text.length)
+    return lineNumber
+}
+
+internal fun workspaceTextLineCount(text: String, stopAfter: Int = Int.MAX_VALUE): Int =
+    scanWorkspaceTextLines(text) { lineNumber, _, _ -> lineNumber <= stopAfter }
+
+internal fun workspaceTextLines(text: String): List<String> {
+    if (text.isEmpty()) return emptyList()
+    return buildList {
+        scanWorkspaceTextLines(text) { _, start, endExclusive ->
+            add(text.substring(start, endExclusive))
+            true
+        }
+    }
+}
+
 class WorkspaceTextPolicyException(
     val code: WorkspaceTextErrorCode,
     val safeMessage: String,
@@ -71,10 +108,7 @@ class WorkspaceTextContentPolicy {
         } catch (_: java.nio.charset.CharacterCodingException) {
             fail(WorkspaceTextErrorCode.INVALID_TEXT_ENCODING, "文件不是可安全编辑的 UTF-8 文本。")
         }
-        val lineCount = when {
-            text.isEmpty() -> 0
-            else -> 1 + text.count { it == '\n' }
-        }
+        val lineCount = workspaceTextLineCount(text, budget.maxLines)
         if (lineCount > budget.maxLines) {
             fail(
                 WorkspaceTextErrorCode.TOO_MANY_LINES,

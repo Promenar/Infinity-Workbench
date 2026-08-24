@@ -72,6 +72,21 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
     }
 
     @Test
+    fun `PREPARED恢复在未外部预绑定时由coordinator绑定整条物理状态机`() = runTest {
+        val file = entry("file", "/source.txt", "source.txt", "root")
+        database.fileEntryDao().insertAbort(file)
+        fileOps.createFile(root, listOf("source.txt"), "payload".toByteArray())
+        insertJournal(WorkspaceMutationType.MOVE, WorkspaceMutationStage.PREPARED, "source.txt", "target.txt")
+        fileOps.move(root, listOf("source.txt"), listOf("target.txt"))
+
+        bindingRequiredCoordinator().recoverOrThrow()
+
+        assertThat(Files.exists(root.resolve("source.txt"))).isTrue()
+        assertThat(Files.exists(root.resolve("target.txt"))).isFalse()
+        assertThat(database.workspaceMutationDao().get("op-1")).isNull()
+    }
+
+    @Test
     fun `move恢复遇到source和target同时存在时fail close且保留journal`() = runTest {
         database.fileEntryDao().insertAbort(entry("file", "/source.txt", "source.txt", "root"))
         fileOps.createFile(root, listOf("source.txt"), "source".toByteArray())
@@ -201,6 +216,110 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
     }
 
     @Test
+    fun `DB_COMMITTED create拒绝同内容不同fileKey替换并保留journal和target`() = runTest {
+        val payload = "payload".toByteArray()
+        database.fileEntryDao().insertAbort(
+            entry("created", "/created.txt", "created.txt", "root").copy(sizeBytes = payload.size.toLong()),
+        )
+        fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        fileOps.createDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1"))
+        val ownership = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")
+        val staged = ownership + CREATE_STAGED_NODE
+        fileOps.createFile(root, staged, payload)
+        val stagedIdentity = fileOps.inspect(root, staged)
+        fileOps.createFile(
+            root,
+            ownership + CREATE_MANIFEST,
+            encodeCreateOwnershipManifest(WorkspaceCreateOwnershipManifest("created.txt", stagedIdentity)),
+        )
+        fileOps.move(root, staged, listOf("created.txt")).commit()
+        fileOps.delete(root, listOf("created.txt"))
+        fileOps.createFile(root, listOf("created.txt"), payload)
+        assertThat(fileOps.inspect(root, listOf("created.txt")).fileKey)
+            .isNotEqualTo(stagedIdentity.fileKey)
+        insertJournal(
+            WorkspaceMutationType.CREATE,
+            WorkspaceMutationStage.DB_COMMITTED,
+            "created.txt",
+            "created.txt",
+            targetUuid = "created",
+        )
+
+        assertThat(runCatching { coordinator().recoverOrThrow() }.exceptionOrNull())
+            .isInstanceOf(WorkspaceMutationRecoveryException::class.java)
+        assertThat(Files.readAllBytes(root.resolve("created.txt"))).isEqualTo(payload)
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+        assertThat(Files.exists(root.resolve(CREATE_OWNERSHIP_DIRECTORY).resolve("op-1"))).isTrue()
+    }
+
+    @Test
+    fun `DB_COMMITTED mkdir拒绝同路径不同fileKey目录并保留journal和target`() = runTest {
+        database.fileEntryDao().insertAbort(
+            entry("created-dir", "/created-dir", "created-dir", "root", directory = true),
+        )
+        fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        fileOps.createDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1"))
+        val ownership = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")
+        val staged = ownership + CREATE_STAGED_NODE
+        fileOps.createDirectory(root, staged)
+        val stagedIdentity = fileOps.inspect(root, staged)
+        fileOps.createFile(
+            root,
+            ownership + CREATE_MANIFEST,
+            encodeCreateOwnershipManifest(WorkspaceCreateOwnershipManifest("created-dir", stagedIdentity)),
+        )
+        fileOps.move(root, staged, listOf("created-dir")).commit()
+        fileOps.delete(root, listOf("created-dir"))
+        fileOps.createDirectory(root, listOf("created-dir"))
+        assertThat(fileOps.inspect(root, listOf("created-dir")).fileKey)
+            .isNotEqualTo(stagedIdentity.fileKey)
+        insertJournal(
+            WorkspaceMutationType.MKDIR,
+            WorkspaceMutationStage.DB_COMMITTED,
+            "created-dir",
+            "created-dir",
+            targetUuid = "created-dir",
+        )
+
+        assertThat(runCatching { coordinator().recoverOrThrow() }.exceptionOrNull())
+            .isInstanceOf(WorkspaceMutationRecoveryException::class.java)
+        assertThat(Files.isDirectory(root.resolve("created-dir"))).isTrue()
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+        assertThat(Files.exists(root.resolve(CREATE_OWNERSHIP_DIRECTORY).resolve("op-1"))).isTrue()
+    }
+
+    @Test
+    fun `DB_COMMITTED create缺少manifest即使DB与target匹配也fail close`() = runTest {
+        val payload = "payload".toByteArray()
+        database.fileEntryDao().insertAbort(
+            entry("created", "/created.txt", "created.txt", "root").copy(sizeBytes = payload.size.toLong()),
+        )
+        fileOps.createFile(root, listOf("created.txt"), payload)
+        insertJournal(
+            WorkspaceMutationType.CREATE,
+            WorkspaceMutationStage.DB_COMMITTED,
+            "created.txt",
+            "created.txt",
+            targetUuid = "created",
+        )
+
+        assertThat(runCatching { coordinator().recoverOrThrow() }.exceptionOrNull())
+            .isInstanceOf(WorkspaceMutationRecoveryException::class.java)
+        assertThat(Files.readAllBytes(root.resolve("created.txt"))).isEqualTo(payload)
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+    }
+
+    @Test
+    fun `无journal的owner维护清理也由coordinator绑定工作区根`() = runTest {
+        fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        fileOps.createDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "orphan-owner"))
+
+        bindingRequiredCoordinator().recoverOrThrow()
+
+        assertThat(Files.exists(root.resolve(CREATE_OWNERSHIP_DIRECTORY))).isFalse()
+    }
+
+    @Test
     fun `DB_COMMITTED move按DB target重做缺失物理步骤并清理journal`() = runTest {
         val file = entry("file", "/target.txt", "target.txt", "root")
         database.fileEntryDao().insertAbort(file)
@@ -208,6 +327,20 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
         insertJournal(WorkspaceMutationType.MOVE, WorkspaceMutationStage.DB_COMMITTED, "source.txt", "target.txt")
 
         coordinator().recoverOrThrow()
+
+        assertThat(Files.exists(root.resolve("source.txt"))).isFalse()
+        assertThat(Files.readAllBytes(root.resolve("target.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+        assertThat(database.workspaceMutationDao().get("op-1")).isNull()
+    }
+
+    @Test
+    fun `DB_COMMITTED恢复在未外部预绑定时由coordinator绑定整条物理状态机`() = runTest {
+        val file = entry("file", "/target.txt", "target.txt", "root")
+        database.fileEntryDao().insertAbort(file)
+        fileOps.createFile(root, listOf("source.txt"), "payload".toByteArray())
+        insertJournal(WorkspaceMutationType.MOVE, WorkspaceMutationStage.DB_COMMITTED, "source.txt", "target.txt")
+
+        bindingRequiredCoordinator().recoverOrThrow()
 
         assertThat(Files.exists(root.resolve("source.txt"))).isFalse()
         assertThat(Files.readAllBytes(root.resolve("target.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
@@ -255,6 +388,46 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
     }
 
     private fun coordinator() = WorkspaceFileMutationRecoveryCoordinator(database, fileOps)
+
+    private fun bindingRequiredCoordinator(): WorkspaceFileMutationRecoveryCoordinator {
+        val bindingRequiredOps = object : WorkspaceFileOps by fileOps {
+            private fun requireBinding(boundRoot: Path) {
+                check(WorkspaceMutationCoordinator.expectedIdentity(boundRoot) == rootEntry.hash) {
+                    "工作区根缺少进程内数据库身份绑定"
+                }
+            }
+
+            override fun ensureRoot(
+                root: Path,
+                initializeIdentity: Boolean,
+                expectedIdentity: String?,
+                allowUnboundParent: Boolean,
+            ): String {
+                requireBinding(root)
+                return fileOps.ensureRoot(root, initializeIdentity, expectedIdentity, allowUnboundParent)
+            }
+
+            override fun exists(root: Path, relative: List<String>): Boolean {
+                requireBinding(root)
+                return fileOps.exists(root, relative)
+            }
+
+            override fun move(
+                root: Path,
+                source: List<String>,
+                target: List<String>,
+            ): WorkspaceFileRollback {
+                requireBinding(root)
+                return fileOps.move(root, source, target)
+            }
+
+            override fun delete(root: Path, source: List<String>) {
+                requireBinding(root)
+                fileOps.delete(root, source)
+            }
+        }
+        return WorkspaceFileMutationRecoveryCoordinator(database, bindingRequiredOps)
+    }
 
     private suspend fun insertJournal(
         type: WorkspaceMutationType,

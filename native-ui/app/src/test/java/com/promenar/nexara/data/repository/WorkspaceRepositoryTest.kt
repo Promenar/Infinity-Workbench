@@ -1774,6 +1774,51 @@ class WorkspaceRepositoryTest {
     }
 
     @Test
+    fun `create先完成committed journal再清owner且清理失败不伪装业务失败`() = runBlocking<Unit> {
+        insertSession("create-owner-cleanup", rootA.absolutePath)
+        val delegate = TestWorkspaceFileOps()
+        var failOwnerCleanup = true
+        val cleanupFailingOps = object : WorkspaceFileOps by delegate {
+            override fun delete(root: java.nio.file.Path, source: List<String>) {
+                if (failOwnerCleanup && source.size == 2 && source.first() == CREATE_OWNERSHIP_DIRECTORY) {
+                    throw java.io.IOException("injected owner cleanup failure")
+                }
+                delegate.delete(root, source)
+            }
+        }
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            fileOps = cleanupFailingOps,
+            mutationJournal = RoomWorkspaceFileMutationJournal(
+                db,
+                operationIdFactory = { "cleanup-op" },
+            ),
+        )
+        val root = repo.ensureSessionRoot("create-owner-cleanup")
+
+        val created = repo.createFileInWorkspace(
+            root.uuid,
+            "created",
+            "created.txt",
+            "payload",
+            root.uuid,
+            "/created.txt",
+        )
+
+        assertThat(created.uuid).isEqualTo("created")
+        assertThat(File(rootA, "created.txt").readText()).isEqualTo("payload")
+        assertThat(db.workspaceMutationDao().getUnfinished()).isEmpty()
+        assertThat(File(rootA, "$CREATE_OWNERSHIP_DIRECTORY/cleanup-op").isDirectory).isTrue()
+
+        failOwnerCleanup = false
+        WorkspaceFileMutationRecoveryCoordinator(db, delegate).recoverOrThrow()
+
+        assertThat(File(rootA, CREATE_OWNERSHIP_DIRECTORY).exists()).isFalse()
+        assertThat(File(rootA, "created.txt").readText()).isEqualTo("payload")
+    }
+
+    @Test
     fun `restore与move目标同名冲突在prepare前拒绝且重启恢复无悬挂`() = runBlocking<Unit> {
         insertSession("move-collision", rootA.absolutePath)
         repo = WorkspaceRepository(
@@ -1798,6 +1843,81 @@ class WorkspaceRepositoryTest {
         assertThat(File(rootA, "right/dup.txt").readText()).isEqualTo("right")
         assertThat(db.workspaceMutationDao().getUnfinished()).isEmpty()
         WorkspaceFileMutationRecoveryCoordinator(db, TestWorkspaceFileOps()).recoverOrThrow()
+    }
+
+    @Test
+    fun `restore根originalParent与originalPath父目录不一致时在journal和物理移动前拒绝`() = runBlocking<Unit> {
+        insertSession("restore-root-shape", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("restore-root-shape")
+        val parentA = repo.createDirectoryInWorkspace(root.uuid, "parent-a", "a", root.uuid, "/a")
+        repo.createDirectoryInWorkspace(root.uuid, "parent-b", "b", root.uuid, "/b")
+        val file = repo.createFileInWorkspace(
+            root.uuid,
+            "recycled-file",
+            "item.txt",
+            "payload",
+            parentA.uuid,
+            "/a/item.txt",
+        )
+        repo.moveToRecycleBin(root.uuid, file.uuid)
+        val recycled = checkNotNull(db.fileEntryDao().getAnyStateByUuidForLifecycle(root.uuid, file.uuid))
+        db.fileEntryDao().update(
+            recycled.copy(
+                originalParentUuid = parentA.uuid,
+                originalMaterializedPath = "/b/item.txt",
+            ),
+        )
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            fileOps = TestWorkspaceFileOps(),
+            mutationJournal = RoomWorkspaceFileMutationJournal(db),
+        )
+
+        assertThat(runCatching { repo.restoreFromRecycleBin(root.uuid, file.uuid) }.exceptionOrNull())
+            .isNotNull()
+        assertThat(db.workspaceMutationDao().getUnfinished()).isEmpty()
+        assertThat(File(rootA, ".recycle_bin/${file.uuid}").readText()).isEqualTo("payload")
+        assertThat(File(rootA, "b/item.txt").exists()).isFalse()
+    }
+
+    @Test
+    fun `restore子树child的原parent或name与originalPath不一致时均在prepare前拒绝`() = runBlocking<Unit> {
+        insertSession("restore-child-shape", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("restore-child-shape")
+        val folder = repo.createDirectoryInWorkspace(root.uuid, "folder", "folder", root.uuid, "/folder")
+        val child = repo.createFileInWorkspace(
+            root.uuid,
+            "child",
+            "item.txt",
+            "payload",
+            folder.uuid,
+            "/folder/item.txt",
+        )
+        repo.moveToRecycleBin(root.uuid, folder.uuid)
+        val recycledChild = checkNotNull(
+            db.fileEntryDao().getAnyStateByUuidForLifecycle(root.uuid, child.uuid),
+        )
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            fileOps = TestWorkspaceFileOps(),
+            mutationJournal = RoomWorkspaceFileMutationJournal(db),
+        )
+
+        listOf(
+            recycledChild.copy(originalParentUuid = root.uuid),
+            recycledChild.copy(name = "different.txt"),
+        ).forEach { malformed ->
+            db.fileEntryDao().update(malformed)
+
+            assertThat(runCatching { repo.restoreFromRecycleBin(root.uuid, folder.uuid) }.exceptionOrNull())
+                .isNotNull()
+            assertThat(db.workspaceMutationDao().getUnfinished()).isEmpty()
+            assertThat(File(rootA, ".recycle_bin/${folder.uuid}/item.txt").readText())
+                .isEqualTo("payload")
+            assertThat(File(rootA, "folder").exists()).isFalse()
+        }
     }
 
     @Test

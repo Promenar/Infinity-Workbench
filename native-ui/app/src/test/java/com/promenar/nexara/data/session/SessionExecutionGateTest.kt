@@ -61,6 +61,35 @@ class SessionExecutionGateTest {
     }
 
     @Test
+    fun `删除全序列仅按session串行且不阻塞另一session`() = runTest {
+        val gate = SessionExecutionGate()
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val otherEntered = CompletableDeferred<Unit>()
+        val first = async {
+            gate.withSessionDeletionSequence("session-a") {
+                firstEntered.complete(Unit)
+                releaseFirst.await()
+            }
+        }
+        firstEntered.await()
+
+        val sameSession = async {
+            gate.withSessionDeletionSequence("session-a") { Unit }
+        }
+        val otherSession = async {
+            gate.withSessionDeletionSequence("session-b") { otherEntered.complete(Unit) }
+        }
+
+        otherEntered.await()
+        assertThat(sameSession.isCompleted).isFalse()
+        releaseFirst.complete(Unit)
+        first.await()
+        sameSession.await()
+        otherSession.await()
+    }
+
+    @Test
     fun `删除关闭admission后等待既有写租约且嵌套同资源只计最外层`() = runTest {
         val gate = SessionExecutionGate()
         val writeEntered = CompletableDeferred<Unit>()

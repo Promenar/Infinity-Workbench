@@ -7,6 +7,11 @@ import com.promenar.nexara.data.backup.SecureBackupFileOps
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.SessionEntity
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationPayload
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationPayloadCodec
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationStage
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationType
 import com.promenar.nexara.infra.util.Sha256Utils
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -168,6 +173,88 @@ class AndroidSecureWorkspaceFileOpsTest {
             assertThat(files.readFileRange(claimed.uuid, "file-restore").content).isEqualTo("new")
         } finally {
             db.close()
+        }
+    }
+
+    @Test
+    fun productionRecoveryBindsRealSecureRootForPreparedAndDbCommitted() = runBlocking<Unit> {
+        listOf(WorkspaceMutationStage.PREPARED, WorkspaceMutationStage.DB_COMMITTED).forEachIndexed { index, stage ->
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val physicalRoot = Files.createDirectory(root.resolve("recovery-$index"))
+            val ops = SecureWorkspaceFileOps()
+            val identity = ops.ensureRoot(physicalRoot)
+            val source = physicalRoot.resolve("source.txt")
+            val target = physicalRoot.resolve("target.txt")
+            Files.write(source, "payload".toByteArray())
+            if (stage == WorkspaceMutationStage.PREPARED) Files.move(source, target)
+            val now = System.currentTimeMillis()
+            val rootUuid = "recovery-root-$index"
+            val raw = WorkspaceMutationPayloadCodec.encode(
+                WorkspaceMutationPayload(
+                    sourceRelativePath = "source.txt",
+                    targetRelativePath = "target.txt",
+                    databaseTargetUuid = "recovery-file-$index",
+                    expectedSha256 = identity,
+                ),
+            )
+            val db = Room.inMemoryDatabaseBuilder(context, NexaraDatabase::class.java)
+                .allowMainThreadQueries()
+                .build()
+            try {
+                db.fileEntryDao().insert(
+                    FileEntry(
+                        uuid = rootUuid,
+                        workspaceRootUuid = rootUuid,
+                        parentUuid = null,
+                        name = "workspace",
+                        hash = identity,
+                        isDirectory = true,
+                        physicalRootPath = physicalRoot.toString(),
+                        materializedPath = "/",
+                        createdAt = now,
+                        updatedAt = now,
+                    ),
+                )
+                db.fileEntryDao().insert(
+                    FileEntry(
+                        uuid = "recovery-file-$index",
+                        workspaceRootUuid = rootUuid,
+                        parentUuid = rootUuid,
+                        name = if (stage == WorkspaceMutationStage.PREPARED) "source.txt" else "target.txt",
+                        hash = Sha256Utils.hash("payload"),
+                        sizeBytes = "payload".toByteArray().size.toLong(),
+                        physicalRootPath = physicalRoot.toString(),
+                        materializedPath = if (stage == WorkspaceMutationStage.PREPARED) "/source.txt" else "/target.txt",
+                        createdAt = now,
+                        updatedAt = now,
+                    ),
+                )
+                db.workspaceMutationDao().insert(
+                    WorkspaceMutationEntity(
+                        operationId = "recovery-op-$index",
+                        workspaceRootUuid = rootUuid,
+                        operationType = WorkspaceMutationType.MOVE,
+                        payload = raw,
+                        payloadDigest = Sha256Utils.hash(raw),
+                        state = stage,
+                        createdAt = now,
+                        updatedAt = now,
+                    ),
+                )
+
+                WorkspaceFileMutationRecoveryCoordinator(db, ops).recoverOrThrow()
+
+                if (stage == WorkspaceMutationStage.PREPARED) {
+                    assertThat(Files.readAllBytes(source).toString(Charsets.UTF_8)).isEqualTo("payload")
+                    assertThat(Files.exists(target)).isFalse()
+                } else {
+                    assertThat(Files.exists(source)).isFalse()
+                    assertThat(Files.readAllBytes(target).toString(Charsets.UTF_8)).isEqualTo("payload")
+                }
+                assertThat(db.workspaceMutationDao().get("recovery-op-$index")).isNull()
+            } finally {
+                db.close()
+            }
         }
     }
 

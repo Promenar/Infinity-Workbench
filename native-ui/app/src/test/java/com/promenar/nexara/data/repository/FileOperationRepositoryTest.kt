@@ -100,6 +100,24 @@ class FileOperationRepositoryTest {
     }
 
     @Test
+    fun `read的totalLines与文本策略对CR和尾换行使用同一语义`() = runBlocking<Unit> {
+        val content = "first\rsecond\r"
+        val entry = insertTestFile(content = content)
+        val validated = WorkspaceTextContentPolicy().validate(
+            entry.name,
+            entry.mimeType,
+            content.toByteArray(),
+            WorkspaceTextOperation.READ,
+        )
+
+        val result = repo.readFileRange(ROOT, entry.uuid)
+
+        assertThat(result.totalLines).isEqualTo(3)
+        assertThat(result.totalLines).isEqualTo(validated.lineCount)
+        assertThat(result.content).isEqualTo("first\nsecond\n")
+    }
+
+    @Test
     fun `UTF8 BOM write规范化新文本并以原始bytes保存可验证历史版本`() = runBlocking<Unit> {
         val oldBytes = UTF8_BOM + "old\ncontent".toByteArray(Charsets.UTF_8)
         val entry = insertTestFile(content = "old\ncontent", physicalBytes = oldBytes)

@@ -153,6 +153,138 @@ class SessionDeletionCoordinatorTest {
     }
 
     @Test
+    fun `第二个并发删除不得在首次stage后恢复在途PREPARED journal`() = runTest {
+        val gate = SessionExecutionGate()
+        var current: SessionDeletionTarget? = target()
+        var sourceExists = true
+        var stagedExists = false
+        var journalState: String? = null
+        var preparedRecoveryCount = 0
+        var databaseDeleteCount = 0
+        val firstDatabaseEntered = CompletableDeferred<Unit>()
+        val releaseFirstDatabase = CompletableDeferred<Unit>()
+        val secondStarted = CompletableDeferred<Unit>()
+        val coordinator = SessionDeletionCoordinator(
+            gate = gate,
+            recoverSessionDeletion = {
+                when (journalState) {
+                    "PREPARED" -> {
+                        preparedRecoveryCount += 1
+                        check(current != null && stagedExists && !sourceExists)
+                        sourceExists = true
+                        stagedExists = false
+                        journalState = null
+                    }
+                    "DB_COMMITTED" -> {
+                        check(current == null && stagedExists)
+                        stagedExists = false
+                        journalState = null
+                    }
+                }
+            },
+            resolveTarget = { current },
+            cancelAndJoinGeneration = {},
+            closePendingExecution = {},
+            acquireVectorBarrier = { NoOpSessionDeletionBarrier },
+            journal = object : SessionWorkspaceMutationJournal {
+                override suspend fun stage(target: SessionDeletionTarget): StagedSessionWorkspaceMutation {
+                    check(sourceExists && !stagedExists && journalState == null)
+                    sourceExists = false
+                    stagedExists = true
+                    journalState = "PREPARED"
+                    return StagedSessionWorkspaceMutation("op", target)
+                }
+                override suspend fun rollback(staged: StagedSessionWorkspaceMutation) = Unit
+                override suspend fun complete(staged: StagedSessionWorkspaceMutation) {
+                    check(journalState == "DB_COMMITTED" && stagedExists && !sourceExists)
+                    stagedExists = false
+                    journalState = null
+                }
+            },
+            deleteDatabase = { _, _ ->
+                firstDatabaseEntered.complete(Unit)
+                releaseFirstDatabase.await()
+                databaseDeleteCount += 1
+                current = null
+                journalState = "DB_COMMITTED"
+            },
+        )
+
+        val first = async { coordinator.delete("session-1") }
+        firstDatabaseEntered.await()
+        val second = async {
+            secondStarted.complete(Unit)
+            coordinator.delete("session-1")
+        }
+        secondStarted.await()
+        yield()
+        releaseFirstDatabase.complete(Unit)
+
+        assertThat(first.await()).isEqualTo(SessionDeletionResult.Deleted)
+        assertThat(second.await()).isEqualTo(SessionDeletionResult.AlreadyDeleted)
+        assertThat(preparedRecoveryCount).isEqualTo(0)
+        assertThat(databaseDeleteCount).isEqualTo(1)
+        assertThat(sourceExists).isFalse()
+        assertThat(stagedExists).isFalse()
+        assertThat(journalState).isNull()
+    }
+
+    @Test
+    fun `DB_COMMITTED收尾失败由同session下一次删除恢复并返回AlreadyDeleted`() = runTest {
+        var current: SessionDeletionTarget? = target()
+        var stagedExists = false
+        var journalState: String? = null
+        var databaseDeleteCount = 0
+        var failCompletion = true
+        val coordinator = SessionDeletionCoordinator(
+            gate = SessionExecutionGate(),
+            recoverSessionDeletion = {
+                if (journalState == "DB_COMMITTED") {
+                    check(current == null && stagedExists)
+                    stagedExists = false
+                    journalState = null
+                }
+            },
+            resolveTarget = { current },
+            cancelAndJoinGeneration = {},
+            closePendingExecution = {},
+            acquireVectorBarrier = { NoOpSessionDeletionBarrier },
+            journal = object : SessionWorkspaceMutationJournal {
+                override suspend fun stage(target: SessionDeletionTarget): StagedSessionWorkspaceMutation {
+                    stagedExists = true
+                    journalState = "PREPARED"
+                    return StagedSessionWorkspaceMutation("op", target)
+                }
+                override suspend fun rollback(staged: StagedSessionWorkspaceMutation) = Unit
+                override suspend fun complete(staged: StagedSessionWorkspaceMutation) {
+                    check(journalState == "DB_COMMITTED" && stagedExists)
+                    if (failCompletion) {
+                        failCompletion = false
+                        throw java.io.IOException("injected completion failure")
+                    }
+                    stagedExists = false
+                    journalState = null
+                }
+            },
+            deleteDatabase = { _, _ ->
+                databaseDeleteCount += 1
+                current = null
+                journalState = "DB_COMMITTED"
+            },
+        )
+
+        assertThat(coordinator.delete("session-1"))
+            .isInstanceOf(SessionDeletionResult.Failed::class.java)
+        assertThat(stagedExists).isTrue()
+        assertThat(journalState).isEqualTo("DB_COMMITTED")
+
+        assertThat(coordinator.delete("session-1")).isEqualTo(SessionDeletionResult.AlreadyDeleted)
+        assertThat(databaseDeleteCount).isEqualTo(1)
+        assertThat(stagedExists).isFalse()
+        assertThat(journalState).isNull()
+    }
+
+    @Test
     fun `删除等待既有workspace写租约并使用释放后的最终target提交`() = runTest {
         val gate = SessionExecutionGate()
         var current = target().copy(fileUuids = listOf("root-1"))

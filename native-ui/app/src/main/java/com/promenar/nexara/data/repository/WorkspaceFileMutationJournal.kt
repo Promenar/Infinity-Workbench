@@ -124,6 +124,7 @@ class WorkspaceFileMutationRecoveryCoordinator(
 ) {
     suspend fun recoverOrThrow() = withContext(Dispatchers.IO) {
         recoverEntities(database.workspaceMutationDao().getUnfinished().filterNot(::isSessionDelete))
+        cleanupOrphanCreateOwnership(database.fileEntryDao().getAllWorkspaceRootsForMaintenance())
     }
 
     suspend fun recoverRootOrThrow(workspaceRootUuid: String) = withContext(Dispatchers.IO) {
@@ -132,6 +133,8 @@ class WorkspaceFileMutationRecoveryCoordinator(
                 .filter { it.workspaceRootUuid == workspaceRootUuid }
                 .filterNot(::isSessionDelete),
         )
+        database.fileEntryDao().getAnyStateByUuidForLifecycle(workspaceRootUuid, workspaceRootUuid)
+            ?.let { cleanupOrphanCreateOwnership(listOf(it)) }
     }
 
     private suspend fun recoverEntities(entities: List<WorkspaceMutationEntity>) {
@@ -167,31 +170,33 @@ class WorkspaceFileMutationRecoveryCoordinator(
             ?: conflict("文件 journal 工作区根不存在")
         if (root.hash != identity) conflict("文件 journal 根身份与数据库不匹配")
         val rootPath = File(root.physicalRootPath).toPath()
-        fileOps.ensureRoot(rootPath, initializeIdentity = false, expectedIdentity = identity)
-        val databaseTarget = database.fileEntryDao().getAnyStateByUuidForLifecycle(
-            entity.workspaceRootUuid,
-            targetUuid,
-        )
-
-        when (entity.operationType) {
-            WorkspaceMutationType.CREATE,
-            WorkspaceMutationType.CREATE_STREAMING,
-            WorkspaceMutationType.MKDIR -> recoverCreateLike(entity, rootPath, databaseTarget, targetRaw, target)
-
-            WorkspaceMutationType.RENAME,
-            WorkspaceMutationType.MOVE,
-            WorkspaceMutationType.RECYCLE,
-            WorkspaceMutationType.RESTORE -> recoverMoveLike(
-                entity,
-                rootPath,
-                databaseTarget ?: conflict("移动类 journal 的数据库目标不存在"),
-                payload.sourceRelativePath,
-                targetRaw,
-                source,
-                target,
+        WorkspaceMutationCoordinator.withBoundRoot(rootPath, identity) {
+            fileOps.ensureRoot(rootPath, initializeIdentity = false, expectedIdentity = identity)
+            val databaseTarget = database.fileEntryDao().getAnyStateByUuidForLifecycle(
+                entity.workspaceRootUuid,
+                targetUuid,
             )
 
-            WorkspaceMutationType.DELETE -> recoverDeleteLike(entity, rootPath)
+            when (entity.operationType) {
+                WorkspaceMutationType.CREATE,
+                WorkspaceMutationType.CREATE_STREAMING,
+                WorkspaceMutationType.MKDIR -> recoverCreateLike(entity, rootPath, databaseTarget, targetRaw, target)
+
+                WorkspaceMutationType.RENAME,
+                WorkspaceMutationType.MOVE,
+                WorkspaceMutationType.RECYCLE,
+                WorkspaceMutationType.RESTORE -> recoverMoveLike(
+                    entity,
+                    rootPath,
+                    databaseTarget ?: conflict("移动类 journal 的数据库目标不存在"),
+                    payload.sourceRelativePath,
+                    targetRaw,
+                    source,
+                    target,
+                )
+
+                WorkspaceMutationType.DELETE -> recoverDeleteLike(entity, rootPath)
+            }
         }
     }
 
@@ -240,15 +245,43 @@ class WorkspaceFileMutationRecoveryCoordinator(
                     fileOps.move(root, stagedNode, target).commit()
                 }
                 val actual = fileOps.inspect(root, target)
+                if (manifest == null || actual != manifest.identity) {
+                    conflict("DB_COMMITTED 创建 journal 物理目标不属于原 staged node")
+                }
                 val databaseMatches = if (committed.isDirectory) {
                     actual.kind == "directory"
                 } else {
                     actual.kind == "file" && actual.sizeBytes == committed.sizeBytes && actual.sha256 == committed.hash
                 }
                 if (!databaseMatches) conflict("DB_COMMITTED 创建 journal 物理身份与数据库不匹配")
-                if (hasOwnership) fileOps.delete(root, ownership)
+                // journal 是已提交业务状态的事实源；先完成 journal，再由有界维护清理回收 owner。
+                // 即使进程在二者之间退出，下次启动也不会因 manifest 缺失永久阻断恢复。
                 deleteForState(entity)
             }
+        }
+    }
+
+    /**
+     * 仅在启动恢复或单工作区删除门禁内调用。此时没有新的文件 mutation 获准进入；成功收敛
+     * journal 后，整个 app-private ownership 根都只可能包含无 journal 的残留。
+     */
+    private suspend fun cleanupOrphanCreateOwnership(roots: List<FileEntry>) {
+        try {
+            roots.forEach { root ->
+                val hasLiveFileMutation = database.workspaceMutationDao().getUnfinished()
+                    .any { it.workspaceRootUuid == root.workspaceRootUuid && !isSessionDelete(it) }
+                if (hasLiveFileMutation) return@forEach
+                val rootPath = File(root.physicalRootPath).toPath()
+                WorkspaceMutationCoordinator.withBoundRoot(rootPath, root.hash) {
+                    fileOps.ensureRoot(rootPath, initializeIdentity = false, expectedIdentity = root.hash)
+                    val ownershipRoot = listOf(CREATE_OWNERSHIP_DIRECTORY)
+                    if (fileOps.exists(rootPath, ownershipRoot)) fileOps.delete(rootPath, ownershipRoot)
+                }
+            }
+        } catch (known: WorkspaceMutationRecoveryException) {
+            throw known
+        } catch (failure: Throwable) {
+            throw WorkspaceMutationRecoveryException("创建 ownership 维护清理失败", failure)
         }
     }
 

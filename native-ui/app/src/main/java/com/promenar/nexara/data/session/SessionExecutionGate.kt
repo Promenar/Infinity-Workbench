@@ -20,6 +20,7 @@ import kotlin.coroutines.CoroutineContext
  */
 class SessionExecutionGate {
     private val sessionLocks = ConcurrentHashMap<String, Mutex>()
+    private val deletionSequenceLocks = ConcurrentHashMap<String, Mutex>()
     private val stateMutex = Mutex()
     private val deletingSessions = ConcurrentHashMap.newKeySet<String>()
     private val deletingWorkspaceRoots = ConcurrentHashMap<String, String>()
@@ -51,6 +52,17 @@ class SessionExecutionGate {
         setOf(requireIdentifier(workspaceRootUuid, "workspaceRootUuid")),
         block = block,
     )
+
+    /** 将同一 session 的遗留 journal 恢复、目标解析与删除事务纳入一个完整串行区。 */
+    suspend fun <T> withSessionDeletionSequence(
+        sessionId: String,
+        block: suspend () -> T,
+    ): T {
+        val checkedSessionId = requireIdentifier(sessionId, "sessionId")
+        return deletionSequenceLocks.computeIfAbsent(checkedSessionId) { Mutex() }.withLock {
+            block()
+        }
+    }
 
     suspend fun <T> withDeletion(
         sessionId: String,

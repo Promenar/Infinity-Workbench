@@ -52,6 +52,7 @@ interface SessionWorkspaceMutationJournal {
 /** 删除主事务的唯一编排器；物理树与 Room 的崩溃一致性由 journal 实现。 */
 class SessionDeletionCoordinator(
     private val gate: SessionExecutionGate,
+    private val recoverSessionDeletion: suspend (String) -> Unit = {},
     private val resolveTarget: suspend (String) -> SessionDeletionTarget?,
     private val cancelAndJoinGeneration: suspend (String) -> Unit,
     private val recoverFileMutations: suspend (SessionDeletionTarget) -> Unit = {},
@@ -61,7 +62,24 @@ class SessionDeletionCoordinator(
     private val deleteDatabase: suspend (SessionDeletionTarget, operationId: String) -> Unit,
     private val afterDatabaseCommit: suspend (SessionDeletionTarget) -> Unit = {},
 ) {
-    suspend fun delete(sessionId: String): SessionDeletionResult {
+    suspend fun delete(sessionId: String): SessionDeletionResult = try {
+        gate.withSessionDeletionSequence(sessionId) {
+            try {
+                recoverSessionDeletion(sessionId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                return@withSessionDeletionSequence failed(SessionDeletionErrorCode.WORKSPACE, failure)
+            }
+            deleteAfterRecovery(sessionId)
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Throwable) {
+        failed(SessionDeletionErrorCode.EXECUTION, failure)
+    }
+
+    private suspend fun deleteAfterRecovery(sessionId: String): SessionDeletionResult {
         val firstTarget = try {
             resolveTarget(sessionId)
         } catch (cancelled: CancellationException) {
