@@ -6,6 +6,7 @@ import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.*
 
 class TavilyProvider(
@@ -58,6 +59,8 @@ class TavilyProvider(
             }
             
             contextBuilder.toString() to citations
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             "Tavily Search failed: ${e.message}" to emptyList()
         }

@@ -18,6 +18,7 @@ import com.promenar.nexara.infra.util.Sha256Utils
 import com.promenar.nexara.data.rag.FileIndexEvent
 import com.promenar.nexara.data.rag.FileIndexEventSink
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
@@ -205,8 +206,10 @@ class FileOperationRepository(
                 FileIndexEvent.Changed(workspaceRootUuid, uuid, target.contentHash, target.targetEpoch),
             )
             true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
-            // 文件与版本记录已经提交；包括取消在内的发布失败只能标记为待补偿。
+            // 文件与版本记录已经提交；普通发布失败标记为待补偿，取消必须原样传播。
             false
         }
 

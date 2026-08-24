@@ -7,6 +7,7 @@ import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
@@ -21,15 +22,18 @@ import kotlinx.serialization.json.*
 class ImageGenClient(
     private val baseUrl: String,
     private val apiKey: String,
-    private val model: String
-) {
-    private val json = Json { ignoreUnknownKeys = true }
-    private val httpClient = HttpClient(OkHttp) {
+    private val model: String,
+    private val httpClient: HttpClient = HttpClient(OkHttp) {
         install(HttpTimeout) {
             requestTimeoutMillis = 120_000  // 图像生成可能较慢
             connectTimeoutMillis = 15_000
         }
-    }
+    },
+    private val responseBodyReader: suspend (HttpResponse) -> String = { response ->
+        response.bodyAsText()
+    },
+) {
+    private val json = Json { ignoreUnknownKeys = true }
 
     /**
      * 生成图像。
@@ -73,13 +77,19 @@ class ImageGenClient(
         }
 
         if (!response.status.isSuccess()) {
-            val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
+            val errorBody = try {
+                responseBodyReader(response)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                ""
+            }
             throw IllegalStateException(
                 "Image generation failed (${response.status.value}): $errorBody".take(200)
             )
         }
 
-        val responseText = response.bodyAsText()
+        val responseText = responseBodyReader(response)
         val jsonResponse = json.parseToJsonElement(responseText).jsonObject
         val dataArray = jsonResponse["data"]?.jsonArray
             ?: throw IllegalStateException("Missing 'data' array in image generation response")

@@ -5,6 +5,7 @@ import com.promenar.nexara.ui.chat.manager.WebSearchProvider
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.*
 
 class SearXNGProvider(
@@ -36,6 +37,8 @@ class SearXNGProvider(
             val responseText = response.bodyAsText()
             val root = try {
                 json.parseToJsonElement(responseText).jsonObject
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 if (responseText.contains("<html", ignoreCase = true) || responseText.contains("<!DOCTYPE html", ignoreCase = true)) {
                     throw Exception("JSON API is disabled on this SearXNG instance. Please enable format 'json' in settings.yml")
@@ -65,6 +68,8 @@ class SearXNGProvider(
             }
             
             contextBuilder.toString() to citations
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             throw Exception("SearXNG Search failed: ${e.message}")
         }

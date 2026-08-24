@@ -360,25 +360,31 @@ class FileOperationRepositoryTest {
     }
 
     @Test
-    fun `提交后索引发布取消仍返回带真实目标的成功结果`() = runBlocking<Unit> {
+    fun `提交后索引发布取消原样传播且保留已提交真实目标`() = runBlocking<Unit> {
         val entry = insertTestFile(content = "stable")
+        val cancellation = kotlinx.coroutines.CancellationException("cancel after commit")
         repo = FileOperationRepository(
             db.fileEntryDao(),
             db.fileVersionDao(),
             TestWorkspaceFileOps(),
             indexEventSink = FileIndexEventSink {
-                throw kotlinx.coroutines.CancellationException("cancel after commit")
+                throw cancellation
             },
         )
 
-        val result = repo.writeFileAtomic(ROOT, entry.uuid, "committed", "session", entry.hash)
-            as WriteResult.Success
+        val caught = try {
+            repo.writeFileAtomic(ROOT, entry.uuid, "committed", "session", entry.hash)
+            null
+        } catch (error: Throwable) {
+            error
+        }
         val committed = db.fileEntryDao().getByUuid(ROOT, entry.uuid)!!
 
-        assertThat(result.indexQueued).isFalse()
-        assertThat(result.newHash).isEqualTo(committed.hash)
-        assertThat(result.targetEpoch).isNotNull()
-        assertThat(result.targetEpoch).isEqualTo(committed.updatedAt)
+        assertCancellationPreserved(caught, cancellation)
+        assertThat(committed.hash).isEqualTo(Sha256Utils.hash("committed"))
+        assertThat(committed.updatedAt).isGreaterThan(entry.updatedAt)
+        assertThat(committed.vectorizedAt).isNull()
+        assertThat(committed.kgExtractedAt).isNull()
         assertThat(File(testDir, "test.txt").readText()).isEqualTo("committed")
     }
 
@@ -419,6 +425,7 @@ class FileOperationRepositoryTest {
         val entry = insertTestFile(content = "stable")
         val events = mutableListOf<FileIndexEvent.Changed>()
         var attempts = 0
+        val cancellation = kotlinx.coroutines.CancellationException("first publish cancelled")
         repo = FileOperationRepository(
             db.fileEntryDao(),
             db.fileVersionDao(),
@@ -426,29 +433,42 @@ class FileOperationRepositoryTest {
             indexEventSink = FileIndexEventSink { event ->
                 attempts += 1
                 if (attempts == 1) {
-                    throw kotlinx.coroutines.CancellationException("first publish cancelled")
+                    throw cancellation
                 }
                 events += event as FileIndexEvent.Changed
             },
         )
 
-        val first = repo.writeFileAtomic(ROOT, entry.uuid, "committed", "session", entry.hash)
-            as WriteResult.Success
-        val second = repo.writeFileAtomic(ROOT, entry.uuid, "committed", "session", first.newHash)
+        val caught = try {
+            repo.writeFileAtomic(ROOT, entry.uuid, "committed", "session", entry.hash)
+            null
+        } catch (error: Throwable) {
+            error
+        }
+        val committed = db.fileEntryDao().getByUuid(ROOT, entry.uuid)!!
+        val second = repo.writeFileAtomic(ROOT, entry.uuid, "committed", "session", committed.hash)
             as WriteResult.Success
 
-        assertThat(first.indexQueued).isFalse()
-        assertThat(first.targetEpoch).isNotNull()
+        assertCancellationPreserved(caught, cancellation)
         assertThat(second.indexQueued).isTrue()
-        assertThat(second.newHash).isEqualTo(first.newHash)
-        assertThat(second.targetEpoch).isEqualTo(first.targetEpoch)
+        assertThat(second.newHash).isEqualTo(committed.hash)
+        assertThat(second.targetEpoch).isEqualTo(committed.updatedAt)
         assertThat(events).containsExactly(
-            FileIndexEvent.Changed(ROOT, entry.uuid, first.newHash, requireNotNull(first.targetEpoch)),
+            FileIndexEvent.Changed(ROOT, entry.uuid, committed.hash, committed.updatedAt),
         )
         assertThat(db.fileVersionDao().getByFile(ROOT, entry.uuid)).hasSize(1)
     }
 
     private companion object {
         const val ROOT = "root-1"
+    }
+
+    private fun assertCancellationPreserved(
+        caught: Throwable?,
+        original: kotlinx.coroutines.CancellationException,
+    ) {
+        assertThat(caught).isInstanceOf(kotlinx.coroutines.CancellationException::class.java)
+        assertThat(caught?.message).isEqualTo(original.message)
+        assertThat(generateSequence(caught) { it.cause }.any { it === original }).isTrue()
     }
 }

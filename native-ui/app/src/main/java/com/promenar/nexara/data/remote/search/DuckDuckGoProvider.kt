@@ -5,6 +5,7 @@ import com.promenar.nexara.ui.chat.manager.WebSearchProvider
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import kotlinx.coroutines.CancellationException
 import org.jsoup.Jsoup
 
 class DuckDuckGoProvider(
@@ -54,6 +55,8 @@ class DuckDuckGoProvider(
             } else {
                 contextBuilder.toString() to citations
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             "Search failed: ${e.message}" to emptyList()
         }
