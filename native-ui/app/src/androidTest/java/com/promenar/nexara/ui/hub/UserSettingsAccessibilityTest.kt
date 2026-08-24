@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.MotionDurationScale
@@ -48,6 +49,7 @@ import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.NexaraSearchTopBar
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.AgentAvatar
 import com.promenar.nexara.ui.settings.ProviderListScreenActions
 import com.promenar.nexara.ui.settings.ProviderListScreenContent
 import com.promenar.nexara.ui.settings.ProviderListScreenState
@@ -91,6 +93,38 @@ class UserSettingsAccessibilityTest {
         }
         rule.onNodeWithTag(UiTags.SETTINGS_TAB_APP).assertDoesNotExist()
         rule.onNodeWithTag(UiTags.SETTINGS_TAB_PROVIDER).assertDoesNotExist()
+    }
+
+    @Test
+    fun userAndAgentAvatarActionsExposeButtonRoleAnd48DpTargets() {
+        rule.setContent {
+            NexaraTheme {
+                androidx.compose.foundation.layout.Column {
+                    UserSettingsHomeScreenContent(
+                        state = UserSettingsHomeScreenState(userName = "Nexara"),
+                        actions = UserSettingsHomeScreenActions(),
+                    )
+                    AgentAvatar(
+                        icon = Icons.Rounded.Person,
+                        backgroundColor = androidx.compose.ui.graphics.Color.Gray,
+                        size = 32.dp,
+                        onClick = {},
+                        contentDescription = "Edit agent avatar",
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.SETTINGS_USER_AVATAR)
+            .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag(UiTags.AGENT_AVATAR_ACTION)
+            .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
     }
 
     @Test

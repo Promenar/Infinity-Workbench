@@ -75,22 +75,6 @@ internal fun classifyFetchedModelType(
     }
 }
 
-data class ProviderStats(
-    val name: String,
-    val totalTokens: Long,
-    val cost: Double,
-    val models: List<ModelStat>,
-    val estimated: Boolean = false
-)
-
-data class ModelStat(
-    val name: String,
-    val inputTokens: Long,
-    val outputTokens: Long,
-    val cost: Double,
-    val estimated: Boolean = false
-)
-
 data class McpServerUiModel(
     val id: String,
     val name: String,
@@ -112,7 +96,7 @@ data class SkillInfo(
     val enabled: Boolean
 )
 
-enum class SettingsAsyncErrorCode { TOKEN_STATS_LOAD_FAILED, TOKEN_STATS_CLEAR_FAILED, AVATAR_IMPORT_FAILED }
+enum class SettingsAsyncErrorCode { AVATAR_IMPORT_FAILED }
 
 internal fun UiStatusNotice.withFallbackWarning(usedFallback: Boolean): UiStatusNotice =
     if (usedFallback) {
@@ -299,8 +283,6 @@ class SettingsViewModel(
 
     val providerModels: StateFlow<List<ModelInfo>> = pm.providerModels
 
-    private val _tokenStats = MutableStateFlow<List<ProviderStats>>(emptyList())
-    val tokenStats: StateFlow<List<ProviderStats>> = _tokenStats.asStateFlow()
     private val _settingsError = MutableStateFlow<SettingsAsyncErrorCode?>(null)
     val settingsError: StateFlow<SettingsAsyncErrorCode?> = _settingsError.asStateFlow()
     private var avatarRetryUri: Uri? = null
@@ -335,9 +317,6 @@ class SettingsViewModel(
 
     private val _activeSourcesCount = MutableStateFlow(0)
     val activeSourcesCount: StateFlow<Int> = _activeSourcesCount.asStateFlow()
-
-    private val _tokenCostThisMonth = MutableStateFlow("$0.00")
-    val tokenCostThisMonth: StateFlow<String> = _tokenCostThisMonth.asStateFlow()
 
     private val _isFetchingModels = MutableStateFlow(false)
     val isFetchingModels: StateFlow<Boolean> = _isFetchingModels.asStateFlow()
@@ -384,7 +363,6 @@ class SettingsViewModel(
     private fun loadAll() {
         loadUserProfile()
         loadPreferences()
-        loadTokenStats()
         loadKnowledgeStats()
         loadSkills()
         observeSkills()
@@ -604,51 +582,6 @@ class SettingsViewModel(
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             pm.revealCredential(providerId, vertex)
         }
-
-    private fun loadTokenStats() {
-        viewModelScope.launch {
-            try {
-                val totalUsage = tokenStatsRepository.getTotalUsage()
-                val byModel = tokenStatsRepository.getUsageByModel()
-                val config = pm.getMainProviderConfig()
-                val providerName = config?.name ?: "Provider"
-
-                val modelStats = byModel.map { stats ->
-                    val spec = com.promenar.nexara.data.model.findModelSpec(stats.modelId)
-                    val name = spec?.note ?: stats.modelId
-                    ModelStat(
-                        name = name,
-                        inputTokens = stats.usage.inputTokens,
-                        outputTokens = stats.usage.outputTokens,
-                        cost = 0.0,
-                        estimated = stats.usage.estimated
-                    )
-                }
-
-                _tokenStats.value = if (modelStats.isEmpty()) {
-                    emptyList()
-                } else {
-                    listOf(
-                        ProviderStats(
-                            name = providerName,
-                            totalTokens = totalUsage.totalTokens,
-                            cost = 0.0,
-                            models = modelStats,
-                            estimated = totalUsage.estimated
-                        )
-                    )
-                }
-                _tokenCostThisMonth.value = "$%.2f".format(0.0)
-                if (_settingsError.value == SettingsAsyncErrorCode.TOKEN_STATS_LOAD_FAILED) {
-                    _settingsError.value = null
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                _settingsError.value = SettingsAsyncErrorCode.TOKEN_STATS_LOAD_FAILED
-            }
-        }
-    }
 
     private fun loadSkills() {
         val allPresetSkills = setOf(
@@ -883,24 +816,8 @@ class SettingsViewModel(
         return uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank() && uri.userInfo == null
     }
 
-    fun clearTokenStats() {
-        viewModelScope.launch {
-            try {
-                tokenStatsRepository.resetStats()
-                _tokenStats.value = emptyList()
-                _settingsError.value = null
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                _settingsError.value = SettingsAsyncErrorCode.TOKEN_STATS_CLEAR_FAILED
-            }
-        }
-    }
-
     fun retryLastError() {
         when (_settingsError.value) {
-            SettingsAsyncErrorCode.TOKEN_STATS_LOAD_FAILED -> loadTokenStats()
-            SettingsAsyncErrorCode.TOKEN_STATS_CLEAR_FAILED -> clearTokenStats()
             SettingsAsyncErrorCode.AVATAR_IMPORT_FAILED -> avatarRetryUri?.let { updateUserAvatar(it.toString()) }
             null -> Unit
         }

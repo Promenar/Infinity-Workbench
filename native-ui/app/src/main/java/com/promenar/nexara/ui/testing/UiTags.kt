@@ -88,6 +88,7 @@ object UiTags {
 
     fun hubAgentCard(agentId: String): String = HUB_AGENT_CARD_PREFIX + agentId
     fun hubAgentActions(agentId: String): String = "$HUB_AGENT_ACTIONS:$agentId"
+    const val AGENT_AVATAR_ACTION = "agent_avatar_action"
 
     // ============ User Settings Home ==========
     const val SETTINGS_ROOT = "settings_root"
@@ -100,6 +101,7 @@ object UiTags {
     const val SETTINGS_ADD_PROVIDER = "settings_add_provider"
     const val SETTINGS_PROVIDER_ACTIONS = "settings_provider_actions"
     const val SETTINGS_LOCAL_INFERENCE_ENTRY = "settings_local_inference_entry"
+    const val SETTINGS_USER_AVATAR = "settings_user_avatar"
     private const val SETTINGS_PROVIDER_CARD_PREFIX = "settings_provider_card:"
 
     fun settingsProviderCard(providerId: String): String = SETTINGS_PROVIDER_CARD_PREFIX + providerId

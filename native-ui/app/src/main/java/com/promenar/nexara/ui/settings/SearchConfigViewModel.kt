@@ -66,6 +66,11 @@ class SearchConfigViewModel(
     private var secretJob: Job? = null
 
     init {
+        loadTavilySecretState()
+    }
+
+    private fun loadTavilySecretState(): Boolean {
+        if (secretJob?.isActive == true) return false
         _uiState.update { it.copy(secretOperation = SearchSecretOperation.Initializing) }
         secretJob = viewModelScope.launch {
             try {
@@ -83,6 +88,7 @@ class SearchConfigViewModel(
                 }
             }
         }
+        return true
     }
 
     private fun migrateLegacyTavilyKey() {
@@ -164,6 +170,31 @@ class SearchConfigViewModel(
             }
         }
         return true
+    }
+
+    /**
+     * 只重放当前结构化错误对应的操作。保存失败的明文仍由可见编辑器短暂持有，
+     * ViewModel 不缓存该值，并立即接管/清零传入数组。
+     */
+    fun retryTavilySecretFailure(key: CharArray? = null): Boolean {
+        val code = (_uiState.value.secretOperation as? SearchSecretOperation.Error)?.code
+        return when (code) {
+            SearchSecretErrorCode.LOAD_FAILED -> {
+                key?.fill('\u0000')
+                loadTavilySecretState()
+            }
+            SearchSecretErrorCode.SAVE_FAILED -> {
+                if (key == null) false else saveTavilyApiKey(key)
+            }
+            SearchSecretErrorCode.CLEAR_FAILED -> {
+                key?.fill('\u0000')
+                clearTavilyApiKey()
+            }
+            null -> {
+                key?.fill('\u0000')
+                false
+            }
+        }
     }
 
     /** 返回值由当前可见组件取得所有权，组件隐藏或销毁时必须清零。 */

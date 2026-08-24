@@ -6,6 +6,7 @@ import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.domain.repository.TokenUsageAggregate
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -30,9 +31,43 @@ class TokenUsageViewModelTest {
     @Test
     fun `token errors use stable type instead of repository messages`() {
         val errorField = TokenStatsState::class.java.getDeclaredField("error")
+        val operationField = TokenStatsState::class.java.getDeclaredField("operation")
 
         assertThat(errorField.type.name)
             .isEqualTo("com.promenar.nexara.ui.settings.TokenStatsErrorCode")
+        assertThat(operationField.type.name)
+            .isEqualTo("com.promenar.nexara.ui.settings.TokenStatsOperation")
+        assertThat(TokenStatsState::class.java.declaredFields.map { it.name })
+            .doesNotContain("isLoading")
+    }
+
+    @Test
+    fun `loading and clearing expose distinct typed operations and reject duplicate clear`() = runTest {
+        val loadGate = CompletableDeferred<Unit>()
+        val clearGate = CompletableDeferred<Unit>()
+        val repository = successfulRepository()
+        coEvery { repository.getTotalUsage() } coAnswers {
+            loadGate.await()
+            TokenUsageAggregate(inputTokens = 8)
+        }
+        coEvery { repository.resetStats() } coAnswers { clearGate.await() }
+        val viewModel = TokenUsageViewModel(mockk<Application>(relaxed = true), repository)
+
+        assertThat(viewModel.state.value.operation).isEqualTo(TokenStatsOperation.LOADING)
+        loadGate.complete(Unit)
+        advanceUntilIdle()
+        assertThat(viewModel.state.value.operation).isEqualTo(TokenStatsOperation.READY)
+
+        viewModel.showClearConfirm()
+        viewModel.clearStats()
+        viewModel.clearStats()
+
+        assertThat(viewModel.state.value.operation).isEqualTo(TokenStatsOperation.CLEARING)
+        assertThat(viewModel.state.value.showClearConfirm).isFalse()
+        clearGate.complete(Unit)
+        advanceUntilIdle()
+        assertThat(viewModel.state.value.operation).isEqualTo(TokenStatsOperation.READY)
+        io.mockk.coVerify(exactly = 1) { repository.resetStats() }
     }
 
     @Test

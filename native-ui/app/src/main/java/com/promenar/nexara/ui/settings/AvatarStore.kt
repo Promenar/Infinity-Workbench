@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.settings
 
+import android.graphics.BitmapFactory
 import android.net.Uri
 import java.io.File
 import java.io.FileOutputStream
@@ -26,11 +27,23 @@ internal class AvatarStore(
             val input = openInput(uri) ?: return null
             input.use { source ->
                 FileOutputStream(staged).use { output ->
-                    source.copyTo(output)
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var total = 0L
+                    while (true) {
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        if (total > MAX_AVATAR_BYTES) return null
+                        output.write(buffer, 0, count)
+                    }
                     output.fd.sync()
                 }
             }
-            if (staged.length() == 0L || !hasSupportedImageSignature(staged)) return null
+            if (
+                staged.length() == 0L ||
+                !hasSupportedImageSignature(staged) ||
+                !hasDecodablePixels(staged)
+            ) return null
             Files.move(
                 staged.toPath(),
                 target.toPath(),
@@ -58,10 +71,43 @@ internal class AvatarStore(
             )
     }
 
+    /**
+     * 先只读取尺寸阻止解压炸弹，再用采样解码验证载荷确实包含可读像素。
+     */
+    private fun hasDecodablePixels(file: File): Boolean {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        val width = bounds.outWidth
+        val height = bounds.outHeight
+        if (
+            width <= 0 || height <= 0 ||
+            width > MAX_AVATAR_DIMENSION || height > MAX_AVATAR_DIMENSION ||
+            width.toLong() * height.toLong() > MAX_AVATAR_PIXELS
+        ) return false
+
+        var sampleSize = 1
+        while (maxOf(width, height) / sampleSize > DECODE_PROBE_DIMENSION) {
+            sampleSize *= 2
+        }
+        val probe = BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply { inSampleSize = sampleSize },
+        ) ?: return false
+        return try {
+            probe.width > 0 && probe.height > 0
+        } finally {
+            probe.recycle()
+        }
+    }
+
     private fun ByteArray.startsWith(prefix: ByteArray, available: Int): Boolean =
         available >= prefix.size && copyOfRange(0, prefix.size).contentEquals(prefix)
 
     private companion object {
         val SAFE_SLOT = Regex("[A-Za-z0-9_-]{1,96}")
+        const val MAX_AVATAR_BYTES = 10L * 1024 * 1024
+        const val MAX_AVATAR_DIMENSION = 8192
+        const val MAX_AVATAR_PIXELS = 16_777_216L
+        const val DECODE_PROBE_DIMENSION = 512
     }
 }

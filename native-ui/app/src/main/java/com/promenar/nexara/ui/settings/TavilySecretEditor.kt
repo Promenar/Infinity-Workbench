@@ -24,6 +24,9 @@ internal data class TavilySecretActions(
     val onSave: (CharArray) -> Unit = {},
     val onReveal: suspend () -> CharArray? = { null },
     val onClear: () -> Unit = {},
+    val onRetry: (SearchSecretErrorCode, CharArray?) -> Unit = { _, secret ->
+        secret?.fill('\u0000')
+    },
 )
 
 @Composable
@@ -36,6 +39,12 @@ internal fun TavilySecretEditor(
             onSave = { viewModel.saveTavilyApiKey(it) },
             onReveal = viewModel::revealTavilyApiKey,
             onClear = { viewModel.clearTavilyApiKey() },
+            onRetry = { code, secret ->
+                viewModel.retryTavilySecretFailure(
+                    if (code == SearchSecretErrorCode.SAVE_FAILED) secret else null,
+                )
+                if (code != SearchSecretErrorCode.SAVE_FAILED) secret?.fill('\u0000')
+            },
         ),
         state = state,
     )
@@ -65,7 +74,6 @@ internal fun TavilySecretEditor(
         Button(
             onClick = {
                 actions.onSave(edit.toCharArray())
-                edit = ""
             },
             enabled = edit.isNotBlank() && state.secretOperation !is SearchSecretOperation.Saving &&
                 state.secretOperation !is SearchSecretOperation.Initializing,
@@ -89,16 +97,36 @@ internal fun TavilySecretEditor(
                 stringResource(R.string.search_secret_saved),
                 color = MaterialTheme.colorScheme.primary,
             )
-            is SearchSecretOperation.Error -> Text(
-                stringResource(
-                    when (operation.code) {
-                        SearchSecretErrorCode.LOAD_FAILED -> R.string.search_secret_load_failed
-                        SearchSecretErrorCode.SAVE_FAILED -> R.string.search_secret_save_failed
-                        SearchSecretErrorCode.CLEAR_FAILED -> R.string.search_secret_clear_failed
+            is SearchSecretOperation.Error -> {
+                Text(
+                    stringResource(
+                        when (operation.code) {
+                            SearchSecretErrorCode.LOAD_FAILED -> R.string.search_secret_load_failed
+                            SearchSecretErrorCode.SAVE_FAILED -> R.string.search_secret_save_failed
+                            SearchSecretErrorCode.CLEAR_FAILED -> R.string.search_secret_clear_failed
+                        },
+                    ),
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Button(
+                    onClick = {
+                        actions.onRetry(
+                            operation.code,
+                            if (operation.code == SearchSecretErrorCode.SAVE_FAILED) {
+                                edit.toCharArray()
+                            } else {
+                                null
+                            },
+                        )
                     },
-                ),
-                color = MaterialTheme.colorScheme.error,
-            )
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("search_tavily_secret_retry"),
+                ) {
+                    Text(stringResource(R.string.common_retry))
+                }
+            }
             SearchSecretOperation.Idle -> Unit
         }
     }

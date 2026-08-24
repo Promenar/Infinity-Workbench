@@ -155,6 +155,7 @@ fun AgentEditScreen(
                         Text(
                             text = stringResource(
                                 when (error) {
+                                    AgentEditErrorCode.NOT_FOUND -> R.string.agent_edit_error_load
                                     AgentEditErrorCode.LOAD_FAILED -> R.string.agent_edit_error_load
                                     AgentEditErrorCode.SAVE_FAILED -> R.string.agent_edit_error_save
                                     AgentEditErrorCode.DELETE_FAILED -> R.string.agent_edit_error_delete

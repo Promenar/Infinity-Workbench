@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.nexaraDomainColors
+import com.promenar.nexara.ui.testing.UiTags
 
 @Composable
 fun AgentAvatar(
@@ -51,18 +53,15 @@ fun AgentAvatar(
         if (onClick != null) R.string.agent_avatar_edit else R.string.agent_avatar
     )
 
+    val touchTargetSize = if (onClick != null && size < 48.dp) 48.dp else size
     Box(
         modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(backgroundColor)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
+            .size(touchTargetSize)
             .then(
                 if (onClick != null) {
-                    Modifier.clickable(
+                    Modifier
+                        .testTag(UiTags.AGENT_AVATAR_ACTION)
+                        .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         onClickLabel = avatarDescription,
@@ -78,19 +77,31 @@ fun AgentAvatar(
             },
         contentAlignment = Alignment.Center
     ) {
-        if (customImageUri != null) {
-            AsyncImage(
-                model = customImageUri,
-                contentDescription = null,
-                modifier = Modifier.size(size)
-            )
-        } else if (icon != null) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.nexaraDomainColors.overlayContent,
-                modifier = Modifier.size(36.dp)
-            )
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(backgroundColor)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (customImageUri != null) {
+                AsyncImage(
+                    model = customImageUri,
+                    contentDescription = null,
+                    modifier = Modifier.size(size)
+                )
+            } else if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.nexaraDomainColors.overlayContent,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
         }
     }
 }

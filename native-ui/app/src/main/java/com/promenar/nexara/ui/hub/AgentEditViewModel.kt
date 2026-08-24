@@ -26,7 +26,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class AgentEditErrorCode { LOAD_FAILED, SAVE_FAILED, DELETE_FAILED, AVATAR_IMPORT_FAILED }
+enum class AgentEditErrorCode { NOT_FOUND, LOAD_FAILED, SAVE_FAILED, DELETE_FAILED, AVATAR_IMPORT_FAILED }
 
 class AgentEditViewModel(
     private val agentRepository: AgentRepository,
@@ -132,6 +132,9 @@ class AgentEditViewModel(
                 }
                     _saveError.value = null
                     retryAction = null
+                } else {
+                    _saveError.value = AgentEditErrorCode.NOT_FOUND
+                    retryAction = { loadAgent(agentId, localizedPresetName, localizedPresetDescription) }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled

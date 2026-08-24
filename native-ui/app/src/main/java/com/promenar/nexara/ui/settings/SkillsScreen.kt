@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -73,7 +75,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -803,7 +807,7 @@ private fun SearchConfigBottomSheet(
 }
 
 @Composable
-private fun EngineOption(id: String, label: String, isSelected: Boolean, onClick: () -> Unit) {
+internal fun EngineOption(id: String, label: String, isSelected: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -814,7 +818,13 @@ private fun EngineOption(id: String, label: String, isSelected: Boolean, onClick
                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                 shape = RoundedCornerShape(12.dp)
             )
-            .clickable { onClick() }
+            .defaultMinSize(minHeight = 48.dp)
+            .testTag("search_engine_$id")
+            .selectable(
+                selected = isSelected,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
             .padding(16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -825,12 +835,18 @@ private fun EngineOption(id: String, label: String, isSelected: Boolean, onClick
 }
 
 @Composable
-private fun DepthChip(id: String, label: String, isSelected: Boolean, onClick: () -> Unit) {
+internal fun DepthChip(id: String, label: String, isSelected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(CircleShape)
             .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-            .clickable { onClick() }
+            .defaultMinSize(minHeight = 48.dp)
+            .testTag("search_depth_$id")
+            .selectable(
+                selected = isSelected,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
             .padding(horizontal = 16.dp, vertical = 6.dp)
     ) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)

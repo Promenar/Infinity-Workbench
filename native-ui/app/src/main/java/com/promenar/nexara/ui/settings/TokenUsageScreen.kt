@@ -112,7 +112,7 @@ fun TokenUsageScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        if (state.isLoading) {
+        if (state.operation == TokenStatsOperation.LOADING) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -184,9 +184,10 @@ fun TokenUsageScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (!state.isLoading) {
+        if (state.operation != TokenStatsOperation.LOADING) {
             OutlinedButton(
                 onClick = { viewModel.showClearConfirm() },
+                enabled = state.operation == TokenStatsOperation.READY,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.error

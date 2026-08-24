@@ -234,8 +234,6 @@ internal fun UserSettingsHomeScreenContent(
                         Text(
                             text = stringResource(
                                 when (error) {
-                                    SettingsAsyncErrorCode.TOKEN_STATS_LOAD_FAILED -> R.string.settings_error_token_load
-                                    SettingsAsyncErrorCode.TOKEN_STATS_CLEAR_FAILED -> R.string.settings_error_token_clear
                                     SettingsAsyncErrorCode.AVATAR_IMPORT_FAILED -> R.string.settings_error_avatar
                                 },
                             ),
@@ -429,6 +427,7 @@ private fun UserProfileListItem(
         Box(
             modifier = Modifier
                 .size(56.dp)
+                .testTag(UiTags.SETTINGS_USER_AVATAR)
                 .clickable(
                     role = Role.Button,
                     onClickLabel = editAvatarDescription,

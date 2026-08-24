@@ -28,6 +28,7 @@ data class ModelCostInfo(
 )
 
 enum class TokenStatsErrorCode { LOAD_FAILED, CLEAR_FAILED }
+enum class TokenStatsOperation { LOADING, READY, CLEARING }
 
 data class TokenStatsState(
     val globalInput: Long = 0,
@@ -37,7 +38,7 @@ data class TokenStatsState(
     val modelBreakdown: List<ModelCostInfo> = emptyList(),
     val topSessions: List<SessionTokenUsage> = emptyList(),
     val dailyTrend: List<DailyTokenStats> = emptyList(),
-    val isLoading: Boolean = true,
+    val operation: TokenStatsOperation = TokenStatsOperation.READY,
     val error: TokenStatsErrorCode? = null,
     val showClearConfirm: Boolean = false
 )
@@ -55,8 +56,12 @@ class TokenUsageViewModel(
     }
 
     fun loadStats() {
+        if (_state.value.operation != TokenStatsOperation.READY) return
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true, error = null)
+            _state.value = _state.value.copy(
+                operation = TokenStatsOperation.LOADING,
+                error = null,
+            )
             try {
                 val totalUsage = tokenStatsRepository.getTotalUsage()
                 val byModel = tokenStatsRepository.getUsageByModel()
@@ -90,13 +95,16 @@ class TokenUsageViewModel(
                     modelBreakdown = modelBreakdown,
                     topSessions = topSessions,
                     dailyTrend = dailyTrend,
-                    isLoading = false
+                    operation = TokenStatsOperation.READY,
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
                 NexaraLogger.logError("$TAG.loadStats", e)
-                _state.value = _state.value.copy(isLoading = false, error = TokenStatsErrorCode.LOAD_FAILED)
+                _state.value = _state.value.copy(
+                    operation = TokenStatsOperation.READY,
+                    error = TokenStatsErrorCode.LOAD_FAILED,
+                )
             }
         }
     }
@@ -110,17 +118,23 @@ class TokenUsageViewModel(
     }
 
     fun clearStats() {
+        if (_state.value.operation != TokenStatsOperation.READY) return
         viewModelScope.launch {
+            _state.value = _state.value.copy(
+                operation = TokenStatsOperation.CLEARING,
+                error = null,
+                showClearConfirm = false,
+            )
             try {
                 tokenStatsRepository.resetStats()
-                _state.value = TokenStatsState(isLoading = false)
+                _state.value = TokenStatsState(operation = TokenStatsOperation.READY)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
                 NexaraLogger.logError("$TAG.clearStats", e)
                 _state.value = _state.value.copy(
+                    operation = TokenStatsOperation.READY,
                     error = TokenStatsErrorCode.CLEAR_FAILED,
-                    showClearConfirm = false,
                 )
             }
         }

@@ -106,16 +106,53 @@ class SearchConfigViewModelTest {
         )
     }
 
+    @Test
+    fun `load and clear failures retry only their originating operation`() = runTest(dispatcher) {
+        secrets.failContains = true
+        val viewModel = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.secretOperation).isEqualTo(
+            SearchSecretOperation.Error(SearchSecretErrorCode.LOAD_FAILED),
+        )
+
+        secrets.failContains = false
+        assertThat(viewModel.retryTavilySecretFailure()).isTrue()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.secretOperation).isEqualTo(SearchSecretOperation.Idle)
+
+        secrets.put(SecretCatalog.tavilyApiKey, "stored".encodeToByteArray())
+        secrets.failRemove = true
+        assertThat(viewModel.clearTavilyApiKey()).isTrue()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.secretOperation).isEqualTo(
+            SearchSecretOperation.Error(SearchSecretErrorCode.CLEAR_FAILED),
+        )
+
+        secrets.failRemove = false
+        assertThat(viewModel.retryTavilySecretFailure()).isTrue()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.hasTavilyApiKey).isFalse()
+        assertThat(viewModel.uiState.value.secretOperation).isEqualTo(SearchSecretOperation.Saved)
+    }
+
     private class MemorySecretStore : SecretStore {
         private val values = mutableMapOf<SecretId, ByteArray>()
         var failPut = false
+        var failContains = false
+        var failRemove = false
         override fun put(id: SecretId, value: ByteArray) {
             if (failPut) error("put failed")
             values[id] = value.copyOf()
         }
         override fun get(id: SecretId): ByteArray? = values[id]?.copyOf()
-        override fun contains(id: SecretId): Boolean = id in values
-        override fun remove(id: SecretId) { values.remove(id) }
+        override fun contains(id: SecretId): Boolean {
+            if (failContains) error("contains failed")
+            return id in values
+        }
+        override fun remove(id: SecretId) {
+            if (failRemove) error("remove failed")
+            values.remove(id)
+        }
         fun text(id: SecretId): String? = get(id)?.toString(Charsets.UTF_8)
     }
 }

@@ -92,6 +92,35 @@ class AgentEditViewModelTest {
     }
 
     @Test
+    fun `missing agent exposes typed not found instead of silent empty editor`() = runTest {
+        every { repo.observeById("missing") } returns flowOf(null)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+
+        vm.loadAgent("missing")
+
+        assertThat(vm.saveError.value).isEqualTo(AgentEditErrorCode.NOT_FOUND)
+        assertThat(vm.name.value).isEmpty()
+    }
+
+    @Test
+    fun `avatar importer empty result preserves current avatar and exposes typed failure`() = runTest {
+        val agent = Agent(id = "a1", name = "Agent", avatarPath = "/avatar/original.png")
+        every { repo.observeById("a1") } returns flowOf(agent)
+        val vm = AgentEditViewModel(
+            repo,
+            RagConfigPersistence(prefs),
+            avatarImporter = { _, _ -> null },
+        )
+        vm.loadAgent("a1")
+
+        vm.importAvatar(mockk(relaxed = true))
+
+        assertThat(vm.avatarPath.value).isEqualTo("/avatar/original.png")
+        assertThat(vm.saveError.value).isEqualTo(AgentEditErrorCode.AVATAR_IMPORT_FAILED)
+        coVerify(exactly = 0) { repo.update(any()) }
+    }
+
+    @Test
     fun `loadAgent with useInheritedConfig=true loads global rag config`() = runTest {
         val agent = Agent(id = "a1", name = "n", useInheritedConfig = true)
         every { repo.observeById("a1") } returns flowOf(agent)

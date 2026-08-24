@@ -43,8 +43,11 @@ import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenContent
 import com.promenar.nexara.ui.hub.AgentAdvancedRetrievalScreenState
 import com.promenar.nexara.ui.settings.SearchConfigState
 import com.promenar.nexara.ui.settings.SearchSecretOperation
+import com.promenar.nexara.ui.settings.SearchSecretErrorCode
 import com.promenar.nexara.ui.settings.TavilySecretEditor
 import com.promenar.nexara.ui.settings.TavilySecretActions
+import com.promenar.nexara.ui.settings.EngineOption
+import com.promenar.nexara.ui.settings.DepthChip
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.theme.NexaraThemeMode
@@ -209,6 +212,67 @@ class RagSettingsAccessibilityTest {
             assertThat(cleared.get()).isTrue()
             assertThat(state.hasTavilyApiKey).isFalse()
         }
+    }
+
+    @Test
+    fun tavilySaveFailureRetainsEditAndRetryReplaysOnlySave() {
+        var state by mutableStateOf(
+            SearchConfigState(
+                searchEngine = "tavily",
+                secretOperation = SearchSecretOperation.Idle,
+            ),
+        )
+        val retried = AtomicReference<String>()
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                TavilySecretEditor(
+                    state = state,
+                    actions = TavilySecretActions(
+                        onSave = {
+                            state = state.copy(
+                                secretOperation = SearchSecretOperation.Error(
+                                    SearchSecretErrorCode.SAVE_FAILED,
+                                ),
+                            )
+                        },
+                        onRetry = { code, secret ->
+                            assertThat(code).isEqualTo(SearchSecretErrorCode.SAVE_FAILED)
+                            retried.set(secret?.concatToString())
+                        },
+                    ),
+                )
+            }
+        }
+
+        rule.onNodeWithTag("search_tavily_secret_field").performTextInput("retry-secret")
+        rule.onNodeWithTag("search_tavily_secret_save").performClick()
+        rule.onNodeWithTag("search_tavily_secret_field").assertTextContains("retry-secret")
+        rule.onNodeWithTag("search_tavily_secret_retry")
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        rule.runOnIdle { assertThat(retried.get()).isEqualTo("retry-secret") }
+    }
+
+    @Test
+    fun searchEngineAndDepthOptionsExposeSelectableRadioSemantics() {
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                androidx.compose.foundation.layout.Column {
+                    EngineOption("tavily", "Tavily", true) {}
+                    DepthChip("advanced", "Advanced", true) {}
+                }
+            }
+        }
+
+        rule.onNodeWithTag("search_engine_tavily")
+            .assertIsSelectable()
+            .assertIsSelected()
+            .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag("search_depth_advanced")
+            .assertIsSelectable()
+            .assertIsSelected()
+            .assertHeightIsAtLeast(48.dp)
     }
 
     @Test
