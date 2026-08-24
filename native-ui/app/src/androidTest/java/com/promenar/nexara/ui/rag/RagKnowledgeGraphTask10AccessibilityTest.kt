@@ -89,7 +89,10 @@ class RagKnowledgeGraphTask10AccessibilityTest {
             .assertHeightIsAtLeast(48.dp)
             .performClick()
         rule.onNodeWithText("这里包含 needle 的正文上下文").assertIsDisplayed()
-        rule.onNodeWithTag(UiTags.RAG_SEARCH_BODY_MATCH).assertIsDisplayed()
+        rule.onNodeWithTag(
+            UiTags.RAG_SEARCH_BODY_MATCH,
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
         assertThat(opened.get()).isEqualTo("doc-1")
     }
 
@@ -114,7 +117,10 @@ class RagKnowledgeGraphTask10AccessibilityTest {
         }
 
         rule.onNodeWithTag(UiTags.RAG_SEARCH_WARNING).assertIsDisplayed()
-        rule.onNodeWithTag(UiTags.RAG_SEARCH_TITLE_FALLBACK).assertIsDisplayed()
+        rule.onNodeWithTag(
+            UiTags.RAG_SEARCH_TITLE_FALLBACK,
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
     }
 
     @Test
