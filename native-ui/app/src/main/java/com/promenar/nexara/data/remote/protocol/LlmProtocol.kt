@@ -374,3 +374,13 @@ internal fun validatedCompletion(
     return if (valid) StreamChunk.Completed(reason, ids)
     else streamContractError("TOOL_CALLS terminal contained incomplete calls")
 }
+
+/** 同步响应也必须服从与流式终态一致的工具调用合同。 */
+internal fun requireValidSyncCompletion(
+    reason: CompletionReason,
+    calls: List<ProtocolToolCall>,
+) {
+    check(validatedCompletion(reason, calls) is StreamChunk.Completed) {
+        "Sync completion contained inconsistent or incomplete tool calls"
+    }
+}

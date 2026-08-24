@@ -440,10 +440,11 @@ class OpenAIProtocol(
 
     private fun parseSyncResponse(responseText: String): PromptResponse {
         val parsed = json.parseToJsonElement(responseText).jsonObject
-        val message = parsed["choices"]
-            ?.jsonArray?.firstOrNull()?.jsonObject
-            ?.get("message")?.jsonObject
-            ?: return PromptResponse(content = "")
+        val choice = parsed["choices"]
+            ?.jsonArray?.firstOrNull() as? JsonObject
+            ?: throw IllegalStateException("OpenAI sync response missing choice")
+        val message = choice["message"] as? JsonObject
+            ?: throw IllegalStateException("OpenAI sync response missing message")
 
         var content = message.stringField("content")
         var reasoning = message.stringField("reasoning_content")
@@ -463,15 +464,27 @@ class OpenAIProtocol(
         content = cleanSpecialTokens(content)
         reasoning = cleanSpecialTokens(reasoning)
 
-        val toolCalls = message["tool_calls"]?.jsonArray?.mapNotNull { tcElement ->
-            val tc = tcElement.jsonObject
-            val function = tc["function"]?.jsonObject ?: return@mapNotNull null
+        val toolCallElements = message["tool_calls"]?.let { element ->
+            element as? JsonArray
+                ?: throw IllegalStateException("OpenAI sync tool_calls is not an array")
+        }.orEmpty()
+        val toolCalls = toolCallElements.map { tcElement ->
+            val tc = tcElement as? JsonObject
+                ?: throw IllegalStateException("OpenAI sync tool call is not an object")
+            val function = tc["function"] as? JsonObject
+                ?: throw IllegalStateException("OpenAI sync tool call missing function")
             ProtocolToolCall(
-                id = tc["id"]?.jsonPrimitive?.contentOrNull ?: "",
-                name = function["name"]?.jsonPrimitive?.contentOrNull ?: "",
-                arguments = function["arguments"]?.jsonPrimitive?.contentOrNull ?: "{}"
+                id = tc.stringField("id"),
+                name = function.stringField("name"),
+                arguments = function.stringField("arguments"),
             )
         }
+        val completionReason = when (val finishReason = choice.stringField("finish_reason")) {
+            "stop" -> CompletionReason.END_TURN
+            "tool_calls" -> CompletionReason.TOOL_CALLS
+            else -> throw IllegalStateException("Unknown OpenAI finish_reason: $finishReason")
+        }
+        requireValidSyncCompletion(completionReason, toolCalls)
 
         val usageRaw = parsed["usage"]?.jsonObject
         val usage = if (usageRaw != null) {
@@ -485,7 +498,7 @@ class OpenAIProtocol(
         return PromptResponse(
             content = content,
             reasoning = reasoning.ifEmpty { null },
-            toolCalls = toolCalls,
+            toolCalls = toolCalls.ifEmpty { null },
             usage = usage
         )
     }

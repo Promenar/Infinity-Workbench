@@ -87,6 +87,18 @@ class ChatGenerationRunner(
                 }
             }
         }
+        suspend fun clearUnconfirmedToolCalls(primary: Throwable) {
+            if (snapshot.toolCalls.isEmpty()) return
+            val cleanSnapshot = snapshot.copy(toolCalls = emptyList())
+            snapshot = cleanSnapshot
+            try {
+                withContext(NonCancellable) {
+                    snapshot = persist(request, cleanSnapshot, emit)
+                }
+            } catch (cleanupFailure: Throwable) {
+                if (cleanupFailure !== primary) primary.addSuppressed(cleanupFailure)
+            }
+        }
         suspend fun publishPersistenceFailure(
             persistenceFailure: Throwable,
             originalFailure: Throwable? = null,
@@ -301,33 +313,29 @@ class ChatGenerationRunner(
             primaryFailure = cancelled
             try {
                 runtime.cancelProvider()
-            } catch (cleanupCancellation: CancellationException) {
-                if (!cleanupCancellation.isRecoveryOf(cancelled)) {
-                    primaryFailure = cleanupCancellation
-                    throw cleanupCancellation
-                }
             } catch (cleanupFailure: Throwable) {
-                cancelled.addSuppressed(cleanupFailure)
+                if (!cleanupFailure.isRecoveryOf(cancelled)) {
+                    cancelled.addSuppressed(cleanupFailure)
+                }
             }
+            clearUnconfirmedToolCalls(cancelled)
             try {
                 withContext(NonCancellable) {
                     if (persistTerminal(GenerationTerminalStatus.CANCELLED, cancelled)) {
                         phase(GenerationPhase.CANCELLED, cancelled)
                     }
                 }
-            } catch (cleanupCancellation: CancellationException) {
-                if (!cleanupCancellation.isRecoveryOf(cancelled)) {
-                    primaryFailure = cleanupCancellation
-                    throw cleanupCancellation
-                }
             } catch (cleanupFailure: Throwable) {
-                cancelled.addSuppressed(cleanupFailure)
+                if (!cleanupFailure.isRecoveryOf(cancelled)) {
+                    cancelled.addSuppressed(cleanupFailure)
+                }
             }
             throw cancelled
         } catch (failure: Throwable) {
             primaryFailure = failure
             val generationFailure = failure.failureOrUnknown()
             withContext(NonCancellable) {
+                clearUnconfirmedToolCalls(failure)
                 if (persistTerminal(GenerationTerminalStatus.ERROR, failure)) {
                     safeEmit(GenerationEvent.Failed(generationFailure), failure)
                     phase(GenerationPhase.FAILED, failure)

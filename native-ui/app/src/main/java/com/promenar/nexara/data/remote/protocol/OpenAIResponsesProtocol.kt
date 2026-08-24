@@ -45,6 +45,7 @@ private data class ResponsesToolAccumulator(
     var callId: String = "",
     var name: String = "",
     var arguments: String = "",
+    var emittedArgumentsLength: Int = 0,
 )
 
 class OpenAIResponsesProtocol(
@@ -306,6 +307,7 @@ class OpenAIResponsesProtocol(
                     delta,
                     index,
                 ))
+                accumulator.emittedArgumentsLength = accumulator.arguments.length
             }
             "response.function_call_arguments.done" -> {
                 val index = chunk["output_index"]?.jsonPrimitive?.intOrNull
@@ -326,6 +328,7 @@ class OpenAIResponsesProtocol(
                             remainder,
                             index,
                         ))
+                        accumulator.emittedArgumentsLength = accumulator.arguments.length
                     }
                 }
             }
@@ -335,8 +338,8 @@ class OpenAIResponsesProtocol(
                 if (response.stringField("status") != "completed") {
                     return streamContractError("Responses completed event has unknown status")
                 }
-                (response["output"] as? JsonArray).orEmpty().forEachIndexed { index, element ->
-                    val item = element as? JsonObject ?: return@forEachIndexed
+                for ((index, element) in (response["output"] as? JsonArray).orEmpty().withIndex()) {
+                    val item = element as? JsonObject ?: continue
                     if (item.stringField("type") == "function_call") {
                         mergeResponsesToolCall(index, item, toolCalls)
                     }
@@ -377,7 +380,7 @@ class OpenAIResponsesProtocol(
         return null
     }
 
-    private fun mergeResponsesToolCall(
+    private suspend fun SendChannel<StreamChunk>.mergeResponsesToolCall(
         index: Int,
         item: JsonObject,
         toolCalls: MutableMap<Int, ResponsesToolAccumulator>,
@@ -395,10 +398,27 @@ class OpenAIResponsesProtocol(
             }
             accumulator.arguments = arguments
         }
+        if (
+            accumulator.callId.isNotBlank() &&
+            accumulator.name.isNotBlank() &&
+            accumulator.emittedArgumentsLength < accumulator.arguments.length
+        ) {
+            val pendingArguments = accumulator.arguments.substring(accumulator.emittedArgumentsLength)
+            send(StreamChunk.ToolCallDelta(
+                id = accumulator.callId,
+                name = accumulator.name,
+                arguments = pendingArguments,
+                index = index,
+            ))
+            accumulator.emittedArgumentsLength = accumulator.arguments.length
+        }
     }
 
     private fun parseSyncResponse(responseText: String): PromptResponse {
         val root = json.parseToJsonElement(responseText).jsonObject
+        check(root.stringField("status") == "completed") {
+            "Responses sync response did not complete successfully"
+        }
         val toolCalls = root["output"]?.jsonArray
             ?.mapNotNull { outputItem ->
                 val item = outputItem as? JsonObject ?: return@mapNotNull null
@@ -410,18 +430,10 @@ class OpenAIResponsesProtocol(
                 )
             }
             .orEmpty()
-        if (toolCalls.isNotEmpty()) {
-            val ids = toolCalls.map { it.id }
-            check(
-                ids.all(String::isNotBlank) &&
-                    ids.distinct().size == ids.size &&
-                    toolCalls.all { call ->
-                        call.name.isNotBlank() &&
-                            runCatching { json.parseToJsonElement(call.arguments) is JsonObject }
-                                .getOrDefault(false)
-                    },
-            ) { "Responses sync function_call is incomplete" }
-        }
+        requireValidSyncCompletion(
+            if (toolCalls.isEmpty()) CompletionReason.END_TURN else CompletionReason.TOOL_CALLS,
+            toolCalls,
+        )
         val outputText = root.stringField("output_text").ifBlank {
             root["output"]?.jsonArray
                 ?.flatMap { outputItem ->

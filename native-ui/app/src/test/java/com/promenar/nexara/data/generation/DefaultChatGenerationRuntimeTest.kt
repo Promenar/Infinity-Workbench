@@ -539,6 +539,7 @@ class DefaultChatGenerationRuntimeTest {
         assertThat(options.captured.errorMessage).isEqualTo(envelope)
         assertThat(options.captured.errorMessage).doesNotContain("provider")
         assertThat(options.captured.isError).isTrue()
+        assertThat(options.captured.clearToolCalls).isTrue()
         verify(exactly = 1) { ui.setError(failure) }
         coVerify(exactly = 1) {
             messageManager.markGenerationTerminal(

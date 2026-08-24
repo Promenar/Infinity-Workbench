@@ -146,7 +146,7 @@ class CrossProtocolParamAuditTest {
             capturedUrl = request.url.encodedPath
             capturedBody = request.body.toByteReadPacket().readText()
             respond(
-                content = """{"output_text":"pong","usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}""",
+                content = """{"status":"completed","output_text":"pong","usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}""",
                 status = HttpStatusCode.OK,
                 headers = headersOf(HttpHeaders.ContentType, "application/json")
             )

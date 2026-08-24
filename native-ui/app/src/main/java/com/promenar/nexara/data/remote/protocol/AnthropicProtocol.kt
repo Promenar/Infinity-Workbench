@@ -303,15 +303,15 @@ class AnthropicProtocol(
                     // 4. Handle Assistant Tool Calls
                     if (msg.role == "assistant" && !msg.toolCalls.isNullOrEmpty()) {
                         msg.toolCalls.forEach { tc ->
+                            val input = json.parseToJsonElement(tc.arguments)
+                            require(input is JsonObject) {
+                                "Anthropic assistant tool arguments must be a JSON object"
+                            }
                             contentParts.add(buildJsonObject {
                                 put("type", "tool_use")
                                 put("id", tc.id)
                                 put("name", tc.name)
-                                put("input", try {
-                                    json.parseToJsonElement(tc.arguments)
-                                } catch (_: Exception) {
-                                    buildJsonObject {}
-                                })
+                                put("input", input)
                             })
                         }
                     }
@@ -563,25 +563,30 @@ class AnthropicProtocol(
             )
         } else null
 
-        val stopReason = parsed["stop_reason"]?.jsonPrimitive?.contentOrNull
-
-        val toolCalls = contentArray?.mapNotNull { block ->
-            val blockObj = block.jsonObject
-            if (blockObj["type"]?.jsonPrimitive?.contentOrNull == "tool_use") {
+        val toolCalls = contentArray.orEmpty().mapNotNull { block ->
+            val blockObj = block as? JsonObject
+                ?: throw IllegalStateException("Anthropic sync content block is not an object")
+            if (blockObj.stringField("type") == "tool_use") {
+                val input = blockObj["input"] as? JsonObject
+                    ?: throw IllegalStateException("Anthropic sync tool_use input is not an object")
                 ProtocolToolCall(
-                    id = blockObj["id"]?.jsonPrimitive?.contentOrNull ?: "",
-                    name = blockObj["name"]?.jsonPrimitive?.contentOrNull ?: "",
-                    arguments = blockObj["input"]?.let { input ->
-                        json.encodeToString(JsonElement.serializer(), input)
-                    } ?: "{}"
+                    id = blockObj.stringField("id"),
+                    name = blockObj.stringField("name"),
+                    arguments = json.encodeToString(JsonElement.serializer(), input),
                 )
             } else null
         }
+        val completionReason = when (val stopReason = parsed.stringField("stop_reason")) {
+            "end_turn" -> CompletionReason.END_TURN
+            "tool_use" -> CompletionReason.TOOL_CALLS
+            else -> throw IllegalStateException("Unknown Anthropic stop_reason: $stopReason")
+        }
+        requireValidSyncCompletion(completionReason, toolCalls)
 
         return PromptResponse(
             content = textContent,
             reasoning = thinkingContent.ifEmpty { null },
-            toolCalls = toolCalls?.ifEmpty { null },
+            toolCalls = toolCalls.ifEmpty { null },
             usage = usage
         )
     }

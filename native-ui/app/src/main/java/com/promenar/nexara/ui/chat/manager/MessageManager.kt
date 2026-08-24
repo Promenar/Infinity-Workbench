@@ -948,11 +948,13 @@ class MessageManager(
                     applyPendingToMessage(message, pending, pending.tokens ?: message.tokens ?: TokenUsage())
                 }
                 val isError = status == "error"
+                val clearUnconfirmedTools = status != "success"
                 val terminal = merged.copy(
                     content = content,
                     status = status,
                     isError = isError,
                     errorMessage = errorMessage,
+                    toolCalls = if (clearUnconfirmedTools) emptyList() else merged.toolCalls,
                 )
                 val updates = mutableMapOf<String, Any?>()
                 pendingDb?.updates?.let(updates::putAll)
@@ -966,6 +968,7 @@ class MessageManager(
                         "errorMessage" to errorMessage,
                     ),
                 )
+                if (clearUnconfirmedTools) updates["toolCalls"] = emptyList<ToolCall>()
                 try {
                     messageRepository.updatePartial(messageId, updates)
                     store.updateMessageInSession(sessionId, messageId) { terminal }

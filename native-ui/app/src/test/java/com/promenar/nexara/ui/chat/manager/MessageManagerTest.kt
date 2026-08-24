@@ -991,6 +991,24 @@ class MessageManagerTest {
     }
 
     @Test
+    fun `失败终态在Store与数据库原子清除未确认工具调用`() = testScope.runTest {
+        seedSession()
+        messageManager.addMessage(
+            "s1",
+            assistantMessage().copy(
+                toolCalls = listOf(ToolCall("call", "search", "{}")),
+                status = "streaming",
+            ),
+        )
+        advanceUntilIdle()
+
+        messageManager.markGenerationTerminal("s1", "m1", "partial", "error", "network")
+
+        assertThat(store.getSession("s1")!!.messages.single().toolCalls).isEmpty()
+        assertThat(partialUpdates.last()["toolCalls"]).isEqualTo(emptyList<ToolCall>())
+    }
+
+    @Test
     fun `终态DB写失败时Store不得提前发布success`() = testScope.runTest {
         seedSession()
         messageManager.addMessage(

@@ -737,6 +737,9 @@ class VertexAIProtocol(
 
         val candidate = candidatesArray.first().jsonObject
         val finishReason = candidate["finishReason"]?.jsonPrimitive?.contentOrNull
+        if (finishReason != "STOP") {
+            throw Exception("Vertex AI response finished with reason: ${finishReason.orEmpty()}")
+        }
 
         var textContent = ""
         var reasoningContent = ""
@@ -758,12 +761,6 @@ class VertexAIProtocol(
                 } else if (part.containsKey("functionCall")) {
                     throw IllegalStateException("Vertex returned an unsupported functionCall")
                 }
-            }
-        }
-
-        if (textContent.isEmpty() && reasoningContent.isEmpty()) {
-            if (finishReason != null && finishReason != "STOP" && finishReason != "END_TURN") {
-                throw Exception("Vertex AI response finished with reason: $finishReason")
             }
         }
 

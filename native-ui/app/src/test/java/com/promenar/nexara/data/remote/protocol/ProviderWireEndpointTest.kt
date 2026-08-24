@@ -214,7 +214,7 @@ class ProviderWireEndpointTest {
                     headers = headersOf(HttpHeaders.ContentType, "text/event-stream"),
                 )
                 else -> respond(
-                    content = """{"candidates":[{"content":{"parts":[{"text":"pong"}]}}]}""",
+                    content = """{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"pong"}]}}]}""",
                     status = HttpStatusCode.OK,
                     headers = headersOf(HttpHeaders.ContentType, "application/json"),
                 )

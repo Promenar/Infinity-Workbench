@@ -12,12 +12,70 @@ import com.promenar.nexara.domain.generation.GenerationSnapshot
 import com.promenar.nexara.domain.generation.GenerationTerminalStatus
 import com.promenar.nexara.domain.generation.GenerationToolCall
 import com.promenar.nexara.domain.generation.GenerationToolDecision
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class ChatGenerationRunnerTerminalContractTest {
+    @Test
+    fun `Error EOF 与取消都会持久化清除未确认工具后再标终态`() = runTest {
+        val providerFailure = com.promenar.nexara.domain.generation.GenerationFailure(
+            com.promenar.nexara.domain.generation.GenerationFailureCode.SERVER,
+        )
+        val cases = listOf(
+            RuntimeFixture(
+                listOf(flowOf(
+                    GenerationChunk.ToolCall("error", "search", "{}"),
+                    GenerationChunk.Failure(providerFailure),
+                )),
+                knownTools = setOf("search"),
+            ) to GenerationTerminalStatus.ERROR,
+            RuntimeFixture(
+                listOf(flowOf(GenerationChunk.ToolCall("eof", "search", "{}"))),
+                knownTools = setOf("search"),
+            ) to GenerationTerminalStatus.ERROR,
+            RuntimeFixture(
+                listOf(flow {
+                    emit(GenerationChunk.ToolCall("cancel", "search", "{}"))
+                    throw CancellationException("cancel")
+                }),
+                knownTools = setOf("search"),
+            ) to GenerationTerminalStatus.CANCELLED,
+        )
+
+        cases.forEach { (runtime, expectedTerminal) ->
+            val failure = runCatching { ChatGenerationRunner(runtime).run(request()) {} }.exceptionOrNull()
+
+            assertThat(failure).isNotNull()
+            assertThat(runtime.handled).isEmpty()
+            assertThat(runtime.persisted.last().toolCalls).isEmpty()
+            assertThat(runtime.terminals).containsExactly(expectedTerminal)
+            assertThat(runtime.terminalSnapshots.single().toolCalls).isEmpty()
+        }
+    }
+
+    @Test
+    fun `取消后的工具清理在NonCancellable完成且传播原取消异常`() = runTest {
+        val original = CancellationException("original")
+        val runtime = RuntimeFixture(
+            listOf(flow {
+                emit(GenerationChunk.ToolCall("cancel", "search", "{}"))
+                throw original
+            }),
+            knownTools = setOf("search"),
+        ).apply { suspendCleanPersist = true }
+
+        val failure = runCatching { ChatGenerationRunner(runtime).run(request()) {} }.exceptionOrNull()
+
+        assertThat(failure).isSameInstanceAs(original)
+        assertThat(runtime.cleanPersistCompleted).isTrue()
+        assertThat(runtime.persisted.last().toolCalls).isEmpty()
+        assertThat(runtime.terminalSnapshots.single().toolCalls).isEmpty()
+    }
+
     @Test
     fun `截断工具流没有 Completed 时不得进入审批或执行`() = runTest {
         val runtime = RuntimeFixture(
@@ -124,14 +182,24 @@ class ChatGenerationRunnerTerminalContractTest {
         private val knownTools: Set<String>,
     ) : ChatGenerationRuntime {
         val handled = mutableListOf<List<GenerationToolCall>>()
+        val persisted = mutableListOf<GenerationSnapshot>()
         val terminals = mutableListOf<GenerationTerminalStatus>()
+        val terminalSnapshots = mutableListOf<GenerationSnapshot>()
         val decisions = ArrayDeque<GenerationToolDecision>()
+        var suspendCleanPersist = false
+        var cleanPersistCompleted = false
 
         override suspend fun prepare(request: GenerationRequest) = Unit
         override suspend fun buildContext(request: GenerationRequest) = GenerationPreparationOutcome.Ready
         override suspend fun stream(request: GenerationRequest, attempt: Int) = streams[attempt]
         override fun knownToolNames(request: GenerationRequest): Set<String> = knownTools
-        override suspend fun persist(request: GenerationRequest, snapshot: GenerationSnapshot) = Unit
+        override suspend fun persist(request: GenerationRequest, snapshot: GenerationSnapshot) {
+            if (suspendCleanPersist && snapshot.toolCalls.isEmpty()) {
+                kotlinx.coroutines.yield()
+                cleanPersistCompleted = true
+            }
+            persisted += snapshot
+        }
         override suspend fun handleTools(
             request: GenerationRequest,
             toolCalls: List<GenerationToolCall>,
@@ -147,6 +215,7 @@ class ChatGenerationRunnerTerminalContractTest {
             cause: Throwable?,
         ) {
             terminals += status
+            terminalSnapshots += snapshot
         }
         override suspend fun flush(request: GenerationRequest) = Unit
         override fun cancelProvider() = Unit
