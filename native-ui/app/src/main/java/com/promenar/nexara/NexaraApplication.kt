@@ -243,6 +243,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             },
         )
     }
+    private val workspaceFileMutationJournal by lazy {
+        com.promenar.nexara.data.repository.RoomWorkspaceFileMutationJournal(database)
+    }
+    private val workspaceFileMutationRecoveryCoordinator by lazy {
+        com.promenar.nexara.data.repository.WorkspaceFileMutationRecoveryCoordinator(database)
+    }
     private val sessionDeletionCoordinator by lazy {
         val targetResolver = com.promenar.nexara.data.session.RoomSessionDeletionTargetResolver(
             database,
@@ -403,6 +409,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     val workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository by lazy {
+        val lifecycle = com.promenar.nexara.data.repository.WorkspaceLifecycleTransaction(database)
         WorkspaceRepository(
             database.fileEntryDao(),
             database.workspaceSeqDao(),
@@ -414,7 +421,23 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             afterDeleteCommitted = { workspaceRootUuid, ids ->
                 pendingDocumentIndexCoordinator.clearCommitted(workspaceRootUuid, ids)
             },
+            recycleCommitter = lifecycle::recycle,
+            restoreCommitter = lifecycle::restore,
+            beforeRecycleCommitted = { workspaceRootUuid, ids ->
+                vectorizationQueue.acquireDeleteBarrier(workspaceRootUuid, ids)
+            },
+            afterRecycleCommitted = { workspaceRootUuid, ids ->
+                pendingDocumentIndexCoordinator.clearForRecycle(workspaceRootUuid, ids)
+            },
+            afterRestoreCommitted = { workspaceRootUuid, targets ->
+                pendingDocumentIndexCoordinator.resumeAfterRestore(
+                    workspaceRootUuid,
+                    targets.map { it.fileUuid },
+                )
+                vectorizationQueue.resumeInterruptedTasks().getOrThrow()
+            },
             executionGate = sessionExecutionGate,
+            mutationJournal = workspaceFileMutationJournal,
         )
     }
 
@@ -422,7 +445,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         PendingDocumentIndexCoordinator(
             downstream = FileIndexEventSink { event -> vectorizationQueue.publish(event) },
             resolveCurrentTarget = { target ->
-                val entry = database.fileEntryDao().getByUuid(
+                val entry = database.fileEntryDao().getActiveByUuid(
                     target.workspaceRootUuid,
                     target.fileUuid,
                 )
@@ -585,6 +608,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                         recoverWorkspaceJournal = {
                             withContext(Dispatchers.IO) {
                                 java.nio.file.Files.createDirectories(sessionWorkspaceParent)
+                                workspaceFileMutationRecoveryCoordinator.recoverOrThrow()
                                 workspaceMutationRecoveryCoordinator.recoverOrThrow()
                             }
                         },

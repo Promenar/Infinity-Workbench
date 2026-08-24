@@ -26,19 +26,58 @@ interface VectorizationTaskDao {
     @Query("SELECT * FROM vectorization_tasks WHERE id = :taskId")
     suspend fun getById(taskId: String): VectorizationTaskEntity?
 
-    @Query("SELECT * FROM vectorization_tasks WHERE status = :status")
+    @Query("""
+        SELECT * FROM vectorization_tasks
+        WHERE status = :status
+          AND (
+            doc_id IS NULL OR workspace_root_uuid IS NULL OR EXISTS (
+              SELECT 1 FROM workspace_files AS f
+              WHERE f.workspace_root_uuid = vectorization_tasks.workspace_root_uuid
+                AND f.uuid = vectorization_tasks.doc_id
+                AND f.in_recycle_bin = 0
+            )
+          )
+    """)
     suspend fun getByStatus(status: String): List<VectorizationTaskEntity>
 
-    @Query("SELECT * FROM vectorization_tasks WHERE doc_id = :docId")
+    @Query("""
+        SELECT * FROM vectorization_tasks
+        WHERE doc_id = :docId
+          AND EXISTS (
+            SELECT 1 FROM workspace_files AS f
+            WHERE f.workspace_root_uuid = vectorization_tasks.workspace_root_uuid
+              AND f.uuid = vectorization_tasks.doc_id
+              AND f.in_recycle_bin = 0
+          )
+    """)
     suspend fun getByDocId(docId: String): List<VectorizationTaskEntity>
 
-    @Query("SELECT * FROM vectorization_tasks WHERE workspace_root_uuid = :workspaceRootUuid AND doc_id IN (:docIds)")
+    @Query("""
+        SELECT * FROM vectorization_tasks
+        WHERE workspace_root_uuid = :workspaceRootUuid AND doc_id IN (:docIds)
+          AND EXISTS (
+            SELECT 1 FROM workspace_files AS f
+            WHERE f.workspace_root_uuid = vectorization_tasks.workspace_root_uuid
+              AND f.uuid = vectorization_tasks.doc_id
+              AND f.in_recycle_bin = 0
+          )
+    """)
     suspend fun getByWorkspaceFiles(
         workspaceRootUuid: String,
         docIds: List<String>,
     ): List<VectorizationTaskEntity>
 
-    @Query("SELECT * FROM vectorization_tasks WHERE workspace_root_uuid = :workspaceRootUuid AND doc_id = :docId AND type = :type LIMIT 1")
+    @Query("""
+        SELECT * FROM vectorization_tasks
+        WHERE workspace_root_uuid = :workspaceRootUuid AND doc_id = :docId AND type = :type
+          AND EXISTS (
+            SELECT 1 FROM workspace_files AS f
+            WHERE f.workspace_root_uuid = vectorization_tasks.workspace_root_uuid
+              AND f.uuid = vectorization_tasks.doc_id
+              AND f.in_recycle_bin = 0
+          )
+        LIMIT 1
+    """)
     suspend fun getByWorkspaceFile(workspaceRootUuid: String, docId: String, type: String): VectorizationTaskEntity?
 
     @Query("""
@@ -46,6 +85,12 @@ interface VectorizationTaskDao {
         WHERE workspace_root_uuid = :workspaceRootUuid
           AND doc_id = :docId
           AND status IN ('pending', 'processing', 'extracting_source', 'chunking', 'vectorizing', 'saving', 'extracting')
+          AND EXISTS (
+            SELECT 1 FROM workspace_files AS f
+            WHERE f.workspace_root_uuid = vectorization_tasks.workspace_root_uuid
+              AND f.uuid = vectorization_tasks.doc_id
+              AND f.in_recycle_bin = 0
+          )
     """)
     suspend fun countActiveForFile(workspaceRootUuid: String, docId: String): Int
 
@@ -260,10 +305,34 @@ interface VectorizationTaskDao {
         throw IllegalStateException("vectorization target 在并发更新后仍无法稳定写入")
     }
 
-    @Query("SELECT * FROM vectorization_tasks WHERE status IN ('pending', 'interrupted') ORDER BY created_at ASC")
+    @Query("""
+        SELECT * FROM vectorization_tasks
+        WHERE status IN ('pending', 'interrupted')
+          AND (
+            doc_id IS NULL OR workspace_root_uuid IS NULL OR EXISTS (
+              SELECT 1 FROM workspace_files AS f
+              WHERE f.workspace_root_uuid = vectorization_tasks.workspace_root_uuid
+                AND f.uuid = vectorization_tasks.doc_id
+                AND f.in_recycle_bin = 0
+            )
+          )
+        ORDER BY created_at ASC
+    """)
     suspend fun getRecoverableTasks(): List<VectorizationTaskEntity>
 
-    @Query("SELECT * FROM vectorization_tasks WHERE type IN ('document_reference', 'document') AND status IN ('failed', 'partial') ORDER BY updated_at DESC")
+    @Query("""
+        SELECT * FROM vectorization_tasks
+        WHERE type IN ('document_reference', 'document') AND status IN ('failed', 'partial')
+          AND (
+            doc_id IS NULL OR workspace_root_uuid IS NULL OR EXISTS (
+              SELECT 1 FROM workspace_files AS f
+              WHERE f.workspace_root_uuid = vectorization_tasks.workspace_root_uuid
+                AND f.uuid = vectorization_tasks.doc_id
+                AND f.in_recycle_bin = 0
+            )
+          )
+        ORDER BY updated_at DESC
+    """)
     suspend fun getAttentionTasks(): List<VectorizationTaskEntity>
 
     @Query("""

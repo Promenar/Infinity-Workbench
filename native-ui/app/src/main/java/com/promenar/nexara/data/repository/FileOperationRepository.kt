@@ -32,6 +32,7 @@ class FileOperationRepository(
     private val indexEventSink: FileIndexEventSink = FileIndexEventSink.None,
     private val clock: () -> Long = System::currentTimeMillis,
     private val executionGate: SessionExecutionGate? = null,
+    private val textPolicy: WorkspaceTextContentPolicy = WorkspaceTextContentPolicy(),
 ) : IFileOperationRepository {
 
     override suspend fun writeFileAtomic(
@@ -42,11 +43,19 @@ class FileOperationRepository(
         expectedHash: String,
     ): WriteResult = withSessionWorkspaceAdmission(sessionId, workspaceRootUuid) {
         withContext(Dispatchers.IO) {
-        val initial = dao.getByUuid(workspaceRootUuid, uuid) ?: return@withContext WriteResult.NotFound
+        val initial = dao.getActiveByUuid(workspaceRootUuid, uuid)
+            ?: return@withContext WriteResult.NotFound
         val root = bindRoot(workspaceRootUuid)
         WorkspaceMutationCoordinator.withBoundRoot(File(initial.physicalRootPath).toPath(), root.hash) {
-            val entry = dao.getByUuid(workspaceRootUuid, uuid) ?: return@withBoundRoot WriteResult.NotFound
+            val entry = dao.getActiveByUuid(workspaceRootUuid, uuid)
+                ?: return@withBoundRoot WriteResult.NotFound
             if (entry.isDirectory) return@withBoundRoot WriteResult.NotFound
+            textPolicy.validate(
+                entry.name,
+                entry.mimeType,
+                newContent.toByteArray(Charsets.UTF_8),
+                WorkspaceTextOperation.WRITE,
+            )
             if (entry.hash != expectedHash) {
                 return@withBoundRoot WriteResult.Conflict(
                     currentHash = entry.hash,
@@ -75,11 +84,13 @@ class FileOperationRepository(
         val root = bindRoot(workspaceRootUuid)
         WorkspaceMutationCoordinator.withBoundRoot(File(root.physicalRootPath).toPath(), root.hash) {
             val entry = requireFile(workspaceRootUuid, uuid)
-            val allLines = readContent(entry).lines().let { if (it == listOf("")) emptyList() else it }
+            val allLines = readContent(entry, WorkspaceTextOperation.READ)
+                .lines().let { if (it == listOf("")) emptyList() else it }
             val total = allLines.size
             val start = startLine?.coerceIn(1, total.coerceAtLeast(1)) ?: 1
             val end = endLine?.coerceIn(1, total.coerceAtLeast(1)) ?: total
             val content = if (total == 0) "" else allLines.subList(start - 1, end).joinToString("\n")
+            textPolicy.validateOutput(content, WorkspaceTextContentPolicy.DEFAULT_TOOL_BUDGET)
             ReadResult(entry.uuid, entry.name, total, start, end, content, entry.hash, entry.updatedAt)
         }
     }
@@ -92,13 +103,17 @@ class FileOperationRepository(
         val root = bindRoot(workspaceRootUuid)
         WorkspaceMutationCoordinator.withBoundRoot(File(root.physicalRootPath).toPath(), root.hash) {
             val entry = requireFile(workspaceRootUuid, uuid)
-            val currentContent = readContent(entry)
+            val currentContent = readContent(entry, WorkspaceTextOperation.DIFF)
             val basisContent = when {
                 basisHash == null || basisHash == entry.hash -> currentContent
                 else -> readVersionContent(entry, basisHash)
             }
             val effectiveBasisHash = basisHash ?: entry.hash
             val hunks = MyersDiff.computeHunks(basisContent.lines(), currentContent.lines())
+            textPolicy.validateOutput(
+                hunks.asSequence().flatMap { it.lines.asSequence() }.joinToString("\n") { it.content },
+                WorkspaceTextContentPolicy.DEFAULT_TOOL_BUDGET,
+            )
             DiffResult(
             uuid = entry.uuid,
             basisHash = effectiveBasisHash,
@@ -123,11 +138,11 @@ class FileOperationRepository(
         expectedHash: String,
     ): PatchResult = withWorkspaceAdmission(workspaceRootUuid) {
         withContext(Dispatchers.IO) {
-        val initial = dao.getByUuid(workspaceRootUuid, uuid)
+        val initial = dao.getActiveByUuid(workspaceRootUuid, uuid)
             ?: return@withContext fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
         val root = bindRoot(workspaceRootUuid)
         WorkspaceMutationCoordinator.withBoundRoot(File(initial.physicalRootPath).toPath(), root.hash) {
-            val entry = dao.getByUuid(workspaceRootUuid, uuid)
+            val entry = dao.getActiveByUuid(workspaceRootUuid, uuid)
                 ?: return@withBoundRoot fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
             if (entry.isDirectory) return@withBoundRoot fileFailure("FILE_NOT_FOUND", "文件不存在: $uuid", uuid)
             if (entry.hash != expectedHash) {
@@ -140,55 +155,46 @@ class FileOperationRepository(
                 ))
             }
 
-            val currentContent = readContent(entry)
-            val lines = currentContent.lines().toMutableList()
+            val currentContent = try {
+                readContent(entry, WorkspaceTextOperation.PATCH)
+            } catch (failure: WorkspaceTextPolicyException) {
+                return@withBoundRoot policyFailure(failure, uuid)
+            }
+            val lines = currentContent.lines().let { if (it == listOf("")) emptyList() else it }.toMutableList()
             val originalTotal = lines.size
-            var lineOffset = 0
-
-            operations.forEachIndexed { index, operation ->
+            validatePatchOperations(operations, lines, uuid)?.let { return@withBoundRoot it }
+            operations.withIndex().sortedByDescending { (_, operation) ->
+                operation.startLine ?: operation.afterLine ?: -1
+            }.forEach { (_, operation) ->
                 when (operation.action) {
                     "replace_lines" -> {
-                        val start = (operation.startLine ?: 0) + lineOffset
-                        val end = (operation.endLine ?: 0) + lineOffset
-                        if (start < 1 || end < start || start > lines.size) {
-                            return@withBoundRoot rangeFailure(operation, index, uuid, originalTotal)
-                        }
-                        val replacement = (operation.newContent ?: "").lines()
-                        val count = end - start + 1
-                        lines.subList(start - 1, (start - 1 + count).coerceAtMost(lines.size)).clear()
-                        lines.addAll(start - 1, replacement)
-                        lineOffset += replacement.size - count
+                        val start = requireNotNull(operation.startLine)
+                        val end = requireNotNull(operation.endLine)
+                        lines.subList(start - 1, end).clear()
+                        lines.addAll(start - 1, contentLines(operation.newContent.orEmpty()))
                     }
-                    "insert_after" -> {
-                        val after = operation.afterLine ?: -1
-                        val indexInCurrent = after + lineOffset
-                        if (after < 0 || indexInCurrent > lines.size) {
-                            return@withBoundRoot rangeFailure(operation, index, uuid, originalTotal)
-                        }
-                        val insertion = (operation.newContent ?: "").lines()
-                        lines.addAll(indexInCurrent, insertion)
-                        lineOffset += insertion.size
-                    }
-                    "delete_lines" -> {
-                        val start = (operation.startLine ?: 0) + lineOffset
-                        val end = (operation.endLine ?: 0) + lineOffset
-                        if (start < 1 || end < start || start > lines.size) {
-                            return@withBoundRoot rangeFailure(operation, index, uuid, originalTotal)
-                        }
-                        val count = end - start + 1
-                        lines.subList(start - 1, (start - 1 + count).coerceAtMost(lines.size)).clear()
-                        lineOffset -= count
-                    }
-                    else -> return@withBoundRoot PatchResult.Failure(PatchError(
-                        code = "INVALID_ACTION",
-                        message = "未知的 patch 操作类型: ${operation.action}",
-                        operationIndex = index,
-                        fileUuid = uuid,
-                    ))
+                    "insert_after" -> lines.addAll(
+                        requireNotNull(operation.afterLine),
+                        contentLines(operation.newContent.orEmpty()),
+                    )
+                    "delete_lines" -> lines.subList(
+                        requireNotNull(operation.startLine) - 1,
+                        requireNotNull(operation.endLine),
+                    ).clear()
                 }
             }
 
             val newContent = lines.joinToString("\n")
+            try {
+                textPolicy.validate(
+                    entry.name,
+                    entry.mimeType,
+                    newContent.toByteArray(Charsets.UTF_8),
+                    WorkspaceTextOperation.PATCH,
+                )
+            } catch (failure: WorkspaceTextPolicyException) {
+                return@withBoundRoot policyFailure(failure, uuid)
+            }
             val committed = commitContentChange(entry, newContent, null)
             val indexTarget = committed ?: entry.currentIndexTargetIfStale()
             val indexQueued = indexTarget == null || publishIndexEvent(workspaceRootUuid, uuid, indexTarget)
@@ -243,7 +249,7 @@ class FileOperationRepository(
         sessionId: String?,
     ): CommittedIndexTarget? {
         val root = File(entry.physicalRootPath).toPath()
-        val oldContent = readContent(entry)
+        val oldContent = readContent(entry, WorkspaceTextOperation.WRITE)
         val physicalHash = Sha256Utils.hash(oldContent)
         if (physicalHash != entry.hash) {
             throw IllegalStateException("文件内容与数据库哈希不一致，已拒绝覆盖: ${entry.uuid}")
@@ -334,7 +340,29 @@ class FileOperationRepository(
             throw SecurityException("文件版本快照路径无效")
         }
         val relative = rootPath.relativize(rawSnapshotPath).map { it.toString() }
-        return fileOps.read(rootPath, relative).toString(Charsets.UTF_8).also { content ->
+        if (rawSnapshotPath.toFile().length() > WorkspaceTextContentPolicy.DEFAULT_TOOL_BUDGET.maxInputBytes) {
+            throw WorkspaceTextPolicyException(
+                WorkspaceTextErrorCode.INPUT_TOO_LARGE,
+                "历史版本超过差异操作上限，请缩小文件后重试。",
+            )
+        }
+        return textPolicy.validate(
+            entry.name,
+            entry.mimeType,
+            try {
+                fileOps.readLimited(
+                    rootPath,
+                    relative,
+                    WorkspaceTextContentPolicy.DEFAULT_TOOL_BUDGET.maxInputBytes,
+                )
+            } catch (_: WorkspaceFileTooLargeException) {
+                throw WorkspaceTextPolicyException(
+                    WorkspaceTextErrorCode.INPUT_TOO_LARGE,
+                    "历史版本超过差异操作上限，请缩小文件后重试。",
+                )
+            },
+            WorkspaceTextOperation.DIFF,
+        ).text.also { content ->
             if (Sha256Utils.hash(content) != version.hash) {
                 throw SecurityException("文件版本快照哈希校验失败")
             }
@@ -348,11 +376,27 @@ class FileOperationRepository(
         directories.indices.forEach { index -> fileOps.ensureDirectory(root, directories.take(index + 1)) }
     }
 
-    private fun readContent(entry: FileEntry): String {
+    private fun readContent(entry: FileEntry, operation: WorkspaceTextOperation): String {
+        textPolicy.requireSupportedType(entry.name, entry.mimeType)
+        val budget = WorkspaceTextContentPolicy.budgetFor(operation)
+        if (entry.sizeBytes > budget.maxInputBytes) {
+            throw WorkspaceTextPolicyException(
+                WorkspaceTextErrorCode.INPUT_TOO_LARGE,
+                "文件超过本次操作的读取上限，请缩小读取范围或使用专用文件处理能力。",
+            )
+        }
         val root = File(entry.physicalRootPath).toPath()
         val relative = relative(entry.materializedPath)
         fileOps.reconcileFile(root, relative, entry.hash)
-        return fileOps.read(root, relative).toString(Charsets.UTF_8)
+        val bytes = try {
+            fileOps.readLimited(root, relative, budget.maxInputBytes)
+        } catch (_: WorkspaceFileTooLargeException) {
+            throw WorkspaceTextPolicyException(
+                WorkspaceTextErrorCode.INPUT_TOO_LARGE,
+                "文件超过本次操作的读取上限，请缩小读取范围或使用专用文件处理能力。",
+            )
+        }
+        return textPolicy.validate(entry.name, entry.mimeType, bytes, operation, budget).text
     }
 
     private fun relative(materializedPath: String): List<String> =
@@ -360,12 +404,12 @@ class FileOperationRepository(
 
     private suspend fun requireFile(workspaceRootUuid: String, uuid: String): FileEntry =
         bindRoot(workspaceRootUuid).let {
-            dao.getByUuid(workspaceRootUuid, uuid)?.takeUnless { it.isDirectory }
+            dao.getActiveByUuid(workspaceRootUuid, uuid)?.takeUnless { it.isDirectory }
         }
             ?: throw NoSuchElementException("File not found: $uuid")
 
     private suspend fun bindRoot(workspaceRootUuid: String): FileEntry {
-        val root = dao.getByUuid(workspaceRootUuid, workspaceRootUuid)
+        val root = dao.getActiveByUuid(workspaceRootUuid, workspaceRootUuid)
             ?.takeIf { it.isDirectory && it.parentUuid == null }
             ?: throw SecurityException("工作区根不存在或无效")
         return root
@@ -384,5 +428,85 @@ class FileOperationRepository(
             totalLines = total,
             suggestion = "请先读取当前文件内容后重试。",
         ))
+
+    private fun policyFailure(failure: WorkspaceTextPolicyException, uuid: String) =
+        PatchResult.Failure(PatchError(
+            code = failure.code.name,
+            message = failure.safeMessage,
+            operationIndex = -1,
+            fileUuid = uuid,
+            suggestion = "请改用受支持的文本文件，并缩小操作范围。",
+        ))
+
+    private fun validatePatchOperations(
+        operations: List<PatchOperation>,
+        lines: List<String>,
+        uuid: String,
+    ): PatchResult.Failure? {
+        data class ClaimedRange(val start: Int, val end: Int)
+        val claimed = mutableListOf<ClaimedRange>()
+        val insertions = mutableSetOf<Int>()
+        operations.forEachIndexed { index, operation ->
+            when (operation.action) {
+                "replace_lines", "delete_lines" -> {
+                    val start = operation.startLine
+                    val end = operation.endLine
+                    if (start == null || end == null || start < 1 || end < start || end > lines.size) {
+                        return rangeFailure(operation, index, uuid, lines.size)
+                    }
+                    val range = ClaimedRange(start, end)
+                    if (claimed.any { range.start <= it.end && it.start <= range.end }) {
+                        return PatchResult.Failure(PatchError(
+                            "OVERLAPPING_OPERATIONS",
+                            "patch 操作坐标重叠，已拒绝整批修改。",
+                            index,
+                            uuid,
+                            lines.size,
+                            "请合并重叠操作并基于同一原始文件坐标重试。",
+                        ))
+                    }
+                    claimed += range
+                    operation.expectedContent?.let { expected ->
+                        val actual = lines.subList(start - 1, end).joinToString("\n")
+                        if (actual != expected) {
+                            return PatchResult.Failure(PatchError(
+                                "CONTEXT_MISMATCH",
+                                "patch 上下文与当前文件不一致，已拒绝修改。",
+                                index,
+                                uuid,
+                                lines.size,
+                                "请重新读取文件后生成补丁。",
+                            ))
+                        }
+                    }
+                }
+                "insert_after" -> {
+                    val after = operation.afterLine
+                    if (after == null || after < 0 || after > lines.size) {
+                        return rangeFailure(operation, index, uuid, lines.size)
+                    }
+                    if (!insertions.add(after)) {
+                        return PatchResult.Failure(PatchError(
+                            "OVERLAPPING_OPERATIONS",
+                            "同一坐标存在多个插入操作，已拒绝整批修改。",
+                            index,
+                            uuid,
+                            lines.size,
+                        ))
+                    }
+                }
+                else -> return PatchResult.Failure(PatchError(
+                    code = "INVALID_ACTION",
+                    message = "未知的 patch 操作类型: ${operation.action}",
+                    operationIndex = index,
+                    fileUuid = uuid,
+                ))
+            }
+        }
+        return null
+    }
+
+    private fun contentLines(content: String): List<String> =
+        if (content.isEmpty()) emptyList() else content.lines()
 
 }

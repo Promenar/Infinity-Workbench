@@ -173,6 +173,9 @@ class SharedFileImporter(
                         fileUuid = receipt.fileUuid,
                         indexTaskId = receipt.taskId,
                     )
+                    if (creation.createdNow) {
+                        workspace.confirmCreatedEntry(workspaceRootUuid, entry.uuid)
+                    }
                 } catch (cancelled: CancellationException) {
                     try {
                         rollbackIfCreatedNow(workspaceRootUuid, creation, nonCancellable = true)
@@ -313,10 +316,10 @@ class SharedFileImporter(
         if (!creation.createdNow) return
         if (nonCancellable) {
             withContext(NonCancellable) {
-                workspace.permanentDelete(workspaceRootUuid, creation.entry.uuid)
+                workspace.rollbackCreatedEntry(workspaceRootUuid, creation.entry.uuid)
             }
         } else {
-            workspace.permanentDelete(workspaceRootUuid, creation.entry.uuid)
+            workspace.rollbackCreatedEntry(workspaceRootUuid, creation.entry.uuid)
         }
     }
 

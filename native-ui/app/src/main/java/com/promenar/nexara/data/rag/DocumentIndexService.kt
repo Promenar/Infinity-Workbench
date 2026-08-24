@@ -58,7 +58,7 @@ class WorkspaceDocumentIndexCandidateBuilder(
     private val graphCandidateBuilder: KnowledgeGraphCandidateBuilder? = null,
 ) : DocumentIndexCandidateBuilder {
     override suspend fun build(event: FileIndexEvent.Changed): DocumentIndexCandidate {
-        val entry = fileEntryDao.getByUuid(event.workspaceRootUuid, event.fileUuid)
+        val entry = fileEntryDao.getActiveByUuid(event.workspaceRootUuid, event.fileUuid)
             ?: throw java.io.FileNotFoundException("索引文件不存在")
         require(entry.hash == event.contentHash) { "索引事件 hash 已过期" }
         require(entry.updatedAt == event.targetEpoch) { "索引事件 epoch 已过期" }
@@ -171,8 +171,10 @@ class RoomDocumentIndexService(
         return try {
             withWorkspaceAdmission(event.workspaceRootUuid) {
                 database.withTransaction {
-                val current = database.fileEntryDao().getByUuid(event.workspaceRootUuid, event.fileUuid)
-                if (current?.hash != event.contentHash || current.updatedAt != event.targetEpoch) {
+                val current = database.fileEntryDao().getActiveByUuid(event.workspaceRootUuid, event.fileUuid)
+                if (current?.hash != event.contentHash ||
+                    current.updatedAt != event.targetEpoch
+                ) {
                     return@withTransaction DocumentIndexResult.HashChanged(current?.hash)
                 }
                 val activeTask = database.vectorizationTaskDao().getByWorkspaceFile(

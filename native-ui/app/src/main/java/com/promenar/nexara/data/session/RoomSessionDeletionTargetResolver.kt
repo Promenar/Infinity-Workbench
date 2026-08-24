@@ -20,7 +20,7 @@ class RoomSessionDeletionTargetResolver(
         val session = database.sessionDao().getById(sessionId) ?: return null
         val rootUuid = session.workspaceRootUuid?.takeIf { it.isNotBlank() }
             ?: throw SecurityException("会话缺少工作区根 UUID")
-        val root = database.fileEntryDao().getByUuid(rootUuid, rootUuid)
+        val root = database.fileEntryDao().getAnyStateByUuidForLifecycle(rootUuid, rootUuid)
             ?: throw SecurityException("会话工作区根记录不存在")
         check(root.uuid == root.workspaceRootUuid && root.parentUuid == null && root.isDirectory &&
             root.materializedPath == "/" && !root.inRecycleBin) { "会话工作区根记录无效" }
@@ -42,7 +42,7 @@ class RoomSessionDeletionTargetResolver(
         val identity = root.hash.takeIf { it.isNotBlank() }
             ?: throw SecurityException("工作区根缺少身份")
         verifyIdentity(path, identity)
-        val files = database.fileEntryDao().getAllByWorkspaceRoot(rootUuid)
+        val files = database.fileEntryDao().getAllStatesByWorkspaceRootForCleanup(rootUuid)
         check(files.count { it.uuid == rootUuid } == 1) { "工作区根记录不唯一" }
         validateVersionPaths(path, rootUuid)
         return SessionDeletionTarget(

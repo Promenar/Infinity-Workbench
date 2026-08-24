@@ -15,22 +15,22 @@ interface KgEdgeDao {
     @Delete
     suspend fun delete(edge: KgEdgeEntity)
 
-    @Query("SELECT * FROM kg_edges WHERE id = :edgeId")
+    @Query("SELECT * FROM kg_edges WHERE id = :edgeId AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getById(edgeId: String): KgEdgeEntity?
 
-    @Query("SELECT * FROM kg_edges WHERE source_id = :nodeId OR target_id = :nodeId")
+    @Query("SELECT * FROM kg_edges WHERE (source_id = :nodeId OR target_id = :nodeId) AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getByNodeId(nodeId: String): List<KgEdgeEntity>
 
-    @Query("SELECT * FROM kg_edges WHERE session_id = :sessionId")
+    @Query("SELECT * FROM kg_edges WHERE session_id = :sessionId AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getBySessionId(sessionId: String): List<KgEdgeEntity>
 
-    @Query("SELECT * FROM kg_edges WHERE doc_id = :docId")
+    @Query("SELECT * FROM kg_edges WHERE doc_id = :docId AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getByDocId(docId: String): List<KgEdgeEntity>
 
-    @Query("SELECT * FROM kg_edges WHERE doc_id IN (:docIds)")
+    @Query("SELECT * FROM kg_edges WHERE doc_id IN (:docIds) AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getByDocIds(docIds: List<String>): List<KgEdgeEntity>
 
-    @Query("SELECT * FROM kg_edges WHERE doc_id IS NOT NULL")
+    @Query("SELECT * FROM kg_edges WHERE doc_id IS NOT NULL AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getAllDocEdges(): List<KgEdgeEntity>
 
     @Query("SELECT * FROM kg_edges WHERE doc_id IS NOT NULL AND doc_id NOT IN (:docIds)")
@@ -95,7 +95,7 @@ interface KgEdgeDao {
     @Query("SELECT COUNT(*) FROM kg_edges")
     suspend fun getCount(): Int
 
-    @Query("SELECT * FROM kg_edges")
+    @Query("SELECT * FROM kg_edges WHERE file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0)")
     suspend fun getAll(): List<KgEdgeEntity>
 
     @Query("DELETE FROM kg_edges")

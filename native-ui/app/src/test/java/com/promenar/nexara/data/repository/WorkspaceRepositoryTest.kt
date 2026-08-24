@@ -8,7 +8,9 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.SessionEntity
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationType
 import com.promenar.nexara.domain.repository.RenameResult
+import com.promenar.nexara.domain.repository.RenameIndexTarget
 import com.promenar.nexara.infra.util.Sha256Utils
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -72,6 +74,125 @@ class WorkspaceRepositoryTest {
                 updatedAt = now,
             ),
         )
+    }
+
+    @Test
+    fun `所有文件生命周期操作接入统一journal并成功完成不留悬挂记录`() = runBlocking<Unit> {
+        insertSession("journal-session", rootA.absolutePath)
+        val journal = RecordingWorkspaceFileMutationJournal()
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
+            mutationJournal = journal,
+        )
+        val root = repo.ensureSessionRoot("journal-session")
+        val folder = repo.createDirectoryInWorkspace(root.uuid, "folder", "folder", root.uuid, "/folder")
+        val file = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "a", root.uuid, "/a.txt")
+        repo.createFileInWorkspaceStreaming(
+            root.uuid,
+            "stream",
+            "stream.bin",
+            "application/octet-stream",
+            root.uuid,
+            "/stream.bin",
+            64,
+        ) { it.write(byteArrayOf(1, 2, 3)) }
+        repo.rename(root.uuid, file.uuid, "b.txt", "a.txt")
+        repo.updateParent(root.uuid, file.uuid, folder.uuid)
+        repo.moveToRecycleBin(root.uuid, file.uuid)
+        repo.restoreFromRecycleBin(root.uuid, file.uuid)
+        repo.moveToRecycleBin(root.uuid, file.uuid)
+        repo.permanentDelete(root.uuid, file.uuid)
+
+        assertThat(journal.preparedTypes).containsAtLeast(
+            WorkspaceMutationType.MKDIR,
+            WorkspaceMutationType.CREATE,
+            WorkspaceMutationType.CREATE_STREAMING,
+            WorkspaceMutationType.RENAME,
+            WorkspaceMutationType.MOVE,
+            WorkspaceMutationType.RECYCLE,
+            WorkspaceMutationType.RESTORE,
+            WorkspaceMutationType.DELETE,
+        )
+        assertThat(journal.openOperations).isEmpty()
+        assertThat(journal.markedCommitted).containsExactlyElementsIn(journal.completed)
+    }
+
+    @Test
+    fun `move数据库提交失败且物理回滚失败时保留journal供启动恢复`() = runBlocking<Unit> {
+        insertSession("journal-move-failure", rootA.absolutePath)
+        val journal = RecordingWorkspaceFileMutationJournal()
+        val delegate = TestWorkspaceFileOps()
+        val rollbackFailingOps = object : WorkspaceFileOps by delegate {
+            override fun move(
+                root: java.nio.file.Path,
+                source: List<String>,
+                target: List<String>,
+            ): WorkspaceFileRollback {
+                val actual = delegate.move(root, source, target)
+                return object : WorkspaceFileRollback {
+                    override fun commit() = actual.commit()
+                    override fun rollback() = throw IllegalStateException("injected move rollback failure")
+                }
+            }
+        }
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            fileOps = rollbackFailingOps,
+            updateCommitter = { throw IllegalStateException("injected update failure") },
+            mutationJournal = journal,
+        )
+        val root = repo.ensureSessionRoot("journal-move-failure")
+        val file = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+
+        val failure = runCatching { repo.rename(root.uuid, file.uuid, "b.txt", "a.txt") }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(journal.openOperations).hasSize(1)
+        assertThat(File(rootA, "a.txt").exists()).isFalse()
+        assertThat(File(rootA, "b.txt").readText()).isEqualTo("A")
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, file.uuid)!!.materializedPath).isEqualTo("/a.txt")
+    }
+
+    @Test
+    fun `delete数据库提交失败且tombstone回滚失败时保留journal供启动恢复`() = runBlocking<Unit> {
+        insertSession("journal-delete-failure", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("journal-delete-failure")
+        val file = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        repo.moveToRecycleBin(root.uuid, file.uuid)
+        val journal = RecordingWorkspaceFileMutationJournal()
+        val delegate = TestWorkspaceFileOps()
+        val rollbackFailingOps = object : WorkspaceFileOps by delegate {
+            override fun stageDelete(
+                root: java.nio.file.Path,
+                source: List<String>,
+                deletionToken: String,
+            ): WorkspaceFileRollback {
+                val actual = delegate.stageDelete(root, source, deletionToken)
+                return object : WorkspaceFileRollback {
+                    override fun commit() = actual.commit()
+                    override fun rollback() = throw IllegalStateException("injected delete rollback failure")
+                }
+            }
+        }
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            fileOps = rollbackFailingOps,
+            deleteCommitter = { _, _ -> throw IllegalStateException("injected delete transaction failure") },
+            mutationJournal = journal,
+        )
+
+        val failure = runCatching { repo.permanentDelete(root.uuid, file.uuid) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(journal.openOperations).hasSize(1)
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, file.uuid)).isNotNull()
+        assertThat(File(rootA, ".recycle_bin/file").exists()).isFalse()
+        assertThat(File(rootA, ".nexara_tombstones").walkTopDown().any { it.isFile }).isTrue()
     }
 
     @Test
@@ -439,7 +560,7 @@ class WorkspaceRepositoryTest {
         assertThat(result.targetHash).isEqualTo(entry.hash)
         assertThat(result.targetEpoch).isGreaterThan(entry.updatedAt)
         assertThat(result.changed).isTrue()
-        assertThat(File(rootA, "a.txt").exists()).isFalse()
+        assertThat(File(rootA, ".recycle_bin/file").exists()).isFalse()
         assertThat(File(rootA, "b.txt").readText()).isEqualTo("A")
         assertThat(db.fileEntryDao().getByUuid(root.uuid, entry.uuid)!!.updatedAt)
             .isEqualTo(result.targetEpoch)
@@ -866,7 +987,9 @@ class WorkspaceRepositoryTest {
         val renameEntry = repo.createFileInWorkspace(root.uuid, "rename", "rename.txt", "old", root.uuid, "/rename.txt")
         val recycleEntry = repo.createFileInWorkspace(root.uuid, "recycle", "recycle.txt", "old", root.uuid, "/recycle.txt")
         val deleteEntry = repo.createFileInWorkspace(root.uuid, "delete", "delete.txt", "old", root.uuid, "/delete.txt")
-        listOf("rename.txt", "recycle.txt", "delete.txt").forEach { File(rootA, it).writeText("new-crash-state") }
+        repo.moveToRecycleBin(root.uuid, deleteEntry.uuid)
+        listOf("rename.txt", "recycle.txt", ".recycle_bin/delete")
+            .forEach { File(rootA, it).writeText("new-crash-state") }
         val delegate = TestWorkspaceFileOps()
         val reconciled = mutableListOf<String>()
         repo = WorkspaceRepository(
@@ -893,7 +1016,7 @@ class WorkspaceRepositoryTest {
         assertThat(File(rootA, "renamed.txt").readText()).isEqualTo("old")
         assertThat(File(rootA, ".recycle_bin/recycle").readText()).isEqualTo("old")
         assertThat(File(rootA, "delete.txt").exists()).isFalse()
-        assertThat(reconciled).containsExactly("rename.txt", "recycle.txt", "delete.txt")
+        assertThat(reconciled).containsExactly("rename.txt", "recycle.txt", ".recycle_bin/delete")
     }
 
     @Test
@@ -904,7 +1027,7 @@ class WorkspaceRepositoryTest {
         repo.createFileInWorkspace(root.uuid, "file-1", "a.txt", "hello", docs.uuid, "/docs/a.txt")
 
         repo.moveToRecycleBin(root.uuid, "file-1")
-        val recycled = repo.getByUuid(root.uuid, "file-1")!!
+        val recycled = db.fileEntryDao().getByUuid(root.uuid, "file-1")!!
         assertThat(recycled.inRecycleBin).isTrue()
         assertThat(File(rootA, ".recycle_bin/file-1").readText()).isEqualTo("hello")
 
@@ -966,6 +1089,7 @@ class WorkspaceRepositoryTest {
         insertSession("session-a", rootA.absolutePath)
         val root = repo.ensureSessionRoot("session-a")
         val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        repo.moveToRecycleBin(root.uuid, entry.uuid)
         repo = WorkspaceRepository(
             db.fileEntryDao(),
             db.workspaceSeqDao(),
@@ -981,7 +1105,7 @@ class WorkspaceRepositoryTest {
         }
 
         assertThat(failed).isTrue()
-        assertThat(File(rootA, "a.txt").readText()).isEqualTo("A")
+        assertThat(File(rootA, ".recycle_bin/file").readText()).isEqualTo("A")
         assertThat(db.fileEntryDao().getByUuid(root.uuid, entry.uuid)).isNotNull()
     }
 
@@ -990,6 +1114,7 @@ class WorkspaceRepositoryTest {
         insertSession("session-a", rootA.absolutePath)
         val root = repo.ensureSessionRoot("session-a")
         val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        repo.moveToRecycleBin(root.uuid, entry.uuid)
         val barrierEntered = CompletableDeferred<Unit>()
         val releaseBarrier = CompletableDeferred<Unit>()
         val committerCalled = CompletableDeferred<Unit>()
@@ -1016,7 +1141,7 @@ class WorkspaceRepositoryTest {
         barrierEntered.await()
 
         assertThat(committerCalled.isCompleted).isFalse()
-        assertThat(File(rootA, "a.txt").exists()).isFalse()
+        assertThat(File(rootA, ".recycle_bin/file").exists()).isFalse()
         releaseBarrier.complete(Unit)
         deletion.await()
 
@@ -1050,6 +1175,7 @@ class WorkspaceRepositoryTest {
         )
         queue.enqueueDocument(root.uuid, entry.uuid, entry.name, "A")
         embeddingStarted.await()
+        repo.moveToRecycleBin(root.uuid, entry.uuid)
         repo = WorkspaceRepository(
             db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
             beforeDeleteCommitted = { workspace, ids -> queue.acquireDeleteBarrier(workspace, ids) },
@@ -1095,6 +1221,7 @@ class WorkspaceRepositoryTest {
         )
         queue.enqueueDocument(root.uuid, entry.uuid, entry.name, "A")
         firstStarted.await()
+        repo.moveToRecycleBin(root.uuid, entry.uuid)
         repo = WorkspaceRepository(
             db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
             beforeDeleteCommitted = { workspace, ids -> queue.acquireDeleteBarrier(workspace, ids) },
@@ -1105,10 +1232,10 @@ class WorkspaceRepositoryTest {
 
         assertThat(failure).isInstanceOf(IllegalStateException::class.java)
         firstCancelled.await()
-        secondStarted.await()
-        assertThat(File(rootA, "a.txt").readText()).isEqualTo("A")
-        assertThat(db.vectorizationTaskDao().getByDocId(entry.uuid)).hasSize(1)
-        assertThat(queue.snapshotState().queue.single().docId).isEqualTo(entry.uuid)
+        assertThat(kotlinx.coroutines.withTimeoutOrNull(250) { secondStarted.await() }).isNull()
+        assertThat(File(rootA, ".recycle_bin/file").readText()).isEqualTo("A")
+        assertThat(db.vectorizationTaskDao().getByDocId(entry.uuid)).isEmpty()
+        assertThat(queue.snapshotState().queue).isEmpty()
         queue.shutdown()
     }
 
@@ -1173,6 +1300,7 @@ class WorkspaceRepositoryTest {
         queue.enqueueDocument(root.uuid, entry.uuid, entry.name, "A", kgStrategy = "full")
         kotlinx.coroutines.withTimeout(5_000) { graphStarted.await() }
         assertThat(db.vectorDao().getByDocId(entry.uuid)).hasSize(1)
+        repo.moveToRecycleBin(root.uuid, entry.uuid)
         repo = WorkspaceRepository(
             db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
             beforeDeleteCommitted = { workspace, ids -> queue.acquireDeleteBarrier(workspace, ids) },
@@ -1183,11 +1311,9 @@ class WorkspaceRepositoryTest {
 
         assertThat(failure).isInstanceOf(IllegalStateException::class.java)
         kotlinx.coroutines.withTimeout(5_000) { graphCancelled.await() }
-        kotlinx.coroutines.withTimeout(5_000) { rebuildCompleted.await() }
-        assertThat(File(rootA, "a.txt").readText()).isEqualTo("A")
-        assertThat(db.vectorDao().getByDocId(entry.uuid).map { it.content }).containsExactly("rebuilt")
-        assertThat(db.vectorizationTaskDao().getByDocId(entry.uuid).map { it.type })
-            .doesNotContain("document")
+        assertThat(kotlinx.coroutines.withTimeoutOrNull(250) { rebuildCompleted.await() }).isNull()
+        assertThat(File(rootA, ".recycle_bin/file").readText()).isEqualTo("A")
+        assertThat(db.vectorDao().getByDocId(entry.uuid)).isEmpty()
         queue.shutdown()
     }
 
@@ -1198,6 +1324,7 @@ class WorkspaceRepositoryTest {
         val folder = repo.createDirectoryInWorkspace(root.uuid, "folder", "folder", root.uuid, "/folder")
         val file = repo.createFileInWorkspace(root.uuid, "child", "a.txt", "A", folder.uuid, "/folder/a.txt")
         seedDerivedArtifacts(root.uuid, file.uuid)
+        repo.moveToRecycleBin(root.uuid, folder.uuid)
         val deletion = WorkspaceDeletionTransaction(db)
         repo = WorkspaceRepository(
             db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
@@ -1231,6 +1358,8 @@ class WorkspaceRepositoryTest {
                 )
             }
         }
+        repo.moveToRecycleBin(root.uuid, single.uuid)
+        repo.moveToRecycleBin(root.uuid, folder.uuid)
         var barrierCommitted = false
         val callbackIds = mutableListOf<List<String>>()
         repo = WorkspaceRepository(
@@ -1272,6 +1401,7 @@ class WorkspaceRepositoryTest {
             root.uuid, file.uuid, file.hash, file.updatedAt,
         )
         runCatching { coordinator.publish(target) }
+        repo.moveToRecycleBin(root.uuid, file.uuid)
         var aborted = false
         var callbackCalls = 0
         repo = WorkspaceRepository(
@@ -1304,6 +1434,7 @@ class WorkspaceRepositoryTest {
         insertSession("session-a", rootA.absolutePath)
         val root = repo.ensureSessionRoot("session-a")
         val file = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        repo.moveToRecycleBin(root.uuid, file.uuid)
         repo = WorkspaceRepository(
             db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
             deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
@@ -1315,7 +1446,7 @@ class WorkspaceRepositoryTest {
         repo.permanentDelete(root.uuid, file.uuid)
 
         assertThat(db.fileEntryDao().getByUuid(root.uuid, file.uuid)).isNull()
-        assertThat(File(rootA, "a.txt").exists()).isFalse()
+        assertThat(File(rootA, ".recycle_bin/file").exists()).isFalse()
     }
 
     @Test
@@ -1324,6 +1455,7 @@ class WorkspaceRepositoryTest {
         val root = repo.ensureSessionRoot("session-a")
         val file = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
         seedDerivedArtifacts(root.uuid, file.uuid)
+        repo.moveToRecycleBin(root.uuid, file.uuid)
         val deletion = WorkspaceDeletionTransaction(db) { throw IllegalStateException("injected transaction failure") }
         var abortObservedPhysicalRollback = false
         repo = WorkspaceRepository(
@@ -1334,7 +1466,7 @@ class WorkspaceRepositoryTest {
                     override suspend fun awaitReady() = Unit
                     override suspend fun commit() = Unit
                     override suspend fun abort() {
-                        abortObservedPhysicalRollback = File(rootA, "a.txt").exists()
+                        abortObservedPhysicalRollback = File(rootA, ".recycle_bin/file").exists()
                     }
                 }
             },
@@ -1343,11 +1475,11 @@ class WorkspaceRepositoryTest {
         val failure = runCatching { repo.permanentDelete(root.uuid, file.uuid) }.exceptionOrNull()
 
         assertThat(failure).isInstanceOf(IllegalStateException::class.java)
-        assertThat(File(rootA, "a.txt").readText()).isEqualTo("A")
+        assertThat(File(rootA, ".recycle_bin/file").readText()).isEqualTo("A")
         assertThat(db.fileEntryDao().getByUuid(root.uuid, file.uuid)).isNotNull()
-        assertThat(db.vectorDao().getByDocId(file.uuid)).hasSize(1)
+        assertThat(db.vectorDao().getByDocId(file.uuid)).isEmpty()
         assertThat(db.documentTagDao().getByDocId(file.uuid)).hasSize(1)
-        assertThat(db.vectorizationTaskDao().getByDocId(file.uuid)).hasSize(1)
+        assertThat(db.vectorizationTaskDao().getByDocId(file.uuid)).isEmpty()
         assertThat(abortObservedPhysicalRollback).isTrue()
     }
 
@@ -1382,6 +1514,7 @@ class WorkspaceRepositoryTest {
         insertSession("session-a", rootA.absolutePath)
         val root = repo.ensureSessionRoot("session-a")
         val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
+        repo.moveToRecycleBin(root.uuid, entry.uuid)
         val secure = TestWorkspaceFileOps()
         val cleanupFailingOps = object : WorkspaceFileOps by secure {
             override fun stageDelete(
@@ -1401,8 +1534,9 @@ class WorkspaceRepositoryTest {
             deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
         )
 
-        repo.permanentDelete(root.uuid, entry.uuid)
+        val failure = runCatching { repo.permanentDelete(root.uuid, entry.uuid) }.exceptionOrNull()
 
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
         assertThat(db.fileEntryDao().getByUuid(root.uuid, entry.uuid)).isNull()
         assertThat(File(rootA, "a.txt").exists()).isFalse()
         assertThat(File(rootA, ".nexara_tombstones").walkTopDown().any { it.isFile }).isTrue()
@@ -1452,7 +1586,7 @@ class WorkspaceRepositoryTest {
         ops.stageDelete(rootA.toPath(), listOf("bad.txt"), workspaceDeletionToken(bad.uuid))
         ops.stageDelete(rootA.toPath(), listOf("good.txt"), workspaceDeletionToken(good.uuid))
         db.fileEntryDao().update(bad.copy(materializedPath = "/../outside.txt"))
-        val outside = rootA.parentFile.resolve("outside.txt")
+        val outside = rootA.parentFile!!.resolve("outside.txt")
         outside.delete()
 
         val report = repo.cleanupPendingTombstones(root.uuid)
@@ -1647,7 +1781,7 @@ class WorkspaceRepositoryTest {
     }
 
     @Test
-    fun `write and delete from different repositories serialize on canonical root`() = runBlocking<Unit> {
+    fun `write and recycle from different repositories serialize on canonical root`() = runBlocking<Unit> {
         insertSession("session-a", rootA.absolutePath)
         val root = repo.ensureSessionRoot("session-a")
         val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "old", root.uuid, "/a.txt")
@@ -1672,14 +1806,179 @@ class WorkspaceRepositoryTest {
             fileRepository.writeFileAtomic(root.uuid, entry.uuid, "new", "session-a", entry.hash)
         }
         assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue()
-        val delete = async(Dispatchers.Default) { anotherWorkspace.permanentDelete(root.uuid, entry.uuid) }
+        val delete = async(Dispatchers.Default) { anotherWorkspace.moveToRecycleBin(root.uuid, entry.uuid) }
         delay(100)
         assertThat(delete.isCompleted).isFalse()
         release.countDown()
         write.await()
         delete.await()
 
-        assertThat(File(rootA, "a.txt").exists()).isFalse()
-        assertThat(db.fileEntryDao().getByUuid(root.uuid, entry.uuid)).isNull()
+        assertThat(File(rootA, ".recycle_bin/file").readText()).isEqualTo("new")
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, entry.uuid)?.inRecycleBin).isTrue()
+    }
+
+    @Test
+    fun `active文件直接永久删除返回稳定拒绝且零副作用`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(root.uuid, "active", "active.txt", "keep", root.uuid, "/active.txt")
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
+        )
+
+        val failure = runCatching { repo.permanentDelete(root.uuid, entry.uuid) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(WorkspaceLifecycleException::class.java)
+        assertThat((failure as WorkspaceLifecycleException).code)
+            .isEqualTo(WorkspaceLifecycleErrorCode.ACTIVE_PERMANENT_DELETE_FORBIDDEN)
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, entry.uuid)).isNotNull()
+        assertThat(File(rootA, "active.txt").readText()).isEqualTo("keep")
+    }
+
+    @Test
+    fun `creation rollback授权仅允许未确认的流式新建文件`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val rollback = repo.createFileInWorkspaceStreaming(
+            root.uuid, "rollback", "rollback.txt", "text/plain", root.uuid, "/rollback.txt", 32,
+        ) { it.write("temp".toByteArray()) }
+        val confirmed = repo.createFileInWorkspaceStreaming(
+            root.uuid, "confirmed", "confirmed.txt", "text/plain", root.uuid, "/confirmed.txt", 32,
+        ) { it.write("keep".toByteArray()) }
+        repo.confirmCreatedEntry(root.uuid, confirmed.uuid)
+
+        repo.rollbackCreatedEntry(root.uuid, rollback.uuid)
+        val rejected = runCatching {
+            repo.rollbackCreatedEntry(root.uuid, confirmed.uuid)
+        }.exceptionOrNull()
+
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, rollback.uuid)).isNull()
+        assertThat(File(rootA, "rollback.txt").exists()).isFalse()
+        assertThat(rejected).isInstanceOf(WorkspaceLifecycleException::class.java)
+        assertThat((rejected as WorkspaceLifecycleException).code)
+            .isEqualTo(WorkspaceLifecycleErrorCode.CREATION_ROLLBACK_NOT_AUTHORIZED)
+        assertThat(File(rootA, "confirmed.txt").readText()).isEqualTo("keep")
+    }
+
+    @Test
+    fun `回收文件不进入普通uuid路径子列表子树和搜索查询`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val entry = repo.createFileInWorkspace(
+            root.uuid,
+            "recycled-invisible",
+            "hidden.txt",
+            "secret",
+            root.uuid,
+            "/hidden.txt",
+        )
+        seedDerivedArtifacts(root.uuid, entry.uuid)
+
+        repo.moveToRecycleBin(root.uuid, entry.uuid)
+
+        assertThat(repo.getByUuid(root.uuid, entry.uuid)).isNull()
+        assertThat(repo.getByMaterializedPath(root.uuid, "/hidden.txt")).isNull()
+        assertThat(repo.observeChildren(root.uuid, root.uuid).first()).isEmpty()
+        assertThat(repo.getSubtree(root.uuid, "/")).containsExactly(root)
+        assertThat(repo.searchByName(root.uuid, "hidden").first()).isEmpty()
+        assertThat(db.vectorDao().getByDocId(entry.uuid)).isEmpty()
+        assertThat(db.kgEdgeDao().getByDocId(entry.uuid)).isEmpty()
+        assertThat(db.vectorizationTaskDao().getByDocId(entry.uuid)).isEmpty()
+        assertThat(repo.observeRecycleBin(root.uuid).first().map { it.uuid }).contains(entry.uuid)
+    }
+
+    @Test
+    fun `回收子树同步清理派生数据且恢复只提交一次精确重建目标`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val folder = repo.createDirectoryInWorkspace(root.uuid, "folder", "folder", root.uuid, "/folder")
+        val child = repo.createFileInWorkspace(root.uuid, "child", "a.txt", "A", folder.uuid, "/folder/a.txt")
+        seedDerivedArtifacts(root.uuid, child.uuid)
+        val lifecycle = WorkspaceLifecycleTransaction(db)
+        val restoredTargets = mutableListOf<RenameIndexTarget>()
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            recycleCommitter = lifecycle::recycle,
+            restoreCommitter = lifecycle::restore,
+            afterRestoreCommitted = { _, targets -> restoredTargets += targets },
+        )
+
+        repo.moveToRecycleBin(root.uuid, folder.uuid)
+
+        assertThat(db.vectorDao().getByDocId(child.uuid)).isEmpty()
+        assertThat(db.kgEdgeDao().getByDocId(child.uuid)).isEmpty()
+        assertThat(db.kgNodeDao().getByIds(listOf("source-${child.uuid}", "target-${child.uuid}"))).isEmpty()
+        assertThat(db.vectorizationTaskDao().getByDocId(child.uuid)).isEmpty()
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, child.uuid)?.inRecycleBin).isTrue()
+
+        repo.restoreFromRecycleBin(root.uuid, folder.uuid)
+
+        assertThat(restoredTargets.map { it.fileUuid }).containsExactly(child.uuid)
+        assertThat(restoredTargets.single().targetHash).isEqualTo(child.hash)
+        assertThat(db.fileEntryDao().getByUuid(root.uuid, child.uuid)?.inRecycleBin).isFalse()
+    }
+
+    @Test
+    fun `永久删除回收子树显式清理版本记录和物理快照`() = runBlocking<Unit> {
+        insertSession("session-a", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("session-a")
+        val folder = repo.createDirectoryInWorkspace(root.uuid, "folder", "folder", root.uuid, "/folder")
+        val child = repo.createFileInWorkspace(root.uuid, "child", "a.txt", "A", folder.uuid, "/folder/a.txt")
+        val fileRepo = FileOperationRepository(db.fileEntryDao(), db.fileVersionDao(), TestWorkspaceFileOps())
+        fileRepo.writeFileAtomic(root.uuid, child.uuid, "B", "session-a", child.hash)
+        val version = db.fileVersionDao().getByFile(root.uuid, child.uuid).single()
+        assertThat(File(version.contentPath).isFile).isTrue()
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
+            deleteCommitter = WorkspaceDeletionTransaction(db)::delete,
+        )
+
+        repo.moveToRecycleBin(root.uuid, folder.uuid)
+        repo.permanentDelete(root.uuid, folder.uuid)
+
+        assertThat(db.fileVersionDao().getByFile(root.uuid, child.uuid)).isEmpty()
+        assertThat(File(version.contentPath).exists()).isFalse()
+    }
+}
+
+private class RecordingWorkspaceFileMutationJournal : WorkspaceFileMutationJournal {
+    val preparedTypes = mutableListOf<WorkspaceMutationType>()
+    val openOperations = linkedSetOf<String>()
+    val markedCommitted = mutableListOf<String>()
+    val completed = mutableListOf<String>()
+    private var nextId = 0
+
+    override suspend fun prepare(
+        workspaceRootUuid: String,
+        operationType: WorkspaceMutationType,
+        sourceRelativePath: String,
+        targetRelativePath: String,
+        databaseTargetUuid: String,
+        rootIdentity: String,
+    ): StagedWorkspaceFileMutation {
+        preparedTypes += operationType
+        val id = "record-${++nextId}"
+        openOperations += id
+        return StagedWorkspaceFileMutation(id, workspaceRootUuid, operationType)
+    }
+
+    override suspend fun commitDatabase(
+        staged: StagedWorkspaceFileMutation,
+        mutation: suspend () -> Unit,
+    ) {
+        check(staged.operationId in openOperations)
+        mutation()
+        markedCommitted += staged.operationId
+    }
+
+    override suspend fun complete(staged: StagedWorkspaceFileMutation) {
+        check(staged.operationId in openOperations)
+        completed += staged.operationId
+        openOperations -= staged.operationId
+    }
+
+    override suspend fun abort(staged: StagedWorkspaceFileMutation) {
+        openOperations -= staged.operationId
     }
 }

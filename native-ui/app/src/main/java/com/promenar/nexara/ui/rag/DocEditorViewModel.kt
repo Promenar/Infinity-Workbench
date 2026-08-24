@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.rag.FileIndexEvent
 import com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator
+import com.promenar.nexara.data.repository.WorkspaceTextPolicyException
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
@@ -45,6 +46,11 @@ enum class DocEditorFailureCode {
     SaveCancelled,
 }
 
+enum class DocEditorReadonlyReason {
+    Oversize,
+    UnsupportedContent,
+}
+
 data class DocEditorUiState(
     val phase: DocEditorPhase = DocEditorPhase.Loading,
     val workspaceRootUuid: String = "",
@@ -62,6 +68,7 @@ data class DocEditorUiState(
     val titleDirty: Boolean = false,
     val contentDirty: Boolean = false,
     val contentAccess: DocEditorContentAccess = DocEditorContentAccess.Editable,
+    val readonlyReason: DocEditorReadonlyReason? = null,
     val warningDismissed: Boolean = false,
     val hasLoadedDocument: Boolean = false,
     val failureCode: DocEditorFailureCode? = null,
@@ -157,6 +164,7 @@ class DocEditorViewModel(
                             lastModified = fileEntry.updatedAt,
                             sizeBytes = fileEntry.sizeBytes,
                             contentAccess = DocEditorContentAccess.MetadataOnly,
+                            readonlyReason = DocEditorReadonlyReason.Oversize,
                             hasLoadedDocument = true,
                             indexPendingTargets = readyPendingTargets,
                             indexQueueFailed = readyPendingTargets.isNotEmpty(),
@@ -164,7 +172,30 @@ class DocEditorViewModel(
                     }
                     return@launch
                 }
-                val result = fileOperationRepository.readFileRange(workspaceRootUuid, uuid)
+                val result = try {
+                    fileOperationRepository.readFileRange(workspaceRootUuid, uuid)
+                } catch (_: WorkspaceTextPolicyException) {
+                    val readyPendingTargets = sharedPendingTargets(workspaceRootUuid, uuid)
+                    updateCurrentLoad(generation, workspaceRootUuid, uuid) {
+                        DocEditorUiState(
+                            phase = DocEditorPhase.Ready,
+                            workspaceRootUuid = workspaceRootUuid,
+                            documentId = uuid,
+                            documentEpoch = generation,
+                            title = fileEntry.name,
+                            persistedTitle = fileEntry.name,
+                            currentHash = fileEntry.hash,
+                            lastModified = fileEntry.updatedAt,
+                            sizeBytes = fileEntry.sizeBytes,
+                            contentAccess = DocEditorContentAccess.MetadataOnly,
+                            readonlyReason = DocEditorReadonlyReason.UnsupportedContent,
+                            hasLoadedDocument = true,
+                            indexPendingTargets = readyPendingTargets,
+                            indexQueueFailed = readyPendingTargets.isNotEmpty(),
+                        )
+                    }
+                    return@launch
+                }
                 val statistics = analyzeDocEditorText(result.content)
                 val readyPendingTargets = sharedPendingTargets(workspaceRootUuid, uuid)
                 updateCurrentLoad(generation, workspaceRootUuid, uuid) {

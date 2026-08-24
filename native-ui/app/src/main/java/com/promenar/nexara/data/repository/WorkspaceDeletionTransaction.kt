@@ -15,6 +15,9 @@ class WorkspaceDeletionTransaction(
             fileUuids.forEach { fileUuid ->
                 artifacts.clear(workspaceRootUuid, fileUuid, deleteTags = true)
             }
+            database.vectorizationTaskDao().deleteByWorkspaceFiles(workspaceRootUuid, fileUuids)
+            database.fileVersionDao().deleteByFiles(workspaceRootUuid, fileUuids)
+            database.kgJitCacheDao().deleteAll()
             beforeFileDelete()
             database.fileEntryDao().deleteByUuids(workspaceRootUuid, fileUuids)
         }

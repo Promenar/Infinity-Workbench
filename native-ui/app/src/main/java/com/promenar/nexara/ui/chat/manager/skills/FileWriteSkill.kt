@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.data.repository.WorkspaceTextPolicyException
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.WriteResult
@@ -33,7 +34,12 @@ class FileWriteSkill(
         val expectedHash = args.stringArgument("expectedHash")
             ?: return ToolResult("err", "缺少 expectedHash", "error")
 
-        return when (val result = fileOpRepo.writeFileAtomic(context.workspaceRootUuid, uuid, content, context.sessionId, expectedHash)) {
+        val result = try {
+            fileOpRepo.writeFileAtomic(context.workspaceRootUuid, uuid, content, context.sessionId, expectedHash)
+        } catch (failure: WorkspaceTextPolicyException) {
+            return workspaceTextFailureResult("write_file", failure)
+        }
+        return when (result) {
             is WriteResult.Success -> ToolResult(
                 "write_file_${System.currentTimeMillis()}",
                 if (result.indexQueued) {

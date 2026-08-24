@@ -99,6 +99,7 @@
     <string name="shared_loading">加载中…</string>
     <string name="shared_error_generic">出了点问题</string>
     <string name="shared_btn_delete">删除</string>
+    <string name="shared_btn_move_to_recycle_bin">移入回收站</string>
     <string name="shared_btn_save">保存</string>
     <string name="shared_btn_edit">编辑</string>
     <string name="shared_btn_add">添加</string>
@@ -186,6 +187,7 @@
     <string name="files_time_days_ago">%1$d 天前</string>
     <string name="shared_confirm_delete_title">确认删除</string>
     <string name="shared_action_cannot_undo">此操作无法撤销。</string>
+    <string name="shared_action_move_to_recycle_bin">之后可从回收站恢复这些项目。</string>
     <string name="shared_btn_copy">复制</string>
     <string name="shared_btn_regenerate">重新生成</string>
 
@@ -988,7 +990,7 @@
     <string name="rag_home_extract_kg">抽取知识图谱</string>
     <string name="rag_home_extract_kg_full">全量抽取（所有分块）</string>
     <string name="rag_home_extract_kg_summary">摘要优先（采样抽取）</string>
-    <string name="rag_home_delete_confirm_title">删除 %1$d 项？</string>
+    <string name="rag_home_delete_confirm_title">将 %1$d 项移入回收站？</string>
     <string name="rag_home_docs_count">%1$d 文档</string>
 
     <!-- RagFolderScreen -->
@@ -998,7 +1000,7 @@
     <string name="rag_folder_empty_subtitle">上传文档以开始构建知识库。</string>
     <string name="rag_folder_upload">上传文档</string>
     <string name="rag_folder_cd_open_document">打开 %1$s</string>
-    <string name="rag_folder_delete_confirm_title">删除 %1$d 个文档？</string>
+    <string name="rag_folder_delete_confirm_title">将 %1$d 个文档移入回收站？</string>
 
     <!-- DocEditorScreen -->
     <string name="doc_editor_screen_title">文档</string>
@@ -1041,6 +1043,7 @@
     <string name="doc_editor_missing_after_save_title">保存期间文档已消失</string>
     <string name="doc_editor_missing_after_save_description">本地内容已保留，但工作区中的原文档已不存在。</string>
     <string name="doc_editor_large_file_warning">为保护内存与编辑安全，系统没有读取完整正文。</string>
+    <string name="doc_editor_unsupported_content_warning">此文件类型仅支持只读使用，请使用兼容的查看器或导入工具。</string>
     <string name="doc_editor_large_file_read_only_title">大文件安全模式</string>
     <string name="doc_editor_large_file_read_only_description">该文档大小为 %1$s，超过 1 MiB。当前仅显示元数据，编辑、分屏和保存均已禁用。</string>
     <string name="doc_editor_large_file_status">大文件 · 仅元数据</string>

@@ -199,7 +199,7 @@ class VectorizationQueueReferenceTest {
         val taskDao = mockk<VectorizationTaskDao>(relaxed = true)
         stubTargetUpsert(taskDao)
         val fileDao = mockk<FileEntryDao>()
-        coEvery { fileDao.getByUuid(ROOT, DOC) } returns com.promenar.nexara.data.local.db.entity.FileEntry(
+        coEvery { fileDao.getActiveByUuid(ROOT, DOC) } returns com.promenar.nexara.data.local.db.entity.FileEntry(
             uuid = DOC, workspaceRootUuid = ROOT, parentUuid = ROOT, name = "note.txt", hash = "hash-v1",
             mimeType = "text/plain", physicalRootPath = "/tmp", materializedPath = "/note.txt",
             createdAt = 1, updatedAt = 1,
@@ -229,7 +229,7 @@ class VectorizationQueueReferenceTest {
         val taskDao = mockk<VectorizationTaskDao>(relaxed = true)
         stubTargetUpsert(taskDao)
         val fileDao = mockk<FileEntryDao>()
-        coEvery { fileDao.getByUuid(ROOT, DOC) } returns com.promenar.nexara.data.local.db.entity.FileEntry(
+        coEvery { fileDao.getActiveByUuid(ROOT, DOC) } returns com.promenar.nexara.data.local.db.entity.FileEntry(
             uuid = DOC, workspaceRootUuid = ROOT, parentUuid = ROOT, name = "note.txt", hash = "hash-v1",
             mimeType = "text/plain", physicalRootPath = "/tmp", materializedPath = "/note.txt",
             createdAt = 1, updatedAt = 1,
@@ -420,7 +420,7 @@ class VectorizationQueueReferenceTest {
         coEvery { taskDao.getAttentionTasks() } returns listOf(failed)
         coJustRun { taskDao.delete(failed) }
         val fileDao = mockk<FileEntryDao>()
-        coEvery { fileDao.getByUuid(ROOT, DOC) } returns null
+        coEvery { fileDao.getActiveByUuid(ROOT, DOC) } returns null
         coEvery { fileDao.getUnvectorizedSupportedFiles(any()) } returns emptyList()
         val vectorDao = mockk<VectorDao>()
         coJustRun { vectorDao.deleteByDocId(DOC) }

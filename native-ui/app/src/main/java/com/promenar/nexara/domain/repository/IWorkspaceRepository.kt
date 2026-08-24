@@ -50,6 +50,8 @@ interface IWorkspaceRepository {
     suspend fun moveToRecycleBin(workspaceRootUuid: String, uuid: String)
     suspend fun restoreFromRecycleBin(workspaceRootUuid: String, uuid: String)
     suspend fun permanentDelete(workspaceRootUuid: String, uuid: String)
+    suspend fun rollbackCreatedEntry(workspaceRootUuid: String, uuid: String)
+    suspend fun confirmCreatedEntry(workspaceRootUuid: String, uuid: String)
     suspend fun emptyRecycleBin(workspaceRootUuid: String)
     suspend fun updateParent(workspaceRootUuid: String, uuid: String, newParentUuid: String)
     suspend fun rename(

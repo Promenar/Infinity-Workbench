@@ -99,6 +99,7 @@
     <string name="shared_loading">Loading…</string>
     <string name="shared_error_generic">Something went wrong</string>
     <string name="shared_btn_delete">Delete</string>
+    <string name="shared_btn_move_to_recycle_bin">Move to recycle bin</string>
     <string name="shared_btn_save">Save</string>
     <string name="shared_btn_edit">Edit</string>
     <string name="shared_btn_add">Add</string>
@@ -186,6 +187,7 @@
     <string name="files_time_days_ago">%1$d days ago</string>
     <string name="shared_confirm_delete_title">Confirm Delete</string>
     <string name="shared_action_cannot_undo">This action cannot be undone.</string>
+    <string name="shared_action_move_to_recycle_bin">You can restore these items later from the recycle bin.</string>
     <string name="shared_btn_copy">Copy</string>
     <string name="shared_btn_regenerate">Regenerate</string>
 
@@ -981,7 +983,7 @@
     <string name="rag_home_extract_kg">Extract Knowledge Graph</string>
     <string name="rag_home_extract_kg_full">Full Extraction (all chunks)</string>
     <string name="rag_home_extract_kg_summary">Summary-first (sampled)</string>
-    <string name="rag_home_delete_confirm_title">Delete %1$d items?</string>
+    <string name="rag_home_delete_confirm_title">Move %1$d items to the recycle bin?</string>
     <string name="rag_home_docs_count">%1$d docs</string>
 
     <!-- RagFolderScreen -->
@@ -991,7 +993,7 @@
     <string name="rag_folder_empty_subtitle">Upload documents to start building your knowledge base.</string>
     <string name="rag_folder_upload">Upload Document</string>
     <string name="rag_folder_cd_open_document">Open %1$s</string>
-    <string name="rag_folder_delete_confirm_title">Delete %1$d documents?</string>
+    <string name="rag_folder_delete_confirm_title">Move %1$d documents to the recycle bin?</string>
 
     <!-- DocEditorScreen -->
     <string name="doc_editor_screen_title">Document</string>
@@ -1034,6 +1036,7 @@
     <string name="doc_editor_missing_after_save_title">Document disappeared while saving</string>
     <string name="doc_editor_missing_after_save_description">Your local content is preserved, but the workspace document no longer exists.</string>
     <string name="doc_editor_large_file_warning">Full content was not loaded to protect memory and editing safety.</string>
+    <string name="doc_editor_unsupported_content_warning">This file type is read-only here. Use a compatible viewer or import tool.</string>
     <string name="doc_editor_large_file_read_only_title">Large file safety mode</string>
     <string name="doc_editor_large_file_read_only_description">This %1$s document is larger than 1 MiB. Only metadata is shown; editing, split view, and saving are disabled.</string>
     <string name="doc_editor_large_file_status">Large file · Metadata only</string>

@@ -7,6 +7,8 @@ import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.PatchResult
 import com.promenar.nexara.domain.repository.ReadResult
 import com.promenar.nexara.domain.repository.WriteResult
+import com.promenar.nexara.data.repository.WorkspaceTextErrorCode
+import com.promenar.nexara.data.repository.WorkspaceTextPolicyException
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -77,6 +79,34 @@ class FileSkillsScopeTest {
         FileSearchSkill(workspace).execute(skillArgs("query" to "x"), context)
 
         verify(exactly = 2) { workspace.observeChildren("root-a", "root-a") }
+    }
+
+    @Test
+    fun `read write diff文本策略拒绝返回稳定错误码与缩小范围建议`() = runTest {
+        val operations = mockk<IFileOperationRepository>()
+        val failure = WorkspaceTextPolicyException(
+            WorkspaceTextErrorCode.INPUT_TOO_LARGE,
+            "文件超过上限，请缩小读取范围。",
+        )
+        coEvery { operations.readFileRange(any(), any(), any(), any()) } throws failure
+        coEvery { operations.writeFileAtomic(any(), any(), any(), any(), any()) } throws failure
+        coEvery { operations.diffFile(any(), any(), any()) } throws failure
+
+        val results = listOf(
+            FileReadSkill(operations).execute(skillArgs("uuid" to "file"), context),
+            FileWriteSkill(operations).execute(
+                skillArgs("uuid" to "file", "content" to "new", "expectedHash" to "hash"),
+                context,
+            ),
+            FileDiffSkill(operations).execute(skillArgs("uuid" to "file"), context),
+        )
+
+        results.forEach { result ->
+            assertThat(result.status).isEqualTo("error")
+            assertThat(result.content).contains("缩小")
+            assertThat(json.parseToJsonElement(result.data!!).jsonObject["errorCode"]?.jsonPrimitive?.content)
+                .isEqualTo("INPUT_TOO_LARGE")
+        }
     }
 
     @Test

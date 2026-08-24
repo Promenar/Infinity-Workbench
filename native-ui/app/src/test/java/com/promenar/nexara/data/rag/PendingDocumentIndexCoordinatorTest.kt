@@ -243,6 +243,26 @@ class PendingDocumentIndexCoordinatorTest {
     }
 
     @Test
+    fun `回收清理pending但不永久封禁uuid恢复后可登记精确新目标`() = runTest {
+        val delegated = mutableListOf<FileIndexEvent>()
+        var fail = true
+        val coordinator = PendingDocumentIndexCoordinator(FileIndexEventSink { event ->
+            delegated += event
+            if (fail) throw IllegalStateException("hold pending")
+        })
+        val beforeRecycle = changed(hash = "before", epoch = 31L)
+        runCatching { coordinator.publish(beforeRecycle) }
+
+        coordinator.clearForRecycle(ROOT, listOf(FILE))
+
+        assertThat(coordinator.snapshot()).isEmpty()
+        fail = false
+        val restored = changed(hash = "restored", epoch = 32L)
+        coordinator.publish(restored)
+        assertThat(delegated).containsExactly(beforeRecycle, restored).inOrder()
+    }
+
+    @Test
     fun `retry普通失败返回false成功精确移除且不会删除期间覆盖的newer`() = runTest {
         val older = changed(hash = "retry-old", epoch = 8L)
         val newer = changed(hash = "retry-new", epoch = 9L)

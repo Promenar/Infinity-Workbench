@@ -516,7 +516,7 @@ private fun BatchActionBar(
                         modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
                     ) {
                         Text(
-                            stringResource(R.string.shared_btn_delete),
+                            stringResource(R.string.shared_btn_move_to_recycle_bin),
                             style = NexaraTypography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
                         )
@@ -685,7 +685,7 @@ private fun FileTreeRow(
             }
             if (onDelete != null) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.shared_btn_delete), color = MaterialTheme.colorScheme.error) },
+                    text = { Text(stringResource(R.string.shared_btn_move_to_recycle_bin), color = MaterialTheme.colorScheme.error) },
                     onClick = { showMenu = false; onDelete(file.uuid) },
                     modifier = Modifier.testTag("files_panel_delete_action_${file.uuid}"),
                 )

@@ -161,7 +161,7 @@ class SharedFileImporterTest {
         )
 
         assertThat(result.rejected.single().reason).isEqualTo(ShareRejectReason.IndexScheduleFailed)
-        coVerify(exactly = 1) { repository.permanentDelete(ROOT, "entry-rollback.txt") }
+        coVerify(exactly = 1) { repository.rollbackCreatedEntry(ROOT, "entry-rollback.txt") }
     }
 
     @Test
@@ -270,7 +270,7 @@ class SharedFileImporterTest {
         val result = importer.import(request(listOf(uri)), ROOT)
 
         assertThat(result.rejected.single().reason).isEqualTo(ShareRejectReason.PermissionDenied)
-        coVerify(exactly = 1) { repository.permanentDelete(ROOT, "entry-new-security.txt") }
+        coVerify(exactly = 1) { repository.rollbackCreatedEntry(ROOT, "entry-new-security.txt") }
     }
 
     @Test
@@ -329,7 +329,8 @@ class SharedFileImporterTest {
                 materializedPath = materializedPath,
             )
         }
-        coJustRun { repository.permanentDelete(any(), any()) }
+        coJustRun { repository.rollbackCreatedEntry(any(), any()) }
+        coJustRun { repository.confirmCreatedEntry(any(), any()) }
         return repository
     }
 

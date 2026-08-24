@@ -785,7 +785,7 @@ class RagViewModel(
                             } else {
                                 listOfNotNull(entry)
                             }
-                            workspaceRepository.permanentDelete(rootUuid, id)
+                            workspaceRepository.moveToRecycleBin(rootUuid, id)
                             val runtimeIds = entriesToClean.filterNot { it.isDirectory }.map { it.uuid }
                                 .ifEmpty { if (entry?.isDirectory == true) emptyList() else listOf(id) }
                             runtimeIds.forEach(::clearDocumentRuntimeState)

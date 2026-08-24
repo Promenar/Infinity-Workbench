@@ -39,45 +39,45 @@ interface VectorDao {
     @Query("DELETE FROM vectors WHERE session_id = :sessionId AND json_extract(metadata, '$.type') = 'memory' AND start_message_id >= :startMsgId AND end_message_id <= :endMsgId")
     suspend fun deleteMemoryRange(sessionId: String, startMsgId: String, endMsgId: String): Int
 
-    @Query("SELECT * FROM vectors WHERE id = :vectorId")
+    @Query("SELECT * FROM vectors WHERE id = :vectorId AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getById(vectorId: String): VectorEntity?
 
-    @Query("SELECT * FROM vectors WHERE doc_id = :docId")
+    @Query("SELECT * FROM vectors WHERE doc_id = :docId AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getByDocId(docId: String): List<VectorEntity>
 
-    @Query("SELECT * FROM vectors WHERE session_id = :sessionId")
+    @Query("SELECT * FROM vectors WHERE session_id = :sessionId AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getBySessionId(sessionId: String): List<VectorEntity>
 
-    @Query("SELECT * FROM vectors")
+    @Query("SELECT * FROM vectors WHERE file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0)")
     suspend fun getAll(): List<VectorEntity>
 
-    @Query("SELECT * FROM vectors WHERE doc_id IN (:docIds)")
+    @Query("SELECT * FROM vectors WHERE doc_id IN (:docIds) AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getByDocIds(docIds: List<String>): List<VectorEntity>
 
     // 向量 metadata 由应用统一编码为以根字段 type 开头的紧凑 JSON；使用标准 substr
     // 避免依赖并非所有 SQLite runtime 都编译启用的 JSON1 扩展。
-    @Query("SELECT * FROM vectors WHERE substr(metadata, 1, length('{\"type\":\"') + length(:type) + 1) = '{\"type\":\"' || :type || '\"'")
+    @Query("SELECT * FROM vectors WHERE substr(metadata, 1, length('{\"type\":\"') + length(:type) + 1) = '{\"type\":\"' || :type || '\"' AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getByType(type: String): List<VectorEntity>
 
-    @Query("SELECT * FROM vectors WHERE session_id = :sessionId AND substr(metadata, 1, length('{\"type\":\"') + length(:type) + 1) = '{\"type\":\"' || :type || '\"'")
+    @Query("SELECT * FROM vectors WHERE session_id = :sessionId AND substr(metadata, 1, length('{\"type\":\"') + length(:type) + 1) = '{\"type\":\"' || :type || '\"' AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getBySessionIdAndType(sessionId: String, type: String): List<VectorEntity>
 
-    @Query("SELECT * FROM vectors WHERE substr(metadata, 1, length('{\"type\":\"') + length(:type) + 1) = '{\"type\":\"' || :type || '\"' AND doc_id IN (:docIds)")
+    @Query("SELECT * FROM vectors WHERE substr(metadata, 1, length('{\"type\":\"') + length(:type) + 1) = '{\"type\":\"' || :type || '\"' AND doc_id IN (:docIds) AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getByTypeAndDocIds(type: String, docIds: List<String>): List<VectorEntity>
 
-    @Query("SELECT vectors.* FROM vectors_fts JOIN vectors ON vectors.rowid = vectors_fts.rowid WHERE vectors_fts MATCH :query")
+    @Query("SELECT vectors.* FROM vectors_fts JOIN vectors ON vectors.rowid = vectors_fts.rowid WHERE vectors_fts MATCH :query AND (vectors.file_uuid IS NULL OR vectors.file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun searchFts(query: String): List<VectorEntity>
 
-    @Query("SELECT vectors.* FROM vectors_fts JOIN vectors ON vectors.rowid = vectors_fts.rowid WHERE vectors_fts MATCH :query AND vectors.session_id = :sessionId")
+    @Query("SELECT vectors.* FROM vectors_fts JOIN vectors ON vectors.rowid = vectors_fts.rowid WHERE vectors_fts MATCH :query AND vectors.session_id = :sessionId AND (vectors.file_uuid IS NULL OR vectors.file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun searchFtsBySession(query: String, sessionId: String): List<VectorEntity>
 
-    @Query("SELECT vectors.* FROM vectors_fts JOIN vectors ON vectors.rowid = vectors_fts.rowid WHERE vectors_fts MATCH :query AND vectors.doc_id IN (:docIds)")
+    @Query("SELECT vectors.* FROM vectors_fts JOIN vectors ON vectors.rowid = vectors_fts.rowid WHERE vectors_fts MATCH :query AND vectors.doc_id IN (:docIds) AND (vectors.file_uuid IS NULL OR vectors.file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun searchFtsByDocIds(query: String, docIds: List<String>): List<VectorEntity>
 
     @Query("SELECT vectors.* FROM vectors_fts JOIN vectors ON vectors.rowid = vectors_fts.rowid WHERE vectors_fts MATCH :query AND vectors.doc_id IS NULL")
     suspend fun searchFtsExcludeDocs(query: String): List<VectorEntity>
 
-    @Query("SELECT * FROM vectors WHERE content LIKE '%' || :keyword || '%'")
+    @Query("SELECT * FROM vectors WHERE content LIKE '%' || :keyword || '%' AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun searchByKeyword(keyword: String): List<VectorEntity>
 
     @Query("SELECT COUNT(*) FROM vectors")
@@ -89,7 +89,7 @@ interface VectorDao {
     @Query("SELECT session_id, COUNT(*) as count FROM vectors WHERE session_id IS NOT NULL GROUP BY session_id ORDER BY count DESC LIMIT :limit")
     suspend fun countBySession(limit: Int = 10): List<SessionCount>
 
-    @Query("SELECT * FROM vectors WHERE file_uuid = :fileUuid AND stale = 0 ORDER BY updated_at")
+    @Query("SELECT * FROM vectors WHERE file_uuid = :fileUuid AND stale = 0 AND file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0) ORDER BY updated_at")
     suspend fun getActiveChunks(fileUuid: String): List<VectorEntity>
 
     @Query("DELETE FROM vectors WHERE stale = 1 AND updated_at < :cutoff")

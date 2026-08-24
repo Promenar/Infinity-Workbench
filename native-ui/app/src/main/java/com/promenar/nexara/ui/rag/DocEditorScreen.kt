@@ -1191,7 +1191,13 @@ private fun MetadataOnlyState(
                     )
                     Spacer(Modifier.width(NexaraSpacing.Small))
                     Text(
-                        text = stringResource(R.string.doc_editor_large_file_warning),
+                        text = stringResource(
+                            if (editor.readonlyReason == DocEditorReadonlyReason.UnsupportedContent) {
+                                R.string.doc_editor_unsupported_content_warning
+                            } else {
+                                R.string.doc_editor_large_file_warning
+                            },
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.weight(1f),

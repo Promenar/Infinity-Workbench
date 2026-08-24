@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.data.repository.WorkspaceTextPolicyException
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
@@ -23,7 +24,11 @@ class FileDiffSkill(
             ?: return ToolResult("err", "缺少 uuid", "error")
         val basisHash = args.stringArgument("basisHash")
 
-        val result = fileOpRepo.diffFile(context.workspaceRootUuid, uuid, basisHash)
+        val result = try {
+            fileOpRepo.diffFile(context.workspaceRootUuid, uuid, basisHash)
+        } catch (failure: WorkspaceTextPolicyException) {
+            return workspaceTextFailureResult("diff_file", failure)
+        }
 
         return ToolResult(
             "diff_file_${System.currentTimeMillis()}",

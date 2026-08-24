@@ -42,6 +42,17 @@ class TestWorkspaceFileOps(
     override fun read(root: Path, relative: List<String>): ByteArray =
         Files.readAllBytes(resolve(root, relative, requireTarget = true))
 
+    override fun readLimited(root: Path, relative: List<String>, maxBytes: Long): ByteArray {
+        val target = resolve(root, relative, requireTarget = true)
+        if (Files.size(target) > maxBytes) throw WorkspaceFileTooLargeException(maxBytes)
+        return Files.readAllBytes(target).also { bytes ->
+            if (bytes.size.toLong() > maxBytes) throw WorkspaceFileTooLargeException(maxBytes)
+        }
+    }
+
+    override fun exists(root: Path, relative: List<String>): Boolean =
+        Files.exists(resolve(root, relative, requireTarget = true), LinkOption.NOFOLLOW_LINKS)
+
     override fun createFile(root: Path, relative: List<String>, bytes: ByteArray) {
         val target = resolve(root, relative)
         if (!Files.isDirectory(target.parent, LinkOption.NOFOLLOW_LINKS)) {

@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.data.repository.WorkspaceTextPolicyException
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
@@ -8,6 +9,8 @@ import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.chat.manager.registry.intArgument
 import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class FileReadSkill(
     private val fileOpRepo: IFileOperationRepository
@@ -40,7 +43,11 @@ class FileReadSkill(
             }
         }
 
-        val result = fileOpRepo.readFileRange(context.workspaceRootUuid, uuid, startLine, endLine)
+        val result = try {
+            fileOpRepo.readFileRange(context.workspaceRootUuid, uuid, startLine, endLine)
+        } catch (failure: WorkspaceTextPolicyException) {
+            return workspaceTextFailureResult("read_file", failure)
+        }
 
         return ToolResult(
             "read_file_${System.currentTimeMillis()}",
@@ -54,3 +61,17 @@ class FileReadSkill(
         )
     }
 }
+
+internal fun workspaceTextFailureResult(
+    operation: String,
+    failure: WorkspaceTextPolicyException,
+): ToolResult = ToolResult(
+    id = "${operation}_error_${System.currentTimeMillis()}",
+    content = failure.safeMessage.take(512),
+    status = "error",
+    data = buildJsonObject {
+        put("operation", operation)
+        put("errorCode", failure.code.name)
+        put("retrySuggestion", "请缩小读取或差异范围，或使用兼容该文件类型的专用工具。")
+    }.toString(),
+)

@@ -537,7 +537,7 @@ internal fun RagFolderScreenContent(
             modifier = Modifier.testTag(UiTags.RAG_FOLDER_DELETE_CONFIRM_DIALOG),
             onDismissRequest = { if (!state.isDeletingDocuments) showDeleteConfirm = false },
             title = { Text(stringResource(R.string.rag_folder_delete_confirm_title, state.selectedIds.size)) },
-            text = { Text(stringResource(R.string.shared_action_cannot_undo)) },
+            text = { Text(stringResource(R.string.shared_action_move_to_recycle_bin)) },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }, enabled = !state.isDeletingDocuments) {
                     Text(stringResource(R.string.common_btn_cancel))
@@ -549,12 +549,12 @@ internal fun RagFolderScreenContent(
                         val deletingIds = state.selectedIds.toList()
                         actions.onDelete(deletingIds) { succeeded, failedIds ->
                             applyMoveSelectionResult(state.selectedIds, deletingIds.toSet(), failedIds.toSet(), succeeded)
-                            showDeleteConfirm = false
+                            if (succeeded && failedIds.isEmpty()) showDeleteConfirm = false
                         }
                     },
                     enabled = !state.isDeletingDocuments,
                     modifier = Modifier.testTag(UiTags.RAG_FOLDER_DELETE_CONFIRM_BUTTON),
-                ) { Text(stringResource(R.string.shared_btn_delete), color = MaterialTheme.colorScheme.error) }
+                ) { Text(stringResource(R.string.shared_btn_move_to_recycle_bin), color = MaterialTheme.colorScheme.error) }
             },
         )
     }

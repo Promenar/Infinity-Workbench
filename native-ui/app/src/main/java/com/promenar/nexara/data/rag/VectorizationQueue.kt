@@ -77,7 +77,7 @@ class VectorizationQueue(
         when (event) {
             is FileIndexEvent.Changed -> {
                 val dao = requireNotNull(fileEntryDao) { "文件索引 DAO 未配置" }
-                val entry = dao.getByUuid(event.workspaceRootUuid, event.fileUuid)
+                val entry = dao.getActiveByUuid(event.workspaceRootUuid, event.fileUuid)
                     ?: throw java.io.FileNotFoundException("索引文件不存在")
                 enqueueDocumentReference(
                     workspaceRootUuid = event.workspaceRootUuid,
@@ -290,7 +290,7 @@ class VectorizationQueue(
             TYPE_DOCUMENT_REFERENCE,
         ) ?: return false
         if (existing.status !in setOf("failed", "partial", "interrupted")) return false
-        val entry = requireNotNull(fileEntryDao).getByUuid(workspaceRootUuid, docId) ?: return false
+        val entry = requireNotNull(fileEntryDao).getActiveByUuid(workspaceRootUuid, docId) ?: return false
         enqueueDocumentReference(
             workspaceRootUuid = workspaceRootUuid,
             docId = docId,
@@ -511,7 +511,7 @@ class VectorizationQueue(
         val service = requireNotNull(documentIndexService) {
             "document_reference 必须配置事务索引服务"
         }
-        val entry = fileEntryDao?.getByUuid(workspaceRootUuid, docId)
+        val entry = fileEntryDao?.getActiveByUuid(workspaceRootUuid, docId)
             ?: throw IllegalStateException("Document reference file missing")
         if (entry.mimeType != task.sourceMimeType) throw SecurityException("索引任务 MIME 与文件不一致")
         task.status = "extracting_source"
@@ -637,7 +637,7 @@ class VectorizationQueue(
     private suspend fun updateFileEntryVectorizedAt(workspaceRootUuid: String, docId: String, timestamp: Long) {
         withWorkspaceAdmission(workspaceRootUuid) {
             val dao = fileEntryDao ?: throw IllegalStateException("文件索引 DAO 未配置")
-            val entry = dao.getByUuid(workspaceRootUuid, docId)
+            val entry = dao.getActiveByUuid(workspaceRootUuid, docId)
                 ?: throw IllegalStateException("索引文件不存在")
             dao.update(entry.copy(vectorizedAt = maxOf(timestamp, entry.updatedAt)))
         }
@@ -945,7 +945,7 @@ class VectorizationQueue(
         val docId = task.docId
         val hasIdentity = root != null && docId != null
         val hasCurrentFile = hasIdentity && (
-            fileEntryDao == null || fileEntryDao.getByUuid(root, docId) != null
+            fileEntryDao == null || fileEntryDao.getActiveByUuid(root, docId) != null
         )
         if (hasCurrentFile) return@mapNotNull task
 
@@ -962,7 +962,7 @@ class VectorizationQueue(
     ): VectorizationTaskEntity? {
         val root = legacy.workspaceRootUuid ?: return null
         val docId = legacy.docId ?: return null
-        val entry = fileEntryDao?.getByUuid(root, docId) ?: return null
+        val entry = fileEntryDao?.getActiveByUuid(root, docId) ?: return null
         val mimeType = entry.mimeType ?: return null
         if (documentIndexService == null || mimeType !in DocumentReferenceExtractor.SUPPORTED_MIME_TYPES ||
             entry.hash.isBlank() || entry.updatedAt <= 0

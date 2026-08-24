@@ -76,7 +76,8 @@ data class PatchOperation(
     val startLine: Int? = null,
     val endLine: Int? = null,
     val afterLine: Int? = null,
-    val newContent: String? = null
+    val newContent: String? = null,
+    val expectedContent: String? = null,
 )
 
 sealed class PatchResult {

@@ -135,6 +135,57 @@ class DocumentIndexServiceTest {
     }
 
     @Test
+    fun `候选构建开始前拒绝已回收文件且不调用embedding`() = runTest {
+        seedFileAndOldArtifacts()
+        val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+        database.fileEntryDao().update(current.copy(inRecycleBin = true))
+        val embedding = mockk<EmbeddingClient>()
+        val builder = WorkspaceDocumentIndexCandidateBuilder(
+            database.fileEntryDao(),
+            embedding,
+            RagConfiguration(),
+        )
+
+        val failure = runCatching { builder.build(changed()) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(java.io.FileNotFoundException::class.java)
+        coVerify(exactly = 0) { embedding.embedDocuments(any()) }
+    }
+
+    @Test
+    fun `候选完成后文件进入回收站则提交复核拒绝且派生数据不复活`() = runTest {
+        seedFileAndOldArtifacts()
+        val service = RoomDocumentIndexService(database) {
+            val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+            database.fileEntryDao().update(current.copy(inRecycleBin = true))
+            database.vectorDao().deleteByDocId(FILE)
+            database.kgEdgeDao().deleteByDocId(FILE)
+            database.kgNodeDao().deleteByFileUuid(FILE)
+            candidate()
+        }
+
+        val result = service.rebuild(changed())
+
+        assertThat(result).isEqualTo(DocumentIndexResult.HashChanged(null))
+        assertThat(database.vectorDao().getByDocId(FILE)).isEmpty()
+        assertThat(database.kgEdgeDao().getByDocId(FILE)).isEmpty()
+        assertThat(database.kgNodeDao().getById("new-source")).isNull()
+    }
+
+    @Test
+    fun `遗留派生行在文件回收后也不进入vector FTS keyword与KG普通查询`() = runTest {
+        seedFileAndOldArtifacts()
+        val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+        database.fileEntryDao().update(current.copy(inRecycleBin = true))
+
+        assertThat(database.vectorDao().getAll()).isEmpty()
+        assertThat(database.vectorDao().searchByKeyword("old searchable")).isEmpty()
+        assertThat(database.vectorDao().searchFts("old")).isEmpty()
+        assertThat(database.kgEdgeDao().getByDocId(FILE)).isEmpty()
+        assertThat(database.kgNodeDao().getAll()).isEmpty()
+    }
+
+    @Test
     fun `候选完成后活动任务目标变化时拒绝旧目标提交`() = runTest {
         seedFileAndOldArtifacts()
         val service = RoomDocumentIndexService(database) {
@@ -283,6 +334,14 @@ class DocumentIndexServiceTest {
     @Test
     fun `删除事件事务清理全部派生数据`() = runTest {
         seedFileAndOldArtifacts()
+        val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+        database.fileEntryDao().insertAbort(
+            current.copy(
+                uuid = "other-file",
+                name = "other.txt",
+                materializedPath = "/other.txt",
+            ),
+        )
         database.kgNodeDao().insert(KgNodeEntity(
             id = "unrelated-orphan", name = "unrelated", createdAt = 1, fileUuid = "other-file",
         ))

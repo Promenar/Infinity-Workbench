@@ -30,6 +30,8 @@ interface WorkspaceFileOps {
         allowUnboundParent: Boolean = false,
     ): String
     fun read(root: Path, relative: List<String>): ByteArray
+    fun readLimited(root: Path, relative: List<String>, maxBytes: Long): ByteArray
+    fun exists(root: Path, relative: List<String>): Boolean
     fun createFile(root: Path, relative: List<String>, bytes: ByteArray)
     fun createFileStreaming(
         root: Path,
@@ -88,21 +90,39 @@ class SecureWorkspaceFileOps(
     }
 
     override fun read(root: Path, relative: List<String>): ByteArray =
+        readLimited(root, relative, Long.MAX_VALUE)
+
+    override fun readLimited(root: Path, relative: List<String>, maxBytes: Long): ByteArray =
         withParent(root, relative) { parent, name ->
             parent.newByteChannel(
                 name,
                 setOf<OpenOption>(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
             ).use { channel ->
+                if (channel.size() > maxBytes) throw WorkspaceFileTooLargeException(maxBytes)
                 val output = java.io.ByteArrayOutputStream()
                 val buffer = ByteBuffer.allocate(DEFAULT_BUFFER_SIZE)
+                var total = 0L
                 while (true) {
                     buffer.clear()
                     val count = channel.read(buffer)
                     if (count < 0) break
+                    if (total > maxBytes - count) throw WorkspaceFileTooLargeException(maxBytes)
                     output.write(buffer.array(), 0, count)
+                    total += count
                 }
                 output.toByteArray()
             }
+        }
+
+    override fun exists(root: Path, relative: List<String>): Boolean =
+        try {
+            withParent(root, relative) { _, _ ->
+                val target = relative.fold(root) { current, part -> current.resolve(part) }.normalize()
+                if (Files.isSymbolicLink(target)) throw SecurityException("工作区目标不可为符号链接")
+                Files.exists(target, LinkOption.NOFOLLOW_LINKS)
+            }
+        } catch (_: java.nio.file.NoSuchFileException) {
+            false
         }
 
     override fun createFile(root: Path, relative: List<String>, bytes: ByteArray) {

@@ -6,6 +6,8 @@ import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.rag.FileIndexEvent
 import com.promenar.nexara.data.rag.FileIndexEventSink
 import com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator
+import com.promenar.nexara.data.repository.WorkspaceTextErrorCode
+import com.promenar.nexara.data.repository.WorkspaceTextPolicyException
 import com.promenar.nexara.domain.repository.DiffResult
 import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
@@ -174,6 +176,34 @@ class DocEditorViewModelTest {
         coVerify(exactly = 0) {
             fileRepository.writeFileAtomic(any(), any(), any(), any(), any())
         }
+    }
+
+    @Test
+    fun `二进制内容按统一文本策略进入只读且不能修改或保存原文件`() = runTest(dispatcher) {
+        coEvery { workspaceRepository.getByUuid(ROOT, DOC) } returns metadataEntry(
+            name = "paper.pdf",
+            sizeBytes = 512L,
+        )
+        coEvery { fileRepository.readFileRange(ROOT, DOC) } throws WorkspaceTextPolicyException(
+            WorkspaceTextErrorCode.UNSUPPORTED_CONTENT_TYPE,
+            "不支持文本编辑",
+        )
+        val vm = viewModel()
+
+        vm.loadDocument(ROOT, DOC)
+        runCurrent()
+        vm.updateTitle("overwritten.pdf")
+        vm.onContentChanged("overwrite")
+        vm.saveDocument()
+        advanceUntilIdle()
+
+        assertThat(vm.uiState.value.phase).isEqualTo(DocEditorPhase.Ready)
+        assertThat(vm.uiState.value.contentAccess).isEqualTo(DocEditorContentAccess.MetadataOnly)
+        assertThat(vm.uiState.value.readonlyReason).isEqualTo(DocEditorReadonlyReason.UnsupportedContent)
+        assertThat(vm.uiState.value.title).isEqualTo("paper.pdf")
+        assertThat(vm.uiState.value.isDirty).isFalse()
+        coVerify(exactly = 0) { workspaceRepository.rename(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { fileRepository.writeFileAtomic(any(), any(), any(), any(), any()) }
     }
 
     @Test

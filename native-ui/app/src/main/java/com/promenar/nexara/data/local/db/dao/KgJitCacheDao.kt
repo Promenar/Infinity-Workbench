@@ -19,4 +19,7 @@ interface KgJitCacheDao {
 
     @Query("DELETE FROM kg_jit_cache WHERE cache_key = :cacheKey")
     suspend fun deleteByKey(cacheKey: String)
+
+    @Query("DELETE FROM kg_jit_cache")
+    suspend fun deleteAll(): Int
 }

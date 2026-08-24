@@ -523,6 +523,137 @@ class FileOperationRepositoryTest {
         assertThat(db.fileVersionDao().getByFile(ROOT, entry.uuid)).hasSize(1)
     }
 
+    @Test
+    fun `回收文件对read write patch diff均不可见且零副作用`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "line1\nline2")
+        db.fileEntryDao().update(entry.copy(inRecycleBin = true, recycledAt = 1L))
+
+        assertThat(runCatching { repo.readFileRange(ROOT, entry.uuid) }.exceptionOrNull())
+            .isInstanceOf(NoSuchElementException::class.java)
+        assertThat(runCatching { repo.diffFile(ROOT, entry.uuid) }.exceptionOrNull())
+            .isInstanceOf(NoSuchElementException::class.java)
+        assertThat(repo.writeFileAtomic(ROOT, entry.uuid, "changed", "session", entry.hash))
+            .isEqualTo(WriteResult.NotFound)
+        val patch = repo.patchFile(
+            ROOT,
+            entry.uuid,
+            listOf(PatchOperation("replace_lines", 1, 1, newContent = "changed")),
+            entry.hash,
+        ) as PatchResult.Failure
+
+        assertThat(patch.error.code).isEqualTo("FILE_NOT_FOUND")
+        assertThat(File(testDir, "test.txt").readText()).isEqualTo("line1\nline2")
+        assertThat(db.fileVersionDao().getByFile(ROOT, entry.uuid)).isEmpty()
+    }
+
+    @Test
+    fun `二进制 NUL 与无效UTF8对所有内容操作失败且不覆盖原文件`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "placeholder")
+        val binary = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0)
+        File(testDir, "test.txt").writeBytes(binary)
+        val binaryHash = Sha256Utils.hashFile(File(testDir, "test.txt"))
+        db.fileEntryDao().update(
+            entry.copy(
+                name = "image.png",
+                mimeType = "image/png",
+                materializedPath = "/test.txt",
+                hash = binaryHash,
+                sizeBytes = binary.size.toLong(),
+            ),
+        )
+
+        val readFailure = runCatching { repo.readFileRange(ROOT, entry.uuid) }.exceptionOrNull()
+        val diffFailure = runCatching { repo.diffFile(ROOT, entry.uuid) }.exceptionOrNull()
+        val writeFailure = runCatching {
+            repo.writeFileAtomic(ROOT, entry.uuid, "overwrite", "session", binaryHash)
+        }.exceptionOrNull()
+        val patch = repo.patchFile(
+            ROOT,
+            entry.uuid,
+            listOf(PatchOperation("insert_after", afterLine = 0, newContent = "overwrite")),
+            binaryHash,
+        ) as PatchResult.Failure
+
+        listOf(readFailure, diffFailure, writeFailure).forEach { failure ->
+            assertThat(failure).isInstanceOf(WorkspaceTextPolicyException::class.java)
+            assertThat((failure as WorkspaceTextPolicyException).code)
+                .isEqualTo(WorkspaceTextErrorCode.UNSUPPORTED_CONTENT_TYPE)
+        }
+        assertThat(patch.error.code).isEqualTo("UNSUPPORTED_CONTENT_TYPE")
+        assertThat(File(testDir, "test.txt").readBytes().toList()).containsExactlyElementsIn(binary.toList()).inOrder()
+        assertThat(db.fileVersionDao().getByFile(ROOT, entry.uuid)).isEmpty()
+    }
+
+    @Test
+    fun `超出物理字节上限时在读取文件内容之前拒绝`() = runBlocking<Unit> {
+        val content = "x".repeat(WorkspaceTextContentPolicy.DEFAULT_TOOL_BUDGET.maxInputBytes.toInt() + 1)
+        val entry = insertTestFile(content = content)
+        var physicalReads = 0
+        val delegate = TestWorkspaceFileOps()
+        repo = FileOperationRepository(
+            db.fileEntryDao(),
+            db.fileVersionDao(),
+            object : WorkspaceFileOps by delegate {
+                override fun read(root: java.nio.file.Path, relative: List<String>): ByteArray {
+                    physicalReads += 1
+                    return delegate.read(root, relative)
+                }
+            },
+        )
+
+        val failure = runCatching { repo.readFileRange(ROOT, entry.uuid) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(WorkspaceTextPolicyException::class.java)
+        assertThat((failure as WorkspaceTextPolicyException).code)
+            .isEqualTo(WorkspaceTextErrorCode.INPUT_TOO_LARGE)
+        assertThat(physicalReads).isEqualTo(0)
+    }
+
+    @Test
+    fun `patch拒绝负坐标越界重叠与上下文不匹配且全部零副作用`() = runBlocking<Unit> {
+        val fixtures = listOf(
+            listOf(PatchOperation("replace_lines", startLine = -1, endLine = 1, newContent = "x")),
+            listOf(PatchOperation("delete_lines", startLine = 2, endLine = 9)),
+            listOf(
+                PatchOperation("replace_lines", startLine = 1, endLine = 2, newContent = "x"),
+                PatchOperation("delete_lines", startLine = 2, endLine = 3),
+            ),
+            listOf(PatchOperation("replace_lines", startLine = 1, endLine = 1, newContent = "x", expectedContent = "wrong")),
+        )
+
+        fixtures.forEachIndexed { index, operations ->
+            val entry = if (index == 0) insertTestFile(content = "a\nb\nc")
+            else db.fileEntryDao().getByUuid(ROOT, "file-1")!!
+            val result = repo.patchFile(ROOT, entry.uuid, operations, entry.hash)
+            assertThat(result).isInstanceOf(PatchResult.Failure::class.java)
+            assertThat(File(testDir, "test.txt").readText()).isEqualTo("a\nb\nc")
+            assertThat(db.fileVersionDao().getByFile(ROOT, entry.uuid)).isEmpty()
+        }
+    }
+
+    @Test
+    fun `patch仅允许afterLine等于精确EOF作为尾部插入`() = runBlocking<Unit> {
+        val entry = insertTestFile(content = "a\nb")
+
+        val beyond = repo.patchFile(
+            ROOT,
+            entry.uuid,
+            listOf(PatchOperation("insert_after", afterLine = 3, newContent = "x")),
+            entry.hash,
+        )
+        assertThat(beyond).isInstanceOf(PatchResult.Failure::class.java)
+        assertThat(File(testDir, "test.txt").readText()).isEqualTo("a\nb")
+
+        val exact = repo.patchFile(
+            ROOT,
+            entry.uuid,
+            listOf(PatchOperation("insert_after", afterLine = 2, newContent = "c")),
+            entry.hash,
+        )
+        assertThat(exact).isInstanceOf(PatchResult.Success::class.java)
+        assertThat(File(testDir, "test.txt").readText()).isEqualTo("a\nb\nc")
+    }
+
     private companion object {
         const val ROOT = "root-1"
     }

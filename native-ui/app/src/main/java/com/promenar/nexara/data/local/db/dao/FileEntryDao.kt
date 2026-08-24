@@ -13,8 +13,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FileEntryDao {
+    /** 含回收站记录；仅供删除、恢复与启动恢复流程使用。 */
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid")
-    suspend fun getAllByWorkspaceRoot(workspaceRootUuid: String): List<FileEntry>
+    suspend fun getAllStatesByWorkspaceRootForCleanup(workspaceRootUuid: String): List<FileEntry>
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entry: FileEntry)
 
@@ -30,8 +31,16 @@ interface FileEntryDao {
     @Delete
     suspend fun delete(entry: FileEntry)
 
+    /** 含回收站记录；仅供生命周期、恢复和测试状态断言使用。 */
+    @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :uuid")
+    suspend fun getAnyStateByUuidForLifecycle(workspaceRootUuid: String, uuid: String): FileEntry?
+
+    /** 测试夹具兼容入口；生产消费者不得使用。 */
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :uuid")
     suspend fun getByUuid(workspaceRootUuid: String, uuid: String): FileEntry?
+
+    @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :uuid AND in_recycle_bin = 0")
+    suspend fun getActiveByUuid(workspaceRootUuid: String, uuid: String): FileEntry?
 
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid IN (:uuids)")
     suspend fun getByUuids(workspaceRootUuid: String, uuids: List<String>): List<FileEntry>
@@ -39,7 +48,10 @@ interface FileEntryDao {
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :uuid")
     fun observeByUuid(workspaceRootUuid: String, uuid: String): Flow<FileEntry?>
 
-    @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND parent_uuid = :parentUuid ORDER BY is_directory DESC, name ASC")
+    @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :uuid AND in_recycle_bin = 0")
+    fun observeActiveByUuid(workspaceRootUuid: String, uuid: String): Flow<FileEntry?>
+
+    @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND parent_uuid = :parentUuid AND in_recycle_bin = 0 ORDER BY is_directory DESC, name ASC")
     fun observeChildren(workspaceRootUuid: String, parentUuid: String): Flow<List<FileEntry>>
 
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :workspaceRootUuid AND parent_uuid IS NULL AND in_recycle_bin = 0")
@@ -61,11 +73,12 @@ interface FileEntryDao {
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND in_recycle_bin = 1 AND materialized_path != '/.recycle_bin' ORDER BY recycled_at DESC")
     fun observeRecycleBin(workspaceRootUuid: String): Flow<List<FileEntry>>
 
-    @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND materialized_path = :path LIMIT 1")
-    suspend fun getByMaterializedPath(workspaceRootUuid: String, path: String): FileEntry?
+    @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND materialized_path = :path AND in_recycle_bin = 0 LIMIT 1")
+    suspend fun getActiveByMaterializedPath(workspaceRootUuid: String, path: String): FileEntry?
 
+    /** 含回收站记录；仅供生命周期路径冲突与恢复使用。 */
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND materialized_path = :path LIMIT 1")
-    suspend fun getByRootAndMaterializedPath(workspaceRootUuid: String, path: String): FileEntry?
+    suspend fun getAnyStateByMaterializedPathForLifecycle(workspaceRootUuid: String, path: String): FileEntry?
 
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND name LIKE '%' || :query || '%' AND in_recycle_bin = 0")
     fun searchByName(workspaceRootUuid: String, query: String): Flow<List<FileEntry>>
@@ -154,7 +167,7 @@ interface FileEntryDao {
             if (countOtherSessionsForRoot(existingUuid, sessionId) != 0) {
                 throw SecurityException("Workspace root is referenced by multiple sessions")
             }
-            val existing = getByUuid(existingUuid, existingUuid)
+            val existing = getAnyStateByUuidForLifecycle(existingUuid, existingUuid)
                 ?: throw IllegalStateException("Session workspace root reference is invalid: $sessionId")
             if (countOtherSessionsForPhysicalRoot(existing.physicalRootPath, sessionId) != 0) {
                 throw SecurityException("Workspace physical root is referenced by another session")
@@ -173,7 +186,7 @@ interface FileEntryDao {
         deleteByUuid(candidate.workspaceRootUuid, candidate.uuid)
         val winnerUuid = getSessionForRoot(sessionId)?.workspaceRootUuid
             ?: throw IllegalStateException("Session workspace root claim failed: $sessionId")
-        return getByUuid(winnerUuid, winnerUuid)
+        return getAnyStateByUuidForLifecycle(winnerUuid, winnerUuid)
             ?: throw IllegalStateException("Claimed workspace root is missing: $winnerUuid")
     }
 }

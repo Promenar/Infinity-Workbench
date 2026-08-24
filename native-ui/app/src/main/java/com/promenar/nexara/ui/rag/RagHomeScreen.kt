@@ -995,7 +995,11 @@ internal fun RagHomeScreenContent(
                                     ),
                                 )
                                 isDeletingSelection = false
-                                pendingDocumentDelete = null
+                                pendingDocumentDelete = if (normalizedFailedIds.isEmpty()) {
+                                    null
+                                } else {
+                                    pendingDelete.copy(ids = normalizedFailedIds.distinct())
+                                }
                             }
                         }
                     },
@@ -1005,7 +1009,7 @@ internal fun RagHomeScreenContent(
                         .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                         .testTag(UiTags.RAG_HOME_DELETE_CONFIRM_BUTTON),
                 ) {
-                    Text(stringResource(R.string.shared_btn_delete))
+                    Text(stringResource(R.string.shared_btn_move_to_recycle_bin))
                 }
             },
             dismissButton = {

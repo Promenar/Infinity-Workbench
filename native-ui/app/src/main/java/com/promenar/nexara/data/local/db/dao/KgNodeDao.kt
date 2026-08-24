@@ -19,22 +19,22 @@ interface KgNodeDao {
     @Delete
     suspend fun delete(node: KgNodeEntity)
 
-    @Query("SELECT * FROM kg_nodes WHERE id = :nodeId")
+    @Query("SELECT * FROM kg_nodes WHERE id = :nodeId AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getById(nodeId: String): KgNodeEntity?
 
-    @Query("SELECT * FROM kg_nodes WHERE name = :name")
+    @Query("SELECT * FROM kg_nodes WHERE name = :name AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getByName(name: String): KgNodeEntity?
 
-    @Query("SELECT * FROM kg_nodes WHERE session_id = :sessionId")
+    @Query("SELECT * FROM kg_nodes WHERE session_id = :sessionId AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getBySessionId(sessionId: String): List<KgNodeEntity>
 
     @Query("SELECT * FROM kg_nodes WHERE source_type = :sourceType")
     suspend fun getBySourceType(sourceType: String): List<KgNodeEntity>
 
-    @Query("SELECT * FROM kg_nodes")
+    @Query("SELECT * FROM kg_nodes WHERE file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0)")
     suspend fun getAll(): List<KgNodeEntity>
 
-    @Query("SELECT * FROM kg_nodes WHERE id IN (:nodeIds)")
+    @Query("SELECT * FROM kg_nodes WHERE id IN (:nodeIds) AND (file_uuid IS NULL OR file_uuid IN (SELECT uuid FROM workspace_files WHERE in_recycle_bin = 0))")
     suspend fun getByIds(nodeIds: List<String>): List<KgNodeEntity>
 
     @Query("DELETE FROM kg_nodes WHERE id = :nodeId")

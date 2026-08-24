@@ -31,7 +31,14 @@ class WorkspaceMutationRecoveryCoordinator(
 ) {
     suspend fun recoverOrThrow() = withContext(Dispatchers.IO) {
         val parent = validateParent()
-        loadUnfinished().forEach { entity -> recoverOne(parent, entity) }
+        loadUnfinished().filter(::isSessionDelete).forEach { entity -> recoverOne(parent, entity) }
+    }
+
+    private fun isSessionDelete(entity: WorkspaceMutationEntity): Boolean {
+        if (entity.operationType != WorkspaceMutationType.DELETE) return false
+        val payload = (WorkspaceMutationPayloadCodec.decode(entity.payloadVersion, entity.payload)
+            as? WorkspaceMutationPayloadResult.Valid)?.payload ?: return false
+        return payload.targetRelativePath?.startsWith("$STAGING_DIRECTORY/") == true
     }
 
     private suspend fun recoverOne(parent: Path, entity: WorkspaceMutationEntity) {

@@ -81,6 +81,31 @@ class PendingDocumentIndexCoordinator(
         }
     }
 
+    /** 回收提交后清除待处理水位，但不永久封禁 UUID，允许随后恢复同一文件。 */
+    suspend fun clearForRecycle(workspaceRootUuid: String, ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        mutex.withLock {
+            var pendingChanged = false
+            ids.forEach { fileUuid ->
+                val key = Key(workspaceRootUuid, fileUuid)
+                pendingChanged = targets.remove(key) != null || pendingChanged
+                latestKnownTargets.remove(key)
+                committedDeletedKeys.remove(key)
+            }
+            if (pendingChanged) publishStateLocked()
+        }
+    }
+
+    /** 恢复事务提交后解除回收期间可能由迟到事件建立的进程内 tombstone。 */
+    suspend fun resumeAfterRestore(workspaceRootUuid: String, ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        mutex.withLock {
+            ids.forEach { fileUuid ->
+                committedDeletedKeys.remove(Key(workspaceRootUuid, fileUuid))
+            }
+        }
+    }
+
     /** 普通失败保留目标并返回 false；取消必须继续向调用方传播。 */
     suspend fun retry(target: FileIndexEvent.Changed): Boolean {
         val preparation = try {

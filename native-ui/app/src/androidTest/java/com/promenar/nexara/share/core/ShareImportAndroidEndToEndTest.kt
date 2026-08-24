@@ -200,6 +200,7 @@ class ShareImportAndroidEndToEndTest {
                 File(root.physicalRootPath).list().orEmpty().any { it.startsWith(".create-") }
             ).isFalse()
             assertThat(recreatedQueue.dropDurably(recreatedLease.token)).isTrue()
+            app.workspaceRepository.moveToRecycleBin(root.uuid, created.uuid)
             app.workspaceRepository.permanentDelete(root.uuid, created.uuid)
         } finally {
             app.database.sessionDao().deleteById(sessionId)
