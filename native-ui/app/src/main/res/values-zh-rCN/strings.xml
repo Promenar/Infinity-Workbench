@@ -84,6 +84,7 @@
     <string name="secret_field_clear">清除已保存密钥</string>
     <string name="provider_form_https_required">云端提供商地址必须是有效的 HTTPS URL。</string>
     <string name="provider_form_protocol_unsupported">该历史提供商协议已停止支持。</string>
+    <string name="settings_provider_protocol_unsupported">协议不受支持</string>
     <string name="provider_form_legacy_migration_required">请选择受支持的提供商，并替换或明确清除已保存凭证后再保存。</string>
     <string name="provider_form_credential_kind_changed">该协议使用不同类型的凭证。保存前请填写新凭证，或明确清除已保存凭证。</string>
     <string name="provider_form_saving">正在安全保存…</string>

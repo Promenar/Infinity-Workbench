@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -51,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.model.UnsupportedProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
@@ -66,12 +68,14 @@ fun ProviderListScreen(
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
     val providers by viewModel.providers.collectAsState()
+    val unsupportedProviders by viewModel.unsupportedProviders.collectAsState()
 
     var showDeleteDialog by remember { mutableStateOf<String?>(null) }
 
-    val state = remember(providers) {
+    val state = remember(providers, unsupportedProviders) {
         ProviderListScreenState(
-            providers = providers
+            providers = providers,
+            unsupportedProviders = unsupportedProviders,
         )
     }
 
@@ -108,7 +112,8 @@ fun ProviderListScreen(
 }
 
 internal data class ProviderListScreenState(
-    val providers: List<ProviderListItem> = emptyList()
+    val providers: List<ProviderListItem> = emptyList(),
+    val unsupportedProviders: List<UnsupportedProviderListItem> = emptyList(),
 )
 
 internal data class ProviderListScreenActions(
@@ -153,7 +158,7 @@ internal fun ProviderListScreenContent(
             contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-            if (state.providers.isEmpty()) {
+            if (state.providers.isEmpty() && state.unsupportedProviders.isEmpty()) {
                 item {
                     ProviderEmptyState(compactHeight = compactHeightEmptyState)
                 }
@@ -173,12 +178,118 @@ internal fun ProviderListScreenContent(
                         }
                     )
                 }
+                itemsIndexed(
+                    state.unsupportedProviders,
+                    key = { _, provider -> provider.id },
+                ) { index, provider ->
+                    if (state.providers.isNotEmpty() || index > 0) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                    UnsupportedProviderCard(
+                        provider = provider,
+                        onDelete = { actions.onRequestDeleteProvider(provider.id) },
+                    )
+                }
                 item {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun UnsupportedProviderCard(
+    provider: UnsupportedProviderListItem,
+    onDelete: () -> Unit,
+) {
+    var menuExpanded by remember(provider.id) { mutableStateOf(false) }
+    val unsupportedDescription = stringResource(R.string.settings_provider_protocol_unsupported)
+    val deleteDescription = stringResource(R.string.shared_btn_delete)
+    ListItem(
+        modifier = Modifier
+            .fillMaxWidth()
+            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+            .testTag(UiTags.settingsProviderCard(provider.id))
+            .semantics {
+                disabled()
+                stateDescription = unsupportedDescription
+            },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        headlineContent = {
+            Text(
+                text = provider.name,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        supportingContent = {
+            Column {
+                Text(
+                    text = unsupportedDescription,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    text = provider.rawProtocolId,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
+        trailingContent = {
+            Box {
+                IconButton(
+                    onClick = { menuExpanded = true },
+                    modifier = Modifier
+                        .testTag(UiTags.settingsProviderActions(provider.id))
+                        .sizeIn(
+                            minWidth = NexaraSpacing.MinimumTouchTarget,
+                            minHeight = NexaraSpacing.MinimumTouchTarget,
+                        ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "${provider.name}: $deleteDescription",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = deleteDescription,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        },
+                        modifier = Modifier
+                            .testTag("${UiTags.settingsProviderActions(provider.id)}:delete")
+                            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+                            .semantics { role = Role.Button },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                    )
+                }
+            }
+        },
+    )
 }
 
 @Composable

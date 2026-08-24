@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.model.UnsupportedProviderListItem
 import com.promenar.nexara.data.model.catalog.BundledModelCatalog
 import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.data.remote.protocol.ProtocolType
@@ -12,6 +13,7 @@ import com.promenar.nexara.data.remote.DefaultProviderRequestRouter
 import com.promenar.nexara.data.remote.ProviderResolution
 import com.promenar.nexara.data.remote.ProviderResolutionError
 import com.promenar.nexara.data.security.SecretId
+import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.settings.persistVerifiedProviderConnection
@@ -240,6 +242,104 @@ class ProviderManagerTest {
         assertThat(prefs.getString("extra_provider_${unknownIndex}_protocol", null))
             .isEqualTo("Future_Unknown_Protocol")
         assertThat(isolated.isPersistedProtocolUnsupported("unknown-extra")).isTrue()
+    }
+
+    @Test
+    fun `未知额外Provider以typed只读行可见且删除后完整清理并允许复用ID`() {
+        val providerId = "unknown-extra"
+        val modelId = "$providerId::legacy-model"
+        val prefs = app.getSharedPreferences("nexara_settings", 0)
+        prefs.edit()
+            .clear()
+            .putInt("extra_providers_count", 1)
+            .putString("extra_provider_0_id", providerId)
+            .putString("extra_provider_0_name", "Unknown Extra")
+            .putString("extra_provider_0_protocol", "Future_Unknown_Protocol")
+            .putString("extra_provider_0_base_url", "https://must-not-be-exposed.invalid")
+            .putString("extra_provider_0_model", "legacy-model")
+            .putBoolean("extra_provider_0_enabled", true)
+            .putStringSet("all_models", setOf(modelId))
+            .putStringSet("enabled_models", setOf(modelId))
+            .putString("all_models_order", modelId)
+            .putString("model_info_${modelId}_name", "Legacy Model")
+            .putString("model_info_${modelId}_provider", "Unknown Extra")
+            .putString("model_info_${modelId}_remote_model_id", "legacy-model")
+            .putString("preset_summary_model", modelId)
+            .putStringSet("suppressed_provider_models", setOf(providerId))
+            .commit()
+        val secrets = TestSecretStore().apply {
+            put(SecretCatalog.providerApiKey(providerId), "hidden-key".toByteArray())
+            put(SecretCatalog.vertexServiceAccount(providerId), "hidden-json".toByteArray())
+        }
+
+        val isolated = ProviderManager.createForTest(app, secrets)
+
+        assertThat(isolated.providers.value.map { it.id }).doesNotContain(providerId)
+        assertThat(isolated.unsupportedProviders.value).containsExactly(
+            UnsupportedProviderListItem(
+                id = providerId,
+                name = "Unknown Extra",
+                rawProtocolId = "Future_Unknown_Protocol",
+                enabled = true,
+                hasApiKey = true,
+                hasVertexCredentials = true,
+            ),
+        )
+        assertThat(runCatching {
+            isolated.addProvider(knownProvider(providerId), CredentialUpdate.Clear)
+        }.isFailure).isTrue()
+
+        isolated.deleteProvider(providerId)
+
+        assertThat(isolated.unsupportedProviders.value).isEmpty()
+        assertThat(isolated.providerModels.value.map { it.id }).doesNotContain(modelId)
+        assertThat(isolated.summaryModelId.value).isEmpty()
+        assertThat(prefs.getStringSet("all_models", emptySet())).doesNotContain(modelId)
+        assertThat(prefs.getStringSet("enabled_models", emptySet())).doesNotContain(modelId)
+        assertThat(prefs.getString("all_models_order", "").orEmpty()).doesNotContain(modelId)
+        assertThat(prefs.getStringSet("suppressed_provider_models", emptySet()))
+            .doesNotContain(providerId)
+        assertThat(prefs.all.keys.any { it.startsWith("extra_provider_0_") }).isFalse()
+        assertThat(prefs.all.keys.any { it.startsWith("model_info_${modelId}_") }).isFalse()
+        assertThat(secrets.contains(SecretCatalog.providerApiKey(providerId))).isFalse()
+        assertThat(secrets.contains(SecretCatalog.vertexServiceAccount(providerId))).isFalse()
+        assertThat(isolated.isPersistedProtocolUnsupported(providerId)).isFalse()
+
+        isolated.addProvider(knownProvider(providerId), CredentialUpdate.Clear)
+        assertThat(isolated.providers.value.map { it.id }).contains(providerId)
+    }
+
+    @Test
+    fun `删除未知Provider会压缩保留项并清理旧尾槽位`() {
+        val prefs = app.getSharedPreferences("nexara_settings", 0)
+        prefs.edit()
+            .clear()
+            .putInt("extra_providers_count", 2)
+            .putString("extra_provider_0_id", "unknown-a")
+            .putString("extra_provider_0_name", "Unknown A")
+            .putString("extra_provider_0_protocol", "Future_A")
+            .putString("extra_provider_0_base_url", "https://a.invalid")
+            .putString("extra_provider_0_model", "model-a")
+            .putBoolean("extra_provider_0_enabled", false)
+            .putString("extra_provider_1_id", "unknown-b")
+            .putString("extra_provider_1_name", "Unknown B")
+            .putString("extra_provider_1_protocol", "Future_B")
+            .putString("extra_provider_1_base_url", "https://b.invalid")
+            .putString("extra_provider_1_model", "model-b")
+            .putBoolean("extra_provider_1_enabled", true)
+            .commit()
+        val isolated = ProviderManager.createForTest(app, TestSecretStore())
+
+        isolated.deleteProvider("unknown-a")
+
+        assertThat(prefs.getInt("extra_providers_count", -1)).isEqualTo(1)
+        assertThat(prefs.getString("extra_provider_0_id", null)).isEqualTo("unknown-b")
+        assertThat(prefs.getString("extra_provider_0_name", null)).isEqualTo("Unknown B")
+        assertThat(prefs.getString("extra_provider_0_protocol", null)).isEqualTo("Future_B")
+        assertThat(prefs.getString("extra_provider_0_base_url", null)).isEqualTo("https://b.invalid")
+        assertThat(prefs.getString("extra_provider_0_model", null)).isEqualTo("model-b")
+        assertThat(prefs.getBoolean("extra_provider_0_enabled", false)).isTrue()
+        assertThat(prefs.all.keys.any { it.startsWith("extra_provider_1_") }).isFalse()
     }
 
     @Test
@@ -503,6 +603,14 @@ class ProviderManagerTest {
             CredentialUpdate.Replace("extra-test-key"),
         )
     }
+
+    private fun knownProvider(id: String) = ProviderListItem(
+        id = id,
+        name = "Known Replacement",
+        baseUrl = "https://known.invalid/v1/chat/completions",
+        model = "known-model",
+        protocolType = ProtocolType.OpenAI_ChatCompletions,
+    )
 
     private fun persistLegacyDeepSeekV4FlashFingerprint(
         name: String = "DeepSeek",

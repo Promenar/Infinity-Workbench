@@ -19,6 +19,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsAtLeast
@@ -44,6 +45,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.espresso.Espresso
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.model.UnsupportedProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.NexaraSearchTopBar
@@ -580,6 +582,65 @@ class UserSettingsAccessibilityTest {
             .assertIsDisplayed()
         rule.onNodeWithText(apiMissingSummary, useUnmergedTree = true)
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun unsupportedProviderRowIsVisibleDisabledAndOffersDeleteOnly() {
+        val providerId = "provider-unsupported"
+        val deleteRequested = AtomicReference<String>()
+        val unsupportedDescription = resources.getString(R.string.settings_provider_protocol_unsupported)
+
+        rule.setContent {
+            NexaraTheme {
+                ProviderListScreenContent(
+                    state = ProviderListScreenState(
+                        unsupportedProviders = listOf(
+                            UnsupportedProviderListItem(
+                                id = providerId,
+                                name = "Future Provider",
+                                rawProtocolId = "Future_Unknown_Protocol",
+                                enabled = true,
+                                hasApiKey = true,
+                                hasVertexCredentials = true,
+                            ),
+                        ),
+                    ),
+                    actions = ProviderListScreenActions(
+                        onRequestDeleteProvider = deleteRequested::set,
+                    ),
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.settingsProviderCard(providerId))
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+            .assert(
+                SemanticsMatcher("未知协议行不可进入模型、探测或编辑") { node ->
+                    SemanticsActions.OnClick !in node.config
+                },
+            )
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    unsupportedDescription,
+                ),
+            )
+        rule.onNodeWithText("Future_Unknown_Protocol", useUnmergedTree = true)
+            .assertIsDisplayed()
+
+        rule.onNodeWithTag(
+            UiTags.settingsProviderActions(providerId),
+            useUnmergedTree = true,
+        ).performClick()
+        rule.onNodeWithTag("${UiTags.settingsProviderActions(providerId)}:edit")
+            .assertDoesNotExist()
+        rule.onNodeWithTag("${UiTags.settingsProviderActions(providerId)}:delete")
+            .assertHasClickAction()
+            .performClick()
+
+        rule.waitForIdle()
+        com.google.common.truth.Truth.assertThat(deleteRequested.get()).isEqualTo(providerId)
     }
 
     @Test

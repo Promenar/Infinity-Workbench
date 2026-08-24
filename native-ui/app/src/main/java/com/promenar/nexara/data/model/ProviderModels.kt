@@ -33,6 +33,21 @@ data class ProviderListItem(
     val enabled: Boolean = true,
 )
 
+/**
+ * 未知持久化协议的只读列表投影。
+ *
+ * 不携带 URL、模型或秘密值，也不伪造成任何可执行 [ProtocolType]。调用方只能展示并删除，
+ * 如需迁移必须通过显式替换配置完成。
+ */
+data class UnsupportedProviderListItem(
+    val id: String,
+    val name: String,
+    val rawProtocolId: String,
+    val enabled: Boolean,
+    val hasApiKey: Boolean,
+    val hasVertexCredentials: Boolean,
+)
+
 data class ProviderSummary(
     val id: String,
     val name: String,

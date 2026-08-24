@@ -12,6 +12,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.model.UnsupportedProviderListItem
 import com.promenar.nexara.domain.usecase.IdGenerator
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.ProviderRequestRouter
@@ -312,6 +313,7 @@ class SettingsViewModel(
     val hapticEnabled: StateFlow<Boolean> = _hapticEnabled.asStateFlow()
 
     val providers: StateFlow<List<ProviderListItem>> = pm.providers
+    val unsupportedProviders: StateFlow<List<UnsupportedProviderListItem>> = pm.unsupportedProviders
 
     val currentModelSummary: StateFlow<String> = pm.currentModelSummary
 

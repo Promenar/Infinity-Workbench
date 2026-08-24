@@ -6,6 +6,7 @@ import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.model.ProviderSummary
+import com.promenar.nexara.data.model.UnsupportedProviderListItem
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.model.USER_EDITABLE_MODEL_FIELDS
 import com.promenar.nexara.data.model.mergeResolvedMetadata
@@ -59,6 +60,10 @@ class ProviderManager private constructor(
     // ── StateFlow: 提供商列表 ────────────────────────────────────────
     private val _providers = MutableStateFlow<List<ProviderListItem>>(emptyList())
     val providers: StateFlow<List<ProviderListItem>> = _providers.asStateFlow()
+
+    private val _unsupportedProviders = MutableStateFlow<List<UnsupportedProviderListItem>>(emptyList())
+    val unsupportedProviders: StateFlow<List<UnsupportedProviderListItem>> =
+        _unsupportedProviders.asStateFlow()
 
     private val _configurationChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val configurationChanges: SharedFlow<Unit> = _configurationChanges
@@ -237,6 +242,7 @@ class ProviderManager private constructor(
 
     fun loadProviders() {
         val items = mutableListOf<ProviderListItem>()
+        val unsupportedItems = mutableListOf<UnsupportedProviderListItem>()
         val config = getMainProviderConfig()
         if (config != null) {
             val typeName = config.protocolType.displayName
@@ -257,12 +263,24 @@ class ProviderManager private constructor(
         val count = settingsPrefs.getInt("extra_providers_count", 0)
         for (i in 0 until count) {
             val prefix = "extra_provider_$i"
-            val name = settingsPrefs.getString("${prefix}_name", null) ?: continue
+            val realId = resolveExtraProviderId(i)
+            val name = settingsPrefs.getString("${prefix}_name", null) ?: realId
             val protoName = settingsPrefs.getString("${prefix}_protocol", null)
                 ?: settingsPrefs.getString("${prefix}_type", null) ?: ""
-            val protocolType = decodePersistedProtocol(protoName) ?: continue
-            // 优先使用持久化的真实 ID，回退到索引生成（兼容旧数据）
-            val realId = resolveExtraProviderId(i)
+            val protocolType = decodePersistedProtocol(protoName)
+            if (protocolType == null) {
+                unsupportedItems += UnsupportedProviderListItem(
+                    id = realId,
+                    name = name,
+                    rawProtocolId = protoName,
+                    enabled = settingsPrefs.getBoolean("${prefix}_enabled", true),
+                    hasApiKey = secretStore.contains(SecretCatalog.providerApiKey(realId)),
+                    hasVertexCredentials = secretStore.contains(
+                        SecretCatalog.vertexServiceAccount(realId),
+                    ),
+                )
+                continue
+            }
             items.add(
                 ProviderListItem(
                     id = realId,
@@ -278,6 +296,7 @@ class ProviderManager private constructor(
             )
         }
         _providers.value = items
+        _unsupportedProviders.value = unsupportedItems
     }
 
     @Synchronized
@@ -338,11 +357,15 @@ class ProviderManager private constructor(
         if (providerId == "default") return
         ProviderConfigurationRevision.publishMutation(afterProviderConfigurationWriteStarted) {
             val removedModelIds = _providerModels.value
-                .filter { model -> model.providerId == providerId }
+                .filter { model ->
+                    model.providerId == providerId ||
+                        (model.providerId == null && model.id.startsWith("$providerId::"))
+                }
                 .mapTo(mutableSetOf()) { model -> model.id }
             secretStore.remove(SecretCatalog.providerApiKey(providerId))
             secretStore.remove(SecretCatalog.vertexServiceAccount(providerId))
             _providers.update { it.filter { p -> p.id != providerId } }
+            _unsupportedProviders.update { it.filter { p -> p.id != providerId } }
             if (removedModelIds.isNotEmpty()) {
                 _providerModels.update { models -> models.filterNot { it.id in removedModelIds } }
                 removePersistedModelMetadata(removedModelIds)
@@ -350,6 +373,7 @@ class ProviderManager private constructor(
                 clearPresetReferences(removedModelIds)
             }
             persistExtraProviders(replacedUnsupportedProviderIds = setOf(providerId))
+            loadProviders()
             clearProviderModelSuppression(providerId)
             _configurationChanges.tryEmit(Unit)
         }
@@ -374,6 +398,7 @@ class ProviderManager private constructor(
     private fun persistExtraProviders(
         replacedUnsupportedProviderIds: Set<String> = emptySet(),
     ) {
+        val oldCount = settingsPrefs.getInt("extra_providers_count", 0)
         val known = _providers.value.filter { it.id != "default" }.map { item ->
             PersistedExtraProvider(
                 id = item.id,
@@ -389,21 +414,32 @@ class ProviderManager private constructor(
             it.id !in knownIds && it.id !in replacedUnsupportedProviderIds
         }
         val extras = known + unsupported
-        settingsPrefs.edit()
+        val editor = settingsPrefs.edit()
+        for (index in 0 until oldCount) {
+            val prefix = "extra_provider_$index"
+            editor
+                .remove("${prefix}_id")
+                .remove("${prefix}_name")
+                .remove("${prefix}_protocol")
+                .remove("${prefix}_type")
+                .remove("${prefix}_base_url")
+                .remove("${prefix}_model")
+                .remove("${prefix}_enabled")
+        }
+        editor
             .putInt("extra_providers_count", extras.size)
             .putString("extra_providers_ids", extras.joinToString(",") { it.id })
-            .apply()
         extras.forEachIndexed { index, item ->
             val prefix = "extra_provider_$index"
-            settingsPrefs.edit()
+            editor
                 .putString("${prefix}_name", item.name)
                 .putString("${prefix}_protocol", item.protocolName)
                 .putString("${prefix}_base_url", item.baseUrl)
                 .putString("${prefix}_model", item.model)
                 .putString("${prefix}_id", item.id)
                 .putBoolean("${prefix}_enabled", item.enabled)
-                .apply()
         }
+        editor.apply()
     }
 
     private fun readUnsupportedExtraProviders(): List<PersistedExtraProvider> {
