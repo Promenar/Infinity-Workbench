@@ -911,7 +911,7 @@ class DefaultChatGenerationRuntimeTest {
         val contentStrategy = mockk<ChatGenerationContentStrategy>(relaxed = true)
         every { contentStrategy.pendingApprovalIds(any(), any()) } returns emptyList()
         val toolExecutor = mockk<ToolExecutor>(relaxed = true)
-        coEvery { toolExecutor.executeTools(any(), any(), any(), any()) } returns Unit
+        coEvery { toolExecutor.executeTools(any(), any(), any(), any(), any()) } returns Unit
         val runtime = DefaultChatGenerationRuntime(
             settings = settings,
             applicationScope = this,
@@ -950,7 +950,8 @@ class DefaultChatGenerationRuntimeTest {
                 "s1",
                 "a1",
                 match { it.single().id == "tool-1" },
-                match { it == setOf("tool-1") },
+                match { it.isEmpty() },
+                match { it.isEmpty() },
             )
         }
     }
@@ -1034,9 +1035,11 @@ class DefaultChatGenerationRuntimeTest {
             override fun createClient(resolved: ResolvedProviderModel): UnifiedLlmClient = error("local")
         }
         val toolExecutor = mockk<ToolExecutor>()
-        coEvery { toolExecutor.executeTools(any(), any(), any(), any()) } coAnswers {
+        val executorPreparedSnapshots = mutableListOf<List<ProtocolTool>>()
+        coEvery { toolExecutor.executeTools(any(), any(), any(), any(), any()) } coAnswers {
             val sessionId = firstArg<String>()
             val calls = thirdArg<List<com.promenar.nexara.data.model.ToolCall>>()
+            executorPreparedSnapshots += arg<List<ProtocolTool>>(4)
             calls.forEach { call ->
                 messageManager.addMessage(
                     sessionId,
@@ -1051,8 +1054,16 @@ class DefaultChatGenerationRuntimeTest {
             }
         }
         val advertisedTools = listOf(
-            ProtocolTool(function = ProtocolToolFunction("search", "search", "{\"type\":\"object\"}")),
-            ProtocolTool(function = ProtocolToolFunction("read_file", "read", "{\"type\":\"object\"}")),
+            ProtocolTool(
+                function = ProtocolToolFunction("search", "search", "{\"type\":\"object\"}"),
+                runtimeToolId = "search",
+                sourceId = "builtin",
+            ),
+            ProtocolTool(
+                function = ProtocolToolFunction("read_file", "read", "{\"type\":\"object\"}"),
+                runtimeToolId = "read_file",
+                sourceId = "builtin",
+            ),
         )
         val skillRegistry = mockk<SkillRegistry>()
         every { skillRegistry.getAllTools(any()) } returns advertisedTools
@@ -1088,5 +1099,7 @@ class DefaultChatGenerationRuntimeTest {
             .containsExactly("call-1", "call-2").inOrder()
         assertThat(third.filter { it.role == "tool" }.map { it.toolCallId })
             .containsExactly("call-1", "call-2").inOrder()
+        assertThat(executorPreparedSnapshots).isNotEmpty()
+        assertThat(executorPreparedSnapshots.all { it == advertisedTools }).isTrue()
     }
 }

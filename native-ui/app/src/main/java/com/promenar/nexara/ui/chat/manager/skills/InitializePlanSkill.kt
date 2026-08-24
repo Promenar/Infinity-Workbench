@@ -13,6 +13,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import com.promenar.nexara.ui.chat.manager.registry.arrayArgument
+import com.promenar.nexara.ui.chat.manager.registry.intArgument
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class InitializePlanSkill(
     private val taskRepo: ITaskRepository
@@ -24,13 +27,11 @@ class InitializePlanSkill(
     override val risk = ToolRisk.FILE_WRITE
     override val parametersSchema = """{"type":"object","properties":{"goal":{"type":"string","description":"任务目标描述"},"tree":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"sortOrder":{"type":"integer"},"children":{"type":"array","items":{}}},"required":["id","title"]}}},"required":["goal","tree"]}"""
 
-    private val json = Json { ignoreUnknownKeys = true }
-
-    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
-        val goal = args["goal"] as? String
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val goal = args.stringArgument("goal")
             ?: return ToolResult("err", "缺少 goal 参数", "error")
 
-        val treeRaw = args["tree"]
+        val treeRaw = args.arrayArgument("tree")
             ?: return ToolResult("err", "缺少 tree 参数", "error")
 
         val tree = parseTree(treeRaw)
@@ -63,57 +64,20 @@ class InitializePlanSkill(
         }
     }
 
-    private fun parseTree(raw: Any): List<TaskStep>? {
-        return try {
-            val jsonString = when (raw) {
-                is String -> raw
-                is List<*> -> {
-                    val elements = raw.map { item ->
-                        when (item) {
-                            is Map<*, *> -> mapToJsonObject(item)
-                            else -> return null
-                        }
-                    }
-                    JsonArray(elements).toString()
-                }
-                else -> raw.toString()
-            }
-            val array = json.parseToJsonElement(jsonString).jsonArray
-            array.map { parseStep(it.jsonObject) }
-        } catch (_: Exception) {
-            null
-        }
+    private fun parseTree(raw: JsonArray): List<TaskStep>? = raw.map { item ->
+        parseStep(item as? JsonObject ?: return null) ?: return null
     }
 
-    private fun parseStep(obj: JsonObject): TaskStep {
-        val children = obj["children"]?.jsonArray?.map { parseStep(it.jsonObject) } ?: emptyList()
+    private fun parseStep(obj: JsonObject): TaskStep? {
+        val children = (obj["children"] as? JsonArray)?.map { child ->
+            parseStep(child as? JsonObject ?: return null) ?: return null
+        } ?: emptyList()
         return TaskStep(
-            id = obj["id"]?.jsonPrimitive?.content ?: "",
-            title = obj["title"]?.jsonPrimitive?.content ?: "",
-            description = obj["description"]?.jsonPrimitive?.content ?: "",
-            sortOrder = obj["sortOrder"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0,
+            id = obj.stringArgument("id") ?: return null,
+            title = obj.stringArgument("title") ?: return null,
+            description = obj.stringArgument("description") ?: "",
+            sortOrder = obj.intArgument("sortOrder") ?: 0,
             children = children
         )
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun mapToJsonObject(map: Map<*, *>): JsonObject {
-        val pairs = (map as Map<String, Any?>).mapNotNull { (k, v) ->
-            when (v) {
-                is String -> k to JsonPrimitive(v)
-                is Number -> k to JsonPrimitive(v.toInt())
-                is Boolean -> k to JsonPrimitive(v)
-                is List<*> -> k to JsonArray(v.map { item ->
-                    when (item) {
-                        is Map<*, *> -> mapToJsonObject(item)
-                        is String -> JsonPrimitive(item)
-                        else -> JsonPrimitive(item?.toString() ?: "")
-                    }
-                })
-                null -> null
-                else -> k to JsonPrimitive(v.toString())
-            }
-        }
-        return JsonObject(pairs.toMap())
     }
 }

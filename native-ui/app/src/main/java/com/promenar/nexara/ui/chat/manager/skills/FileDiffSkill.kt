@@ -5,6 +5,8 @@ import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.domain.tool.ToolRisk
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
+import kotlinx.serialization.json.JsonObject
 
 class FileDiffSkill(
     private val fileOpRepo: IFileOperationRepository
@@ -16,10 +18,10 @@ class FileDiffSkill(
     override val risk = ToolRisk.SAFE_READ
     override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"basisHash":{"type":"string","description":"对比基准hash(可选，默认与上次已知版本对比)"}},"required":["uuid"]}"""
 
-    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
-        val uuid = args["uuid"] as? String
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val uuid = args.stringArgument("uuid")
             ?: return ToolResult("err", "缺少 uuid", "error")
-        val basisHash = args["basisHash"] as? String
+        val basisHash = args.stringArgument("basisHash")
 
         val result = fileOpRepo.diffFile(context.workspaceRootUuid, uuid, basisHash)
 

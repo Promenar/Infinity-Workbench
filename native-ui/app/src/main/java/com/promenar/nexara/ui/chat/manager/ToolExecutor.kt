@@ -12,6 +12,9 @@ import com.promenar.nexara.data.repository.ToolExecutionLedger
 import com.promenar.nexara.data.repository.ToolExecutionOutcome
 import com.promenar.nexara.data.repository.ToolInvocationIdentityFactory
 import com.promenar.nexara.data.repository.ToolInvocationIdentityResolution
+import com.promenar.nexara.data.repository.ToolInvocationIdentity
+import com.promenar.nexara.data.repository.ToolInvocationIdentityErrorCode
+import com.promenar.nexara.data.repository.ToolDefinitionDigestResolution
 import com.promenar.nexara.data.repository.ToolRegistrationResult
 import com.promenar.nexara.ui.chat.ChatStore
 import kotlinx.coroutines.CancellationException
@@ -19,10 +22,16 @@ import kotlinx.coroutines.CancellationException
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.ui.chat.manager.registry.toProtocolTool
+import com.promenar.nexara.domain.tool.ToolArgumentsValidation
+import com.promenar.nexara.domain.tool.ToolArgumentsValidator
+import com.promenar.nexara.data.remote.protocol.ProtocolTool
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.encodeToString
 import com.promenar.nexara.utils.SensitiveDataRedactor
 import com.promenar.nexara.utils.HttpsUrlValidator
 import java.util.Base64
+import java.security.MessageDigest
 
 class ToolExecutor(
     private val store: ChatStore,
@@ -36,6 +45,7 @@ class ToolExecutor(
         assistantMessageId: String,
         toolCalls: List<ToolCall>,
         allowedToolCallIds: Set<String> = toolCalls.mapTo(mutableSetOf()) { it.id },
+        preparedTools: List<ProtocolTool>? = null,
     ) {
         val session = store.getSession(sessionId) ?: return
         val targetMsgId = assistantMessageId
@@ -63,28 +73,27 @@ class ToolExecutor(
 
         val activeLedger = ledger ?: return
 
-        val registeredToolCallIds = mutableSetOf<String>()
-        toolCalls.distinctBy { it.id }.forEach { toolCall ->
-            val key = ToolExecutionKey(sessionId, targetMsgId, toolCall.id)
-            val persistedIdentity = activeLedger.invocationIdentity(key)
-            val identity = ToolInvocationIdentityFactory.fromLegacyToolCall(
-                toolCall,
-                persistedIdentity?.requiresApproval ?: (toolCall.id !in allowedToolCallIds),
-            )
-            if (identity !is ToolInvocationIdentityResolution.Valid) return@forEach
-            val registration = activeLedger.register(
-                key = key,
-                identity = identity.identity,
-            )
-            if (registration != ToolRegistrationResult.Conflict) registeredToolCallIds += toolCall.id
-        }
-
         for (tc in toolCalls.distinctBy { it.id }) {
-            if (tc.name.isEmpty()) continue
-            if (tc.id !in allowedToolCallIds) continue
-            if (tc.id !in registeredToolCallIds) continue
             val key = ToolExecutionKey(sessionId, targetMsgId, tc.id)
-            if (!activeLedger.claim(key)) continue
+            val persistedIdentity = activeLedger.invocationIdentity(key)
+            val preflight = preflight(
+                call = tc,
+                persistedIdentity = persistedIdentity,
+                preparedTools = preparedTools,
+                requiresApproval = tc.id !in allowedToolCallIds,
+            )
+            if (preflight is ToolPreflight.Invalid) {
+                finishInvalidCall(activeLedger, key, targetMsg, preflight.identity)
+                continue
+            }
+            preflight as ToolPreflight.Valid
+            val registration = activeLedger.register(key, preflight.identity)
+            if (registration == ToolRegistrationResult.Conflict) continue
+            if (tc.id !in allowedToolCallIds) continue
+            val expectedIdentity = activeLedger.invocationIdentity(key)
+                ?.takeIf { it == preflight.identity }
+                ?: continue
+            if (!activeLedger.claim(key, expectedIdentity)) continue
 
             val stepId = "step_${System.currentTimeMillis()}_${tc.id}"
             val currentFocusId = session.activeTask?.currentFocusStepId
@@ -99,7 +108,23 @@ class ToolExecutor(
                 taskStepId = currentFocusId
             ))
 
-            val result: ToolResult = executeSkill(tc, session)
+            val currentSkill = skillRegistry?.getSkillByRuntimeToolId(expectedIdentity.runtimeToolId)
+            val currentDefinition = currentSkill?.toProtocolTool()
+                ?.let(ToolInvocationIdentityFactory::definitionDigest)
+            if (currentSkill == null || currentSkill.name != expectedIdentity.toolName ||
+                currentDefinition !is ToolDefinitionDigestResolution.Valid ||
+                currentDefinition.digest != expectedIdentity.definitionDigest
+            ) {
+                finishClaimedFailure(
+                    activeLedger = activeLedger,
+                    key = key,
+                    toolName = tc.name,
+                    thoughtSignature = targetMsg.thoughtSignature,
+                )
+                continue
+            }
+
+            val result: ToolResult = executeSkill(currentSkill, preflight.arguments, tc, session)
             val failed = result.status != "success"
             val safeResultData = sanitizeResultData(result.data, failed)
 
@@ -158,19 +183,15 @@ class ToolExecutor(
         }
     }
 
-    private suspend fun executeSkill(tc: ToolCall, session: com.promenar.nexara.data.model.Session): ToolResult {
-        if (skillRegistry == null) {
-            return ToolResult(id = tc.id, content = "Error: SkillRegistry not configured", status = "error")
-        }
-
-        val skill = skillRegistry.getSkill(tc.name)
-        if (skill == null) {
-            return ToolResult(id = tc.id, content = "Error: Skill ${tc.name} not found", status = "error")
-        }
-
+    private suspend fun executeSkill(
+        skill: SkillDefinition,
+        arguments: JsonObject,
+        tc: ToolCall,
+        session: com.promenar.nexara.data.model.Session,
+    ): ToolResult {
         return try {
             skill.execute(
-                parseArgs(tc.arguments),
+                arguments,
                 object : SkillExecutionContext {
                     override val sessionId = session.id
                     override val agentId = session.agentId
@@ -185,6 +206,104 @@ class ToolExecutor(
             ToolResult(id = tc.id, content = "工具执行失败", status = "error")
         }
     }
+
+    private suspend fun finishInvalidCall(
+        activeLedger: ToolExecutionLedger,
+        key: ToolExecutionKey,
+        targetMessage: Message,
+        identity: ToolInvocationIdentity,
+    ) {
+        val registration = activeLedger.register(key, identity)
+        if (registration == ToolRegistrationResult.Conflict) return
+        if (!activeLedger.claim(key, identity)) return
+        val terminal = activeLedger.finishWithResult(
+            key = key,
+            toolName = "invalid_tool",
+            content = INVALID_TOOL_CALL_CONTENT,
+            thoughtSignature = targetMessage.thoughtSignature,
+            outcome = ToolExecutionOutcome.Failed("工具调用预检失败"),
+        )
+        terminal?.let { messageManager.mirrorPersistedMessage(key.sessionId, it) }
+    }
+
+    private suspend fun finishClaimedFailure(
+        activeLedger: ToolExecutionLedger,
+        key: ToolExecutionKey,
+        toolName: String,
+        thoughtSignature: String?,
+    ) {
+        val terminal = activeLedger.finishWithResult(
+            key = key,
+            toolName = toolName,
+            content = "工具执行失败：工具定义已变化，已安全终止。",
+            thoughtSignature = thoughtSignature,
+            outcome = ToolExecutionOutcome.Failed("工具定义身份不一致"),
+        )
+        terminal?.let { messageManager.mirrorPersistedMessage(key.sessionId, it) }
+    }
+
+    private fun preflight(
+        call: ToolCall,
+        persistedIdentity: ToolInvocationIdentity?,
+        preparedTools: List<ProtocolTool>?,
+        requiresApproval: Boolean,
+    ): ToolPreflight {
+        if (persistedIdentity != null) {
+            val arguments = ToolArgumentsValidator().validate(call.arguments)
+                as? ToolArgumentsValidation.Valid
+            if (arguments == null || call.name != persistedIdentity.toolName ||
+                arguments.sha256 != persistedIdentity.argumentsDigest ||
+                (requiresApproval && !persistedIdentity.requiresApproval)
+            ) {
+                return invalidPreflight(call, ToolInvocationIdentityErrorCode.MALFORMED_ARGUMENTS)
+            }
+            return ToolPreflight.Valid(persistedIdentity, arguments.arguments)
+        }
+
+        val matchingDefinitions = preparedTools.orEmpty().filter { it.function.name == call.name }
+        if (matchingDefinitions.size != 1) {
+            return invalidPreflight(call, ToolInvocationIdentityErrorCode.INVALID_DEFINITION)
+        }
+        return when (val resolved = ToolInvocationIdentityFactory.fromPreparedToolCall(
+            call = call,
+            tool = matchingDefinitions.single(),
+            requiresApproval = requiresApproval,
+        )) {
+            is ToolInvocationIdentityResolution.Valid -> ToolPreflight.Valid(
+                resolved.identity,
+                resolved.arguments,
+            )
+            is ToolInvocationIdentityResolution.Invalid -> invalidPreflight(call, resolved.code)
+        }
+    }
+
+    private fun invalidPreflight(
+        call: ToolCall,
+        code: ToolInvocationIdentityErrorCode,
+    ): ToolPreflight.Invalid = ToolPreflight.Invalid(
+        ToolInvocationIdentity(
+            runtimeToolId = "invalid_tool",
+            toolName = "invalid_tool",
+            argumentsDigest = sha256(
+                "nexara:invalid-tool-arguments:v1\u0000${call.name}\u0000${call.arguments}",
+            ),
+            definitionDigest = sha256("nexara:invalid-tool-definition:v1\u0000${code.name}"),
+            requiresApproval = false,
+        ),
+    )
+
+    private sealed interface ToolPreflight {
+        data class Valid(
+            val identity: ToolInvocationIdentity,
+            val arguments: JsonObject,
+        ) : ToolPreflight
+
+        data class Invalid(val identity: ToolInvocationIdentity) : ToolPreflight
+    }
+
+    private fun sha256(raw: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(raw.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 
     private suspend fun appendStep(sessionId: String, targetMsgId: String, newStep: ExecutionStep) {
         val currentSession = store.getSession(sessionId) ?: return
@@ -205,42 +324,6 @@ class ToolExecutor(
             sessionId, targetMsgId, currentMsg.content,
             UpdateMessageOptions(executionSteps = updatedSteps)
         )
-    }
-
-    private fun parseArgs(argsJson: String): Map<String, Any> {
-        return try {
-            val element = kotlinx.serialization.json.Json.parseToJsonElement(argsJson)
-            if (element is kotlinx.serialization.json.JsonObject) {
-                val result = mutableMapOf<String, Any>()
-                for ((key, v) in element) {
-                    when (v) {
-                        is kotlinx.serialization.json.JsonPrimitive -> {
-                            when {
-                                v.isString -> result[key] = v.content
-                                else -> {
-                                    val content = v.content
-                                    when {
-                                        content == "true" -> result[key] = true
-                                        content == "false" -> result[key] = false
-                                        else -> {
-                                            val long = content.toLongOrNull()
-                                            if (long != null) result[key] = long
-                                            else result[key] = content
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        else -> result[key] = v.toString()
-                    }
-                }
-                result
-            } else {
-                emptyMap()
-            }
-        } catch (_: Exception) {
-            emptyMap()
-        }
     }
 
     private fun sanitizeResultData(data: String?, failed: Boolean): String? {
@@ -315,6 +398,7 @@ class ToolExecutor(
     }
 
     private companion object {
+        const val INVALID_TOOL_CALL_CONTENT = "工具调用校验失败，已安全终止。"
         const val MAX_SAFE_RESULT_DATA_CHARS = 256 * 1024
         const val MAX_IMAGE_BYTES = 5 * 1024 * 1024
         const val MAX_IMAGE_BASE64_CHARS = ((MAX_IMAGE_BYTES + 2) / 3) * 4 + 1024

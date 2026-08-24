@@ -67,6 +67,9 @@ data class ProtocolTool(
     val type: String = "function",
     val function: ProtocolToolFunction,
     @Transient val risk: ToolRisk = ToolRisk.UNKNOWN,
+    @Transient val runtimeToolId: String = "",
+    @Transient val sourceId: String = "builtin",
+    @Transient val mcpServerId: String? = null,
 )
 
 @Serializable

@@ -22,6 +22,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import com.promenar.nexara.ui.chat.manager.registry.arrayArgument
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class FilePatchSkill(
     private val fileOpRepo: IFileOperationRepository
@@ -33,15 +35,13 @@ class FilePatchSkill(
     override val risk = ToolRisk.PATCH
     override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"expectedHash":{"type":"string","description":"乐观锁基础版本hash"},"operations":{"type":"array","items":{"type":"object","properties":{"action":{"type":"string","enum":["replace_lines","insert_after","delete_lines"]},"startLine":{"type":"integer"},"endLine":{"type":"integer"},"afterLine":{"type":"integer"},"newContent":{"type":"string"}},"required":["action"]}}},"required":["uuid","expectedHash","operations"]}"""
 
-    private val json = Json { ignoreUnknownKeys = true }
-
-    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
-        val uuid = args["uuid"] as? String
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val uuid = args.stringArgument("uuid")
             ?: return ToolResult("err", "缺少 uuid", "error")
-        val expectedHash = args["expectedHash"] as? String
+        val expectedHash = args.stringArgument("expectedHash")
             ?: return ToolResult("err", "缺少 expectedHash", "error")
 
-        val operationsRaw = args["operations"]
+        val operationsRaw = args.arrayArgument("operations")
         if (operationsRaw == null) {
             return ToolResult("err", "缺少 operations 参数", "error")
         }
@@ -127,49 +127,15 @@ class FilePatchSkill(
         }
     }.toString()
 
-    private fun parseOperations(raw: Any): List<PatchOperation>? {
-        return try {
-            val jsonString = when (raw) {
-                is String -> raw
-                is List<*> -> {
-                    val elements = raw.map { item ->
-                        when (item) {
-                            is Map<*, *> -> {
-                                @Suppress("UNCHECKED_CAST")
-                                val map = item as Map<String, Any?>
-                                val pairs = map.mapNotNull { (k, v) ->
-                                    when (v) {
-                                        is String -> k to JsonPrimitive(v)
-                                        is Number -> k to JsonPrimitive(v.toInt())
-                                        is Boolean -> k to JsonPrimitive(v)
-                                        null -> null
-                                        else -> k to JsonPrimitive(v.toString())
-                                    }
-                                }
-                                JsonObject(pairs.toMap())
-                            }
-                            else -> return null
-                        }
-                    }
-                    JsonArray(elements).toString()
-                }
-                else -> raw.toString()
-            }
-
-            val array = json.parseToJsonElement(jsonString).jsonArray
-            array.map { element ->
-                val obj = element.jsonObject
-                PatchOperation(
-                    action = obj["action"]?.jsonPrimitive?.content ?: return null,
-                    startLine = obj["startLine"]?.jsonPrimitive?.intOrNull,
-                    endLine = obj["endLine"]?.jsonPrimitive?.intOrNull,
-                    afterLine = obj["afterLine"]?.jsonPrimitive?.intOrNull,
-                    newContent = obj["newContent"]?.jsonPrimitive?.content
-                )
-            }
-        } catch (_: Exception) {
-            null
-        }
+    private fun parseOperations(raw: JsonArray): List<PatchOperation>? = raw.map { element ->
+        val obj = element as? JsonObject ?: return null
+        PatchOperation(
+            action = obj.stringArgument("action") ?: return null,
+            startLine = obj["startLine"]?.jsonPrimitive?.intOrNull,
+            endLine = obj["endLine"]?.jsonPrimitive?.intOrNull,
+            afterLine = obj["afterLine"]?.jsonPrimitive?.intOrNull,
+            newContent = obj.stringArgument("newContent"),
+        )
     }
 
     private fun formatPatchError(error: PatchError): String {

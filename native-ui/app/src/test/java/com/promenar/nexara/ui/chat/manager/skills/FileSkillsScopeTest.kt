@@ -45,14 +45,14 @@ class FileSkillsScopeTest {
         coEvery { operations.patchFile("root-a", "file", any(), "hash") } returns
             PatchResult.Success("new-hash", 1)
 
-        FileReadSkill(operations).execute(mapOf("uuid" to "file"), context)
+        FileReadSkill(operations).execute(skillArgs("uuid" to "file"), context)
         FileWriteSkill(operations).execute(
-            mapOf("uuid" to "file", "content" to "new", "expectedHash" to "hash"),
+            skillArgs("uuid" to "file", "content" to "new", "expectedHash" to "hash"),
             context,
         )
-        FileDiffSkill(operations).execute(mapOf("uuid" to "file"), context)
+        FileDiffSkill(operations).execute(skillArgs("uuid" to "file"), context)
         FilePatchSkill(operations).execute(
-            mapOf(
+            skillArgs(
                 "uuid" to "file",
                 "expectedHash" to "hash",
                 "operations" to listOf(
@@ -73,8 +73,8 @@ class FileSkillsScopeTest {
         val workspace = mockk<IWorkspaceRepository>()
         every { workspace.observeChildren("root-a", "root-a") } returns flowOf(emptyList())
 
-        FileListSkill(workspace).execute(emptyMap(), context)
-        FileSearchSkill(workspace).execute(mapOf("query" to "x"), context)
+        FileListSkill(workspace).execute(skillArgs(), context)
+        FileSearchSkill(workspace).execute(skillArgs("query" to "x"), context)
 
         verify(exactly = 2) { workspace.observeChildren("root-a", "root-a") }
     }
@@ -88,11 +88,11 @@ class FileSkillsScopeTest {
             PatchResult.Success("patch-hash", 1, indexQueued = true, targetEpoch = 102L)
 
         val write = FileWriteSkill(operations).execute(
-            mapOf("uuid" to "file", "content" to "new", "expectedHash" to "old-hash"),
+            skillArgs("uuid" to "file", "content" to "new", "expectedHash" to "old-hash"),
             context,
         )
         val patch = FilePatchSkill(operations).execute(
-            mapOf(
+            skillArgs(
                 "uuid" to "file",
                 "expectedHash" to "write-hash",
                 "operations" to listOf(
@@ -117,11 +117,11 @@ class FileSkillsScopeTest {
             PatchResult.Success("patch-hash", 1, indexQueued = false, targetEpoch = 202L)
 
         val write = FileWriteSkill(operations).execute(
-            mapOf("uuid" to "file", "content" to "new", "expectedHash" to "old-hash"),
+            skillArgs("uuid" to "file", "content" to "new", "expectedHash" to "old-hash"),
             context,
         )
         val patch = FilePatchSkill(operations).execute(
-            mapOf(
+            skillArgs(
                 "uuid" to "file",
                 "expectedHash" to "write-hash",
                 "operations" to listOf(
@@ -148,11 +148,11 @@ class FileSkillsScopeTest {
             PatchResult.Success("patch-hash", 1, indexQueued = false, targetEpoch = null)
 
         val write = FileWriteSkill(operations).execute(
-            mapOf("uuid" to "file", "content" to "new", "expectedHash" to "old-hash"),
+            skillArgs("uuid" to "file", "content" to "new", "expectedHash" to "old-hash"),
             context,
         )
         val patch = FilePatchSkill(operations).execute(
-            mapOf(
+            skillArgs(
                 "uuid" to "file",
                 "expectedHash" to "write-hash",
                 "operations" to listOf(

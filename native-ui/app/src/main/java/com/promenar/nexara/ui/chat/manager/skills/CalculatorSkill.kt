@@ -4,6 +4,8 @@ import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.domain.tool.ToolRisk
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
+import kotlinx.serialization.json.JsonObject
 
 class CalculatorSkill : SkillDefinition {
     override val id = "calculator"
@@ -15,10 +17,10 @@ class CalculatorSkill : SkillDefinition {
         """{"type":"object","properties":{"expression":{"type":"string","description":"Math expression to evaluate"}},"required":["expression"]}"""
 
     override suspend fun execute(
-        args: Map<String, Any>,
+        args: JsonObject,
         context: SkillExecutionContext
     ): ToolResult {
-        val expression = args["expression"]?.toString()
+        val expression = args.stringArgument("expression")
             ?: return ToolResult(
                 id = "result_${System.currentTimeMillis()}",
                 content = "Missing required parameter: expression",

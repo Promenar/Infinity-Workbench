@@ -16,6 +16,11 @@ import com.promenar.nexara.data.model.json
 import com.promenar.nexara.domain.tool.ToolArgumentsValidation
 import com.promenar.nexara.domain.tool.ToolArgumentsValidator
 import com.promenar.nexara.domain.tool.ToolRisk
+import com.promenar.nexara.domain.tool.ToolSchemaValidation
+import com.promenar.nexara.domain.tool.ToolSchemaValidator
+import com.promenar.nexara.data.remote.protocol.ProtocolTool
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import java.security.MessageDigest
@@ -52,6 +57,7 @@ fun ApprovalCallIdentity.toInvocationIdentity(): ToolInvocationIdentity = ToolIn
 data class ApprovalCallCandidate(
     val call: ToolCall,
     val risk: ToolRisk,
+    val identity: ToolInvocationIdentity,
 )
 
 object ToolApprovalRequestFactory {
@@ -63,19 +69,17 @@ object ToolApprovalRequestFactory {
         reason: String? = null,
     ): ApprovalRequest {
         val identities = candidates.map { candidate ->
-            val resolution = ToolInvocationIdentityFactory.fromLegacyToolCall(
-                candidate.call,
-                requiresApproval = true,
-            )
-            require(resolution is ToolInvocationIdentityResolution.Valid) {
-                (resolution as ToolInvocationIdentityResolution.Invalid).message
-            }
+            require(candidate.identity.requiresApproval) { "审批工具必须绑定 requiresApproval identity" }
+            require(candidate.identity.toolName == candidate.call.name) { "审批工具名称与 identity 不一致" }
+            val arguments = ToolArgumentsValidator().validate(candidate.call.arguments)
+            require(arguments is ToolArgumentsValidation.Valid) { "审批工具参数必须是合法 JSON object" }
+            require(arguments.sha256 == candidate.identity.argumentsDigest) { "审批工具参数与 identity 不一致" }
             ApprovalCallIdentity(
                 toolCallId = candidate.call.id,
-                runtimeToolId = resolution.identity.runtimeToolId,
-                toolName = resolution.identity.toolName,
-                argumentsDigest = resolution.identity.argumentsDigest,
-                definitionDigest = resolution.identity.definitionDigest,
+                runtimeToolId = candidate.identity.runtimeToolId,
+                toolName = candidate.identity.toolName,
+                argumentsDigest = candidate.identity.argumentsDigest,
+                definitionDigest = candidate.identity.definitionDigest,
                 requiresApproval = true,
                 argumentsSummary = summarizeArguments(candidate.call.arguments),
                 risk = candidate.risk.name.lowercase(),
@@ -133,35 +137,152 @@ object ToolApprovalRequestFactory {
         .let { if (it.length <= MAX_ARGUMENT_SUMMARY) it else it.take(MAX_ARGUMENT_SUMMARY - 3) + "..." }
 }
 
+enum class ToolInvocationIdentityErrorCode {
+    TOOL_NAME_MISMATCH,
+    MALFORMED_ARGUMENTS,
+    ROOT_ARGUMENTS_NOT_OBJECT,
+    INVALID_DEFINITION,
+    SCHEMA_MISMATCH,
+}
+
+sealed interface ToolDefinitionDigestResolution {
+    data class Valid(
+        val digest: String,
+        val canonicalSchema: String,
+    ) : ToolDefinitionDigestResolution
+
+    data class Invalid(val message: String) : ToolDefinitionDigestResolution
+}
+
 sealed interface ToolInvocationIdentityResolution {
-    data class Valid(val identity: ToolInvocationIdentity) : ToolInvocationIdentityResolution
-    data class Invalid(val message: String) : ToolInvocationIdentityResolution
+    data class Valid(
+        val identity: ToolInvocationIdentity,
+        val arguments: JsonObject,
+    ) : ToolInvocationIdentityResolution
+
+    data class Invalid(
+        val code: ToolInvocationIdentityErrorCode,
+        val message: String,
+    ) : ToolInvocationIdentityResolution
 }
 
 object ToolInvocationIdentityFactory {
+    private const val DEFINITION_VERSION = "nexara:tool-definition:v2"
     private const val LEGACY_DEFINITION_PREFIX = "nexara:legacy-tool-definition:v1:"
+
+    fun definitionDigest(tool: ProtocolTool): ToolDefinitionDigestResolution {
+        val runtimeToolId = tool.runtimeToolId.trim()
+        val wireName = tool.function.name.trim()
+        val sourceId = tool.sourceId.trim()
+        if (runtimeToolId.isEmpty() || wireName.isEmpty() || sourceId.isEmpty()) {
+            return ToolDefinitionDigestResolution.Invalid("工具定义身份字段不完整")
+        }
+        val schema = ToolSchemaValidator().validateDefinition(tool.function.parameters)
+        if (schema !is ToolSchemaValidation.Valid) {
+            return ToolDefinitionDigestResolution.Invalid("工具 schema 无效或包含不支持的关键字")
+        }
+        val raw = listOf(
+            DEFINITION_VERSION,
+            runtimeToolId,
+            wireName,
+            tool.function.description,
+            schema.canonicalSchema,
+            tool.risk.name,
+            sourceId,
+            tool.mcpServerId.orEmpty(),
+        ).joinToString("\u0000")
+        return ToolDefinitionDigestResolution.Valid(
+            digest = sha256Hex(raw),
+            canonicalSchema = schema.canonicalSchema,
+        )
+    }
+
+    fun fromPreparedToolCall(
+        call: ToolCall,
+        tool: ProtocolTool,
+        requiresApproval: Boolean,
+    ): ToolInvocationIdentityResolution {
+        val toolName = call.name.trim()
+        if (toolName.isEmpty() || toolName != tool.function.name.trim()) {
+            return ToolInvocationIdentityResolution.Invalid(
+                ToolInvocationIdentityErrorCode.TOOL_NAME_MISMATCH,
+                "工具调用名称与已准备定义不一致",
+            )
+        }
+        val arguments = when (val validated = ToolArgumentsValidator().validate(call.arguments)) {
+            is ToolArgumentsValidation.Valid -> validated
+            is ToolArgumentsValidation.Invalid -> return ToolInvocationIdentityResolution.Invalid(
+                code = when (validated.error.code) {
+                    com.promenar.nexara.domain.tool.ToolArgumentsErrorCode.MALFORMED_JSON ->
+                        ToolInvocationIdentityErrorCode.MALFORMED_ARGUMENTS
+                    com.promenar.nexara.domain.tool.ToolArgumentsErrorCode.ROOT_NOT_OBJECT ->
+                        ToolInvocationIdentityErrorCode.ROOT_ARGUMENTS_NOT_OBJECT
+                },
+                message = validated.error.message,
+            )
+        }
+        val digest = definitionDigest(tool)
+        if (digest !is ToolDefinitionDigestResolution.Valid) {
+            return ToolInvocationIdentityResolution.Invalid(
+                ToolInvocationIdentityErrorCode.INVALID_DEFINITION,
+                (digest as ToolDefinitionDigestResolution.Invalid).message,
+            )
+        }
+        val schema = ToolSchemaValidator().validate(digest.canonicalSchema, arguments.arguments)
+        if (schema is ToolSchemaValidation.Invalid) {
+            return ToolInvocationIdentityResolution.Invalid(
+                ToolInvocationIdentityErrorCode.SCHEMA_MISMATCH,
+                "工具参数不符合已准备的 schema",
+            )
+        }
+        return ToolInvocationIdentityResolution.Valid(
+            identity = ToolInvocationIdentity(
+                runtimeToolId = tool.runtimeToolId.trim(),
+                toolName = toolName,
+                argumentsDigest = arguments.sha256,
+                definitionDigest = digest.digest,
+                requiresApproval = requiresApproval,
+            ),
+            arguments = arguments.arguments,
+        )
+    }
 
     fun fromLegacyToolCall(
         call: ToolCall,
         requiresApproval: Boolean,
     ): ToolInvocationIdentityResolution {
         val toolName = call.name.trim()
-        if (toolName.isEmpty()) return ToolInvocationIdentityResolution.Invalid("工具名称不能为空")
+        if (toolName.isEmpty()) return ToolInvocationIdentityResolution.Invalid(
+            ToolInvocationIdentityErrorCode.TOOL_NAME_MISMATCH,
+            "工具名称不能为空",
+        )
         val validated = ToolArgumentsValidator().validate(call.arguments)
         if (validated is ToolArgumentsValidation.Invalid) {
-            return ToolInvocationIdentityResolution.Invalid(validated.error.message)
+            return ToolInvocationIdentityResolution.Invalid(
+                code = when (validated.error.code) {
+                    com.promenar.nexara.domain.tool.ToolArgumentsErrorCode.MALFORMED_JSON ->
+                        ToolInvocationIdentityErrorCode.MALFORMED_ARGUMENTS
+                    com.promenar.nexara.domain.tool.ToolArgumentsErrorCode.ROOT_NOT_OBJECT ->
+                        ToolInvocationIdentityErrorCode.ROOT_ARGUMENTS_NOT_OBJECT
+                },
+                message = validated.error.message,
+            )
         }
         validated as ToolArgumentsValidation.Valid
         return ToolInvocationIdentityResolution.Valid(
-            ToolInvocationIdentity(
+            identity = ToolInvocationIdentity(
                 runtimeToolId = toolName,
                 toolName = toolName,
                 argumentsDigest = validated.sha256,
                 definitionDigest = sha256Hex("$LEGACY_DEFINITION_PREFIX$toolName"),
                 requiresApproval = requiresApproval,
             ),
+            arguments = validated.arguments,
         )
     }
+
+    fun isLegacy(identity: ToolInvocationIdentity): Boolean =
+        identity.definitionDigest == sha256Hex("$LEGACY_DEFINITION_PREFIX${identity.toolName}")
 }
 
 sealed interface ToolRegistrationResult {
@@ -225,7 +346,7 @@ interface ToolExecutionLedger {
     suspend fun reject(keys: Set<ToolExecutionKey>): Int
     suspend fun cancel(keys: Set<ToolExecutionKey>): Int
     suspend fun timeout(keys: Set<ToolExecutionKey>): Int
-    suspend fun claim(key: ToolExecutionKey): Boolean
+    suspend fun claim(key: ToolExecutionKey, expectedIdentity: ToolInvocationIdentity): Boolean
     suspend fun finish(key: ToolExecutionKey, outcome: ToolExecutionOutcome): Boolean
     suspend fun finishWithResult(
         key: ToolExecutionKey,
@@ -336,10 +457,18 @@ class ToolExecutionLedgerRepository(
         ToolLedgerState.TIMED_OUT,
     ).size
 
-    override suspend fun claim(key: ToolExecutionKey): Boolean = dao.claim(
+    override suspend fun claim(
+        key: ToolExecutionKey,
+        expectedIdentity: ToolInvocationIdentity,
+    ): Boolean = dao.claim(
         key.sessionId,
         key.assistantMessageId,
         key.toolCallId,
+        expectedIdentity.runtimeToolId,
+        expectedIdentity.toolName,
+        expectedIdentity.argumentsDigest,
+        expectedIdentity.definitionDigest,
+        expectedIdentity.requiresApproval,
         clock(),
     ) == 1
 
@@ -449,7 +578,7 @@ class ToolExecutionLedgerRepository(
         database.withTransaction { dao.deleteOrphans() }
         val running = dao.getRunning()
         return running.count { entry ->
-            runCatching {
+            recoverOrNull {
                 database.withTransaction {
                     val key = ToolExecutionKey(entry.sessionId, entry.assistantMessageId, entry.toolCallId)
                     val createdAt = clock()
@@ -475,7 +604,7 @@ class ToolExecutionLedgerRepository(
                         false
                     }
                 }
-            }.getOrDefault(false)
+            } == true
         }
     }
 
@@ -501,82 +630,51 @@ class ToolExecutionLedgerRepository(
         if (distinctCalls.size != toolCalls.size || pendingToolCallIds.isEmpty() ||
             pendingToolCallIds.any { pendingId -> distinctCalls.none { it.id == pendingId } }
         ) return@withTransaction ToolApprovalCreation.CONFLICT
-        val identities = distinctCalls.map { call ->
-            val resolved = ToolInvocationIdentityFactory.fromLegacyToolCall(
-                call,
-                call.id in pendingToolCallIds,
-            )
-            if (resolved !is ToolInvocationIdentityResolution.Valid) {
-                return@withTransaction ToolApprovalCreation.CONFLICT
-            }
-            call.id to resolved.identity
-        }.toMap()
         val orderedPendingIds = distinctCalls.filter { it.id in pendingToolCallIds }.map { it.id }
-        if (request.calls.map { it.toolCallId } != orderedPendingIds ||
-            request.calls.any { approvalCall ->
-                identities[approvalCall.toolCallId] != approvalCall.toInvocationIdentity()
-            }
-        ) return@withTransaction ToolApprovalCreation.CONFLICT
-        val existingSame = if (awaiting.any { it.assistantMessageId == assistantMessageId }) {
-            dao.getForAssistant(keySessionId, assistantMessageId)
-        } else {
-            emptyList()
+        if (request.calls.map { it.toolCallId } != orderedPendingIds) {
+            return@withTransaction ToolApprovalCreation.CONFLICT
         }
-        if (existingSame.isNotEmpty()) {
+        val callsById = distinctCalls.associateBy { it.id }
+        val identities = request.calls.associate { approvalCall ->
+            val identity = approvalCall.toInvocationIdentity()
+            val call = callsById[approvalCall.toolCallId]
+                ?: return@withTransaction ToolApprovalCreation.CONFLICT
+            val arguments = ToolArgumentsValidator().validate(call.arguments)
+                as? ToolArgumentsValidation.Valid
+                ?: return@withTransaction ToolApprovalCreation.CONFLICT
+            if (ToolInvocationIdentityFactory.isLegacy(identity) ||
+                !identity.requiresApproval || identity.toolName != call.name ||
+                identity.argumentsDigest != arguments.sha256
+            ) return@withTransaction ToolApprovalCreation.CONFLICT
+            approvalCall.toolCallId to identity
+        }
+        for ((callId, identity) in identities) {
+            val key = ToolExecutionKey(keySessionId, assistant.id, callId)
+            when (val existing = dao.get(keySessionId, assistantMessageId, callId)) {
+                null -> if (registerInTransaction(key, identity) !=
+                    ToolRegistrationResult.Registered(ToolLedgerState.PENDING_APPROVAL)
+                ) return@withTransaction ToolApprovalCreation.CONFLICT
+                else -> if (!existing.matches(identity) ||
+                    existing.status != ToolLedgerState.PENDING_APPROVAL
+                ) return@withTransaction ToolApprovalCreation.CONFLICT
+            }
+        }
+        val persistedPending = assistant.pendingApprovalToolIds?.let {
+            runCatching { json.decodeFromString<List<String>>(it) }.getOrNull()
+        }
+        val persistedRequest = database.sessionDao().getById(keySessionId)?.approvalRequest?.let {
+            runCatching { json.decodeFromString<ApprovalRequest>(it) }.getOrNull()
+        }
+        if (persistedPending != null || persistedRequest != null) {
             val persistedCalls = assistant.toolCalls?.let {
                 runCatching { json.decodeFromString<List<ToolCall>>(it) }.getOrNull()
             }
-            val persistedPending = assistant.pendingApprovalToolIds?.let {
-                runCatching { json.decodeFromString<List<String>>(it) }.getOrNull()
-            }
-            val expectedStates = distinctCalls.associate { call ->
-                call.id to if (call.id in pendingToolCallIds) {
-                    ToolLedgerState.PENDING_APPROVAL
-                } else {
-                    ToolLedgerState.APPROVED
-                }
-            }
-            val persistedStates = existingSame.associate { it.toolCallId to it.status }
-            val persistedApprovalRequirements = existingSame.associate {
-                it.toolCallId to it.requiresApproval
-            }
-            val persistedIdentities = existingSame.associate { entry ->
-                entry.toolCallId to identities[entry.toolCallId]?.let { identity ->
-                    entry.matches(identity)
-                }
-            }
-            val persistedRequest = database.sessionDao().getById(keySessionId)?.approvalRequest?.let {
-                runCatching { json.decodeFromString<ApprovalRequest>(it) }.getOrNull()
-            }
             return@withTransaction if (
-                persistedCalls == distinctCalls &&
-                    persistedPending == orderedPendingIds &&
-                    persistedStates == expectedStates &&
-                    persistedIdentities == identities.keys.associateWith { true } &&
-                    persistedApprovalRequirements == distinctCalls.associate {
-                        it.id to (it.id in pendingToolCallIds)
-                    } &&
-                    persistedRequest == request
+                persistedCalls == distinctCalls && persistedPending == orderedPendingIds &&
+                persistedRequest == request
             ) ToolApprovalCreation.EXISTING else ToolApprovalCreation.CONFLICT
         }
-        if (identities.keys.any { callId ->
-                dao.get(keySessionId, assistantMessageId, callId) != null
-            }
-        ) return@withTransaction ToolApprovalCreation.CONFLICT
         val now = clock()
-        distinctCalls.forEach { call ->
-            val expectedState = if (call.id in pendingToolCallIds) {
-                ToolLedgerState.PENDING_APPROVAL
-            } else {
-                ToolLedgerState.APPROVED
-            }
-            check(registerInTransaction(
-                ToolExecutionKey(keySessionId, assistant.id, call.id),
-                identities.getValue(call.id),
-            ) == ToolRegistrationResult.Registered(expectedState)) {
-                "重复工具调用状态与审批请求冲突"
-            }
-        }
         check(database.messageDao().updateToolApprovalPayload(
             assistantMessageId,
             json.encodeToString(distinctCalls),
@@ -726,13 +824,15 @@ class ToolExecutionLedgerRepository(
         val entriesById = dao.getForAssistant(sessionId, assistantId).associateBy { it.toolCallId }
         val entries = request.calls.mapIndexed { index, approvalCall ->
             val persistedCall = byCallId[approvalCall.toolCallId] ?: return null
-            val expectedIdentity = ToolInvocationIdentityFactory.fromLegacyToolCall(
-                persistedCall,
-                requiresApproval = true,
-            ) as? ToolInvocationIdentityResolution.Valid ?: return null
-            if (expectedIdentity.identity != approvalCall.toInvocationIdentity()) return null
+            val expectedIdentity = approvalCall.toInvocationIdentity()
+            if (ToolInvocationIdentityFactory.isLegacy(expectedIdentity) ||
+                persistedCall.name != expectedIdentity.toolName
+            ) return null
+            val arguments = ToolArgumentsValidator().validate(persistedCall.arguments)
+                as? ToolArgumentsValidation.Valid ?: return null
+            if (arguments.sha256 != expectedIdentity.argumentsDigest) return null
             val entry = entriesById[approvalCall.toolCallId]
-                ?.takeIf { it.matches(approvalCall.toInvocationIdentity()) }
+                ?.takeIf { it.matches(expectedIdentity) }
                 ?: return null
             val validState = entry.status == ToolLedgerState.PENDING_APPROVAL ||
                 (index == 0 && entry.status in allowedFirstStates)
@@ -881,7 +981,7 @@ class ToolExecutionLedgerRepository(
             database.messageDao().clearPendingApprovalWithoutLedger()
         }
         dao.getUnclaimedSafeApprovals().forEach { entry ->
-            runCatching {
+            recoverOrNull {
                 database.withTransaction {
                     val parent = database.messageDao().getById(entry.assistantMessageId)
                         ?.takeIf { it.sessionId == entry.sessionId && it.role == "assistant" }
@@ -915,7 +1015,7 @@ class ToolExecutionLedgerRepository(
         val sessions = dao.getAwaitingApproval().groupBy { it.sessionId }
         val activeSessions = mutableSetOf<String>()
         sessions.forEach { (sessionId, sessionEntries) ->
-            val hasActive = runCatching {
+            val hasActive = recoverOrNull {
                 database.withTransaction {
                     val groups = sessionEntries.groupBy { it.assistantMessageId }
                     val validGroups = mutableListOf<Pair<com.promenar.nexara.data.local.db.entity.MessageEntity, List<ToolExecutionLedgerEntity>>>()
@@ -1000,13 +1100,13 @@ class ToolExecutionLedgerRepository(
                         }
                     }
                 }
-            }.getOrDefault(false)
+            } ?: false
             if (hasActive) activeSessions += sessionId
         }
         database.sessionDao().getWithToolApprovalState()
             .filterNot { it.id in activeSessions }
             .forEach { session ->
-                runCatching {
+                recoverOrNull {
                     database.withTransaction {
                         database.sessionDao().updateToolApprovalState(
                             session.id,
@@ -1030,7 +1130,14 @@ class ToolExecutionLedgerRepository(
         val callsById = calls.associateBy { it.id }
         val candidates = entries.map { entry ->
             val call = callsById[entry.toolCallId] ?: return null
-            ApprovalCallCandidate(call, ToolRisk.UNKNOWN)
+            val identity = entry.toIdentityOrNull() ?: return null
+            if (ToolInvocationIdentityFactory.isLegacy(identity) ||
+                identity.toolName != call.name || !identity.requiresApproval
+            ) return null
+            val arguments = ToolArgumentsValidator().validate(call.arguments)
+                as? ToolArgumentsValidation.Valid ?: return null
+            if (arguments.sha256 != identity.argumentsDigest) return null
+            ApprovalCallCandidate(call, ToolRisk.UNKNOWN, identity)
         }
         val request = runCatching {
             ToolApprovalRequestFactory.create(
@@ -1178,3 +1285,11 @@ class ToolExecutionLedgerRepository(
 private fun sha256Hex(raw: String): String = MessageDigest.getInstance("SHA-256")
     .digest(raw.toByteArray(Charsets.UTF_8))
     .joinToString("") { byte -> "%02x".format(byte) }
+
+private suspend inline fun <T> recoverOrNull(block: suspend () -> T): T? = try {
+    block()
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    null
+}

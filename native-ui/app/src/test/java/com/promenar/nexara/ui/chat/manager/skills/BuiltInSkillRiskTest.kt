@@ -10,6 +10,7 @@ import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import io.mockk.mockk
 import org.junit.Test
+import kotlinx.serialization.json.JsonObject
 
 class BuiltInSkillRiskTest {
     @Test
@@ -33,7 +34,7 @@ class BuiltInSkillRiskTest {
             override val parametersSchema = "{}"
             override val mcpServerId: String? = "mcp"
             override suspend fun execute(
-                args: Map<String, Any>,
+                args: JsonObject,
                 context: com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext,
             ) = com.promenar.nexara.data.model.ToolResult("id", "ok")
         }.risk).isEqualTo(ToolRisk.UNKNOWN)

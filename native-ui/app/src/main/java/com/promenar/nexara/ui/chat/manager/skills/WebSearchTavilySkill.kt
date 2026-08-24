@@ -11,6 +11,9 @@ import com.promenar.nexara.data.security.SecretStore
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import com.promenar.nexara.domain.tool.ToolRisk
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonObject
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class WebSearchTavilySkill(
     private val context: Context,
@@ -37,10 +40,10 @@ class WebSearchTavilySkill(
     """.trimIndent()
 
     override suspend fun execute(
-        args: Map<String, Any>,
+        args: JsonObject,
         context: SkillExecutionContext
     ): ToolResult {
-        val query = args["query"]?.toString() ?: return ToolResult(id = "err", content = "Missing query", status = "error")
+        val query = args.stringArgument("query") ?: return ToolResult(id = "err", content = "Missing query", status = "error")
         val prefs = this.context.getSharedPreferences("nexara_search", Context.MODE_PRIVATE)
         val key = secretStore.get(SecretCatalog.tavilyApiKey)?.toString(Charsets.UTF_8).orEmpty()
         val depth = prefs.getString("search_depth", "advanced") ?: "advanced"
@@ -64,6 +67,8 @@ class WebSearchTavilySkill(
                 status = "success",
                 data = citationsJson
             )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             ToolResult(id = "err", content = "Tavily Search failed: ${e.message}", status = "error")
         }

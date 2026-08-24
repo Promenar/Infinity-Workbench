@@ -4,6 +4,9 @@ import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonObject
 import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.coroutines.flow.firstOrNull
 
@@ -17,10 +20,10 @@ class FileSearchSkill(
     override val risk = ToolRisk.SAFE_READ
     override val parametersSchema = """{"type":"object","properties":{"query":{"type":"string","description":"搜索关键词"},"mode":{"type":"string","enum":["name","fts"],"default":"name"}},"required":["query"]}"""
 
-    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
-        val query = args["query"] as? String
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val query = args.stringArgument("query")
             ?: return ToolResult("err", "缺少 query", "error")
-        val mode = args["mode"] as? String ?: "name"
+        val mode = args.stringArgument("mode") ?: "name"
 
         return try {
             val roots = workspaceRepo.observeChildren(context.workspaceRootUuid, context.workspaceRootUuid).firstOrNull()
@@ -39,6 +42,8 @@ class FileSearchSkill(
                     "找到 ${results.size} 个结果:\n${results.joinToString("\n") { "  $it" }}"
                 )
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             ToolResult("search_files_${System.currentTimeMillis()}", "搜索失败: ${e.message}", "error")
         }

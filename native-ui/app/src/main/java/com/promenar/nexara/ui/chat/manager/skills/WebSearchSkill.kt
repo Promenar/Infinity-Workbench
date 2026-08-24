@@ -14,6 +14,9 @@ import io.ktor.client.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import com.promenar.nexara.domain.tool.ToolRisk
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonObject
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class WebSearchSkill(
     private val context: Context,
@@ -40,10 +43,10 @@ class WebSearchSkill(
     """.trimIndent()
 
     override suspend fun execute(
-        args: Map<String, Any>,
+        args: JsonObject,
         context: SkillExecutionContext
     ): ToolResult {
-        val query = args["query"]?.toString() ?: return ToolResult(id = "err", content = "Missing query argument", status = "error")
+        val query = args.stringArgument("query") ?: return ToolResult(id = "err", content = "Missing query argument", status = "error")
         
         val provider = getActiveProvider()
         return try {
@@ -63,6 +66,8 @@ class WebSearchSkill(
                 status = if (results.isNotEmpty()) "success" else "error",
                 data = citationsJson
             )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             ToolResult(
                 id = "search_${System.currentTimeMillis()}",

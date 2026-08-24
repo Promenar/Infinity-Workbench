@@ -7,6 +7,10 @@ import com.promenar.nexara.domain.repository.PlanPatchOp
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.data.repository.TaskRepository
+import com.promenar.nexara.ui.chat.manager.registry.arrayArgument
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 class UpdatePlanSkill(
     private val taskRepo: ITaskRepository
@@ -18,8 +22,8 @@ class UpdatePlanSkill(
     override val risk = ToolRisk.FILE_WRITE
     override val parametersSchema = """{"type":"object","properties":{"operations":{"type":"array","items":{"type":"object","properties":{"action":{"type":"string","enum":["set_status","add_step","remove_step","move_step","update_title","set_note"]},"stepId":{"type":"string"},"parentId":{"type":"string"},"payload":{"type":"object","properties":{"status":{"type":"string"},"note":{"type":"string"},"title":{"type":"string"},"sortOrder":{"type":"string"},"newParentId":{"type":"string"},"newSortOrder":{"type":"string"}}}},"required":["action"]}}},"required":["operations"]}"""
 
-    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
-        val opsRaw = args["operations"]
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val opsRaw = args.arrayArgument("operations")
             ?: return ToolResult("err", "缺少 operations 参数", "error")
 
         val operations = parseOperations(opsRaw)
@@ -58,28 +62,16 @@ class UpdatePlanSkill(
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun parseOperations(raw: Any): List<PlanPatchOp>? {
-        return try {
-            when (raw) {
-                is List<*> -> raw.map { item ->
-                    when (item) {
-                        is Map<*, *> -> {
-                            val map = item as Map<String, Any?>
-                            PlanPatchOp(
-                                action = map["action"] as? String ?: return null,
-                                stepId = map["stepId"] as? String,
-                                parentId = map["parentId"] as? String,
-                                payload = (map["payload"] as? Map<String, Any>)?.mapValues { it.value.toString() }
-                            )
-                        }
-                        else -> return null
-                    }
-                }
-                else -> null
-            }
-        } catch (_: Exception) {
-            null
+    private fun parseOperations(raw: kotlinx.serialization.json.JsonArray): List<PlanPatchOp>? = raw.map { item ->
+        val operation = item as? JsonObject ?: return null
+        val payload = (operation["payload"] as? JsonObject)?.mapValues { (_, value) ->
+            (value as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
         }
+        PlanPatchOp(
+            action = operation.stringArgument("action") ?: return null,
+            stepId = operation.stringArgument("stepId"),
+            parentId = operation.stringArgument("parentId"),
+            payload = payload,
+        )
     }
 }

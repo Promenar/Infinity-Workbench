@@ -5,6 +5,8 @@ import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.repository.ITaskRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
+import kotlinx.serialization.json.JsonObject
 
 class DropPlanSkill(
     private val taskRepo: ITaskRepository
@@ -16,8 +18,8 @@ class DropPlanSkill(
     override val risk = ToolRisk.DELETE
     override val parametersSchema = """{"type":"object","properties":{"reason":{"type":"string","description":"终止原因"}},"required":["reason"]}"""
 
-    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
-        val reason = args["reason"] as? String ?: ""
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val reason = args.stringArgument("reason") ?: ""
 
         val state = taskRepo.getPlan(context.sessionId)
         val planId = state?.id ?: ""

@@ -12,6 +12,8 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.JsonObject
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class FileWriteSkill(
     private val fileOpRepo: IFileOperationRepository
@@ -23,12 +25,12 @@ class FileWriteSkill(
     override val risk = ToolRisk.FILE_WRITE
     override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"目标文件UUID"},"content":{"type":"string","description":"要写入的完整内容"},"expectedHash":{"type":"string","description":"文件的当前hash(乐观锁)"}},"required":["uuid","content","expectedHash"]}"""
 
-    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
-        val uuid = args["uuid"] as? String
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val uuid = args.stringArgument("uuid")
             ?: return ToolResult("err", "缺少 uuid", "error")
-        val content = args["content"] as? String
+        val content = args.stringArgument("content")
             ?: return ToolResult("err", "缺少 content", "error")
-        val expectedHash = args["expectedHash"] as? String
+        val expectedHash = args.stringArgument("expectedHash")
             ?: return ToolResult("err", "缺少 expectedHash", "error")
 
         return when (val result = fileOpRepo.writeFileAtomic(context.workspaceRootUuid, uuid, content, context.sessionId, expectedHash)) {

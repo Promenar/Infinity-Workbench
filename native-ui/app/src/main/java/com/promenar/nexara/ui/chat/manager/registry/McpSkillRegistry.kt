@@ -4,7 +4,6 @@ import com.promenar.nexara.data.repository.SkillRepository
 import com.promenar.nexara.ui.chat.manager.skills.McpSkill
 import com.promenar.nexara.data.remote.mcp.McpClient
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
-import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
 import io.ktor.client.HttpClient
 
 class McpSkillRegistry(
@@ -28,16 +27,7 @@ class McpSkillRegistry(
             mcpSkills.values.filter { it.id in allowedIds }
         }
         
-        return filteredSkills.map { skill ->
-            ProtocolTool(
-                type = "function",
-                function = ProtocolToolFunction(
-                    name = skill.name,
-                    description = skill.description,
-                    parameters = skill.parametersSchema
-                )
-            )
-        }
+        return filteredSkills.map(SkillDefinition::toProtocolTool)
     }
 
     // This would be called whenever MCP servers are updated or synced
@@ -45,9 +35,11 @@ class McpSkillRegistry(
         tools.forEach { tool ->
             mcpSkills[tool.name] = McpSkill(
                 mcpClient = McpClient(httpClient, serverUrl),
+                id = "mcp:$serverName:${tool.name}",
                 name = tool.name,
                 description = tool.description ?: "",
-                parametersSchema = tool.inputSchema?.toString() ?: "{}"
+                parametersSchema = tool.inputSchema?.toString() ?: "{}",
+                mcpServerId = serverName,
             )
         }
     }

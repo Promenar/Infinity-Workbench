@@ -7,6 +7,7 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import com.promenar.nexara.domain.tool.ToolRisk
+import kotlinx.serialization.json.JsonObject
 
 class GetPlanSkill(
     private val taskRepo: ITaskRepository
@@ -20,7 +21,7 @@ class GetPlanSkill(
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
 
-    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
         val state = taskRepo.getPlan(context.sessionId)
             ?: return ToolResult(
                 id = "get_plan_${System.currentTimeMillis()}",

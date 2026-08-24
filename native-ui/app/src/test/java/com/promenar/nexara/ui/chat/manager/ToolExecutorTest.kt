@@ -26,6 +26,17 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import org.junit.Before
 import org.junit.Test
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.boolean
+import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
+import com.promenar.nexara.domain.tool.ToolRisk
+import kotlinx.coroutines.CancellationException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ToolExecutorTest {
@@ -85,8 +96,11 @@ class ToolExecutorTest {
             ToolLedgerState.TIMED_OUT,
         )
 
-        override suspend fun claim(key: ToolExecutionKey): Boolean = synchronized(states) {
-            if (states[key] == ToolLedgerState.APPROVED) {
+        override suspend fun claim(
+            key: ToolExecutionKey,
+            expectedIdentity: ToolInvocationIdentity,
+        ): Boolean = synchronized(states) {
+            if (identities[key] == expectedIdentity && states[key] == ToolLedgerState.APPROVED) {
                 states[key] = ToolLedgerState.RUNNING
                 true
             } else {
@@ -239,7 +253,12 @@ class ToolExecutorTest {
         seedSessionWithAssistant(toolsEnabled = false)
 
         val toolCalls = listOf(ToolCall(id = "tc1", name = "read_file", arguments = """{"path":"/tmp"}"""))
-        toolExecutor.executeTools("s1", "m1", toolCalls)
+        toolExecutor.executeTools(
+            "s1",
+            "m1",
+            toolCalls,
+            preparedTools = listOf(testSkill("read_file") { ToolResult("unused", "unused") }.toPreparedTool()),
+        )
         advanceUntilIdle()
 
         val session = store.getSession("s1")!!
@@ -249,11 +268,162 @@ class ToolExecutorTest {
     }
 
     @Test
+    fun preparedSnapshotPreservesNestedTypedArguments() = testScope.runTest {
+        seedSessionWithAssistant()
+        var recorded: JsonObject? = null
+        val skill = testSkill(
+            name = "nested_tool",
+            schema = """{"type":"object","properties":{"object":{"type":"object","additionalProperties":true},"array":{"type":"array","items":{}},"decimal":{"type":"number"},"flag":{"type":"boolean"},"nil":{"type":"null"}},"required":["object","array","decimal","flag","nil"]}""",
+        ) { args ->
+            recorded = args
+            ToolResult("nested", "ok")
+        }
+        val registry = singleSkillRegistry(skill)
+        val prepared = skill.toPreparedTool()
+        val executor = ToolExecutor(store, messageManager, registry, ledger = RecordingLedger())
+
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(ToolCall("nested", "nested_tool", """{"object":{"x":1},"array":[true,null],"decimal":1.5,"flag":false,"nil":null}""")),
+            preparedTools = listOf(prepared),
+        )
+
+        val args = requireNotNull(recorded)
+        assertThat(args.getValue("object").jsonObject.getValue("x").jsonPrimitive.content).isEqualTo("1")
+        assertThat(args.getValue("array").jsonArray[0].jsonPrimitive.boolean).isTrue()
+        assertThat(args.getValue("array").jsonArray[1]).isEqualTo(JsonNull)
+        assertThat(args.getValue("decimal").jsonPrimitive.content).isEqualTo("1.5")
+        assertThat(args.getValue("flag").jsonPrimitive.boolean).isFalse()
+        assertThat(args.getValue("nil")).isEqualTo(JsonNull)
+    }
+
+    @Test
+    fun malformedUnknownAndSchemaMismatchFailDeterministicallyWithoutExecution() = testScope.runTest {
+        seedSessionWithAssistant()
+        var executions = 0
+        val skill = testSkill(
+            name = "safe_tool",
+            schema = """{"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false}""",
+        ) {
+            executions++
+            ToolResult("unexpected", "unexpected")
+        }
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(store, messageManager, singleSkillRegistry(skill), ledger = ledger)
+        val prepared = listOf(skill.toPreparedTool())
+        val calls = listOf(
+            ToolCall("malformed", "safe_tool", "{"),
+            ToolCall("root-array", "safe_tool", "[]"),
+            ToolCall("unknown", "unknown_tool", "{}"),
+            ToolCall("schema", "safe_tool", """{"value":1,"secret":"do-not-echo"}"""),
+        )
+
+        executor.executeTools("s1", "m1", calls, preparedTools = prepared)
+        advanceUntilIdle()
+
+        assertThat(executions).isEqualTo(0)
+        val messages = store.getSession("s1")!!.messages.filter { it.role == MessageRole.TOOL }
+        assertThat(messages.map { it.toolCallId }).containsExactlyElementsIn(calls.map { it.id })
+        assertThat(messages.map { it.content }.distinct()).containsExactly("工具调用校验失败，已安全终止。")
+        assertThat(messages.joinToString { it.content }).doesNotContain("do-not-echo")
+        calls.forEach { call ->
+            assertThat(ledger.state(ToolExecutionKey("s1", "m1", call.id))).isEqualTo(ToolLedgerState.FAILED)
+        }
+    }
+
+    @Test
+    fun concurrentInvalidInvocationHasOneTerminalAndModifiedSameKeyConflicts() = testScope.runTest {
+        seedSessionWithAssistant()
+        val skill = testSkill(
+            name = "validated_tool",
+            schema = """{"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false}""",
+        ) { ToolResult("unexpected", "unexpected") }
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(store, messageManager, singleSkillRegistry(skill), ledger = ledger)
+        val prepared = listOf(skill.toPreparedTool())
+        val invalid = ToolCall("same-invalid", "validated_tool", """{"value":1}""")
+
+        listOf(
+            async { executor.executeTools("s1", "m1", listOf(invalid), preparedTools = prepared) },
+            async { executor.executeTools("s1", "m1", listOf(invalid), preparedTools = prepared) },
+        ).awaitAll()
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(invalid.copy(arguments = """{"value":false}""")),
+            preparedTools = prepared,
+        )
+        advanceUntilIdle()
+
+        assertThat(store.getSession("s1")!!.messages.count {
+            it.role == MessageRole.TOOL && it.toolCallId == invalid.id
+        }).isEqualTo(1)
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", invalid.id)))
+            .isEqualTo(ToolLedgerState.FAILED)
+    }
+
+    @Test
+    fun changedRegistryDefinitionFailsAfterClaimWithoutExecutingReplacement() = testScope.runTest {
+        seedSessionWithAssistant()
+        var executions = 0
+        val preparedSkill = testSkill("replaceable", description = "prompt definition") { ToolResult("x", "x") }
+        val currentSkill = testSkill("replaceable", description = "changed definition") {
+            executions++
+            ToolResult("unexpected", "unexpected")
+        }
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(store, messageManager, singleSkillRegistry(currentSkill), ledger = ledger)
+
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(ToolCall("changed", "replaceable", "{}")),
+            preparedTools = listOf(preparedSkill.toPreparedTool()),
+        )
+        advanceUntilIdle()
+
+        assertThat(executions).isEqualTo(0)
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", "changed"))).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(store.getSession("s1")!!.messages.last().content).contains("工具执行失败")
+    }
+
+    @Test
+    fun skillCancellationPropagatesWithoutSyntheticSuccess() = testScope.runTest {
+        seedSessionWithAssistant()
+        val skill = testSkill("cancel_tool") { throw CancellationException("cancel") }
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(store, messageManager, singleSkillRegistry(skill), ledger = ledger)
+
+        var thrown: Throwable? = null
+        try {
+            executor.executeTools(
+                "s1",
+                "m1",
+                listOf(ToolCall("cancelled", "cancel_tool", "{}")),
+                preparedTools = listOf(skill.toPreparedTool()),
+            )
+        } catch (error: Throwable) {
+            thrown = error
+        }
+
+        assertThat(thrown).isInstanceOf(CancellationException::class.java)
+        assertThat(store.getSession("s1")!!.messages.none {
+            it.role == MessageRole.TOOL && it.toolCallId == "cancelled" && it.content.contains("完成")
+        }).isTrue()
+    }
+
+    @Test
     fun executeToolsWithNoRegistry() = testScope.runTest {
         seedSessionWithAssistant(toolsEnabled = true)
 
         val toolCalls = listOf(ToolCall(id = "tc1", name = "read_file", arguments = """{"path":"/tmp"}"""))
-        toolExecutor.executeTools("s1", "m1", toolCalls)
+        toolExecutor.executeTools(
+            "s1",
+            "m1",
+            toolCalls,
+            preparedTools = listOf(testSkill("read_file") { ToolResult("unused", "unused") }.toPreparedTool()),
+        )
         advanceUntilIdle()
 
         val session = store.getSession("s1")!!
@@ -275,7 +445,7 @@ class ToolExecutorTest {
                         override val description = "Read a file"
                         override val mcpServerId: String? = null
                         override val parametersSchema = "{}"
-                        override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
+                        override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
                             return ToolResult(id = "tc1", content = "File contents here", status = "success")
                         }
                     }
@@ -288,7 +458,12 @@ class ToolExecutorTest {
 
         val executorWithRegistry = ToolExecutor(store, messageManager, customRegistry, ledger = RecordingLedger())
         val toolCalls = listOf(ToolCall(id = "tc1", name = "read_file", arguments = """{"path":"/tmp"}"""))
-        executorWithRegistry.executeTools("s1", "m1", toolCalls)
+        executorWithRegistry.executeTools(
+            "s1",
+            "m1",
+            toolCalls,
+            preparedTools = preparedFor(customRegistry, "read_file"),
+        )
         advanceUntilIdle()
 
         val session = store.getSession("s1")!!
@@ -309,7 +484,12 @@ class ToolExecutorTest {
 
         val executorWithRegistry = ToolExecutor(store, messageManager, customRegistry, ledger = RecordingLedger())
         val toolCalls = listOf(ToolCall(id = "tc1", name = "unknown_tool", arguments = "{}"))
-        executorWithRegistry.executeTools("s1", "m1", toolCalls)
+        executorWithRegistry.executeTools(
+            "s1",
+            "m1",
+            toolCalls,
+            preparedTools = listOf(testSkill("unknown_tool") { ToolResult("unused", "unused") }.toPreparedTool()),
+        )
         advanceUntilIdle()
 
         val session = store.getSession("s1")!!
@@ -330,7 +510,7 @@ class ToolExecutorTest {
                     override val description = "Fails"
                     override val mcpServerId: String? = null
                     override val parametersSchema = "{}"
-                    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
+                    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
                         throw RuntimeException("Something went wrong")
                     }
                 }
@@ -341,7 +521,12 @@ class ToolExecutorTest {
 
         val executorWithRegistry = ToolExecutor(store, messageManager, customRegistry, ledger = RecordingLedger())
         val toolCalls = listOf(ToolCall(id = "tc1", name = "fail_tool", arguments = "{}"))
-        executorWithRegistry.executeTools("s1", "m1", toolCalls)
+        executorWithRegistry.executeTools(
+            "s1",
+            "m1",
+            toolCalls,
+            preparedTools = preparedFor(customRegistry, "fail_tool"),
+        )
         advanceUntilIdle()
 
         val session = store.getSession("s1")!!
@@ -371,7 +556,7 @@ class ToolExecutorTest {
                         override val description = "Read"
                         override val mcpServerId: String? = null
                         override val parametersSchema = "{}"
-                        override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
+                        override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
                             readFileExecuted = true
                             return ToolResult(id = "tc2", content = "file data", status = "success")
                         }
@@ -388,7 +573,16 @@ class ToolExecutorTest {
             ToolCall(id = "tc1", name = "file_write", arguments = """{"path":"/tmp"}"""),
             ToolCall(id = "tc2", name = "file_read", arguments = """{"path":"/tmp"}""")
         )
-        executorWithRegistry.executeTools("s1", "m1", toolCalls, allowedToolCallIds = setOf("tc2"))
+        executorWithRegistry.executeTools(
+            "s1",
+            "m1",
+            toolCalls,
+            allowedToolCallIds = setOf("tc2"),
+            preparedTools = listOf(
+                testSkill("file_write") { ToolResult("unused", "unused") }.toPreparedTool(),
+                requireNotNull(customRegistry.getSkill("file_read")).toPreparedTool(),
+            ),
+        )
         advanceUntilIdle()
 
         assertThat(readFileExecuted).isTrue()
@@ -410,7 +604,13 @@ class ToolExecutorTest {
             ToolCall("risky", "write_file", "{}"),
         )
 
-        executor.executeTools("s1", "m1", calls, allowedToolCallIds = setOf("safe"))
+        executor.executeTools(
+            "s1",
+            "m1",
+            calls,
+            allowedToolCallIds = setOf("safe"),
+            preparedTools = preparedFor(registry, "read_file", "write_file"),
+        )
         val riskyKey = ToolExecutionKey("s1", "m1", "risky")
         ledger.approve(setOf(riskyKey))
         executor.executeTools("s1", "m1", calls, allowedToolCallIds = setOf("risky"))
@@ -433,7 +633,15 @@ class ToolExecutorTest {
         val calls = listOf(ToolCall("same", "write_file", "{}"))
 
         (1..2).map {
-            async { executor.executeTools("s1", "m1", calls, setOf("same")) }
+            async {
+                executor.executeTools(
+                    "s1",
+                    "m1",
+                    calls,
+                    setOf("same"),
+                    preparedFor(countingRegistry(counts), "write_file"),
+                )
+            }
         }.awaitAll()
         advanceUntilIdle()
 
@@ -454,7 +662,7 @@ class ToolExecutorTest {
                 override val description = "失败工具"
                 override val mcpServerId: String? = null
                 override val parametersSchema = "{}"
-                override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
+                override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
                     throw IllegalStateException("Authorization: Bearer secret-token")
                 }
             }
@@ -468,6 +676,7 @@ class ToolExecutorTest {
             "m1",
             listOf(ToolCall("failed", "remote_tool", "{}")),
             setOf("failed"),
+            preparedFor(registry, "remote_tool"),
         )
         advanceUntilIdle()
 
@@ -494,7 +703,7 @@ class ToolExecutorTest {
                 override val description = "返回敏感data"
                 override val mcpServerId: String? = null
                 override val parametersSchema = "{}"
-                override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext) =
+                override suspend fun execute(args: JsonObject, context: SkillExecutionContext) =
                     ToolResult(
                         id = "secret-data",
                         content = "done",
@@ -511,6 +720,7 @@ class ToolExecutorTest {
             "s1",
             "m1",
             listOf(ToolCall("secret-data", "remote_tool", "{}")),
+            preparedTools = preparedFor(registry, "remote_tool"),
         )
         advanceUntilIdle()
 
@@ -529,14 +739,20 @@ class ToolExecutorTest {
             0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
         ) + "Authorization: Bearer secret-token".toByteArray()
         val data = "data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(payload)
+        val registry = resultDataRegistry(data)
         val executor = ToolExecutor(
             store,
             messageManager,
-            resultDataRegistry(data),
+            registry,
             ledger = ledger,
         )
 
-        executor.executeTools("s1", "m1", listOf(ToolCall("fake-image", "remote_tool", "{}")))
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(ToolCall("fake-image", "remote_tool", "{}")),
+            preparedTools = preparedFor(registry, "remote_tool"),
+        )
         advanceUntilIdle()
 
         val session = store.getSession("s1")!!
@@ -549,9 +765,15 @@ class ToolExecutorTest {
         seedSessionWithAssistant()
         val ledger = RecordingLedger()
         val data = """[{"title":"Authorization: Bearer secret-token /Users/alice/key","url":"https://user:pass@example.com/sk-abcdefghijklmnopqrstuvwxyz?q=api_key#frag","source":"C:\\\\private\\\\sk-secretvalue"}]"""
-        val executor = ToolExecutor(store, messageManager, resultDataRegistry(data), ledger = ledger)
+        val registry = resultDataRegistry(data)
+        val executor = ToolExecutor(store, messageManager, registry, ledger = ledger)
 
-        executor.executeTools("s1", "m1", listOf(ToolCall("citations", "remote_tool", "{}")))
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(ToolCall("citations", "remote_tool", "{}")),
+            preparedTools = preparedFor(registry, "remote_tool"),
+        )
         advanceUntilIdle()
 
         val safeData = store.getSession("s1")!!.messages.first { it.id == "m1" }
@@ -571,7 +793,7 @@ class ToolExecutorTest {
             override val description = "data"
             override val mcpServerId: String? = null
             override val parametersSchema = "{}"
-            override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext) =
+            override suspend fun execute(args: JsonObject, context: SkillExecutionContext) =
                 ToolResult(id = name, content = "done", status = "success", data = data)
         }
         override fun getAllSkills() = emptyList<SkillDefinition>()
@@ -585,7 +807,7 @@ class ToolExecutorTest {
             override val description = "计数工具"
             override val mcpServerId: String? = null
             override val parametersSchema = "{}"
-            override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
+            override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
                 synchronized(counts) { counts[contextualToolCallId(name)] = (counts[contextualToolCallId(name)] ?: 0) + 1 }
                 return ToolResult(id = name, content = "ok", status = "success")
             }
@@ -599,4 +821,36 @@ class ToolExecutorTest {
             else -> name
         }
     }
+
+    private fun testSkill(
+        name: String,
+        description: String = "test",
+        schema: String = """{"type":"object","properties":{}}""",
+        execute: suspend (JsonObject) -> ToolResult,
+    ) = object : SkillDefinition {
+        override val id = name
+        override val name = name
+        override val description = description
+        override val mcpServerId: String? = null
+        override val parametersSchema = schema
+        override val risk = ToolRisk.SAFE_READ
+        override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = execute(args)
+    }
+
+    private fun singleSkillRegistry(skill: SkillDefinition) = object : SkillRegistry {
+        override fun getSkill(name: String): SkillDefinition? = skill.takeIf { it.name == name }
+        override fun getAllSkills(): List<SkillDefinition> = listOf(skill)
+        override fun getAllTools(allowedIds: List<String>?): List<ProtocolTool> = listOf(skill.toPreparedTool())
+    }
+
+    private fun preparedFor(registry: SkillRegistry, vararg names: String): List<ProtocolTool> =
+        names.map { name -> requireNotNull(registry.getSkill(name)).toPreparedTool() }
+
+    private fun SkillDefinition.toPreparedTool() = ProtocolTool(
+        function = ProtocolToolFunction(name, description, parametersSchema),
+        risk = risk,
+        runtimeToolId = runtimeToolId,
+        sourceId = sourceId,
+        mcpServerId = mcpServerId,
+    )
 }

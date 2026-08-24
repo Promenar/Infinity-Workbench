@@ -1,7 +1,6 @@
 package com.promenar.nexara.ui.chat.manager.registry
 
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
-import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
 
 class DefaultSkillRegistry : SkillRegistry {
     private val skills = mutableMapOf<String, SkillDefinition>()
@@ -31,16 +30,6 @@ class DefaultSkillRegistry : SkillRegistry {
             skills.values.filter { it.id in resolvedAllowedIds }
         }
         
-        return filteredSkills.map { skill ->
-            ProtocolTool(
-                type = "function",
-                risk = skill.risk,
-                function = ProtocolToolFunction(
-                    name = skill.name,
-                    description = skill.description,
-                    parameters = skill.parametersSchema
-                )
-            )
-        }
+        return filteredSkills.map(SkillDefinition::toProtocolTool)
     }
 }

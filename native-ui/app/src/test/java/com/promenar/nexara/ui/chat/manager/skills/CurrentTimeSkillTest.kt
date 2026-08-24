@@ -21,13 +21,13 @@ class CurrentTimeSkillTest {
 
     @Test
     fun `returns success status`() = runTest {
-        val result = skill.execute(emptyMap(), ctx)
+        val result = skill.execute(skillArgs(), ctx)
         assertThat(result.status).isEqualTo("success")
     }
 
     @Test
     fun `returns valid ISO-8601 datetime`() = runTest {
-        val result = skill.execute(emptyMap(), ctx)
+        val result = skill.execute(skillArgs(), ctx)
         // 2026-05-14T03:17:00.123+08:00
         val parsed = ZonedDateTime.parse(result.content, DateTimeFormatter.ISO_OFFSET_DATE_TIME)
         assertThat(parsed).isNotNull()
@@ -36,7 +36,7 @@ class CurrentTimeSkillTest {
     @Test
     fun `returns time close to current moment`() = runTest {
         val before = ZonedDateTime.now()
-        val result = skill.execute(emptyMap(), ctx)
+        val result = skill.execute(skillArgs(), ctx)
         val after = ZonedDateTime.now()
 
         val parsed = ZonedDateTime.parse(result.content, DateTimeFormatter.ISO_OFFSET_DATE_TIME)
@@ -47,15 +47,15 @@ class CurrentTimeSkillTest {
 
     @Test
     fun `content contains timezone offset`() = runTest {
-        val result = skill.execute(emptyMap(), ctx)
+        val result = skill.execute(skillArgs(), ctx)
         // ISO_OFFSET_DATE_TIME 应包含时区偏移（如 +08:00 或 Z）
         assertThat(result.content).containsMatch("\\+\\d{2}:\\d{2}|\\-\\d{2}:\\d{2}|Z")
     }
 
     @Test
     fun `result id is unique`() = runTest {
-        val r1 = skill.execute(emptyMap(), ctx)
-        val r2 = skill.execute(emptyMap(), ctx)
+        val r1 = skill.execute(skillArgs(), ctx)
+        val r2 = skill.execute(skillArgs(), ctx)
         assertThat(r1.id).isNotEqualTo(r2.id)
     }
 }

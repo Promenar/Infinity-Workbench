@@ -13,6 +13,7 @@ import com.promenar.nexara.data.model.LoopStatus
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.toEntity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
@@ -154,6 +155,32 @@ class ToolExecutionLedgerRepositoryTest {
     }
 
     @Test
+    fun `createToolApproval 拒绝仅按工具名称重算的 legacy pending identity`() = runBlocking {
+        val call = ToolCall("legacy-pending", "write_file", "{}")
+        val legacy = legacyIdentity(call, requiresApproval = true)
+        val request = ToolApprovalRequestFactory.createFromIdentities(
+            assistantMessageId = "m1",
+            calls = listOf(
+                com.promenar.nexara.data.model.ApprovalCallIdentity(
+                    toolCallId = call.id,
+                    runtimeToolId = legacy.runtimeToolId,
+                    toolName = legacy.toolName,
+                    argumentsDigest = legacy.argumentsDigest,
+                    definitionDigest = legacy.definitionDigest,
+                    requiresApproval = true,
+                    argumentsSummary = "{}",
+                    risk = "unknown",
+                ),
+            ),
+        )
+
+        assertThat(
+            repository.createToolApproval("s1", "m1", listOf(call), setOf(call.id), request),
+        ).isEqualTo(ToolApprovalCreation.CONFLICT)
+        assertThat(repository.state(key(call.id))).isNull()
+    }
+
+    @Test
     fun approveClaimAndFinishOnlyAllowLegalTransitions() = runBlocking {
         val key = key("risky")
         repository.register(key, "write_file", requiresApproval = true)
@@ -166,6 +193,21 @@ class ToolExecutionLedgerRepositoryTest {
         assertThat(repository.finish(key, ToolExecutionOutcome.Failed("late failure"))).isFalse()
         assertThat(repository.reject(setOf(key))).isEqualTo(0)
         assertThat(repository.state(key)).isEqualTo(ToolLedgerState.SUCCEEDED)
+    }
+
+    @Test
+    fun claimComparesCompleteExpectedInvocationIdentity() = runBlocking {
+        val call = ToolCall("identity-claim", "read_file", """{"uuid":"one"}""")
+        val expected = legacyIdentity(call, requiresApproval = false)
+        val key = key(call.id)
+        repository.register(key, expected)
+
+        assertThat(repository.claim(
+            key,
+            expected.copy(definitionDigest = "f".repeat(64)),
+        )).isFalse()
+        assertThat(repository.claim(key, expected)).isTrue()
+        assertThat(repository.claim(key, expected)).isFalse()
     }
 
     @Test
@@ -225,6 +267,26 @@ class ToolExecutionLedgerRepositoryTest {
         assertThat(repeatedRecoveryMessages).hasSize(1)
         assertThat(repeatedRecoveryMessages.single().toolCallId).isEqualTo("running")
         assertThat(repeatedRecoveryMessages.single().parentMessageId).isEqualTo("m1")
+    }
+
+    @Test
+    fun `ledger recovery 显式传播取消且事务不伪造 FAILED`() = runBlocking {
+        val running = key("cancel-recovery")
+        repository.register(running, "write_file", requiresApproval = false)
+        assertThat(repository.claim(running)).isTrue()
+        val cancellation = CancellationException("cancel recovery")
+        val cancellingRepository = ToolExecutionLedgerRepository(database) { throw cancellation }
+
+        val thrown = try {
+            cancellingRepository.recoverInterruptedRunning("should not be persisted")
+            null
+        } catch (error: Throwable) {
+            error
+        }
+
+        assertThat(thrown).isInstanceOf(CancellationException::class.java)
+        assertThat(thrown).hasMessageThat().isEqualTo(cancellation.message)
+        assertThat(repository.state(running)).isEqualTo(ToolLedgerState.RUNNING)
     }
 
     @Test
@@ -401,6 +463,7 @@ class ToolExecutionLedgerRepositoryTest {
             com.promenar.nexara.data.model.ToolCall("risky", "write_file", "{\"path\":\"a\"}"),
         )
         val request = exactRequest("m1", calls, setOf("risky"))
+        repository.register(key("safe"), preparedIdentity(calls[0], requiresApproval = false))
 
         repository.createToolApproval("s1", "m1", calls, setOf("risky"), request)
 
@@ -545,6 +608,7 @@ class ToolExecutionLedgerRepositoryTest {
             com.promenar.nexara.data.model.ToolCall("pending", "write_file", "{}"),
             com.promenar.nexara.data.model.ToolCall("approved", "read_file", "{}"),
         )
+        repository.register(key("approved"), preparedIdentity(calls[1], requiresApproval = false))
         repository.createToolApproval(
             "s1",
             "m1",
@@ -678,6 +742,7 @@ class ToolExecutionLedgerRepositoryTest {
             com.promenar.nexara.data.model.ToolCall("risk", "write_file", "{}"),
         )
         val request = exactRequest("m1", calls, setOf("risk"))
+        repository.register(key("safe"), preparedIdentity(calls[0], requiresApproval = false))
 
         assertThat(repository.createToolApproval("s1", "m1", calls, setOf("risk"), request))
             .isEqualTo(ToolApprovalCreation.CREATED)
@@ -739,7 +804,7 @@ class ToolExecutionLedgerRepositoryTest {
     fun completingCurrentGroupSwitchesNextExactIdentityGroupToWaiting(): Unit = runBlocking {
         val first = com.promenar.nexara.data.model.ToolCall("first", "write_file", "{}")
         val second = com.promenar.nexara.data.model.ToolCall("second", "write_file", "{}")
-        val secondIdentity = legacyIdentity(second, requiresApproval = true)
+        val secondIdentity = preparedIdentity(second, requiresApproval = true)
         repository.createToolApproval(
             "s1", "m1", listOf(first), setOf(first.id),
             exactRequest("m1", listOf(first), setOf(first.id)),
@@ -827,6 +892,9 @@ class ToolExecutionLedgerRepositoryTest {
         legacyIdentity(ToolCall(key.toolCallId, toolName, "{}"), requiresApproval),
     )
 
+    private suspend fun ToolExecutionLedgerRepository.claim(key: ToolExecutionKey): Boolean =
+        claim(key, requireNotNull(invocationIdentity(key)))
+
     private fun exactRequest(
         assistantMessageId: String,
         calls: List<ToolCall>,
@@ -837,6 +905,40 @@ class ToolExecutionLedgerRepositoryTest {
             ApprovalCallCandidate(it, com.promenar.nexara.domain.tool.ToolRisk.UNKNOWN)
         },
     )
+
+    private fun ApprovalCallCandidate(
+        call: ToolCall,
+        risk: com.promenar.nexara.domain.tool.ToolRisk,
+    ): ApprovalCallCandidate = ApprovalCallCandidate(
+        call = call,
+        risk = risk,
+        identity = preparedIdentity(call, requiresApproval = true, risk = risk),
+    )
+
+    private fun preparedIdentity(
+        call: ToolCall,
+        requiresApproval: Boolean,
+        risk: com.promenar.nexara.domain.tool.ToolRisk = com.promenar.nexara.domain.tool.ToolRisk.UNKNOWN,
+    ): ToolInvocationIdentity {
+        val tool = com.promenar.nexara.data.remote.protocol.ProtocolTool(
+            function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction(
+                name = call.name,
+                description = "test definition",
+                parameters = """{"type":"object","additionalProperties":true}""",
+            ),
+            risk = risk,
+            runtimeToolId = "test:${call.name}",
+            sourceId = "test",
+        )
+        return when (val result = ToolInvocationIdentityFactory.fromPreparedToolCall(
+            call,
+            tool,
+            requiresApproval,
+        )) {
+            is ToolInvocationIdentityResolution.Valid -> result.identity
+            is ToolInvocationIdentityResolution.Invalid -> error(result.message)
+        }
+    }
 
     private fun legacyIdentity(
         call: ToolCall,

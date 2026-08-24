@@ -29,6 +29,8 @@ import com.promenar.nexara.data.repository.ToolApprovalCreation
 import com.promenar.nexara.data.repository.ApprovalCallCandidate
 import com.promenar.nexara.data.repository.ToolApprovalRequestFactory
 import com.promenar.nexara.data.repository.ToolExecutionLedger
+import com.promenar.nexara.data.repository.ToolInvocationIdentityFactory
+import com.promenar.nexara.data.repository.ToolInvocationIdentityResolution
 import com.promenar.nexara.domain.generation.GenerationChunk
 import com.promenar.nexara.domain.generation.GenerationFailure
 import com.promenar.nexara.domain.generation.GenerationFailureCode
@@ -357,12 +359,41 @@ internal class DefaultChatGenerationRuntime(
         val session = store.getSession(request.sessionId) ?: error("生成会话不存在")
         messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
         val calls = toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
-        val pendingIds = contentStrategy.pendingApprovalIds(calls, session.executionMode.ifEmpty { "semi" })
+        val requestedPendingIds = contentStrategy
+            .pendingApprovalIds(calls, session.executionMode.ifEmpty { "semi" })
+            .toSet()
+        val preparedByName = preparedTools.groupBy { it.function.name }
+        val validInvocations = calls.mapNotNull { call ->
+            val tool = preparedByName[call.name]?.singleOrNull() ?: return@mapNotNull null
+            val resolved = ToolInvocationIdentityFactory.fromPreparedToolCall(
+                call = call,
+                tool = tool,
+                requiresApproval = call.id in requestedPendingIds,
+            ) as? ToolInvocationIdentityResolution.Valid ?: return@mapNotNull null
+            Triple(call, tool, resolved.identity)
+        }
+        val pendingIds = validInvocations
+            .filter { (call, _, identity) -> call.id in requestedPendingIds && identity.requiresApproval }
+            .map { it.first.id }
+        val allowedIds = validInvocations
+            .filterNot { it.first.id in pendingIds }
+            .mapTo(linkedSetOf()) { it.first.id }
+        if (pendingIds.isEmpty()) {
+            val loopLimit = settings.getInt("loop_limit", 50)
+            check(toolRounds++ < loopLimit) { "工具循环达到上限 $loopLimit" }
+        }
+        toolExecutor.executeTools(
+            request.sessionId,
+            assistantMessageId(request),
+            calls,
+            allowedIds,
+            preparedTools,
+        )
         if (pendingIds.isNotEmpty()) {
             val approval = ToolApprovalRequestFactory.create(
                 assistantMessageId = assistantMessageId(request),
-                candidates = calls.filter { it.id in pendingIds }.map { call ->
-                    ApprovalCallCandidate(call, contentStrategy.riskForTool(call.name))
+                candidates = validInvocations.filter { it.first.id in pendingIds }.map { (call, tool, identity) ->
+                    ApprovalCallCandidate(call, tool.risk, identity)
                 },
                 reason = "Execution mode: ${session.executionMode.ifEmpty { "semi" }}",
             )
@@ -394,18 +425,9 @@ internal class DefaultChatGenerationRuntime(
                     loopStatus = com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_APPROVAL,
                 )
             }
-            toolExecutor.executeTools(
-                request.sessionId,
-                assistantMessageId(request),
-                calls,
-                calls.map { it.id }.filterNot { it in pendingIds }.toSet(),
-            )
             ui.setGenerating(false)
             return GenerationToolDecision.WAIT_FOR_APPROVAL
         }
-        val loopLimit = settings.getInt("loop_limit", 50)
-        check(toolRounds++ < loopLimit) { "工具循环达到上限 $loopLimit" }
-        toolExecutor.executeTools(request.sessionId, assistantMessageId(request), calls)
         return GenerationToolDecision.CONTINUE
     }
 

@@ -67,12 +67,22 @@ interface ToolExecutionLedgerDao {
            WHERE session_id = :sessionId
              AND assistant_message_id = :assistantMessageId
              AND tool_call_id = :toolCallId
+             AND runtime_tool_id = :runtimeToolId
+             AND tool_name = :toolName
+             AND arguments_digest = :argumentsDigest
+             AND definition_digest = :definitionDigest
+             AND requires_approval = :requiresApproval
              AND status = 'APPROVED'""",
     )
     suspend fun claim(
         sessionId: String,
         assistantMessageId: String,
         toolCallId: String,
+        runtimeToolId: String,
+        toolName: String,
+        argumentsDigest: String,
+        definitionDigest: String,
+        requiresApproval: Boolean,
         updatedAt: Long,
     ): Int
 

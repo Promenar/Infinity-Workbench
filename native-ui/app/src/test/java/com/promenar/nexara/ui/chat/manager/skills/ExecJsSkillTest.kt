@@ -31,7 +31,7 @@ class ExecJsSkillTest {
 
     @Test
     fun `returns error for missing code parameter`() = runTest {
-        val result = skill.execute(emptyMap(), testExecContext)
+        val result = skill.execute(skillArgs(), testExecContext)
         assertThat(result.status).isEqualTo("error")
         assertThat(result.content).contains("Missing required parameter: code")
     }
@@ -39,7 +39,7 @@ class ExecJsSkillTest {
     @Test
     fun `returns error for code too long`() = runTest {
         val longCode = "a".repeat(50001)
-        val result = skill.execute(mapOf("code" to longCode), testExecContext)
+        val result = skill.execute(skillArgs("code" to longCode), testExecContext)
         assertThat(result.status).isEqualTo("error")
         assertThat(result.content).contains("Code too long")
     }
@@ -47,7 +47,7 @@ class ExecJsSkillTest {
     @Test
     fun `accepts code at max length boundary`() = runTest {
         val maxCode = "a".repeat(50000)
-        val result = skill.execute(mapOf("code" to maxCode), testExecContext)
+        val result = skill.execute(skillArgs("code" to maxCode), testExecContext)
         assertThat(result.status).isNotEqualTo("Missing required parameter: code")
     }
 

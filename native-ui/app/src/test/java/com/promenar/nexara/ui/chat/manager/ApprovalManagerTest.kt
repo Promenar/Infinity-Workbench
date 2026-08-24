@@ -31,6 +31,40 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 
+private fun preparedApprovalIdentity(
+    call: ToolCall,
+    requiresApproval: Boolean = true,
+    risk: com.promenar.nexara.domain.tool.ToolRisk = com.promenar.nexara.domain.tool.ToolRisk.UNKNOWN,
+): ToolInvocationIdentity {
+    val tool = com.promenar.nexara.data.remote.protocol.ProtocolTool(
+        function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction(
+            name = call.name,
+            description = "test definition",
+            parameters = """{"type":"object","additionalProperties":true}""",
+        ),
+        risk = risk,
+        runtimeToolId = "test:${call.name}",
+        sourceId = "test",
+    )
+    return when (val resolution = ToolInvocationIdentityFactory.fromPreparedToolCall(
+        call,
+        tool,
+        requiresApproval,
+    )) {
+        is ToolInvocationIdentityResolution.Valid -> resolution.identity
+        is ToolInvocationIdentityResolution.Invalid -> error(resolution.message)
+    }
+}
+
+private fun ApprovalCallCandidate(
+    call: ToolCall,
+    risk: com.promenar.nexara.domain.tool.ToolRisk,
+): ApprovalCallCandidate = ApprovalCallCandidate(
+    call = call,
+    risk = risk,
+    identity = preparedApprovalIdentity(call),
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class ApprovalManagerTest {
     private lateinit var store: ChatStore
@@ -93,16 +127,16 @@ class ApprovalManagerTest {
         suspend fun register(key: ToolExecutionKey, toolName: String, requiresApproval: Boolean) =
             register(
                 key,
-                (ToolInvocationIdentityFactory.fromLegacyToolCall(
+                preparedApprovalIdentity(
                     ToolCall(key.toolCallId, toolName, "{}"),
                     requiresApproval,
-                ) as ToolInvocationIdentityResolution.Valid).identity,
+                ),
             )
         override suspend fun approve(keys: Set<ToolExecutionKey>) = transition(keys, ToolLedgerState.APPROVED)
         override suspend fun reject(keys: Set<ToolExecutionKey>) = transition(keys, ToolLedgerState.REJECTED)
         override suspend fun cancel(keys: Set<ToolExecutionKey>) = transition(keys, ToolLedgerState.CANCELLED)
         override suspend fun timeout(keys: Set<ToolExecutionKey>) = transition(keys, ToolLedgerState.TIMED_OUT)
-        override suspend fun claim(key: ToolExecutionKey) = false
+        override suspend fun claim(key: ToolExecutionKey, expectedIdentity: ToolInvocationIdentity) = false
         override suspend fun finish(key: ToolExecutionKey, outcome: ToolExecutionOutcome) = false
         override suspend fun finishWithResult(
             key: ToolExecutionKey,
@@ -143,17 +177,14 @@ class ApprovalManagerTest {
             pendingToolCallIds: Set<String>,
             request: ApprovalRequest,
         ): com.promenar.nexara.data.repository.ToolApprovalCreation {
-            toolCalls.forEach {
-                val identity = ToolInvocationIdentityFactory.fromLegacyToolCall(
-                    it,
-                    it.id in pendingToolCallIds,
-                )
-                if (identity !is ToolInvocationIdentityResolution.Valid) {
+            request.calls.forEach { approvalCall ->
+                val identity = approvalCall.toInvocationIdentity()
+                if (approvalCall.toolCallId !in pendingToolCallIds || !identity.requiresApproval) {
                     return com.promenar.nexara.data.repository.ToolApprovalCreation.CONFLICT
                 }
                 if (register(
-                        ToolExecutionKey(keySessionId, assistantMessageId, it.id),
-                        identity.identity,
+                        ToolExecutionKey(keySessionId, assistantMessageId, approvalCall.toolCallId),
+                        identity,
                     ) == ToolRegistrationResult.Conflict
                 ) return com.promenar.nexara.data.repository.ToolApprovalCreation.CONFLICT
             }
@@ -311,9 +342,10 @@ class ApprovalManagerTest {
     ): ApprovalRequest {
         seedSessionWithAssistant(toolCalls = calls, pendingApprovalToolIds = calls.map { it.id })
         calls.forEach { call ->
-            val identity = ToolInvocationIdentityFactory.fromLegacyToolCall(call, true)
-                as ToolInvocationIdentityResolution.Valid
-            ledger.register(ToolExecutionKey("s1", "m1", call.id), identity.identity)
+            ledger.register(
+                ToolExecutionKey("s1", "m1", call.id),
+                preparedApprovalIdentity(call),
+            )
         }
         return ToolApprovalRequestFactory.create(
             "m1",
@@ -836,9 +868,10 @@ class ApprovalManagerTest {
         )
         seedSessionWithAssistant(toolCalls = calls, pendingApprovalToolIds = calls.map { it.id })
         calls.forEach { call ->
-            val identity = ToolInvocationIdentityFactory.fromLegacyToolCall(call, true)
-                as ToolInvocationIdentityResolution.Valid
-            ledger.register(ToolExecutionKey("s1", "m1", call.id), identity.identity)
+            ledger.register(
+                ToolExecutionKey("s1", "m1", call.id),
+                preparedApprovalIdentity(call),
+            )
         }
         val request = ToolApprovalRequestFactory.create(
             "m1",
@@ -874,7 +907,10 @@ class ApprovalManagerTest {
     fun staleHashMessageIdAndQueueMismatchFailClosedWithoutExecution() = testScope.runTest {
         val call = ToolCall("risk", "write_file", "{\"path\":\"a\"}")
         seedSessionWithAssistant(toolCalls = listOf(call), pendingApprovalToolIds = listOf(call.id))
-        ledger.register(ToolExecutionKey("s1", "m1", call.id), call.name, true)
+        ledger.register(
+            ToolExecutionKey("s1", "m1", call.id),
+            preparedApprovalIdentity(call),
+        )
         val request = ToolApprovalRequestFactory.create(
             "m1",
             listOf(ApprovalCallCandidate(call, com.promenar.nexara.domain.tool.ToolRisk.FILE_WRITE)),

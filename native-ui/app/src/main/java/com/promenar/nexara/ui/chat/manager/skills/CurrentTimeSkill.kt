@@ -7,6 +7,7 @@ import com.promenar.nexara.domain.tool.ToolRisk
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import kotlinx.serialization.json.JsonObject
 
 /**
  * 系统时间查询技能 — 已废弃为被动注入。
@@ -25,7 +26,7 @@ class CurrentTimeSkill : SkillDefinition {
     override val parametersSchema = """{"type":"object","properties":{}}"""
 
     override suspend fun execute(
-        args: Map<String, Any>,
+        args: JsonObject,
         context: SkillExecutionContext
     ): ToolResult {
         val now = ZonedDateTime.now(ZoneId.systemDefault())

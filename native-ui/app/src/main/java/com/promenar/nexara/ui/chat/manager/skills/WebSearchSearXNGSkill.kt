@@ -9,6 +9,9 @@ import android.content.Context
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import com.promenar.nexara.domain.tool.ToolRisk
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonObject
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class WebSearchSearXNGSkill(
     private val context: Context,
@@ -34,10 +37,10 @@ class WebSearchSearXNGSkill(
     """.trimIndent()
 
     override suspend fun execute(
-        args: Map<String, Any>,
+        args: JsonObject,
         context: SkillExecutionContext
     ): ToolResult {
-        val query = args["query"]?.toString() ?: return ToolResult(id = "err", content = "Missing query", status = "error")
+        val query = args.stringArgument("query") ?: return ToolResult(id = "err", content = "Missing query", status = "error")
         val prefs = this.context.getSharedPreferences("nexara_search", Context.MODE_PRIVATE)
         val url = prefs.getString("searxng_url", "https://searx.be") ?: "https://searx.be"
         val maxResults = prefs.getInt("result_count", 5)
@@ -60,6 +63,8 @@ class WebSearchSearXNGSkill(
                 data = citationsJson,
                 status = if (results.isNotEmpty() && !results.startsWith("SearXNG Search failed")) "success" else "error"
             )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             ToolResult(id = "err", content = "SearXNG Search failed: ${e.message}", status = "error")
         }

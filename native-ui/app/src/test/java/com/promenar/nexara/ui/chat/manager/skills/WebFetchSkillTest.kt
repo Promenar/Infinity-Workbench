@@ -28,7 +28,7 @@ class WebFetchSkillTest {
         }
         val skill = WebFetchSkill(client)
 
-        val result = skill.execute(mapOf("url" to "http://127.0.0.1:8080/private"), context)
+        val result = skill.execute(skillArgs("url" to "http://127.0.0.1:8080/private"), context)
 
         assertThat(result.status).isEqualTo("error")
         assertThat(result.content).contains("Blocked URL")
@@ -48,7 +48,7 @@ class WebFetchSkillTest {
         }
         val skill = WebFetchSkill(client)
 
-        val result = skill.execute(mapOf("url" to "http://192.168.1.10/page"), context)
+        val result = skill.execute(skillArgs("url" to "http://192.168.1.10/page"), context)
 
         assertThat(result.status).isEqualTo("error")
         assertThat(result.content).contains("Blocked URL")

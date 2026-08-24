@@ -7,6 +7,9 @@ import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonObject
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class CreateToolSkill(
     private val skillDao: SkillDao
@@ -30,11 +33,11 @@ class CreateToolSkill(
         }
     """.trimIndent()
 
-    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
-        val name = args["name"] as? String ?: return ToolResult("err", "Missing name", "error")
-        val description = args["description"] as? String ?: ""
-        val schema = args["parametersSchema"] as? String ?: "{}"
-        val code = args["code"] as? String ?: ""
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val name = args.stringArgument("name") ?: return ToolResult("err", "Missing name", "error")
+        val description = args.stringArgument("description") ?: ""
+        val schema = args.stringArgument("parametersSchema") ?: "{}"
+        val code = args.stringArgument("code") ?: ""
 
         val entity = CustomSkillEntity(
             id = "user_${UUID.randomUUID()}",
@@ -48,6 +51,8 @@ class CreateToolSkill(
         return try {
             skillDao.insertCustomSkill(entity)
             ToolResult("create_${System.currentTimeMillis()}", "Successfully created tool: $name. You can now use it.", "success")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             ToolResult("create_${System.currentTimeMillis()}", "Failed to create tool: ${e.message}", "error")
         }

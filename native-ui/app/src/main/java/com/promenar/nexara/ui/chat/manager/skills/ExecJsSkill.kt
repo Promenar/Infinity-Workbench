@@ -14,9 +14,34 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlin.coroutines.resume
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonObject
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class ExecJsSkill(
-    private val appContext: Context
+    private val appContext: Context,
+    private val evaluator: suspend (String) -> String = { wrappedCode ->
+        withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { cont ->
+                val wv = WebView(appContext).also {
+                    it.settings.javaScriptEnabled = true
+                    it.settings.allowFileAccess = false
+                    it.settings.allowContentAccess = false
+                    it.settings.blockNetworkLoads = true
+                    it.settings.loadsImagesAutomatically = false
+                    it.settings.domStorageEnabled = false
+                    it.removeJavascriptInterface("searchBoxJavaBridge_")
+                    it.removeJavascriptInterface("accessibility")
+                    it.removeJavascriptInterface("accessibilityTraversal")
+                }
+                wv.evaluateJavascript(wrappedCode) { result ->
+                    cont.resume(result ?: "null")
+                    wv.destroy()
+                }
+                cont.invokeOnCancellation { wv.destroy() }
+            }
+        }
+    },
 ) : SkillDefinition {
     override val id = "exec_js"
     override val name = "exec_js"
@@ -39,8 +64,8 @@ class ExecJsSkill(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
-        val code = args["code"]?.toString()
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val code = args.stringArgument("code")
             ?: return ToolResult("err", "Missing required parameter: code", "error")
 
         if (code.length > 50000) {
@@ -56,26 +81,7 @@ class ExecJsSkill(
             }
 
             val output = withTimeoutOrNull(5000L) {
-                withContext(Dispatchers.Main) {
-                    suspendCancellableCoroutine<String> { cont ->
-                        val wv = WebView(appContext).also {
-                            it.settings.javaScriptEnabled = true
-                            it.settings.allowFileAccess = false
-                            it.settings.allowContentAccess = false
-                            it.settings.blockNetworkLoads = true
-                            it.settings.loadsImagesAutomatically = false
-                            it.settings.domStorageEnabled = false
-                            it.removeJavascriptInterface("searchBoxJavaBridge_")
-                            it.removeJavascriptInterface("accessibility")
-                            it.removeJavascriptInterface("accessibilityTraversal")
-                        }
-                        wv.evaluateJavascript(wrappedCode) { result ->
-                            cont.resume(result ?: "null")
-                            wv.destroy()
-                        }
-                        cont.invokeOnCancellation { wv.destroy() }
-                    }
-                }
+                evaluator(wrappedCode)
             }
 
             if (output == null) {
@@ -101,6 +107,8 @@ class ExecJsSkill(
                     "JS Error: ${parsed.error}", "error"
                 )
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             ToolResult(
                 "exec_js_${System.currentTimeMillis()}",

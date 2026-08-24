@@ -8,15 +8,22 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import org.jsoup.Jsoup
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.URI
 import com.promenar.nexara.domain.tool.ToolRisk
+import kotlinx.serialization.json.JsonObject
+import com.promenar.nexara.ui.chat.manager.registry.intArgument
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class WebFetchSkill(
-    private val httpClient: HttpClient
+    private val httpClient: HttpClient,
+    private val addressResolver: suspend (String) -> Array<InetAddress> = { host ->
+        withContext(Dispatchers.IO) { InetAddress.getAllByName(host) }
+    },
 ) : SkillDefinition {
     override val id = "web_fetch"
     override val name = "web_fetch"
@@ -46,10 +53,10 @@ class WebFetchSkill(
     """.trimIndent()
 
     override suspend fun execute(
-        args: Map<String, Any>,
+        args: JsonObject,
         context: SkillExecutionContext
     ): ToolResult {
-        val rawUrl = args["url"]?.toString() ?: return ToolResult(id = "err", content = "Missing 'url' argument", status = "error")
+        val rawUrl = args.stringArgument("url") ?: return ToolResult(id = "err", content = "Missing 'url' argument", status = "error")
         val url = if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
             "https://$rawUrl"
         } else {
@@ -62,12 +69,8 @@ class WebFetchSkill(
         }
 
         // 解析并校验 startLine 和 lineCount 分页参数
-        val rawStartLine = (args["startLine"] as? Number)?.toInt()
-            ?: (args["startLine"]?.toString()?.toIntOrNull())
-            ?: 1
-        val rawLineCount = (args["lineCount"] as? Number)?.toInt()
-            ?: (args["lineCount"]?.toString()?.toIntOrNull())
-            ?: 80
+        val rawStartLine = args.intArgument("startLine") ?: 1
+        val rawLineCount = args.intArgument("lineCount") ?: 80
 
         val startLine = rawStartLine.coerceAtLeast(1)
         val lineCount = rawLineCount.coerceAtLeast(1).coerceAtMost(500) // 最大单次读取 500 行，防爆
@@ -174,6 +177,8 @@ class WebFetchSkill(
                 content = formattedContent,
                 status = "success"
             )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             ToolResult(
                 id = "fetch_${System.currentTimeMillis()}",
@@ -195,7 +200,9 @@ class WebFetchSkill(
         }
         val host = uri.host ?: return "Invalid URL: missing host"
         val addresses = try {
-            withContext(Dispatchers.IO) { InetAddress.getAllByName(host) }
+            addressResolver(host)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             return "Unable to resolve host: ${e.localizedMessage ?: e.message}"
         }

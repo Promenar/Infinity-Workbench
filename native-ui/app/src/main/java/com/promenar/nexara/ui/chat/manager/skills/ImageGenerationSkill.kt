@@ -10,6 +10,7 @@ import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -17,6 +18,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Base64
 import java.util.UUID
+import kotlinx.serialization.json.JsonObject
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 /**
  * 图像生成工具。
@@ -33,7 +36,9 @@ import java.util.UUID
  */
 class ImageGenerationSkill(
     private val appContext: Context,
-    private val providerManager: ProviderManager
+    private val providerManager: ProviderManager,
+    private val imageGenClientFactory: (baseUrl: String, apiKey: String, modelId: String) -> ImageGenClient =
+        { baseUrl, apiKey, modelId -> ImageGenClient(baseUrl = baseUrl, apiKey = apiKey, model = modelId) },
 ) : SkillDefinition {
 
     override val id = "image_generation"
@@ -74,21 +79,21 @@ class ImageGenerationSkill(
     """.trimIndent()
 
     override suspend fun execute(
-        args: Map<String, Any>,
+        args: JsonObject,
         context: SkillExecutionContext
     ): ToolResult {
         val resultId = "img_${UUID.randomUUID().toString().take(8)}"
 
-        val prompt = args["prompt"]?.toString()
+        val prompt = args.stringArgument("prompt")
             ?: return ToolResult(id = resultId, content = "Missing required parameter: prompt", status = "error")
 
         if (prompt.isBlank()) {
             return ToolResult(id = resultId, content = "Prompt must not be blank", status = "error")
         }
 
-        val size = args["size"]?.toString() ?: "1024x1024"
-        val quality = args["quality"]?.toString() ?: "standard"
-        val style = args["style"]?.toString()
+        val size = args.stringArgument("size") ?: "1024x1024"
+        val quality = args.stringArgument("quality") ?: "standard"
+        val style = args.stringArgument("style")
 
         // ── 读取图像模型配置 ──
         val mainConfig = providerManager.getMainProviderConfig()
@@ -107,7 +112,7 @@ class ImageGenerationSkill(
         }
 
         return try {
-            val client = ImageGenClient(baseUrl = baseUrl, apiKey = apiKey, model = modelId)
+            val client = imageGenClientFactory(baseUrl, apiKey, modelId)
 
             val result = withContext(Dispatchers.IO) {
                 client.generate(
@@ -157,6 +162,8 @@ class ImageGenerationSkill(
                 content = "Image generated successfully$countSuffix.$revisedNote\n\nPrompt: \"$prompt\"",
                 data = imageData
             )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             ToolResult(
                 id = resultId,
@@ -186,6 +193,8 @@ class ImageGenerationSkill(
             }
 
             image.copy(localPath = file.absolutePath)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             null
         }

@@ -6,6 +6,8 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.serialization.json.JsonObject
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class FileListSkill(
     private val workspaceRepo: IWorkspaceRepository
@@ -17,8 +19,8 @@ class FileListSkill(
     override val risk = ToolRisk.SAFE_READ
     override val parametersSchema = """{"type":"object","properties":{"parentUuid":{"type":"string","description":"父目录UUID(不传则列出根目录)"}}}"""
 
-    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
-        val parentUuid = args["parentUuid"] as? String
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val parentUuid = args.stringArgument("parentUuid")
 
         val children = if (parentUuid != null) {
             workspaceRepo.observeChildren(context.workspaceRootUuid, parentUuid).firstOrNull()

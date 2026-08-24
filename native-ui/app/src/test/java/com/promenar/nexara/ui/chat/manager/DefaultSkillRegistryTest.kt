@@ -7,6 +7,7 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import org.junit.Before
 import org.junit.Test
+import kotlinx.serialization.json.JsonObject
 
 class DefaultSkillRegistryTest {
     private lateinit var registry: DefaultSkillRegistry
@@ -17,7 +18,7 @@ class DefaultSkillRegistryTest {
         override val description = "Evaluate math"
         override val mcpServerId: String? = null
         override val parametersSchema = "{}"
-        override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext) = ToolResult("tc1", "2")
+        override suspend fun execute(args: JsonObject, context: SkillExecutionContext) = ToolResult("tc1", "2")
     }
 
     private val testFileListSkill = object : SkillDefinition {
@@ -26,7 +27,7 @@ class DefaultSkillRegistryTest {
         override val description = "List files"
         override val mcpServerId: String? = null
         override val parametersSchema = "{}"
-        override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext) = ToolResult("tc2", "files")
+        override suspend fun execute(args: JsonObject, context: SkillExecutionContext) = ToolResult("tc2", "files")
     }
 
     private val testFileReadSkill = object : SkillDefinition {
@@ -35,7 +36,7 @@ class DefaultSkillRegistryTest {
         override val description = "Read file"
         override val mcpServerId: String? = null
         override val parametersSchema = "{}"
-        override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext) = ToolResult("tc3", "content")
+        override suspend fun execute(args: JsonObject, context: SkillExecutionContext) = ToolResult("tc3", "content")
     }
 
     @Before

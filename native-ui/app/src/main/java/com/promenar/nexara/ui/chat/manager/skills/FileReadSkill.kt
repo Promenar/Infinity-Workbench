@@ -5,6 +5,9 @@ import com.promenar.nexara.domain.repository.IFileOperationRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.domain.tool.ToolRisk
+import com.promenar.nexara.ui.chat.manager.registry.intArgument
+import com.promenar.nexara.ui.chat.manager.registry.stringArgument
+import kotlinx.serialization.json.JsonObject
 
 class FileReadSkill(
     private val fileOpRepo: IFileOperationRepository
@@ -16,22 +19,22 @@ class FileReadSkill(
     override val risk = ToolRisk.SAFE_READ
     override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"mode":{"type":"string","enum":["page","range"],"default":"page"},"offset":{"type":"integer","description":"分页偏移(行号，0-based)"},"limit":{"type":"integer","description":"分页大小(行数)","default":200},"startLine":{"type":"integer","description":"起始行号(1-based)"},"endLine":{"type":"integer","description":"结束行号(1-based)"}},"required":["uuid"]}"""
 
-    override suspend fun execute(args: Map<String, Any>, context: SkillExecutionContext): ToolResult {
-        val uuid = args["uuid"] as? String
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        val uuid = args.stringArgument("uuid")
             ?: return ToolResult("err", "缺少 uuid 参数", "error")
-        val mode = args["mode"] as? String ?: "page"
+        val mode = args.stringArgument("mode") ?: "page"
 
         val startLine: Int?
         val endLine: Int?
 
         when (mode) {
             "range" -> {
-                startLine = (args["startLine"] as? Number)?.toInt()
-                endLine = (args["endLine"] as? Number)?.toInt()
+                startLine = args.intArgument("startLine")
+                endLine = args.intArgument("endLine")
             }
             else -> {
-                val offset = (args["offset"] as? Number)?.toInt() ?: 0
-                val limit = (args["limit"] as? Number)?.toInt() ?: 200
+                val offset = args.intArgument("offset") ?: 0
+                val limit = args.intArgument("limit") ?: 200
                 startLine = offset + 1
                 endLine = offset + limit
             }
