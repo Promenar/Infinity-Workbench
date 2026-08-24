@@ -368,7 +368,7 @@
     <string name="settings_local_models_desc">GGUF on-device · Experimental</string>
     <string name="settings_section_data">Data</string>
     <string name="settings_backup">Backup</string>
-    <string name="settings_backup_desc">Local / WebDAV sync</string>
+    <string name="settings_backup_desc">Local / WebDAV backup</string>
     <string name="settings_logs">Logs</string>
     <string name="settings_logs_desc">Record debug info and error logs</string>
     <string name="settings_export_logs">Export Logs</string>
@@ -644,7 +644,7 @@
 
     <!-- BackupSettingsScreen -->
     <string name="backup_title">Backup &amp; Restore</string>
-    <string name="backup_desc">Manage data security, local export, and cloud sync settings.</string>
+    <string name="backup_desc">Manage data security, local export, and manual cloud backups.</string>
     <string name="backup_content_title">Backup Content</string>
     <string name="backup_core_content_summary">Core data is always included; API keys are optional. Device-local profile and agent avatars are not transferred.</string>
     <string name="backup_core_content_fixed">Always included</string>
@@ -670,7 +670,7 @@
     <string name="backup_upload_cloud">Upload to Cloud</string>
     <string name="backup_restore_cloud">Restore from Cloud</string>
     <string name="backup_config_webdav">Configure WebDAV</string>
-    <string name="backup_info_text">Data is stored locally by default. WebDAV enables cross-device sync. Backups can be password-encrypted; encryption is required when keys are included.</string>
+    <string name="backup_info_text">Data is stored locally by default. WebDAV provides manual cross-device backup and restore. Backups can be password-encrypted; encryption is required when keys are included.</string>
     <string name="backup_webdav_config_title">WebDAV Configuration</string>
     <string name="backup_webdav_url_label">Server URL</string>
     <string name="backup_webdav_url_hint">https://your-webdav-server.com</string>

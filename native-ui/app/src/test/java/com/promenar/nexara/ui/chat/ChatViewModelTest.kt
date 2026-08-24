@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.chat
 
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.model.*
@@ -36,7 +38,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.job
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -555,7 +559,14 @@ class ChatViewModelTest {
 
     @After
     fun tearDown() {
-        generationScope.cancel()
+        val viewModelJob = viewModel.viewModelScope.coroutineContext.job
+        runBlocking {
+            generationScope.coroutineContext.job.cancelAndJoin()
+        }
+        ViewModelStore().also { it.put("chat", viewModel) }.clear()
+        runBlocking {
+            viewModelJob.join()
+        }
         kotlinx.coroutines.Dispatchers.resetMain()
     }
 

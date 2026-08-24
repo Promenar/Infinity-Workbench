@@ -46,6 +46,7 @@ import com.promenar.nexara.data.backup.BackupExportOptions
 import com.promenar.nexara.data.backup.PendingRestoreMetadata
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.model.ProviderListItem
+import com.promenar.nexara.data.model.UnsupportedProviderListItem
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.webdav.RemoteBackup
@@ -2708,6 +2709,16 @@ fun userSettingsProviderLargeFontReleasePreview() {
                         protocolType = ProtocolType.Google_VertexAI,
                         hasVertexCredentials = false,
                         enabled = false,
+                    ),
+                ),
+                unsupportedProviders = listOf(
+                    UnsupportedProviderListItem(
+                        id = "provider-historical-unsupported",
+                        name = "Historical provider retained for safe removal",
+                        rawProtocolId = "Future_Unknown_Protocol",
+                        enabled = false,
+                        hasApiKey = true,
+                        hasVertexCredentials = false,
                     ),
                 ),
             ),

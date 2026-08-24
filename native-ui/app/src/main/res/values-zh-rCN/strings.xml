@@ -374,7 +374,7 @@
     <string name="settings_local_models_desc">GGUF 端侧推理 · 实验性</string>
     <string name="settings_section_data">数据</string>
     <string name="settings_backup">备份</string>
-    <string name="settings_backup_desc">本地 / WebDAV 同步</string>
+    <string name="settings_backup_desc">本地 / WebDAV 备份</string>
     <string name="settings_logs">日志</string>
     <string name="settings_logs_desc">记录调试信息与错误日志</string>
     <string name="settings_export_logs">导出日志</string>
@@ -649,7 +649,7 @@
 
     <!-- BackupSettingsScreen -->
     <string name="backup_title">备份与恢复</string>
-    <string name="backup_desc">管理数据安全、本地导出与云端同步设置。</string>
+    <string name="backup_desc">管理数据安全、本地导出与手动云端备份。</string>
     <string name="backup_content_title">备份内容</string>
     <string name="backup_core_content_summary">核心数据固定包含，密钥可选；本机个人头像与 Agent 头像不随备份迁移。</string>
     <string name="backup_core_content_fixed">始终包含</string>
@@ -675,7 +675,7 @@
     <string name="backup_upload_cloud">上传到云端</string>
     <string name="backup_restore_cloud">从云端恢复</string>
     <string name="backup_config_webdav">配置 WebDAV</string>
-    <string name="backup_info_text">数据默认仅在本地存储。WebDAV 可用于跨设备同步。备份可选使用密码加密；包含密钥时必须加密。</string>
+    <string name="backup_info_text">数据默认仅在本地存储。WebDAV 仅提供手动跨设备备份与恢复。备份可选使用密码加密；包含密钥时必须加密。</string>
     <string name="backup_webdav_config_title">WebDAV 配置</string>
     <string name="backup_webdav_url_label">服务器 URL</string>
     <string name="backup_webdav_url_hint">https://your-webdav-server.com</string>
