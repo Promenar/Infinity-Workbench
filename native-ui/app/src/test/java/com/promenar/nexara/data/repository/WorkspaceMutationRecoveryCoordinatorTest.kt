@@ -90,6 +90,26 @@ class WorkspaceMutationRecoveryCoordinatorTest {
     }
 
     @Test
+    fun `DB_COMMITTED的stage路径必须与row operationId精确绑定`() = runTest {
+        val source = parent.resolve("missing-source")
+        val mismatchedTarget = parent.resolve(".nexara_session_deletions/op-b")
+        Files.createDirectories(mismatchedTarget)
+        val sentinel = Files.write(mismatchedTarget.resolve("sentinel.txt"), "keep".toByteArray())
+        val mismatched = fixture(
+            stage = WorkspaceMutationStage.DB_COMMITTED,
+            dbExists = false,
+            source = source,
+            operationId = "op-a",
+            targetRelative = ".nexara_session_deletions/op-b",
+        )
+
+        assertConflict(mismatched)
+
+        assertThat(Files.isDirectory(mismatchedTarget)).isTrue()
+        assertThat(Files.readAllBytes(sentinel).toString(Charsets.UTF_8)).isEqualTo("keep")
+    }
+
+    @Test
     fun `路径穿越与符号链接源必须拒绝且不改文件`() = runTest {
         val outside = createRoot("outside", "identity")
         val traversal = fixture(
@@ -120,11 +140,12 @@ class WorkspaceMutationRecoveryCoordinatorTest {
         dbExists: Boolean,
         source: Path,
         sourceRelative: String = source.fileName.toString(),
+        operationId: String = "op-${source.fileName}",
+        targetRelative: String = ".nexara_session_deletions/$operationId",
     ): Fixture {
-        val operationId = "op-${source.fileName}"
         val payload = WorkspaceMutationPayload(
             sourceRelativePath = sourceRelative,
-            targetRelativePath = ".nexara_session_deletions/$operationId",
+            targetRelativePath = targetRelative,
             databaseTargetUuid = "session-1",
             expectedSha256 = "identity",
         )
@@ -152,7 +173,7 @@ class WorkspaceMutationRecoveryCoordinatorTest {
             },
             identityMarkerName = ".identity",
         )
-        return Fixture(coordinator, source, parent.resolve(".nexara_session_deletions/$operationId"), deleted)
+        return Fixture(coordinator, source, parent.resolve(targetRelative), deleted)
     }
 
     private fun createRoot(name: String, identity: String): Path =

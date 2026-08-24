@@ -6,6 +6,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationPayloadCodec
 import com.promenar.nexara.data.local.db.entity.WorkspaceMutationPayloadResult
 import com.promenar.nexara.data.local.db.entity.WorkspaceMutationStage
 import com.promenar.nexara.data.local.db.entity.WorkspaceMutationType
+import com.promenar.nexara.data.repository.WorkspaceMutationRecoveryCoordinator
 import com.promenar.nexara.infra.util.Sha256Utils
 import java.io.File
 
@@ -48,6 +49,10 @@ class RoomSessionDeletionTransaction(private val database: NexaraDatabase) {
             is WorkspaceMutationPayloadResult.Valid -> decoded.payload
             is WorkspaceMutationPayloadResult.Invalid -> error(decoded.error.message)
         }
+        check(journal.operationId == operationId) { "删除 journal operationId 不匹配" }
+        check(payload.targetRelativePath == expectedStageRelativePath(operationId)) {
+            "删除 journal stage 目标与 operationId 不匹配"
+        }
         check(payload.databaseTargetUuid == target.sessionId) { "删除 journal 会话身份不匹配" }
         check(payload.expectedSha256 == target.rootIdentity) { "删除 journal 根身份不匹配" }
         check(payload.sourceRelativePath == target.physicalRoot.fileName.toString()) { "删除 journal 根路径不匹配" }
@@ -58,4 +63,7 @@ class RoomSessionDeletionTransaction(private val database: NexaraDatabase) {
             "会话工作区路径已变化"
         }
     }
+
+    private fun expectedStageRelativePath(operationId: String): String =
+        "${WorkspaceMutationRecoveryCoordinator.STAGING_DIRECTORY}/$operationId"
 }

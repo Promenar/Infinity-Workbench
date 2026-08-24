@@ -4,6 +4,7 @@ import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
 import com.promenar.nexara.data.local.db.entity.WorkspaceMutationPayload
 import com.promenar.nexara.data.local.db.entity.WorkspaceMutationPayloadCodec
+import com.promenar.nexara.data.local.db.entity.WorkspaceMutationPayloadResult
 import com.promenar.nexara.data.local.db.entity.WorkspaceMutationStage
 import com.promenar.nexara.data.local.db.entity.WorkspaceMutationType
 import com.promenar.nexara.data.repository.SecureWorkspaceFileOps
@@ -64,6 +65,7 @@ class RoomSessionWorkspaceMutationJournal(
         }
 
     override suspend fun rollback(staged: StagedSessionWorkspaceMutation) = withContext(Dispatchers.IO) {
+        validateJournal(staged, WorkspaceMutationStage.PREPARED)
         val parent = workspaceParent.toAbsolutePath().normalize()
         val source = staged.target.physicalRoot.toAbsolutePath().normalize()
         val target = stagedPath(parent, staged.operationId)
@@ -85,7 +87,7 @@ class RoomSessionWorkspaceMutationJournal(
     override suspend fun complete(staged: StagedSessionWorkspaceMutation) = withContext(Dispatchers.IO) {
         val journal = database.workspaceMutationDao().get(staged.operationId)
             ?: throw IllegalStateException("DB_COMMITTED 删除 journal 不存在")
-        check(journal.state == WorkspaceMutationStage.DB_COMMITTED) { "删除 journal 尚未提交数据库" }
+        validateJournal(staged, WorkspaceMutationStage.DB_COMMITTED, journal)
         val parent = workspaceParent.toAbsolutePath().normalize()
         val source = staged.target.physicalRoot.toAbsolutePath().normalize()
         val target = stagedPath(parent, staged.operationId)
@@ -95,6 +97,34 @@ class RoomSessionWorkspaceMutationJournal(
         check(database.workspaceMutationDao().deleteCommitted(staged.operationId) == 1) {
             "DB_COMMITTED 删除 journal 无法清理"
         }
+    }
+
+    private suspend fun validateJournal(
+        staged: StagedSessionWorkspaceMutation,
+        expectedState: WorkspaceMutationStage,
+        loaded: WorkspaceMutationEntity? = null,
+    ) {
+        val journal = loaded ?: database.workspaceMutationDao().get(staged.operationId)
+            ?: throw IllegalStateException("删除 journal 不存在")
+        check(journal.operationId == staged.operationId) { "删除 journal operationId 不匹配" }
+        check(journal.state == expectedState && journal.operationType == WorkspaceMutationType.DELETE) {
+            "删除 journal 状态无效"
+        }
+        check(journal.workspaceRootUuid == staged.target.workspaceRootUuid) { "删除 journal 工作区身份不匹配" }
+        check(Sha256Utils.hash(journal.payload) == journal.payloadDigest) { "删除 journal 摘要不匹配" }
+        val payload = when (val decoded = WorkspaceMutationPayloadCodec.decode(journal.payloadVersion, journal.payload)) {
+            is WorkspaceMutationPayloadResult.Valid -> decoded.payload
+            is WorkspaceMutationPayloadResult.Invalid -> error(decoded.error.message)
+        }
+        val expectedTargetRelative = "${WorkspaceMutationRecoveryCoordinator.STAGING_DIRECTORY}/${staged.operationId}"
+        check(payload.targetRelativePath == expectedTargetRelative) {
+            "删除 journal stage 目标与 operationId 不匹配"
+        }
+        check(payload.sourceRelativePath == staged.target.physicalRoot.fileName.toString()) {
+            "删除 journal 根路径不匹配"
+        }
+        check(payload.databaseTargetUuid == staged.target.sessionId) { "删除 journal 会话身份不匹配" }
+        check(payload.expectedSha256 == staged.target.rootIdentity) { "删除 journal 根身份不匹配" }
     }
 
     private fun validateTarget(target: SessionDeletionTarget): Path {

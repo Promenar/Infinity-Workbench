@@ -45,10 +45,14 @@ class WorkspaceMutationRecoveryCoordinator(
             ?: conflict("journal 缺少会话标识")
         val expectedIdentity = payload.expectedSha256?.takeIf { it.isNotBlank() }
             ?: conflict("journal 缺少根身份")
+        val expectedTargetRelative = "$STAGING_DIRECTORY/${entity.operationId}"
+        if (payload.targetRelativePath != expectedTargetRelative) {
+            conflict("journal stage 目标与 operationId 不匹配")
+        }
         val source = resolveSafe(parent, payload.sourceRelativePath, allowReserved = false)
         val target = resolveSafe(
             parent,
-            payload.targetRelativePath ?: conflict("journal 缺少 stage 目标"),
+            expectedTargetRelative,
             allowReserved = true,
         )
         if (!target.startsWith(parent.resolve(STAGING_DIRECTORY)) || target.nameCount != parent.nameCount + 2) {

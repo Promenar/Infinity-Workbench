@@ -86,6 +86,36 @@ class RoomSessionDeletionTransactionTest {
     }
 
     @Test
+    fun `数据库删除事务拒绝payload stage与row operationId错配`() = runBlocking {
+        seedAllRelations()
+        val raw = WorkspaceMutationPayloadCodec.encode(
+            WorkspaceMutationPayload(
+                sourceRelativePath = "root",
+                targetRelativePath = ".nexara_session_deletions/op-b",
+                databaseTargetUuid = SESSION,
+                expectedSha256 = "identity",
+            ),
+        )
+        database.workspaceMutationDao().insert(
+            WorkspaceMutationEntity(
+                operationId = "op-a",
+                workspaceRootUuid = ROOT,
+                operationType = WorkspaceMutationType.DELETE,
+                payload = raw,
+                payloadDigest = Sha256Utils.hash(raw),
+                createdAt = 1,
+                updatedAt = 1,
+            ),
+        )
+
+        assertThat(runCatching { RoomSessionDeletionTransaction(database).delete(target(), "op-a") }.exceptionOrNull())
+            .isNotNull()
+        assertThat(count("sessions")).isEqualTo(1)
+        assertThat(count("workspace_files")).isEqualTo(2)
+        assertThat(database.workspaceMutationDao().get("op-a")?.state?.name).isEqualTo("PREPARED")
+    }
+
+    @Test
     fun `完整journal删除同时清理工作区树及物理版本快照`() = runBlocking {
         val parent = Files.createTempDirectory("session-delete-parent")
         val root = Files.createDirectories(parent.resolve("root"))
@@ -151,6 +181,70 @@ class RoomSessionDeletionTransactionTest {
 
         assertThat(Files.exists(stagedRoot)).isFalse()
         assertThat(database.workspaceMutationDao().get("partial-op")).isNull()
+        Files.deleteIfExists(parent.resolve(".nexara_session_deletions"))
+        Files.deleteIfExists(parent)
+    }
+
+    @Test
+    fun `物理收尾拒绝payload stage与row operationId错配`() = runBlocking<Unit> {
+        val parent = Files.createTempDirectory("session-delete-mismatch")
+        val root = Files.createDirectories(parent.resolve("root"))
+        Files.write(root.resolve("sentinel.txt"), "keep".toByteArray())
+        val journal = RoomSessionWorkspaceMutationJournal(
+            database = database,
+            workspaceParent = parent,
+            operationIdFactory = { "op-a" },
+            verifyIdentity = { _, _ -> },
+        )
+        val staged = journal.stage(target(root.toString()))
+        check(database.workspaceMutationDao().markDbCommitted(staged.operationId, 2) == 1)
+        val mismatchedRaw = WorkspaceMutationPayloadCodec.encode(
+            WorkspaceMutationPayload(
+                sourceRelativePath = "root",
+                targetRelativePath = ".nexara_session_deletions/op-b",
+                databaseTargetUuid = SESSION,
+                expectedSha256 = "identity",
+            ),
+        )
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE workspace_mutations SET payload = ?, payload_digest = ? WHERE operation_id = ?",
+            arrayOf(mismatchedRaw, Sha256Utils.hash(mismatchedRaw), staged.operationId),
+        )
+        val stagedRoot = parent.resolve(".nexara_session_deletions/op-a")
+
+        assertThat(runCatching { journal.complete(staged) }.exceptionOrNull()).isNotNull()
+        assertThat(Files.readAllBytes(stagedRoot.resolve("sentinel.txt")).toString(Charsets.UTF_8)).isEqualTo("keep")
+        assertThat(database.workspaceMutationDao().get("op-a")).isNotNull()
+
+        Files.walk(stagedRoot).sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists)
+        Files.deleteIfExists(parent.resolve(".nexara_session_deletions"))
+        Files.deleteIfExists(parent)
+    }
+
+    @Test
+    fun `物理收尾拒绝journal payload摘要损坏`() = runBlocking<Unit> {
+        val parent = Files.createTempDirectory("session-delete-digest")
+        val root = Files.createDirectories(parent.resolve("root"))
+        Files.write(root.resolve("sentinel.txt"), "keep".toByteArray())
+        val journal = RoomSessionWorkspaceMutationJournal(
+            database = database,
+            workspaceParent = parent,
+            operationIdFactory = { "digest-op" },
+            verifyIdentity = { _, _ -> },
+        )
+        val staged = journal.stage(target(root.toString()))
+        check(database.workspaceMutationDao().markDbCommitted(staged.operationId, 2) == 1)
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE workspace_mutations SET payload_digest = ? WHERE operation_id = ?",
+            arrayOf("wrong-digest", staged.operationId),
+        )
+        val stagedRoot = parent.resolve(".nexara_session_deletions/digest-op")
+
+        assertThat(runCatching { journal.complete(staged) }.exceptionOrNull()).isNotNull()
+        assertThat(Files.readAllBytes(stagedRoot.resolve("sentinel.txt")).toString(Charsets.UTF_8)).isEqualTo("keep")
+        assertThat(database.workspaceMutationDao().get("digest-op")).isNotNull()
+
+        Files.walk(stagedRoot).sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists)
         Files.deleteIfExists(parent.resolve(".nexara_session_deletions"))
         Files.deleteIfExists(parent)
     }
