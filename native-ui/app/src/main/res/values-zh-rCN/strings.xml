@@ -650,7 +650,7 @@
     <string name="backup_title">备份与恢复</string>
     <string name="backup_desc">管理数据安全、本地导出与云端同步设置。</string>
     <string name="backup_content_title">备份内容</string>
-    <string name="backup_core_content_summary">核心数据固定包含，密钥可选。</string>
+    <string name="backup_core_content_summary">核心数据固定包含，密钥可选；本机个人头像与 Agent 头像不随备份迁移。</string>
     <string name="backup_core_content_fixed">始终包含</string>
     <string name="backup_content_sessions">会话</string>
     <string name="backup_content_library">知识库</string>
@@ -665,9 +665,12 @@
     <string name="backup_import_subtitle">恢复数据</string>
     <string name="backup_importing">正在导入…</string>
     <string name="backup_section_webdav">WebDAV 云端</string>
-    <string name="backup_webdav_sync">WebDAV 同步</string>
+    <string name="backup_webdav_manual">WebDAV 手动备份</string>
     <string name="backup_webdav_configured">已配置</string>
     <string name="backup_webdav_not_configured">未配置</string>
+    <string name="backup_webdav_incomplete">配置不完整</string>
+    <string name="backup_encrypt_package">加密备份包</string>
+    <string name="backup_encrypt_package_summary">建议用于本地导出和 WebDAV 上传；包含密钥时必须加密。</string>
     <string name="backup_upload_cloud">上传到云端</string>
     <string name="backup_restore_cloud">从云端恢复</string>
     <string name="backup_config_webdav">配置 WebDAV</string>
@@ -684,8 +687,8 @@
     <string name="backup_remote_refresh">刷新远程备份</string>
     <string name="backup_remote_empty">暂无远程备份，请配置 WebDAV 后刷新。</string>
     <string name="backup_remote_metadata">%1$d 字节 · %2$d</string>
-    <string name="backup_password_export_title">保护导出的完整密钥</string>
-    <string name="backup_password_upload_title">上传前保护完整密钥</string>
+    <string name="backup_password_export_title">加密导出的备份</string>
+    <string name="backup_password_upload_title">上传前加密备份</string>
     <string name="backup_password_restore_title">恢复本地备份</string>
     <string name="backup_password_remote_restore_title">恢复选中的远程备份</string>
     <string name="backup_password_label">备份密码</string>
@@ -711,7 +714,7 @@
     <string name="backup_status_export_success">备份已导出</string>
     <string name="backup_status_upload_success">备份已上传</string>
     <string name="backup_status_success_cleanup_warning">备份已上传，但部分旧远程备份未能清理。</string>
-    <string name="backup_error_password_required">包含完整密钥时必须输入并确认相同密码。</string>
+    <string name="backup_error_password_required">加密备份时必须输入并确认相同密码。</string>
     <string name="backup_error_configuration_missing">请先完成 WebDAV 安全配置。</string>
     <string name="backup_error_connection">WebDAV 连接失败，请检查安全配置。</string>
     <string name="backup_error_remote_list">无法读取远程备份。</string>

@@ -15,6 +15,7 @@ data class BackupOptions(
     val content: Set<BackupContent>,
     val includeSecrets: Boolean = false,
     val password: CharArray? = null,
+    val encryptPackage: Boolean = false,
 )
 
 /** 面向 UI/CLI 的规范全量导出选项；密钥默认关闭且必须双次确认密码。 */
@@ -22,6 +23,7 @@ data class BackupExportOptions(
     val includeSecrets: Boolean = false,
     val password: CharArray? = null,
     val passwordConfirmation: CharArray? = null,
+    val encryptPackage: Boolean = false,
 )
 
 data class BackupSnapshot(

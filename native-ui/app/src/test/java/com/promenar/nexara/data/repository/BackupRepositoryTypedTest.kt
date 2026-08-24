@@ -72,6 +72,38 @@ class BackupRepositoryTypedTest {
     }
 
     @Test
+    fun `core data can be encrypted without exporting secrets`() = runBlocking {
+        val password = "core-only".toCharArray()
+        val encoded = BackupRepository(
+            RecordingSource(),
+            DefaultBackupPackageCodec(),
+            FakeWebDav(),
+            FakePendingStore(),
+        ).export(
+            BackupExportOptions(
+                includeSecrets = false,
+                password = password,
+                passwordConfirmation = password.copyOf(),
+                encryptPackage = true,
+            ),
+        )
+
+        try {
+            assertThat(encoded.copyOfRange(0, 4)).isEqualTo("NXBK".encodeToByteArray())
+            DefaultBackupPackageCodec().decode(encoded, "core-only".toCharArray()).use { restored ->
+                assertThat(restored.manifest.encrypted).isTrue()
+                assertThat(restored.manifest.containsSecrets).isFalse()
+            }
+            assertThrows<BackupValidationException> {
+                DefaultBackupPackageCodec().decode(encoded, "wrong".toCharArray())
+            }
+        } finally {
+            encoded.fill(0)
+            password.fill('\u0000')
+        }
+    }
+
+    @Test
     fun `upload preserves committed warning and only uses uploadAndPrune`() = runBlocking {
         val warning = WebDavPruneWarning("warning", listOf("old.nexara"))
         val webDav = FakeWebDav(warning)

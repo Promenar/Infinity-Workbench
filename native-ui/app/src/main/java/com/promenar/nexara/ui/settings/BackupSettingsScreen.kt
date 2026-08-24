@@ -153,8 +153,8 @@ internal fun BackupSettingsScreen(
                     handedOff = true
                     viewModel.export(
                         output,
-                        backupPassword.takeIf { uiState.includeKeys }?.toCharArray(),
-                        passwordConfirmation.takeIf { uiState.includeKeys }?.toCharArray(),
+                        backupPassword.takeIf { uiState.encryptBackup || uiState.includeKeys }?.toCharArray(),
+                        passwordConfirmation.takeIf { uiState.encryptBackup || uiState.includeKeys }?.toCharArray(),
                     )
                 }
             }
@@ -178,7 +178,7 @@ internal fun BackupSettingsScreen(
         }
     }
     val onExportClick = {
-        if (uiState.includeKeys) showExportPasswordDialog = true
+        if (uiState.encryptBackup || uiState.includeKeys) showExportPasswordDialog = true
         else exportLauncher.launch("nexara_backup_${System.currentTimeMillis()}.nexara")
     }
     val onImportClick = { importLauncher.launch("*/*") }
@@ -300,6 +300,12 @@ internal fun BackupSettingsScreen(
                                 checked = uiState.keysChecked,
                                 onCheckedChange = { viewModel.setIncludeKeys(it) }
                             )
+                            SettingsToggle(
+                                title = stringResource(R.string.backup_encrypt_package),
+                                description = stringResource(R.string.backup_encrypt_package_summary),
+                                checked = uiState.encryptBackup,
+                                onCheckedChange = viewModel::setEncryptBackup,
+                            )
                         }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -337,14 +343,20 @@ internal fun BackupSettingsScreen(
                     ListItem(
                         headlineContent = {
                             Text(
-                                text = stringResource(R.string.backup_webdav_sync),
+                                text = stringResource(R.string.backup_webdav_manual),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         },
                         supportingContent = {
                             Text(
-                                text = if (uiState.webdavEnabled) stringResource(R.string.backup_webdav_configured) else stringResource(R.string.backup_webdav_not_configured),
+                                text = stringResource(
+                                    when (uiState.webDavReadiness) {
+                                        WebDavReadiness.Disabled -> R.string.backup_webdav_not_configured
+                                        WebDavReadiness.Incomplete -> R.string.backup_webdav_incomplete
+                                        WebDavReadiness.Ready -> R.string.backup_webdav_configured
+                                    },
+                                ),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -367,10 +379,10 @@ internal fun BackupSettingsScreen(
                         ) {
                             Button(
                                 onClick = {
-                                    if (uiState.includeKeys) showUploadPasswordDialog = true
+                                    if (uiState.encryptBackup || uiState.includeKeys) showUploadPasswordDialog = true
                                     else viewModel.upload(null, null)
                                 },
-                                enabled = uiState.canExecute,
+                                enabled = uiState.canExecute && uiState.webDavReadiness == WebDavReadiness.Ready,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(Icons.Rounded.Upload, contentDescription = null)
@@ -380,7 +392,7 @@ internal fun BackupSettingsScreen(
 
                             FilledTonalButton(
                                 onClick = { viewModel.listRemote() },
-                                enabled = uiState.canExecute,
+                                enabled = uiState.canExecute && uiState.webDavReadiness == WebDavReadiness.Ready,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(Icons.Rounded.Refresh, contentDescription = null)

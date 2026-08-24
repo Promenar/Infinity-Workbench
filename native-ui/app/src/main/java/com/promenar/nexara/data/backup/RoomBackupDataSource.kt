@@ -45,6 +45,7 @@ class RoomBackupDataSource(
     private val appVersion: String,
     private val crashHook: RestoreCrashHook = RestoreCrashHook {},
     private val snapshotReadHook: (Path) -> Unit = {},
+    private val configurationRevision: () -> Long = { 0L },
     journalAuthenticator: RestoreJournalAuthenticator,
     private val restoreFileOperations: RestoreFileOperations = SecureBackupFileOps,
 ) : BackupDataSource {
@@ -59,6 +60,18 @@ class RoomBackupDataSource(
     private val restoreMutex = Mutex()
 
     override suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot = withContext(Dispatchers.IO) {
+        repeat(MAX_CONFIGURATION_SNAPSHOT_ATTEMPTS) {
+            val before = configurationRevision()
+            if (before and 1L != 0L) return@repeat
+            val captured = snapshotOnce(content)
+            val after = configurationRevision()
+            if (before == after && after and 1L == 0L) return@withContext captured
+            captured.wipe()
+        }
+        throw BackupValidationException("Provider 配置在备份期间持续变化，请稍后重试")
+    }
+
+    private suspend fun snapshotOnce(content: Set<BackupContent>): BackupSnapshot {
         requireCanonicalSnapshotContent(content)
         requireWorkspaceMutationJournalRecovered()
         val safePreferences = sanitizePreferences(preferences.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES))
@@ -68,7 +81,7 @@ class RoomBackupDataSource(
         }
         var files: Map<String, ByteArray> = emptyMap()
         var secretSnapshot: Map<SecretId, ByteArray> = emptyMap()
-        try {
+        return try {
             secretSnapshot = if (BackupContent.SECRETS in content) {
                 snapshotSecrets(
                     safePreferences.providerIds,
@@ -79,7 +92,7 @@ class RoomBackupDataSource(
             val databaseAndFiles =
             database.withTransaction {
                 requireWorkspaceMutationJournalRecovered()
-                val payload = readDatabasePayload()
+                val payload = stripDeviceLocalAvatarPaths(readDatabasePayload())
                 val preliminaryDatabase = json.encodeToString(payload).toByteArray(Charsets.UTF_8)
                 val nonDirectoryCount = payload.rows(FILE_TABLE).count { !it.requiredBoolean("is_directory") }
                 val remaining = BackupPackageLimits.MAX_IN_MEMORY_BYTES - preferenceBytes.size - secretBytes -
@@ -122,7 +135,7 @@ class RoomBackupDataSource(
         requireWorkspaceMutationJournalRecovered()
         requireCanonicalRestoreContent(validated)
         if (journal.read() != null) throw BackupValidationException("存在未恢复的 restore journal，请先执行 recoverInterruptedRestore")
-        val payload = parseDatabase(validated.database)
+        val payload = stripDeviceLocalAvatarPaths(parseDatabase(validated.database))
         val preferenceSnapshot = parsePreferences(validated.preferences)
         validatePayload(payload, validated.files)
         validateSecrets(validated.secrets, preferenceSnapshot.providerIds)
@@ -446,6 +459,22 @@ class RoomBackupDataSource(
             2 -> upgradeV2Payload(decoded)
             else -> decoded
         }
+    }
+
+    /**
+     * 头像文件位于当前安装私有目录，现行备份包没有携带这些文件。
+     * 导出和读取历史包时都清除绝对路径，避免跨设备恢复出指向旧沙箱的伪成功引用。
+     */
+    private fun stripDeviceLocalAvatarPaths(payload: DatabaseBackupPayload): DatabaseBackupPayload {
+        val agents = payload.tables["agents"] ?: return payload
+        return payload.copy(
+            tables = payload.tables + (
+                "agents" to agents.map { row ->
+                    if (row["avatar_path"] == null || row["avatar_path"] == JsonNull) row
+                    else JsonObject(row + ("avatar_path" to JsonNull))
+                }
+            ),
+        )
     }
 
     private fun upgradeV1Payload(payload: DatabaseBackupPayload): DatabaseBackupPayload {
@@ -1393,6 +1422,7 @@ class RoomBackupDataSource(
     }
 
     private companion object {
+        const val MAX_CONFIGURATION_SNAPSHOT_ATTEMPTS = 3
         const val DATABASE_SCHEMA_VERSION = 3
         const val FILE_TABLE = "workspace_files"
         const val OWNER_MARKER = ".restore-owner"

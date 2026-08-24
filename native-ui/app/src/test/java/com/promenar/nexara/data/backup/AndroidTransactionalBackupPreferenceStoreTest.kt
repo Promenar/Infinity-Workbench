@@ -44,6 +44,8 @@ class AndroidTransactionalBackupPreferenceStoreTest {
             .putInt("loop_limit", 9)
             .putFloat("default_temperature", 0.4f)
             .putStringSet("enabled_skills", setOf("z", "a"))
+            .putStringSet("suppressed_provider_models", setOf("provider-one"))
+            .putString("user_avatar", "/stale/device/path/avatar.img")
             .putString("model_info_sample_family", "MiniMax M3")
             .putString("model_info_sample_canonical_id", "minimax/minimax-m3")
             .putString("model_info_sample_chat_endpoint", "SUPPORTED")
@@ -78,6 +80,12 @@ class AndroidTransactionalBackupPreferenceStoreTest {
                 ("settings" to "loop_limit") to entry("settings", "loop_limit", PreferenceValueType.INT, "9"),
                 ("settings" to "default_temperature") to entry("settings", "default_temperature", PreferenceValueType.FLOAT, "0.4"),
                 ("settings" to "enabled_skills") to entry("settings", "enabled_skills", PreferenceValueType.STRING_SET, "[\"a\",\"z\"]"),
+                ("settings" to "suppressed_provider_models") to entry(
+                    "settings",
+                    "suppressed_provider_models",
+                    PreferenceValueType.STRING_SET,
+                    "[\"provider-one\"]",
+                ),
                 ("settings" to "model_info_sample_family") to entry("settings", "model_info_sample_family", PreferenceValueType.STRING, "MiniMax M3"),
                 ("settings" to "model_info_sample_canonical_id") to entry("settings", "model_info_sample_canonical_id", PreferenceValueType.STRING, "minimax/minimax-m3"),
                 ("settings" to "model_info_sample_chat_endpoint") to entry("settings", "model_info_sample_chat_endpoint", PreferenceValueType.STRING, "SUPPORTED"),
@@ -91,6 +99,7 @@ class AndroidTransactionalBackupPreferenceStoreTest {
         assertThat(snapshot.entries.map { it.key }).doesNotContain("api_key")
         assertThat(snapshot.entries.map { it.key }).doesNotContain("webdav_pass")
         assertThat(snapshot.entries.map { it.key }).doesNotContain("auto_backup")
+        assertThat(snapshot.entries.map { it.key }).doesNotContain("user_avatar")
         assertThat(snapshot.entries.map { it.key }).containsNoneOf(
             "jit_max_chunks",
             "kg_domain_auto",

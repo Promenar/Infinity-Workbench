@@ -10,9 +10,9 @@ class ReleaseConfigurationTest {
     private val cmake = source("app/src/main/cpp/CMakeLists.txt")
 
     @Test
-    fun `v0_2 beta 发行元数据与本地推理能力按构建类型隔离`() {
-        assertThat(gradle).contains("versionCode = 2")
-        assertThat(gradle).contains("versionName = \"0.2-beta\"")
+    fun `v0_2_1 beta 发行元数据与本地推理能力按构建类型隔离`() {
+        assertThat(gradle).contains("versionCode = 3")
+        assertThat(gradle).contains("versionName = \"0.2.1-beta\"")
         assertThat(buildTypeBody("debug"))
             .contains("buildConfigField(\"boolean\", \"LOCAL_INFERENCE_AVAILABLE\", \"true\")")
         assertThat(buildTypeBody("release"))

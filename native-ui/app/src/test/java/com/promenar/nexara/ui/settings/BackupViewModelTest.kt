@@ -61,8 +61,54 @@ class BackupViewModelTest {
         val names = BackupUiState::class.java.declaredFields.map { it.name }
 
         assertThat(state.includeKeys).isFalse()
+        assertThat(state.encryptBackup).isFalse()
         assertThat(state.hasWebDavPassword).isFalse()
         assertThat(names).containsNoneOf("webdavPass", "password", "passwordConfirmation", "apiKey", "progress")
+    }
+
+    @Test
+    fun `enabled WebDAV without endpoint user or password is incomplete and cannot upload`() {
+        val vm = newViewModel(
+            settings = FakeSettings(webDavEnabled = true),
+            secrets = FakeSecrets(),
+        )
+
+        assertThat(vm.uiState.value.webDavReadiness).isEqualTo(WebDavReadiness.Incomplete)
+        assertThat(vm.upload("pw".toCharArray(), "pw".toCharArray())).isFalse()
+    }
+
+    @Test
+    fun `disabled WebDAV never starts a remote operation even when canonical auth is complete`() {
+        val operations = FakeOperations()
+        val settings = FakeSettings(
+            webDavEnabled = false,
+            webDavUrl = "https://dav.invalid/",
+            webDavUser = "user",
+        )
+        val secrets = FakeSecrets().apply {
+            put(SecretCatalog.webDavPassword, "secret".encodeToByteArray())
+        }
+        val vm = newViewModel(operations = operations, settings = settings, secrets = secrets)
+
+        assertThat(vm.uiState.value.webDavReadiness).isEqualTo(WebDavReadiness.Disabled)
+        assertThat(vm.testConnection()).isFalse()
+        assertThat(operations.lastConfig).isNull()
+    }
+
+    @Test
+    fun `core-only encrypted export forwards password without including keys`() = runTest(dispatcher) {
+        val operations = FakeOperations()
+        val vm = newViewModel(operations = operations)
+        vm.setEncryptBackup(true)
+        val password = "same".toCharArray()
+        val confirmation = "same".toCharArray()
+
+        vm.export(ByteArrayOutputStream(), password, confirmation)
+        advanceUntilIdle()
+
+        assertThat(operations.lastOptions?.includeSecrets).isFalse()
+        assertThat(operations.lastOptions?.encryptPackage).isTrue()
+        assertThat(operations.lastOptions?.password).isEqualTo(CharArray(4))
     }
 
     @Test
@@ -860,7 +906,7 @@ class BackupViewModelTest {
 
     @Test
     fun `prefs cache failure cannot split canonical auth and reconstruction repairs cache`() = runTest(dispatcher) {
-        val settings = FakeSettings()
+        val settings = FakeSettings(webDavEnabled = true)
         val secrets = FakeSecrets()
         val operations = FakeOperations()
         val vm = newViewModel(operations, settings, secrets)
@@ -892,7 +938,7 @@ class BackupViewModelTest {
     @Test
     fun `corrupt canonical rejects normal writes until explicit reset then allows clean replacement and recreation`() = runTest(dispatcher) {
         val secrets = FakeSecrets().apply { putRaw(SecretCatalog.webDavAuthRecord, byteArrayOf(1, 2, 3)) }
-        val settings = FakeSettings(webDavPasswordPlaintext = "must-not-return")
+        val settings = FakeSettings(webDavEnabled = true, webDavPasswordPlaintext = "must-not-return")
         val operations = FakeOperations()
         val vm = newViewModel(operations, settings, secrets)
         val rejected = "rejected".toCharArray()
@@ -918,7 +964,7 @@ class BackupViewModelTest {
 
     @Test
     fun `config cache Error propagates but reservation is released after canonical publish`() = runTest(dispatcher) {
-        val settings = FakeSettings()
+        val settings = FakeSettings(webDavEnabled = true)
         val secrets = FakeSecrets()
         val operations = FakeOperations()
         val vm = newViewModel(operations, settings, secrets)
@@ -967,6 +1013,8 @@ class BackupViewModelTest {
         assertThat(secrets.accessThreads).isNotEmpty()
         assertThat(secrets.accessThreads.none { it === mainThread }).isTrue()
 
+        assertThat(vm.saveWebDavConfig("https://async.invalid/", "u", "after-reset".toCharArray())).isTrue()
+        drainRealIoUntil { vm.uiState.value.operation !is BackupOperation.SavingConfig }
         secrets.accessThreads.clear()
         assertThat(vm.testConnection()).isTrue()
         drainRealIoUntil { vm.uiState.value.operation is BackupOperation.Success }
@@ -1215,22 +1263,32 @@ class BackupViewModelTest {
 
     private fun newViewModel(
         operations: FakeOperations = FakeOperations(),
-        settings: FakeSettings = FakeSettings(),
-        secrets: FakeSecrets = FakeSecrets(),
+        settings: FakeSettings? = null,
+        secrets: FakeSecrets? = null,
         restart: FakeRestart = FakeRestart(),
         hooks: BackupViewModelHooks = BackupViewModelHooks.None,
         synchronousIo: Boolean = true,
         ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = dispatcher,
-    ) = BackupViewModel(
-        operations,
-        settings,
-        secrets,
-        restart,
-        clock = { 999L },
-        hooks = hooks,
-        ioDispatcher = ioDispatcher,
-        synchronousIoForTests = synchronousIo,
-    )
+    ): BackupViewModel {
+        val completeSettings = settings ?: FakeSettings(
+            webDavEnabled = true,
+            webDavUrl = "https://default.invalid/",
+            webDavUser = "default-user",
+        )
+        val completeSecrets = secrets ?: FakeSecrets().apply {
+            put(SecretCatalog.webDavPassword, "default-password".encodeToByteArray())
+        }
+        return BackupViewModel(
+            operations,
+            completeSettings,
+            completeSecrets,
+            restart,
+            clock = { 999L },
+            hooks = hooks,
+            ioDispatcher = ioDispatcher,
+            synchronousIoForTests = synchronousIo,
+        )
+    }
 
     private fun kotlinx.coroutines.test.TestScope.drainRealIoUntil(condition: () -> Boolean) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
@@ -1437,6 +1495,7 @@ class BackupViewModelTest {
         var lastConfig: WebDavConfig? = null
         var observedPassword: CharArray? = null
         var observedConfirmation: CharArray? = null
+        var lastOptions: BackupExportOptions? = null
         var testCancelled = false
         var discardCalls = 0
         var pending = false
@@ -1445,6 +1504,7 @@ class BackupViewModelTest {
 
         override suspend fun export(options: BackupExportOptions): ByteArray {
             exportCalls++
+            lastOptions = options
             observedPassword = options.password
             observedConfirmation = options.passwordConfirmation
             exportGate?.await()
@@ -1453,6 +1513,7 @@ class BackupViewModelTest {
         }
         override suspend fun upload(config: WebDavConfig, options: BackupExportOptions): BackupUploadReceipt {
             lastConfig = config
+            lastOptions = options
             observedPassword = options.password
             observedConfirmation = options.passwordConfirmation
             return BackupUploadReceipt("new.nexara", warning)

@@ -14,11 +14,12 @@ internal object BackupPreferencePolicy {
             "embedding_base_url", "embedding_model",
         ),
         "settings" to setOf(
-            "language", "theme_mode", "theme_color_source", "haptic_enabled", "loop_limit", "user_name", "user_avatar",
+            "language", "theme_mode", "theme_color_source", "haptic_enabled", "loop_limit", "user_name",
             "extra_providers_count", "extra_providers_ids", "all_models", "enabled_models", "all_models_order",
             "preset_summary_model", "preset_image_model", "preset_embedding_model", "preset_rerank_model",
             "preset_skills_migrated_v3",
             "enabled_skills",
+            "suppressed_provider_models",
             "default_model", "default_temperature", "default_top_p", "default_max_tokens",
         ),
         "search" to setOf(
@@ -69,6 +70,7 @@ internal object BackupPreferencePolicy {
     // 只为读取旧备份时识别并丢弃；不得继续导出或写回设备。
     private val exactRetired = mapOf(
         "backup" to setOf("auto_backup"),
+        "settings" to setOf("user_avatar"),
         "rag" to setOf(
             "jit_max_chunks",
             "kg_domain_auto",

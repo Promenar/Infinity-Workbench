@@ -42,11 +42,12 @@ class DefaultBackupPackageCodec private constructor(
 
     private fun encodeInternal(snapshot: BackupSnapshot, options: BackupOptions): ByteArray {
         val includeSecrets = options.includeSecrets
+        val encryptPackage = options.encryptPackage || includeSecrets
         if (includeSecrets && BackupContent.SECRETS !in options.content) {
             throw BackupValidationException("包含密钥时必须选择密钥内容")
         }
-        if (includeSecrets && (options.password == null || options.password.isEmpty())) {
-            throw BackupValidationException("包含密钥的备份必须设置非空密码")
+        if (encryptPackage && (options.password == null || options.password.isEmpty())) {
+            throw BackupValidationException("加密备份必须设置非空密码")
         }
 
         val ownedPassword = options.password?.copyOf()
@@ -77,7 +78,7 @@ class DefaultBackupPackageCodec private constructor(
                     wipe("encode-manifest", manifestBytes)
                 }
             }
-            if (!includeSecrets) return createZipPackage(null)
+            if (!encryptPackage) return createZipPackage(null)
             return crypto.encryptPackage(ownedPassword!!) { kdf -> createZipPackage(kdf) }
         } finally {
             wipeAll(entries.map { (path, content) -> "encode:$path" to content })

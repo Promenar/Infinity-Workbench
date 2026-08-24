@@ -259,4 +259,12 @@ class BackupPreferenceInventoryTest {
             assertThat(BackupPreferencePolicy.isAllowed(namespace, "theme_color_source")).isTrue()
         }
     }
+
+    @Test
+    fun `模型抑制状态必须备份而头像绝对路径必须读取后丢弃`() {
+        assertThat(BackupPreferencePolicy.isAllowed("settings", "suppressed_provider_models")).isTrue()
+        assertThat(BackupPreferencePolicy.isKnown("settings", "user_avatar")).isTrue()
+        assertThat(BackupPreferencePolicy.isAllowed("settings", "user_avatar")).isFalse()
+        assertThat(BackupPreferencePolicy.isRetired("settings", "user_avatar")).isTrue()
+    }
 }

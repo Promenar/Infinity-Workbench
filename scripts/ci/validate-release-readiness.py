@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""校验 v0.2-beta 发行状态一致性。"""
+"""校验当前发行候选的账本、冷安装与覆盖升级证据。"""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ PHYSICAL_DEVICE_ACCEPTANCE_PREFIX = re.compile(r"^>\s*物理真机人工验收�
 GITHUB_RELEASE_AUTHORIZATION_PREFIX = re.compile(r"^>\s*GitHub 发布动作：\s*(.*?)\s*$")
 CURRENT_APK_COLD_INSTALL_PREFIX = re.compile(r"^>\s*当前本地 APK 冷安装：\s*(.*?)\s*$")
 HISTORICAL_APK_COLD_INSTALL_PREFIX = re.compile(r"^>\s*同源历史候选冷安装：\s*(.*?)\s*$")
+UPGRADE_DATA_INHERITANCE_PREFIX = re.compile(r"^>\s*旧版覆盖升级数据继承：\s*(.*?)\s*$")
 
 
 def parse_plain_value(raw: str) -> str:
@@ -99,12 +100,18 @@ def validate_ledgers(validation_content: str, release_content: str) -> None:
         "当前本地 APK 冷安装证据行",
         ledger_lines,
         CURRENT_APK_COLD_INSTALL_PREFIX,
-        "NOT-RUN",
+        "PASS",
     )
     require_exact_value_marker(
         "同源历史候选冷安装证据行",
         ledger_lines,
         HISTORICAL_APK_COLD_INSTALL_PREFIX,
+        "PASS",
+    )
+    require_exact_value_marker(
+        "旧版覆盖升级数据继承证据行",
+        ledger_lines,
+        UPGRADE_DATA_INHERITANCE_PREFIX,
         "PASS",
     )
 

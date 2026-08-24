@@ -4,12 +4,12 @@
 ![Platform](https://img.shields.io/badge/platform-Android-green.svg)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg)
 ![Compose](https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4.svg)
-![Version](https://img.shields.io/badge/version-0.2--beta-6366F1.svg)
-![Stage](https://img.shields.io/badge/stage-beta%20prerelease-6366F1.svg)
+![Version](https://img.shields.io/badge/version-0.2.1--beta-6366F1.svg)
+![Stage](https://img.shields.io/badge/stage-release%20candidate-6366F1.svg)
 
 > Android 端 BYOK 开源 AI 客户端，以 Kotlin 与 Jetpack Compose 原生构建，集成多服务商对话、RAG、知识图谱、Agent 工具、会话工作区和加密备份。
 
-`v0.2-beta` 已于 2026-07-29 获得 beta prerelease 放行。后台持续生成等功能已经实现；2119 项 JVM、96 张截图、Lint、真实 API 四模型 smoke、分支 Android CI、API 31/35/36 设备矩阵，以及同源稳定证书签名候选的 API 35/36 冷安装均已通过。2026-07-15 真机首轮反馈中的引导跳转、三个 RAG 设置入口闪退、聊天/模型管理布局及模型元数据问题已在当前候选中修复。最终 tag workflow 会重新构建、验签并冷安装远端 APK；物理真机 TalkBack 人工听觉、完整焦点遍历和更广泛 OEM/IME 体验继续作为 beta 期间的人工验证项，不冒充已完成的自动化门禁。
+`v0.2.1-beta` 是当前开发与本地签名交付候选，重点收口 Provider/Tool Call/MCP、会话工作区、RAG/知识图谱、备份恢复和设置子页面的一致性，并新增从公开同签名 `v0.1-beta` 到当前 Room v5 的禁止卸载覆盖升级门禁。GitHub tag 与 Release 发布仍需单独授权；在此之前，最新公开版本仍是 `v0.2-beta`。当前候选的实测范围和剩余人工门禁以发行验证账本为准。
 
 ## 主要能力
 
@@ -19,7 +19,7 @@
 - **Agent 与工具调用**：内置联网搜索、计算、受限脚本、文件操作、图像生成和任务规划等工具，支持审批、幂等执行账本和工具结果回传。任务计划以消息流 Material 3 卡片和 composer 状态胶囊呈现；生成停止后仍可人工继续或销项，不会把残留计划误报为仍在生成。
 - **会话工作区**：按 Session 隔离文件根目录，覆盖导入、原子写入、版本、回收站、恢复和路径逃逸防护；文档索引使用版本化目标与失败重试，进程重启后按当前文件版本和 KG 配置补建缺失任务。
 - **长文档安全编辑**：严格大于 1 MiB 的文件仅加载元数据；已读取正文严格超过 32K 个 UTF-16 代码单元、2,000 行或单行 16K 个 UTF-16 代码单元时自动进入性能保护，只预览约前 16K 字符，但复制和保存始终使用完整全文。一次输入跨过软线时，已修改内容不会被截断，仍可完整完成 CAS 安全保存。
-- **安全备份与恢复**：核心数据可本地或通过 HTTPS WebDAV 备份；密钥默认不进入备份，用户可显式选择把可备份的完整密钥加密写入备份包。
+- **安全备份与恢复**：核心数据可本地或通过 HTTPS WebDAV 手动备份；密钥默认不进入备份。备份包可独立启用加密，包含完整密钥时强制加密；设备本机个人头像与 Agent 头像不跨设备迁移，避免恢复出失效绝对路径。
 - **后台持续生成**：前台发起的当前生成任务在切后台、锁屏、旋转或 Activity 重建后继续，通过前台服务通知返回会话或停止任务。
 - **本地优先**：会话、文档和配置保存在设备本地；云端模型调用直接连接用户配置的服务商。
 
@@ -42,7 +42,7 @@
 
 ## GGUF 本地推理
 
-GGUF/llama.cpp 不属于 `v0.2-beta` 稳定发行范围，本轮不继续推进端到端实现。Release 构建会关闭本地推理并拒绝打包 GGUF、llama 或 ggml 制品；相关代码只能视为实验性研发资产，不能据此承诺可用能力。
+GGUF/llama.cpp 不属于 `v0.2.1-beta` 稳定发行范围，本轮不继续推进端到端实现。Release 构建会关闭本地推理并拒绝打包 GGUF、llama 或 ggml 制品；相关代码只能视为实验性研发资产，不能据此承诺可用能力。
 
 ## 运行要求
 
@@ -54,16 +54,16 @@ GGUF/llama.cpp 不属于 `v0.2-beta` 稳定发行范围，本轮不继续推进�
 | 网络 | 云端模型、Embedding、Rerank、联网搜索和 WebDAV 需要网络 |
 | 权限 | 网络；通知权限用于后台生成，可拒绝但会退化为仅前台生成 |
 
-本版本采用全新 `v0.2-beta` 数据基线，不兼容 `v0.1-beta` 用户数据。安装前请先自行导出需要保留的旧数据，再卸载旧版。
+`v0.2.1-beta` 保持既有包名与发行签名，并提供 Room v1→v5 前进迁移。来自官方同签名 `v0.1-beta` 或 `v0.2-beta` 的安装应直接覆盖升级，**不要先卸载或清除数据**；安装前仍建议完成可用备份。来源不同、被重签名或包名不同的 APK 无法继承本应用数据，也不得通过卸载回退冒充升级成功。
 
 ## 安装
 
-正式制品只从 [Promenar/Nexara Releases](https://github.com/Promenar/Nexara/releases) 发布。安装 `v0.2-beta`：
+公开制品只从 [Promenar/Nexara Releases](https://github.com/Promenar/Nexara/releases) 发布。当前 `v0.2.1-beta` 若由维护者直接交付，应同时提供 APK 的绝对路径、SHA-256、版本身份和同签名验真结果；未获授权前不会创建 tag 或 GitHub Release。安装时：
 
-1. 下载 `nexara-v0.2-beta.apk` 与同名 `.sha256` 文件。
+1. 取得 `nexara-v0.2.1-beta.apk` 与同名 `.sha256` 文件。
 2. 校验 APK 的 SHA-256 与发布文件一致。
 3. 在 Android 系统中允许当前文件管理器或浏览器“安装未知应用”。
-4. 侧载 APK；首次启动按引导配置语言、Provider、默认模型、Agent 和首条对话。
+4. 新安装直接侧载；从同签名旧版升级时直接覆盖安装，不卸载、不清数据。
 
 不要安装 Actions 临时制品、Debug APK 或来源不明的重打包版本。
 
@@ -100,7 +100,7 @@ adb logcat -s NEXARA_METRO | node scripts/nexara-metro-tui.js --stdin --no-color
 | 导航 | Compose Navigation |
 | 构建/发行 | Gradle、R8、GitHub Actions、GitHub Release |
 
-架构快速参考见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，发行说明见 [docs/release/v0.2-beta.md](docs/release/v0.2-beta.md)，发行验证状态见 [docs/release/v0.2-beta-validation.md](docs/release/v0.2-beta-validation.md)。
+架构快速参考见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，当前发行说明见 [docs/release/v0.2.1-beta.md](docs/release/v0.2.1-beta.md)，发行验证状态见 [docs/release/v0.2.1-beta-validation.md](docs/release/v0.2.1-beta-validation.md)。
 
 ## License
 

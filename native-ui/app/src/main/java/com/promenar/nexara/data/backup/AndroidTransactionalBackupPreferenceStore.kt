@@ -404,7 +404,14 @@ internal class AndroidTransactionalBackupPreferenceStore(
                 "haptic_enabled", "local_models_enabled", "local_auto_load", "preset_skills_migrated_v3")
             typed("settings", PreferenceValueType.INT, "loop_limit", "extra_providers_count", "default_max_tokens")
             typed("settings", PreferenceValueType.FLOAT, "default_temperature", "default_top_p")
-            typed("settings", PreferenceValueType.STRING_SET, "all_models", "enabled_models", "enabled_skills")
+            typed(
+                "settings",
+                PreferenceValueType.STRING_SET,
+                "all_models",
+                "enabled_models",
+                "enabled_skills",
+                "suppressed_provider_models",
+            )
             typed("search", PreferenceValueType.BOOLEAN, "web_search_enabled")
             typed("search", PreferenceValueType.INT, "result_count")
             typed("rag", PreferenceValueType.INT,

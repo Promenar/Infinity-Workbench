@@ -21,6 +21,7 @@ import com.promenar.nexara.data.backup.PendingRestoreStore
 import com.promenar.nexara.data.backup.RoomBackupDataSource
 import com.promenar.nexara.data.backup.wipe
 import com.promenar.nexara.data.backup.WipeableByteArrayOutputStream
+import com.promenar.nexara.data.manager.ProviderConfigurationRevision
 import com.promenar.nexara.data.remote.webdav.KtorWebDavBackupClient
 import com.promenar.nexara.data.remote.webdav.RemoteBackup
 import com.promenar.nexara.data.remote.webdav.UploadAndPruneResult
@@ -62,7 +63,15 @@ class BackupRepository internal constructor(
         try {
             val captured = dataSource.snapshot(content)
             snapshot = captured
-            codec.encode(captured, BackupOptions(content, options.includeSecrets, password))
+            codec.encode(
+                captured,
+                BackupOptions(
+                    content = content,
+                    includeSecrets = options.includeSecrets,
+                    encryptPackage = options.encryptPackage || options.includeSecrets,
+                    password = password,
+                ),
+            )
                 .also(::requireBoundedPackage)
         } finally {
             snapshot?.wipe()
@@ -157,9 +166,10 @@ class BackupRepository internal constructor(
     }
 
     private fun validatedPassword(options: BackupExportOptions): CharArray? {
-        if (!options.includeSecrets) return null
-        val password = options.password ?: throw BackupValidationException("包含密钥时必须设置备份密码")
-        val confirmation = options.passwordConfirmation ?: throw BackupValidationException("包含密钥时必须确认备份密码")
+        val encryptionRequired = options.encryptPackage || options.includeSecrets
+        if (!encryptionRequired) return null
+        val password = options.password ?: throw BackupValidationException("加密备份必须设置备份密码")
+        val confirmation = options.passwordConfirmation ?: throw BackupValidationException("加密备份必须确认备份密码")
         if (password.isEmpty() || confirmation.isEmpty()) throw BackupValidationException("备份密码不能为空")
         var difference = password.size xor confirmation.size
         val length = maxOf(password.size, confirmation.size)
@@ -226,6 +236,7 @@ class BackupRepository internal constructor(
                 ),
                 trustedRestoreBase = restoreBase,
                 appVersion = BuildConfig.VERSION_NAME,
+                configurationRevision = ProviderConfigurationRevision::current,
                 journalAuthenticator = AndroidRestoreJournalAuthenticator(),
             )
         }

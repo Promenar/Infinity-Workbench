@@ -20,7 +20,7 @@
 - 设置、RAG、KG 新 UI 只复用现有 Material 3/SE 视觉原语；不引入新 UI 库、不恢复 Glass/逐项卡片。
 - 新增或变更数据转换、状态流转、网络协议、权限、持久化和工具逻辑必须先写测试，运行并记录预期 RED，再做最小实现并运行 GREEN。
 - 远程 Provider 测试只用 MockEngine/权威 fixture；不得调用真实或付费模型 API。
-- Room v3 是共享聚合面，Task 1 独占数据库版本、migration 和 schema；后续任务只能消费已冻结 DAO/列，不再自行升版本。
+- Room Schema 按已验证的数据合同串行演进：Task 1 建立 v3，Task 2 为精确审批/会话选择建立 v4，Task 6 为可重启恢复的 MCP discovery 派生快照建立 v5。既有 `1.json`～`4.json` 必须保持冻结；每次升版都要补前进 migration、schema、迁移设备测试和备份派生数据清理测试，其他 Task 不得自行升版本。
 - `NexaraApplication.kt`、`ChatModels.kt`、`LlmProtocol.kt`、`RagViewModel.kt`、strings、README/CHANGELOG/PRD/发行账本均为共享热点，按任务顺序串行。
 - 每个实现 Task 完成后先由施工 Agent 自检，再由未参与该 Task 的独立审阅 Agent 检查规格符合性、数据安全、测试质量和 diff；Critical/Important 全部关闭后才能进入下一 Task。
 - 每个 Task 提交前运行 `git diff --check`；构建产物、APK、报告临时文件、签名材料和 `.nexara-workspace-*` 不纳入 Git。
@@ -143,9 +143,11 @@
 - All generation/list/probe code consumes `ProviderEndpointResolver`; protocol classes do not append hard-coded endpoint paths.
 - Presets resolve to one exact wire URL; Generic ambiguous paths are rejected.
 - Vertex uses serviceAccountJson/project/location, unified credential validation and OAuth-only connection check.
+- Vertex generation accepts only the canonical Google origin for the selected location, and standard service-account PEM trailing newlines remain valid.
 - Anthropic probe does not treat an empty model-list implementation as connection failure.
 - Cohere is removed from advertised presets unless its native v2 adapter and golden tests are implemented in this task.
 - Unsupported transports/protocol claims disappear from UI rather than remain disabled.
+- Generic host-only addresses are rejected by both resolver and form; editing a legacy unsupported provider never silently rewrites its protocol.
 
 - [ ] **Step 1 — RED:** golden endpoint tests for every preset; Vertex parser/probe tests; Provider form mapping tests; Anthropic validation test; unsupported Cohere visibility contract.
 - [ ] **Step 2 — Verify RED:** run endpoint, provider router, form/state JVM tests and AndroidTest compile.
@@ -168,18 +170,20 @@
 
 **Behavior:**
 
-- Remote protocols emit explicit successful `Completed(reason, completedToolCallIds)` or structured Error; Error/cancel/truncated stream never executes tools.
-- Runner validates completed call IDs, JSON object args, known tool snapshot and max call count before runtime approval/execution.
+- Remote protocols emit exactly one explicit successful `Completed(END_TURN|TOOL_CALLS, completedToolCallIds)` or structured Error; duplicate terminal, unknown finish/stop reason, Error/cancel/truncated/EOF never executes tools.
+- Runner accepts tools only for `TOOL_CALLS`; validates nonempty unique completed IDs exactly match assembled calls, JSON object args, known tool snapshot and the 10-call limit before runtime approval/execution. `END_TURN` must carry no executable tools.
+- Sync responses enforce the same finish/stop/status and tool-shape rules as streams; every non-success path clears unconfirmed persisted tool calls before marking the message terminal.
+- Responses normalizes both argument-delta events and complete output-item-only calls into one exact unified call without duplication.
 - Responses emits/consumes function call and function_call_output with same call_id.
 - Anthropic emits tool_use and user/tool_result blocks.
 - Vertex keeps per-call thought signature only where an existing authoritative fixture confirms shape; otherwise tools remain capability-gated off for Vertex.
 - Fallback sniffer may run only after successful STOP and cannot create executable/approvable calls from failed content.
 
-- [ ] **Step 1 — RED:** add MockEngine two-turn golden tests for Chat Completions, Responses and Anthropic; add Vertex contract/capability gate tests; replace the existing “Failure 后执行工具” expectation with zero execution.
-- [ ] **Step 2 — Verify RED:** run `*ToolRoundTripTest`, protocol tests, `ChatGenerationRunnerTest`, `DefaultChatGenerationRuntimeTest`.
-- [ ] **Step 3 — GREEN:** implement explicit completion and provider codecs; preserve multiple call ordering/IDs.
-- [ ] **Step 4 — Verify GREEN:** targeted suites plus all protocol/error classification tests.
-- [ ] **Step 5 — Commit:** `fix: close provider tool round trips and failed streams`.
+- [x] **Step 1 — RED:** add MockEngine two-turn golden tests for Chat Completions, Responses and Anthropic; add Vertex contract/capability gate tests; replace the existing “Failure 后执行工具” expectation with zero execution.
+- [x] **Step 2 — Verify RED:** run `*ToolRoundTripTest`, protocol tests, `ChatGenerationRunnerTest`, `DefaultChatGenerationRuntimeTest`.
+- [x] **Step 3 — GREEN:** implement explicit completion and provider codecs; preserve multiple call ordering/IDs.
+- [x] **Step 4 — Verify GREEN:** targeted suites plus all protocol/error classification tests.
+- [x] **Step 5 — Commit:** `fix: close provider tool round trips and failed streams`.
 
 ---
 
@@ -200,12 +204,14 @@
 - `update_plan` consumes a real JsonArray/objects.
 - Register/claim compares runtimeToolId + canonical args hash + definition hash; mismatches are CONFLICT.
 - `CancellationException` is rethrown; recovered RUNNING becomes unknown/failed outcome and is never replayed.
+- 已注册 identity 后出现名称、参数或审批属性失配时，以原完整 identity 做 CAS，只允许 `PENDING_APPROVAL/APPROVED -> FAILED`，并生成一次脱敏失败终态。
+- 重启恢复只接受数据库中完整且逐项一致的原始审批请求；缺失或损坏时整组失败关闭，不得降级成 `UNKNOWN` 风险重建。
 
-- [ ] **Step 1 — RED:** nested update_plan args; malformed JSON; same key different payload/schema/name; concurrent claim; cancellation/recovery tests.
-- [ ] **Step 2 — Verify RED:** run `ToolExecutorTest`, `ToolExecutionLedgerRepositoryTest`, all built-in skill tests.
-- [ ] **Step 3 — GREEN:** implement validator/identity at register and execute-time recheck.
-- [ ] **Step 4 — Verify GREEN:** targeted tests plus tool/generation module suite.
-- [ ] **Step 5 — Commit:** `fix: preserve tool arguments and invocation identity`.
+- [x] **Step 1 — RED:** nested update_plan args; malformed JSON; same key different payload/schema/name; concurrent claim; cancellation/recovery tests.
+- [x] **Step 2 — Verify RED:** run `ToolExecutorTest`, `ToolExecutionLedgerRepositoryTest`, all built-in skill tests.
+- [x] **Step 3 — GREEN:** implement validator/identity at register and execute-time recheck.
+- [x] **Step 4 — Verify GREEN:** targeted tests plus tool/generation module suite.
+- [x] **Step 5 — Commit:** `fix: preserve tool arguments and invocation identity`，并以 `fix: fail closed on tool identity replay` 收口独立审阅发现。
 
 ---
 
@@ -218,7 +224,8 @@
 - Modify: `DefaultSkillRegistry.kt`, `ModularSkillRegistry.kt`, `UserSkillRegistry.kt`
 - Modify: `McpSkillRegistry.kt`, `McpSkill.kt`, `McpClient.kt`
 - Modify: `ChatGenerationContentStrategy.kt` and session settings Skill/MCP UI
-- Modify: Skill/MCP repository/DAO/entities using the Task 1 schema only
+- Create: `McpToolSnapshotEntity.kt` and Room schema `5.json`
+- Modify: Skill/MCP repository/DAO, `NexaraDatabase.kt`, migrations and Room backup derived-data cleanup
 - Modify: `SkillsScreen.kt` and related strings/tests.
 
 **Behavior:**
@@ -226,15 +233,22 @@
 - Resolved set = global enabled built-ins + enabled/active custom + enabled/active/synced MCP, gated by session toolsEnabled.
 - Execute time rechecks active/enabled and definition digest.
 - MCP aliases are stable and server-qualified; sync atomically replaces one server and removes stale definitions.
-- Process restart restores persisted discovery; disabled/deleted server cannot resolve.
-- Only HTTP transport remains visible; STDIO is removed until implemented.
+- Process restart restores persisted discovery from Room v5; disabled/deleted/URL-changed server cannot resolve, and late sync results cannot resurrect it.
+- `mcp_tool_snapshots` is a derived cache: backup exports only MCP server source configuration, restore clears snapshots and requires a new successful sync before advertising tools.
+- Transport support is exactly MCP `2026-07-28` modern Streamable HTTP over HTTPS: protocol metadata and headers are mandatory; no legacy initialize/session fallback is claimed.
+- Discovery consumes every `tools/list.nextCursor` page before one atomic replace and fails closed on HTTP/RPC/id/schema/name/duplicate/cursor errors.
+- `x-mcp-header` primitive parameter mapping is implemented; `isError` and unsupported `input_required` become typed failures rather than successful Tool results.
+- Settings permits only new HTTPS HTTP servers. Legacy cleartext HTTP/STDIO records remain visible for delete/migration but cannot sync, advertise or execute; release Network Security Config remains cleartext-denying.
 - Custom database/script Skills without sandbox are editable but never advertised/executed and never return fake success.
+- Prompt 与执行必须共用唯一 `SessionToolResolver`；每次副作用前重读当前 Session 并重新校验全局/会话授权集合与 definition digest。
+- Registry 的同步读取只能访问生命周期内维护的不可变内存快照，不得在 Main 调用链使用 `runBlocking`；同步提交以配置 revision、每服务器 generation 和串行提交锁阻止 ABA 与逆序覆盖。
+- `_meta` 使用 `io.modelcontextprotocol/` 命名空间键，`Accept` 明确同时接受 JSON 与 event stream。
 
-- [ ] **Step 1 — RED:** master off, session intersection, server disable after prompt, duplicate remote names, stale removal, restart restore, custom unsandboxed tests.
-- [ ] **Step 2 — Verify RED:** run registry/MCP/content strategy tests.
-- [ ] **Step 3 — GREEN:** implement resolved snapshot and atomic discovery.
-- [ ] **Step 4 — Verify GREEN:** targeted tests, settings screenshots and AndroidTest compile.
-- [ ] **Step 5 — Commit:** `fix: enforce session scoped skill and mcp availability`.
+- [x] **Step 1 — RED:** master off, session intersection, server disable after prompt, duplicate remote names, stale removal, restart restore, custom unsandboxed, protocol headers, pagination, `x-mcp-header`, `isError`, `input_required` and HTTPS-only tests.
+- [x] **Step 2 — Verify RED:** run registry/MCP/content strategy tests.
+- [x] **Step 3 — GREEN:** implement resolved snapshot and atomic discovery.
+- [x] **Step 4 — Verify GREEN:** targeted tests, settings screenshots and AndroidTest compile.
+- [x] **Step 5 — Commit:** `fix: enforce session scoped skill and mcp availability`，并以执行时重验、同步代际和 namespaced metadata 的独立审阅修复提交收口。
 
 ---
 
@@ -259,12 +273,14 @@
 - DB failure restores physical root and reopens gate; DB success never resurrects data, and tombstone cleanup can retry.
 - Duplicate delete is idempotent; shared/wrong/out-of-root workspace identity fails closed.
 - Startup recovery runs workspace journal before tombstone cleanup/index queue resume.
+- 所有持久化入口在完整操作期间持有可重入 admission lease；删除原子关闭新入场，先取消并等待 generation，再 drain 既有 lease，最后重解析目标。
+- DB_COMMITTED 部分物理清理保留可恢复所有权凭据，并将 staging target 精确绑定到 row operationId；错配或坏 digest 在任何文件操作前失败关闭。
 
-- [ ] **Step 1 — RED:** fence/join ordering, all-domain deletion, DB rollback, post-commit cleanup, process-death recovery, duplicate delete, root identity/shared root tests.
-- [ ] **Step 2 — Verify RED:** run new transaction/recovery tests, coordinator, ToolExecutor, Chat/Hub VM tests.
-- [ ] **Step 3 — GREEN:** implement journal stages and use case; no UI success before completion.
-- [ ] **Step 4 — Verify GREEN:** targeted JVM tests, migration/device test where available, application startup tests.
-- [ ] **Step 5 — Commit:** `fix: make session deletion transactional and recoverable`.
+- [x] **Step 1 — RED:** fence/join ordering, all-domain deletion, DB rollback, post-commit cleanup, process-death recovery, duplicate delete, root identity/shared root tests.
+- [x] **Step 2 — Verify RED:** run new transaction/recovery tests, coordinator, ToolExecutor, Chat/Hub VM tests.
+- [x] **Step 3 — GREEN:** implement journal stages and use case; no UI success before completion.
+- [x] **Step 4 — Verify GREEN:** targeted JVM tests, migration/device test where available, application startup tests.
+- [x] **Step 5 — Commit:** `fix: make session deletion transactional and recoverable`，并以活跃写入序列化及 operationId 绑定的独立审阅修复提交收口。
 
 ---
 
@@ -276,9 +292,9 @@
 
 - Create: `WorkspaceTextContentPolicy.kt`
 - Modify: `WorkspaceRepository.kt`, `WorkspaceDeletionTransaction.kt`, `SecureWorkspaceFileOps.kt`
-- Modify: index/vector/FTS/KG candidate queries and coordinators
+- Modify: active-only `FileEntry`/`FileVersion`/workspace-mutation DAOs plus index/vector/FTS/KG task/candidate queries and coordinators
 - Modify: `IFileOperationRepository.kt`, `FileOperationRepository.kt`
-- Modify: FileRead/Write/Patch/Diff skills
+- Modify: FileList/Search/Read/Write/Patch/Diff skills
 - Modify: `DocEditorViewModel.kt`, `DocEditorScreen.kt`
 - Modify: `RagViewModel.kt`, ResourceExplorer/RecycleBin ViewModels and UI/strings.
 
@@ -286,7 +302,8 @@
 
 - Normal delete moves to recycle; permanent delete only from recycle/cleanup/creation rollback.
 - Recycled rows are invisible to normal tree, file tools, vector/FTS/KG and RAG.
-- Permanent delete stages and removes all FileVersion rows/snapshots for subtree.
+- Recycle synchronously cancels/joins indexing, clears vector/FTS/KG/task/cache data, and restore enqueues exactly one rebuild after the row is active again.
+- Permanent delete is accepted only for recycled rows or creation rollback; it stages and removes all FileVersion rows/snapshots and derived data for the full subtree.
 - create/mkdir/move/rename/recycle/restore use Task 1 journal and recover idempotently.
 - Explicit text policy rejects PDF/DOCX/NUL/invalid UTF-8 for editor/read/write/patch/diff.
 - Strict patch coordinates reject end past EOF with zero side effects.
@@ -386,7 +403,7 @@
 
 **Files:**
 
-- Modify: `README.md`, `docs/PRD.md`, `CHANGELOG.md`, `docs/release/v0.2-beta-validation.md`
+- Modify: `README.md`, `docs/PRD.md`, `CHANGELOG.md`, `docs/release/v0.2.1-beta.md`, `docs/release/v0.2.1-beta-validation.md`
 - Modify affected `docs/ADR/` architecture records, especially ADR-019 and database/provider contracts.
 - Append: `.agent/handover.md` only through HLG script; regenerate index via Skill.
 - Do not commit APK/build outputs.

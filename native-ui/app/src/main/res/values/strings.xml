@@ -645,7 +645,7 @@
     <string name="backup_title">Backup &amp; Restore</string>
     <string name="backup_desc">Manage data security, local export, and cloud sync settings.</string>
     <string name="backup_content_title">Backup Content</string>
-    <string name="backup_core_content_summary">Core data is always included; API keys are optional.</string>
+    <string name="backup_core_content_summary">Core data is always included; API keys are optional. Device-local profile and agent avatars are not transferred.</string>
     <string name="backup_core_content_fixed">Always included</string>
     <string name="backup_content_sessions">Sessions</string>
     <string name="backup_content_library">Knowledge Base</string>
@@ -660,9 +660,12 @@
     <string name="backup_import_subtitle">Restore Data</string>
     <string name="backup_importing">Importing…</string>
     <string name="backup_section_webdav">WebDAV Cloud</string>
-    <string name="backup_webdav_sync">WebDAV Sync</string>
+    <string name="backup_webdav_manual">WebDAV manual backup</string>
     <string name="backup_webdav_configured">Configured</string>
     <string name="backup_webdav_not_configured">Not Configured</string>
+    <string name="backup_webdav_incomplete">Configuration incomplete</string>
+    <string name="backup_encrypt_package">Encrypt backup package</string>
+    <string name="backup_encrypt_package_summary">Recommended for local exports and WebDAV uploads; keys always require encryption.</string>
     <string name="backup_upload_cloud">Upload to Cloud</string>
     <string name="backup_restore_cloud">Restore from Cloud</string>
     <string name="backup_config_webdav">Configure WebDAV</string>
@@ -679,8 +682,8 @@
     <string name="backup_remote_refresh">Refresh remote backups</string>
     <string name="backup_remote_empty">No remote backups found. Refresh after configuring WebDAV.</string>
     <string name="backup_remote_metadata">%1$d bytes · %2$d</string>
-    <string name="backup_password_export_title">Protect exported keys</string>
-    <string name="backup_password_upload_title">Protect keys before upload</string>
+    <string name="backup_password_export_title">Encrypt exported backup</string>
+    <string name="backup_password_upload_title">Encrypt backup before upload</string>
     <string name="backup_password_restore_title">Restore local backup</string>
     <string name="backup_password_remote_restore_title">Restore selected remote backup</string>
     <string name="backup_password_label">Backup password</string>
@@ -706,7 +709,7 @@
     <string name="backup_status_export_success">Backup exported</string>
     <string name="backup_status_upload_success">Backup uploaded</string>
     <string name="backup_status_success_cleanup_warning">Backup uploaded, but some old remote backups could not be pruned.</string>
-    <string name="backup_error_password_required">A password and matching confirmation are required when keys are included.</string>
+    <string name="backup_error_password_required">Encryption requires a password and matching confirmation.</string>
     <string name="backup_error_configuration_missing">Complete the secure WebDAV configuration first.</string>
     <string name="backup_error_connection">WebDAV connection failed. Verify the secure configuration.</string>
     <string name="backup_error_remote_list">Remote backups could not be loaded.</string>

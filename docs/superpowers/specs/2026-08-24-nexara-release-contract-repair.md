@@ -78,14 +78,22 @@
 
 ### 4.2 能力真值
 
-- OpenAI Chat Completions、OpenAI Responses、Anthropic、Mistral、DeepSeek、Kimi、Qwen、GLM、Doubao、Yi、Baichuan 与 Generic OpenAI Compat 显式映射到实际 wire protocol。
+- OpenAI Chat Completions、OpenAI Responses、Anthropic、Mistral、DeepSeek、Kimi、Qwen、GLM、Doubao、Baichuan 与 Generic OpenAI Compat 显式映射到实际 wire protocol。
+- Yi 仅保留历史配置可识别能力。[零一万物开放平台公告](https://platform.lingyiwanwu.com/)已说明停止新注册与充值，并将于 2026-09-03 24:00 停止 API 调用，因此本发行版对 Yi 的 probe、route 与 inference 统一返回 `PROTOCOL_UNSUPPORTED`，不得携带历史凭据发起网络请求，也不得静默迁移为 Generic。
 - Anthropic 连接验证不得依赖默认空模型列表；使用无推理成本的协议验证或清晰能力探测。
 - Vertex 服务账号 JSON 只进入 `serviceAccountJson`，从统一解析器提取并验证 `project_id`、`client_email` 和 PKCS8 RSA 私钥；不得当作 API key。
 - Vertex 连接验证只做凭据解析与 OAuth token exchange，不发送付费模型推理请求。
+- Vertex 推理只允许 location 对应的 Google 官方 `aiplatform.googleapis.com` origin；用户配置、旧备份或导入数据不得把 OAuth access token 转发到自定义 host。标准 Google JSON 中私钥结尾换行必须可解析。
 - Provider 表单不直接构造协议，由 `ProviderConnectionProbe` 负责参数映射。
+- Generic OpenAI Compat 的表单校验与 resolver 使用同一合同：host-only 地址不得保存或探测；完整 inference URL 保持原样。历史已下线协议只读 fail-closed，未经用户明确迁移不得静默改写为 Generic。
 
 ### 4.3 Tool Call 往返
 
+- 每次生成必须且只能产生一个终态：`Completed(END_TURN, empty)`、`Completed(TOOL_CALLS, completedToolCallIds)` 或结构化 `Error`。未知 finish/stop reason、重复终态、EOF 截断、取消均失败关闭。
+- 只有 `TOOL_CALLS` 可以进入工具执行；其 ID 集合必须非空、唯一，并与本轮已完整组装且参数为 JSON object 的调用精确相等。`END_TURN` 不得附带可执行工具。
+- 单次生成最多接收 10 个 Tool Call；重复 ID、终态遗漏/多报 ID、未知工具或非法参数均不得进入审批或执行。
+- 同步与流式响应使用同一终态合同；任何 Error、取消、截断或无效同步终态都必须清除本轮未确认 Tool Call 的持久化快照，后续轮不得把它重新作为历史 assistant tool call 发送。
+- Responses 在完整 `output_item` 中一次给出 function call、但不发送 arguments delta 时，适配器仍要向统一客户端补齐恰好一次调用数据，再核验 `response.completed`。
 - OpenAI Responses 同步与流式都支持 function call name、call id、arguments delta/complete、usage 和错误。
 - Responses 后续轮使用 assistant function call item 与 `function_call_output(call_id, output)`，不得把工具结果伪装为普通 user 文本。
 - Anthropic assistant `tool_use` 与 user `tool_result` content block 成对；不得发送 OpenAI 风格顶层 `role=tool`。
@@ -105,6 +113,8 @@
 
 - 没有 Provider call id 时生成的稳定调用 ID/账本 key 必须包含规范化工具名、参数 payload hash 和序号。
 - 相同消息内不同参数的同名工具不得互相去重；真正的重复重放仍返回既有终态。
+- Prompt 时冻结的定义身份至少绑定 runtimeToolId、wire name、description、规范化参数 schema、risk、source/server id；审批、账本注册、原子 claim 和执行前复核必须使用同一个版本化 definition digest。
+- Skill Registry 在模型生成期间发生删除、替换、禁用、schema/risk/server 变化时，既有调用失败关闭；不得按当前同名定义继续执行。
 
 ### 5.3 Skill/MCP
 
@@ -121,8 +131,21 @@
 - MCP 工具 ID 使用 `mcp:{serverId}:{remoteToolName}`，避免服务器间重名。
 - 同步以 server 为事务边界：成功后原子替换该 server 的工具；禁用/删除/同步失败时清除或保留上次成功快照并显示明确状态，不能混入半批新旧工具。
 - MCP 调用必须携带 serverId，不得由名称猜测服务器。
-- Settings 中只显示实际支持的 HTTP transport。
+- 本发行版只支持 MCP `2026-07-28` modern Streamable HTTP：每个请求在 `_meta`、`MCP-Protocol-Version`、`Mcp-Method` 中声明一致协议版本与方法，`tools/call` 还要发送 `Mcp-Name`；不实现旧版 initialize/session 回退。
+- `text/event-stream` 响应必须按有界字节、行、事件增量读取；只允许忽略合法 `jsonrpc: 2.0` notification。首个完整且精确匹配请求 ID 的 response event 是当前请求终态，客户端随即关闭响应通道，不等待持久连接 EOF；畸形对象、错误版本、带 result/error 的错 ID response、截断与任一上限溢出均 fail-closed。
+- `tools/list` 必须完整读取全部 `nextCursor` 后才可提交快照；HTTP 非成功、JSON-RPC id 不一致、RPC error、非法工具名、非 object/不受支持的 JSON Schema、重复工具定义或分页循环均失败关闭并保留上一批快照。
+- `x-mcp-header` 只接受 schema 中可安全到达的 primitive string/integer/boolean 参数；调用时按规范编码为 `Mcp-Param-*`，非法声明使该远端工具不可广告。
+- `tools/call` 必须区分成功内容、`isError=true` 和 `input_required`；本发行版不支持交互式补参，遇到 `input_required` 返回稳定“不支持”失败，不能伪装成功。
+- Settings 只允许新增 HTTPS HTTP transport；历史 HTTP 明文或 STDIO 配置仍可见并可删除/迁移，但不可同步、不可广告、不可执行。正式版不新增 cleartext 例外。
 - 自定义数据库 Skill 在没有沙箱前不进入模型 tool schema。
+
+### 5.4 MCP discovery 持久化
+
+- Room v5 新增 `mcp_tool_snapshots(server_id, remote_tool_name, description, input_schema_json, synced_at)`，以 `(server_id, remote_tool_name)` 为复合主键并对 `mcp_servers` 使用删除级联。
+- `mcp:{serverId}:{remoteToolName}` 是稳定内部身份；Provider wire alias 可以另行确定性派生，但不得反向解析别名猜服务器。
+- 同步只在完整响应和 schema 校验成功后，于单个 Room 事务中替换一个服务器的整批快照；失败保留上一批并显示错误，空成功批次明确清空。事务提交前再次确认服务器仍存在、启用且为 HTTP。
+- 禁用、删除、修改 URL/type 必须同步清除快照；晚到的同步结果不得复活已失效工具。
+- discovery 是派生缓存，不进入备份；恢复仅保留 MCP server 源配置并清空快照，重新同步成功前不向模型广告 MCP 工具。
 
 ## 6. 工作区与删除合同
 
@@ -143,6 +166,7 @@
 
 - RAG/普通文件删除调用 `moveToRecycleBin`；只有回收站“永久删除/清空”或回滚新建失败可调用 `permanentDelete`。
 - 回收站条目不进入普通列表、文件工具、全文搜索、文档检索或知识图谱。
+- 普通消费者只能调用 active-only DAO；回收动作取消并等待在途索引后清理 vector、FTS、KG、任务和缓存，恢复后精确排队一次重建，候选构建与提交两端都要复核 active 状态。
 - 永久删除目录时清理整棵子树的 FileVersion DB 记录与物理快照。
 - 恢复后重新进入索引协调器；失败时保留回收条目并可重试。
 
@@ -223,7 +247,7 @@
 
 ## 11. 文档与治理
 
-- 同步 `README.md`、`docs/PRD.md`、`CHANGELOG.md`、`docs/release/v0.2-beta-validation.md` 及受影响 ADR/架构说明。
+- 同步 `README.md`、`docs/PRD.md`、`CHANGELOG.md`、`docs/release/v0.2.1-beta.md`、`docs/release/v0.2.1-beta-validation.md` 及受影响 ADR/架构说明。
 - 旧验证段保持历史身份，新验证以当前最终 commit 追加，未运行项为 PENDING/阻断，不改写成 PASS。
 - HLG 由主控使用 Skill 的 `append` 先 dry-run 后 `--apply`，不得直接编辑既有 handover 记录。
 - 最终提交只包含本轮明确成果；排除签名材料、`secure_env/`、APK/build 产物和临时工作区；推送当前 `B-native-refactor`，不强推。

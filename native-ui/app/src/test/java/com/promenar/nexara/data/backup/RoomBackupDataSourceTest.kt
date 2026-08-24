@@ -108,6 +108,51 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `snapshot retries when Provider configuration revision changes across stores`() = runBlocking {
+        seedCompleteGraph()
+        val reads = java.util.concurrent.atomic.AtomicInteger(0)
+        val revisions = longArrayOf(0L, 2L, 2L, 2L)
+
+        val snapshot = newDataSource(
+            configurationRevision = {
+                revisions[reads.getAndIncrement().coerceAtMost(revisions.lastIndex)]
+            },
+        ).snapshot(CANONICAL_CONTENT)
+
+        assertThat(reads.get()).isEqualTo(4)
+        assertThat(preferences.snapshotCalls).isEqualTo(2)
+        snapshot.wipe()
+    }
+
+    @Test
+    fun `snapshot fails closed before reading stores while Provider configuration is mutating`() = runBlocking {
+        seedCompleteGraph()
+
+        assertFails {
+            newDataSource(configurationRevision = { 1L }).snapshot(CANONICAL_CONTENT)
+        }
+
+        assertThat(preferences.snapshotCalls).isEqualTo(0)
+    }
+
+    @Test
+    fun `cross-device backup strips device-local agent avatar paths`() = runBlocking {
+        seedCompleteGraph()
+        db.openHelper.writableDatabase.execSQL(
+            "UPDATE agents SET avatar_path = ? WHERE id = ?",
+            arrayOf<Any?>("/data/user/0/old.install/files/avatars/agent-1.img", "agent-1"),
+        )
+
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val agent = root.getValue("tables").jsonObject.getValue("agents").jsonArray.single().jsonObject
+
+        assertThat(agent.getValue("avatar_path")).isEqualTo(JsonNull)
+        newDataSource().restore(validated(snapshot), "avatar-path-sanitize")
+        assertThat(db.agentDao().getAll().single().avatarPath).isNull()
+    }
+
+    @Test
     fun `restore refuses to begin while workspace mutation journal is unfinished`() = runBlocking {
         seedCompleteGraph()
         val backup = newDataSource().snapshot(CANONICAL_CONTENT)
@@ -1183,6 +1228,7 @@ class RoomBackupDataSourceTest {
         preferenceStore: FakePreferenceStore = preferences,
         secretStore: FakeSecretStore = secrets,
         fileOperations: RestoreFileOperations = TestRestoreFileOperations(),
+        configurationRevision: () -> Long = { 0L },
     ): RoomBackupDataSource = RoomBackupDataSource(
         database = db,
         preferences = preferenceStore,
@@ -1194,6 +1240,7 @@ class RoomBackupDataSourceTest {
             if (point == crashPoint) throw SimulatedRestoreProcessDeath(point)
         },
         snapshotReadHook = snapshotReadHook,
+        configurationRevision = configurationRevision,
         journalAuthenticator = TestRestoreJournalAuthenticator,
         restoreFileOperations = fileOperations,
     )
@@ -1453,6 +1500,7 @@ private class FakePreferenceStore private constructor(
         get() = state.prepareFailureBeforeRecord
         set(value) { state.prepareFailureBeforeRecord = value }
     var prepareCalls: Int = 0
+    var snapshotCalls: Int = 0
     private val prepared get() = state.prepared
 
     fun reopen(): FakePreferenceStore = FakePreferenceStore(
@@ -1460,6 +1508,7 @@ private class FakePreferenceStore private constructor(
     )
 
     override suspend fun snapshot(maxTotalBytes: Long): BackupPreferenceSnapshot {
+        snapshotCalls++
         val encodedSize = kotlinx.serialization.json.Json.encodeToString(
             BackupPreferenceSnapshot.serializer(), snapshot
         ).toByteArray().size.toLong()

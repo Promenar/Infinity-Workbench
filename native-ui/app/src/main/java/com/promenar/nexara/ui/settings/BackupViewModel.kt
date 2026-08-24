@@ -80,6 +80,12 @@ sealed interface BackupOperation {
     data class Error(val code: BackupErrorCode) : BackupOperation
 }
 
+enum class WebDavReadiness {
+    Disabled,
+    Incomplete,
+    Ready,
+}
+
 val BackupOperation.isCancellable: Boolean
     get() = this is BackupOperation.Testing || this is BackupOperation.ListingRemote ||
         this is BackupOperation.Exporting || this is BackupOperation.Uploading ||
@@ -87,6 +93,7 @@ val BackupOperation.isCancellable: Boolean
 
 data class BackupUiState(
     val includeKeys: Boolean = false,
+    val encryptBackup: Boolean = false,
     val webdavEnabled: Boolean = false,
     val webdavUrl: String = "",
     val webdavUser: String = "",
@@ -100,6 +107,12 @@ data class BackupUiState(
     val keysChecked: Boolean get() = includeKeys
     val isExporting: Boolean get() = operation is BackupOperation.Exporting || operation is BackupOperation.Uploading
     val isImporting: Boolean get() = operation is BackupOperation.StagingRestore || operation is BackupOperation.Restarting
+    val webDavReadiness: WebDavReadiness
+        get() = when {
+            !webdavEnabled -> WebDavReadiness.Disabled
+            webdavUrl.isBlank() || webdavUser.isBlank() || !hasWebDavPassword -> WebDavReadiness.Incomplete
+            else -> WebDavReadiness.Ready
+        }
     val canExecute: Boolean get() = operation !is BackupOperation.Testing &&
         operation !is BackupOperation.Initializing &&
         operation !is BackupOperation.SavingConfig &&
@@ -268,7 +281,16 @@ class BackupViewModel internal constructor(
         synchronized(operationLock) {
             if (!initialized || restoreControl?.restartAuthorized == true || restoreBlocked || cleared) return
         }
-        _uiState.update { it.copy(includeKeys = include) }
+        _uiState.update { it.copy(includeKeys = include, encryptBackup = it.encryptBackup || include) }
+    }
+
+    fun setEncryptBackup(encrypt: Boolean) {
+        synchronized(operationLock) {
+            if (!initialized || restoreControl?.restartAuthorized == true || restoreBlocked || cleared) return
+        }
+        _uiState.update { state ->
+            if (!encrypt && state.includeKeys) state else state.copy(encryptBackup = encrypt)
+        }
     }
 
     /** password 非空时由本方法取得所有权，并在返回前清零；null 表示保留既有密码。 */
@@ -788,11 +810,12 @@ class BackupViewModel internal constructor(
             return false
         }
         val include = _uiState.value.includeKeys
+        val encrypt = _uiState.value.encryptBackup || include
         val ownedPassword = password?.copyOf()
         val ownedConfirmation = confirmation?.copyOf()
         password?.fill('\u0000')
         confirmation?.fill('\u0000')
-        if (include && (ownedPassword == null || ownedPassword.isEmpty() ||
+        if (encrypt && (ownedPassword == null || ownedPassword.isEmpty() ||
                 ownedConfirmation == null || ownedConfirmation.isEmpty())) {
             ownedPassword?.fill('\u0000')
             ownedConfirmation?.fill('\u0000')
@@ -800,7 +823,7 @@ class BackupViewModel internal constructor(
             externalCleanup()
             return false
         }
-        if (include && !constantTimeEquals(ownedPassword!!, ownedConfirmation!!)) {
+        if (encrypt && !constantTimeEquals(ownedPassword!!, ownedConfirmation!!)) {
             ownedPassword.fill('\u0000')
             ownedConfirmation.fill('\u0000')
             publishPasswordValidationFailure(BackupErrorCode.PASSWORD_MISMATCH)
@@ -820,8 +843,9 @@ class BackupViewModel internal constructor(
                 token,
                 BackupExportOptions(
                     includeSecrets = include,
-                    password = if (include) ownedPassword else null,
-                    passwordConfirmation = if (include) ownedConfirmation else null,
+                    password = if (encrypt) ownedPassword else null,
+                    passwordConfirmation = if (encrypt) ownedConfirmation else null,
+                    encryptPackage = encrypt,
                 ),
             )
         }
@@ -1066,7 +1090,9 @@ class BackupViewModel internal constructor(
     }
 
     private fun captureWebDavRevision(): Long? = synchronized(operationLock) {
-        if (!initialized || configMutationRevision != null || webDavBlocked || restoreControl != null) null
+        if (!initialized || configMutationRevision != null || webDavBlocked || restoreControl != null ||
+            _uiState.value.webDavReadiness != WebDavReadiness.Ready
+        ) null
         else configRevision.get()
     }
 
