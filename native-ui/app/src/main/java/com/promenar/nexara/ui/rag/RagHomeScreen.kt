@@ -130,6 +130,17 @@ internal fun shouldShowRagIndexSection(
     canRetryPendingIndex: Boolean,
 ): Boolean = isIndexing || hasNotice || canRetryPendingIndex
 
+/**
+ * 搜索结果不会呈现原文件列表中的选择项；进入非空搜索时立即清空旧选择，
+ * 避免底部批量操作继续作用于当前不可见的文档。
+ */
+internal fun applyRagSearchSelectionPolicy(
+    selectedIds: MutableList<String>,
+    query: String,
+) {
+    if (query.isNotBlank()) selectedIds.clear()
+}
+
 internal data class RagHomeScreenState(
     val currentTab: PortalTab,
     val searchQuery: String,
@@ -630,7 +641,10 @@ internal fun RagHomeScreenContent(
                     PortalTab.DOCUMENTS -> {
                         NexaraSearchBar(
                             value = state.searchQuery,
-                            onValueChange = actions.onSearch,
+                            onValueChange = { query ->
+                                applyRagSearchSelectionPolicy(state.selectedIds, query)
+                                actions.onSearch(query)
+                            },
                             placeholder = stringResource(R.string.rag_home_search),
                             modifier = Modifier
                                 .fillMaxWidth()

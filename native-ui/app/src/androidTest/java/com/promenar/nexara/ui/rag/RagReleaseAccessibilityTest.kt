@@ -27,6 +27,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -704,6 +705,31 @@ class RagReleaseAccessibilityTest {
             assertThat(selections).isEmpty()
         }
         rule.onNodeWithTag(UiTags.RAG_HOME_DELETE_CONFIRM_DIALOG).assertDoesNotExist()
+    }
+
+    @Test
+    fun nonBlankSearchClearsInvisibleSelectionAndRemovesBatchActions() {
+        val selections = mutableStateListOf("doc-a")
+        val searched = AtomicReference<String?>(null)
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                RagHomeScreenContent(
+                    state = releaseState().copy(selectedIds = selections),
+                    actions = RagHomeScreenActions(onSearch = searched::set),
+                    documentsContent = { modifier, _, _ -> Box(modifier.fillMaxSize()) },
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.RAG_HOME_SELECTION_BAR).assertExists()
+        rule.onNodeWithTag(UiTags.RAG_HOME_SEARCH).performTextInput("needle")
+
+        rule.runOnIdle {
+            assertThat(selections).isEmpty()
+            assertThat(searched.get()).isEqualTo("needle")
+        }
+        rule.onNodeWithTag(UiTags.RAG_HOME_SELECTION_BAR).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.RAG_HOME_DELETE_SELECTION).assertDoesNotExist()
     }
 
     @Test

@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.data.rag.KgDocumentOption
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.rag.canvas.GraphPhysicsSimulator
 import com.promenar.nexara.ui.rag.canvas.InteractiveGraphCanvas
@@ -64,6 +65,7 @@ fun KnowledgeGraphScreen(
     val selectedDocumentId by viewModel.selectedDocumentId.collectAsState()
     val documentSelectionRequired by viewModel.documentSelectionRequired.collectAsState()
     val documentOptions by viewModel.documentOptions.collectAsState()
+    val documentOptionsError by viewModel.documentOptionsError.collectAsState()
     val loadError by viewModel.loadError.collectAsState()
     var showDocumentSelector by remember { mutableStateOf(false) }
     var showAccessibilityList by remember { mutableStateOf(false) }
@@ -258,30 +260,15 @@ fun KnowledgeGraphScreen(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
-            LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                if (documentOptions.isEmpty()) {
-                    item {
-                        Text(
-                            text = stringResource(R.string.kg_document_options_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(16.dp),
-                        )
-                    }
-                }
-                items(documentOptions, key = { it.docId }) { option ->
-                    ListItem(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-                            .clickable {
-                                showDocumentSelector = false
-                                viewModel.loadGraphByDoc(option.docId)
-                            },
-                        headlineContent = { Text(option.title) },
-                    )
-                }
-            }
+            KnowledgeGraphDocumentOptionsContent(
+                options = documentOptions,
+                loadError = documentOptionsError,
+                onRetry = viewModel::retryDocumentOptions,
+                onSelect = { docId ->
+                    showDocumentSelector = false
+                    viewModel.loadGraphByDoc(docId)
+                },
+            )
         }
     }
     if (showAccessibilityList) {
@@ -290,5 +277,61 @@ fun KnowledgeGraphScreen(
             edges = edges,
             onDismiss = { showAccessibilityList = false },
         )
+    }
+}
+
+@Composable
+internal fun KnowledgeGraphDocumentOptionsContent(
+    options: List<KgDocumentOption>,
+    loadError: KgDocumentOptionsError?,
+    onRetry: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    LazyColumn(modifier = Modifier.fillMaxWidth()) {
+        when {
+            loadError != null -> item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(UiTags.KG_DOCUMENT_OPTIONS_ERROR)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.kg_document_options_load_failed),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    if (loadError.canRetry) {
+                        TextButton(
+                            onClick = onRetry,
+                            modifier = Modifier
+                                .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+                                .testTag(UiTags.KG_DOCUMENT_OPTIONS_RETRY),
+                        ) {
+                            Text(stringResource(R.string.shared_btn_retry))
+                        }
+                    }
+                }
+            }
+            options.isEmpty() -> item {
+                Text(
+                    text = stringResource(R.string.kg_document_options_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .testTag(UiTags.KG_DOCUMENT_OPTIONS_EMPTY)
+                        .padding(16.dp),
+                )
+            }
+            else -> items(options, key = { it.docId }) { option ->
+                ListItem(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+                        .clickable { onSelect(option.docId) },
+                    headlineContent = { Text(option.title) },
+                )
+            }
+        }
     }
 }

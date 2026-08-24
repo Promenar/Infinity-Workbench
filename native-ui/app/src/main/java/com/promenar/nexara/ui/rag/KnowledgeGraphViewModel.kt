@@ -33,8 +33,16 @@ enum class KgViewMode { GLOBAL, DOCUMENT, CONCEPT }
 
 enum class KgLoadErrorCode { LoadFailed }
 
+enum class KgDocumentOptionsErrorCode { LoadFailed }
+
 data class KgLoadError(
     val code: KgLoadErrorCode,
+    val canRetry: Boolean,
+    val technical: String?,
+)
+
+data class KgDocumentOptionsError(
+    val code: KgDocumentOptionsErrorCode,
     val canRetry: Boolean,
     val technical: String?,
 )
@@ -84,10 +92,16 @@ class KnowledgeGraphViewModel(
     private val _documentOptions = MutableStateFlow<List<KgDocumentOption>>(emptyList())
     val documentOptions: StateFlow<List<KgDocumentOption>> = _documentOptions.asStateFlow()
 
+    private val _documentOptionsError = MutableStateFlow<KgDocumentOptionsError?>(null)
+    val documentOptionsError: StateFlow<KgDocumentOptionsError?> =
+        _documentOptionsError.asStateFlow()
+
     private var globalCache: GraphData? = null
     private val documentCache = mutableMapOf<String, GraphData>()
     private var loadJob: Job? = null
     private var loadGeneration = 0L
+    private var documentOptionsJob: Job? = null
+    private var documentOptionsGeneration = 0L
 
     init {
         loadDocumentOptions()
@@ -95,16 +109,29 @@ class KnowledgeGraphViewModel(
     }
 
     fun loadDocumentOptions() {
-        viewModelScope.launch {
+        val generation = ++documentOptionsGeneration
+        documentOptionsJob?.cancel()
+        documentOptionsJob = viewModelScope.launch {
             try {
-                _documentOptions.value = graphStore.getDocumentOptions()
+                val options = graphStore.getDocumentOptions()
+                if (generation != documentOptionsGeneration) return@launch
+                _documentOptions.value = options
+                _documentOptionsError.value = null
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
+                if (generation != documentOptionsGeneration) return@launch
                 NexaraLogger.logError("[KG] loadDocumentOptions failed", failure)
+                _documentOptionsError.value = KgDocumentOptionsError(
+                    code = KgDocumentOptionsErrorCode.LoadFailed,
+                    canRetry = true,
+                    technical = failure::class.simpleName?.take(80),
+                )
             }
         }
     }
+
+    fun retryDocumentOptions() = loadDocumentOptions()
 
     fun setViewMode(mode: KgViewMode) {
         _viewMode.value = mode

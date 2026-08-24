@@ -18,11 +18,13 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.R
 import com.promenar.nexara.data.rag.RagConfiguration
+import com.promenar.nexara.data.rag.KgDocumentOption
 import com.promenar.nexara.ui.rag.canvas.GraphPhysicsSimulator
 import com.promenar.nexara.ui.rag.canvas.InteractiveGraphCanvas
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Rule
 import org.junit.Test
 import androidx.test.platform.app.InstrumentationRegistry
@@ -111,6 +113,69 @@ class RagKnowledgeGraphTask10AccessibilityTest {
 
         rule.onNodeWithTag(UiTags.RAG_SEARCH_WARNING).assertIsDisplayed()
         rule.onNodeWithTag(UiTags.RAG_SEARCH_TITLE_FALLBACK).assertIsDisplayed()
+    }
+
+    @Test
+    fun documentOptionsFailureShowsRetryInsteadOfEmptyState() {
+        val retries = AtomicInteger(0)
+        rule.setContent {
+            NexaraTheme {
+                KnowledgeGraphDocumentOptionsContent(
+                    options = emptyList(),
+                    loadError = KgDocumentOptionsError(
+                        code = KgDocumentOptionsErrorCode.LoadFailed,
+                        canRetry = true,
+                        technical = "IllegalStateException",
+                    ),
+                    onRetry = { retries.incrementAndGet() },
+                    onSelect = {},
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.KG_DOCUMENT_OPTIONS_ERROR).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.KG_DOCUMENT_OPTIONS_EMPTY).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.KG_DOCUMENT_OPTIONS_RETRY)
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .performClick()
+        assertThat(retries.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun trulyEmptyDocumentOptionsShowsEmptyStateWithoutError() {
+        rule.setContent {
+            NexaraTheme {
+                KnowledgeGraphDocumentOptionsContent(
+                    options = emptyList(),
+                    loadError = null,
+                    onRetry = {},
+                    onSelect = {},
+                )
+            }
+        }
+
+        rule.onNodeWithTag(UiTags.KG_DOCUMENT_OPTIONS_EMPTY).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.KG_DOCUMENT_OPTIONS_ERROR).assertDoesNotExist()
+        rule.onNodeWithTag(UiTags.KG_DOCUMENT_OPTIONS_RETRY).assertDoesNotExist()
+    }
+
+    @Test
+    fun loadedDocumentOptionRemainsSelectable() {
+        val selected = AtomicReference<String?>(null)
+        rule.setContent {
+            NexaraTheme {
+                KnowledgeGraphDocumentOptionsContent(
+                    options = listOf(KgDocumentOption("doc-a", "Alpha")),
+                    loadError = null,
+                    onRetry = {},
+                    onSelect = selected::set,
+                )
+            }
+        }
+
+        rule.onNodeWithText("Alpha").assertIsDisplayed().performClick()
+        assertThat(selected.get()).isEqualTo("doc-a")
     }
 
     @Test

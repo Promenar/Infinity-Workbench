@@ -1079,6 +1079,7 @@
     <string name="kg_load_failed">Couldn’t update the graph. The last successful view is preserved.</string>
     <string name="kg_select_document">Select a document</string>
     <string name="kg_document_options_empty">No indexed documents contain graph relationships yet.</string>
+    <string name="kg_document_options_load_failed">Couldn’t load the document list. Try again.</string>
     <string name="kg_document_required">Select a document to view its graph.</string>
     <string name="kg_open_accessibility_list">Open accessible relationship list</string>
     <string name="kg_accessibility_title">Nodes and relationships</string>

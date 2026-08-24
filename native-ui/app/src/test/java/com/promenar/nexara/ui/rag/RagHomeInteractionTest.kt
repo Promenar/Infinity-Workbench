@@ -6,6 +6,24 @@ import org.junit.jupiter.api.Test
 class RagHomeInteractionTest {
 
     @Test
+    fun `非空搜索会清空此前不可见的文档选择`() {
+        val selected = mutableListOf("doc-a")
+
+        applyRagSearchSelectionPolicy(selectedIds = selected, query = "needle")
+
+        assertThat(selected).isEmpty()
+    }
+
+    @Test
+    fun `空搜索不会误清当前文档选择`() {
+        val selected = mutableListOf("doc-a")
+
+        applyRagSearchSelectionPolicy(selectedIds = selected, query = "")
+
+        assertThat(selected).containsExactly("doc-a")
+    }
+
+    @Test
     fun `移动失败会保留原选择并保持移动弹层`() {
         val selected = mutableListOf("doc-1", "doc-2")
 

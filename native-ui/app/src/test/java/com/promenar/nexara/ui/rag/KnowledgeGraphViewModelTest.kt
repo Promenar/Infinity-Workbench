@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.rag
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.rag.GraphData
 import com.promenar.nexara.data.rag.GraphStore
+import com.promenar.nexara.data.rag.KgDocumentOption
 import com.promenar.nexara.data.rag.KgNode
 import com.promenar.nexara.data.rag.KgEdge
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
@@ -102,6 +103,37 @@ class KnowledgeGraphViewModelTest {
 
         assertThat(vm.nodes.value).isEmpty()
         assertThat(vm.isLoading.value).isFalse()
+    }
+
+    @Test
+    fun `文档选项加载异常暴露可重试typed error而非伪装为空列表`() = runTest {
+        coEvery { graphStore.getDocumentOptions() } throws
+            IllegalStateException("private document option detail")
+        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
+
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+
+        assertThat(vm.documentOptions.value).isEmpty()
+        assertThat(vm.documentOptionsError.value?.code)
+            .isEqualTo(KgDocumentOptionsErrorCode.LoadFailed)
+        assertThat(vm.documentOptionsError.value?.canRetry).isTrue()
+        assertThat(vm.documentOptionsError.value?.technical)
+            .doesNotContain("private document option detail")
+    }
+
+    @Test
+    fun `文档选项失败后重试成功恢复列表并清除错误`() = runTest {
+        coEvery { graphStore.getDocumentOptions() } throws
+            IllegalStateException("first failure") andThen
+            listOf(KgDocumentOption(docId = "doc-a", title = "Alpha"))
+        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+
+        vm.retryDocumentOptions()
+
+        assertThat(vm.documentOptionsError.value).isNull()
+        assertThat(vm.documentOptions.value)
+            .containsExactly(KgDocumentOption(docId = "doc-a", title = "Alpha"))
     }
 
     @Test

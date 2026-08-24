@@ -1086,6 +1086,7 @@
     <string name="kg_load_failed">图谱更新失败，已保留最近一次成功结果。</string>
     <string name="kg_select_document">选择文档</string>
     <string name="kg_document_options_empty">暂无包含图谱关系的已索引文档。</string>
+    <string name="kg_document_options_load_failed">文档列表加载失败，请重试。</string>
     <string name="kg_document_required">请先选择一个文档，再查看对应图谱。</string>
     <string name="kg_open_accessibility_list">打开无障碍关系列表</string>
     <string name="kg_accessibility_title">节点与关系</string>
