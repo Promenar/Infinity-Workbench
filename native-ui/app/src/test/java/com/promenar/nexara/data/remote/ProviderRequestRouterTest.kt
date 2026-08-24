@@ -240,6 +240,22 @@ class ProviderRequestRouterTest {
     }
 
     @Test
+    fun `未知持久化协议在读取配置前映射为PROTOCOL_UNSUPPORTED`() {
+        seed("unknown-provider", "legacy-model", "fake-key")
+        val failClosedRouter = DefaultProviderRequestRouter(
+            modelResolver = models::get,
+            providerResolver = providers::get,
+            configResolver = configs::get,
+            unsupportedPersistedProtocolResolver = { it == "unknown-provider" },
+            clientFactory = { error("未知协议不得创建客户端") },
+        )
+
+        val failure = failClosedRouter.resolve("unknown-provider::legacy-model") as ProviderResolution.Failure
+
+        assertThat(failure.reason).isEqualTo(ProviderResolutionError.PROTOCOL_UNSUPPORTED)
+    }
+
+    @Test
     fun `本地协议允许空 endpoint 与空 Key`() {
         seedLocal()
 

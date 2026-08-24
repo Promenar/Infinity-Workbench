@@ -51,30 +51,38 @@ class ToolExecutorTest {
     private lateinit var sessionManager: SessionManager
     private val testScope = TestScope()
 
-    private class RecordingLedger : ToolExecutionLedger {
+    private class RecordingLedger(
+        private val beforeInvocationIdentity: suspend (Int) -> Unit = {},
+        private val afterRegisterPersisted: suspend (ToolRegistrationResult) -> Unit = {},
+    ) : ToolExecutionLedger {
         private val states = mutableMapOf<ToolExecutionKey, ToolLedgerState>()
         private val identities = mutableMapOf<ToolExecutionKey, ToolInvocationIdentity>()
+        private var invocationIdentityReads = 0
 
         override suspend fun register(
             key: ToolExecutionKey,
             identity: ToolInvocationIdentity,
-        ): ToolRegistrationResult = synchronized(states) {
-            val existing = identities[key]
-            if (existing != null) {
-                return@synchronized if (existing == identity) {
-                    ToolRegistrationResult.Existing(states.getValue(key))
-                } else {
-                    ToolRegistrationResult.Conflict
+        ): ToolRegistrationResult {
+            val result = synchronized(states) {
+                val existing = identities[key]
+                if (existing != null) {
+                    return@synchronized if (existing == identity) {
+                        ToolRegistrationResult.Existing(states.getValue(key))
+                    } else {
+                        ToolRegistrationResult.Conflict
+                    }
                 }
+                identities[key] = identity
+                val state = if (identity.requiresApproval) {
+                    ToolLedgerState.PENDING_APPROVAL
+                } else {
+                    ToolLedgerState.APPROVED
+                }
+                states[key] = state
+                ToolRegistrationResult.Registered(state)
             }
-            identities[key] = identity
-            val state = if (identity.requiresApproval) {
-                ToolLedgerState.PENDING_APPROVAL
-            } else {
-                ToolLedgerState.APPROVED
-            }
-            states[key] = state
-            ToolRegistrationResult.Registered(state)
+            afterRegisterPersisted(result)
+            return result
         }
 
         override suspend fun approve(keys: Set<ToolExecutionKey>): Int = transition(
@@ -142,12 +150,37 @@ class ToolExecutorTest {
         override suspend fun terminalizeWithResults(
             requests: Set<ToolTerminalRequest>,
             state: ToolLedgerState,
-        ): List<Message> = emptyList()
+        ): List<Message> = synchronized(states) {
+            requests.mapNotNull { request ->
+                val allowed = when (state) {
+                    ToolLedgerState.CANCELLED -> setOf(
+                        ToolLedgerState.PENDING_APPROVAL,
+                        ToolLedgerState.APPROVED,
+                        ToolLedgerState.RUNNING,
+                    )
+                    else -> emptySet()
+                }
+                if (states[request.key] !in allowed) return@mapNotNull null
+                states[request.key] = state
+                Message(
+                    id = "tool-terminal-${request.key.toolCallId}",
+                    role = MessageRole.TOOL,
+                    toolCallId = request.key.toolCallId,
+                    parentMessageId = request.key.assistantMessageId,
+                    name = request.toolName,
+                    content = "工具执行已取消。",
+                    thoughtSignature = request.thoughtSignature,
+                )
+            }
+        }
 
         override suspend fun state(key: ToolExecutionKey): ToolLedgerState? = synchronized(states) { states[key] }
 
-        override suspend fun invocationIdentity(key: ToolExecutionKey): ToolInvocationIdentity? =
-            synchronized(states) { identities[key] }
+        override suspend fun invocationIdentity(key: ToolExecutionKey): ToolInvocationIdentity? {
+            val read = synchronized(states) { ++invocationIdentityReads }
+            beforeInvocationIdentity(read)
+            return synchronized(states) { identities[key] }
+        }
 
         override suspend fun failAwaitingIdentityConflict(
             key: ToolExecutionKey,
@@ -690,9 +723,265 @@ class ToolExecutorTest {
         }
 
         assertThat(thrown).isInstanceOf(CancellationException::class.java)
-        assertThat(store.getSession("s1")!!.messages.none {
-            it.role == MessageRole.TOOL && it.toolCallId == "cancelled" && it.content.contains("完成")
-        }).isTrue()
+        val key = ToolExecutionKey("s1", "m1", "cancelled")
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.CANCELLED)
+        val terminalMessages = store.getSession("s1")!!.messages.filter {
+            it.role == MessageRole.TOOL && it.toolCallId == "cancelled"
+        }
+        assertThat(terminalMessages).hasSize(1)
+        assertThat(terminalMessages.single().content).isEqualTo("工具执行已取消。")
+    }
+
+    @Test
+    fun cancellationBeforeAppendStepTerminalizesClaimExactlyOnce() = testScope.runTest {
+        val expected = CancellationException("append-step-cancel")
+        assertPostClaimCancellation(
+            hooks = ToolExecutorHooks(
+                beforeAppendStep = { throw expected },
+            ),
+            expectedCancellation = expected,
+            expectedExecutions = 0,
+        )
+    }
+
+    @Test
+    fun cancellationAfterSkillSideEffectTerminalizesClaimWithoutReexecution() = testScope.runTest {
+        val expected = CancellationException("post-skill-cancel")
+        assertPostClaimCancellation(
+            hooks = ToolExecutorHooks(
+                afterSkillExecution = { throw expected },
+            ),
+            expectedCancellation = expected,
+            expectedExecutions = 1,
+        )
+    }
+
+    @Test
+    fun cancellationBeforeLedgerFinishTerminalizesClaimWithoutReexecution() = testScope.runTest {
+        val expected = CancellationException("finish-cancel")
+        assertPostClaimCancellation(
+            hooks = ToolExecutorHooks(
+                beforeLedgerFinish = { throw expected },
+            ),
+            expectedCancellation = expected,
+            expectedExecutions = 1,
+        )
+    }
+
+    @Test
+    fun cancellationAfterRegistrationBeforeClaimTerminalizesWithoutLaterExecution() = testScope.runTest {
+        seedSessionWithAssistant()
+        val expected = CancellationException("registered-before-identity-cancel")
+        var executions = 0
+        val skill = testSkill("registered_cancel_tool") {
+            executions++
+            ToolResult("registered-cancel", "unexpected")
+        }
+        val ledger = RecordingLedger(
+            beforeInvocationIdentity = { read ->
+                if (read == 2) throw expected
+            },
+        )
+        val registry = singleSkillRegistry(skill)
+        val executor = ToolExecutor(
+            store = store,
+            messageManager = messageManager,
+            skillRegistry = registry,
+            toolResolver = testToolResolver(registry),
+            ledger = ledger,
+        )
+        val call = ToolCall("registered-cancel", "registered_cancel_tool", "{}")
+
+        val cancellation = runCatching {
+            executor.executeTools(
+                "s1",
+                "m1",
+                listOf(call),
+                preparedTools = listOf(skill.toPreparedTool()),
+            )
+        }.exceptionOrNull()
+
+        assertThat(cancellation).isSameInstanceAs(expected)
+        val key = ToolExecutionKey("s1", "m1", call.id)
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.CANCELLED)
+        assertThat(executions).isEqualTo(0)
+        assertThat(store.getSession("s1")!!.messages.filter {
+            it.role == MessageRole.TOOL && it.toolCallId == call.id
+        }).hasSize(1)
+
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(call),
+            preparedTools = listOf(skill.toPreparedTool()),
+        )
+        assertThat(executions).isEqualTo(0)
+        assertThat(store.getSession("s1")!!.messages.filter {
+            it.role == MessageRole.TOOL && it.toolCallId == call.id
+        }).hasSize(1)
+    }
+
+    @Test
+    fun cancellationAfterRegisterCommitTerminalizesExactInvocationWithoutLaterExecution() = testScope.runTest {
+        seedSessionWithAssistant()
+        val expected = CancellationException("register-commit-cancel")
+        var registerReturns = 0
+        var executions = 0
+        val skill = testSkill("register_commit_cancel_tool") {
+            executions++
+            ToolResult("register-commit-cancel", "unexpected")
+        }
+        val ledger = RecordingLedger(
+            afterRegisterPersisted = {
+                registerReturns++
+                if (registerReturns == 1) throw expected
+            },
+        )
+        val registry = singleSkillRegistry(skill)
+        val executor = ToolExecutor(
+            store = store,
+            messageManager = messageManager,
+            skillRegistry = registry,
+            toolResolver = testToolResolver(registry),
+            ledger = ledger,
+        )
+        val call = ToolCall("register-commit-cancel", "register_commit_cancel_tool", "{}")
+
+        val cancellation = runCatching {
+            executor.executeTools(
+                "s1",
+                "m1",
+                listOf(call),
+                preparedTools = listOf(skill.toPreparedTool()),
+            )
+        }.exceptionOrNull()
+
+        assertThat(cancellation).isSameInstanceAs(expected)
+        val key = ToolExecutionKey("s1", "m1", call.id)
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.CANCELLED)
+        assertThat(executions).isEqualTo(0)
+        assertThat(store.getSession("s1")!!.messages.filter {
+            it.role == MessageRole.TOOL && it.toolCallId == call.id
+        }).hasSize(1)
+
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(call),
+            preparedTools = listOf(skill.toPreparedTool()),
+        )
+        assertThat(executions).isEqualTo(0)
+        assertThat(store.getSession("s1")!!.messages.filter {
+            it.role == MessageRole.TOOL && it.toolCallId == call.id
+        }).hasSize(1)
+    }
+
+    @Test
+    fun invalidCallCancellationAfterRegisterCommitTerminalizesWithoutRetryMessage() = testScope.runTest {
+        seedSessionWithAssistant()
+        val expected = CancellationException("invalid-register-commit-cancel")
+        var registerReturns = 0
+        var executions = 0
+        val skill = testSkill("invalid_register_cancel_tool") {
+            executions++
+            ToolResult("invalid-register-cancel", "unexpected")
+        }
+        val ledger = RecordingLedger(
+            afterRegisterPersisted = {
+                registerReturns++
+                if (registerReturns == 1) throw expected
+            },
+        )
+        val registry = singleSkillRegistry(skill)
+        val executor = ToolExecutor(
+            store = store,
+            messageManager = messageManager,
+            skillRegistry = registry,
+            toolResolver = testToolResolver(registry),
+            ledger = ledger,
+        )
+        val call = ToolCall("invalid-register-cancel", "invalid_register_cancel_tool", "not-json")
+
+        val cancellation = runCatching {
+            executor.executeTools(
+                "s1",
+                "m1",
+                listOf(call),
+                preparedTools = listOf(skill.toPreparedTool()),
+            )
+        }.exceptionOrNull()
+
+        assertThat(cancellation).isSameInstanceAs(expected)
+        val key = ToolExecutionKey("s1", "m1", call.id)
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.CANCELLED)
+        assertThat(executions).isEqualTo(0)
+        assertThat(store.getSession("s1")!!.messages.filter {
+            it.role == MessageRole.TOOL && it.toolCallId == call.id
+        }).hasSize(1)
+
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(call),
+            preparedTools = listOf(skill.toPreparedTool()),
+        )
+        assertThat(executions).isEqualTo(0)
+        assertThat(store.getSession("s1")!!.messages.filter {
+            it.role == MessageRole.TOOL && it.toolCallId == call.id
+        }).hasSize(1)
+    }
+
+    private suspend fun assertPostClaimCancellation(
+        hooks: ToolExecutorHooks,
+        expectedCancellation: CancellationException,
+        expectedExecutions: Int,
+    ) {
+        seedSessionWithAssistant()
+        var executions = 0
+        val skill = testSkill("cancel_boundary_tool") {
+            executions++
+            ToolResult("cancel-boundary", "side effect completed")
+        }
+        val ledger = RecordingLedger()
+        val registry = singleSkillRegistry(skill)
+        val executor = ToolExecutor(
+            store = store,
+            messageManager = messageManager,
+            skillRegistry = registry,
+            toolResolver = testToolResolver(registry),
+            ledger = ledger,
+            hooks = hooks,
+        )
+        val call = ToolCall("cancel-boundary", "cancel_boundary_tool", "{}")
+        val cancellation = runCatching {
+            executor.executeTools(
+                "s1",
+                "m1",
+                listOf(call),
+                preparedTools = listOf(skill.toPreparedTool()),
+            )
+        }.exceptionOrNull()
+
+        assertThat(cancellation).isSameInstanceAs(expectedCancellation)
+        val key = ToolExecutionKey("s1", "m1", call.id)
+        assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.CANCELLED)
+        assertThat(executions).isEqualTo(expectedExecutions)
+        val terminalMessages = store.getSession("s1")!!.messages.filter {
+            it.role == MessageRole.TOOL && it.toolCallId == call.id
+        }
+        assertThat(terminalMessages).hasSize(1)
+        assertThat(terminalMessages.single().content).isEqualTo("工具执行已取消。")
+
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(call),
+            preparedTools = listOf(skill.toPreparedTool()),
+        )
+        assertThat(executions).isEqualTo(expectedExecutions)
+        assertThat(store.getSession("s1")!!.messages.filter {
+            it.role == MessageRole.TOOL && it.toolCallId == call.id
+        }).hasSize(1)
     }
 
     @Test

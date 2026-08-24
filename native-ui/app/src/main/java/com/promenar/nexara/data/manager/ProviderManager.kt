@@ -45,6 +45,7 @@ class ProviderManager private constructor(
     private val beforeModelMetadataTransform: () -> Unit = {},
     private val beforeModelPersistenceLock: () -> Unit = {},
     private val beforeModelPersistenceApply: (List<ModelInfo>) -> Unit = {},
+    private val afterProviderConfigurationWriteStarted: () -> Unit = {},
 ) {
     private val suppressedProviderModelsKey = "suppressed_provider_models"
     private val modelPersistenceLock = Any()
@@ -107,23 +108,28 @@ class ProviderManager private constructor(
         model: String,
         name: String? = null
     ) {
-        val existingType = providerPrefs.getString("protocol_id", null)
-            ?.let(ProtocolType::fromLegacyName)
-        validateCredentialTransition(existingType, protocolType, credentialUpdate)
-        providerPrefs.edit()
-            .putString("protocol_id", protocolType::class.simpleName)
-            .putString("protocol_id_name", protocolType.displayName) // 新增：人类可读协议名
-            .putString("base_url", baseUrl)
-            .putString("model", model)
-            .apply()
-        applyCredentialUpdate("default", protocolType, credentialUpdate)
-        if (name != null) {
-            providerPrefs.edit().putString("provider_name", name).apply()
+        ProviderConfigurationRevision.publishMutation(afterProviderConfigurationWriteStarted) {
+            val existingName = providerPrefs.getString("protocol_id", null)
+            val existingType = existingName?.let(::decodePersistedProtocol)
+            require(existingName == null || existingType != null || credentialUpdate !is CredentialUpdate.Preserve) {
+                "未知历史协议必须明确替换或清除凭证"
+            }
+            validateCredentialTransition(existingType, protocolType, credentialUpdate)
+            providerPrefs.edit()
+                .putString("protocol_id", protocolType::class.simpleName)
+                .putString("protocol_id_name", protocolType.displayName) // 新增：人类可读协议名
+                .putString("base_url", baseUrl)
+                .putString("model", model)
+                .apply()
+            applyCredentialUpdate("default", protocolType, credentialUpdate)
+            if (name != null) {
+                providerPrefs.edit().putString("provider_name", name).apply()
+            }
+            // 重建提供商列表
+            loadProviders()
+            clearProviderModelSuppression("default")
+            ensureConfiguredModel("default", name ?: protocolType.displayName, model)
         }
-        // 重建提供商列表
-        loadProviders()
-        clearProviderModelSuppression("default")
-        ensureConfiguredModel("default", name ?: protocolType.displayName, model)
     }
 
     /**
@@ -132,7 +138,7 @@ class ProviderManager private constructor(
     @Synchronized
     fun getMainProviderConfig(): ProviderConfig? {
         val protocolName = providerPrefs.getString("protocol_id", null) ?: return null
-        val protocolType = ProtocolType.fromLegacyName(protocolName)
+        val protocolType = decodePersistedProtocol(protocolName) ?: return null
         return ProviderConfig(
             protocolType = protocolType,
             baseUrl = providerPrefs.getString("base_url", "") ?: "",
@@ -198,7 +204,7 @@ class ProviderManager private constructor(
                 val protocolName = settingsPrefs.getString("${prefix}_protocol", null)
                     ?: settingsPrefs.getString("${prefix}_type", null) ?: return null
                 return ProviderConfig(
-                    protocolType = ProtocolType.fromLegacyName(protocolName),
+                    protocolType = decodePersistedProtocol(protocolName) ?: return null,
                     baseUrl = settingsPrefs.getString("${prefix}_base_url", "") ?: "",
                     apiKey = readSecret(SecretCatalog.providerApiKey(resolvedId)),
                     model = settingsPrefs.getString("${prefix}_model", "") ?: "",
@@ -254,6 +260,7 @@ class ProviderManager private constructor(
             val name = settingsPrefs.getString("${prefix}_name", null) ?: continue
             val protoName = settingsPrefs.getString("${prefix}_protocol", null)
                 ?: settingsPrefs.getString("${prefix}_type", null) ?: ""
+            val protocolType = decodePersistedProtocol(protoName) ?: continue
             // 优先使用持久化的真实 ID，回退到索引生成（兼容旧数据）
             val realId = resolveExtraProviderId(i)
             items.add(
@@ -263,7 +270,7 @@ class ProviderManager private constructor(
                     typeName = protoName,
                     baseUrl = settingsPrefs.getString("${prefix}_base_url", "") ?: "",
                     model = settingsPrefs.getString("${prefix}_model", "") ?: "",
-                    protocolType = ProtocolType.fromLegacyName(protoName),
+                    protocolType = protocolType,
                     hasApiKey = secretStore.contains(SecretCatalog.providerApiKey(realId)),
                     hasVertexCredentials = secretStore.contains(SecretCatalog.vertexServiceAccount(realId)),
                     enabled = settingsPrefs.getBoolean("${prefix}_enabled", true),
@@ -278,16 +285,23 @@ class ProviderManager private constructor(
         item: ProviderListItem,
         credentialUpdate: CredentialUpdate = CredentialUpdate.Preserve,
     ) {
-        require(item.id != "default" && getProviderConfig(item.id) == null && _providers.value.none { it.id == item.id }) {
-            "Provider ID 已存在: ${item.id}"
+        ProviderConfigurationRevision.publishMutation(afterProviderConfigurationWriteStarted) {
+            require(
+                item.id != "default" &&
+                    getProviderConfig(item.id) == null &&
+                    !isPersistedProtocolUnsupported(item.id) &&
+                    _providers.value.none { it.id == item.id }
+            ) {
+                "Provider ID 已存在: ${item.id}"
+            }
+            applyCredentialUpdate(item.id, item.protocolType, credentialUpdate)
+            _providers.update { it + item }
+            persistExtraProviders()
+            loadProviders()
+            clearProviderModelSuppression(item.id)
+            ensureConfiguredModel(item.id, item.name, item.model)
+            _configurationChanges.tryEmit(Unit)
         }
-        applyCredentialUpdate(item.id, item.protocolType, credentialUpdate)
-        _providers.update { it + item }
-        persistExtraProviders()
-        loadProviders()
-        clearProviderModelSuppression(item.id)
-        ensureConfiguredModel(item.id, item.name, item.model)
-        _configurationChanges.tryEmit(Unit)
     }
 
     @Synchronized
@@ -296,42 +310,49 @@ class ProviderManager private constructor(
         item: ProviderListItem,
         credentialUpdate: CredentialUpdate = CredentialUpdate.Preserve,
     ) {
-        val existingType = getProviderConfig(id)?.protocolType
-        validateCredentialTransition(existingType, item.protocolType, credentialUpdate)
-        if (id != item.id) {
-            moveSecret(SecretCatalog.providerApiKey(id), SecretCatalog.providerApiKey(item.id))
-            moveSecret(SecretCatalog.vertexServiceAccount(id), SecretCatalog.vertexServiceAccount(item.id))
+        ProviderConfigurationRevision.publishMutation(afterProviderConfigurationWriteStarted) {
+            val existingType = getProviderConfig(id)?.protocolType
+            require(existingType != null || !isPersistedProtocolUnsupported(id) || credentialUpdate !is CredentialUpdate.Preserve) {
+                "未知历史协议必须明确替换或清除凭证"
+            }
+            validateCredentialTransition(existingType, item.protocolType, credentialUpdate)
+            if (id != item.id) {
+                moveSecret(SecretCatalog.providerApiKey(id), SecretCatalog.providerApiKey(item.id))
+                moveSecret(SecretCatalog.vertexServiceAccount(id), SecretCatalog.vertexServiceAccount(item.id))
+            }
+            applyCredentialUpdate(item.id, item.protocolType, credentialUpdate)
+            _providers.update { list ->
+                val updated = list.map { if (it.id == id) item else it }
+                if (updated.any { it.id == item.id }) updated else updated + item
+            }
+            persistExtraProviders(replacedUnsupportedProviderIds = setOf(id, item.id))
+            loadProviders()
+            clearProviderModelSuppression(item.id)
+            ensureConfiguredModel(item.id, item.name, item.model)
+            _configurationChanges.tryEmit(Unit)
         }
-        applyCredentialUpdate(item.id, item.protocolType, credentialUpdate)
-        _providers.update { list ->
-            list.map { if (it.id == id) item else it }
-        }
-        persistExtraProviders()
-        loadProviders()
-        clearProviderModelSuppression(item.id)
-        ensureConfiguredModel(item.id, item.name, item.model)
-        _configurationChanges.tryEmit(Unit)
     }
 
     @Synchronized
     fun deleteProvider(providerId: String) {
         if (providerId == "default") return
-
-        val removedModelIds = _providerModels.value
-            .filter { model -> model.providerId == providerId }
-            .mapTo(mutableSetOf()) { model -> model.id }
-        secretStore.remove(SecretCatalog.providerApiKey(providerId))
-        secretStore.remove(SecretCatalog.vertexServiceAccount(providerId))
-        _providers.update { it.filter { p -> p.id != providerId } }
-        if (removedModelIds.isNotEmpty()) {
-            _providerModels.update { models -> models.filterNot { it.id in removedModelIds } }
-            removePersistedModelMetadata(removedModelIds)
-            persistModels()
-            clearPresetReferences(removedModelIds)
+        ProviderConfigurationRevision.publishMutation(afterProviderConfigurationWriteStarted) {
+            val removedModelIds = _providerModels.value
+                .filter { model -> model.providerId == providerId }
+                .mapTo(mutableSetOf()) { model -> model.id }
+            secretStore.remove(SecretCatalog.providerApiKey(providerId))
+            secretStore.remove(SecretCatalog.vertexServiceAccount(providerId))
+            _providers.update { it.filter { p -> p.id != providerId } }
+            if (removedModelIds.isNotEmpty()) {
+                _providerModels.update { models -> models.filterNot { it.id in removedModelIds } }
+                removePersistedModelMetadata(removedModelIds)
+                persistModels()
+                clearPresetReferences(removedModelIds)
+            }
+            persistExtraProviders(replacedUnsupportedProviderIds = setOf(providerId))
+            clearProviderModelSuppression(providerId)
+            _configurationChanges.tryEmit(Unit)
         }
-        persistExtraProviders()
-        clearProviderModelSuppression(providerId)
-        _configurationChanges.tryEmit(Unit)
     }
 
     private fun clearPresetReferences(removedModelIds: Set<String>) {
@@ -350,8 +371,24 @@ class ProviderManager private constructor(
         }
     }
 
-    private fun persistExtraProviders() {
-        val extras = _providers.value.filter { it.id != "default" }
+    private fun persistExtraProviders(
+        replacedUnsupportedProviderIds: Set<String> = emptySet(),
+    ) {
+        val known = _providers.value.filter { it.id != "default" }.map { item ->
+            PersistedExtraProvider(
+                id = item.id,
+                name = item.name,
+                protocolName = item.protocolType::class.simpleName.orEmpty(),
+                baseUrl = item.baseUrl,
+                model = item.model,
+                enabled = item.enabled,
+            )
+        }
+        val knownIds = known.mapTo(mutableSetOf()) { it.id }
+        val unsupported = readUnsupportedExtraProviders().filter {
+            it.id !in knownIds && it.id !in replacedUnsupportedProviderIds
+        }
+        val extras = known + unsupported
         settingsPrefs.edit()
             .putInt("extra_providers_count", extras.size)
             .putString("extra_providers_ids", extras.joinToString(",") { it.id })
@@ -360,7 +397,7 @@ class ProviderManager private constructor(
             val prefix = "extra_provider_$index"
             settingsPrefs.edit()
                 .putString("${prefix}_name", item.name)
-                .putString("${prefix}_protocol", item.protocolType::class.simpleName)
+                .putString("${prefix}_protocol", item.protocolName)
                 .putString("${prefix}_base_url", item.baseUrl)
                 .putString("${prefix}_model", item.model)
                 .putString("${prefix}_id", item.id)
@@ -369,6 +406,34 @@ class ProviderManager private constructor(
         }
     }
 
+    private fun readUnsupportedExtraProviders(): List<PersistedExtraProvider> {
+        val count = settingsPrefs.getInt("extra_providers_count", 0)
+        return (0 until count).mapNotNull { index ->
+            val prefix = "extra_provider_$index"
+            val protocolName = settingsPrefs.getString("${prefix}_protocol", null)
+                ?: settingsPrefs.getString("${prefix}_type", null)
+                ?: return@mapNotNull null
+            if (decodePersistedProtocol(protocolName) != null) return@mapNotNull null
+            PersistedExtraProvider(
+                id = resolveExtraProviderId(index),
+                name = settingsPrefs.getString("${prefix}_name", null) ?: return@mapNotNull null,
+                protocolName = protocolName,
+                baseUrl = settingsPrefs.getString("${prefix}_base_url", "").orEmpty(),
+                model = settingsPrefs.getString("${prefix}_model", "").orEmpty(),
+                enabled = settingsPrefs.getBoolean("${prefix}_enabled", true),
+            )
+        }
+    }
+
+    private data class PersistedExtraProvider(
+        val id: String,
+        val name: String,
+        val protocolName: String,
+        val baseUrl: String,
+        val model: String,
+        val enabled: Boolean,
+    )
+
     fun getProviderSummary(providerId: String): ProviderSummary? {
         val protocolType: ProtocolType
         val baseUrl: String
@@ -376,7 +441,7 @@ class ProviderManager private constructor(
         val name: String?
         if (providerId == "default") {
             val protocolName = providerPrefs.getString("protocol_id", null) ?: return null
-            protocolType = ProtocolType.fromLegacyName(protocolName)
+            protocolType = decodePersistedProtocol(protocolName) ?: return null
             baseUrl = providerPrefs.getString("base_url", "").orEmpty()
             model = providerPrefs.getString("model", "").orEmpty()
             name = providerPrefs.getString("provider_name", null)
@@ -386,7 +451,7 @@ class ProviderManager private constructor(
             val prefix = "extra_provider_$index"
             val protocolName = settingsPrefs.getString("${prefix}_protocol", null)
                 ?: settingsPrefs.getString("${prefix}_type", null) ?: return null
-            protocolType = ProtocolType.fromLegacyName(protocolName)
+            protocolType = decodePersistedProtocol(protocolName) ?: return null
             baseUrl = settingsPrefs.getString("${prefix}_base_url", "").orEmpty()
             model = settingsPrefs.getString("${prefix}_model", "").orEmpty()
             name = settingsPrefs.getString("${prefix}_name", null)
@@ -400,6 +465,26 @@ class ProviderManager private constructor(
             hasApiKey = secretStore.contains(SecretCatalog.providerApiKey(providerId)),
             hasVertexCredentials = secretStore.contains(SecretCatalog.vertexServiceAccount(providerId)),
         )
+    }
+
+    fun isPersistedProtocolUnsupported(providerId: String): Boolean {
+        val protocolName = if (providerId == "default") {
+            providerPrefs.getString("protocol_id", null)
+        } else {
+            val count = settingsPrefs.getInt("extra_providers_count", 0)
+            val index = (0 until count).firstOrNull { resolveExtraProviderId(it) == providerId }
+                ?: return false
+            val prefix = "extra_provider_$index"
+            settingsPrefs.getString("${prefix}_protocol", null)
+                ?: settingsPrefs.getString("${prefix}_type", null)
+        } ?: return false
+        return decodePersistedProtocol(protocolName) == null
+    }
+
+    private fun decodePersistedProtocol(name: String): ProtocolType? = try {
+        ProtocolType.fromLegacyName(name)
+    } catch (_: com.promenar.nexara.data.remote.protocol.UnsupportedPersistedProtocolException) {
+        null
     }
 
     private fun migrateLegacySecrets() {
@@ -589,7 +674,7 @@ class ProviderManager private constructor(
             if (migratedModel != model) {
                 migrated = true
             }
-            // v0.2 不迁移旧裸 ID：旧版必须卸载。残留裸 ID 会由 Router typed fail，
+            // 历史裸 ID 无法可靠确定 Provider 归属，残留裸 ID 由 Router typed fail-close，
             // 禁止只迁 ModelInfo 却遗漏 Agent/Session/预设引用的半迁移。
             migratedModel
          }.sortedWith(compareByDescending<ModelInfo> { it.enabled }.thenBy { it.name.lowercase() })
@@ -885,12 +970,14 @@ class ProviderManager private constructor(
             beforeModelMetadataTransform: () -> Unit = {},
             beforeModelPersistenceLock: () -> Unit = {},
             beforeModelPersistenceApply: (List<ModelInfo>) -> Unit = {},
+            afterProviderConfigurationWriteStarted: () -> Unit = {},
         ): ProviderManager = ProviderManager(
             app,
             secretStore,
             beforeModelMetadataTransform,
             beforeModelPersistenceLock,
             beforeModelPersistenceApply,
+            afterProviderConfigurationWriteStarted,
         )
 
         fun getInstance(): ProviderManager {

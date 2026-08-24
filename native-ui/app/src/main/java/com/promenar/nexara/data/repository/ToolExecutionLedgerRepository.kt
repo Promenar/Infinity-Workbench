@@ -1274,7 +1274,11 @@ class ToolExecutionLedgerRepository(
                 "工具执行已拒绝。",
             )
             ToolLedgerState.CANCELLED -> Triple(
-                setOf(ToolLedgerState.PENDING_APPROVAL, ToolLedgerState.APPROVED),
+                setOf(
+                    ToolLedgerState.PENDING_APPROVAL,
+                    ToolLedgerState.APPROVED,
+                    ToolLedgerState.RUNNING,
+                ),
                 "工具执行已取消",
                 "工具执行已取消。",
             )

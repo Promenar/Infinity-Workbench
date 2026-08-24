@@ -113,6 +113,32 @@ class ProviderConnectionProbeTest {
     }
 
     @Test
+    fun `未知持久化协议与退役Yi探测均零网络fail closed`() = runTest {
+        var requestCount = 0
+        val probe = ProviderConnectionProbe(
+            HttpClient(MockEngine {
+                requestCount++
+                error("未知或退役协议不应请求网络")
+            }),
+        )
+
+        val unknown = probe.probePersisted(
+            persistedProtocol = "Future_Unknown_Protocol",
+            baseUrl = "https://unknown.invalid/v1/chat/completions",
+            apiKey = "fake-key",
+        )
+        val retiredYi = probe.probePersisted(
+            persistedProtocol = ProtocolType.Yi_ZeroOne::class.simpleName.orEmpty(),
+            baseUrl = ProtocolType.Yi_ZeroOne.defaultBaseUrl,
+            apiKey = "fake-key",
+        )
+
+        assertThat(unknown).isEqualTo(ProviderConnectionProbeResult.Unsupported)
+        assertThat(retiredYi).isEqualTo(ProviderConnectionProbeResult.Unsupported)
+        assertThat(requestCount).isEqualTo(0)
+    }
+
+    @Test
     fun `Local is not remotely probed or unconditionally reported connected`() = runTest {
         var requestCount = 0
         val probe = ProviderConnectionProbe(
@@ -229,6 +255,35 @@ class ProviderConnectionProbeTest {
                 ),
             )
         }
+    }
+
+    @Test
+    fun `Generic models probe与listModels共享裸数组兼容及畸形元素失败关闭`() = runTest {
+        suspend fun probe(body: String): ProviderConnectionProbeResult = ProviderConnectionProbe(
+            HttpClient(MockEngine {
+                respond(
+                    content = body,
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                )
+            }),
+        ).probe(
+            UnifiedProviderConfig(
+                protocolType = ProtocolType.Generic_OpenAI_Compat,
+                baseUrl = "https://generic.example.test/v1/chat/completions",
+                apiKey = "fake-key",
+                defaultModel = "",
+            ),
+        )
+
+        assertThat(probe("""[{"id":"bare-model"}]"""))
+            .isEqualTo(ProviderConnectionProbeResult.Success)
+        assertThat(probe("""{"data":[{"id":"valid"},{}]}"""))
+            .isEqualTo(
+                ProviderConnectionProbeResult.Failure(
+                    ProviderConnectionProbeFailure.RESPONSE_INVALID,
+                ),
+            )
     }
 
     @Test

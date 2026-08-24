@@ -22,6 +22,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -82,6 +85,81 @@ class ProviderManagerTest {
     }
 
     @Test
+    fun `跨偏好与SecretStore写入期间发布奇数revision完成后恢复偶数`() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val isolated = ProviderManager.createForTest(
+            app = app,
+            secretStore = TestSecretStore(),
+            afterProviderConfigurationWriteStarted = {
+                assertThat(ProviderConfigurationRevision.current()).isNotEqualTo(0L)
+                assertThat(ProviderConfigurationRevision.current() % 2L).isEqualTo(1L)
+                entered.countDown()
+                check(release.await(5, TimeUnit.SECONDS))
+            },
+        )
+        val executor = Executors.newSingleThreadExecutor()
+        val future = executor.submit {
+            isolated.updateMainProvider(
+                ProtocolType.OpenAI_ChatCompletions,
+                "https://revision.invalid/v1/chat/completions",
+                CredentialUpdate.Replace("revision-key"),
+                "revision-model",
+            )
+        }
+
+        try {
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue()
+            assertThat(ProviderConfigurationRevision.current() % 2L).isEqualTo(1L)
+            assertThat(app.getSharedPreferences("nexara_provider", 0).all.keys)
+                .doesNotContain("provider_configuration_revision")
+            release.countDown()
+            future.get(5, TimeUnit.SECONDS)
+            assertThat(ProviderConfigurationRevision.current() % 2L).isEqualTo(0L)
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `主与额外Provider增改删均发布完整稳定revision`() {
+        fun assertStableMutation(block: () -> Unit) {
+            val before = ProviderConfigurationRevision.current()
+            assertThat(before % 2L).isEqualTo(0L)
+            block()
+            val after = ProviderConfigurationRevision.current()
+            assertThat(after).isGreaterThan(before)
+            assertThat(after % 2L).isEqualTo(0L)
+        }
+
+        assertStableMutation {
+            manager.updateMainProvider(
+                ProtocolType.OpenAI_ChatCompletions,
+                "https://main-revision.invalid/v1/chat/completions",
+                CredentialUpdate.Replace("main-revision-key"),
+                "main-revision-model",
+            )
+        }
+        val extra = ProviderListItem(
+            id = "revision-extra",
+            name = "Revision Extra",
+            baseUrl = "https://extra-revision.invalid/v1/chat/completions",
+            model = "extra-model",
+            protocolType = ProtocolType.OpenAI_ChatCompletions,
+        )
+        assertStableMutation { manager.addProvider(extra, CredentialUpdate.Replace("extra-key")) }
+        assertStableMutation {
+            manager.updateExtraProvider(
+                extra.id,
+                extra.copy(name = "Revision Extra Updated"),
+                CredentialUpdate.Preserve,
+            )
+        }
+        assertStableMutation { manager.deleteProvider(extra.id) }
+    }
+
+    @Test
     fun `缺失 providerId 不按 providerName 模糊回退`() {
         manager.addModel(model(providerId = null, id = "unowned"))
 
@@ -117,6 +195,54 @@ class ProviderManagerTest {
     }
 
     @Test
+    fun `未知持久化Provider保持只读且Router在网络前typed fail closed`() {
+        app.getSharedPreferences("nexara_provider", 0).edit()
+            .putString("protocol_id", "Future_Unknown_Protocol")
+            .commit()
+
+        val reloaded = ProviderManager.createForTest(app, TestSecretStore())
+
+        assertThat(reloaded.getMainProviderConfig()).isNull()
+        assertThat(reloaded.providers.value.map { it.id }).doesNotContain("default")
+        val failure = DefaultProviderRequestRouter(reloaded)
+            .resolve("default::remote-model") as ProviderResolution.Failure
+        assertThat(failure.reason).isEqualTo(ProviderResolutionError.PROTOCOL_UNSUPPORTED)
+    }
+
+    @Test
+    fun `更新已知额外Provider不会静默改写或删除未知历史Provider`() {
+        val prefs = app.getSharedPreferences("nexara_settings", 0)
+        prefs.edit()
+            .putInt("extra_providers_count", 1)
+            .putString("extra_provider_0_id", "unknown-extra")
+            .putString("extra_provider_0_name", "Unknown Extra")
+            .putString("extra_provider_0_protocol", "Future_Unknown_Protocol")
+            .putString("extra_provider_0_base_url", "https://unknown.invalid")
+            .putString("extra_provider_0_model", "legacy-model")
+            .commit()
+        val isolated = ProviderManager.createForTest(app, TestSecretStore())
+
+        isolated.addProvider(
+            ProviderListItem(
+                id = "known-extra",
+                name = "Known Extra",
+                protocolType = ProtocolType.OpenAI_ChatCompletions,
+                baseUrl = "https://known.invalid/v1/chat/completions",
+                model = "known-model",
+            ),
+            CredentialUpdate.Replace("known-key"),
+        )
+
+        assertThat(prefs.getInt("extra_providers_count", 0)).isEqualTo(2)
+        val unknownIndex = (0 until 2).single {
+            prefs.getString("extra_provider_${it}_id", null) == "unknown-extra"
+        }
+        assertThat(prefs.getString("extra_provider_${unknownIndex}_protocol", null))
+            .isEqualTo("Future_Unknown_Protocol")
+        assertThat(isolated.isPersistedProtocolUnsupported("unknown-extra")).isTrue()
+    }
+
+    @Test
     fun `provider scoped disable only changes the requested provider`() {
         addExtraProviderWithModel()
         val defaultId = "default::remote-model"
@@ -137,6 +263,27 @@ class ProviderManagerTest {
         assertThat(manager.providerModels.value.map { it.id }).containsExactly("extra-a::extra-model")
         val reloaded = ProviderManager.createForTest(app, TestSecretStore())
         assertThat(reloaded.providerModels.value.map { it.id }).containsExactly("extra-a::extra-model")
+    }
+
+    @Test
+    fun `恢复的provider模型抑制集合在重建与refresh后都不会复活configured model`() {
+        val prefs = app.getSharedPreferences("nexara_settings", 0)
+        prefs.edit()
+            .remove("all_models")
+            .remove("enabled_models")
+            .remove("all_models_order")
+            .putStringSet("suppressed_provider_models", setOf("default"))
+            .commit()
+
+        val restored = ProviderManager.createForTest(app, TestSecretStore())
+        assertThat(restored.providerModels.value.map { it.id })
+            .doesNotContain("default::remote-model")
+
+        restored.refreshAll()
+        assertThat(restored.providerModels.value.map { it.id })
+            .doesNotContain("default::remote-model")
+        assertThat(prefs.getStringSet("suppressed_provider_models", emptySet()))
+            .contains("default")
     }
 
     @Test

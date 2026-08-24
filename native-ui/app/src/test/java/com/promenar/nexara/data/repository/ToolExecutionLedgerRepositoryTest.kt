@@ -286,6 +286,29 @@ class ToolExecutionLedgerRepositoryTest {
     }
 
     @Test
+    fun cancellationTerminalizesRunningEntryAndPersistsExactlyOneResult() = runBlocking {
+        val running = key("running-cancel")
+        repository.register(running, "write_file", requiresApproval = false)
+        assertThat(repository.claim(running)).isTrue()
+        val request = ToolTerminalRequest(running, "write_file", "sig")
+
+        val messages = repository.terminalizeWithResults(
+            setOf(request),
+            ToolLedgerState.CANCELLED,
+        )
+
+        assertThat(repository.state(running)).isEqualTo(ToolLedgerState.CANCELLED)
+        assertThat(messages).hasSize(1)
+        assertThat(messages.single().content).isEqualTo("工具执行已取消。")
+        assertThat(repository.terminalizeWithResults(
+            setOf(request),
+            ToolLedgerState.CANCELLED,
+        )).isEmpty()
+        assertThat(database.messageDao().getBySession("s1").filter { it.role == "tool" })
+            .hasSize(1)
+    }
+
+    @Test
     fun interruptedRunningEntriesBecomeFailedWithoutReplayingSideEffects() = runBlocking {
         val running = key("running")
         val approved = key("approved")

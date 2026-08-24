@@ -5,6 +5,7 @@ import com.promenar.nexara.data.remote.protocol.ProtocolId
 import com.promenar.nexara.data.remote.protocol.ProtocolFactory
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.protocol.UnsupportedProviderProtocolException
+import com.promenar.nexara.data.remote.protocol.UnsupportedPersistedProtocolException
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.StreamChunk
@@ -145,6 +146,14 @@ class LlmProviderTest {
                         model = "fake-model",
                     )
                 }.exceptionOrNull()
+                val persistedFactoryFailure = runCatching {
+                    ProtocolFactory.createPersisted(
+                        persistedType = type::class.simpleName.orEmpty(),
+                        baseUrl = type.defaultBaseUrl,
+                        apiKey = "fake-key",
+                        model = "fake-model",
+                    )
+                }.exceptionOrNull()
                 val providerFactoryFailure = runCatching {
                     LlmProvider.builder()
                         .protocolType(type)
@@ -155,8 +164,29 @@ class LlmProviderTest {
                 }.exceptionOrNull()
 
                 assertThat(protocolFactoryFailure).isInstanceOf(UnsupportedProviderProtocolException::class.java)
+                assertThat(persistedFactoryFailure).isInstanceOf(UnsupportedProviderProtocolException::class.java)
                 assertThat(providerFactoryFailure).isInstanceOf(UnsupportedProviderProtocolException::class.java)
             }
+        }
+
+        @Test
+        fun `未知持久化协议不会静默回退Generic且factory typed fail closed`() {
+            val decodeFailure = runCatching {
+                ProtocolType.fromLegacyName("Future_Unknown_Protocol")
+            }.exceptionOrNull()
+            val factoryFailure = runCatching {
+                ProtocolFactory.createPersisted(
+                    persistedType = "Future_Unknown_Protocol",
+                    baseUrl = "https://unknown.invalid/v1/chat/completions",
+                    apiKey = "fake-key",
+                    model = "fake-model",
+                )
+            }.exceptionOrNull()
+
+            assertThat(decodeFailure)
+                .isInstanceOf(UnsupportedPersistedProtocolException::class.java)
+            assertThat(factoryFailure)
+                .isInstanceOf(UnsupportedPersistedProtocolException::class.java)
         }
 
         @Test

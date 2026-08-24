@@ -17,8 +17,12 @@ import com.promenar.nexara.data.repository.ToolInvocationIdentity
 import com.promenar.nexara.data.repository.ToolInvocationIdentityErrorCode
 import com.promenar.nexara.data.repository.ToolDefinitionDigestResolution
 import com.promenar.nexara.data.repository.ToolRegistrationResult
+import com.promenar.nexara.data.repository.ToolLedgerState
+import com.promenar.nexara.data.repository.ToolTerminalRequest
 import com.promenar.nexara.ui.chat.ChatStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import com.promenar.nexara.data.session.SessionExecutionGate
 
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
@@ -35,7 +39,13 @@ import com.promenar.nexara.utils.HttpsUrlValidator
 import java.util.Base64
 import java.security.MessageDigest
 
-class ToolExecutor(
+internal data class ToolExecutorHooks(
+    val beforeAppendStep: suspend () -> Unit = {},
+    val afterSkillExecution: suspend () -> Unit = {},
+    val beforeLedgerFinish: suspend () -> Unit = {},
+)
+
+class ToolExecutor internal constructor(
     private val store: ChatStore,
     private val messageManager: MessageManager,
     private val skillRegistry: SkillRegistry?,
@@ -43,6 +53,7 @@ class ToolExecutor(
     private val taskRepository: ITaskRepository? = null,
     private val ledger: ToolExecutionLedger? = null,
     private val executionGate: SessionExecutionGate? = null,
+    private val hooks: ToolExecutorHooks = ToolExecutorHooks(),
 ) {
     suspend fun executeTools(
         sessionId: String,
@@ -104,114 +115,185 @@ class ToolExecutor(
                 requiresApproval = tc.id !in allowedToolCallIds,
             )
             if (preflight is ToolPreflight.Invalid) {
-                finishInvalidCall(activeLedger, key, targetMsg, preflight)
+                try {
+                    finishInvalidCall(activeLedger, key, targetMsg, preflight)
+                } catch (cancelled: CancellationException) {
+                    terminalizeInvocationCancellation(
+                        activeLedger = activeLedger,
+                        key = key,
+                        call = tc,
+                        targetMsg = targetMsg,
+                        expectedIdentity = preflight.persistedIdentity ?: preflight.identity,
+                        cancelled = cancelled,
+                    )
+                    throw cancelled
+                }
                 continue
             }
             preflight as ToolPreflight.Valid
-            val registration = activeLedger.register(key, preflight.identity)
-            if (registration == ToolRegistrationResult.Conflict) continue
-            if (tc.id !in allowedToolCallIds) continue
-            val expectedIdentity = activeLedger.invocationIdentity(key)
-                ?.takeIf { it == preflight.identity }
-                ?: continue
-            if (!activeLedger.claim(key, expectedIdentity)) continue
-            val currentSession = store.getSession(sessionId)
-            val currentResolvedTool = currentSession?.let(toolResolver::resolve)
-                ?.singleOrNull { tool ->
-                    tool.runtimeToolId == expectedIdentity.runtimeToolId &&
-                        tool.function.name == expectedIdentity.toolName
-                }
-            val currentResolvedDigest = currentResolvedTool
-                ?.let(ToolInvocationIdentityFactory::definitionDigest)
-            val currentSkill = skillRegistry?.getSkillByRuntimeToolId(expectedIdentity.runtimeToolId)
-            val currentDefinition = currentSkill?.toProtocolTool()
-                ?.let(ToolInvocationIdentityFactory::definitionDigest)
-            if (currentSession == null || currentResolvedTool == null ||
-                currentResolvedDigest !is ToolDefinitionDigestResolution.Valid ||
-                currentResolvedDigest.digest != expectedIdentity.definitionDigest ||
-                currentSkill == null || currentSkill.name != expectedIdentity.toolName ||
-                currentDefinition !is ToolDefinitionDigestResolution.Valid ||
-                currentDefinition.digest != expectedIdentity.definitionDigest
-            ) {
-                finishClaimedFailure(
+            try {
+                val registration = activeLedger.register(key, preflight.identity)
+                if (registration == ToolRegistrationResult.Conflict) continue
+                if (tc.id !in allowedToolCallIds) continue
+                val expectedIdentity = activeLedger.invocationIdentity(key)
+                    ?.takeIf { it == preflight.identity }
+                    ?: continue
+                if (!activeLedger.claim(key, expectedIdentity)) continue
+                executeClaimedTool(
+                    sessionId = sessionId,
+                    targetMsgId = targetMsgId,
+                    targetMsg = targetMsg,
+                    call = tc,
+                    arguments = preflight.arguments,
+                    key = key,
+                    expectedIdentity = expectedIdentity,
+                    activeLedger = activeLedger,
+                )
+            } catch (cancelled: CancellationException) {
+                terminalizeInvocationCancellation(
                     activeLedger = activeLedger,
                     key = key,
-                    toolName = tc.name,
-                    thoughtSignature = targetMsg.thoughtSignature,
+                    call = tc,
+                    targetMsg = targetMsg,
+                    expectedIdentity = preflight.identity,
+                    cancelled = cancelled,
                 )
-                continue
-            }
-
-            val stepId = "step_${System.currentTimeMillis()}_${tc.id}"
-            val currentFocusId = currentSession.activeTask?.currentFocusStepId
-
-            appendStep(sessionId, targetMsgId, ExecutionStep(
-                id = stepId,
-                type = "tool_call",
-                toolName = tc.name,
-                toolArgs = tc.arguments,
-                toolCallId = tc.id,
-                timestamp = System.currentTimeMillis(),
-                taskStepId = currentFocusId
-            ))
-
-            val result: ToolResult = executeSkill(currentSkill, preflight.arguments, tc, currentSession)
-            val failed = result.status != "success"
-            val safeResultData = sanitizeResultData(result.data, failed)
-
-            // 解析并合并 active search 的 citations 注入消息体，高保真呈现在 UI 上
-            val latestSession = store.getSession(sessionId)
-            val latestMsg = latestSession?.messages?.find { it.id == targetMsgId }
-            if (latestMsg != null) {
-                var skillCitations: List<com.promenar.nexara.data.model.Citation>? = null
-                if (!safeResultData.isNullOrBlank() && !safeResultData.startsWith("data:image/")) {
-                    try {
-                        skillCitations = kotlinx.serialization.json.Json.decodeFromString<List<com.promenar.nexara.data.model.Citation>>(safeResultData)
-                    } catch (_: Exception) {}
-                }
-                if (!skillCitations.isNullOrEmpty()) {
-                    val mergedCitations = ((latestMsg.citations ?: emptyList()) + skillCitations).distinctBy { it.url }
-                    messageManager.updateMessageContent(
-                        sessionId, targetMsgId, latestMsg.content,
-                        UpdateMessageOptions(citations = mergedCitations)
-                    )
-                }
-            }
-
-            val finalContent = if (failed) {
-                "工具执行失败，请检查工具参数与配置后重试。"
-            } else {
-                result.content
-            }
-
-            appendStep(sessionId, targetMsgId, ExecutionStep(
-                id = "res_$stepId",
-                type = if (!failed) "tool_result" else "error",
-                toolName = tc.name,
-                toolCallId = tc.id,
-                content = finalContent,
-                data = safeResultData,
-                timestamp = System.currentTimeMillis(),
-                taskStepId = currentFocusId
-            ))
-
-            val toolMessage = activeLedger.finishWithResult(
-                key = key,
-                toolName = tc.name,
-                content = finalContent,
-                thoughtSignature = targetMsg.thoughtSignature,
-                outcome =
-                if (failed) {
-                    ToolExecutionOutcome.Failed("工具执行失败")
-                } else {
-                    ToolExecutionOutcome.Succeeded
-                },
-                images = safeResultData?.takeIf { it.startsWith("data:image/") },
-            )
-            if (toolMessage != null) {
-                messageManager.mirrorPersistedMessage(sessionId, toolMessage)
+                throw cancelled
             }
         }
+    }
+
+    private suspend fun executeClaimedTool(
+        sessionId: String,
+        targetMsgId: String,
+        targetMsg: Message,
+        call: ToolCall,
+        arguments: JsonObject,
+        key: ToolExecutionKey,
+        expectedIdentity: ToolInvocationIdentity,
+        activeLedger: ToolExecutionLedger,
+    ) {
+        val currentSession = store.getSession(sessionId)
+        val currentResolvedTool = currentSession?.let(toolResolver::resolve)
+            ?.singleOrNull { tool ->
+                tool.runtimeToolId == expectedIdentity.runtimeToolId &&
+                    tool.function.name == expectedIdentity.toolName
+            }
+        val currentResolvedDigest = currentResolvedTool
+            ?.let(ToolInvocationIdentityFactory::definitionDigest)
+        val currentSkill = skillRegistry?.getSkillByRuntimeToolId(expectedIdentity.runtimeToolId)
+        val currentDefinition = currentSkill?.toProtocolTool()
+            ?.let(ToolInvocationIdentityFactory::definitionDigest)
+        if (currentSession == null || currentResolvedTool == null ||
+            currentResolvedDigest !is ToolDefinitionDigestResolution.Valid ||
+            currentResolvedDigest.digest != expectedIdentity.definitionDigest ||
+            currentSkill == null || currentSkill.name != expectedIdentity.toolName ||
+            currentDefinition !is ToolDefinitionDigestResolution.Valid ||
+            currentDefinition.digest != expectedIdentity.definitionDigest
+        ) {
+            finishClaimedFailure(
+                activeLedger = activeLedger,
+                key = key,
+                toolName = call.name,
+                thoughtSignature = targetMsg.thoughtSignature,
+            )
+            return
+        }
+
+        val stepId = "step_${System.currentTimeMillis()}_${call.id}"
+        val currentFocusId = currentSession.activeTask?.currentFocusStepId
+
+        hooks.beforeAppendStep()
+        appendStep(sessionId, targetMsgId, ExecutionStep(
+            id = stepId,
+            type = "tool_call",
+            toolName = call.name,
+            toolArgs = call.arguments,
+            toolCallId = call.id,
+            timestamp = System.currentTimeMillis(),
+            taskStepId = currentFocusId
+        ))
+
+        val result = executeSkill(currentSkill, arguments, call, currentSession)
+        hooks.afterSkillExecution()
+        val failed = result.status != "success"
+        val safeResultData = sanitizeResultData(result.data, failed)
+
+        // 解析并合并 active search 的 citations 注入消息体，高保真呈现在 UI 上
+        val latestSession = store.getSession(sessionId)
+        val latestMsg = latestSession?.messages?.find { it.id == targetMsgId }
+        if (latestMsg != null) {
+            var skillCitations: List<com.promenar.nexara.data.model.Citation>? = null
+            if (!safeResultData.isNullOrBlank() && !safeResultData.startsWith("data:image/")) {
+                try {
+                    skillCitations = kotlinx.serialization.json.Json.decodeFromString<List<com.promenar.nexara.data.model.Citation>>(safeResultData)
+                } catch (_: Exception) {}
+            }
+            if (!skillCitations.isNullOrEmpty()) {
+                val mergedCitations = ((latestMsg.citations ?: emptyList()) + skillCitations).distinctBy { it.url }
+                messageManager.updateMessageContent(
+                    sessionId, targetMsgId, latestMsg.content,
+                    UpdateMessageOptions(citations = mergedCitations)
+                )
+            }
+        }
+
+        val finalContent = if (failed) {
+            "工具执行失败，请检查工具参数与配置后重试。"
+        } else {
+            result.content
+        }
+
+        appendStep(sessionId, targetMsgId, ExecutionStep(
+            id = "res_$stepId",
+            type = if (!failed) "tool_result" else "error",
+            toolName = call.name,
+            toolCallId = call.id,
+            content = finalContent,
+            data = safeResultData,
+            timestamp = System.currentTimeMillis(),
+            taskStepId = currentFocusId
+        ))
+
+        hooks.beforeLedgerFinish()
+        val toolMessage = activeLedger.finishWithResult(
+            key = key,
+            toolName = call.name,
+            content = finalContent,
+            thoughtSignature = targetMsg.thoughtSignature,
+            outcome = if (failed) {
+                ToolExecutionOutcome.Failed("工具执行失败")
+            } else {
+                ToolExecutionOutcome.Succeeded
+            },
+            images = safeResultData?.takeIf { it.startsWith("data:image/") },
+        )
+        toolMessage?.let { messageManager.mirrorPersistedMessage(sessionId, it) }
+    }
+
+    private suspend fun terminalizeInvocationCancellation(
+        activeLedger: ToolExecutionLedger,
+        key: ToolExecutionKey,
+        call: ToolCall,
+        targetMsg: Message,
+        expectedIdentity: ToolInvocationIdentity,
+        cancelled: CancellationException,
+    ) = withContext(NonCancellable) {
+        runCatching {
+            if (activeLedger.invocationIdentity(key) != expectedIdentity) return@runCatching
+            activeLedger.terminalizeWithResults(
+                requests = setOf(
+                    ToolTerminalRequest(
+                        key = key,
+                        toolName = call.name,
+                        thoughtSignature = targetMsg.thoughtSignature,
+                    ),
+                ),
+                state = ToolLedgerState.CANCELLED,
+            ).forEach { message ->
+                messageManager.mirrorPersistedMessage(key.sessionId, message)
+            }
+        }.exceptionOrNull()?.let(cancelled::addSuppressed)
     }
 
     private suspend fun executeSkill(

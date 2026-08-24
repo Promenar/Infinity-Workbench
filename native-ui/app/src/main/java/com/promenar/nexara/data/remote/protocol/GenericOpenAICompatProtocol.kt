@@ -232,20 +232,7 @@ class GenericOpenAICompatProtocol(
 
         if (!response.status.isSuccess()) return emptyList()
 
-        val responseText = response.bodyAsText()
-        return try {
-            val root = json.parseToJsonElement(responseText)
-            val models = when (root) {
-                is JsonArray -> root
-                is JsonObject -> root["data"] as? JsonArray ?: JsonArray(emptyList())
-                else -> JsonArray(emptyList())
-            }
-            models.mapNotNull { item ->
-                (item as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull
-            }
-        } catch (_: Exception) {
-            emptyList()
-        }
+        return GenericModelsEnvelopeParser.parse(response.bodyAsText()).orEmpty()
     }
 
     override fun cancel() {

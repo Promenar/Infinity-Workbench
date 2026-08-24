@@ -6,6 +6,26 @@ import com.promenar.nexara.data.local.inference.LocalInferenceEngine
  * Factory for creating LlmProtocol instances based on ProtocolType.
  */
 object ProtocolFactory {
+    fun createPersisted(
+        persistedType: String,
+        baseUrl: String = "",
+        apiKey: String = "",
+        model: String = "",
+        serviceAccountJson: String = "",
+        projectId: String = "",
+        location: String = VERTEX_DEFAULT_LOCATION,
+        localEngine: LocalInferenceEngine? = null,
+    ): LlmProtocol = create(
+        type = ProtocolType.fromLegacyName(persistedType),
+        baseUrl = baseUrl,
+        apiKey = apiKey,
+        model = model,
+        serviceAccountJson = serviceAccountJson,
+        projectId = projectId,
+        location = location,
+        localEngine = localEngine,
+    )
+
     fun create(
         type: ProtocolType,
         baseUrl: String = "",

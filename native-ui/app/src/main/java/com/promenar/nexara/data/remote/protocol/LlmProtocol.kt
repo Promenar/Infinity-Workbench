@@ -252,11 +252,8 @@ sealed class ProtocolType(
             "ANTHROPIC" -> Anthropic_Messages
             "VERTEX_AI" -> Google_VertexAI
             "LOCAL" -> Local
-            else -> try {
-                entries.first { it::class.simpleName == name }
-            } catch (_: Exception) {
-                Generic_OpenAI_Compat
-            }
+            else -> entries.firstOrNull { it::class.simpleName.equals(name, ignoreCase = true) }
+                ?: throw UnsupportedPersistedProtocolException()
         }
 
         val entries: List<ProtocolType> get() = listOfNotNull(
@@ -268,6 +265,10 @@ sealed class ProtocolType(
         )
     }
 }
+
+class UnsupportedPersistedProtocolException : UnsupportedOperationException(
+    "PERSISTED_PROVIDER_PROTOCOL_UNSUPPORTED",
+)
 
 /**
  * 向后兼容别名 — 旧代码中的 ProtocolId 引用使用此别名过渡。

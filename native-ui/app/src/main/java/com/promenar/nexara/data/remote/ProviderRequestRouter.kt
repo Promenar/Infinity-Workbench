@@ -62,6 +62,7 @@ class DefaultProviderRequestRouter(
     private val modelResolver: (String) -> ModelInfo?,
     private val providerResolver: (String) -> ProviderListItem?,
     private val configResolver: (String) -> ProviderConfig?,
+    private val unsupportedPersistedProtocolResolver: (String) -> Boolean = { false },
     private val localInferenceAvailable: () -> Boolean = { BuildConfig.LOCAL_INFERENCE_AVAILABLE },
     private val clientFactory: (UnifiedProviderConfig) -> UnifiedLlmClient = { config ->
         UnifiedLlmClient(providerConfigResolver = { config })
@@ -72,6 +73,7 @@ class DefaultProviderRequestRouter(
         modelResolver = { id -> providerManager.providerModels.value.firstOrNull { it.id == id } },
         providerResolver = { id -> providerManager.providers.value.firstOrNull { it.id == id } },
         configResolver = providerManager::getProviderConfig,
+        unsupportedPersistedProtocolResolver = providerManager::isPersistedProtocolUnsupported,
         clientFactory = { config -> UnifiedLlmClient({ config }, middlewares) },
     )
 
@@ -82,6 +84,9 @@ class DefaultProviderRequestRouter(
             ?: return failure(ProviderResolutionError.PROVIDER_ID_MISSING, modelId)
         if (!model.enabled) {
             return failure(ProviderResolutionError.MODEL_DISABLED, modelId, providerId)
+        }
+        if (unsupportedPersistedProtocolResolver(providerId)) {
+            return failure(ProviderResolutionError.PROTOCOL_UNSUPPORTED, modelId, providerId)
         }
         val expectedId = stableModelId(providerId, model.remoteModelId)
         if (model.id != expectedId || modelId != expectedId) {

@@ -5,8 +5,10 @@ import com.promenar.nexara.data.remote.protocol.ProviderEndpointOperation
 import com.promenar.nexara.data.remote.protocol.ProviderEndpointResolver
 import com.promenar.nexara.data.remote.protocol.ProviderEndpointTarget
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.protocol.GenericModelsEnvelopeParser
 import com.promenar.nexara.data.remote.protocol.UnsupportedProviderOperationException
 import com.promenar.nexara.data.remote.protocol.UnsupportedProviderProtocolException
+import com.promenar.nexara.data.remote.protocol.UnsupportedPersistedProtocolException
 import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -71,6 +73,33 @@ class ProviderConnectionProbe(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    suspend fun probePersisted(
+        persistedProtocol: String,
+        baseUrl: String,
+        apiKey: String,
+        defaultModel: String = "",
+        serviceAccountJson: String = "",
+        projectId: String = "",
+        location: String = VERTEX_DEFAULT_LOCATION,
+    ): ProviderConnectionProbeResult {
+        val protocol = try {
+            ProtocolType.fromLegacyName(persistedProtocol)
+        } catch (_: UnsupportedPersistedProtocolException) {
+            return ProviderConnectionProbeResult.Unsupported
+        }
+        return probe(
+            UnifiedProviderConfig(
+                protocolType = protocol,
+                baseUrl = baseUrl,
+                apiKey = apiKey,
+                defaultModel = defaultModel,
+                serviceAccountJson = serviceAccountJson,
+                projectId = projectId,
+                location = location,
+            ),
+        )
+    }
+
     suspend fun probe(config: UnifiedProviderConfig): ProviderConnectionProbeResult {
         return try {
             when (config.protocolType) {
@@ -121,7 +150,12 @@ class ProviderConnectionProbe(
                 ProviderConnectionProbeFailure.AUTHENTICATION_REJECTED,
             )
         }
-        return if (hasModelsEnvelope(response.bodyAsText())) {
+        val hasModelsEnvelope = if (config.protocolType == ProtocolType.Generic_OpenAI_Compat) {
+            GenericModelsEnvelopeParser.parse(response.bodyAsText()) != null
+        } else {
+            hasCanonicalModelsEnvelope(response.bodyAsText())
+        }
+        return if (hasModelsEnvelope) {
             ProviderConnectionProbeResult.Success
         } else {
             ProviderConnectionProbeResult.Failure(ProviderConnectionProbeFailure.RESPONSE_INVALID)
@@ -182,7 +216,7 @@ class ProviderConnectionProbe(
         }
     }
 
-    private fun hasModelsEnvelope(body: String): Boolean = try {
+    private fun hasCanonicalModelsEnvelope(body: String): Boolean = try {
         json.parseToJsonElement(body).jsonObject["data"]?.jsonArray != null
     } catch (_: Exception) {
         false

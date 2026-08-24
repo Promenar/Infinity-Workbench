@@ -5,9 +5,10 @@ import com.promenar.nexara.domain.tool.ToolSchemaValidation
 import com.promenar.nexara.domain.tool.ToolSchemaValidator
 import io.ktor.client.HttpClient
 import io.ktor.client.request.header
-import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -16,6 +17,7 @@ import io.ktor.http.isSuccess
 import java.net.URI
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
+import io.ktor.utils.io.readUTF8LineTo
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -132,8 +134,8 @@ class McpClient(
         val id = requestId.getAndIncrement()
         val params = JsonObject(rawParams + ("_meta" to requestMetadata()))
         val request = JsonRpcRequest(method = method, params = params, id = id)
-        val response: HttpResponse = try {
-            httpClient.post(serverUrl) {
+        return try {
+            httpClient.preparePost(serverUrl) {
                 contentType(ContentType.Application.Json)
                 header(HttpHeaders.Accept, ACCEPT)
                 header(HEADER_PROTOCOL_VERSION, PROTOCOL_VERSION)
@@ -141,24 +143,125 @@ class McpClient(
                 toolName?.let { header(HEADER_NAME, it) }
                 parameterHeaders.forEach { (name, value) -> header(name, value) }
                 setBody(Json.encodeToString(JsonRpcRequest.serializer(), request))
+            }.execute { response ->
+                if (!response.status.isSuccess()) {
+                    throw McpProtocolException("MCP_HTTP_${response.status.value}")
+                }
+                val root = parseRpcResponse(response, id)
+                if (root["jsonrpc"]?.jsonPrimitive?.contentOrNull != "2.0") {
+                    throw McpProtocolException("MCP_RPC_VERSION_MISMATCH")
+                }
+                if (root["id"] != JsonPrimitive(id)) throw McpProtocolException("MCP_RPC_ID_MISMATCH")
+                if (root["error"] != null && root["error"] !is JsonNull) {
+                    throw McpProtocolException("MCP_RPC_ERROR")
+                }
+                root["result"] ?: throw McpProtocolException("MCP_RPC_RESULT_MISSING")
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         }
-        if (!response.status.isSuccess()) throw McpProtocolException("MCP_HTTP_${response.status.value}")
-        val root = try {
-            Json.parseToJsonElement(response.bodyAsText()) as? JsonObject
-        } catch (error: SerializationException) {
-            throw McpProtocolException("MCP_RPC_MALFORMED", error)
-        } catch (error: IllegalArgumentException) {
-            throw McpProtocolException("MCP_RPC_MALFORMED", error)
-        } ?: throw McpProtocolException("MCP_RPC_NOT_OBJECT")
-        if (root["jsonrpc"]?.jsonPrimitive?.contentOrNull != "2.0") {
-            throw McpProtocolException("MCP_RPC_VERSION_MISMATCH")
+    }
+
+    private suspend fun parseRpcResponse(response: HttpResponse, expectedId: Long): JsonObject {
+        val mediaType = response.headers[HttpHeaders.ContentType]
+            ?.substringBefore(';')?.trim()?.lowercase()
+            ?: throw McpProtocolException("MCP_RPC_CONTENT_TYPE_MISSING")
+        return when (mediaType) {
+            ContentType.Application.Json.toString() -> parseRpcObject(response.bodyAsText())
+            ContentType.Text.EventStream.toString() -> parseSseRpcResponse(response, expectedId)
+            else -> throw McpProtocolException("MCP_RPC_CONTENT_TYPE_UNSUPPORTED")
         }
-        if (root["id"] != JsonPrimitive(id)) throw McpProtocolException("MCP_RPC_ID_MISMATCH")
-        if (root["error"] != null && root["error"] !is JsonNull) throw McpProtocolException("MCP_RPC_ERROR")
-        return root["result"] ?: throw McpProtocolException("MCP_RPC_RESULT_MISSING")
+    }
+
+    private fun parseRpcObject(payload: String): JsonObject = try {
+        Json.parseToJsonElement(payload) as? JsonObject
+            ?: throw McpProtocolException("MCP_RPC_NOT_OBJECT")
+    } catch (error: McpProtocolException) {
+        throw error
+    } catch (error: SerializationException) {
+        throw McpProtocolException("MCP_RPC_MALFORMED", error)
+    } catch (error: IllegalArgumentException) {
+        throw McpProtocolException("MCP_RPC_MALFORMED", error)
+    }
+
+    private suspend fun parseSseRpcResponse(response: HttpResponse, expectedId: Long): JsonObject {
+        val channel = response.bodyAsChannel()
+        val dataLines = mutableListOf<String>()
+        val lineBuffer = StringBuilder()
+        var eventBytes = 0L
+        var totalBytes = 0L
+        var eventCount = 0
+        try {
+            while (true) {
+                lineBuffer.clear()
+                val hasLine = try {
+                    channel.readUTF8LineTo(lineBuffer, MAX_SSE_LINE_CHARS)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    throw McpProtocolException("MCP_SSE_LINE_TOO_LARGE", error)
+                }
+                if (!hasLine) {
+                    if (dataLines.isNotEmpty()) throw McpProtocolException("MCP_SSE_TRUNCATED")
+                    throw McpProtocolException("MCP_RPC_ID_MISMATCH")
+                }
+                val line = lineBuffer.toString()
+                totalBytes += line.toByteArray(Charsets.UTF_8).size + 1L
+                if (totalBytes > MAX_SSE_TOTAL_BYTES) {
+                    throw McpProtocolException("MCP_SSE_TOTAL_TOO_LARGE")
+                }
+                when {
+                    line.isEmpty() -> {
+                        if (dataLines.isEmpty()) continue
+                        eventCount++
+                        if (eventCount > MAX_SSE_EVENTS) {
+                            throw McpProtocolException("MCP_SSE_EVENT_LIMIT_EXCEEDED")
+                        }
+                        val message = parseRpcObject(dataLines.joinToString("\n"))
+                        dataLines.clear()
+                        eventBytes = 0L
+                        val version = (message["jsonrpc"] as? JsonPrimitive)
+                            ?.takeIf { it.isString }
+                            ?.contentOrNull
+                        if (version != "2.0") {
+                            throw McpProtocolException("MCP_RPC_VERSION_MISMATCH")
+                        }
+                        val hasResult = message.containsKey("result")
+                        val hasError = message.containsKey("error")
+                        if (hasResult || hasError) {
+                            if (hasResult == hasError || message["error"] is JsonNull) {
+                                throw McpProtocolException("MCP_RPC_MALFORMED")
+                            }
+                            if (message["id"] != JsonPrimitive(expectedId)) {
+                                throw McpProtocolException("MCP_RPC_ID_MISMATCH")
+                            }
+                            return message
+                        }
+                        val method = (message["method"] as? JsonPrimitive)
+                            ?.takeIf { it.isString }
+                            ?.contentOrNull
+                            ?.takeIf(String::isNotBlank)
+                        if (method != null && message["id"] == null) continue
+                        if (method != null && message["id"] != null) {
+                            throw McpProtocolException("MCP_SERVER_REQUEST_UNSUPPORTED")
+                        }
+                        throw McpProtocolException("MCP_SSE_EVENT_MALFORMED")
+                    }
+                    line.startsWith(":") -> Unit
+                    line.startsWith("data:") -> {
+                        val data = line.removePrefix("data:").removePrefix(" ")
+                        eventBytes += data.toByteArray(Charsets.UTF_8).size + 1L
+                        if (eventBytes > MAX_SSE_EVENT_BYTES) {
+                            throw McpProtocolException("MCP_SSE_EVENT_TOO_LARGE")
+                        }
+                        dataLines += data
+                    }
+                    else -> Unit
+                }
+            }
+        } finally {
+            channel.cancel(null)
+        }
     }
 
     private fun normalizeInputSchema(schema: JsonObject): McpNormalizedSchema = McpInputSchemaPolicy.parse(schema)
@@ -224,6 +327,10 @@ class McpClient(
         const val HEADER_NAME = "Mcp-Name"
         const val HEADER_PARAMETER_PREFIX = "Mcp-Param-"
         const val MAX_PAGES = 1_000
+        const val MAX_SSE_EVENTS = 1_000
+        const val MAX_SSE_EVENT_BYTES = 256L * 1024L
+        const val MAX_SSE_TOTAL_BYTES = 2L * 1024L * 1024L
+        const val MAX_SSE_LINE_CHARS = 256 * 1024
         val TOOL_NAME = Regex("[A-Za-z0-9_.:/-]{1,128}")
         val HEADER_PARAMETER_NAME = Regex("[A-Za-z][A-Za-z0-9_-]{0,63}")
     }
