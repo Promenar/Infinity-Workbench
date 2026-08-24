@@ -94,6 +94,32 @@ class ShareImportSheetTest {
     }
 
     @Test
+    fun presentationFailureRemainsVisibleAndOffersEnabledRetryWithoutTarget() {
+        var retried = false
+        rule.setContent {
+            NexaraTheme {
+                ShareImportSheet(
+                    state = ShareImportUiState(
+                        visible = true,
+                        error = ShareImportErrorCode.PRESENT_FAILED,
+                    ),
+                    onSelectTarget = {},
+                    onImport = {},
+                    onRetry = { retried = true },
+                    onClose = {},
+                )
+            }
+        }
+
+        rule.onNodeWithText("Couldn’t open the shared files").assertIsDisplayed()
+        rule.onNodeWithText("Retry failed")
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+        rule.runOnIdle { assertTrue(retried) }
+    }
+
+    @Test
     fun actionButtonsRemainReachableAtTwoTimesFontScaleInNarrowWidth() {
         val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
         var imported = false

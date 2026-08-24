@@ -155,7 +155,14 @@ fun ShareImportSheet(
                 ) {
                     TextButton(
                         onClick = onRetry,
-                        enabled = !state.importing && state.selectedWorkspaceRootUuid != null,
+                        enabled = !state.importing && (
+                            state.selectedWorkspaceRootUuid != null ||
+                                state.error in setOf(
+                                    ShareImportErrorCode.PRESENT_FAILED,
+                                    ShareImportErrorCode.POSTPONE_FAILED,
+                                    ShareImportErrorCode.CANCEL_FAILED,
+                                )
+                            ),
                         modifier = Modifier.height(48.dp),
                     ) { Text(stringResource(R.string.share_import_retry)) }
                 }

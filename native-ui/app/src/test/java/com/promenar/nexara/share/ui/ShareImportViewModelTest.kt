@@ -21,6 +21,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
 import com.promenar.nexara.data.rag.VectorizationQueue
 import com.promenar.nexara.data.rag.VectorizationTask
 import com.promenar.nexara.share.core.ShareIndexStatus
@@ -47,6 +48,69 @@ class ShareImportViewModelTest {
 
         assertThat(fields).contains("error")
         assertThat(fields).doesNotContain("errorMessage")
+    }
+
+    @Test
+    fun `呈现失败保持可见且重试只重放呈现操作`() = runTest(dispatcher) {
+        val uri = Uri.parse("content://fixture/shared.txt")
+        val request = ShareRequest(
+            uris = listOf(uri),
+            mimeType = "text/plain",
+            fingerprint = "0".repeat(64),
+            canonicalSizeBytes = 1,
+            requestId = "request",
+        )
+        val queue = mockk<ShareIntentQueue>()
+        every { queue.durablePendingCount } returns MutableStateFlow(1)
+        coJustRun { queue.refreshDurableCount() }
+        coEvery { queue.claimNextDurably() } returns ShareLease("lease", request)
+        coEvery { queue.nackDurably("lease") } returns true
+        val importer = mockk<SharedFileImporter>()
+        coEvery { importer.inspect(request) } returns listOf(
+            ShareImportItem(uri, "shared.txt", "text/plain", 4),
+        )
+        val attempts = AtomicInteger(0)
+        val viewModel = ShareImportViewModel(
+            queue = queue,
+            importer = importer,
+            targetProvider = {
+                if (attempts.incrementAndGet() == 1) throw IOException("targets unavailable")
+                listOf(ShareImportTarget(ROOT, "知识库", ShareTargetKind.KnowledgeBase))
+            },
+        )
+
+        viewModel.presentNext()
+
+        assertThat(viewModel.state.value.visible).isTrue()
+        assertThat(viewModel.state.value.error).isEqualTo(ShareImportErrorCode.PRESENT_FAILED)
+        assertThat(viewModel.state.value.presentation).isEqualTo(SharePresentationState.Idle)
+
+        viewModel.retryLastFailure()
+
+        assertThat(viewModel.state.value.visible).isTrue()
+        assertThat(viewModel.state.value.error).isNull()
+        assertThat(viewModel.state.value.presentation).isEqualTo(SharePresentationState.Visible)
+        coVerify(exactly = 2) { queue.claimNextDurably() }
+        coVerify(exactly = 1) { importer.inspect(request) }
+        coVerify(exactly = 0) { importer.import(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `稍后处理失败的重试不会误触发导入`() = runTest(dispatcher) {
+        val fixture = fixture(null)
+        fixture.viewModel.presentNext()
+        coEvery { fixture.queue.nackDurably("lease") } returnsMany listOf(false, true)
+
+        fixture.viewModel.postpone()
+        assertThat(fixture.viewModel.state.value.error)
+            .isEqualTo(ShareImportErrorCode.POSTPONE_FAILED)
+
+        fixture.viewModel.retryLastFailure()
+
+        assertThat(fixture.viewModel.state.value.visible).isFalse()
+        assertThat(fixture.viewModel.state.value.error).isNull()
+        coVerify(exactly = 2) { fixture.queue.nackDurably("lease") }
+        coVerify(exactly = 0) { fixture.importer.import(any(), any(), any(), any()) }
     }
 
     @Test
@@ -199,12 +263,13 @@ class ShareImportViewModelTest {
             targetProvider = { listOf(ShareImportTarget(ROOT, "知识库", ShareTargetKind.KnowledgeBase)) },
             indexQueueState = indexState,
         )
-        return Fixture(viewModel, queue, indexState)
+        return Fixture(viewModel, queue, importer, indexState)
     }
 
     private data class Fixture(
         val viewModel: ShareImportViewModel,
         val queue: ShareIntentQueue,
+        val importer: SharedFileImporter,
         val indexState: MutableStateFlow<VectorizationQueue.QueueState>,
     )
 

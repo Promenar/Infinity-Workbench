@@ -75,7 +75,9 @@ class ShareImportViewModel(
             presentMutex.withLock {
                 if (_state.value.presentation != SharePresentationState.Idle || _state.value.importing) return@withLock
                 _state.value = _state.value.copy(presentation = SharePresentationState.Presenting)
-                val claimed = queue.claimNextDurably()
+                // 呈现阶段若 durable nack 失败，保留原 lease 并重放同一次呈现，
+                // 不得再 claim 另一条请求导致顺序错乱。
+                val claimed = lease ?: queue.claimNextDurably()
                 if (claimed == null) {
                     _state.value = _state.value.copy(presentation = SharePresentationState.Idle)
                     return@withLock
@@ -102,7 +104,8 @@ class ShareImportViewModel(
                     val released = tryNack(claimed)
                     if (released) lease = null
                     _state.value = _state.value.copy(
-                        visible = false,
+                        // PRESENT_FAILED 必须留在可见恢复面，不能只剩一个无法解释的 pending banner。
+                        visible = true,
                         presentation = SharePresentationState.Idle,
                         error = ShareImportErrorCode.PRESENT_FAILED,
                     )
@@ -204,6 +207,21 @@ class ShareImportViewModel(
             } finally {
                 _state.value = _state.value.copy(importing = false)
             }
+        }
+    }
+
+    /**
+     * 重试按钮只重放产生当前错误的操作；无显式错误时保持逐项导入/索引重试语义。
+     */
+    fun retryLastFailure() {
+        when (_state.value.error) {
+            ShareImportErrorCode.PRESENT_FAILED -> presentNext()
+            ShareImportErrorCode.IMPORT_FAILED,
+            ShareImportErrorCode.INDEX_RETRY_FAILED,
+            null,
+            -> retryRejected()
+            ShareImportErrorCode.POSTPONE_FAILED -> postpone()
+            ShareImportErrorCode.CANCEL_FAILED -> cancelConfirmed()
         }
     }
 

@@ -206,7 +206,7 @@ open class MainActivity : ComponentActivity() {
                             state = importState,
                             onSelectTarget = shareImportViewModel::selectTarget,
                             onImport = shareImportViewModel::importAll,
-                            onRetry = shareImportViewModel::retryRejected,
+                            onRetry = shareImportViewModel::retryLastFailure,
                             onClose = { shareImportViewModel.postpone() },
                             onCancel = shareImportViewModel::cancelConfirmed,
                         )

@@ -42,6 +42,15 @@ class MainActivityStartupGateWiringTest {
     }
 
     @Test
+    fun `分享弹层重试入口按最近失败操作路由而非固定重放导入`() {
+        val sheet = source.substring(source.indexOf("ShareImportSheet("))
+            .substringBefore("SharePendingBanner(")
+
+        assertThat(sheet).contains("onRetry = shareImportViewModel::retryLastFailure")
+        assertThat(sheet).doesNotContain("onRetry = shareImportViewModel::retryRejected")
+    }
+
+    @Test
     fun `payload is replaced only after durable stage success or known duplicate`() {
         val stage = functionBody("private fun handleShareStageOutcome(outcome: ShareStageOutcome)")
         val accepted = stage.indexOf("ShareEnqueueResult.Accepted, ShareEnqueueResult.Duplicate")
