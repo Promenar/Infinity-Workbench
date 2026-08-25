@@ -24,6 +24,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.advanceTimeBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -118,6 +119,39 @@ class AgentEditViewModelTest {
         assertThat(vm.avatarPath.value).isEqualTo("/avatar/original.png")
         assertThat(vm.saveError.value).isEqualTo(AgentEditErrorCode.AVATAR_IMPORT_FAILED)
         coVerify(exactly = 0) { repo.update(any()) }
+    }
+
+    @Test
+    fun `successful avatar import persists before leaving editor without hasChanges collector`() = runTest {
+        val agent = Agent(id = "a1", name = "Agent", avatarPath = "/avatar/original.png")
+        every { repo.observeById("a1") } returns flowOf(agent)
+        val vm = AgentEditViewModel(
+            repo,
+            RagConfigPersistence(prefs),
+            avatarImporter = { _, _ -> "/avatar/replacement.png" },
+        )
+        vm.loadAgent("a1")
+
+        vm.importAvatar(mockk(relaxed = true))
+
+        coVerify(exactly = 1) {
+            repo.update(match { it.id == "a1" && it.avatarPath == "/avatar/replacement.png" })
+        }
+        assertThat(vm.avatarPath.value).isEqualTo("/avatar/replacement.png")
+    }
+
+    @Test
+    fun `delayed field autosave does not depend on observing hasChanges`() = runTest {
+        val agent = Agent(id = "a1", name = "Original")
+        every { repo.observeById("a1") } returns flowOf(agent)
+        val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
+        vm.loadAgent("a1")
+
+        vm.setName("Persisted")
+        advanceTimeBy(1_001)
+        runCurrent()
+
+        coVerify(exactly = 1) { repo.update(match { it.name == "Persisted" }) }
     }
 
     @Test

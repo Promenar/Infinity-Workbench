@@ -85,9 +85,11 @@ object UiTags {
     const val HUB_AGENT_MENU_EDIT = "hub_agent_menu_edit"
     const val HUB_AGENT_MENU_DELETE = "hub_agent_menu_delete"
     private const val HUB_AGENT_CARD_PREFIX = "hub_agent_card:"
+    private const val HUB_AGENT_CUSTOM_AVATAR_PREFIX = "hub_agent_custom_avatar:"
 
     fun hubAgentCard(agentId: String): String = HUB_AGENT_CARD_PREFIX + agentId
     fun hubAgentActions(agentId: String): String = "$HUB_AGENT_ACTIONS:$agentId"
+    fun hubAgentCustomAvatar(agentId: String): String = HUB_AGENT_CUSTOM_AVATAR_PREFIX + agentId
     const val AGENT_AVATAR_ACTION = "agent_avatar_action"
 
     // ============ User Settings Home ==========

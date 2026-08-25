@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -396,7 +397,7 @@ internal fun AgentHubScreenContent(
                     .testTag(UiTags.HUB_AGENT_LIST)
                     .padding(paddingValues),
                 contentPadding = PaddingValues(
-                    start = 20.dp, end = 20.dp,
+                    start = 0.dp, end = 0.dp,
                     top = 8.dp, bottom = 24.dp
                 ),
             ) {
@@ -413,6 +414,7 @@ internal fun AgentHubScreenContent(
                     AgentCardItem(
                         agentId = agent.id,
                         icon = iconVector,
+                        customImageUri = agent.avatarPath,
                         title = item.title,
                         subtitle = item.subtitle,
                         iconContainerColor = parsedColor,
@@ -464,6 +466,7 @@ private fun HubSearchEmptyState(modifier: Modifier = Modifier) {
 fun AgentCardItem(
     agentId: String,
     icon: ImageVector,
+    customImageUri: String? = null,
     title: String,
     subtitle: String,
     iconContainerColor: Color,
@@ -489,7 +492,7 @@ fun AgentCardItem(
             ListItem(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 64.dp)
+                    .heightIn(min = 88.dp)
                     .testTag(UiTags.hubAgentCard(agentId))
                     .semantics {
                         if (isPinned) stateDescription = pinnedStateDescription
@@ -500,24 +503,25 @@ fun AgentCardItem(
                 ),
                 leadingContent = {
                     Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(iconContainerColor.copy(alpha = 0.2f)),
+                        modifier = if (customImageUri != null) {
+                            Modifier.testTag(UiTags.hubAgentCustomAvatar(agentId))
+                        } else {
+                            Modifier
+                        },
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = iconContainerColor,
-                            modifier = Modifier.size(20.dp)
+                        AgentAvatar(
+                            icon = icon,
+                            customImageUri = customImageUri,
+                            backgroundColor = iconContainerColor,
+                            size = 56.dp,
                         )
                     }
                 },
                 headlineContent = {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = if (largeFont) 4 else 2,
                         overflow = TextOverflow.Ellipsis,
@@ -527,7 +531,7 @@ fun AgentCardItem(
                     {
                         Text(
                             text = subtitle,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = NexaraTypography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = if (largeFont) 4 else 2,
                             overflow = TextOverflow.Ellipsis,
@@ -598,7 +602,7 @@ fun AgentCardItem(
                 HorizontalDivider(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 72.dp),
+                        .padding(start = 88.dp),
                     color = MaterialTheme.colorScheme.outlineVariant,
                     thickness = 1.dp
                 )

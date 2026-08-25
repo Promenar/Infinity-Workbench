@@ -91,6 +91,29 @@ final result: passed
 
 ---
 
+# Agent 首页身份列表 Material 3 视觉验收
+
+- 验收日期：2026-08-25
+- 用户实机参考：`/var/folders/tf/qf5lsvm91j91bh107wqfwr9h0000gn/T/codex-clipboard-f25465a5-3703-4dd9-9947-b4ae3032c001.jpg`
+- 覆盖状态：普通英文列表、自定义头像分支、中文 2.0x 字体。
+
+## 视觉结论
+
+- Agent 首页继续使用无外层卡片的连续 Material 3 `ListItem`，单行最小高度 88dp；56dp 圆形身份头像、17sp/28sp 中字重主标题和 15sp/26sp 副标题形成比旧 64dp 行高、40dp 头像更大方的身份层级。
+- 自定义图片与预设图标共用同一头像容器和裁切形状；分隔线从 88dp 文字轴开始，不穿过头像。列表使用标准 16dp 内容轴，避免页面与 `ListItem` 重复缩进。
+- 普通深色基线和中文 2.0x 基线均无文字重叠或头像裁切；大字体时列表行自然增高。用户实机对最终密度与 OEM 字体的主观验收仍保留为人工项。
+- `MainTabScaffold.kt` 零 diff，底部聊天、知识库、设置三按钮导航的尺寸、选中胶囊与动画保持不变。
+
+## 自动化证据
+
+- API 35 `AgentHubScreenContentTest`：9/9 通过，包含持久化自定义路径选择图片分支。
+- `validateDebugScreenshotTest`：100/100 通过；两张 Agent 首页 reference 已更新并逐张检查。
+- 全量 JVM：2546 项，0 failure、0 error、14 skip；Lint 0 Error/Fatal；Debug APK、AndroidTest APK 与正式签名 R8 APK 构建通过。
+
+final result: passed
+
+---
+
 # 会话任务进度面板 Material 3 视觉验收
 
 - 验收日期：2026-08-01

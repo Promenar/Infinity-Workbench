@@ -115,6 +115,7 @@ class AgentHubScreenContentTest {
         name: String,
         description: String,
         isPinned: Boolean = false,
+        avatarPath: String? = null,
     ) = Agent(
         id = id,
         name = name,
@@ -122,7 +123,38 @@ class AgentHubScreenContentTest {
         icon = "A",
         color = "#5B8DEF",
         isPinned = isPinned,
+        avatarPath = avatarPath,
     )
+
+    @Test
+    fun customAvatarPathSelectsTheCustomImageBranchInHubRow() {
+        rule.setContent {
+            NexaraTheme {
+                AgentHubScreenContent(
+                    state = AgentHubScreenState(
+                        displayAgents = listOf(
+                            AgentDisplayItem(
+                                agent = previewAgent(
+                                    id = "agent-custom",
+                                    name = "Custom Avatar",
+                                    description = "Uses the persisted image",
+                                    avatarPath = "/data/user/0/test/files/avatars/custom.img",
+                                ),
+                                title = "Custom Avatar",
+                                subtitle = "Uses the persisted image",
+                            ),
+                        ),
+                    ),
+                    actions = AgentHubScreenActions(),
+                )
+            }
+        }
+
+        rule.onNodeWithTag(
+            "hub_agent_custom_avatar:agent-custom",
+            useUnmergedTree = true,
+        ).assertExists()
+    }
 
     @Test
     fun cardActionsEntryOpensLocalizedMenu() {

@@ -207,9 +207,15 @@ class AgentEditViewModel(
                 retryAction = { importAvatar(uri) }
                 return@launch
             }
-            _avatarPath.value = saved
-            runCatching { avatarCleaner(uri) }
-            scheduleSave()
+            val candidate = buildAgent(agentId).copy(avatarPath = saved)
+            val persisted = persistCandidate(candidate) {
+                _avatarPath.value = saved
+            }
+            if (persisted.isSuccess) {
+                runCatching { avatarCleaner(uri) }
+            } else {
+                retryAction = { importAvatar(uri) }
+            }
         }
     }
 
@@ -375,9 +381,7 @@ class AgentEditViewModel(
         saveJob = viewModelScope.launch {
             delay(1000)
             _initialAgent.value?.let { agent ->
-                if (hasChanges.value) {
-                    persistCurrentAgent(agent.id)
-                }
+                persistCurrentAgent(agent.id)
             }
         }
     }
