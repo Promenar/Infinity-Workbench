@@ -32,6 +32,7 @@ class AgentEditViewModel(
     private val agentRepository: AgentRepository,
     private val ragConfigPersistence: RagConfigPersistence,
     private val avatarImporter: suspend (Uri, String) -> String? = { _, _ -> null },
+    private val avatarCleaner: (Uri) -> Unit = {},
 ) : ViewModel() {
 
     private val _initialAgent = MutableStateFlow<Agent?>(null)
@@ -91,6 +92,7 @@ class AgentEditViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private var saveJob: Job? = null
+    private var avatarImportJob: Job? = null
     private var retryAction: (() -> Unit)? = null
 
     fun loadAgent(
@@ -191,7 +193,8 @@ class AgentEditViewModel(
 
     fun importAvatar(uri: Uri) {
         val agentId = _initialAgent.value?.id ?: return
-        viewModelScope.launch {
+        avatarImportJob?.cancel()
+        avatarImportJob = viewModelScope.launch {
             val saved = try {
                 avatarImporter(uri, "agent-$agentId")
             } catch (cancelled: CancellationException) {
@@ -205,8 +208,14 @@ class AgentEditViewModel(
                 return@launch
             }
             _avatarPath.value = saved
+            runCatching { avatarCleaner(uri) }
             scheduleSave()
         }
+    }
+
+    fun reportAvatarImportFailure() {
+        _saveError.value = AgentEditErrorCode.AVATAR_IMPORT_FAILED
+        retryAction = null
     }
 
     fun setTemperature(value: Float) {
@@ -403,6 +412,12 @@ class AgentEditViewModel(
                                     openInput = app.contentResolver::openInputStream,
                                 ).save(uri, slot)
                             }
+                        },
+                        avatarCleaner = { uri ->
+                            com.promenar.nexara.ui.avatar.AvatarCropFiles.deleteIfOwned(
+                                app.cacheDir,
+                                uri,
+                            )
                         },
                     ) as T
                 }

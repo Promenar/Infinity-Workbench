@@ -198,10 +198,12 @@ INSERT OR REPLACE INTO workspace_files(
 ) VALUES('upgrade-file','upgrade-root','upgrade.txt',
   '64124d620f1875ac448941c5c8161bfc7f4bdabdc592f0b0d53e59530623b232',26,0,
   '${workspace_root}','/upgrade.txt',1,1,0,1700000000006,1700000000007);
+-- 使用会保留在数据库中的失败终态验证迁移映射；completed 会被新版启动恢复流程按设计清理，
+-- 使升级断言与队列清理时序竞争。
 INSERT OR REPLACE INTO vectorization_tasks(
   id,type,status,doc_id,doc_title,session_id,last_chunk_index,progress,created_at,updated_at
-) VALUES('upgrade-vector-task','document_reference','completed','upgrade-file','upgrade.txt',
-  'upgrade-session',0,1.0,1700000000008,1700000000009);
+) VALUES('upgrade-vector-task','document_reference','failed','upgrade-file','upgrade.txt',
+  'upgrade-session',0,0.0,1700000000008,1700000000009);
 COMMIT;
 PRAGMA wal_checkpoint(TRUNCATE);
 SQL

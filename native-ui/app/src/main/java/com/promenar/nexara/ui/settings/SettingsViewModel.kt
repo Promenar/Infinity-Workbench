@@ -51,6 +51,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.common.status.UiStatusNotice
+import com.promenar.nexara.ui.avatar.AvatarCropFiles
 import com.promenar.nexara.ui.welcome.runOnboardingEndpointProbe
 import com.promenar.nexara.ui.welcome.verifyOnboardingModelCandidate
 import com.promenar.nexara.domain.generation.GenerationFailureCode
@@ -287,6 +288,7 @@ class SettingsViewModel(
     private val _settingsError = MutableStateFlow<SettingsAsyncErrorCode?>(null)
     val settingsError: StateFlow<SettingsAsyncErrorCode?> = _settingsError.asStateFlow()
     private var avatarRetryUri: Uri? = null
+    private var avatarImportJob: Job? = null
 
     private val _skills = MutableStateFlow<List<SkillInfo>>(emptyList())
     val skills: StateFlow<List<SkillInfo>> = _skills.asStateFlow()
@@ -632,12 +634,14 @@ class SettingsViewModel(
 
     fun updateUserAvatar(uriStr: String?) {
         if (uriStr == null) {
+            avatarImportJob?.cancel()
             _userAvatar.value = null
             prefs.edit().remove("user_avatar").apply()
             return
         }
 
-        viewModelScope.launch {
+        avatarImportJob?.cancel()
+        avatarImportJob = viewModelScope.launch {
             val source = Uri.parse(uriStr)
             val localPath = try {
                 withContext(Dispatchers.IO) {
@@ -651,6 +655,7 @@ class SettingsViewModel(
             if (localPath != null) {
                 _userAvatar.value = localPath
                 prefs.edit().putString("user_avatar", localPath).apply()
+                AvatarCropFiles.deleteIfOwned(app.cacheDir, source)
                 avatarRetryUri = null
                 if (_settingsError.value == SettingsAsyncErrorCode.AVATAR_IMPORT_FAILED) {
                     _settingsError.value = null
@@ -660,6 +665,11 @@ class SettingsViewModel(
                 _settingsError.value = SettingsAsyncErrorCode.AVATAR_IMPORT_FAILED
             }
         }
+    }
+
+    fun reportAvatarImportFailure() {
+        avatarRetryUri = null
+        _settingsError.value = SettingsAsyncErrorCode.AVATAR_IMPORT_FAILED
     }
 
     fun setLanguage(lang: String) {

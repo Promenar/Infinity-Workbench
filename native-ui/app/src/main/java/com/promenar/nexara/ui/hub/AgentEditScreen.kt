@@ -1,7 +1,5 @@
 package com.promenar.nexara.ui.hub
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,6 +35,7 @@ import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.data.agent.PresetAgents
+import com.promenar.nexara.ui.avatar.rememberAvatarCropLauncher
 
 data class AgentIconOption(
     val id: String,
@@ -93,6 +92,10 @@ fun AgentEditScreen(
     }
 
     val currentIconVector = presetIcons.find { it.id == selectedIcon }?.icon ?: Icons.Rounded.AutoAwesome
+    val avatarCropLauncher = rememberAvatarCropLauncher(
+        onCropped = viewModel::importAvatar,
+        onFailure = viewModel::reportAvatarImportFailure,
+    )
 
     LaunchedEffect(agentId) {
         viewModel.loadAgent(agentId, localizedPresetName, localizedPresetDescription)
@@ -223,12 +226,6 @@ fun AgentEditScreen(
                     var isExpanded by remember { mutableStateOf(false) }
                     val avatarPath by viewModel.avatarPath.collectAsState()
                     
-                    val imagePickerLauncher = rememberLauncherForActivityResult(
-                        contract = ActivityResultContracts.GetContent()
-                    ) { uri ->
-                        uri?.let(viewModel::importAvatar)
-                    }
-
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -246,7 +243,7 @@ fun AgentEditScreen(
                                     customImageUri = avatarPath,
                                     backgroundColor = parsedColor,
                                     size = 100.dp,
-                                    onClick = { imagePickerLauncher.launch("image/*") }
+                                    onClick = avatarCropLauncher::launch,
                                 )
                                 Box(
                                     modifier = Modifier
@@ -254,7 +251,7 @@ fun AgentEditScreen(
                                         .clip(CircleShape)
                                         .background(MaterialTheme.colorScheme.primary)
                                         .border(2.dp, MaterialTheme.colorScheme.surfaceContainer, CircleShape)
-                                        .clickable { imagePickerLauncher.launch("image/*") },
+                                        .clickable(onClick = avatarCropLauncher::launch),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(

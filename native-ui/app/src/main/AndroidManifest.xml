@@ -69,7 +69,7 @@
         </provider>
 
         <activity
-            android:name="com.yalantis.ucrop.UCropActivity"
+            android:name=".ui.avatar.AvatarCropActivity"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.AppCompat.NoActionBar" />
 

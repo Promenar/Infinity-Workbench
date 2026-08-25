@@ -1,9 +1,13 @@
 package com.promenar.nexara.ui.settings
 
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
 import com.google.common.truth.Truth.assertThat
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.File
 import java.nio.file.Files
 import java.util.Base64
 import org.junit.Test
@@ -17,9 +21,9 @@ class AvatarStoreTest {
     private val uri = Uri.parse("content://avatar/fixture")
 
     @Test
-    fun `valid image is fully staged before atomically replacing old avatar`() {
+    fun `valid image is fully staged into a new cache identity and removes the legacy slot`() {
         val directory = Files.createTempDirectory("avatar-store").toFile()
-        val target = directory.resolve("user-avatar.img").apply { writeBytes(byteArrayOf(9)) }
+        val legacyTarget = directory.resolve("user-avatar.img").apply { writeBytes(byteArrayOf(9)) }
         val png = Base64.getDecoder().decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
         )
@@ -27,9 +31,28 @@ class AvatarStoreTest {
 
         val saved = store.save(uri, "user-avatar")
 
-        assertThat(saved).isEqualTo(target.absolutePath)
+        val target = File(requireNotNull(saved))
+        assertThat(target.name).startsWith("user-avatar-")
+        assertThat(target.name).endsWith(".img")
         assertThat(target.readBytes()).isEqualTo(png)
-        assertThat(directory.listFiles()?.map { it.name }).containsExactly("user-avatar.img")
+        assertThat(legacyTarget.exists()).isFalse()
+        assertThat(directory.listFiles()?.map { it.name }).containsExactly(target.name)
+    }
+
+    @Test
+    fun `a different second upload gets a different path and removes the superseded image`() {
+        val directory = Files.createTempDirectory("avatar-store-cache-identity").toFile()
+        var payload = png(Color.RED)
+        val store = AvatarStore(directory, { "image/png" }) { ByteArrayInputStream(payload) }
+
+        val first = requireNotNull(store.save(uri, "agent-a1"))
+        payload = png(Color.BLUE)
+        val second = requireNotNull(store.save(uri, "agent-a1"))
+
+        assertThat(second).isNotEqualTo(first)
+        assertThat(File(first).exists()).isFalse()
+        assertThat(File(second).readBytes()).isEqualTo(payload)
+        assertThat(directory.listFiles()?.map { it.absolutePath }).containsExactly(second)
     }
 
     @Test
@@ -97,5 +120,16 @@ class AvatarStoreTest {
         ).isNull()
         assertThat(target.readBytes()).isEqualTo(byteArrayOf(7, 8))
         assertThat(directory.listFiles()?.map { it.name }).containsExactly("user-avatar.img")
+    }
+
+    private fun png(color: Int): ByteArray = ByteArrayOutputStream().use { output ->
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(color)
+            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+        } finally {
+            bitmap.recycle()
+        }
+        output.toByteArray()
     }
 }

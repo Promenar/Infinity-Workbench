@@ -1,10 +1,6 @@
 package com.promenar.nexara.ui.hub
 
 import android.app.Activity
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
@@ -42,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -63,8 +58,7 @@ import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.settings.SettingsAsyncErrorCode
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
-import com.yalantis.ucrop.UCrop
-import java.io.File
+import com.promenar.nexara.ui.avatar.rememberAvatarCropLauncher
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,44 +75,10 @@ fun UserSettingsHomeScreen(
     var showNameEditor by remember { mutableStateOf(false) }
     var editingName by remember { mutableStateOf(userName) }
     var showLanguageDialog by remember { mutableStateOf(false) }
-    val editAvatarTitle = stringResource(R.string.settings_edit_avatar)
-    val colorScheme = MaterialTheme.colorScheme
-
-    val cropLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val resultUri = UCrop.getOutput(result.data!!)
-            if (resultUri != null) {
-                viewModel.updateUserAvatar(resultUri.toString())
-            }
-        }
-    }
-
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            val destinationUri = Uri.fromFile(File(context.cacheDir, "temp_crop_${System.currentTimeMillis()}.jpg"))
-            val options = UCrop.Options().apply {
-                setCircleDimmedLayer(true)
-                setShowCropFrame(false)
-                setShowCropGrid(false)
-                setToolbarColor(colorScheme.surface.toArgb())
-                setStatusBarColor(colorScheme.surface.toArgb())
-                setActiveControlsWidgetColor(colorScheme.primary.toArgb())
-                setToolbarTitle(editAvatarTitle)
-            }
-            
-            val intent = UCrop.of(uri, destinationUri)
-                .withAspectRatio(1f, 1f)
-                .withMaxResultSize(512, 512)
-                .withOptions(options)
-                .getIntent(context)
-            
-            cropLauncher.launch(intent)
-        }
-    }
+    val avatarCropLauncher = rememberAvatarCropLauncher(
+        onCropped = { viewModel.updateUserAvatar(it.toString()) },
+        onFailure = viewModel::reportAvatarImportFailure,
+    )
 
     val state = remember(userName, userAvatar, settingsError) {
         UserSettingsHomeScreenState(
@@ -131,7 +91,7 @@ fun UserSettingsHomeScreen(
 
     val actions = UserSettingsHomeScreenActions(
             onChangeAvatar = {
-                photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                avatarCropLauncher.launch()
             },
             onEditName = {
                 editingName = userName

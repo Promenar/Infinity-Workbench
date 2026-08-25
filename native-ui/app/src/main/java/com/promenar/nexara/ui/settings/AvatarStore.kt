@@ -7,6 +7,7 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 
 internal class AvatarStore(
     private val directory: File,
@@ -21,7 +22,6 @@ internal class AvatarStore(
             if (mimeType?.startsWith("image/") != true) return null
             if (!directory.exists() && !directory.mkdirs()) return null
 
-            val target = File(directory, "$slot.img")
             val staged = File.createTempFile(".$slot-", ".tmp", directory)
             temporary = staged
             val input = openInput(uri) ?: return null
@@ -44,17 +44,49 @@ internal class AvatarStore(
                 !hasSupportedImageSignature(staged) ||
                 !hasDecodablePixels(staged)
             ) return null
+            val contentHash = staged.inputStream().use { source ->
+                val digest = MessageDigest.getInstance("SHA-256")
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val count = source.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+                digest.digest().joinToString("") { "%02x".format(it) }
+            }
+            val target = File(directory, "$slot-$contentHash.img")
             Files.move(
                 staged.toPath(),
                 target.toPath(),
                 StandardCopyOption.ATOMIC_MOVE,
                 StandardCopyOption.REPLACE_EXISTING,
             )
+            cleanupSupersededFiles(slot = slot, current = target)
             target.absolutePath
         } catch (_: Exception) {
             null
         } finally {
             temporary?.delete()
+        }
+    }
+
+    /**
+     * 头像文件名携带内容摘要，让图片加载器在每次内容变化后获得新的缓存身份。
+     * 仅在新文件已经原子发布后清理同槽位旧版本，失败时仍保留原头像。
+     */
+    private fun cleanupSupersededFiles(slot: String, current: File) {
+        val versionedPrefix = "$slot-"
+        directory.listFiles()?.forEach { candidate ->
+            if (
+                candidate != current &&
+                candidate.isFile &&
+                (
+                    candidate.name == "$slot.img" ||
+                        (candidate.name.startsWith(versionedPrefix) && candidate.name.endsWith(".img"))
+                    )
+            ) {
+                runCatching { Files.deleteIfExists(candidate.toPath()) }
+            }
         }
     }
 
