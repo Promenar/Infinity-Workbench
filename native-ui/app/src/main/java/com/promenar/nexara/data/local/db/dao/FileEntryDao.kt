@@ -42,6 +42,17 @@ interface FileEntryDao {
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :uuid AND in_recycle_bin = 0")
     suspend fun getActiveByUuid(workspaceRootUuid: String, uuid: String): FileEntry?
 
+    @Query("""
+        SELECT * FROM workspace_files
+        WHERE uuid = workspace_root_uuid
+          AND parent_uuid IS NULL
+          AND is_directory = 1
+          AND in_recycle_bin = 0
+          AND materialized_path = '/'
+        ORDER BY uuid
+    """)
+    suspend fun getStructurallyValidWorkspaceRootCandidates(): List<FileEntry>
+
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid IN (:uuids)")
     suspend fun getByUuids(workspaceRootUuid: String, uuids: List<String>): List<FileEntry>
 
@@ -140,6 +151,18 @@ interface FileEntryDao {
     """)
     suspend fun canonicalizeSessionRootClaim(
         sessionId: String,
+        workspaceRootUuid: String,
+        physicalRootPath: String,
+        updatedAt: Long,
+    )
+
+    @Query("""
+        UPDATE workspace_files
+        SET physical_root_path = :physicalRootPath,
+            updated_at = :updatedAt
+        WHERE workspace_root_uuid = :workspaceRootUuid
+    """)
+    suspend fun canonicalizeWorkspacePhysicalRootPath(
         workspaceRootUuid: String,
         physicalRootPath: String,
         updatedAt: Long,

@@ -17,6 +17,9 @@ import com.promenar.nexara.data.local.db.MIGRATION_1_2
 import com.promenar.nexara.data.local.db.MIGRATION_2_3
 import com.promenar.nexara.data.local.db.MIGRATION_3_4
 import com.promenar.nexara.data.local.db.MIGRATION_4_5
+import com.promenar.nexara.data.local.db.MIGRATION_5_18
+import com.promenar.nexara.data.local.db.MIGRATION_17_18
+import com.promenar.nexara.data.local.db.LegacyDatabasePromoter
 import com.promenar.nexara.data.backup.BackupRuntime
 import com.promenar.nexara.data.backup.BackupStartupState
 import com.promenar.nexara.data.backup.RestoreRelayActivity
@@ -117,6 +120,8 @@ import com.promenar.nexara.startup.StartupMigration
 import com.promenar.nexara.startup.StartupWriterRegistration
 import com.promenar.nexara.startup.StartupWriterSession
 import com.promenar.nexara.startup.StartupWriterTransaction
+import com.promenar.nexara.data.repository.LegacyWorkspaceRootAdoptionCoordinator
+import com.promenar.nexara.ui.rag.RagWorkspaceProvisioner
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.video.VideoFrameDecoder
@@ -153,8 +158,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         startupBackgroundHealthMonitor.state
 
     val database: NexaraDatabase by lazy {
+        LegacyDatabasePromoter.promote(this)
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18)
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
                     if (com.promenar.nexara.BuildConfig.DEBUG) {
@@ -433,6 +439,14 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         )
     }
 
+    internal val globalKnowledgeWorkspaceProvisioner: RagWorkspaceProvisioner by lazy {
+        RagWorkspaceProvisioner(
+            filesDir = filesDir,
+            database = database,
+            workspaceRepository = workspaceRepository,
+        )
+    }
+
     val pendingDocumentIndexCoordinator: PendingDocumentIndexCoordinator by lazy {
         PendingDocumentIndexCoordinator(
             downstream = FileIndexEventSink { event -> vectorizationQueue.publish(event) },
@@ -600,6 +614,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                         recoverWorkspaceJournal = {
                             withContext(Dispatchers.IO) {
                                 java.nio.file.Files.createDirectories(sessionWorkspaceParent)
+                                LegacyWorkspaceRootAdoptionCoordinator(
+                                    filesDir = filesDir,
+                                    defaultWorkspaceParent = File(filesDir, "session_workspaces"),
+                                    sessionDao = database.sessionDao(),
+                                    fileEntryDao = database.fileEntryDao(),
+                                    workspaceRepository = workspaceRepository,
+                                ).adoptAll()
                                 workspaceFileMutationRecoveryCoordinator.recoverOrThrow()
                                 workspaceMutationRecoveryCoordinator.recoverOrThrow()
                             }

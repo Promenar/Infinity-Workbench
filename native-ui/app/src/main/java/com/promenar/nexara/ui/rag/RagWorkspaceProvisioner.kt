@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.rag
 
+import androidx.room.withTransaction
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.SessionEntity
@@ -30,34 +31,60 @@ internal class RagWorkspaceProvisioner(
         provisionMutex.withLock {
             val legacyRoot = File(filesDir, LEGACY_DIRECTORY_NAME)
             val sessionDao = database.sessionDao()
-            val current = sessionDao.getById(SESSION_ID)
-            when {
-                current == null -> {
-                    val legacyPath = existingLegacyPath(legacyRoot)
-                    val timestamp = now()
-                    sessionDao.insert(
-                        SessionEntity(
-                            id = SESSION_ID,
-                            agentId = SYSTEM_AGENT_ID,
-                            title = SESSION_TITLE,
-                            workspacePath = legacyPath,
-                            createdAt = timestamp,
-                            updatedAt = timestamp,
-                        ),
-                    )
-                }
+            database.withTransaction {
+                val current = sessionDao.getById(SESSION_ID)
+                when {
+                    current == null -> {
+                        val legacyPath = existingLegacyPath(legacyRoot)
+                        val migratedRootUuid = legacyPath?.let { path -> resolveMigratedRootUuid(path) }
+                        val timestamp = now()
+                        sessionDao.insert(
+                            SessionEntity(
+                                id = SESSION_ID,
+                                agentId = SYSTEM_AGENT_ID,
+                                title = SESSION_TITLE,
+                                workspacePath = legacyPath,
+                                workspaceRootUuid = migratedRootUuid,
+                                createdAt = timestamp,
+                                updatedAt = timestamp,
+                            ),
+                        )
+                    }
 
-                current.isUnclaimedMissingLegacy(legacyRoot) -> {
-                    sessionDao.update(
-                        current.copy(
-                            workspacePath = null,
-                            updatedAt = now(),
-                        ),
-                    )
+                    current.isUnclaimedMissingLegacy(legacyRoot) -> {
+                        sessionDao.update(
+                            current.copy(
+                                workspacePath = null,
+                                updatedAt = now(),
+                            ),
+                        )
+                    }
                 }
             }
             workspaceRepository.ensureSessionRoot(SESSION_ID)
         }
+    }
+
+    private suspend fun resolveMigratedRootUuid(canonicalLegacyPath: String): String? {
+        val legacyRoot = File(canonicalLegacyPath).canonicalFile
+        val candidates = database.fileEntryDao()
+            .getStructurallyValidWorkspaceRootCandidates()
+            .filter { candidate ->
+                val declared = File(candidate.physicalRootPath.trim()).absoluteFile.toPath().normalize()
+                val matches = declared.toFile().canonicalFile == legacyRoot
+                if (matches && Files.isSymbolicLink(declared)) {
+                    throw SecurityException("旧知识库物理根不能是符号链接")
+                }
+                matches
+            }
+        if (candidates.size > 1) {
+            throw SecurityException("旧知识库物理根存在多个候选记录")
+        }
+        return candidates.singleOrNull()?.also { candidate ->
+            if (database.fileEntryDao().countOtherSessionsForRoot(candidate.uuid, SESSION_ID) != 0) {
+                throw SecurityException("旧知识库物理根已被其他 Session 认领")
+            }
+        }?.uuid
     }
 
     private fun existingLegacyPath(legacyRoot: File): String? {

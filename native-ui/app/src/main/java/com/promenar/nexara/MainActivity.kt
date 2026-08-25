@@ -77,7 +77,11 @@ open class MainActivity : ComponentActivity() {
     @Volatile private var currentShareSubmissionId: Long? = null
     private val shareTargetProvider by lazy {
         val app = application as NexaraApplication
-        ShareImportTargetProvider(app.database.sessionDao(), app.workspaceRepository)
+        ShareImportTargetProvider(
+            app.database.sessionDao(),
+            app.workspaceRepository,
+            app.globalKnowledgeWorkspaceProvisioner::ensureRoot,
+        )
     }
     private val sharedFileImporter by lazy {
         val app = application as NexaraApplication
@@ -130,14 +134,14 @@ open class MainActivity : ComponentActivity() {
         setContent {
             val themePreferences by app.themePreferenceStore.state.collectAsStateWithLifecycle()
             NexaraTheme(preferences = themePreferences) {
-                val chatRouteDependencies = remember(app) {
-                    provideChatRouteDependencies(app)
-                }
                 val startupState by app.startupState.collectAsStateWithLifecycle()
                 StartupGate(
                     state = startupState,
                     onRetry = app::retryStartupRecovery,
                 ) {
+                    val chatRouteDependencies = remember(app) {
+                        provideChatRouteDependencies(app)
+                    }
                     Box(
                         Modifier
                             .fillMaxSize()

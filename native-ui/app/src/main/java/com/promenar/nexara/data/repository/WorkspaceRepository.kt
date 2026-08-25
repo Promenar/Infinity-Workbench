@@ -165,8 +165,16 @@ class WorkspaceRepository(
             if (File(existing.physicalRootPath).canonicalFile != physicalRoot) {
                 throw SecurityException("Session workspace root path cannot be changed")
             }
-            if (existing.hash.isBlank()) {
-                existing = existing.copy(hash = rootIdentity, updatedAt = clock())
+            val canonicalizedAt = clock()
+            if (existing.physicalRootPath != physicalRoot.path) {
+                dao.canonicalizeWorkspacePhysicalRootPath(existingUuid, physicalRoot.path, canonicalizedAt)
+            }
+            if (existing.hash.isBlank() || existing.physicalRootPath != physicalRoot.path) {
+                existing = existing.copy(
+                    hash = rootIdentity,
+                    physicalRootPath = physicalRoot.path,
+                    updatedAt = canonicalizedAt,
+                )
                 dao.update(existing)
             }
             dao.canonicalizeSessionRootClaim(sessionId, existingUuid, physicalRoot.path, System.currentTimeMillis())
@@ -222,23 +230,15 @@ class WorkspaceRepository(
         declaredRootPath: java.nio.file.Path,
         root: File,
     ): Boolean {
-        val sessionParent = defaultWorkspaceParent?.canonicalFile ?: return false
-        val appFilesDir = sessionParent.parentFile?.canonicalFile ?: return false
-        val expected = if (sessionId == LEGACY_RAG_SESSION_ID) {
-            File(appFilesDir, LEGACY_RAG_DIRECTORY)
-        } else {
-            File(sessionParent, Sha256Utils.hash(sessionId))
-        }
-        val expectedPath = expected.absoluteFile.toPath().normalize()
-        if (declaredRootPath != expectedPath || java.nio.file.Files.isSymbolicLink(declaredRootPath)) {
-            return false
-        }
-        return root == expected.canonicalFile
-    }
-
-    private companion object {
-        const val LEGACY_RAG_SESSION_ID = "__nexara_rag_workspace__"
-        const val LEGACY_RAG_DIRECTORY = "rag_workspace"
+        val sessionParent = defaultWorkspaceParent ?: return false
+        val appFilesDir = sessionParent.parentFile ?: return false
+        return LegacyWorkspaceRootPolicy.isTrusted(
+            sessionId = sessionId,
+            declaredRootPath = declaredRootPath,
+            root = root,
+            defaultWorkspaceParent = sessionParent,
+            filesDir = appFilesDir,
+        )
     }
 
     override fun observeRoots(workspaceRootUuid: String): Flow<List<FileEntry>> =

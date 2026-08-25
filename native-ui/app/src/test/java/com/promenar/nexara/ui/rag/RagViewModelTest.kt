@@ -73,6 +73,7 @@ class RagViewModelTest {
     private lateinit var sessionDao: SessionDao
     private lateinit var vectorizationQueue: com.promenar.nexara.data.rag.VectorizationQueue
     private lateinit var filesDir: java.io.File
+    private lateinit var ensureRagWorkspaceRoot: suspend () -> FileEntry
 
     @BeforeEach
     fun setup() {
@@ -85,6 +86,8 @@ class RagViewModelTest {
         every { app.database } returns database
         every { database.sessionDao() } returns sessionDao
         every { app.getSharedPreferences(any(), any()) } returns mockk(relaxed = true)
+        ensureRagWorkspaceRoot = mockk()
+        coEvery { ensureRagWorkspaceRoot.invoke() } returns rootEntry()
         vectorizationQueue = mockk(relaxed = true)
         every { vectorizationQueue.state } returns MutableStateFlow(
             com.promenar.nexara.data.rag.VectorizationQueue.QueueState(
@@ -116,19 +119,12 @@ class RagViewModelTest {
     }
 
     @Test
-    fun `新装全局知识库会让仓库选择统一受信父目录而不声明旧路径`() = runTest {
-        coEvery { sessionDao.getById(any()) } returns null
-        val inserted = slot<SessionEntity>()
-        coEvery { sessionDao.insert(capture(inserted)) } returns Unit
-
-        createViewModel()
+    fun `知识库初始化使用共享根提供器并发布返回的根`() = runTest {
+        val viewModel = createViewModel()
         advanceUntilIdle()
 
-        assertThat(inserted.captured.id).isEqualTo("__nexara_rag_workspace__")
-        assertThat(inserted.captured.workspacePath).isNull()
-        coVerify(exactly = 1) {
-            workspaceRepository.ensureSessionRoot("__nexara_rag_workspace__")
-        }
+        assertThat(viewModel.workspaceRootUuid.value).isEqualTo("rag-root")
+        coVerify(exactly = 1) { ensureRagWorkspaceRoot.invoke() }
     }
 
     @Test
@@ -222,47 +218,8 @@ class RagViewModelTest {
     }
 
     @Test
-    fun `已有旧知识库目录时保守沿用旧路径避免静默丢失数据`() = runTest {
-        val legacyRoot = java.io.File(filesDir, "rag_workspace").apply { mkdirs() }
-        java.io.File(legacyRoot, "legacy-note.txt").writeText("keep me")
-        coEvery { sessionDao.getById(any()) } returns null
-        val inserted = slot<SessionEntity>()
-        coEvery { sessionDao.insert(capture(inserted)) } returns Unit
-
-        createViewModel()
-        advanceUntilIdle()
-
-        assertThat(inserted.captured.workspacePath).isEqualTo(legacyRoot.canonicalPath)
-        assertThat(java.io.File(legacyRoot, "legacy-note.txt").readText()).isEqualTo("keep me")
-    }
-
-    @Test
-    fun `旧版失败残留的空路径声明会清除后改用统一受信父目录`() = runTest {
-        val legacyRoot = java.io.File(filesDir, "rag_workspace")
-        val stale = SessionEntity(
-            id = "__nexara_rag_workspace__",
-            agentId = "__system__",
-            title = "RAG Workspace",
-            workspacePath = legacyRoot.absolutePath,
-            createdAt = 1L,
-            updatedAt = 1L,
-        )
-        coEvery { sessionDao.getById(stale.id) } returns stale
-        val updated = slot<SessionEntity>()
-        coEvery { sessionDao.update(capture(updated)) } returns Unit
-
-        createViewModel()
-        advanceUntilIdle()
-
-        assertThat(updated.captured.workspacePath).isNull()
-        coVerify(exactly = 1) { workspaceRepository.ensureSessionRoot(stale.id) }
-    }
-
-    @Test
     fun `全局知识库根初始化失败会转为可见错误而不会逃逸到主线程`() = runTest {
-        coEvery { sessionDao.getById(any()) } returns null
-        coEvery { workspaceRepository.ensureSessionRoot(any()) } throws
-            SecurityException("fixture identity failure")
+        coEvery { ensureRagWorkspaceRoot.invoke() } throws SecurityException("fixture identity failure")
 
         val result = runCatching {
             createViewModel().also { advanceUntilIdle() }
@@ -288,9 +245,9 @@ class RagViewModelTest {
             fileOperationRepository, ragConfigPersistence, keywordSearcher,
             injectedImporter = importer,
             injectedRequestFactory = requestFactory,
-            ragWorkspaceIoContext = testDispatcher,
             injectedPendingIndexCoordinator = pendingIndexCoordinator,
             injectedConfigSaver = configSaver,
+            injectedEnsureRagWorkspaceRoot = ensureRagWorkspaceRoot,
         )
     }
 

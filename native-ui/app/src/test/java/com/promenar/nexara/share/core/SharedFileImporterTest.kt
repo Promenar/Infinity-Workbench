@@ -19,6 +19,23 @@ import java.io.InputStream
 @RunWith(RobolectricTestRunner::class)
 class SharedFileImporterTest {
     @Test
+    fun `inspect直接呈现staging预检拒绝而不伪装成可导入`() = runTest {
+        val uri = Uri.parse("content://fixture/unreadable.pdf")
+        val source = FakeSource(
+            metadata = mapOf(uri to meta("unreadable.pdf", "application/pdf", 10)),
+            bytes = emptyMap(),
+            preflightReasons = mapOf(uri to ShareRejectReason.ReadFailed),
+        )
+
+        val item = SharedFileImporter(source, repository()).inspect(
+            request(listOf(uri), "application/pdf")
+        ).single()
+
+        assertThat(item.status).isEqualTo(ShareImportStatus.Rejected)
+        assertThat(item.reason).isEqualTo(ShareRejectReason.ReadFailed)
+    }
+
+    @Test
     fun `部分成功会保留逐项拒绝且只调度已创建文件`() = runTest {
         val good = Uri.parse("content://fixture/good.txt")
         val denied = Uri.parse("content://fixture/denied.txt")
@@ -382,6 +399,7 @@ class SharedFileImporterTest {
         private val bytes: Map<Uri, ByteArray>,
         private val denied: Set<Uri> = emptySet(),
         private val hashes: Map<Uri, String> = emptyMap(),
+        private val preflightReasons: Map<Uri, ShareRejectReason> = emptyMap(),
     ) : SharedContentSource {
         override fun metadata(uri: Uri): SharedContentMetadata {
             if (uri in denied) throw SecurityException("denied")
@@ -389,6 +407,7 @@ class SharedFileImporterTest {
         }
 
         override fun open(uri: Uri): InputStream = ByteArrayInputStream(checkNotNull(bytes[uri]))
+        override fun preflightReason(uri: Uri): ShareRejectReason? = preflightReasons[uri]
         override fun contentSha256(uri: Uri): String? = hashes[uri]
     }
 

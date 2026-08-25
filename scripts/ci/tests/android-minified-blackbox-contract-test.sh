@@ -12,6 +12,7 @@ FIXTURE_ROOT="${REPO_ROOT}/native-ui/blackbox-fixture"
 FIXTURE_BUILD="${FIXTURE_ROOT}/build.gradle.kts"
 FIXTURE_MANIFEST="${FIXTURE_ROOT}/src/main/AndroidManifest.xml"
 FIXTURE_PROVIDER="${FIXTURE_ROOT}/src/main/java/com/promenar/nexara/blackboxfixture/BlackBoxFixtureProvider.java"
+FIXTURE_SENDER="${FIXTURE_ROOT}/src/main/java/com/promenar/nexara/blackboxfixture/BlackBoxFixtureShareActivity.java"
 UI_TAGS="${REPO_ROOT}/native-ui/app/src/main/java/com/promenar/nexara/ui/testing/UiTags.kt"
 SHARE_SHEET="${REPO_ROOT}/native-ui/app/src/main/java/com/promenar/nexara/share/ui/ShareImportSheet.kt"
 MAIN_ACTIVITY="${REPO_ROOT}/native-ui/app/src/main/java/com/promenar/nexara/MainActivity.kt"
@@ -52,6 +53,7 @@ assert_file "${PNG_NORMALIZER_TEST}"
 assert_file "${FIXTURE_BUILD}"
 assert_file "${FIXTURE_MANIFEST}"
 assert_file "${FIXTURE_PROVIDER}"
+assert_file "${FIXTURE_SENDER}"
 
 assert_contains "${SETTINGS}" 'include(":blackbox-fixture")'
 assert_contains "${FIXTURE_BUILD}" 'id("com.android.application")'
@@ -62,7 +64,12 @@ assert_contains "${FIXTURE_MANIFEST}" 'com.promenar.nexara.blackboxfixture.docum
 assert_contains "${FIXTURE_MANIFEST}" 'android:exported="true"'
 assert_contains "${FIXTURE_MANIFEST}" 'android:grantUriPermissions="true"'
 assert_not_contains "${FIXTURE_MANIFEST}" 'android.intent.action.MAIN'
-assert_not_contains "${FIXTURE_MANIFEST}" '<activity'
+assert_contains "${FIXTURE_MANIFEST}" '.BlackBoxFixtureShareActivity'
+assert_contains "${FIXTURE_MANIFEST}" '@android:style/Theme.NoDisplay'
+assert_contains "${FIXTURE_SENDER}" 'Intent.ACTION_SEND'
+assert_contains "${FIXTURE_SENDER}" 'Intent.FLAG_GRANT_READ_URI_PERMISSION'
+assert_contains "${FIXTURE_SENDER}" 'ClipData.newRawUri'
+assert_contains "${FIXTURE_SENDER}" 'setComponent(target)'
 
 for fixture_contract in \
     'release-parser-canary-empty.pdf' \
@@ -73,6 +80,7 @@ for fixture_contract in \
     'text/plain' \
     'OpenableColumns.DISPLAY_NAME' \
     'OpenableColumns.SIZE' \
+    'MediaStore.MediaColumns.MIME_TYPE' \
     '[Content_Types].xml' \
     '_rels/.rels' \
     'word/document.xml' \
@@ -151,7 +159,7 @@ for smoke_contract in \
     'SecretFieldTestActivity' \
     'BackupTestActivity' \
     'mapping.txt' \
-    'android.intent.action.SEND' \
+    'FIXTURE_SHARE_COMPONENT' \
     'release-parser-canary-empty.pdf' \
     'release-parser-canary-empty.docx' \
     'release-index-canary.txt' \
@@ -200,15 +208,18 @@ assert_not_contains "${BLACKBOX_SCRIPT}" 'assembleMinifiedTestAndroidTest'
 assert_not_contains "${BLACKBOX_SCRIPT}" 'mainactivity-e2e'
 assert_not_contains "${BLACKBOX_SCRIPT}" 'am instrument'
 assert_not_contains "${BLACKBOX_SCRIPT}" 'ui-test-manifest'
-assert_contains "${BLACKBOX_SCRIPT}" '--eu android.intent.extra.STREAM "${uri}"'
-assert_contains "${BLACKBOX_SCRIPT}" '-d "${uri}"'
-assert_contains "${BLACKBOX_SCRIPT}" '--grant-read-uri-permission'
+assert_contains "${BLACKBOX_SCRIPT}" '--es document_name "${name}"'
+assert_contains "${BLACKBOX_SCRIPT}" '--es mime_type "${mime}"'
+assert_contains "${BLACKBOX_SCRIPT}" '--es target_component "${TARGET_COMPONENT}"'
+assert_not_contains "${BLACKBOX_SCRIPT}" '--eu android.intent.extra.STREAM'
 assert_not_contains "${BLACKBOX_SCRIPT}" '-f 0x10000001'
 assert_count "${BLACKBOX_SCRIPT}" '-a android.intent.action.MAIN' 4
 assert_count "${BLACKBOX_SCRIPT}" '-c android.intent.category.LAUNCHER' 4
 assert_contains "${BLACKBOX_SCRIPT}" 'com.promenar.nexara.native.test'
 assert_not_contains "${BLACKBOX_SCRIPT}" '--projection _display_name:size'
-assert_contains "${BLACKBOX_SCRIPT}" '--projection _display_name:_size'
+assert_contains "${BLACKBOX_SCRIPT}" '--projection _display_name:_size:mime_type'
+assert_contains "${BLACKBOX_SCRIPT}" 'mime_type=${mime}'
+assert_not_contains "${BLACKBOX_SCRIPT}" 'content gettype'
 assert_not_contains "${BLACKBOX_SCRIPT}" 'cp "${LAST_WINDOW_XML}" "${durable_xml}"'
 assert_contains "${BLACKBOX_SCRIPT}" 'require_file "${durable_xml}"'
 assert_not_contains "${BLACKBOX_SCRIPT}" 'am-start-${key}-persistent.txt'

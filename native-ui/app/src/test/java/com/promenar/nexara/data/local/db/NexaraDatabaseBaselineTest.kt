@@ -30,7 +30,7 @@ class NexaraDatabaseBaselineTest {
     fun backupSchemaGateMatchesExportedRoomIdentityHash() {
         val schema = exportedSchema()
 
-        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V5_IDENTITY_HASH)
+        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V18_IDENTITY_HASH)
             .isEqualTo(schema.identityHash)
         assertThat(exportedSchema(3).identityHash)
             .isEqualTo("7a7a094ee1fd1b9b144a0a241812e53f")
@@ -105,7 +105,10 @@ class NexaraDatabaseBaselineTest {
         val builder = "Room.databaseBuilder(this, NexaraDatabase::class.java, \"nexara_v2.db\")"
 
         assertThat(source).contains(builder)
-        assertThat(source).contains(".addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)")
+        assertThat(source).contains("LegacyDatabasePromoter.promote(this)")
+        assertThat(source).contains(
+            ".addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18)",
+        )
         assertThat(source).doesNotContain(".fallbackToDestructiveMigration")
     }
 
@@ -114,7 +117,7 @@ class NexaraDatabaseBaselineTest {
             .allowMainThreadQueries()
             .build()
 
-    private fun exportedSchema(version: Int = 5): ExportedSchema {
+    private fun exportedSchema(version: Int = 18): ExportedSchema {
         val file = File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json")
         assertThat(file.isFile).isTrue()
         val database = Json.parseToJsonElement(file.readText()).jsonObject
@@ -157,8 +160,8 @@ class NexaraDatabaseBaselineTest {
         database: SupportSQLiteDatabase,
         schema: ExportedSchema,
     ) {
-        assertThat(schema.version).isEqualTo(5)
-        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(5L)
+        assertThat(schema.version).isEqualTo(18)
+        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(18L)
         assertThat(database.longQuery("PRAGMA foreign_keys")).isEqualTo(1L)
 
         val runtimeTables = database.stringColumnQuery(

@@ -55,7 +55,7 @@ class NexaraDatabaseMigration2To3JvmTest {
         }
 
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18)
             .allowMainThreadQueries()
             .build()
         try {
@@ -109,7 +109,7 @@ class NexaraDatabaseMigration2To3JvmTest {
         }
 
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18)
             .allowMainThreadQueries()
             .build()
         try {
@@ -142,7 +142,7 @@ class NexaraDatabaseMigration2To3JvmTest {
         }
 
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_4_5)
+            .addMigrations(MIGRATION_4_5, MIGRATION_5_18)
             .allowMainThreadQueries()
             .build()
         try {
@@ -158,6 +158,43 @@ class NexaraDatabaseMigration2To3JvmTest {
                 .isEqualTo("search")
             database.execSQL("DELETE FROM mcp_servers WHERE id='server'")
             assertThat(database.query("SELECT * FROM mcp_tool_snapshots").use { it.count }).isEqualTo(0)
+        } finally {
+            room.close()
+        }
+    }
+
+    @Test
+    fun migration5To18PreservesCurrentRowsAndAddsLegacyAttachmentArchiveColumn() {
+        createSchema(5, "3c6ffe1572c71bac7e866a33388a5a3b").apply {
+            execSQL(
+                """INSERT INTO agents(
+                    id,name,description,name_customized,description_customized,system_prompt,model,
+                    icon,color,is_pinned,created_at,use_inherited_config
+                ) VALUES('agent-v5','Agent','',0,0,'','model','icon','color',0,1,1)""".trimIndent(),
+            )
+            execSQL(
+                """INSERT INTO sessions(id,agent_id,title,unread,is_pinned,created_at,updated_at)
+                    VALUES('session-v5','agent-v5','Session',0,0,1,1)""".trimIndent(),
+            )
+            execSQL(
+                """INSERT INTO messages(id,session_id,role,content,files,created_at)
+                    VALUES('message-v5','session-v5','user','kept','[{"uri":"v5"}]',1)""".trimIndent(),
+            )
+            close()
+        }
+
+        val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
+            .addMigrations(MIGRATION_5_18)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val database = room.openHelper.writableDatabase
+            assertThat(database.stringQuery("SELECT files FROM messages WHERE id='message-v5'"))
+                .isEqualTo("[{\"uri\":\"v5\"}]")
+            assertThat(database.query("SELECT legacy_attachments FROM messages WHERE id='message-v5'").use {
+                check(it.moveToFirst())
+                it.isNull(0)
+            }).isTrue()
         } finally {
             room.close()
         }

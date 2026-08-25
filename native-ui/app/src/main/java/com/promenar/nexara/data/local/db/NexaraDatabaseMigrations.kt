@@ -152,3 +152,661 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         )
     }
 }
+
+/** v5 提升到公开版之后的版本空间，并增加旧附件 JSON 的无损保留列。 */
+val MIGRATION_5_18 = object : Migration(5, 18) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE messages ADD COLUMN legacy_attachments TEXT")
+    }
+}
+
+/**
+ * 公开 v0.1 实际发布库为 v17。该迁移保留其业务数据，并补齐当前工具链、工作区与消息树契约。
+ */
+val MIGRATION_17_18 = object : Migration(17, 18) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("PRAGMA legacy_alter_table=ON")
+        try {
+            preparePublishedWorkspaceRootMap(db)
+            stageAndDropPublishedSessionGraph(db)
+            migratePublishedAgents(db)
+            migratePublishedSessions(db)
+            migratePublishedMessages(db)
+            recreatePublishedSessionChildren(db)
+            migratePublishedWorkspaceFiles(db)
+            migratePublishedVectorizationTasks(db)
+            migratePublishedVectorFts(db)
+            createPostPublishedTables(db)
+        } finally {
+            db.execSQL("PRAGMA legacy_alter_table=OFF")
+        }
+    }
+}
+
+private fun preparePublishedWorkspaceRootMap(db: SupportSQLiteDatabase) {
+    val sharedSessionPath = db.query(
+        """SELECT workspace_path FROM sessions
+            WHERE workspace_path IS NOT NULL
+            GROUP BY workspace_path HAVING COUNT(*) > 1 LIMIT 1""".trimIndent(),
+    ).use { it.moveToFirst() }
+    if (sharedSessionPath) {
+        throw IllegalStateException("公开 v17 存在共享工作区路径，已中止迁移以保全原库")
+    }
+    val ambiguousCanonicalRoot = db.query(
+        """SELECT physical_root_path FROM workspace_files
+            WHERE parent_uuid IS NULL AND is_directory = 1 AND materialized_path = '/'
+            GROUP BY physical_root_path HAVING COUNT(*) > 1 LIMIT 1""".trimIndent(),
+    ).use { it.moveToFirst() }
+    if (ambiguousCanonicalRoot) {
+        throw IllegalStateException("公开 v17 工作区存在重复规范根，已中止迁移以保全原库")
+    }
+    db.execSQL(
+        """CREATE TEMP TABLE migration17_workspace_roots (
+            physical_root_path TEXT NOT NULL PRIMARY KEY,
+            workspace_root_uuid TEXT NOT NULL,
+            had_canonical_root INTEGER NOT NULL
+        )""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT INTO migration17_workspace_roots
+            SELECT physical_root_path, MIN(uuid), 1
+            FROM workspace_files
+            WHERE parent_uuid IS NULL AND is_directory = 1 AND materialized_path = '/'
+            GROUP BY physical_root_path""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT OR IGNORE INTO migration17_workspace_roots
+            SELECT workspace_path, 'legacy-root-' || lower(hex(randomblob(16))), 0
+            FROM sessions WHERE workspace_path IS NOT NULL
+            GROUP BY workspace_path""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT OR IGNORE INTO migration17_workspace_roots
+            SELECT physical_root_path, 'legacy-root-' || lower(hex(randomblob(16))), 0
+            FROM workspace_files GROUP BY physical_root_path""".trimIndent(),
+    )
+}
+
+private fun stageAndDropPublishedSessionGraph(db: SupportSQLiteDatabase) {
+    listOf(
+        "agents",
+        "sessions",
+        "messages",
+        "attachments",
+        "vectors",
+        "context_summaries",
+        "vectorization_tasks",
+        "artifacts",
+        "task_nodes",
+    ).forEach { table ->
+        db.execSQL("CREATE TEMP TABLE migration17_$table AS SELECT * FROM $table")
+    }
+    listOf(
+        "vectors_fts",
+        "attachments",
+        "vectorization_tasks",
+        "messages",
+        "vectors",
+        "context_summaries",
+        "artifacts",
+        "task_nodes",
+        "sessions",
+        "agents",
+    ).forEach { table -> db.execSQL("DROP TABLE $table") }
+}
+
+private fun migratePublishedAgents(db: SupportSQLiteDatabase) {
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS agents (
+            id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL,
+            name_customized INTEGER NOT NULL,
+            description_customized INTEGER NOT NULL,
+            system_prompt TEXT NOT NULL,
+            model TEXT NOT NULL,
+            icon TEXT NOT NULL,
+            color TEXT NOT NULL,
+            avatar_path TEXT,
+            is_pinned INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            temperature REAL,
+            top_p REAL,
+            max_tokens INTEGER,
+            rag_config TEXT,
+            retrieval_config TEXT,
+            use_inherited_config INTEGER NOT NULL,
+            execution_mode TEXT NOT NULL DEFAULT 'semi',
+            skill_ids TEXT NOT NULL DEFAULT '[]',
+            mcp_server_ids TEXT NOT NULL DEFAULT '[]',
+            PRIMARY KEY(id)
+        )""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT INTO agents(
+            id, name, description, name_customized, description_customized, system_prompt,
+            model, icon, color, avatar_path, is_pinned, created_at, temperature, top_p,
+            max_tokens, rag_config, retrieval_config, use_inherited_config, execution_mode,
+            skill_ids, mcp_server_ids
+        )
+        SELECT id, name, description, 1, 1, system_prompt, model, icon, color, avatar_path,
+            is_pinned, created_at, temperature, top_p, max_tokens, rag_config,
+            retrieval_config, use_inherited_config, 'semi', '[]', '[]'
+        FROM migration17_agents""".trimIndent(),
+    )
+}
+
+private fun migratePublishedSessions(db: SupportSQLiteDatabase) {
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT NOT NULL,
+            agent_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            last_message TEXT,
+            time TEXT,
+            unread INTEGER NOT NULL,
+            model_id TEXT,
+            custom_prompt TEXT,
+            is_pinned INTEGER NOT NULL,
+            scroll_offset REAL,
+            draft TEXT,
+            execution_mode TEXT NOT NULL DEFAULT 'semi',
+            loop_status TEXT NOT NULL DEFAULT 'idle',
+            pending_intervention TEXT,
+            approval_request TEXT,
+            rag_options TEXT,
+            inference_params TEXT,
+            active_task TEXT,
+            stats TEXT,
+            options TEXT,
+            active_mcp_server_ids TEXT,
+            active_skill_ids TEXT,
+            workspace_path TEXT,
+            workspace_root_uuid TEXT,
+            active_task_tree_id TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(id)
+        )""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT INTO sessions(
+            id, agent_id, title, last_message, time, unread, model_id, custom_prompt,
+            is_pinned, scroll_offset, draft, execution_mode, loop_status, pending_intervention,
+            approval_request, rag_options, inference_params, active_task, stats, options,
+            active_mcp_server_ids, active_skill_ids, workspace_path, workspace_root_uuid,
+            active_task_tree_id, created_at, updated_at
+        )
+        SELECT id, agent_id, title, last_message, time, unread, model_id, custom_prompt,
+            is_pinned, scroll_offset, draft, execution_mode, loop_status, pending_intervention,
+            approval_request, rag_options, inference_params, active_task, stats, options,
+            active_mcp_server_ids, active_skill_ids, workspace_path, workspace_root_uuid,
+            active_task_tree_id, created_at, updated_at
+        FROM migration17_sessions""".trimIndent(),
+    )
+}
+
+private fun migratePublishedMessages(db: SupportSQLiteDatabase) {
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS messages (
+            id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            model_id TEXT,
+            status TEXT,
+            reasoning TEXT,
+            thought_signature TEXT,
+            images TEXT,
+            tokens TEXT,
+            citations TEXT,
+            rag_references TEXT,
+            kg_paths TEXT,
+            rag_progress TEXT,
+            rag_metadata TEXT,
+            rag_references_loading INTEGER NOT NULL DEFAULT 0,
+            execution_steps TEXT,
+            tool_calls TEXT,
+            pending_approval_tool_ids TEXT,
+            tool_call_id TEXT,
+            parent_message_id TEXT,
+            name TEXT,
+            planning_task TEXT,
+            is_archived INTEGER NOT NULL DEFAULT 0,
+            vectorization_status TEXT,
+            layout_height REAL,
+            tool_results TEXT,
+            files TEXT,
+            legacy_attachments TEXT,
+            user_images TEXT,
+            is_error INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY(id),
+            FOREIGN KEY(session_id) REFERENCES sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+            FOREIGN KEY(session_id, parent_message_id) REFERENCES messages(session_id, id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT INTO messages(
+            id, session_id, role, content, model_id, status, reasoning, thought_signature,
+            images, tokens, citations, rag_references, kg_paths, rag_progress, rag_metadata,
+            rag_references_loading, execution_steps, tool_calls, pending_approval_tool_ids,
+            tool_call_id, parent_message_id, name, planning_task, is_archived,
+            vectorization_status, layout_height, tool_results, files, legacy_attachments,
+            user_images, is_error,
+            error_message, created_at
+        )
+        SELECT id, session_id, role, content, model_id, status, reasoning, thought_signature,
+            images, tokens, citations, rag_references, NULL, rag_progress, rag_metadata,
+            rag_references_loading, execution_steps, tool_calls, pending_approval_tool_ids,
+            tool_call_id, NULL, name, planning_task, is_archived, vectorization_status,
+            layout_height, tool_results, files, attachments, user_images, is_error,
+            error_message, created_at
+        FROM migration17_messages""".trimIndent(),
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_session_id ON messages(session_id)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_session_id_created_at ON messages(session_id, created_at)")
+    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_messages_session_id_id ON messages(session_id, id)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_session_id_parent_message_id ON messages(session_id, parent_message_id)")
+}
+
+private fun recreatePublishedSessionChildren(db: SupportSQLiteDatabase) {
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS attachments (
+            id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            type TEXT NOT NULL,
+            uri TEXT NOT NULL,
+            local_uri TEXT,
+            PRIMARY KEY(id),
+            FOREIGN KEY(message_id) REFERENCES messages(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT INTO attachments(id, message_id, type, uri, local_uri)
+            SELECT id, message_id, type, uri, local_uri FROM migration17_attachments""".trimIndent(),
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_attachments_message_id ON attachments(message_id)")
+
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS vectors (
+            id TEXT NOT NULL,
+            doc_id TEXT,
+            session_id TEXT,
+            content TEXT NOT NULL,
+            embedding BLOB NOT NULL,
+            metadata TEXT,
+            start_message_id TEXT,
+            end_message_id TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER,
+            stale INTEGER NOT NULL DEFAULT 0,
+            version INTEGER NOT NULL DEFAULT 1,
+            file_uuid TEXT,
+            PRIMARY KEY(id),
+            FOREIGN KEY(session_id) REFERENCES sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT INTO vectors(
+            id, doc_id, session_id, content, embedding, metadata, start_message_id,
+            end_message_id, created_at, updated_at, stale, version, file_uuid
+        ) SELECT id, doc_id, session_id, content, embedding, metadata, start_message_id,
+            end_message_id, created_at, updated_at, stale, version, file_uuid
+        FROM migration17_vectors""".trimIndent(),
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_vectors_doc_id ON vectors(doc_id)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_vectors_session_id ON vectors(session_id)")
+
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS context_summaries (
+            id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            start_message_id TEXT NOT NULL,
+            end_message_id TEXT NOT NULL,
+            summary_content TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            token_usage INTEGER,
+            PRIMARY KEY(id),
+            FOREIGN KEY(session_id) REFERENCES sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT INTO context_summaries(
+            id, session_id, start_message_id, end_message_id, summary_content, created_at, token_usage
+        ) SELECT id, session_id, start_message_id, end_message_id, summary_content, created_at, token_usage
+        FROM migration17_context_summaries""".trimIndent(),
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_context_summaries_session_id ON context_summaries(session_id)")
+
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS artifacts (
+            id TEXT NOT NULL,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            preview_image TEXT,
+            session_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            workspace_path TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            tags TEXT,
+            PRIMARY KEY(id),
+            FOREIGN KEY(session_id) REFERENCES sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT INTO artifacts(
+            id, type, title, content, preview_image, session_id, message_id,
+            workspace_path, created_at, updated_at, tags
+        ) SELECT id, type, title, content, preview_image, session_id, message_id,
+            workspace_path, created_at, updated_at, tags FROM migration17_artifacts""".trimIndent(),
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_artifacts_session_id ON artifacts(session_id)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_artifacts_type ON artifacts(type)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_artifacts_created_at ON artifacts(created_at)")
+
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS task_nodes (
+            id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            parent_id TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            note TEXT,
+            artifact_file_uuids TEXT,
+            is_collapsed INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(id),
+            FOREIGN KEY(session_id) REFERENCES sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT INTO task_nodes(
+            id, session_id, parent_id, sort_order, title, description, status, note,
+            artifact_file_uuids, is_collapsed, created_at, updated_at
+        ) SELECT id, session_id, parent_id, sort_order, title, description, status, note,
+            artifact_file_uuids, is_collapsed, created_at, updated_at FROM migration17_task_nodes""".trimIndent(),
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_task_nodes_session_id ON task_nodes(session_id)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_task_nodes_parent_id ON task_nodes(parent_id)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_task_nodes_status ON task_nodes(status)")
+}
+
+private fun migratePublishedWorkspaceFiles(db: SupportSQLiteDatabase) {
+    db.execSQL("ALTER TABLE workspace_files RENAME TO workspace_files_v17")
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS workspace_files (
+            uuid TEXT NOT NULL,
+            workspace_root_uuid TEXT NOT NULL,
+            parent_uuid TEXT,
+            name TEXT NOT NULL,
+            hash TEXT NOT NULL,
+            mime_type TEXT,
+            size_bytes INTEGER NOT NULL,
+            is_directory INTEGER NOT NULL,
+            physical_root_path TEXT NOT NULL,
+            materialized_path TEXT NOT NULL,
+            vectorized_at INTEGER,
+            vector_version INTEGER NOT NULL,
+            kg_extracted_at INTEGER,
+            kg_version INTEGER NOT NULL,
+            last_write_session_id TEXT,
+            locked_by_session_id TEXT,
+            lock_expires_at INTEGER,
+            in_recycle_bin INTEGER NOT NULL,
+            recycled_at INTEGER,
+            original_parent_uuid TEXT,
+            original_materialized_path TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(uuid)
+        )""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT INTO workspace_files(
+            uuid, workspace_root_uuid, parent_uuid, name, hash, mime_type, size_bytes,
+            is_directory, physical_root_path, materialized_path, vectorized_at,
+            vector_version, kg_extracted_at, kg_version, last_write_session_id,
+            locked_by_session_id, lock_expires_at, in_recycle_bin, recycled_at,
+            original_parent_uuid, original_materialized_path, created_at, updated_at
+        )
+        SELECT file.uuid, root.workspace_root_uuid,
+            CASE
+                WHEN file.uuid = root.workspace_root_uuid THEN NULL
+                WHEN file.parent_uuid IS NULL THEN root.workspace_root_uuid
+                ELSE file.parent_uuid
+            END,
+            file.name, file.hash, file.mime_type, file.size_bytes,
+            file.is_directory, file.physical_root_path, file.materialized_path,
+            file.vectorized_at, file.vector_version, file.kg_extracted_at, file.kg_version,
+            file.last_write_session_id, file.locked_by_session_id, file.lock_expires_at,
+            file.in_recycle_bin, file.recycled_at, file.original_parent_uuid,
+            file.original_materialized_path, file.created_at, file.updated_at
+        FROM workspace_files_v17 AS file
+        JOIN migration17_workspace_roots AS root
+          ON root.physical_root_path = file.physical_root_path""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT INTO workspace_files(
+            uuid, workspace_root_uuid, parent_uuid, name, hash, mime_type, size_bytes,
+            is_directory, physical_root_path, materialized_path, vectorized_at,
+            vector_version, kg_extracted_at, kg_version, last_write_session_id,
+            locked_by_session_id, lock_expires_at, in_recycle_bin, recycled_at,
+            original_parent_uuid, original_materialized_path, created_at, updated_at
+        )
+        SELECT root.workspace_root_uuid, root.workspace_root_uuid, NULL,
+            root.physical_root_path, '', NULL, 0, 1, root.physical_root_path, '/',
+            NULL, 1, NULL, 1, NULL, NULL, NULL, 0, NULL, NULL, NULL,
+            COALESCE(
+                (SELECT MIN(created_at) FROM workspace_files_v17 AS file
+                 WHERE file.physical_root_path = root.physical_root_path),
+                (SELECT MIN(created_at) FROM migration17_sessions AS session
+                 WHERE session.workspace_path = root.physical_root_path),
+                0
+            ),
+            COALESCE(
+                (SELECT MAX(updated_at) FROM workspace_files_v17 AS file
+                 WHERE file.physical_root_path = root.physical_root_path),
+                (SELECT MAX(updated_at) FROM migration17_sessions AS session
+                 WHERE session.workspace_path = root.physical_root_path),
+                0
+            )
+        FROM migration17_workspace_roots AS root
+        WHERE root.had_canonical_root = 0""".trimIndent(),
+    )
+    db.execSQL("DROP TABLE workspace_files_v17")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_workspace_files_parent_uuid ON workspace_files(parent_uuid)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_workspace_files_materialized_path ON workspace_files(materialized_path)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_workspace_files_hash ON workspace_files(hash)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_workspace_files_is_directory ON workspace_files(is_directory)")
+    db.execSQL(
+        "CREATE INDEX IF NOT EXISTS index_workspace_files_in_recycle_bin_physical_root_path_recycled_at " +
+            "ON workspace_files(in_recycle_bin, physical_root_path, recycled_at)",
+    )
+    db.execSQL(
+        "CREATE UNIQUE INDEX IF NOT EXISTS index_workspace_files_workspace_root_uuid_uuid " +
+            "ON workspace_files(workspace_root_uuid, uuid)",
+    )
+    db.execSQL(
+        """UPDATE sessions SET workspace_root_uuid = (
+            SELECT root.workspace_root_uuid FROM migration17_workspace_roots AS root
+            WHERE root.physical_root_path = sessions.workspace_path
+        ) WHERE workspace_path IS NOT NULL""".trimIndent(),
+    )
+}
+
+private fun migratePublishedVectorizationTasks(db: SupportSQLiteDatabase) {
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS vectorization_tasks (
+            id TEXT NOT NULL,
+            type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            doc_id TEXT,
+            doc_title TEXT,
+            workspace_root_uuid TEXT,
+            session_id TEXT,
+            user_content TEXT,
+            ai_content TEXT,
+            user_message_id TEXT,
+            assistant_message_id TEXT,
+            last_chunk_index INTEGER NOT NULL,
+            total_chunks INTEGER,
+            progress REAL NOT NULL,
+            error TEXT,
+            kg_strategy TEXT,
+            skip_vectorization INTEGER NOT NULL,
+            sub_status TEXT,
+            source_mime_type TEXT,
+            content_truncated INTEGER NOT NULL,
+            target_content_hash TEXT,
+            target_epoch INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(id),
+            FOREIGN KEY(session_id) REFERENCES sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+            FOREIGN KEY(workspace_root_uuid, doc_id) REFERENCES workspace_files(workspace_root_uuid, uuid) ON UPDATE NO ACTION ON DELETE CASCADE
+        )""".trimIndent(),
+    )
+    db.execSQL(
+        """INSERT INTO vectorization_tasks(
+            id, type, status, doc_id, doc_title, workspace_root_uuid, session_id,
+            user_content, ai_content, user_message_id, assistant_message_id,
+            last_chunk_index, total_chunks, progress, error, kg_strategy,
+            skip_vectorization, sub_status, source_mime_type, content_truncated,
+            target_content_hash, target_epoch, created_at, updated_at
+        )
+        SELECT task.id, task.type,
+            CASE WHEN task.status IN (
+                'pending', 'processing', 'extracting_source', 'chunking',
+                'vectorizing', 'saving', 'extracting', 'interrupted'
+            ) AND (
+                file.uuid IS NULL OR EXISTS(
+                    SELECT 1 FROM migration17_vectorization_tasks AS newer
+                    WHERE newer.doc_id = task.doc_id AND newer.type = task.type
+                      AND (newer.updated_at > task.updated_at OR
+                           (newer.updated_at = task.updated_at AND newer.id < task.id))
+                )
+            ) THEN 'failed' ELSE task.status END,
+            task.doc_id, task.doc_title,
+            CASE WHEN file.uuid IS NOT NULL AND NOT EXISTS(
+                SELECT 1 FROM migration17_vectorization_tasks AS newer
+                WHERE newer.doc_id = task.doc_id AND newer.type = task.type
+                  AND (newer.updated_at > task.updated_at OR
+                       (newer.updated_at = task.updated_at AND newer.id < task.id))
+            ) THEN file.workspace_root_uuid ELSE NULL END,
+            task.session_id, task.user_content, task.ai_content, task.user_message_id,
+            task.assistant_message_id, task.last_chunk_index, task.total_chunks,
+            task.progress,
+            CASE WHEN task.status IN (
+                'pending', 'processing', 'extracting_source', 'chunking',
+                'vectorizing', 'saving', 'extracting', 'interrupted'
+            ) AND (
+                file.uuid IS NULL OR EXISTS(
+                    SELECT 1 FROM migration17_vectorization_tasks AS newer
+                    WHERE newer.doc_id = task.doc_id AND newer.type = task.type
+                      AND (newer.updated_at > task.updated_at OR
+                           (newer.updated_at = task.updated_at AND newer.id < task.id))
+                )
+            ) THEN COALESCE(task.error, 'v17 迁移已终止重复或失效任务') ELSE task.error END,
+            NULL, 0, NULL, NULL, 0,
+            file.hash, COALESCE(file.updated_at, 0), task.created_at, task.updated_at
+        FROM migration17_vectorization_tasks AS task
+        LEFT JOIN workspace_files AS file ON file.uuid = task.doc_id""".trimIndent(),
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_vectorization_tasks_status ON vectorization_tasks(status)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_vectorization_tasks_doc_id ON vectorization_tasks(doc_id)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_vectorization_tasks_session_id ON vectorization_tasks(session_id)")
+    db.execSQL(
+        "CREATE INDEX IF NOT EXISTS index_vectorization_tasks_workspace_root_uuid_doc_id " +
+            "ON vectorization_tasks(workspace_root_uuid, doc_id)",
+    )
+    db.execSQL(
+        "CREATE UNIQUE INDEX IF NOT EXISTS index_vectorization_tasks_workspace_root_uuid_doc_id_type " +
+            "ON vectorization_tasks(workspace_root_uuid, doc_id, type)",
+    )
+}
+
+private fun migratePublishedVectorFts(db: SupportSQLiteDatabase) {
+    db.execSQL("DROP TABLE IF EXISTS vectors_fts")
+    db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS vectors_fts USING FTS4(content TEXT NOT NULL, content=`vectors`)")
+    db.execSQL("INSERT INTO vectors_fts(vectors_fts) VALUES('rebuild')")
+}
+
+private fun createPostPublishedTables(db: SupportSQLiteDatabase) {
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS mcp_tool_snapshots (
+            server_id TEXT NOT NULL,
+            remote_tool_name TEXT NOT NULL,
+            description TEXT NOT NULL,
+            input_schema_json TEXT NOT NULL,
+            synced_at INTEGER NOT NULL,
+            PRIMARY KEY(server_id, remote_tool_name),
+            FOREIGN KEY(server_id) REFERENCES mcp_servers(id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )""".trimIndent(),
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_mcp_tool_snapshots_server_id ON mcp_tool_snapshots(server_id)")
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS tool_execution_ledger (
+            session_id TEXT NOT NULL,
+            assistant_message_id TEXT NOT NULL,
+            tool_call_id TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            runtime_tool_id TEXT NOT NULL DEFAULT '',
+            arguments_digest TEXT NOT NULL DEFAULT '',
+            definition_digest TEXT NOT NULL DEFAULT '',
+            requires_approval INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            result_message_id TEXT,
+            error TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(session_id, assistant_message_id, tool_call_id),
+            FOREIGN KEY(session_id) REFERENCES sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+            FOREIGN KEY(session_id, assistant_message_id) REFERENCES messages(session_id, id) ON UPDATE NO ACTION ON DELETE CASCADE
+        )""".trimIndent(),
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_tool_execution_ledger_session_id ON tool_execution_ledger(session_id)")
+    db.execSQL(
+        "CREATE INDEX IF NOT EXISTS index_tool_execution_ledger_session_id_assistant_message_id " +
+            "ON tool_execution_ledger(session_id, assistant_message_id)",
+    )
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS file_versions (
+            id TEXT NOT NULL,
+            file_uuid TEXT NOT NULL,
+            workspace_root_uuid TEXT NOT NULL,
+            hash TEXT NOT NULL,
+            content_path TEXT NOT NULL,
+            created_by_session_id TEXT,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY(id)
+        )""".trimIndent(),
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_file_versions_file_uuid ON file_versions(file_uuid)")
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_file_versions_workspace_root_uuid ON file_versions(workspace_root_uuid)")
+    db.execSQL(
+        """CREATE TABLE IF NOT EXISTS workspace_mutations (
+            operation_id TEXT NOT NULL,
+            workspace_root_uuid TEXT NOT NULL,
+            operation_type TEXT NOT NULL,
+            payload_version INTEGER NOT NULL,
+            payload TEXT NOT NULL,
+            payload_digest TEXT NOT NULL,
+            state TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(operation_id)
+        )""".trimIndent(),
+    )
+    db.execSQL(
+        "CREATE INDEX IF NOT EXISTS index_workspace_mutations_workspace_root_uuid " +
+            "ON workspace_mutations(workspace_root_uuid)",
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS index_workspace_mutations_state ON workspace_mutations(state)")
+}

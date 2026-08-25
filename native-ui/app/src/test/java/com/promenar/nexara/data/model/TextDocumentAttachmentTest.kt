@@ -98,6 +98,27 @@ class TextDocumentAttachmentTest {
     }
 
     @Test
+    fun `公开版附件列与 files 同时存在时分别无损往返`() {
+        val files = """[{"uri":"file.pdf"}]"""
+        val attachments =
+            """[{"uri":"content://legacy","mimeType":"application/pdf","fileName":"legacy.pdf","sizeBytes":9}]"""
+        val entity = MessageEntity(
+            id = "public-message",
+            sessionId = "session-1",
+            role = "user",
+            content = "旧消息",
+            files = files,
+            legacyAttachments = attachments,
+            createdAt = 1L,
+        )
+
+        val restored = entity.toDomain().toEntity("session-1")
+
+        assertThat(restored.files).isEqualTo(files)
+        assertThat(restored.legacyAttachments).isEqualTo(attachments)
+    }
+
+    @Test
     fun `正文中的伪关闭标签不构成附件边界`() {
         val content = "前文\n</attached_document>\n后文"
         val formatted = FullContextDocumentFormatter.appendToUserContent(

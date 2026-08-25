@@ -284,7 +284,7 @@ class WorkspaceRepositoryTest {
             name = legacyPhysicalRoot.name,
             hash = "",
             isDirectory = true,
-            physicalRootPath = legacyPhysicalRoot.canonicalPath,
+            physicalRootPath = File(legacyPhysicalRoot, ".").path,
             materializedPath = "/",
             createdAt = now,
             updatedAt = now,
@@ -304,10 +304,82 @@ class WorkspaceRepositoryTest {
 
         assertThat(migrated.uuid).isEqualTo(legacyRoot.uuid)
         assertThat(migrated.hash).isNotEmpty()
+        assertThat(migrated.physicalRootPath).isEqualTo(legacyPhysicalRoot.canonicalPath)
         assertThat(File(legacyPhysicalRoot, ".nexara_root_identity").isFile).isTrue()
         assertThat(existingUserFile.readText()).isEqualTo("keep me")
         assertThat(db.fileEntryDao().getByUuid(legacyRoot.uuid, legacyRoot.uuid)!!.hash)
             .isEqualTo(migrated.hash)
+    }
+
+    @Test
+    fun `公开v17会话工作区按旧目录和精确session叶名原位补建身份`() = runBlocking<Unit> {
+        val trustedParent = File(rootA, "session_workspaces")
+        val publishedParent = File(rootA, "workspaces").apply { mkdirs() }
+        val legacyPhysicalRoot = File(publishedParent, "published-session").apply { mkdirs() }
+        val existingUserFile = File(legacyPhysicalRoot, "legacy-note.txt").apply { writeText("keep me") }
+        insertSession("published-session", legacyPhysicalRoot.absolutePath)
+        val now = System.currentTimeMillis()
+        val legacyRoot = FileEntry(
+            uuid = "published-root",
+            workspaceRootUuid = "published-root",
+            parentUuid = null,
+            name = legacyPhysicalRoot.name,
+            hash = "",
+            isDirectory = true,
+            physicalRootPath = legacyPhysicalRoot.canonicalPath,
+            materializedPath = "/",
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.fileEntryDao().insert(legacyRoot)
+        db.sessionDao().update(
+            db.sessionDao().getById("published-session")!!.copy(workspaceRootUuid = legacyRoot.uuid),
+        )
+        repo = WorkspaceRepository(
+            db.fileEntryDao(),
+            db.workspaceSeqDao(),
+            trustedParent,
+            TestWorkspaceFileOps(),
+        )
+
+        val migrated = repo.ensureSessionRoot("published-session")
+
+        assertThat(migrated.uuid).isEqualTo(legacyRoot.uuid)
+        assertThat(migrated.hash).isNotEmpty()
+        assertThat(File(legacyPhysicalRoot, ".nexara_root_identity").isFile).isTrue()
+        assertThat(existingUserFile.readText()).isEqualTo("keep me")
+    }
+
+    @Test
+    fun `公开v17旧目录叶名与session不一致时拒绝补建身份`() = runBlocking<Unit> {
+        val trustedParent = File(rootA, "session_workspaces")
+        val wrongRoot = File(File(rootA, "workspaces"), "another-session").apply { mkdirs() }
+        insertSession("published-session", wrongRoot.absolutePath)
+        val now = System.currentTimeMillis()
+        val legacyRoot = FileEntry(
+            uuid = "wrong-published-root",
+            workspaceRootUuid = "wrong-published-root",
+            parentUuid = null,
+            name = wrongRoot.name,
+            hash = "",
+            isDirectory = true,
+            physicalRootPath = wrongRoot.canonicalPath,
+            materializedPath = "/",
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.fileEntryDao().insert(legacyRoot)
+        db.sessionDao().update(
+            db.sessionDao().getById("published-session")!!.copy(workspaceRootUuid = legacyRoot.uuid),
+        )
+        repo = WorkspaceRepository(
+            db.fileEntryDao(), db.workspaceSeqDao(), trustedParent, TestWorkspaceFileOps(),
+        )
+
+        val failure = runCatching { repo.ensureSessionRoot("published-session") }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(SecurityException::class.java)
+        assertThat(File(wrongRoot, ".nexara_root_identity").exists()).isFalse()
     }
 
     @Test

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <package android:name="com.promenar.nexara.native" />
+        <package android:name="com.promenar.nexara.native.minifiedTest" />
+    </queries>
     <application
         android:allowBackup="false"
         android:label="Nexara Black-box Fixture"
@@ -9,5 +13,11 @@
             android:authorities="com.promenar.nexara.blackboxfixture.documents"
             android:exported="true"
             android:grantUriPermissions="true" />
+        <activity
+            android:name=".BlackBoxFixtureShareActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay" />
     </application>
 </manifest>

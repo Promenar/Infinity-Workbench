@@ -6,6 +6,7 @@ import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
+import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 
 import java.io.ByteArrayOutputStream;
@@ -51,7 +52,11 @@ public final class BlackBoxFixtureProvider extends ContentProvider {
     ) {
         String name = requireKnownPath(uri);
         String[] requested = projection == null
-                ? new String[]{OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE}
+                ? new String[]{
+                        OpenableColumns.DISPLAY_NAME,
+                        OpenableColumns.SIZE,
+                        MediaStore.MediaColumns.MIME_TYPE
+                }
                 : projection;
         MatrixCursor cursor = new MatrixCursor(requested, 1);
         MatrixCursor.RowBuilder row = cursor.newRow();
@@ -61,6 +66,8 @@ public final class BlackBoxFixtureProvider extends ContentProvider {
                 row.add(name);
             } else if (OpenableColumns.SIZE.equals(column)) {
                 row.add(file.length());
+            } else if (MediaStore.MediaColumns.MIME_TYPE.equals(column)) {
+                row.add(mimeForName(name));
             } else {
                 throw new IllegalArgumentException("不支持的查询列：" + column);
             }
@@ -70,7 +77,10 @@ public final class BlackBoxFixtureProvider extends ContentProvider {
 
     @Override
     public String getType(Uri uri) {
-        String name = requireKnownPath(uri);
+        return mimeForName(requireKnownPath(uri));
+    }
+
+    private static String mimeForName(String name) {
         if (PDF_NAME.equals(name)) {
             return PDF_MIME;
         }

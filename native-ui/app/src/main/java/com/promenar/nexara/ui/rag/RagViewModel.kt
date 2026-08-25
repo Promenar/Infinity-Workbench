@@ -47,7 +47,6 @@ import com.promenar.nexara.share.core.AndroidShareIndexScheduler
 import com.promenar.nexara.share.core.ShareImportItem
 import com.promenar.nexara.share.core.SharedFileImporter
 import kotlinx.coroutines.CancellationException
-import kotlin.coroutines.CoroutineContext
 
 data class RagStats(
     val documentCount: Int = 0,
@@ -71,9 +70,9 @@ class RagViewModel(
     private val keywordSearcher: KeywordSearcher,
     injectedImporter: SharedFileImporter? = null,
     injectedRequestFactory: ((Uri, String) -> ShareRequest)? = null,
-    ragWorkspaceIoContext: CoroutineContext = kotlinx.coroutines.Dispatchers.IO,
     injectedPendingIndexCoordinator: PendingDocumentIndexCoordinator? = null,
     injectedConfigSaver: ((RagConfiguration) -> Unit)? = null,
+    injectedEnsureRagWorkspaceRoot: (suspend () -> FileEntry)? = null,
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
@@ -85,8 +84,9 @@ class RagViewModel(
     )
     private val importRequestFactory = injectedRequestFactory
         ?: AndroidSafImportRequestFactory(app.contentResolver)::create
-    private val ragWorkspaceIoContext = ragWorkspaceIoContext
     private val pendingIndexCoordinator = injectedPendingIndexCoordinator
+    private val ensureGlobalKnowledgeRoot = injectedEnsureRagWorkspaceRoot
+        ?: app.globalKnowledgeWorkspaceProvisioner::ensureRoot
 
     private val vectorStatsService = VectorStatsService(vectorRepository)
 
@@ -187,12 +187,7 @@ class RagViewModel(
     private fun ensureRagWorkspaceRoot() {
         viewModelScope.launch {
             try {
-                _workspaceRootUuid.value = RagWorkspaceProvisioner(
-                    filesDir = app.filesDir,
-                    database = app.database,
-                    workspaceRepository = workspaceRepository,
-                    ioContext = ragWorkspaceIoContext,
-                ).ensureRoot().uuid
+                _workspaceRootUuid.value = ensureGlobalKnowledgeRoot().uuid
                 synchronizeSharedPendingTargets()
             } catch (cancelled: CancellationException) {
                 throw cancelled

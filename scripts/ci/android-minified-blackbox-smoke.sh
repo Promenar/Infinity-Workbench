@@ -12,6 +12,7 @@ SKIP_BUILD="${NEXARA_MINIFIED_SKIP_BUILD:-false}"
 TARGET_ABI="${NEXARA_MINIFIED_E2E_ABI:-x86_64}"
 FIXTURE_PACKAGE="com.promenar.nexara.blackboxfixture"
 FIXTURE_AUTHORITY="com.promenar.nexara.blackboxfixture.documents"
+FIXTURE_SHARE_COMPONENT="${FIXTURE_PACKAGE}/.BlackBoxFixtureShareActivity"
 TALKBACK_PACKAGE="com.google.android.marvin.talkback"
 NOTIFICATION_PERMISSION="android.permission.POST_NOTIFICATIONS"
 FIXTURE_APK="${NATIVE_ROOT}/blackbox-fixture/build/outputs/apk/debug/blackbox-fixture-debug.apk"
@@ -322,15 +323,14 @@ for name_and_mime in \
     name="${name_and_mime%%|*}"
     mime="${name_and_mime#*|}"
     uri="content://${FIXTURE_AUTHORITY}/${name}"
-    actual_type="$(adb shell content gettype --uri "${uri}" | tr -d '\r' | sed -n 's/^Result: //p')"
-    [[ "${actual_type}" == "${mime}" ]] || {
-        echo "fixture MIME 不匹配：${name}" >&2
-        exit 1
-    }
-    adb shell content query --uri "${uri}" --projection _display_name:_size \
+    adb shell content query --uri "${uri}" --projection _display_name:_size:mime_type \
         > "${ARTIFACT_DIR}/fixture-query-${name}.txt"
     grep -Fq "_display_name=${name}" "${ARTIFACT_DIR}/fixture-query-${name}.txt" || {
         echo "fixture query 未暴露正确文件名：${name}" >&2
+        exit 1
+    }
+    grep -Fq "mime_type=${mime}" "${ARTIFACT_DIR}/fixture-query-${name}.txt" || {
+        echo "fixture MIME 不匹配：${name}" >&2
         exit 1
     }
 done
@@ -735,9 +735,10 @@ run_canary() {
 
     adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
     adb logcat -c
-    adb shell am start -S -W -n "${TARGET_COMPONENT}" \
-        -a android.intent.action.SEND -t "${mime}" -d "${uri}" \
-        --eu android.intent.extra.STREAM "${uri}" --grant-read-uri-permission \
+    adb shell am force-stop "${TARGET_PACKAGE}"
+    adb shell am start -S -W -n "${FIXTURE_SHARE_COMPONENT}" \
+        --es document_name "${name}" --es mime_type "${mime}" \
+        --es target_component "${TARGET_COMPONENT}" \
         > "${ARTIFACT_DIR}/am-start-${key}-share.txt"
     wait_for_launcher_stable "${key}-share"
     wait_for_share_surface "${key}-share" "${name}"
@@ -771,9 +772,10 @@ run_canary_text() {
 
     adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
     adb logcat -c
-    adb shell am start -S -W -n "${TARGET_COMPONENT}" \
-        -a android.intent.action.SEND -t "${mime}" -d "${uri}" \
-        --eu android.intent.extra.STREAM "${uri}" --grant-read-uri-permission \
+    adb shell am force-stop "${TARGET_PACKAGE}"
+    adb shell am start -S -W -n "${FIXTURE_SHARE_COMPONENT}" \
+        --es document_name "${name}" --es mime_type "${mime}" \
+        --es target_component "${TARGET_COMPONENT}" \
         > "${ARTIFACT_DIR}/am-start-${key}-share.txt"
     wait_for_launcher_stable "${key}-share"
     wait_for_share_surface "${key}-share" "${name}"

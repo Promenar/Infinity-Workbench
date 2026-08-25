@@ -23,7 +23,7 @@ class ShareImportTargetProviderTest {
         coEvery { workspace.ensureSessionRoot(ShareImportTargetProvider.GLOBAL_KNOWLEDGE_SESSION_ID) } returns
             root("knowledge-root")
 
-        val targets = ShareImportTargetProvider(sessionDao, workspace).load(
+        val targets = ShareImportTargetProvider(sessionDao, workspace) { root("knowledge-root") }.load(
             currentSessionId = CURRENT,
             currentSessionTitle = "当前聊天",
             knowledgeBaseLabel = "知识库",
@@ -40,18 +40,16 @@ class ShareImportTargetProviderTest {
     fun `知识库系统会话缺失时创建后再认领工作区`() = runTest {
         val sessionDao = mockk<SessionDao>()
         val workspace = mockk<IWorkspaceRepository>()
-        coEvery { sessionDao.getById(ShareImportTargetProvider.GLOBAL_KNOWLEDGE_SESSION_ID) } returns null
-        coEvery { sessionDao.insert(any()) } returns Unit
-        coEvery { workspace.ensureSessionRoot(ShareImportTargetProvider.GLOBAL_KNOWLEDGE_SESSION_ID) } returns
-            root("knowledge-root")
+        var provisionCalls = 0
 
-        val targets = ShareImportTargetProvider(sessionDao, workspace).load(null, null, "知识库")
+        val targets = ShareImportTargetProvider(sessionDao, workspace) {
+            provisionCalls += 1
+            root("knowledge-root")
+        }.load(null, null, "知识库")
 
         assertThat(targets).hasSize(1)
         assertThat(targets.single().kind).isEqualTo(ShareTargetKind.KnowledgeBase)
-        coVerify(exactly = 1) {
-            sessionDao.insert(match { it.id == ShareImportTargetProvider.GLOBAL_KNOWLEDGE_SESSION_ID })
-        }
+        assertThat(provisionCalls).isEqualTo(1)
     }
 
     private fun session(id: String, title: String) = SessionEntity(

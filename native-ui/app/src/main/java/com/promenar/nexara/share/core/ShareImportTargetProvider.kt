@@ -1,13 +1,14 @@
 package com.promenar.nexara.share.core
 
 import com.promenar.nexara.data.local.db.dao.SessionDao
-import com.promenar.nexara.data.local.db.entity.SessionEntity
+import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 
 /** 只暴露当前聊天工作区与全局知识库，禁止静默选择其它会话。 */
 class ShareImportTargetProvider(
     private val sessionDao: SessionDao,
     private val workspace: IWorkspaceRepository,
+    private val ensureKnowledgeRoot: suspend () -> FileEntry,
 ) {
     suspend fun load(
         currentSessionId: String?,
@@ -26,28 +27,13 @@ class ShareImportTargetProvider(
             }
         }
 
-        ensureKnowledgeSession(knowledgeBaseLabel)
-        val knowledgeRoot = workspace.ensureSessionRoot(GLOBAL_KNOWLEDGE_SESSION_ID)
+        val knowledgeRoot = ensureKnowledgeRoot()
         targets += ShareImportTarget(
             workspaceRootUuid = knowledgeRoot.uuid,
             label = knowledgeBaseLabel,
             kind = ShareTargetKind.KnowledgeBase,
         )
         return targets
-    }
-
-    private suspend fun ensureKnowledgeSession(knowledgeBaseLabel: String) {
-        if (sessionDao.getById(GLOBAL_KNOWLEDGE_SESSION_ID) != null) return
-        val now = System.currentTimeMillis()
-        sessionDao.insert(
-            SessionEntity(
-                id = GLOBAL_KNOWLEDGE_SESSION_ID,
-                agentId = "__system__",
-                title = knowledgeBaseLabel,
-                createdAt = now,
-                updatedAt = now,
-            )
-        )
     }
 
     companion object {

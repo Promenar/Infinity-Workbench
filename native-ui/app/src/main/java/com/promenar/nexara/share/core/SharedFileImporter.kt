@@ -36,7 +36,7 @@ class SharedFileImporter(
         request.uris.map { uri ->
             source.preflightItem(uri)?.let { return@map it }
             val metadata = metadataOrNull(uri)
-            ShareImportItem(
+            val item = ShareImportItem(
                 uri = uri,
                 displayName = metadata?.displayName?.takeIf { it.isNotBlank() }
                     ?: uri.lastPathSegment?.takeIf { it.isNotBlank() }
@@ -44,6 +44,7 @@ class SharedFileImporter(
                 mimeType = metadata?.mimeType ?: request.mimeType,
                 sizeBytes = metadata?.sizeBytes,
             )
+            source.preflightReason(uri)?.let { item.reject(it) } ?: item
         }
     }
 

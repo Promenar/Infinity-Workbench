@@ -16,11 +16,13 @@ class MainActivityStartupGateWiringTest {
     fun `activity opens startup gate before reading the frozen onboarding snapshot or building nav graph`() {
         val collect = source.indexOf("startupState.collectAsStateWithLifecycle()")
         val gate = source.indexOf("StartupGate(")
+        val dependencies = source.indexOf("provideChatRouteDependencies(app)")
         val onboarding = source.indexOf("onboardingStore.state.value.step")
         val nav = source.indexOf("NexaraNavGraph(")
 
         assertThat(collect).isAtLeast(0)
         assertThat(gate).isGreaterThan(collect)
+        assertThat(dependencies).isGreaterThan(gate)
         assertThat(onboarding).isGreaterThan(gate)
         assertThat(nav).isGreaterThan(onboarding)
     }

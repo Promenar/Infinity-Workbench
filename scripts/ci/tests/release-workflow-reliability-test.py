@@ -252,6 +252,9 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn('install -r --no-streaming "${NEW_APK}"', upgrade_phase)
         self.assertNotRegex(upgrade_phase, r"(?m)^\s*adb_cmd\s+uninstall\b")
         self.assertNotRegex(upgrade_phase, r"(?m)^\s*adb_cmd\s+shell\s+pm\s+clear\b")
+        self.assertIn("cmd package resolve-activity --brief", UPGRADE_SMOKE)
+        self.assertIn('adb_cmd shell am start -W -n "${component}"', UPGRADE_SMOKE)
+        self.assertNotIn("adb_cmd shell monkey", UPGRADE_SMOKE)
         publish_job = workflow_job("publish")
         self.assertEqual(
             job_level_value(publish_job, "needs"),
@@ -277,6 +280,62 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
                     2,
                     msg=f"升级脚本必须写入并回读 {sentinel}",
                 )
+
+    def test_upgrade_smoke_apk_field_requires_a_full_attribute_boundary(self) -> None:
+        expression = r"s/^package:.*[[:space:]]name='\([^']*\)'.*$/\1/p"
+        self.assertIn("[[:space:]]${field}=", UPGRADE_SMOKE)
+        sample = (
+            "package: name='com.promenar.nexara.native' versionCode='1' "
+            "versionName='0.1' compileSdkVersionCodename='16'\n"
+        )
+        completed = subprocess.run(
+            ["sed", "-n", expression],
+            input=sample,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        self.assertEqual(completed.stdout.strip(), "com.promenar.nexara.native")
+
+    def test_upgrade_smoke_uses_public_v17_database_contract_and_current_v18_target(self) -> None:
+        self.assertIn('remote_db="${data_dir}/databases/nexara.db"', UPGRADE_SMOKE)
+        self.assertIn("公开旧版 Room schema 不是实测 v17", UPGRADE_SMOKE)
+        self.assertIn("3311ec5f07e8df42c02fd09163c49f6e", UPGRADE_SMOKE)
+        self.assertNotIn("name_customized,description_customized", UPGRADE_SMOKE)
+        self.assertIn('upgraded_remote_db="${data_dir}/databases/nexara_v2.db"', UPGRADE_SMOKE)
+        self.assertIn("覆盖升级后 Room schema 不是 v18", UPGRADE_SMOKE)
+        self.assertIn("c32f59706ea482fd5697681569c6fdb5", UPGRADE_SMOKE)
+        self.assertIn("UPGRADE_ATTACHMENT_SENTINEL", UPGRADE_SMOKE)
+        self.assertIn("WAL_ONLY_SENTINEL", UPGRADE_SMOKE)
+        self.assertIn('push "${wal_fixture}/${db_name}-wal" "${remote_db}-wal"', UPGRADE_SMOKE)
+        self.assertIn("向量任务工作区哨兵丢失", UPGRADE_SMOKE)
+        self.assertIn('workspace_root="${data_dir}/files/workspaces/upgrade-session"', UPGRADE_SMOKE)
+        self.assertIn("公开 v17 工作区根未经过真实仓库身份认领", UPGRADE_SMOKE)
+        self.assertIn('${workspace_root}/.nexara_root_identity', UPGRADE_SMOKE)
+        self.assertIn("wait_for_upgraded_startup", UPGRADE_SMOKE)
+        self.assertIn("NEXARA_UPGRADE_STARTUP_TIMEOUT_SECONDS", UPGRADE_SMOKE)
+        self.assertIn("PRAGMA user_version", UPGRADE_SMOKE)
+        self.assertNotIn('adb_cmd shell sleep 4', UPGRADE_SMOKE)
+
+    def test_upgrade_smoke_accepts_current_and_legacy_apksigner_labels(self) -> None:
+        expression = (
+            r"s/^(Signer #[0-9]+|V[0-9]+ Signer):? certificate SHA-256 digest: "
+            r"([[:xdigit:]]{64})$/\2/p"
+        )
+        self.assertIn("Signer #[0-9]+|V[0-9]+ Signer", UPGRADE_SMOKE)
+        digest = "00be4cdd8378aafbd70ebc43e971523791cc07deead631e06dcf155deeee3802"
+        sample = (
+            f"Signer #1 certificate SHA-256 digest: {digest}\n"
+            f"V2 Signer: certificate SHA-256 digest: {digest}\n"
+        )
+        completed = subprocess.run(
+            ["sed", "-n", "-E", expression],
+            input=sample,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        self.assertEqual(completed.stdout.splitlines(), [digest, digest])
 
     def test_smoke_requires_modern_zip_alignment(self) -> None:
         self.assertIn('ZIPALIGN="${BUILD_TOOLS_DIR}/zipalign"', SMOKE)

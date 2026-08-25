@@ -79,6 +79,8 @@ data class MessageEntity(
     @ColumnInfo(name = "tool_results")
     val toolResults: String? = null,
     val files: String? = null,
+    @ColumnInfo(name = "legacy_attachments")
+    val legacyAttachments: String? = null,
     @ColumnInfo(name = "user_images")
     val userImages: String? = null,
     @ColumnInfo(name = "is_error", defaultValue = "0")

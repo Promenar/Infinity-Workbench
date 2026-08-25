@@ -358,6 +358,7 @@ data class Message(
     val images: String? = null,
     val userDocuments: List<MessageDocumentAttachment>? = null,
     val legacyFilesPayload: String? = null,
+    val legacyAttachmentsPayload: String? = null,
     val userImages: List<String>? = null,
     val tokens: TokenUsage? = null,
     val citations: List<Citation>? = null,

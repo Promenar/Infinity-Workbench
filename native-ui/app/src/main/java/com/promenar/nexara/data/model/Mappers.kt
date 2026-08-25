@@ -126,6 +126,7 @@ fun MessageEntity.toDomain(): Message {
         images = images,
         userDocuments = decodedDocuments,
         legacyFilesPayload = files?.takeIf { decodedDocuments == null },
+        legacyAttachmentsPayload = legacyAttachments,
         userImages = userImages?.let { decodeFromJson<List<String>>(it) },
         tokens = tokens?.let { decodeFromJson<TokenUsage>(it) },
         citations = citations?.let { decodeFromJson<List<Citation>>(it) },
@@ -163,6 +164,7 @@ fun Message.toEntity(sessionId: String): MessageEntity = MessageEntity(
     images = images,
     files = userDocuments?.let { encodeToJson(MessageDocumentEnvelope(documents = it)) }
         ?: legacyFilesPayload,
+    legacyAttachments = legacyAttachmentsPayload,
     userImages = userImages?.let { encodeToJson(it) },
     tokens = tokens?.let { encodeToJson(it) },
     citations = citations?.let { encodeToJson(it) },
