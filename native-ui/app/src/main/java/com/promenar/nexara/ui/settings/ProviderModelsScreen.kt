@@ -76,6 +76,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
@@ -264,7 +265,7 @@ internal fun ProviderModelsScreenContent(
         Spacer(modifier = Modifier.height(16.dp))
 
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(0.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(bottom = 40.dp),
             modifier = Modifier
                 .weight(1f)
@@ -312,39 +313,18 @@ internal fun ProviderModelsScreenContent(
                 ProviderModelsListState.Content -> itemsIndexed(
                     filteredModels,
                     key = { _, model -> model.id },
-                ) { index, model ->
-                    val shape = when {
-                        filteredModels.size == 1 -> RoundedCornerShape(20.dp)
-                        index == 0 -> RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-                        index == filteredModels.lastIndex -> RoundedCornerShape(
-                            bottomStart = 20.dp,
-                            bottomEnd = 20.dp,
+                ) { _, model ->
+                    BettboxListGroup {
+                        ProviderModelsModelRow(
+                            model = model,
+                            onRowClick = {
+                                focusManager.clearFocus()
+                                keyboardController?.hide()
+                                selectedModelId = model.id
+                            },
+                            onToggle = { actions.onToggle(model.id) },
+                            modifier = Modifier.padding(horizontal = 16.dp),
                         )
-                        else -> RoundedCornerShape(0.dp)
-                    }
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = shape,
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                    ) {
-                        Column {
-                            if (index > 0) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                                )
-                            }
-                            ProviderModelsModelRow(
-                                model = model,
-                                onRowClick = {
-                                    focusManager.clearFocus()
-                                    keyboardController?.hide()
-                                    selectedModelId = model.id
-                                },
-                                onToggle = { actions.onToggle(model.id) },
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                            )
-                        }
                     }
                 }
             }
@@ -749,7 +729,7 @@ private fun ProviderModelsListMessage(
     tag: String,
     assertive: Boolean = false,
 ) {
-    Surface(
+    BettboxListGroup(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(tag)
@@ -757,8 +737,6 @@ private fun ProviderModelsListMessage(
                 liveRegion = if (assertive) LiveRegionMode.Assertive else LiveRegionMode.Polite
                 stateDescription = message
             },
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.large,
     ) {
         Box(
             modifier = Modifier

@@ -20,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -32,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -44,6 +46,7 @@ import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.ui.common.ModelPicker
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.ui.settings.SettingsViewModel
@@ -105,7 +108,9 @@ internal fun RagAdvancedScreenContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(contentPadding),
+                .padding(contentPadding)
+                .bettboxListGroup()
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             Text(
@@ -124,6 +129,7 @@ internal fun RagAdvancedScreenContent(
                 SettingsSectionHeader(stringResource(R.string.rag_advanced_extract_config))
 
                 ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     headlineContent = { Text(stringResource(R.string.rag_advanced_extract_model), style = MaterialTheme.typography.titleMedium) },
                     supportingContent = {
                         val selectedModelName = allModels.find { it.id == config.kgExtractionModel }?.name
@@ -165,6 +171,7 @@ internal fun RagAdvancedScreenContent(
                 SettingsSectionHeader(stringResource(R.string.rag_advanced_prompt_section))
 
                 ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { showPromptEditor = true },
@@ -204,6 +211,7 @@ internal fun RagAdvancedScreenContent(
 
             // === 查看知识图谱 ===
             ListItem(
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 headlineContent = { Text(stringResource(R.string.rag_advanced_view_graph), style = MaterialTheme.typography.bodyLarge) },
                 leadingContent = {
                     Icon(Icons.Rounded.AccountTree, contentDescription = null, tint = MaterialTheme.colorScheme.primary)

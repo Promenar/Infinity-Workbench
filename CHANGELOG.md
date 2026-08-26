@@ -6,11 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Bettbox 开源 Material 3 视觉基线迁移（2026-08-26）
 
+- **分组面贯通全部设置层级**：新增唯一 `BettboxListGroup` plain-card 组件，以 20dp 圆角、`surfaceContainerLow` 和弱描边统一承载一级设置分组、Provider/模型管理、备份、本地模型、技能、用量、Agent 配置及 RAG/检索深层页面；卡内直接 `ListItem` 使用透明底色，避免再次出现贴背景的裸行或卡片内黑色矩形。
+- **首页业务列表与身份头部**：设置首页账户身份块移除“账户”分区标签，保留更突出的 56dp 头像与用户名；Agent 首页使用连续分组卡，会话与 Provider 模型按独立业务对象成卡，避免惰性列表的填满约束制造整屏空白卡壳。
+- **底栏按压轮廓修复**：底部三按钮导航的外观、尺寸、选中动画与触感保持不变，仅把每个标签的交互 indication 在建立 `selectable` 前裁切至现有胶囊轮廓，按压波纹不再泄露方形命中容器。
 - **源码级参考而非截图拟合**：以 Bettbox GPLv3 仓库固定提交 `714130a3d746d093f6278c0503dac9e2e43fd3e3` 的 `lib/widgets/list.dart`、`lib/widgets/google_bottom_nav_bar.dart`、`lib/views/theme.dart` 与 `lib/common/color.dart` 为视觉行为基线，将 Flutter 实现按 Jetpack Compose 语义重写；来源与许可已登记到第三方通知。
 - **设置与管理列表**：设置分组改为 20dp 圆角 `surfaceContainer` 连续卡片，标准 `ListItem` 恢复 Material 3 主副文字、24dp 前导图标和稳定触控节奏；Provider 与模型管理列表同步使用同一填充表面、弱分隔与首尾圆角，不再散落为贴背景的自定义文本行。
 - **Bettbox 式底部导航**：移动端主导航改为 36dp 圆角的浮动 `surfaceContainer` 导航座，使用弱描边、阴影、24dp 图标、`secondaryContainer` 选中项和 250ms 槽位权重动画；原有真实标签切换触感继续保留。
 - **完整外观设置**：新增跟随系统/浅色/深色三模式卡、种子色盘、Android 动态取色、深色纯黑背景及 80%–140% 全局文字缩放。种子色通过 Material Color Utilities 的 Tonal Spot 方案生成完整明暗色阶，偏好均即时持久化。
-- **当前验证与正式 APK**：API 35 模拟器已实图检查主屏、设置首页、外观页和 Provider 空状态；外观页 3/3 设备交互测试通过。全量 JVM 2564 项（0 failure/error、14 skip）、101/101 Screenshot、AndroidTest 编译与 Lint（0 Error/Fatal）通过。当前源码经 clean 正式签名 Release 构建，66 tasks 中 64 executed、2 up-to-date；APK 18,909,143 bytes，SHA-256 `78a2e2e3824a3a5067f47a5c73752fe6313623e4dae652f57aa224d3a2163a95`，包身份、唯一 signer、登记证书、敏感内容与本地推理制品排除、R8 四类输出、16 KiB zipalign 和 checksum 均通过。
+- **当前验证与正式 APK**：设置首页、Agent/会话列表、Provider 表单与模型列表、备份及 RAG/检索深层页的受影响截图均已逐张检查；全量 JVM 2569 项（0 failure/error、14 skip）、100/100 Screenshot、Lint（0 Error/Fatal）及 API 35 本轮相关设备测试 32/32 通过。当前源码经 clean 正式签名 Release 构建，66 tasks 中 64 executed、2 up-to-date；APK 18,909,055 bytes，SHA-256 `ca275ff2979744c1e4d7c26b24a9e230622c5d15a9f36b842100c90dd3d697db`，包身份、唯一 signer、登记证书、敏感内容与本地推理制品排除、R8 四类输出、16 KiB zipalign 和 checksum 均通过。设备全量 313 项尝试在 203 项时停止：其中 14 项为当前基线中与本轮无关的恢复时序、分享 Sheet 及过时视觉断言失败，本轮不将其误报为全量设备通过。
 
 ### 会话可靠性、诊断与连续列表再收敛（2026-08-26）
 

@@ -57,11 +57,13 @@ class SettingsVisualPrimitivesContractTest {
     fun `settings section uses primary small heading and a rounded filled group`() {
         val section = source("NexaraSettingsSection.kt")
         val header = source("SettingsSectionHeader.kt")
+        val group = source("BettboxListGroup.kt")
 
         assertThat(header).contains("color = MaterialTheme.colorScheme.primary")
         assertThat(header).contains("MaterialTheme.typography.labelLarge")
-        assertThat(section).contains("RoundedCornerShape(20.dp)")
-        assertThat(section).contains("MaterialTheme.colorScheme.surfaceContainer")
+        assertThat(section).contains("BettboxListGroup(")
+        assertThat(group).contains("RoundedCornerShape(20.dp)")
+        assertThat(group).contains("MaterialTheme.colorScheme.surfaceContainerLow")
         assertThat(section).doesNotContain("NexaraSpacing.ScreenHorizontal +")
     }
 }

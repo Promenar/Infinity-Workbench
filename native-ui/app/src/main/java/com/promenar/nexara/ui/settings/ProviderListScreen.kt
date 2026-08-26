@@ -59,6 +59,7 @@ import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 
@@ -166,12 +167,10 @@ internal fun ProviderListScreenContent(
                 }
             } else {
                 item("provider-group") {
-                    Surface(
+                    BettboxListGroup(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 5.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
                     ) {
                         Column {
                             val allRows = state.providers.size + state.unsupportedProviders.size

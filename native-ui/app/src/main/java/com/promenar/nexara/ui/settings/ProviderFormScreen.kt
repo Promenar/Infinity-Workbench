@@ -66,6 +66,7 @@ import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.SecretField
 import com.promenar.nexara.ui.common.SettingsSectionHeader
+import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -768,7 +769,10 @@ private fun ProviderPresetIcon(preset: ProviderPreset, selected: Boolean) {
 @Composable
 private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFormActions) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .bettboxListGroup()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         SettingsSectionHeader(stringResource(R.string.provider_form_config_section))
@@ -912,7 +916,10 @@ private fun ProviderFormActionsSection(
 @Composable
 private fun LocalProviderSection(state: ProviderFormUiState, actions: ProviderFormActions) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .bettboxListGroup()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(

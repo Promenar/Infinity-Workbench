@@ -17,9 +17,11 @@ class BettboxVisualContractTest {
     @Test
     fun `设置分组应使用 Bettbox 式 surfaceContainer 圆角连续列表`() {
         val section = common("NexaraSettingsSection.kt")
+        val group = common("BettboxListGroup.kt")
 
-        assertThat(section).contains("MaterialTheme.colorScheme.surfaceContainer")
-        assertThat(section).contains("RoundedCornerShape(20.dp)")
+        assertThat(section).contains("BettboxListGroup(")
+        assertThat(group).contains("MaterialTheme.colorScheme.surfaceContainerLow")
+        assertThat(group).contains("RoundedCornerShape(20.dp)")
         assertThat(section).contains("groupHorizontalPadding")
         assertThat(section).contains("NexaraSpacing.Small")
     }
@@ -41,5 +43,17 @@ class BettboxVisualContractTest {
         assertThat(navigation).contains("MaterialTheme.colorScheme.secondaryContainer")
         assertThat(navigation).contains("tween(durationMillis = 250)")
         assertThat(navigation).doesNotContain("fluidNavigationIndicatorScale")
+    }
+
+    @Test
+    fun `底栏标签的触摸波纹应先裁切为胶囊再建立可选择交互`() {
+        val navigation = ui("MainTabScaffold.kt")
+        val tabSurface = navigation.substringAfter("AppTab.entries.forEach { tab ->")
+            .substringAfter("Surface(")
+            .substringBefore(".semantics { contentDescription = label }")
+
+        assertThat(tabSurface).contains(".clip(CircleShape)")
+        assertThat(tabSurface.indexOf(".clip(CircleShape)"))
+            .isLessThan(tabSurface.indexOf(".selectable("))
     }
 }

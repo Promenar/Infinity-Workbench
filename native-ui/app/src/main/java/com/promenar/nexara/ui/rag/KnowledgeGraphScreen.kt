@@ -49,6 +49,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.rag.KgDocumentOption
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.rag.canvas.GraphPhysicsSimulator
 import com.promenar.nexara.ui.rag.canvas.InteractiveGraphCanvas
 import com.promenar.nexara.ui.testing.UiTags
@@ -96,7 +97,9 @@ fun KnowledgeGraphScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPadding),
+                .padding(contentPadding)
+                .bettboxListGroup()
+                .padding(16.dp),
         ) {
             Text(
                 text = stringResource(R.string.kg_stats_summary, nodes.size, edges.size),

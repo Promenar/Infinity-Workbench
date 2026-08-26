@@ -53,11 +53,10 @@ class UserSettingsHomeScreenContractTest {
     }
 
     @Test
-    fun `settings-home 页面布局应依次包含 profile 且按 account 和 general 和 AI-model 和 knowledge-retrieval 和 tools-data 和 about 顺序`() {
+    fun `settings-home 页面布局应先显示 profile 且不显示账户标签并按其余分区顺序排列`() {
         val content = screenSource.substringAfter("fun UserSettingsHomeScreenContent(")
             .substringBefore("private fun UserProfileListItem(")
         val orderedMarkers = listOf(
-            "settings_section_account",
             "settings_section_general",
             "settings_section_ai_models",
             "settings_section_knowledge_retrieval",
@@ -68,8 +67,9 @@ class UserSettingsHomeScreenContractTest {
 
         assertThat(indices).doesNotContain(-1)
         assertThat(indices).isInStrictOrder()
-        assertThat(content.substringAfter("settings_section_account").substringBefore("settings_section_general"))
+        assertThat(content.substringBefore("settings_section_general"))
             .contains("UserProfileListItem(")
+        assertThat(content).doesNotContain("settings_section_account")
         val aiSection = content.substringAfter("settings_section_ai_models")
             .substringBefore("settings_section_knowledge_retrieval")
         assertThat(aiSection.indexOf("PROVIDER_LIST")).isLessThan(aiSection.indexOf("DEFAULT_MODELS"))
@@ -97,7 +97,8 @@ class UserSettingsHomeScreenContractTest {
     @Test
     fun `app settings are grouped into continuous material lists`() {
         assertThat(screenSource).contains("NexaraSettingsSection(")
-        assertThat(screenSource).contains("settings_section_account")
+        assertThat(screenSource).doesNotContain("settings_section_account")
+        assertThat(screenSource).contains("BettboxListGroup(")
         assertThat(screenSource).contains("settings_section_general")
         assertThat(screenSource).contains("settings_section_ai_models")
         assertThat(screenSource).contains("settings_section_knowledge_retrieval")
@@ -196,7 +197,7 @@ class UserSettingsHomeScreenContractTest {
     fun `provider list is continuous and separates rows without card gaps`() {
         assertThat(providerListSource).contains("verticalArrangement = Arrangement.spacedBy(0.dp)")
         assertThat(providerListSource).contains("ProviderGroupDivider()")
-        assertThat(providerListSource).contains("RoundedCornerShape(20.dp)")
+        assertThat(providerListSource).contains("BettboxListGroup(")
     }
 
     @Test

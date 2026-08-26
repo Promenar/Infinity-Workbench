@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.SettingsSectionHeader
+import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.common.SettingsToggle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
@@ -248,7 +249,7 @@ internal fun BackupSettingsScreen(
             }
 
             item {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
                     ListItem(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -315,7 +316,7 @@ internal fun BackupSettingsScreen(
             item { SettingsSectionHeader(stringResource(R.string.backup_section_local)) }
 
             item {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
                     ExportButton(
                         icon = Icons.Rounded.Download,
                         title = stringResource(R.string.backup_export_title),
@@ -339,7 +340,7 @@ internal fun BackupSettingsScreen(
             item { SettingsSectionHeader(stringResource(R.string.backup_section_webdav)) }
 
             item {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
                     ListItem(
                         headlineContent = {
                             Text(

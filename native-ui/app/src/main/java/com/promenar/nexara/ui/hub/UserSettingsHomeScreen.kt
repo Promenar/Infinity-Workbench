@@ -68,6 +68,7 @@ import coil3.compose.AsyncImage
 import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.R
 import com.promenar.nexara.navigation.NavDestinations
+import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsSection
@@ -217,9 +218,11 @@ internal fun UserSettingsHomeScreenContent(
             contentPadding = contentPadding,
         ) {
             item {
-                NexaraSettingsSection(
-                    title = stringResource(R.string.settings_section_account),
-                    headerStartPadding = NexaraSpacing.ScreenHorizontal,
+                BettboxListGroup(
+                    modifier = Modifier.padding(
+                        horizontal = NexaraSpacing.ScreenHorizontal,
+                        vertical = NexaraSpacing.Small,
+                    ),
                 ) {
                     UserProfileListItem(
                         userName = state.userName,

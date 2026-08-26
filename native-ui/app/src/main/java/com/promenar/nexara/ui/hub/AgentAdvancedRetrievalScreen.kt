@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import androidx.compose.ui.platform.LocalContext
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.bettboxListGroup
 
 @Composable
 fun AgentAdvancedRetrievalScreen(
@@ -124,7 +126,13 @@ internal fun AgentAdvancedRetrievalScreenContent(
         title = stringResource(R.string.agent_retrieval_title),
         onBack = actions.onBack
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .bettboxListGroup()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -144,6 +152,7 @@ internal fun AgentAdvancedRetrievalScreenContent(
             }
 
             ListItem(
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 headlineContent = {
                     Text(
                         text = if (useInherited) stringResource(R.string.agent_rag_status_inherited) else stringResource(R.string.agent_rag_status_custom),
@@ -245,6 +254,7 @@ internal fun AgentAdvancedRetrievalScreenContent(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     headlineContent = {
                         Text(
                             text = stringResource(R.string.agent_retrieval_section_rerank),
@@ -310,6 +320,7 @@ internal fun AgentAdvancedRetrievalScreenContent(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     headlineContent = {
                         Text(
                             text = stringResource(R.string.agent_retrieval_section_rewrite),
@@ -387,6 +398,7 @@ internal fun AgentAdvancedRetrievalScreenContent(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     headlineContent = {
                         Text(
                             text = stringResource(R.string.agent_retrieval_section_hybrid),

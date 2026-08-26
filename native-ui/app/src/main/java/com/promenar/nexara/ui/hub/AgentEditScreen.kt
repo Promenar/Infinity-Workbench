@@ -180,12 +180,7 @@ fun AgentEditScreen(
             }
 
             item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
+                BettboxListGroup {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -217,12 +212,7 @@ fun AgentEditScreen(
             }
 
             item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
+                BettboxListGroup {
                     var isExpanded by remember { mutableStateOf(false) }
                     val avatarPath by viewModel.avatarPath.collectAsState()
                     
@@ -362,13 +352,10 @@ fun AgentEditScreen(
             }
 
             item {
-                Surface(
+                BettboxListGroup(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { showSystemPromptEditor = true },
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(
                         modifier = Modifier
@@ -424,21 +411,24 @@ fun AgentEditScreen(
             }
 
             item {
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Storage,
-                    title = stringResource(R.string.agent_edit_rag_config),
-                    subtitle = stringResource(R.string.agent_edit_rag_desc),
-                    onClick = { onNavigateToRagConfig(agentId) }
-                )
-            }
-
-            item {
-                NexaraSettingsItem(
-                    icon = Icons.Rounded.Tune,
-                    title = stringResource(R.string.agent_edit_advanced_retrieval),
-                    subtitle = stringResource(R.string.agent_edit_retrieval_desc),
-                    onClick = { onNavigateToAdvancedRetrieval(agentId) }
-                )
+                BettboxListGroup {
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Storage,
+                        title = stringResource(R.string.agent_edit_rag_config),
+                        subtitle = stringResource(R.string.agent_edit_rag_desc),
+                        onClick = { onNavigateToRagConfig(agentId) }
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Tune,
+                        title = stringResource(R.string.agent_edit_advanced_retrieval),
+                        subtitle = stringResource(R.string.agent_edit_retrieval_desc),
+                        onClick = { onNavigateToAdvancedRetrieval(agentId) }
+                    )
+                }
             }
 
             item {

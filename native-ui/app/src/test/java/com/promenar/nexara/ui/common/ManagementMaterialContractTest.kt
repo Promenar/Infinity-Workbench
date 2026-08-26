@@ -73,11 +73,13 @@ class ManagementMaterialContractTest {
         assertThat(sectionSourceFile.exists()).isTrue()
 
         val source = sectionSourceFile.readText()
+        val group = sourceFile("BettboxListGroup").readText()
         assertThat(source).contains("fun NexaraSettingsSection")
-        assertThat(source).contains("MaterialTheme.colorScheme.surfaceContainer")
-        assertThat(source).contains("RoundedCornerShape(20.dp)")
+        assertThat(source).contains("BettboxListGroup(")
+        assertThat(group).contains("MaterialTheme.colorScheme.surfaceContainerLow")
+        assertThat(group).contains("RoundedCornerShape(20.dp)")
         assertThat(source).contains("MaterialTheme.typography")
         assertThat(source).doesNotContain("NexaraGlassCard(")
-        assertThat(source).contains("Surface(")
+        assertThat(group).contains("Surface(")
     }
 }

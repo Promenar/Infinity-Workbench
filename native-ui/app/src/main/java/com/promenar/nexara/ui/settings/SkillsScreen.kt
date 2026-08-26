@@ -87,6 +87,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.text.font.FontWeight
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.BettboxListGroup
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -146,8 +147,9 @@ fun SkillsScreen(
                 .padding(contentPadding),
         ) {
 
-            ListItem(
-                headlineContent = {
+            BettboxListGroup {
+                ListItem(
+                    headlineContent = {
                     Text(stringResource(R.string.skills_loop_limit), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 },
                 supportingContent = {
@@ -177,9 +179,9 @@ fun SkillsScreen(
                         }
                     }
                 },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            }
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -226,6 +228,7 @@ fun SkillsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            BettboxListGroup {
             when (selectedTab) {
                 0 -> {
                     presetSkills.forEach { skill ->
@@ -321,6 +324,7 @@ fun SkillsScreen(
                         }
                     }
                 }
+            }
             }
 
             Spacer(modifier = Modifier.height(120.dp))

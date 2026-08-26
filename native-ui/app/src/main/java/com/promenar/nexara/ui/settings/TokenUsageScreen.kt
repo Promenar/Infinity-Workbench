@@ -52,6 +52,7 @@ import com.promenar.nexara.ui.common.ConfirmDialog
 import com.promenar.nexara.ui.common.NexaraCollapsibleSection
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.SettingsSectionHeader
+import com.promenar.nexara.ui.common.bettboxListGroup
 
 @Composable
 fun TokenUsageScreen(
@@ -131,7 +132,7 @@ fun TokenUsageScreen(
 
             if (state.topSessions.isNotEmpty()) {
                 SettingsSectionHeader(stringResource(R.string.token_top_sessions))
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
                     state.topSessions.forEachIndexed { index, session ->
                         SessionRankingRow(index + 1, session)
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

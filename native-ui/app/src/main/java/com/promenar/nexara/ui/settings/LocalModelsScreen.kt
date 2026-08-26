@@ -67,6 +67,8 @@ import com.promenar.nexara.data.local.inference.SlotState
 import com.promenar.nexara.data.local.inference.SlotType
 import com.promenar.nexara.data.local.inference.StoredModel
 import com.promenar.nexara.ui.common.SettingsSectionHeader
+import com.promenar.nexara.ui.common.BettboxListGroup
+import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 
@@ -112,17 +114,19 @@ fun LocalModelsScreen(
             }
 
             item {
-                SettingsToggle(
-                    title = stringResource(R.string.local_models_enable_engine),
-                    description = stringResource(R.string.local_models_engine_subtitle),
-                    checked = engineEnabled,
-                    onCheckedChange = viewModel::setEngineEnabled,
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                BettboxListGroup {
+                    SettingsToggle(
+                        title = stringResource(R.string.local_models_enable_engine),
+                        description = stringResource(R.string.local_models_engine_subtitle),
+                        checked = engineEnabled,
+                        onCheckedChange = viewModel::setEngineEnabled,
+                    )
+                }
             }
 
             item {
-                ListItem(
+                BettboxListGroup {
+                    ListItem(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(enabled = !isImporting) {
@@ -154,8 +158,8 @@ fun LocalModelsScreen(
                         }
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    )
+                }
             }
 
             item { SettingsSectionHeader(stringResource(R.string.local_models_active_slots)) }
@@ -291,7 +295,7 @@ fun LocalModelsScreen(
             item { SettingsSectionHeader(stringResource(R.string.local_models_engine_status)) }
 
             item {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
                     Text(
                         text = "llama.cpp · ${if (viewModel.gpuAvailable) "Vulkan GPU" else "CPU"}",
                         style = MaterialTheme.typography.titleMedium,

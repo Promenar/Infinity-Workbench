@@ -78,7 +78,9 @@ class AgentSessionsMaterialContractTest {
         assertThat(source).doesNotContain("fun SessionCard(")
 
         val list = source.substringAfter("LazyColumn(").substringBefore("itemsIndexed")
-        assertThat(list).doesNotContain("Arrangement.spacedBy")
+        assertThat(list).contains("Arrangement.spacedBy(NexaraSpacing.Small)")
+        assertThat(row).contains("shape = RoundedCornerShape(20.dp)")
+        assertThat(source).contains(".bettboxListGroup()")
     }
 
     @Test

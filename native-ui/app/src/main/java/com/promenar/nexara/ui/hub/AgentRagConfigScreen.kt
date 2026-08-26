@@ -69,7 +69,13 @@ fun AgentRagConfigScreen(
         title = stringResource(R.string.agent_rag_title),
         onBack = onNavigateBack
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .bettboxListGroup()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,

@@ -30,6 +30,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.RadioButton
@@ -47,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -57,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.data.rag.RagConfiguration
@@ -116,7 +119,9 @@ internal fun GlobalRagConfigScreenContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(contentPadding),
+                .padding(contentPadding)
+                .bettboxListGroup()
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
 
@@ -234,6 +239,7 @@ internal fun GlobalRagConfigScreenContent(
 
             // === 摘要提示词 ===
             ListItem(
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { showSummaryTemplateEditor = true },
@@ -258,6 +264,7 @@ internal fun GlobalRagConfigScreenContent(
             // === 导航链接 ===
             Column(modifier = Modifier.fillMaxWidth()) {
                 ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { actions.onNavigateToAdvanced() },
@@ -283,6 +290,7 @@ internal fun GlobalRagConfigScreenContent(
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { actions.onNavigateToDebug() },

@@ -20,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -32,6 +33,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -44,6 +46,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.data.manager.ProviderManager
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,7 +98,9 @@ internal fun AdvancedRetrievalScreenContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(contentPadding),
+                .padding(contentPadding)
+                .bettboxListGroup()
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
 
@@ -187,6 +192,7 @@ internal fun AdvancedRetrievalScreenContent(
                 )
 
                 ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     headlineContent = {
                         Text(
                             text = stringResource(R.string.retrieval_hybrid_enable),
@@ -326,6 +332,7 @@ internal fun AdvancedRetrievalScreenContent(
                 )
 
                 ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     headlineContent = {
                         Text(
                             text = stringResource(R.string.retrieval_rewrite_enable),

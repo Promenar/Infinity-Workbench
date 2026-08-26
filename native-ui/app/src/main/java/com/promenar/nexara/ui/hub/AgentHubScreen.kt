@@ -40,6 +40,7 @@ import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 // =====================================================================================
@@ -393,12 +394,15 @@ internal fun AgentHubScreenContent(
             LazyColumn(
                 state = listState,
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
                     .testTag(UiTags.HUB_AGENT_LIST)
-                    .padding(paddingValues),
+                    .padding(paddingValues)
+                    .padding(horizontal = NexaraSpacing.ScreenHorizontal)
+                    .bettboxListGroup(),
                 contentPadding = PaddingValues(
                     start = 0.dp, end = 0.dp,
-                    top = 8.dp, bottom = 24.dp
+                    top = NexaraSpacing.Small,
+                    bottom = NexaraSpacing.Small,
                 ),
             ) {
                 itemsIndexed(state.displayAgents, key = { _, item -> item.agent.id }) { index, item ->

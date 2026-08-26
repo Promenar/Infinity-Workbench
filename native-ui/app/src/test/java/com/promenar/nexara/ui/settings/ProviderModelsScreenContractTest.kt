@@ -108,7 +108,7 @@ class ProviderModelsScreenContractTest {
     }
 
     @Test
-    fun `模型列表保持常驻搜索稳定key零间距和内缩分隔线`() {
+    fun `模型列表保持常驻搜索稳定 key 与独立 Bettbox 分组卡`() {
         val source = readProviderModelsSource()
         val content = extractBetween(
             source,
@@ -122,10 +122,10 @@ class ProviderModelsScreenContractTest {
         assertThat(content).contains("it.name.contains(searchQuery, ignoreCase = true)")
         assertThat(content).contains("it.remoteModelId.contains(searchQuery, ignoreCase = true)")
         assertThat(content).contains("it.id.contains(searchQuery, ignoreCase = true)")
-        assertThat(content).contains("verticalArrangement = Arrangement.spacedBy(0.dp)")
+        assertThat(content).contains("verticalArrangement = Arrangement.spacedBy(8.dp)")
         assertThat(content).contains("itemsIndexed(")
         assertThat(content).contains("key = { _, model -> model.id }")
-        assertThat(content).contains("HorizontalDivider(")
+        assertThat(content).contains("BettboxListGroup {")
     }
 
     @Test
