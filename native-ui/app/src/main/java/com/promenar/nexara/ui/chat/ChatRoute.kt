@@ -117,6 +117,11 @@ internal fun restoreChatOverlay(token: String?): ChatOverlay? = when {
     else -> null
 }
 
+internal fun shouldShowGenerationFailureSnackbar(uiState: ChatUiState): Boolean =
+    uiState.generationNotice != null &&
+        uiState.generationFailureSurface !=
+        com.promenar.nexara.data.generation.GenerationFailureSurface.INLINE_MESSAGE
+
 internal enum class NotificationPermissionDisposition {
     GRANTED,
     SHOW_EXPLANATION,
@@ -359,7 +364,11 @@ fun ChatRoute(
             snackbarHostState.currentSnackbarData?.dismiss()
             return@LaunchedEffect
         }
-        val message = generationErrorMessage ?: uiState.error ?: return@LaunchedEffect
+        val message = when {
+            uiState.error != null -> uiState.error
+            shouldShowGenerationFailureSnackbar(uiState) -> generationErrorMessage
+            else -> null
+        } ?: return@LaunchedEffect
         snackbarAction = chatViewModel::clearError
         snackbarData = NexaraSnackbarData(message, SnackbarType.ERROR, dismissLabel)
         snackbarHostState.currentSnackbarData?.dismiss()

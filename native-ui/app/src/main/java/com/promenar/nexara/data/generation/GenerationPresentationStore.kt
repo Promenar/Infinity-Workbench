@@ -14,12 +14,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
+enum class GenerationFailureSurface {
+    INLINE_MESSAGE,
+    OVERLAY,
+}
+
 data class GenerationPresentationState(
     val taskId: String,
     val sessionId: String,
     val ragPhases: List<RagPhase> = emptyList(),
     val streamingContent: String = "",
     val error: GenerationFailure? = null,
+    val failureSurface: GenerationFailureSurface? = null,
     val providerFailure: ProviderResolution.Failure? = null,
     val generating: Boolean = false,
     val handledFailure: Boolean = false,
@@ -81,6 +87,9 @@ class GenerationPresentationStore {
                 is GenerationEvent.SnapshotChanged -> current.copy(
                     streamingContent = event.snapshot.content,
                     error = event.snapshot.failure,
+                    failureSurface = if (event.snapshot.failure != null) {
+                        GenerationFailureSurface.INLINE_MESSAGE
+                    } else null,
                 )
                 is GenerationEvent.TargetChanged -> current
                 is GenerationEvent.Rejected -> current.copy(
@@ -91,6 +100,7 @@ class GenerationPresentationStore {
                 )
                 is GenerationEvent.PersistenceFailed -> current.copy(
                     error = event.failure,
+                    failureSurface = GenerationFailureSurface.OVERLAY,
                     generating = false,
                     handledFailure = true,
                     phase = GenerationPhase.PERSISTENCE_FAILED,
@@ -149,6 +159,9 @@ class GenerationPresentationStore {
 
         override fun setError(failure: GenerationFailure?) =
             update(sessionId, taskId) { it.copy(error = failure) }
+
+        override fun setFailureSurface(surface: GenerationFailureSurface?) =
+            update(sessionId, taskId) { it.copy(failureSurface = surface) }
 
         override fun setProviderFailure(failure: ProviderResolution.Failure?) =
             update(sessionId, taskId) { it.copy(providerFailure = failure) }

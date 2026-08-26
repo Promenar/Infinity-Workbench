@@ -69,6 +69,7 @@ interface GenerationUiPort {
     fun setGenerating(value: Boolean)
     fun setStreamingContent(value: String)
     fun setError(failure: GenerationFailure?)
+    fun setFailureSurface(surface: GenerationFailureSurface?)
     fun setProviderFailure(failure: ProviderResolution.Failure?)
     fun onHandledFailure()
     fun addPostProcessTask(type: PostProcessType, detail: String): String
@@ -331,6 +332,9 @@ internal class DefaultChatGenerationRuntime(
     override suspend fun persist(request: GenerationRequest, snapshot: GenerationSnapshot) {
         val calls = snapshot.toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
         val failureEnvelope = snapshot.failure?.let(GenerationFailureCodec::encode)
+        ui.setFailureSurface(
+            snapshot.failure?.let { GenerationFailureSurface.INLINE_MESSAGE },
+        )
         ui.setError(snapshot.failure)
         ui.setStreamingContent(snapshot.content)
         messageManager.updateMessageContent(
@@ -406,6 +410,7 @@ internal class DefaultChatGenerationRuntime(
                 approval,
             )
             if (creation == ToolApprovalCreation.CONFLICT) {
+                ui.setFailureSurface(GenerationFailureSurface.OVERLAY)
                 ui.setError(
                     GenerationFailure.busy(
                         technical = "tool approval conflict: sessionId=${request.sessionId}",
@@ -564,6 +569,13 @@ internal class DefaultChatGenerationRuntime(
         generationFailure: GenerationFailure,
         failure: ProviderResolution.Failure?,
     ) {
+        ui.setFailureSurface(
+            if (request.assistantMessageIdToReplace == null) {
+                GenerationFailureSurface.INLINE_MESSAGE
+            } else {
+                GenerationFailureSurface.OVERLAY
+            },
+        )
         ui.setError(generationFailure)
         ui.setProviderFailure(failure)
         ui.setGenerating(false)
@@ -588,6 +600,7 @@ internal class DefaultChatGenerationRuntime(
         request: GenerationRequest,
         generationFailure: GenerationFailure,
     ) {
+        ui.setFailureSurface(GenerationFailureSurface.OVERLAY)
         ui.setError(generationFailure)
         ui.setProviderFailure(null)
         ui.setGenerating(false)

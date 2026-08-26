@@ -12,6 +12,7 @@ import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -183,7 +184,14 @@ class AgentEditViewModel(
     fun setIcon(value: String) {
         _selectedIcon.value = value
         _avatarPath.value = null
-        scheduleSave()
+        val agentId = _initialAgent.value?.id ?: return
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            // 头像选择是一次明确提交；离开页面不能像普通文本防抖一样取消它。
+            withContext(NonCancellable) {
+                persistCurrentAgent(agentId)
+            }
+        }
     }
 
     fun setAvatarPath(value: String?) {

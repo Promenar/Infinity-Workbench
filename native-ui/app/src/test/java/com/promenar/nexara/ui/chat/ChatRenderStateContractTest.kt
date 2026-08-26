@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.generation.GenerationFailureSurface
 import com.promenar.nexara.domain.generation.GenerationFailure
 import com.promenar.nexara.domain.generation.GenerationFailureCode
 import com.promenar.nexara.ui.testing.UiTags
@@ -211,6 +212,42 @@ class ChatRenderStateContractTest {
         )
 
         assertThat(chatRenderStateTag(state)).isEqualTo(UiTags.CHAT_STATE_ERROR)
+    }
+
+    @Test
+    fun `会话内已持久化错误气泡不应重复触发顶部错误提示`() {
+        val moduleRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
+            if (root.resolve("src/main").isDirectory) root else root.resolve("app")
+        }
+        val routeSource = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/ChatRoute.kt",
+        ).readText()
+
+        assertThat(routeSource).contains("shouldShowGenerationFailureSnackbar(uiState)")
+        assertThat(routeSource).doesNotContain(
+            "val message = generationErrorMessage ?: uiState.error ?: return@LaunchedEffect",
+        )
+        val viewModelSource = moduleRoot.resolve(
+            "src/main/java/com/promenar/nexara/ui/chat/ChatViewModel.kt",
+        ).readText()
+        assertThat(viewModelSource).doesNotContain("task.error?.let")
+
+        assertThat(
+            shouldShowGenerationFailureSnackbar(
+                ChatUiState(
+                    generationNotice = GenerationFailureNotice.from(GenerationFailure.unknown(null)),
+                    generationFailureSurface = GenerationFailureSurface.INLINE_MESSAGE,
+                ),
+            ),
+        ).isFalse()
+        assertThat(
+            shouldShowGenerationFailureSnackbar(
+                ChatUiState(
+                    generationNotice = GenerationFailureNotice.from(GenerationFailure.unknown(null)),
+                    generationFailureSurface = GenerationFailureSurface.OVERLAY,
+                ),
+            ),
+        ).isTrue()
     }
 
     @Test

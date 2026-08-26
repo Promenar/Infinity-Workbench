@@ -148,6 +148,7 @@ data class ChatUiState(
     val streamingContent: String = "",
     val error: String? = null,
     val generationNotice: UiStatusNotice? = null,
+    val generationFailureSurface: com.promenar.nexara.data.generation.GenerationFailureSurface? = null,
     val backgroundWarning: BackgroundGenerationWarning? = null,
     val approvalRequest: ApprovalRequest? = null,
     val isApprovalSubmitting: Boolean = false,
@@ -301,6 +302,9 @@ class ChatViewModel(
     private val _streamingContent = MutableStateFlow("")
     private val _error = MutableStateFlow<String?>(null)
     private val _generationNotice = MutableStateFlow<UiStatusNotice?>(null)
+    private val _generationFailureSurface = MutableStateFlow<
+        com.promenar.nexara.data.generation.GenerationFailureSurface?
+    >(null)
     private val _backgroundServiceStoppedError =
         MutableStateFlow<BackgroundServiceStoppedError?>(null)
     private val _backgroundWarning = MutableStateFlow<BackgroundGenerationWarning?>(null)
@@ -384,6 +388,7 @@ class ChatViewModel(
         _streamingContent,
         _error,
         _generationNotice,
+        _generationFailureSurface,
         _backgroundServiceStoppedError,
         _backgroundWarning,
         _isApprovalSubmitting,
@@ -397,9 +402,10 @@ class ChatViewModel(
         val streamingContent = args[6] as String
         val error = args[7] as String?
         val generationNotice = args[8] as UiStatusNotice?
-        val backgroundServiceStoppedError = args[9] as BackgroundServiceStoppedError?
-        val backgroundWarning = args[10] as BackgroundGenerationWarning?
-        val isApprovalSubmitting = args[11] as Boolean
+        val generationFailureSurface = args[9] as com.promenar.nexara.data.generation.GenerationFailureSurface?
+        val backgroundServiceStoppedError = args[10] as BackgroundServiceStoppedError?
+        val backgroundWarning = args[11] as BackgroundGenerationWarning?
+        val isApprovalSubmitting = args[12] as Boolean
 
         val session = state.sessions.find { it.id == sessionId }
         if (session != null) {
@@ -415,6 +421,7 @@ class ChatViewModel(
             streamingContent = streamingContent,
             error = backgroundServiceStoppedError?.message ?: error,
             generationNotice = generationNotice,
+            generationFailureSurface = generationFailureSurface,
             backgroundWarning = backgroundWarning,
             approvalRequest = session?.approvalRequest,
             isApprovalSubmitting = isApprovalSubmitting,
@@ -455,6 +462,7 @@ class ChatViewModel(
                             pendingDraftClearTaskId = null
                             consumeAcceptedDraft(sessionId)
                         }
+                        _generationFailureSurface.value = presentation.failureSurface
                         _generationNotice.value = presentation.error?.let(GenerationFailureNotice::from)
                         _providerResolutionFailure.value = presentation.providerFailure
                         _isGenerating.value = presentation.generating
@@ -518,7 +526,6 @@ class ChatViewModel(
                             com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED,
                             com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL,
                         )
-                        task.error?.let { _generationNotice.value = GenerationFailureNotice.from(it.failure) }
                         _generationStatus.value = when (task.phase) {
                             com.promenar.nexara.domain.generation.GenerationPhase.PREPARING,
                             com.promenar.nexara.domain.generation.GenerationPhase.BUILDING_CONTEXT,
@@ -1200,6 +1207,7 @@ class ChatViewModel(
         _ragPhases.value = emptyList()
         _error.value = null
         _generationNotice.value = null
+        _generationFailureSurface.value = null
         _backgroundServiceStoppedError.value = null
         _backgroundWarning.value = null
         foregroundTrackedTaskId = null
@@ -1397,6 +1405,7 @@ class ChatViewModel(
 
     fun clearError() {
         _generationNotice.value = null
+        _generationFailureSurface.value = null
         if (_backgroundServiceStoppedError.value != null) {
             _backgroundServiceStoppedError.value = null
             return

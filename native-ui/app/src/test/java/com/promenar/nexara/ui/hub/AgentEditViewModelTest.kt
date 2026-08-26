@@ -247,13 +247,25 @@ class AgentEditViewModelTest {
     }
 
     @Test
-    fun `setIcon clears avatar path`() = runTest {
-        every { repo.observeById(any()) } returns flowOf(null)
+    fun `setIcon immediately persists preset and clears custom avatar`() = runTest {
+        val agent = Agent(
+            id = "a1",
+            name = "Agent",
+            icon = "✨",
+            avatarPath = "/avatar/custom.png",
+        )
+        every { repo.observeById("a1") } returns flowOf(agent)
         val vm = AgentEditViewModel(repo, RagConfigPersistence(prefs))
-        vm.setAvatarPath("/some/path.png")
+        vm.loadAgent("a1")
+
         vm.setIcon("🧪")
+        runCurrent()
+
         assertThat(vm.selectedIcon.value).isEqualTo("🧪")
         assertThat(vm.avatarPath.value).isNull()
+        coVerify(exactly = 1) {
+            repo.update(match { it.id == "a1" && it.icon == "🧪" && it.avatarPath == null })
+        }
     }
 
     @Test

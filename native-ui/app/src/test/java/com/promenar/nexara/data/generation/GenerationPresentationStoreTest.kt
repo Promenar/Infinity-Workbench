@@ -48,6 +48,8 @@ class GenerationPresentationStoreTest {
             GenerationEvent.SnapshotChanged(GenerationSnapshot(content = "content", failure = snapshotFailure)),
         )
         assertThat(store.observe("A").value?.error).isSameInstanceAs(snapshotFailure)
+        assertThat(store.observe("A").value?.failureSurface)
+            .isEqualTo(GenerationFailureSurface.INLINE_MESSAGE)
         store.accept(
             "A",
             "task-A",
@@ -67,6 +69,8 @@ class GenerationPresentationStoreTest {
         assertThat(store.observe("A").value?.error).isSameInstanceAs(persistenceFailure)
         assertThat(store.observe("A").value?.phase)
             .isEqualTo(com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED)
+        assertThat(store.observe("A").value?.failureSurface)
+            .isEqualTo(GenerationFailureSurface.OVERLAY)
         store.accept("A", "task-A", GenerationEvent.Failed(failedFailure))
         assertThat(store.observe("A").value?.error).isSameInstanceAs(failedFailure)
 

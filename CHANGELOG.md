@@ -6,10 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### 真机 Provider 恢复与会话交互修复（2026-08-26）
 
+- **Agent 内置头像持久化**：从自定义图片切换到任一内置向量头像时，不再依赖 1 秒文本防抖；选择会立即提交 Room，并在页面销毁后继续完成这次明确写入。Agent 首页继续只读取持久化 `icon/avatarPath`，因此返回首页后会显示新内置头像而不是旧自定义图片或默认图。
+- **错误提示去重**：生成失败新增明确的呈现面标记；已经持久化为会话内错误气泡的网络、Provider 和流式失败不再重复触发输入框上方 Snackbar。只有尚未形成消息、文档预算前置阻断、消息持久化失败等无内联气泡的错误保留顶层提示。
 - **Provider 配置恢复**：未知协议的主 Provider 不再从管理页消失，而是与未知额外 Provider 一样显式呈现；点击可进入安全修复流程，保留名称、地址和凭证存在状态，但在用户明确选择受支持协议并替换或清除凭证前继续禁止联网，避免把历史协议静默伪装成 OpenAI-compatible。
 - **消息轮次删除**：新建助手消息记录对应用户消息父 ID；删除用户消息会把同轮助手、工具和错误消息作为一组从 Room 原子删除，旧数据即使缺少父 ID 也按相邻轮次兼容处理。孤立错误改为独立 Material 3 错误容器，可长按删除，不再黏到上一条成功回复底部；撤销删除同步恢复完整轮次。
 - **会话视觉与触感**：图片附件删除动作改为缩略图右上角独立圆形按钮；思考框到正文的线和点全部移除，工具调用链连接器保留。底部三按钮水滴导航的尺寸、形状与动画不变，仅在真实切换标签时增加由系统/OEM 调校的分段 tick 触感，并遵循应用触感开关。流式正文尾部淡入降低明暗跳变并延长缓动，减少逐字符机械闪现。
-- **验证与候选 APK**：全量 JVM 2552 项（0 failure/error、14 skip）、100/100 Screenshot、AndroidTest 编译、Lint（0 Error/Fatal）与 Debug 构建通过；正式签名 R8 APK 从 clean 工作树构建并通过包身份、唯一 signer、敏感内容、本地推理制品排除、R8、16 KiB zipalign 和 checksum 验真。APK 18,649,988 bytes，SHA-256 `e1b14bf36c0bf0e16aaa7dfd9121ed301b3f4fde59ca73f95077ff5525123698`；本轮无连接设备，当前 APK 的物理真机安装与 OEM 线性马达手感由用户继续验收。
+- **验证与候选 APK**：全量 JVM 2553 项（0 failure/error、14 skip）、100/100 Screenshot、AndroidTest 编译与 Lint（0 Error/Fatal）通过；正式签名 R8 APK 从 clean 工作树构建并通过包身份、唯一 signer、敏感内容、本地推理制品排除、R8、16 KiB zipalign 和 checksum 验真。最新 APK 18,666,372 bytes，SHA-256 `b09af07ac8864ecab078e5933f54a9fa13d31d598b699350e3e0b5b0f6a52514`；本轮无连接设备，当前 APK 的物理真机安装与头像/错误呈现复测由用户继续验收。
 
 ### v0.2.1-beta 工具链、工作区与数据继承收口（2026-08-25）
 
