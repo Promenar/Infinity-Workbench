@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 - **设置与管理列表**：设置分组改为 20dp 圆角 `surfaceContainer` 连续卡片，标准 `ListItem` 恢复 Material 3 主副文字、24dp 前导图标和稳定触控节奏；Provider 与模型管理列表同步使用同一填充表面、弱分隔与首尾圆角，不再散落为贴背景的自定义文本行。
 - **Bettbox 式底部导航**：移动端主导航改为 36dp 圆角的浮动 `surfaceContainer` 导航座，使用弱描边、阴影、24dp 图标、`secondaryContainer` 选中项和 250ms 槽位权重动画；原有真实标签切换触感继续保留。
 - **完整外观设置**：新增跟随系统/浅色/深色三模式卡、种子色盘、Android 动态取色、深色纯黑背景及 80%–140% 全局文字缩放。种子色通过 Material Color Utilities 的 Tonal Spot 方案生成完整明暗色阶，偏好均即时持久化。
-- **当前验证**：API 35 模拟器已实图检查主屏、设置首页、外观页和 Provider 空状态；外观页 3/3 设备交互测试通过。全量 JVM 2564 项（0 failure/error、14 skip）、101/101 Screenshot、AndroidTest 编译与 Lint（0 Error/Fatal）通过；`assembleMinifiedTest --rerun-tasks` 53/53 tasks 成功。当前进程未注入发行签名变量，未读取项目外签名材料，因此本轮没有生成或冒充正式签名 APK。
+- **当前验证与正式 APK**：API 35 模拟器已实图检查主屏、设置首页、外观页和 Provider 空状态；外观页 3/3 设备交互测试通过。全量 JVM 2564 项（0 failure/error、14 skip）、101/101 Screenshot、AndroidTest 编译与 Lint（0 Error/Fatal）通过。当前源码经 clean 正式签名 Release 构建，66 tasks 中 64 executed、2 up-to-date；APK 18,909,143 bytes，SHA-256 `78a2e2e3824a3a5067f47a5c73752fe6313623e4dae652f57aa224d3a2163a95`，包身份、唯一 signer、登记证书、敏感内容与本地推理制品排除、R8 四类输出、16 KiB zipalign 和 checksum 均通过。
 
 ### 会话可靠性、诊断与连续列表再收敛（2026-08-26）
 

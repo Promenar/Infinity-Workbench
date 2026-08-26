@@ -68,7 +68,7 @@ final result: passed
 - `ThemeSettingsInteractionTest`：API 35 设备 3/3 通过，覆盖模式选中语义、动态色开关、最小触控目标和 2.0x 字体。
 - API 35 通过 UI tree 坐标驱动并逐张检查主屏、设置首页、外观页与 Provider 空状态；应用 crash buffer 为空。
 - 全量 JVM 2564 项（0 failure/error、14 skip）、101/101 Screenshot、AndroidTest Kotlin 编译与 Lint 0 Error/Fatal 通过；`assembleMinifiedTest --rerun-tasks` 53/53 tasks 成功。
-- 当前进程未注入发行签名变量，且未读取项目外签名材料；本轮 R8 结果是非发行的 release-equivalent 诊断包，不能替代正式签名 APK。模拟器视觉通过也不替代用户物理真机字体与 OEM 触感验收。
+- 当前源码已完成 clean 正式签名 Release 构建和统一 fail-closed 验真；APK 18,909,143 bytes，SHA-256 `78a2e2e3824a3a5067f47a5c73752fe6313623e4dae652f57aa224d3a2163a95`，包身份、唯一 signer、登记证书、敏感内容与本地推理制品排除、R8 四类输出、16 KiB zipalign 和 checksum 均通过。模拟器视觉通过仍不替代用户物理真机字体与 OEM 触感验收。
 
 final result: passed-with-physical-device-pending
 
