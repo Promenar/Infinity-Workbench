@@ -44,6 +44,7 @@ import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.status.UiStatusNotice
+import com.promenar.nexara.ui.renderer.ImageLightbox
 import com.promenar.nexara.ui.theme.NexaraCustomShapes
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
@@ -792,15 +793,15 @@ private fun InlineToolRow(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             toolImages.take(4).forEach { imageModel ->
-                                coil3.compose.AsyncImage(
-                                    model = imageModel,
+                                ChatImageThumbnail(
+                                    imageModel = imageModel,
                                     contentDescription = stringResource(R.string.chat_cd_tool_image),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .heightIn(min = 120.dp, max = 220.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(MaterialTheme.colorScheme.surfaceContainerLow),
-                                    contentScale = ContentScale.Fit
+                                    contentScale = ContentScale.Fit,
                                 )
                             }
                         }
@@ -1011,14 +1012,14 @@ fun UserMessageBubble(
                             verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)
                         ) {
                             message.userImages!!.forEach { dataUrl ->
-                                coil3.compose.AsyncImage(
-                                    model = dataUrl,
+                                ChatImageThumbnail(
+                                    imageModel = dataUrl,
                                     contentDescription = stringResource(R.string.chat_cd_attached_image),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .heightIn(max = 200.dp)
                                         .clip(MaterialTheme.shapes.small),
-                                    contentScale = ContentScale.FillWidth
+                                    contentScale = ContentScale.FillWidth,
                                 )
                             }
                         }
@@ -1062,6 +1063,25 @@ fun UserMessageBubble(
             ),
             modifier = Modifier.padding(top = 4.dp, end = 4.dp)
         )
+    }
+}
+
+@Composable
+private fun ChatImageThumbnail(
+    imageModel: String,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Fit,
+) {
+    var showLightbox by remember(imageModel) { mutableStateOf(false) }
+    coil3.compose.AsyncImage(
+        model = imageModel,
+        contentDescription = contentDescription,
+        modifier = modifier.clickable { showLightbox = true },
+        contentScale = contentScale,
+    )
+    if (showLightbox) {
+        ImageLightbox(imageUrl = imageModel, onDismiss = { showLightbox = false })
     }
 }
 

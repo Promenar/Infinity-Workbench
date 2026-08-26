@@ -74,6 +74,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -374,6 +375,7 @@ class ChatViewModel(
     }
 
     private var generationJob: Job? = null
+    private var fontSizePersistenceJob: Job? = null
     private val sendPreparationMutex = Mutex()
     private val approvalSubmissionMutex = Mutex()
 
@@ -1616,6 +1618,7 @@ class ChatViewModel(
     }
 
     fun updateFontSize(size: Int) {
+        fontSizePersistenceJob?.cancel()
         val sessionId = _currentSessionId.value ?: return
         val session = store.getSession(sessionId) ?: return
         val options = session.options ?: SessionOptions()
@@ -1629,6 +1632,12 @@ class ChatViewModel(
         store.updateSession(sessionId) { s ->
             val options = s.options ?: SessionOptions()
             s.copy(options = options.copy(fontSize = size))
+        }
+        fontSizePersistenceJob?.cancel()
+        fontSizePersistenceJob = viewModelScope.launch {
+            delay(FONT_SIZE_PERSISTENCE_DEBOUNCE_MS)
+            val latest = store.getSession(sessionId)?.options ?: SessionOptions()
+            sessionManager.updateSessionOptions(sessionId, latest.copy(fontSize = size))
         }
     }
 
@@ -1864,6 +1873,7 @@ class ChatViewModel(
         )
         private val FOREGROUND_STOPPING_PHASES = TERMINAL_GENERATION_PHASES +
             com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL
+        private const val FONT_SIZE_PERSISTENCE_DEBOUNCE_MS = 180L
         private const val DRAFT_PENDING_START = "__pending_generation_start__"
 
         fun factory(

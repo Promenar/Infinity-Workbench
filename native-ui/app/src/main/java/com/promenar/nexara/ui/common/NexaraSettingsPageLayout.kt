@@ -33,6 +33,7 @@ fun NexaraSettingsPageLayout(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     horizontalContentPadding: Dp = NexaraSpacing.ScreenHorizontal,
+    showTopBar: Boolean = true,
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
@@ -94,7 +95,7 @@ fun NexaraSettingsPageLayout(
             containerColor = MaterialTheme.colorScheme.background,
             contentWindowInsets = WindowInsets.systemBars,
             topBar = {
-                TopAppBar(
+                if (showTopBar) TopAppBar(
                     title = {
                         Text(
                             text = title,

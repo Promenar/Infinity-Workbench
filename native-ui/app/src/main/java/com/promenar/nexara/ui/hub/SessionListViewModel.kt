@@ -133,7 +133,14 @@ class SessionListViewModel(
 
     fun deleteSession(id: String) {
         viewModelScope.launch {
-            runSessionOperation { sessionManager.deleteSession(id) }
+            runSessionOperation {
+                sessionManager.deleteSession(id).also { deleted ->
+                    com.promenar.nexara.utils.NexaraLogger.diagnostic(
+                        "session.delete",
+                        mapOf("sessionId" to id, "deleted" to deleted),
+                    )
+                }
+            }
         }
     }
 

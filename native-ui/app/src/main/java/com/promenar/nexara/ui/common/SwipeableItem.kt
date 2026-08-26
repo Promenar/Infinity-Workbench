@@ -43,6 +43,7 @@ fun SwipeableItem(
     onEdit: (() -> Unit)? = null,
     isPinned: Boolean = false,
     shape: Shape = RoundedCornerShape(12.dp),
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
     val configuration = LocalConfiguration.current
@@ -55,7 +56,7 @@ fun SwipeableItem(
     val scope = rememberCoroutineScope()
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(shape)
     ) {

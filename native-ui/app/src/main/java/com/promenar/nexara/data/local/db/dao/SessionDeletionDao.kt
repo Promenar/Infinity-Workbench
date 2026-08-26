@@ -27,8 +27,14 @@ interface SessionDeletionDao {
     @Query("DELETE FROM vectorization_tasks WHERE session_id = :sessionId OR workspace_root_uuid = :workspaceRootUuid")
     suspend fun deleteVectorizationTasks(sessionId: String, workspaceRootUuid: String): Int
 
+    @Query("DELETE FROM vectorization_tasks WHERE session_id = :sessionId")
+    suspend fun deleteVectorizationTasksBySession(sessionId: String): Int
+
     @Query("DELETE FROM vectors WHERE session_id = :sessionId OR doc_id IN (:fileUuids) OR file_uuid IN (:fileUuids)")
     suspend fun deleteVectors(sessionId: String, fileUuids: List<String>): Int
+
+    @Query("DELETE FROM vectors WHERE session_id = :sessionId")
+    suspend fun deleteVectorsBySession(sessionId: String): Int
 
     @Query("DELETE FROM document_tags WHERE doc_id IN (:fileUuids)")
     suspend fun deleteDocumentTags(fileUuids: List<String>): Int
@@ -36,14 +42,23 @@ interface SessionDeletionDao {
     @Query("DELETE FROM kg_edges WHERE session_id = :sessionId OR doc_id IN (:fileUuids) OR file_uuid IN (:fileUuids)")
     suspend fun deleteKgEdges(sessionId: String, fileUuids: List<String>): Int
 
+    @Query("DELETE FROM kg_edges WHERE session_id = :sessionId")
+    suspend fun deleteKgEdgesBySession(sessionId: String): Int
+
     @Query("DELETE FROM kg_nodes WHERE session_id = :sessionId OR file_uuid IN (:fileUuids)")
     suspend fun deleteKgNodes(sessionId: String, fileUuids: List<String>): Int
+
+    @Query("DELETE FROM kg_nodes WHERE session_id = :sessionId")
+    suspend fun deleteKgNodesBySession(sessionId: String): Int
 
     @Query("DELETE FROM kg_jit_cache")
     suspend fun invalidateKgJitCache(): Int
 
     @Query("DELETE FROM file_versions WHERE workspace_root_uuid = :workspaceRootUuid OR created_by_session_id = :sessionId")
     suspend fun deleteFileVersions(sessionId: String, workspaceRootUuid: String): Int
+
+    @Query("DELETE FROM file_versions WHERE created_by_session_id = :sessionId")
+    suspend fun deleteFileVersionsBySession(sessionId: String): Int
 
     @Query("DELETE FROM messages WHERE session_id = :sessionId")
     suspend fun deleteMessages(sessionId: String): Int

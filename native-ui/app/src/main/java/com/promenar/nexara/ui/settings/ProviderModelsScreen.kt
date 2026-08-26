@@ -601,7 +601,12 @@ internal fun ProviderModelsModelRow(
             .ifEmpty { listOf(model.type) }
             .distinct()
     }
-    val remainingCapabilityCount = (summaryCapabilities.size - 2).coerceAtLeast(0)
+    val localizedCapabilities = mutableListOf<String>()
+    for (capability in summaryCapabilities) {
+        val labelResource = capabilityLabelResource(capability)
+        localizedCapabilities += if (labelResource != null) stringResource(labelResource) else capability
+    }
+    val capabilitySummary = localizedCapabilities.joinToString(" · ")
 
     Column(
         modifier = modifier
@@ -633,36 +638,14 @@ internal fun ProviderModelsModelRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            androidx.compose.foundation.layout.FlowRow(
+            Text(
+                text = capabilitySummary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                summaryCapabilities.take(2).forEach { capability ->
-                    val labelRes = capabilityLabelResource(capability)
-                    Surface(
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    ) {
-                        Text(
-                            text = labelRes?.let { stringResource(it) } ?: capability,
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        )
-                    }
-                }
-                if (remainingCapabilityCount > 0) {
-                    Text(
-                        text = "+$remainingCapabilityCount",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
-                    )
-                }
-            }
+            )
             Switch(
                 checked = model.enabled,
                 onCheckedChange = { onToggle() },

@@ -342,7 +342,7 @@ internal fun AgentHubScreenContent(
                     .semantics(mergeDescendants = true) {},
             ) {
                 NexaraSearchTopBar(
-                    title = stringResource(R.string.hub_title),
+                    title = null,
                     query = state.searchQuery,
                     searchActive = state.searchActive,
                     onQueryChange = actions.onSearch,

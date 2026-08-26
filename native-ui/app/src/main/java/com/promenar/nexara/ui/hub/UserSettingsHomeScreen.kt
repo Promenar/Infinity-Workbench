@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.hub
 
 import android.app.Activity
+import android.content.Intent
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
@@ -32,6 +34,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,12 +56,14 @@ import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.R
 import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.settings.SettingsAsyncErrorCode
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.avatar.rememberAvatarCropLauncher
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,6 +76,8 @@ fun UserSettingsHomeScreen(
     val userAvatar by viewModel.userAvatar.collectAsState()
     val language by viewModel.language.collectAsState()
     val settingsError by viewModel.settingsError.collectAsState()
+    val diagnosticsChooserTitle = stringResource(R.string.settings_diagnostics_export)
+    val coroutineScope = rememberCoroutineScope()
 
     var showNameEditor by remember { mutableStateOf(false) }
     var editingName by remember { mutableStateOf(userName) }
@@ -87,6 +94,20 @@ fun UserSettingsHomeScreen(
             error = settingsError,
             localInferenceAvailable = BuildConfig.LOCAL_INFERENCE_AVAILABLE
         )
+    }
+    val exportDiagnostics: () -> Unit = {
+        coroutineScope.launch {
+            val file = com.promenar.nexara.utils.NexaraLogger.prepareDiagnosticExport(context)
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/x-ndjson"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(
+                Intent.createChooser(intent, diagnosticsChooserTitle),
+            )
+        }
     }
 
     val actions = UserSettingsHomeScreenActions(
@@ -116,6 +137,7 @@ fun UserSettingsHomeScreen(
                 )
             },
             onRetryError = viewModel::retryLastError,
+            onExportDiagnostics = exportDiagnostics,
         )
 
     UserSettingsHomeScreenContent(state = state, actions = actions)
@@ -160,6 +182,7 @@ internal data class UserSettingsHomeScreenActions(
     val onAboutClick: () -> Unit = {},
     val onOpenGithub: () -> Unit = {},
     val onRetryError: () -> Unit = {},
+    val onExportDiagnostics: () -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -172,6 +195,7 @@ internal fun UserSettingsHomeScreenContent(
         title = stringResource(R.string.settings_title),
         modifier = Modifier.testTag(UiTags.SETTINGS_ROOT),
         horizontalContentPadding = 0.dp,
+        showTopBar = false,
     ) { contentPadding ->
         LazyColumn(
             modifier = Modifier
@@ -295,6 +319,11 @@ internal fun UserSettingsHomeScreenContent(
                         subtitle = stringResource(R.string.settings_backup_desc),
                         onClick = { actions.onNavigateToSecondary("backup_settings") },
                     )
+                    UserSettingsNavigationItem(
+                        title = stringResource(R.string.settings_diagnostics_export),
+                        subtitle = stringResource(R.string.settings_diagnostics_export_desc),
+                        onClick = actions.onExportDiagnostics,
+                    )
                 }
             }
 
@@ -326,36 +355,11 @@ private fun UserSettingsNavigationItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    ListItem(
-        modifier = modifier.clickable(
-            role = Role.Button,
-            onClick = onClick,
-        ),
-        headlineContent = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontSize = 16.sp,
-                    lineHeight = 24.sp,
-                    fontWeight = FontWeight.Normal,
-                ),
-            )
-        },
-        supportingContent = {
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    fontWeight = FontWeight.Normal,
-                ),
-            )
-        },
-        colors = ListItemDefaults.colors(
-            containerColor = Color.Transparent,
-            headlineColor = MaterialTheme.colorScheme.onSurface,
-            supportingColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
+    NexaraSettingsItem(
+        title = title,
+        subtitle = subtitle,
+        onClick = onClick,
+        modifier = modifier.padding(horizontal = NexaraSpacing.ScreenHorizontal),
     )
 }
 

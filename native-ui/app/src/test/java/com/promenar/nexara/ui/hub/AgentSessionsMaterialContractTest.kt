@@ -62,14 +62,18 @@ class AgentSessionsMaterialContractTest {
     }
 
     @Test
-    fun `session rows are continuous transparent Material list items`() {
+    fun `session rows use explicit compact typography rhythm`() {
         val source = sessionsSource.readText()
         val row = source.substringAfter("fun SessionListItem(")
             .substringBefore("private fun EmptySessionsState(")
 
-        assertThat(row).contains("ListItem(")
-        assertThat(row).contains("containerColor = Color.Transparent")
+        assertThat(row).contains("Row(")
         assertThat(row).contains("Modifier.clickable(")
+        assertThat(row).contains("fontSize = 17.sp")
+        assertThat(row).contains("lineHeight = 22.sp")
+        assertThat(row).contains("Spacer(modifier = Modifier.height(6.dp))")
+        assertThat(row).contains("fontSize = 14.sp")
+        assertThat(row).contains("lineHeight = 19.sp")
         assertThat(row).doesNotContain("NexaraGlassCard")
         assertThat(source).doesNotContain("fun SessionCard(")
 

@@ -11,6 +11,24 @@ import com.promenar.nexara.infra.util.Sha256Utils
 import java.io.File
 
 class RoomSessionDeletionTransaction(private val database: NexaraDatabase) {
+    suspend fun deleteWithoutWorkspace(sessionId: String): Boolean = database.withTransaction {
+        val dao = database.sessionDeletionDao()
+        dao.deleteAttachments(sessionId)
+        dao.deleteToolLedger(sessionId)
+        dao.deleteArtifacts(sessionId)
+        dao.deleteContextSummaries(sessionId)
+        dao.deleteTaskNodes(sessionId)
+        dao.deleteAuditLogs(sessionId)
+        dao.deleteVectorizationTasksBySession(sessionId)
+        dao.deleteVectorsBySession(sessionId)
+        dao.deleteKgEdgesBySession(sessionId)
+        dao.deleteKgNodesBySession(sessionId)
+        dao.invalidateKgJitCache()
+        dao.deleteFileVersionsBySession(sessionId)
+        dao.deleteMessages(sessionId)
+        dao.deleteSession(sessionId) == 1
+    }
+
     suspend fun delete(target: SessionDeletionTarget, operationId: String) {
         database.withTransaction {
             validatePreparedJournal(target, operationId)

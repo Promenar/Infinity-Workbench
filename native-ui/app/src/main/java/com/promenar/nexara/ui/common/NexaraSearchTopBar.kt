@@ -47,7 +47,7 @@ import com.promenar.nexara.ui.theme.NexaraSpacing
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NexaraSearchTopBar(
-    title: String,
+    title: String? = null,
     query: String,
     searchActive: Boolean,
     onQueryChange: (String) -> Unit,
@@ -122,13 +122,15 @@ fun NexaraSearchTopBar(
                         ),
                     )
                 } else {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    title?.takeIf(String::isNotBlank)?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         },

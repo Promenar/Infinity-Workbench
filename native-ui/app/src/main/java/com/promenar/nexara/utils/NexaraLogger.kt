@@ -5,32 +5,81 @@ import android.util.Log
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.Executors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 object NexaraLogger {
     private const val TAG = "NexaraLogger"
     private const val LOG_FILE_NAME = "nexara_logs.txt"
+    private const val DIAGNOSTIC_FILE_NAME = "nexara_diagnostics.jsonl"
+    private const val MAX_DIAGNOSTIC_BYTES = 512 * 1024L
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
+    private val diagnosticExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "nexara-diagnostics").apply { isDaemon = true }
+    }
 
     private val isAndroid = System.getProperty("java.vendor") == "The Android Project"
 
     fun init(context: Context) {
         if (!isAndroid) return
         try {
-            if (com.promenar.nexara.BuildConfig.DEBUG) {
-                val logFile = getLogFile(context)
-                if (!logFile.exists()) {
-                    logFile.createNewFile()
-                }
+            diagnosticExecutor.execute {
+                runCatching { getDiagnosticFile(context).let { if (!it.exists()) it.createNewFile() } }
+            }
+            if (com.promenar.nexara.BuildConfig.DEBUG) getLogFile(context).let {
+                if (!it.exists()) it.createNewFile()
             }
 
             val originalHandler = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+                diagnostic("app.uncaught", mapOf(
+                    "thread" to thread.name.take(40),
+                    "exception" to throwable::class.java.simpleName.take(60),
+                ))
                 logError("FATAL EXCEPTION", throwable)
                 originalHandler?.uncaughtException(thread, throwable)
             }
         } catch (e: Exception) {
             // Ignored
         }
+    }
+
+    /**
+     * 发行版可用的有界诊断事件。调用方只能传标识符、计数和状态，不得传消息正文、
+     * Prompt、凭据或完整 URL；这里仍会执行统一脱敏并限制单字段长度。
+     */
+    fun diagnostic(event: String, fields: Map<String, Any?> = emptyMap()) {
+        if (!isAndroid) return
+        val context = com.promenar.nexara.NexaraApplication.instance ?: return
+        diagnosticExecutor.execute { runCatching {
+            val safeEvent = event.replace(Regex("[^A-Za-z0-9_.-]"), "_").take(64)
+            val payload = org.json.JSONObject().apply {
+                put("timestamp", System.currentTimeMillis())
+                put("event", safeEvent)
+                sanitizeDiagnosticFields(fields).forEach { (key, value) ->
+                    put(key, value)
+                }
+            }.toString()
+            val file = getDiagnosticFile(context)
+            file.appendText(payload + "\n")
+            if (file.length() > MAX_DIAGNOSTIC_BYTES) {
+                val retained = file.readLines().takeLast(800)
+                file.writeText(retained.joinToString("\n", postfix = "\n"))
+            }
+        } }
+    }
+
+    fun getDiagnosticFile(context: Context): File = File(context.filesDir, DIAGNOSTIC_FILE_NAME)
+
+    suspend fun prepareDiagnosticExport(context: Context): File = withContext(Dispatchers.IO) {
+        getDiagnosticFile(context).also { file ->
+            if (!file.exists()) file.createNewFile()
+        }
+    }
+
+    fun clearDiagnostics(context: Context) {
+        getDiagnosticFile(context).writeText("")
     }
 
     fun log(message: String) {
@@ -144,3 +193,22 @@ object NexaraLogger {
         if (file.exists()) file.writeText("")
     }
 }
+
+private val ForbiddenDiagnosticFieldFragments = setOf(
+    "authorization", "apikey", "api_key", "token", "secret", "prompt",
+    "content", "message", "request", "response", "body", "url",
+)
+
+internal fun sanitizeDiagnosticFields(fields: Map<String, Any?>): Map<String, Any?> =
+    fields.entries.take(16).associate { (key, value) ->
+        val safeKey = key.replace(Regex("[^A-Za-z0-9_.-]"), "_").take(48)
+        val forbidden = ForbiddenDiagnosticFieldFragments.any {
+            safeKey.lowercase(Locale.ROOT).contains(it)
+        }
+        safeKey to if (forbidden) {
+            "[omitted]"
+        } else when (value) {
+            null, is Number, is Boolean -> value
+            else -> SensitiveDataRedactor.redactMessage(value.toString()).take(160)
+        }
+    }

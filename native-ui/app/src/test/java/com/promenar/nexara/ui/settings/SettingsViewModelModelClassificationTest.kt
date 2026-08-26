@@ -8,6 +8,23 @@ import com.promenar.nexara.ui.welcome.eligibleOnboardingModels
 
 class SettingsViewModelModelClassificationTest {
     @Test
+    fun `修改模型调用ID会被记录为用户字段`() {
+        val current = ModelInfo(
+            name = "Model",
+            id = "provider::old-id",
+            remoteModelId = "old-id",
+            description = "",
+            enabled = true,
+        )
+
+        val updated = current.copy(remoteModelId = "manual-model-id")
+            .withRecordedUserEdits(current)
+
+        assertThat(updated.remoteModelId).isEqualTo("manual-model-id")
+        assertThat(updated.userEditedFields).contains("remoteModelId")
+    }
+
+    @Test
     fun `未知 embedding 与 rerank ID 不得默认归类为 chat`() {
         val embeddingType = classifyFetchedModelType("foo-embedding", null)
         assertThat(embeddingType)

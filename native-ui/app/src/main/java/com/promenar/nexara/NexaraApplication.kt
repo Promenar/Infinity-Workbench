@@ -269,6 +269,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             gate = sessionExecutionGate,
             recoverSessionDeletion = workspaceMutationRecoveryCoordinator::recoverSessionOrThrow,
             resolveTarget = targetResolver::resolve,
+            isDatabaseOnlySession = { sessionId ->
+                database.sessionDao().getById(sessionId)?.let { session ->
+                    session.workspaceRootUuid.isNullOrBlank() && session.workspacePath.isNullOrBlank()
+                } == true
+            },
+            deleteDatabaseOnly = transaction::deleteWithoutWorkspace,
             cancelAndJoinGeneration = { sessionId ->
                 generationCoordinator.cancelAndJoinSession(sessionId)
             },

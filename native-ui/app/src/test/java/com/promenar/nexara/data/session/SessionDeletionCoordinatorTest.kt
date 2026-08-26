@@ -13,6 +13,29 @@ import java.nio.file.Paths
 
 class SessionDeletionCoordinatorTest {
     @Test
+    fun `无工作区会话跳过物理journal并完成数据库删除`() = runTest {
+        val events = mutableListOf<String>()
+        val coordinator = SessionDeletionCoordinator(
+            gate = SessionExecutionGate(),
+            resolveTarget = { error("无工作区会话不应解析物理根") },
+            isDatabaseOnlySession = { true },
+            deleteDatabaseOnly = { events += "database-only"; true },
+            cancelAndJoinGeneration = { events += "generation" },
+            closePendingExecution = { events += "execution" },
+            acquireVectorBarrier = { error("不应申请工作区向量屏障") },
+            journal = object : SessionWorkspaceMutationJournal {
+                override suspend fun stage(target: SessionDeletionTarget) = error("不应stage")
+                override suspend fun rollback(staged: StagedSessionWorkspaceMutation) = Unit
+                override suspend fun complete(staged: StagedSessionWorkspaceMutation) = Unit
+            },
+            deleteDatabase = { _, _ -> error("不应进入工作区删除事务") },
+        )
+
+        assertThat(coordinator.delete("session-1")).isEqualTo(SessionDeletionResult.Deleted)
+        assertThat(events).containsExactly("generation", "execution", "database-only").inOrder()
+    }
+
+    @Test
     fun `删除严格等待生成与向量屏障后才提交数据库并完成物理清理`() = runTest {
         val events = mutableListOf<String>()
         val target = target()

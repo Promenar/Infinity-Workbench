@@ -868,6 +868,11 @@ class ProviderManager private constructor(
             models.map { current ->
                 if (current.id != submitted.id) return@map current
                 val updated = current.copy(
+                    remoteModelId = if ("remoteModelId" in submittedFields) {
+                        submitted.remoteModelId.trim().ifBlank { current.remoteModelId }
+                    } else {
+                        current.remoteModelId
+                    },
                     name = if ("name" in submittedFields) submitted.name else current.name,
                     type = if ("type" in submittedFields) submitted.type else current.type,
                     capabilities = if ("capabilities" in submittedFields) {

@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
@@ -20,7 +22,8 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -47,6 +50,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
@@ -103,6 +107,7 @@ internal fun ModelEditorSheet(
     var showDeleteConfirmation by remember(model.id) { mutableStateOf(false) }
     var selectedType by remember(model.id) { mutableStateOf(model.type) }
     var editName by remember(model.id) { mutableStateOf(model.name) }
+    var editRemoteModelId by remember(model.id) { mutableStateOf(model.remoteModelId) }
     var editContext by remember(model.id) { mutableStateOf(model.contextLength.toString()) }
     var activeCaps by remember(model.id) { mutableStateOf(model.capabilities.toSet()) }
 
@@ -110,17 +115,20 @@ internal fun ModelEditorSheet(
         model.id,
         model.type,
         model.name,
+        model.remoteModelId,
         model.contextLength,
         model.capabilities,
     ) {
         selectedType = model.type
         editName = model.name
+        editRemoteModelId = model.remoteModelId
         editContext = model.contextLength.toString()
         activeCaps = model.capabilities.toSet()
     }
 
-    LaunchedEffect(selectedType, editName, editContext, activeCaps) {
+    LaunchedEffect(selectedType, editName, editRemoteModelId, editContext, activeCaps) {
         val updated = model.copy(
+            remoteModelId = editRemoteModelId.trim(),
             type = selectedType,
             name = editName,
             contextLength = editContext.toIntOrNull() ?: model.contextLength,
@@ -139,6 +147,11 @@ internal fun ModelEditorSheet(
         else -> MaterialTheme.colorScheme.primary
     }
     val editedFieldLabels = listOfNotNull(
+        if ("remoteModelId" in model.userEditedFields) {
+            stringResource(R.string.provider_models_field_model_id)
+        } else {
+            null
+        },
         if ("name" in model.userEditedFields) {
             stringResource(R.string.provider_models_field_display_name)
         } else {
@@ -205,6 +218,19 @@ internal fun ModelEditorSheet(
                     editedFieldLabels = editedFieldLabels,
                 )
             }
+            item("remote-model-id") {
+                OutlinedTextField(
+                    value = editRemoteModelId,
+                    onValueChange = { editRemoteModelId = it },
+                    label = { Text(stringResource(R.string.provider_models_field_model_id)) },
+                    placeholder = { Text(stringResource(R.string.provider_models_placeholder_model_id)) },
+                    supportingText = {
+                        Text(stringResource(R.string.provider_models_remote_id_supporting_text))
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             item("name") {
                 OutlinedTextField(
                     value = editName,
@@ -218,47 +244,48 @@ internal fun ModelEditorSheet(
             }
             item("type") {
                 SettingsSectionHeader(stringResource(R.string.provider_models_editor_type))
-                androidx.compose.foundation.layout.FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     EditorModelTypeLabelResources.forEachIndexed { index, labelRes ->
                         val type = EditorModelTypes[index]
-                        FilterChip(
-                            selected = selectedType == type,
-                            onClick = {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 52.dp)
+                                .clickable(role = Role.RadioButton) {
                                 activeCaps = (activeCaps - EditorAllBaseCapKeys) +
                                     (EditorTypeToBaseCaps[type] ?: setOf("chat"))
                                 selectedType = type
-                            },
-                            label = { Text(stringResource(labelRes)) },
-                            modifier = Modifier
-                                .sizeIn(minHeight = 48.dp)
+                            }
                                 .testTag(UiTags.providerModelsTypeAction(model.id, type)),
-                        )
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(stringResource(labelRes), modifier = Modifier.weight(1f))
+                            RadioButton(
+                                selected = selectedType == type,
+                                onClick = null,
+                            )
+                        }
                     }
                 }
             }
             item("capabilities") {
                 SettingsSectionHeader(stringResource(R.string.provider_models_editor_capabilities))
-                androidx.compose.foundation.layout.FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     EditorCapabilityTags.forEach { (key, labelRes) ->
                         val selected = key in activeCaps
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
-                                activeCaps = if (selected) activeCaps - key else activeCaps + key
-                            },
-                            label = { Text(stringResource(labelRes)) },
+                        Row(
                             modifier = Modifier
-                                .sizeIn(minHeight = 48.dp)
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 52.dp)
+                                .clickable(role = Role.Switch) {
+                                activeCaps = if (selected) activeCaps - key else activeCaps + key
+                            }
                                 .testTag(UiTags.providerModelsCapabilityAction(model.id, key)),
-                        )
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(stringResource(labelRes), modifier = Modifier.weight(1f))
+                            Switch(checked = selected, onCheckedChange = null)
+                        }
                     }
                 }
             }

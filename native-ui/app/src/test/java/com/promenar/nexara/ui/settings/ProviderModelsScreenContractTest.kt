@@ -37,7 +37,7 @@ class ProviderModelsScreenContractTest {
     }
 
     @Test
-    fun `列表行只显示摘要并保留2项能力和更多计数`() {
+    fun `列表行使用连续文本能力摘要而非标签墙`() {
         val source = readProviderModelsSource()
         val row = extractBetween(
             source,
@@ -45,8 +45,8 @@ class ProviderModelsScreenContractTest {
             "private fun capabilityLabelResource(",
         )
 
-        assertThat(row).contains("summaryCapabilities.take(2)")
-        assertThat(row).contains("remainingCapabilityCount")
+        assertThat(row).contains("localizedCapabilities.joinToString(\" · \")")
+        assertThat(row).contains("text = capabilitySummary")
         assertThat(row).contains("model.remoteModelId.ifBlank")
         assertThat(row).contains("UiTags.providerModelsModelCard(model.id)")
         assertThat(row).contains("UiTags.providerModelsRemoteId(model.id)")

@@ -258,6 +258,25 @@ class ProviderModelMetadataMigrationTest {
     }
 
     @Test
+    fun `手动模型调用ID会应用并在重载后保留`() {
+        val manager = manager()
+        val original = model()
+        manager.addModel(original)
+        val displayed = manager.providerModels.value.single()
+
+        manager.applyUserModelUpdate(
+            displayed.copy(remoteModelId = "manual-upstream-id")
+                .withRecordedUserEdits(displayed),
+        )
+
+        val reloaded = ProviderManager.createForTest(app, MemorySecretStore())
+        val persisted = reloaded.providerModels.value.single()
+        assertThat(persisted.id).isEqualTo(original.id)
+        assertThat(persisted.remoteModelId).isEqualTo("manual-upstream-id")
+        assertThat(persisted.userEditedFields).contains("remoteModelId")
+    }
+
+    @Test
     fun `元数据刷新与用户提交交错时基于最新模型原子合并`() {
         val transformEntered = CountDownLatch(1)
         val allowTransform = CountDownLatch(1)

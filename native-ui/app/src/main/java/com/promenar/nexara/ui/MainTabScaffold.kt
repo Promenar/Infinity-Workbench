@@ -4,6 +4,10 @@ import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -102,7 +106,13 @@ fun MainTabScaffold(
             selectedTab = selectedTab,
             onTabSelected = { selectedTab = it },
         ) {
-            when (selectedTab) {
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = {
+                    fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+                },
+                label = "main-tab-content",
+            ) { tab -> when (tab) {
                 AppTab.CHAT -> com.promenar.nexara.ui.hub.AgentHubScreen(
                     onNavigateToSessionList = onNavigateToSessionList,
                     onNavigateToAgentEdit = onNavigateToAgentEdit
@@ -118,7 +128,7 @@ fun MainTabScaffold(
                     }
                 )
                 AppTab.SETTINGS -> com.promenar.nexara.ui.hub.UserSettingsHomeScreen(onNavigateToSecondary = onNavigateToSecondary)
-            }
+            } }
         }
     }
 }

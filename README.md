@@ -16,6 +16,7 @@
 - **多服务商 BYOK 对话**：支持 OpenAI、Anthropic、Google Vertex AI、DeepSeek、GLM、Kimi 及 OpenAI-compatible 接口，包含 SSE 流式响应、多模态输入、Markdown/LaTeX/Mermaid/ECharts 渲染和会话内模型切换。
 - **历史 Provider 安全恢复**：无法识别的历史主/额外 Provider 会在管理页显式显示且保持零联网；用户可保留名称与地址进入修复流程，明确选择新协议并处理凭证后恢复使用。
 - **完整文档上下文与会话分支**：输入栏可把 TXT/Markdown 全文作为当前消息上下文发送，超出最终路由模型预算时在网络请求前阻止；会话可导出为可回传的 Markdown/TXT，并可从稳定消息创建独立分支。
+- **媒体查看与实机诊断**：用户图片、Markdown 图片和工具生成图片可全屏缩放、旋转、保存与分享；设置页可导出有界、脱敏的 JSONL 诊断事件，辅助定位真机上的 Provider、生成和会话删除问题。
 - **RAG 与知识图谱**：导入 TXT、Markdown、PDF、Word、HTML 文档，提供向量检索、FTS5、Rerank、查询重写、引用追踪和知识图谱可视化。
 - **Agent 与工具调用**：内置联网搜索、计算、受限脚本、文件操作、图像生成和任务规划等工具，支持审批、幂等执行账本和工具结果回传。任务计划以消息流 Material 3 卡片和 composer 状态胶囊呈现；生成停止后仍可人工继续或销项，不会把残留计划误报为仍在生成。
 - **会话工作区**：按 Session 隔离文件根目录，覆盖导入、原子写入、版本、回收站、恢复和路径逃逸防护；文档索引使用版本化目标与失败重试，进程重启后按当前文件版本和 KG 配置补建缺失任务。
@@ -31,7 +32,7 @@
 - 密钥字段默认显示 `****`；用户可在当前页面临时显示完整值，离开页面或失去焦点后重新隐藏。
 - 备份默认排除所有 Key。启用“包含完整密钥”时必须设置备份密码；备份包使用 PBKDF2-HMAC-SHA256 派生密钥和 AES-256-GCM 加密。
 - Release 云端 Provider 与 WebDAV 仅允许 HTTPS。局域网 HTTP 只允许进入显式 Debug/Integration 测试，不属于发行能力。
-- Release 日志不得写入 Prompt、模型输出、Authorization、API Key、SQL 参数或完整异常堆栈。
+- Release 诊断事件不得写入 Prompt、模型输出、请求/响应正文、完整 URL、Authorization、API Key、SQL 参数或完整异常堆栈；文件限制为 512 KiB，并可由用户主动导出。
 
 ## 后台生成边界
 
@@ -88,7 +89,7 @@ node scripts/nexara-metro-tui.js --serial emulator-5554
 adb logcat -s NEXARA_METRO | node scripts/nexara-metro-tui.js --stdin --no-color
 ```
 
-该 TUI 支持中文帮助、设备/Tag 选择、标准输入、TTY/非 TTY 输出、明确退出码和缺失字段容错。Release 会关闭并剥离 Metro/调试日志入口。
+该 TUI 支持中文帮助、设备/Tag 选择、标准输入、TTY/非 TTY 输出、明确退出码和缺失字段容错。Release 会关闭并剥离 Metro/调试日志入口；发行版仅保留应用内有界、脱敏且由用户主动分享的诊断事件文件。
 
 ## 技术栈
 

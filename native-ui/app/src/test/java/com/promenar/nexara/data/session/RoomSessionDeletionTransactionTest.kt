@@ -73,6 +73,24 @@ class RoomSessionDeletionTransactionTest {
     }
 
     @Test
+    fun `无工作区会话只清理会话关联数据并保留独立工作区记录`() = runBlocking {
+        seedAllRelations()
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE sessions SET workspace_path = NULL, workspace_root_uuid = NULL WHERE id = '$SESSION'",
+        )
+
+        assertThat(RoomSessionDeletionTransaction(database).deleteWithoutWorkspace(SESSION)).isTrue()
+
+        listOf(
+            "sessions", "messages", "attachments", "vectors", "context_summaries",
+            "kg_nodes", "kg_edges", "vectorization_tasks", "audit_logs", "artifacts",
+            "task_nodes", "tool_execution_ledger", "file_versions",
+        ).forEach { table -> assertThat(count(table)).isEqualTo(0) }
+        assertThat(count("workspace_files")).isEqualTo(2)
+        assertThat(count("document_tags")).isEqualTo(1)
+    }
+
+    @Test
     fun `不存在或身份不匹配的journal使整个删除事务回滚`() = runBlocking {
         seedAllRelations()
         val failure = runCatching {

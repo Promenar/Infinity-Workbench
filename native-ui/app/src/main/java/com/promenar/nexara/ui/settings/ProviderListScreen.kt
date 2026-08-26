@@ -47,7 +47,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ProviderListItem
@@ -213,6 +215,7 @@ private fun UnsupportedProviderCard(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+            .padding(vertical = 4.dp)
             .clickable(onClick = onEdit)
             .testTag(UiTags.settingsProviderCard(provider.id))
             .semantics {
@@ -222,22 +225,26 @@ private fun UnsupportedProviderCard(
         headlineContent = {
             Text(
                 text = provider.name,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 17.sp,
+                    lineHeight = 22.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
         },
         supportingContent = {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
                     text = unsupportedDescription,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 19.sp),
                     color = MaterialTheme.colorScheme.error,
                 )
                 Text(
                     text = provider.rawProtocolId,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 17.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -420,6 +427,7 @@ private fun ProviderCard(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+            .padding(vertical = 4.dp)
             .testTag(UiTags.settingsProviderCard(provider.id))
             .semantics { stateDescription = providerStateDescription }
             .clickable(
@@ -431,7 +439,11 @@ private fun ProviderCard(
         headlineContent = {
             Text(
                 text = provider.name,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 17.sp,
+                    lineHeight = 22.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
                 color = if (provider.enabled) {
                     MaterialTheme.colorScheme.onSurface
                 } else {
@@ -442,17 +454,17 @@ private fun ProviderCard(
             )
         },
         supportingContent = {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
                     text = "$localizedTypeName · $providerStateDescription",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 19.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = provider.baseUrl.removePrefix("https://").removePrefix("http://"),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 17.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

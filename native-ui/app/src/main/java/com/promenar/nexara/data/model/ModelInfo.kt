@@ -7,6 +7,7 @@ import com.promenar.nexara.data.model.catalog.ResolvedModelMetadata
 import com.promenar.nexara.data.remote.stableModelId
 
 internal val USER_EDITABLE_MODEL_FIELDS = setOf(
+    "remoteModelId",
     "name",
     "type",
     "capabilities",
@@ -145,6 +146,7 @@ internal fun ModelInfo.mergeResolvedMetadata(resolved: ResolvedModelMetadata): M
 
 internal fun ModelInfo.withRecordedUserEdits(previous: ModelInfo): ModelInfo {
     val changedFields = buildSet {
+        if (remoteModelId != previous.remoteModelId) add("remoteModelId")
         if (name != previous.name) add("name")
         if (type != previous.type) add("type")
         if (capabilities.toSet() != previous.capabilities.toSet()) add("capabilities")

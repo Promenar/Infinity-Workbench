@@ -15,11 +15,12 @@ import com.promenar.nexara.domain.generation.CompletionReason
 import com.promenar.nexara.domain.generation.GenerationFailure
 import com.promenar.nexara.domain.generation.GenerationFailureCode
 import com.promenar.nexara.domain.generation.MAX_TOOL_CALLS_PER_GENERATION
+import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
@@ -187,10 +188,10 @@ class ChatGenerationRunner(
                 val roundTools = linkedMapOf<String, GenerationToolCall>()
                 var completed: GenerationChunk.Completed? = null
                 val knownToolNames = runtime.knownToolNames(request)
-                stream.collect { chunk ->
-                    if (completed != null) {
-                        throw contractFailure("Provider emitted data after Completed")
-                    }
+                stream.transformWhile { chunk ->
+                    emit(chunk)
+                    chunk !is GenerationChunk.Completed
+                }.collect { chunk ->
                     when (chunk) {
                         is GenerationChunk.Text -> {
                             if (!streamingPhaseEmitted) {
@@ -306,6 +307,7 @@ class ChatGenerationRunner(
             runtime.postProcess(request, snapshot)
             withContext(NonCancellable) {
                 if (persistTerminal(GenerationTerminalStatus.SUCCESS)) {
+                    NexaraLogger.diagnostic("generation.completed", mapOf("sessionId" to request.sessionId))
                     phase(GenerationPhase.COMPLETED)
                 }
             }
@@ -334,6 +336,10 @@ class ChatGenerationRunner(
         } catch (failure: Throwable) {
             primaryFailure = failure
             val generationFailure = failure.failureOrUnknown()
+            NexaraLogger.diagnostic(
+                "generation.failed",
+                mapOf("sessionId" to request.sessionId, "code" to generationFailure.code.name),
+            )
             withContext(NonCancellable) {
                 clearUnconfirmedToolCalls(failure)
                 if (persistTerminal(GenerationTerminalStatus.ERROR, failure)) {

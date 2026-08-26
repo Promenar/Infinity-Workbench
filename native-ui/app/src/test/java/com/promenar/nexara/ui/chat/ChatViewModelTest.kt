@@ -211,6 +211,9 @@ class ChatViewModelTest {
                 if (updates.containsKey("customPrompt")) {
                     session = session.copy(customPrompt = updates["customPrompt"] as String?)
                 }
+                if (updates.containsKey("options")) {
+                    session = session.copy(options = updates["options"] as SessionOptions)
+                }
                 savedSessions[index] = session
             }
         }
@@ -597,6 +600,17 @@ class ChatViewModelTest {
             .chatStore.getSession("s1")?.modelId).isEqualTo("provider-b::model-b")
         assertThat(savedSessions.single { it.id == "s1" }.modelId)
             .isEqualTo("provider-b::model-b")
+    }
+
+    @Test
+    fun 拖动字号即使未触发结束回调也会持久化最终值() = runTest {
+        seedSession()
+        advanceUntilIdle()
+
+        viewModel.updateFontSizeLocally(17)
+        advanceUntilIdle()
+
+        assertThat(savedSessions.single { it.id == "s1" }.options?.fontSize).isEqualTo(17)
     }
 
     @Test

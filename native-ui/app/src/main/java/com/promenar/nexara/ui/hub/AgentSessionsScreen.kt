@@ -32,8 +32,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -60,7 +58,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.Session
@@ -287,6 +287,7 @@ internal fun AgentSessionsScreenContent(
                             session = session,
                             showDivider = index < state.sessions.lastIndex,
                             actions = actions,
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
@@ -300,6 +301,7 @@ private fun SessionListItem(
     session: Session,
     showDivider: Boolean,
     actions: AgentSessionsScreenActions,
+    modifier: Modifier = Modifier,
 ) {
     val configuration = LocalConfiguration.current
     val locale = configuration.locales[0]
@@ -318,14 +320,16 @@ private fun SessionListItem(
         onDelete = { actions.onRequestDelete(session.id) },
         isPinned = session.isPinned,
         shape = RectangleShape,
+        modifier = modifier,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            ListItem(
+            Row(
                 modifier = Modifier.clickable(
                     onClick = { actions.onOpenSession(session.id) },
                 )
                     .fillMaxWidth()
-                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                    .heightIn(min = 80.dp)
+                    .padding(vertical = 12.dp)
                     .semantics(mergeDescendants = true) {
                         if (session.isPinned) stateDescription = pinnedStateDescription
                         customActions = listOf(
@@ -339,54 +343,57 @@ private fun SessionListItem(
                             },
                         )
                     },
-                colors = ListItemDefaults.colors(
-                    containerColor = Color.Transparent,
-                ),
-                headlineContent = {
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = session.title,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 17.sp,
+                            lineHeight = 22.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
                         maxLines = if (largeFont) 4 else 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                },
-                supportingContent = if (session.lastMessage.isNullOrBlank()) {
-                    null
-                } else {
-                    {
+                    if (!session.lastMessage.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = session.lastMessage.orEmpty(),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 14.sp,
+                                lineHeight = 19.sp,
+                                fontWeight = FontWeight.Normal,
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = if (largeFont) 4 else 3,
+                            maxLines = if (largeFont) 4 else 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                },
-                trailingContent = {
-                    Column(
-                        modifier = Modifier.widthIn(max = 96.dp),
-                        horizontalAlignment = Alignment.End,
-                    ) {
-                        if (session.isPinned) {
-                            Icon(
-                                imageVector = Icons.Rounded.PushPin,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                        Text(
-                            text = formattedTime,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.End,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(
+                    modifier = Modifier.widthIn(max = 80.dp),
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    if (session.isPinned) {
+                        Icon(
+                            imageVector = Icons.Rounded.PushPin,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
                         )
                     }
-                },
-            )
+                    Text(
+                        text = formattedTime,
+                        style = MaterialTheme.typography.labelSmall.copy(lineHeight = 16.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.End,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             if (showDivider) {
                 HorizontalDivider(
                     modifier = Modifier.padding(start = NexaraSpacing.ScreenHorizontal),

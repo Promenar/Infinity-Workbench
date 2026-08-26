@@ -54,6 +54,8 @@ class SessionDeletionCoordinator(
     private val gate: SessionExecutionGate,
     private val recoverSessionDeletion: suspend (String) -> Unit = {},
     private val resolveTarget: suspend (String) -> SessionDeletionTarget?,
+    private val isDatabaseOnlySession: suspend (String) -> Boolean = { false },
+    private val deleteDatabaseOnly: suspend (String) -> Boolean = { false },
     private val cancelAndJoinGeneration: suspend (String) -> Unit,
     private val recoverFileMutations: suspend (SessionDeletionTarget) -> Unit = {},
     private val closePendingExecution: suspend (String) -> Unit,
@@ -80,6 +82,15 @@ class SessionDeletionCoordinator(
     }
 
     private suspend fun deleteAfterRecovery(sessionId: String): SessionDeletionResult {
+        val databaseOnly = try {
+            isDatabaseOnlySession(sessionId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Throwable) {
+            return failed(SessionDeletionErrorCode.INVALID_TARGET, failure)
+        }
+        if (databaseOnly) return deleteDatabaseOnlySession(sessionId)
+
         val firstTarget = try {
             resolveTarget(sessionId)
         } catch (cancelled: CancellationException) {
@@ -179,6 +190,17 @@ class SessionDeletionCoordinator(
         } catch (failure: Throwable) {
             failed(SessionDeletionErrorCode.EXECUTION, failure)
         }
+    }
+
+    private suspend fun deleteDatabaseOnlySession(sessionId: String): SessionDeletionResult = try {
+        cancelAndJoinGeneration(sessionId)
+        closePendingExecution(sessionId)
+        if (deleteDatabaseOnly(sessionId)) SessionDeletionResult.Deleted
+        else SessionDeletionResult.AlreadyDeleted
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Throwable) {
+        failed(SessionDeletionErrorCode.DATABASE, failure)
     }
 
     private fun failed(code: SessionDeletionErrorCode, cause: Throwable) =

@@ -436,15 +436,7 @@ internal fun RagHomeScreenContent(
         contentWindowInsets = WindowInsets.statusBars,
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.rag_home_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 180.dp),
-                    )
-                },
+                title = {},
                 actions = {
                     IconButton(
                         onClick = actions.onOpenGraph,

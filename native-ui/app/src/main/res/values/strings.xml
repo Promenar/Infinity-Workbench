@@ -368,6 +368,8 @@
     <string name="settings_local_models_desc">GGUF on-device · Experimental</string>
     <string name="settings_section_data">Data</string>
     <string name="settings_backup">Backup</string>
+    <string name="settings_diagnostics_export">Export diagnostics</string>
+    <string name="settings_diagnostics_export_desc">Share a bounded, redacted event log for troubleshooting</string>
     <string name="settings_backup_desc">Local / WebDAV backup</string>
     <string name="settings_logs">Logs</string>
     <string name="settings_logs_desc">Record debug info and error logs</string>
@@ -805,6 +807,7 @@
     <string name="provider_models_capability_computer_use">Computer</string>
     <string name="provider_models_field_model_id">Model ID</string>
     <string name="provider_models_placeholder_model_id">e.g. model-id</string>
+    <string name="provider_models_remote_id_supporting_text">The exact model ID sent to the provider. Use this for providers that cannot list models.</string>
     <string name="provider_models_field_display_name">Display Name</string>
     <string name="provider_models_placeholder_optional">Optional</string>
     <string name="provider_models_tokens_unit">tokens</string>

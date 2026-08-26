@@ -28,6 +28,27 @@ import org.junit.Test
 
 class ChatGenerationRunnerTest {
     @Test
+    fun `显式完成后上游迟到的失败分片不得污染成功终态`() = runTest {
+        val lateFailure = GenerationFailure(
+            code = GenerationFailureCode.NETWORK,
+            technical = "late provider failure",
+        )
+        val runtime = FakeRuntime(listOf(flowOf(
+            GenerationChunk.Text("done"),
+            GenerationChunk.Completed(CompletionReason.END_TURN),
+            GenerationChunk.Failure(lateFailure),
+        )))
+        val events = mutableListOf<GenerationEvent>()
+
+        ChatGenerationRunner(runtime).run(request(), events::add)
+
+        assertThat(runtime.persisted.last().content).isEqualTo("done")
+        assertThat(runtime.persisted.last().failure).isNull()
+        assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.SUCCESS)
+        assertThat(events.phases().last()).isEqualTo(GenerationPhase.COMPLETED)
+    }
+
+    @Test
     fun `固定阶段顺序且每个流分片持久化并在完成时flush`() = runTest {
         val runtime = FakeRuntime(listOf(flowOf(
             GenerationChunk.Text("A"),

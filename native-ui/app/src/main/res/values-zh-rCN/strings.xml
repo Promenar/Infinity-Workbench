@@ -374,6 +374,8 @@
     <string name="settings_local_models_desc">GGUF 端侧推理 · 实验性</string>
     <string name="settings_section_data">数据</string>
     <string name="settings_backup">备份</string>
+    <string name="settings_diagnostics_export">导出诊断日志</string>
+    <string name="settings_diagnostics_export_desc">分享有界且已脱敏的事件日志，用于精确排障</string>
     <string name="settings_backup_desc">本地 / WebDAV 备份</string>
     <string name="settings_logs">日志</string>
     <string name="settings_logs_desc">记录调试信息与错误日志</string>
@@ -810,6 +812,7 @@
     <string name="provider_models_capability_computer_use">计算机操作</string>
     <string name="provider_models_field_model_id">模型 ID</string>
     <string name="provider_models_placeholder_model_id">例如 model-id</string>
+    <string name="provider_models_remote_id_supporting_text">请求时发送给提供商的精确模型 ID，适用于无法拉取模型清单的上游。</string>
     <string name="provider_models_field_display_name">显示名称</string>
     <string name="provider_models_placeholder_optional">可选</string>
     <string name="provider_models_tokens_unit">词元</string>
