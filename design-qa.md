@@ -57,18 +57,18 @@ final result: passed
 
 ## 视觉结论
 
-- 设置首页使用 20dp 圆角 `surfaceContainer` 分组卡片和标准 Material 3 `ListItem`，24dp 前导图标提供扫描锚点；16sp 主标题与 14sp 副标题保持正常可读尺寸，密度由统一行高、组间留白和文字轴控制。
+- 设置页面使用 20dp 圆角、无描边的 `surfaceContainer` 填充分组和标准 Material 3 `ListItem`；16sp 主标题与 14sp 副标题保持正常可读尺寸，密度由统一行高、语义组间留白和文字轴控制。记忆设置的预设、检索参数、摘要模板和后续入口分别成组，不再用无法对应触控边界的横线切割整页。
 - 用户身份继续使用独立的 56dp 头像和 22sp 用户名层级，没有与普通设置项共用 Token。
 - 底部导航采用 Bettbox 的浮动容器语言：36dp 圆角、弱描边、6dp 阴影、选中 `secondaryContainer`、24dp 图标和 250ms 槽位权重过渡；Nexara 的真实切换触感逻辑保留。
 - 外观页包含三模式大卡、8 个可达种子色入口、动态取色、深色纯黑和全局文字缩放。实图中模式卡、色盘、开关与标题轴线一致，未出现先前压缩字号造成的廉价感。
-- Provider 空状态保持独立管理页语义；有数据时 Provider 与模型条目使用与设置页一致的填充分组和弱分隔，不更改 Provider/模型业务动作。
+- Provider 空状态保持独立管理页语义；有数据时 Provider 与模型条目使用与设置页一致的填充分组，不更改 Provider/模型业务动作。Agent 首页进一步移除行间横线及列表上下异色色带，普通与大字体截图均不再出现伪阴影。
 
 ## 设备与自动化证据
 
 - `ThemeSettingsInteractionTest`：API 35 设备 3/3 通过，覆盖模式选中语义、动态色开关、最小触控目标和 2.0x 字体。
 - API 35 通过 UI tree 坐标驱动并逐张检查主屏、设置首页、外观页与 Provider 空状态；应用 crash buffer 为空。
-- 全量 JVM 2564 项（0 failure/error、14 skip）、101/101 Screenshot、AndroidTest Kotlin 编译与 Lint 0 Error/Fatal 通过；`assembleMinifiedTest --rerun-tasks` 53/53 tasks 成功。
-- 当前源码已完成 clean 正式签名 Release 构建和统一 fail-closed 验真；APK 18,909,143 bytes，SHA-256 `78a2e2e3824a3a5067f47a5c73752fe6313623e4dae652f57aa224d3a2163a95`，包身份、唯一 signer、登记证书、敏感内容与本地推理制品排除、R8 四类输出、16 KiB zipalign 和 checksum 均通过。模拟器视觉通过仍不替代用户物理真机字体与 OEM 触感验收。
+- 全量 JVM 2571 项（0 failure/error、14 skip）、100/100 Screenshot、AndroidTest Kotlin 编译与 Lint 0 Error/Fatal 通过。
+- 当前源码已完成 clean 正式签名 Release 构建和统一 fail-closed 验真；APK 18,909,055 bytes，SHA-256 `79d6b7c71b903fe783e4bd4d1625b6a3794154cfb292731c0efbd6f9759f8c5e`，包身份、唯一 signer、登记证书、敏感内容与本地推理制品排除、R8 输出、16 KiB zipalign 和 checksum 均通过。模拟器视觉通过仍不替代用户物理真机字体与 OEM 触感验收。
 
 final result: passed-with-physical-device-pending
 

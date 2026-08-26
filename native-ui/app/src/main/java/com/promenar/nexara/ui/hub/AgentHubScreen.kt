@@ -5,7 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -399,13 +399,8 @@ internal fun AgentHubScreenContent(
                     .padding(paddingValues)
                     .padding(horizontal = NexaraSpacing.ScreenHorizontal)
                     .bettboxListGroup(),
-                contentPadding = PaddingValues(
-                    start = 0.dp, end = 0.dp,
-                    top = NexaraSpacing.Small,
-                    bottom = NexaraSpacing.Small,
-                ),
             ) {
-                itemsIndexed(state.displayAgents, key = { _, item -> item.agent.id }) { index, item ->
+                items(state.displayAgents, key = { item -> item.agent.id }) { item ->
                     val agent = item.agent
                     val parsedColor = try {
                         Color(agent.color.toColorInt())
@@ -423,7 +418,6 @@ internal fun AgentHubScreenContent(
                         subtitle = item.subtitle,
                         iconContainerColor = parsedColor,
                         isPinned = agent.isPinned,
-                        showDivider = index < state.displayAgents.lastIndex,
                         onPin = { actions.onTogglePin(agent.id) },
                         onDelete = { actions.onRequestDelete(agent.id) },
                         onEdit = { actions.onEdit(agent.id) },
@@ -475,7 +469,6 @@ fun AgentCardItem(
     subtitle: String,
     iconContainerColor: Color,
     isPinned: Boolean = false,
-    showDivider: Boolean = true,
     onPin: () -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
@@ -492,8 +485,7 @@ fun AgentCardItem(
         isPinned = isPinned,
         shape = RectangleShape,
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            ListItem(
+        ListItem(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 88.dp)
@@ -602,16 +594,6 @@ fun AgentCardItem(
                     }
                 }
             )
-            if (showDivider) {
-                HorizontalDivider(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 88.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    thickness = 1.dp
-                )
-            }
-        }
     }
 }
 

@@ -15,13 +15,13 @@ class BettboxGroupedSurfacesContractTest {
     ).toString(Charsets.UTF_8)
 
     @Test
-    fun `共享分组面应使用 Bettbox plain card 的填色描边与二十 dp 圆角`() {
+    fun `共享分组面应使用无描边填色与二十 dp 圆角`() {
         val group = source("common/BettboxListGroup.kt")
 
         assertThat(group).contains("RoundedCornerShape(20.dp)")
         assertThat(group).contains("MaterialTheme.colorScheme.surfaceContainerLow")
-        assertThat(group).contains("MaterialTheme.colorScheme.surfaceContainerHighest")
-        assertThat(group).contains("BorderStroke(1.dp")
+        assertThat(group).doesNotContain("BorderStroke")
+        assertThat(group).doesNotContain(".border(")
     }
 
     @Test
@@ -75,5 +75,15 @@ class BettboxGroupedSurfacesContractTest {
         assertThat(sessions).contains(".bettboxListGroup()")
         assertThat(agentHub).contains("NexaraSpacing.ScreenHorizontal")
         assertThat(sessions).contains("NexaraSpacing.ScreenHorizontal")
+    }
+
+    @Test
+    fun `记忆设置应按语义使用多个分组面且不使用装饰分割线`() {
+        val globalRag = source("rag/GlobalRagConfigScreen.kt")
+        val content = globalRag.substringAfter("internal fun GlobalRagConfigScreenContent(")
+
+        assertThat(globalRag).doesNotContain("HorizontalDivider")
+        assertThat(content.split("BettboxListGroup")).hasSize(5)
+        assertThat(globalRag).doesNotContain(".verticalScroll(rememberScrollState())\n                .padding(contentPadding)\n                .bettboxListGroup()")
     }
 }

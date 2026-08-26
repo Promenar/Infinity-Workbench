@@ -58,9 +58,20 @@ class AgentHubScreenContractTest {
     @Test
     fun `agent list is continuous instead of card spaced`() {
         val source = hubSource.readText()
-        val lazyColumn = source.substringAfter("LazyColumn(").substringBefore("itemsIndexed")
+        val lazyColumn = source.substringAfter("LazyColumn(").substringBefore("items(state.displayAgents")
 
         assertThat(lazyColumn).doesNotContain("verticalArrangement = Arrangement.spacedBy(8.dp)")
+        assertThat(lazyColumn).doesNotContain("top = NexaraSpacing.Small")
+        assertThat(lazyColumn).doesNotContain("bottom = NexaraSpacing.Small")
+    }
+
+    @Test
+    fun `agent rows rely on spacing and group fill without decorative dividers`() {
+        val source = hubSource.readText()
+        val row = source.substringAfter("fun AgentCardItem(").substringBefore("private fun EmptyAgentState(")
+
+        assertThat(row).doesNotContain("showDivider")
+        assertThat(row).doesNotContain("HorizontalDivider")
     }
 
     @Test

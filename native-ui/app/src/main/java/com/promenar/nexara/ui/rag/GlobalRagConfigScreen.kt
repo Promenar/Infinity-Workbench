@@ -27,7 +27,6 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -58,8 +57,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
-import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.data.rag.RagConfiguration
@@ -119,9 +118,7 @@ internal fun GlobalRagConfigScreenContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(contentPadding)
-                .bettboxListGroup()
-                .padding(16.dp),
+                .padding(contentPadding),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
 
@@ -136,133 +133,134 @@ internal fun GlobalRagConfigScreenContent(
                 Triple(Icons.Rounded.Code, codingLabel, "coding")
             )
 
-            SingleChoiceSegmentedButtonRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .sizeIn(minHeight = 48.dp)
-                    .testTag("rag_global_presets")
-            ) {
-                presets.forEachIndexed { index, (icon, title, presetId) ->
-                    val isSelected = config.currentPreset == presetId
-                    SegmentedButton(
-                        modifier = Modifier
-                            .sizeIn(minHeight = 48.dp)
-                            .testTag("rag_global_preset_$presetId"),
-                        selected = isSelected,
-                        onClick = { actions.onPresetSelected(presetId) },
-                        shape = SegmentedButtonDefaults.itemShape(index = index, count = presets.size),
-                        icon = {
-                            SegmentedButtonDefaults.Icon(active = isSelected) {
-                                Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            BettboxListGroup {
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .sizeIn(minHeight = 48.dp)
+                        .testTag("rag_global_presets")
+                ) {
+                    presets.forEachIndexed { index, (icon, title, presetId) ->
+                        val isSelected = config.currentPreset == presetId
+                        SegmentedButton(
+                            modifier = Modifier
+                                .sizeIn(minHeight = 48.dp)
+                                .testTag("rag_global_preset_$presetId"),
+                            selected = isSelected,
+                            onClick = { actions.onPresetSelected(presetId) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = presets.size),
+                            icon = {
+                                SegmentedButtonDefaults.Icon(active = isSelected) {
+                                    Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp))
+                                }
+                            },
+                            label = {
+                                Text(
+                                    text = title,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
                             }
-                        },
-                        label = {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
-                    )
+                        )
+                    }
                 }
             }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             // 检索参数分组
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.rag_config_retrieval_params),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold
-                )
+            BettboxListGroup {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.rag_config_retrieval_params),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
 
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = stringResource(R.string.rag_config_chunk_size),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "${config.docChunkSize}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = stringResource(R.string.rag_config_chunk_size),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "${config.docChunkSize}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Slider(
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("rag_global_chunk_size_slider"),
+                            value = config.docChunkSize.toFloat(),
+                            onValueChange = { actions.onConfigChanged { copy(docChunkSize = it.toInt()) } },
+                            valueRange = 100f..2000f,
+                            steps = 18
                         )
                     }
-                    Slider(
-                        modifier = Modifier
-                            .minimumInteractiveComponentSize()
-                            .testTag("rag_global_chunk_size_slider"),
-                        value = config.docChunkSize.toFloat(),
-                        onValueChange = { actions.onConfigChanged { copy(docChunkSize = it.toInt()) } },
-                        valueRange = 100f..2000f,
-                        steps = 18
-                    )
-                }
 
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = stringResource(R.string.rag_config_overlap),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "${config.chunkOverlap}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = stringResource(R.string.rag_config_overlap),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "${config.chunkOverlap}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Slider(
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("rag_global_chunk_overlap_slider"),
+                            value = config.chunkOverlap.toFloat(),
+                            onValueChange = { actions.onConfigChanged { copy(chunkOverlap = it.toInt()) } },
+                            valueRange = 0f..500f,
+                            steps = 9
                         )
                     }
-                    Slider(
-                        modifier = Modifier
-                            .minimumInteractiveComponentSize()
-                            .testTag("rag_global_chunk_overlap_slider"),
-                        value = config.chunkOverlap.toFloat(),
-                        onValueChange = { actions.onConfigChanged { copy(chunkOverlap = it.toInt()) } },
-                        valueRange = 0f..500f,
-                        steps = 9
-                    )
                 }
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
             // === 摘要提示词 ===
-            ListItem(
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showSummaryTemplateEditor = true },
-                headlineContent = {
-                    Text(
-                        text = stringResource(R.string.rag_config_section_template),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                },
-                supportingContent = {
-                    Text(
-                        text = config.summaryTemplate.take(100) + if (config.summaryTemplate.length > 100) "..." else "",
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            )
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            BettboxListGroup {
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showSummaryTemplateEditor = true },
+                    headlineContent = {
+                        Text(
+                            text = stringResource(R.string.rag_config_section_template),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = config.summaryTemplate.take(100) + if (config.summaryTemplate.length > 100) "..." else "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                )
+            }
 
             // === 导航链接 ===
-            Column(modifier = Modifier.fillMaxWidth()) {
+            BettboxListGroup {
                 ListItem(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     modifier = Modifier
@@ -288,7 +286,6 @@ internal fun GlobalRagConfigScreenContent(
                         )
                     }
                 )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 ListItem(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     modifier = Modifier
@@ -315,8 +312,6 @@ internal fun GlobalRagConfigScreenContent(
                     }
                 )
             }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             // === 清空按钮 ===
             Row(
