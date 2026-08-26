@@ -36,7 +36,7 @@ class SettingsVisualPrimitivesContractTest {
     fun `settings rows use standard md3 text roles without a default decorative chevron`() {
         val source = source("NexaraSettingsItem.kt")
 
-        assertThat(source).contains("defaultMinSize(minHeight =")
+        assertThat(source).contains("ListItem(")
         assertThat(source).contains("MaterialTheme.typography.bodyLarge")
         assertThat(source).contains("MaterialTheme.typography.bodyMedium")
         assertThat(source).contains("showChevron: Boolean = false")
@@ -54,13 +54,14 @@ class SettingsVisualPrimitivesContractTest {
     }
 
     @Test
-    fun `settings section uses primary small heading and a full-width group-end divider`() {
+    fun `settings section uses primary small heading and a rounded filled group`() {
         val section = source("NexaraSettingsSection.kt")
         val header = source("SettingsSectionHeader.kt")
 
         assertThat(header).contains("color = MaterialTheme.colorScheme.primary")
         assertThat(header).contains("MaterialTheme.typography.labelLarge")
-        assertThat(section).contains("nexara_settings_section_divider")
+        assertThat(section).contains("RoundedCornerShape(20.dp)")
+        assertThat(section).contains("MaterialTheme.colorScheme.surfaceContainer")
         assertThat(section).doesNotContain("NexaraSpacing.ScreenHorizontal +")
     }
 }

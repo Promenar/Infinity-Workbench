@@ -4,20 +4,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.ui.theme.NexaraSpacing
 
-/**
- * 连续设置列表的分组容器。
- *
- * 标题、内容和分隔线共用一个透明 Column，避免将每个设置项包装为独立卡片。
- */
+/** Bettbox 风格设置分组：弱化标题，设置行收进统一圆角色面。 */
 @Composable
 fun NexaraSettingsSection(
     title: String,
@@ -25,21 +21,29 @@ fun NexaraSettingsSection(
     headerStartPadding: Dp = 0.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
+    val groupHorizontalPadding = headerStartPadding
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = NexaraSpacing.Small),
+    ) {
         SettingsSectionHeader(
             title = title,
             titleStyle = MaterialTheme.typography.labelLarge,
             modifier = Modifier.padding(
-                start = headerStartPadding,
-                top = NexaraSpacing.Small,
+                start = groupHorizontalPadding + NexaraSpacing.Small,
+                end = groupHorizontalPadding + NexaraSpacing.Small,
+                bottom = NexaraSpacing.Small,
             ),
         )
-        content()
-        HorizontalDivider(
+        Surface(
             modifier = Modifier
-                .padding(top = NexaraSpacing.XSmall)
-                .testTag("nexara_settings_section_divider"),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
-        )
+                .fillMaxWidth()
+                .padding(horizontal = groupHorizontalPadding),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            Column(content = content)
+        }
     }
 }

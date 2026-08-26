@@ -17,6 +17,7 @@ class ThemeSurfaceContractTest {
     private val themeFileWhitelist = setOf(
         "native-ui/app/src/main/java/com/promenar/nexara/ui/theme/Color.kt",
         "native-ui/app/src/main/java/com/promenar/nexara/ui/theme/Theme.kt",
+        "native-ui/app/src/main/java/com/promenar/nexara/ui/theme/SeededColorScheme.kt",
     )
 
     private fun manifestFilePaths(): Set<String> {

@@ -48,6 +48,32 @@ final result: passed
 
 ---
 
+# Bettbox 开源 Material 3 基线迁移验收
+
+- 验收日期：2026-08-26
+- 上游固定提交：`714130a3d746d093f6278c0503dac9e2e43fd3e3`
+- 上游实现：`lib/widgets/list.dart`、`lib/widgets/google_bottom_nav_bar.dart`、`lib/views/theme.dart`、`lib/common/color.dart`
+- 验收设备：Android 15 / API 35，1080×2400 模拟器，中文、深色。
+
+## 视觉结论
+
+- 设置首页使用 20dp 圆角 `surfaceContainer` 分组卡片和标准 Material 3 `ListItem`，24dp 前导图标提供扫描锚点；16sp 主标题与 14sp 副标题保持正常可读尺寸，密度由统一行高、组间留白和文字轴控制。
+- 用户身份继续使用独立的 56dp 头像和 22sp 用户名层级，没有与普通设置项共用 Token。
+- 底部导航采用 Bettbox 的浮动容器语言：36dp 圆角、弱描边、6dp 阴影、选中 `secondaryContainer`、24dp 图标和 250ms 槽位权重过渡；Nexara 的真实切换触感逻辑保留。
+- 外观页包含三模式大卡、8 个可达种子色入口、动态取色、深色纯黑和全局文字缩放。实图中模式卡、色盘、开关与标题轴线一致，未出现先前压缩字号造成的廉价感。
+- Provider 空状态保持独立管理页语义；有数据时 Provider 与模型条目使用与设置页一致的填充分组和弱分隔，不更改 Provider/模型业务动作。
+
+## 设备与自动化证据
+
+- `ThemeSettingsInteractionTest`：API 35 设备 3/3 通过，覆盖模式选中语义、动态色开关、最小触控目标和 2.0x 字体。
+- API 35 通过 UI tree 坐标驱动并逐张检查主屏、设置首页、外观页与 Provider 空状态；应用 crash buffer 为空。
+- 全量 JVM 2564 项（0 failure/error、14 skip）、101/101 Screenshot、AndroidTest Kotlin 编译与 Lint 0 Error/Fatal 通过；`assembleMinifiedTest --rerun-tasks` 53/53 tasks 成功。
+- 当前进程未注入发行签名变量，且未读取项目外签名材料；本轮 R8 结果是非发行的 release-equivalent 诊断包，不能替代正式签名 APK。模拟器视觉通过也不替代用户物理真机字体与 OEM 触感验收。
+
+final result: passed-with-physical-device-pending
+
+---
+
 # 会话错误、思考轨迹与导航触感增量验收
 
 - 验收日期：2026-08-26

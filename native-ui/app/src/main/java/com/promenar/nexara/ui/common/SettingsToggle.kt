@@ -48,7 +48,7 @@ fun SettingsToggle(
                 role = Role.Switch,
                 onValueChange = onCheckedChange,
             )
-            .padding(vertical = NexaraSpacing.Small),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {

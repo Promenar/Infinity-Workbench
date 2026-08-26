@@ -49,6 +49,23 @@ class ThemeViewModel(
         store.setColorSource(source)
     }
 
+    fun setPrimaryColor(color: Long?) {
+        store.setPrimaryColor(color)
+        store.setColorSource(NexaraColorSource.NEXARA)
+    }
+
+    fun setPureBlack(enabled: Boolean) {
+        store.setPureBlack(enabled)
+    }
+
+    fun setTextScaleEnabled(enabled: Boolean) {
+        store.setTextScale(enabled)
+    }
+
+    fun setTextScale(scale: Float) {
+        store.setTextScale(store.state.value.textScaleEnabled, scale)
+    }
+
     companion object {
         fun provideFactory(store: ThemePreferenceStore): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {

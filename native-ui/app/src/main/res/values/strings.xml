@@ -923,6 +923,12 @@
     <string name="theme_dynamic_color">Dynamic Color</string>
     <string name="theme_dynamic_color_desc">Use colors generated from your wallpaper (Android 12+)</string>
     <string name="theme_dynamic_color_unavailable">Dynamic color is not supported on this Android version</string>
+    <string name="theme_dark_mode">Dark appearance</string>
+    <string name="theme_pure_black">Pure black background</string>
+    <string name="theme_pure_black_desc">Use a true black surface in dark mode</string>
+    <string name="theme_text">Text</string>
+    <string name="theme_text_scale">Custom text size</string>
+    <string name="theme_text_scale_desc">Scale app text without changing display size</string>
     <string name="developer_title">Developer panel</string>
     <string name="developer_diagnostics_section">Diagnostics and debugging</string>
     <string name="developer_export_logs">Export runtime logs</string>

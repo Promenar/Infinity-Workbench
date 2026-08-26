@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bettbox 开源 Material 3 视觉基线迁移（2026-08-26）
+
+- **源码级参考而非截图拟合**：以 Bettbox GPLv3 仓库固定提交 `714130a3d746d093f6278c0503dac9e2e43fd3e3` 的 `lib/widgets/list.dart`、`lib/widgets/google_bottom_nav_bar.dart`、`lib/views/theme.dart` 与 `lib/common/color.dart` 为视觉行为基线，将 Flutter 实现按 Jetpack Compose 语义重写；来源与许可已登记到第三方通知。
+- **设置与管理列表**：设置分组改为 20dp 圆角 `surfaceContainer` 连续卡片，标准 `ListItem` 恢复 Material 3 主副文字、24dp 前导图标和稳定触控节奏；Provider 与模型管理列表同步使用同一填充表面、弱分隔与首尾圆角，不再散落为贴背景的自定义文本行。
+- **Bettbox 式底部导航**：移动端主导航改为 36dp 圆角的浮动 `surfaceContainer` 导航座，使用弱描边、阴影、24dp 图标、`secondaryContainer` 选中项和 250ms 槽位权重动画；原有真实标签切换触感继续保留。
+- **完整外观设置**：新增跟随系统/浅色/深色三模式卡、种子色盘、Android 动态取色、深色纯黑背景及 80%–140% 全局文字缩放。种子色通过 Material Color Utilities 的 Tonal Spot 方案生成完整明暗色阶，偏好均即时持久化。
+- **当前验证**：API 35 模拟器已实图检查主屏、设置首页、外观页和 Provider 空状态；外观页 3/3 设备交互测试通过。全量 JVM 2564 项（0 failure/error、14 skip）、101/101 Screenshot、AndroidTest 编译与 Lint（0 Error/Fatal）通过；`assembleMinifiedTest --rerun-tasks` 53/53 tasks 成功。当前进程未注入发行签名变量，未读取项目外签名材料，因此本轮没有生成或冒充正式签名 APK。
+
 ### 会话可靠性、诊断与连续列表再收敛（2026-08-26）
 
 - **生成终态封口**：Provider 一旦发出显式 `Completed`，本轮流立即停止消费；迟到的失败分片不再把已经成功落库的正文污染为“提供商不可用”。字号滑块在拖动过程中采用串行防抖落库，即使 Sheet 被手势关闭、没有触发滑动结束回调，也会持久化最终字号。

@@ -25,12 +25,9 @@ class ManagementMaterialContractTest {
     fun `settings item is a flexible continuous row with button semantics`() {
         val source = source("NexaraSettingsItem")
 
-        assertThat(source).contains("Row(")
+        assertThat(source).contains("ListItem(")
         assertThat(source).doesNotContain("Surface(")
-        assertThat(source).doesNotContain("ListItem(")
         assertThat(source).doesNotContain("NexaraGlassCard(")
-        assertThat(source).contains("NexaraSpacing.MinimumTouchTarget")
-        assertThat(source).contains(".fillMaxWidth()")
         assertThat(source).contains("role = Role.Button")
         assertThat(source).contains("MaterialTheme.typography")
         assertThat(source).contains("MaterialTheme.colorScheme")
@@ -71,15 +68,16 @@ class ManagementMaterialContractTest {
     }
 
     @Test
-    fun `settings section primitive should not regress to glass card or per-row surface`() {
+    fun `settings section primitive should use Bettbox filled group surface`() {
         val sectionSourceFile = sourceFile("NexaraSettingsSection")
         assertThat(sectionSourceFile.exists()).isTrue()
 
         val source = sectionSourceFile.readText()
         assertThat(source).contains("fun NexaraSettingsSection")
-        assertThat(source).contains("HorizontalDivider(")
+        assertThat(source).contains("MaterialTheme.colorScheme.surfaceContainer")
+        assertThat(source).contains("RoundedCornerShape(20.dp)")
         assertThat(source).contains("MaterialTheme.typography")
         assertThat(source).doesNotContain("NexaraGlassCard(")
-        assertThat(source).doesNotContain("Surface(")
+        assertThat(source).contains("Surface(")
     }
 }

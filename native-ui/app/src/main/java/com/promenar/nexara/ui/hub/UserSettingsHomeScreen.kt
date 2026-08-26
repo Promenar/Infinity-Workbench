@@ -29,6 +29,19 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SmartToy
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Toll
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -240,11 +253,13 @@ internal fun UserSettingsHomeScreenContent(
                     headerStartPadding = NexaraSpacing.ScreenHorizontal,
                 ) {
                     UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Language,
                         title = stringResource(R.string.settings_language),
                         subtitle = stringResource(R.string.settings_language_desc),
                         onClick = actions.onShowLanguageDialog,
                     )
                     UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Palette,
                         title = stringResource(R.string.settings_appearance),
                         subtitle = stringResource(R.string.settings_appearance_desc),
                         onClick = { actions.onNavigateToSecondary(NavDestinations.THEME_CONFIG) }
@@ -258,12 +273,14 @@ internal fun UserSettingsHomeScreenContent(
                     headerStartPadding = NexaraSpacing.ScreenHorizontal,
                 ) {
                     UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Storage,
                         title = stringResource(R.string.settings_provider_management),
                         subtitle = stringResource(R.string.settings_provider_management_desc),
                         onClick = { actions.onNavigateToSecondary(NavDestinations.PROVIDER_LIST) },
                         modifier = Modifier.testTag(UiTags.SETTINGS_PROVIDER_ENTRY),
                     )
                     UserSettingsNavigationItem(
+                        icon = Icons.Rounded.SmartToy,
                         title = stringResource(R.string.settings_default_models),
                         subtitle = stringResource(R.string.settings_default_models_desc),
                         onClick = { actions.onNavigateToSecondary(NavDestinations.DEFAULT_MODELS) },
@@ -272,6 +289,7 @@ internal fun UserSettingsHomeScreenContent(
                     if (state.localInferenceAvailable) {
                         Box(modifier = Modifier.testTag(UiTags.SETTINGS_LOCAL_INFERENCE_ENTRY)) {
                             UserSettingsNavigationItem(
+                                icon = Icons.Rounded.Memory,
                                 title = stringResource(R.string.settings_local_models),
                                 subtitle = stringResource(R.string.settings_local_models_desc),
                                 onClick = { actions.onNavigateToSecondary("local_models") }
@@ -287,11 +305,13 @@ internal fun UserSettingsHomeScreenContent(
                     headerStartPadding = NexaraSpacing.ScreenHorizontal,
                 ) {
                     UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Psychology,
                         title = stringResource(R.string.settings_rag_config),
                         subtitle = stringResource(R.string.settings_rag_desc),
                         onClick = { actions.onNavigateToSecondary("rag_global_config") },
                     )
                     UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Search,
                         title = stringResource(R.string.settings_advanced_retrieval),
                         subtitle = stringResource(R.string.settings_retrieval_desc),
                         onClick = { actions.onNavigateToSecondary("rag_advanced") },
@@ -305,21 +325,25 @@ internal fun UserSettingsHomeScreenContent(
                     headerStartPadding = NexaraSpacing.ScreenHorizontal,
                 ) {
                     UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Build,
                         title = stringResource(R.string.settings_skills),
                         subtitle = stringResource(R.string.settings_skills_desc),
                         onClick = { actions.onNavigateToSecondary("skills_config") },
                     )
                     UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Toll,
                         title = stringResource(R.string.settings_token_usage),
                         subtitle = stringResource(R.string.settings_token_usage_desc),
                         onClick = { actions.onNavigateToSecondary("token_usage") },
                     )
                     UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Backup,
                         title = stringResource(R.string.settings_backup),
                         subtitle = stringResource(R.string.settings_backup_desc),
                         onClick = { actions.onNavigateToSecondary("backup_settings") },
                     )
                     UserSettingsNavigationItem(
+                        icon = Icons.Rounded.BugReport,
                         title = stringResource(R.string.settings_diagnostics_export),
                         subtitle = stringResource(R.string.settings_diagnostics_export_desc),
                         onClick = actions.onExportDiagnostics,
@@ -333,6 +357,7 @@ internal fun UserSettingsHomeScreenContent(
                     headerStartPadding = NexaraSpacing.ScreenHorizontal,
                 ) {
                     UserSettingsNavigationItem(
+                        icon = Icons.Rounded.Info,
                         title = stringResource(R.string.settings_about_nexara),
                         subtitle = stringResource(R.string.settings_about_nexara_desc),
                         onClick = actions.onAboutClick,
@@ -350,16 +375,18 @@ internal fun UserSettingsHomeScreenContent(
 
 @Composable
 private fun UserSettingsNavigationItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     NexaraSettingsItem(
+        icon = icon,
         title = title,
         subtitle = subtitle,
         onClick = onClick,
-        modifier = modifier.padding(horizontal = NexaraSpacing.ScreenHorizontal),
+        modifier = modifier,
     )
 }
 

@@ -65,6 +65,36 @@ class ThemePreferenceStoreTest {
     }
 
     @Test
+    fun `Bettbox 外观偏好立即更新并写入持久化存储`() {
+        val editor = mockk<SharedPreferences.Editor>(relaxed = true)
+        every { editor.putString(any(), any()) } returns editor
+        every { editor.putLong(any(), any()) } returns editor
+        every { editor.putBoolean(any(), any()) } returns editor
+        every { editor.putFloat(any(), any()) } returns editor
+        every { editor.apply() } returns Unit
+        val prefs = mockk<SharedPreferences>(relaxed = true) {
+            every { contains(any()) } returns false
+            every { getString("theme_mode", any()) } returns null
+            every { getString("theme_color_source", any()) } returns null
+            every { edit() } returns editor
+        }
+        val store = ThemePreferenceStore(contextFor(prefs))
+
+        store.setPrimaryColor(0xFF6366F1L)
+        store.setPureBlack(true)
+        store.setTextScale(enabled = true, scale = 1.2f)
+
+        assertThat(store.state.value.primaryColor).isEqualTo(0xFF6366F1L)
+        assertThat(store.state.value.pureBlack).isTrue()
+        assertThat(store.state.value.textScaleEnabled).isTrue()
+        assertThat(store.state.value.textScale).isWithin(0.001f).of(1.2f)
+        verify { editor.putLong("theme_primary_color", 0xFF6366F1L) }
+        verify { editor.putBoolean("theme_pure_black", true) }
+        verify { editor.putBoolean("theme_text_scale_enabled", true) }
+        verify { editor.putFloat("theme_text_scale", 1.2f) }
+    }
+
+    @Test
     fun `未知持久值回退到默认策略`() = runTest {
         val prefs = mockk<SharedPreferences>(relaxed = true) {
             every { getString("theme_mode", any()) } returns "unknown"

@@ -3,20 +3,18 @@ package com.promenar.nexara.ui
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.annotation.StringRes
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.LocalLibrary
@@ -33,28 +31,17 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.testTag as semanticsTestTag
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.zIndex
 import com.promenar.nexara.R
-import kotlin.math.PI
-import kotlin.math.sin
 
 enum class AppTab(@StringRes val titleRes: Int, val icon: ImageVector) {
     CHAT(R.string.nav_tab_chat, Icons.Rounded.ChatBubble),
@@ -67,8 +54,7 @@ internal fun shouldUseNavigationRail(width: androidx.compose.ui.unit.Dp): Boolea
 internal fun constrainedBodyWidth(available: androidx.compose.ui.unit.Dp): androidx.compose.ui.unit.Dp =
     minOf(available, 960.dp)
 
-internal fun fluidNavigationTargetIndex(tab: AppTab): Int =
-    AppTab.entries.indexOf(tab).coerceAtLeast(0)
+internal fun bottomNavigationTabWeight(selected: Boolean): Float = if (selected) 1.45f else 1f
 
 internal fun shouldPerformNavigationHaptic(
     current: AppTab,
@@ -79,17 +65,6 @@ internal fun shouldPerformNavigationHaptic(
 internal fun navigationHapticConstant(sdkInt: Int): Int =
     if (sdkInt >= 34) HapticFeedbackConstants.SEGMENT_TICK
     else HapticFeedbackConstants.CLOCK_TICK
-
-internal data class FluidNavigationScale(val x: Float, val y: Float)
-
-internal fun fluidNavigationIndicatorScale(progress: Float): FluidNavigationScale {
-    val boundedProgress = progress.coerceIn(0f, 1f)
-    val deformation = sin(PI.toFloat() * boundedProgress)
-    return FluidNavigationScale(
-        x = 1f + (0.16f * deformation),
-        y = 1f - (0.10f * deformation),
-    )
-}
 
 @Composable
 fun MainTabScaffold(
@@ -225,13 +200,16 @@ private fun FloatingNavigationDock(
                 .fillMaxWidth()
                 .height(64.dp)
                 .testTag("main_bottom_navigation"),
-            shape = androidx.compose.foundation.shape.CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(36.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            tonalElevation = 5.dp,
-            shadowElevation = 4.dp,
+            border = BorderStroke(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            ),
+            shadowElevation = 6.dp,
         ) {
-            FluidNavigationContent(
+            BettboxNavigationContent(
                 selectedTab = selectedTab,
                 onTabSelected = onTabSelected,
             )
@@ -240,143 +218,79 @@ private fun FloatingNavigationDock(
 }
 
 @Composable
-private fun FluidNavigationContent(
+private fun BettboxNavigationContent(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
 ) {
     val view = LocalView.current
     val app = LocalContext.current.applicationContext as? com.promenar.nexara.NexaraApplication
-    val targetIndex = fluidNavigationTargetIndex(selectedTab)
-    val animatedIndex = animateFloatAsState(
-        targetValue = targetIndex.toFloat(),
-        animationSpec = spring(
-            dampingRatio = 0.78f,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
-        label = "fluidNavigationPosition",
-    )
-    val deformationProgress = remember { Animatable(1f) }
-    var hasRenderedSelection by remember { mutableStateOf(false) }
-
-    LaunchedEffect(targetIndex) {
-        if (hasRenderedSelection) {
-            if (deformationProgress.value == 1f) {
-                deformationProgress.snapTo(0f)
-            }
-            deformationProgress.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing),
-            )
-        } else {
-            hasRenderedSelection = true
-            deformationProgress.snapTo(1f)
-        }
-    }
-
-    BoxWithConstraints(
+    Row(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        val slotWidth = maxWidth / AppTab.entries.size
-        val indicatorWidth = (slotWidth + 20.dp).coerceAtMost(maxWidth)
-        val density = LocalDensity.current
-        val slotWidthPx = with(density) { slotWidth.toPx() }
-        val indicatorWidthPx = with(density) { indicatorWidth.toPx() }
-        val maxOffsetPx = with(density) { (maxWidth - indicatorWidth).toPx() }
-        val indicatorTopPx = with(density) { 8.dp.roundToPx() }
-        val indicatorColor = lerp(
-            MaterialTheme.colorScheme.surfaceContainerHigh,
-            MaterialTheme.colorScheme.primary,
-            0.22f,
-        )
-        val transformOrigin = when (targetIndex) {
-            0 -> TransformOrigin(0f, 0.5f)
-            AppTab.entries.lastIndex -> TransformOrigin(1f, 0.5f)
-            else -> TransformOrigin.Center
-        }
-
-        Box(
-            modifier = Modifier
-                .offset {
-                    val rawOffset = slotWidthPx * animatedIndex.value +
-                        (slotWidthPx - indicatorWidthPx) / 2f
-                    IntOffset(
-                        x = rawOffset.coerceIn(0f, maxOffsetPx).toInt(),
-                        y = indicatorTopPx,
+        AppTab.entries.forEach { tab ->
+            val label = stringResource(tab.titleRes)
+            val selected = selectedTab == tab
+            val weight by animateFloatAsState(
+                targetValue = bottomNavigationTabWeight(selected),
+                animationSpec = tween(durationMillis = 250),
+                label = "bottom-navigation-weight-${tab.name}",
+            )
+            Surface(
+                modifier = Modifier
+                    .weight(weight)
+                    .fillMaxHeight()
+                    .minimumInteractiveComponentSize()
+                    .selectable(
+                        selected = selected,
+                        onClick = {
+                            if (shouldPerformNavigationHaptic(
+                                    current = selectedTab,
+                                    target = tab,
+                                    enabled = app?.hapticEnabled == true,
+                                )
+                            ) {
+                                view.performHapticFeedback(
+                                    navigationHapticConstant(Build.VERSION.SDK_INT),
+                                )
+                            }
+                            onTabSelected(tab)
+                        },
+                        role = Role.Tab,
                     )
-                }
-                .width(indicatorWidth)
-                .height(48.dp)
-                .zIndex(1f)
-                .graphicsLayer {
-                    val indicatorScale = fluidNavigationIndicatorScale(deformationProgress.value)
-                    scaleX = indicatorScale.x
-                    scaleY = indicatorScale.y
-                    this.transformOrigin = transformOrigin
-                }
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(indicatorColor)
-                .clearAndSetSemantics {
-                    semanticsTestTag = "main_navigation_selected_indicator"
+                    .semantics { contentDescription = label }
+                    .testTag(navigationTabTag(tab)),
+                shape = CircleShape,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.secondaryContainer
+                } else {
+                    androidx.compose.ui.graphics.Color.Transparent
                 },
-            contentAlignment = Alignment.Center,
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
+                contentColor = if (selected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             ) {
-                Icon(
-                    imageVector = selectedTab.icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = stringResource(selectedTab.titleRes),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                )
-            }
-        }
-
-        Row(modifier = Modifier.fillMaxSize()) {
-            AppTab.entries.forEach { tab ->
-                val label = stringResource(tab.titleRes)
-                val selected = selectedTab == tab
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .minimumInteractiveComponentSize()
-                        .clip(CircleShape)
-                        .selectable(
-                            selected = selected,
-                            onClick = {
-                                if (shouldPerformNavigationHaptic(
-                                        current = selectedTab,
-                                        target = tab,
-                                        enabled = app?.hapticEnabled == true,
-                                    )
-                                ) {
-                                    view.performHapticFeedback(
-                                        navigationHapticConstant(Build.VERSION.SDK_INT),
-                                    )
-                                }
-                                onTabSelected(tab)
-                            },
-                            role = Role.Tab,
-                        )
-                        .semantics { contentDescription = label }
-                        .testTag(navigationTabTag(tab)),
-                    contentAlignment = Alignment.Center,
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (!selected) {
-                        Icon(
-                            imageVector = tab.icon,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Icon(
+                        imageVector = tab.icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    if (selected) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
                         )
                     }
                 }

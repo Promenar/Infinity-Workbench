@@ -12,8 +12,11 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Density
 import androidx.core.view.WindowCompat
 
 private val LocalNexaraDomainColors = staticCompositionLocalOf { NexaraDarkDomainColors }
@@ -64,6 +67,7 @@ fun NexaraTheme(
     }
     val useDynamicColor = preferences?.colorSource == NexaraColorSource.DYNAMIC ||
         (preferences == null && dynamicColor)
+    val seedColor = preferences?.primaryColor?.let { Color(it.toULong()) }
     val colorScheme = when {
         useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && useDarkTheme -> {
             val context = LocalContext.current
@@ -73,9 +77,10 @@ fun NexaraTheme(
             val context = LocalContext.current
             androidx.compose.material3.dynamicLightColorScheme(context)
         }
+        seedColor != null -> seededColorScheme(seedColor, useDarkTheme)
         useDarkTheme -> NexaraDarkColorScheme
         else -> NexaraLightColorScheme
-    }
+    }.withPureBlackSurface(useDarkTheme && preferences?.pureBlack == true)
     val domainColors = remember(colorScheme, useDynamicColor, useDarkTheme) {
         when {
             useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
@@ -101,7 +106,20 @@ fun NexaraTheme(
         }
     }
 
-    CompositionLocalProvider(LocalNexaraDomainColors provides domainColors) {
+    val currentDensity = LocalDensity.current
+    val textScale = if (preferences?.textScaleEnabled == true) {
+        preferences.textScale.coerceIn(0.8f, 1.4f)
+    } else {
+        1f
+    }
+    val scaledDensity = remember(currentDensity, textScale) {
+        Density(currentDensity.density, currentDensity.fontScale * textScale)
+    }
+
+    CompositionLocalProvider(
+        LocalNexaraDomainColors provides domainColors,
+        LocalDensity provides scaledDensity,
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = NexaraTypography,

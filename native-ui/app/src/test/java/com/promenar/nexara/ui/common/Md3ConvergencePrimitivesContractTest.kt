@@ -23,10 +23,12 @@ class Md3ConvergencePrimitivesContractTest {
     }
 
     @Test
-    fun `NexaraSettingsSection should use list-vertical tokens without glass card`() {
+    fun `NexaraSettingsSection should use Bettbox surface container without glass card`() {
         val source = sourceFile("NexaraSettingsSection").readText()
         assertThat(source).contains("SettingsSectionHeader")
-        assertThat(source).contains("Divider")
+        assertThat(source).contains("Surface(")
+        assertThat(source).contains("surfaceContainer")
+        assertThat(source).contains("RoundedCornerShape(20.dp)")
         assertThat(source).contains("MaterialTheme.typography")
         assertThat(source).contains("MaterialTheme.colorScheme")
         assertThat(source).doesNotContain("NexaraGlassCard(")

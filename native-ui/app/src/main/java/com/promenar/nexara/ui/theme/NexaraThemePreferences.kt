@@ -24,4 +24,8 @@ enum class NexaraColorSource {
 data class NexaraThemePreferences(
     val mode: NexaraThemeMode = NexaraThemeMode.DARK,
     val colorSource: NexaraColorSource = NexaraColorSource.NEXARA,
+    val primaryColor: Long? = null,
+    val pureBlack: Boolean = false,
+    val textScaleEnabled: Boolean = false,
+    val textScale: Float = 1f,
 )

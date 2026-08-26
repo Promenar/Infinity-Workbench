@@ -930,6 +930,12 @@
     <string name="theme_dynamic_color">动态取色</string>
     <string name="theme_dynamic_color_desc">根据系统壁纸动态生成应用配色 (Android 12+)</string>
     <string name="theme_dynamic_color_unavailable">当前 Android 版本不支持动态取色</string>
+    <string name="theme_dark_mode">深色外观</string>
+    <string name="theme_pure_black">纯黑背景</string>
+    <string name="theme_pure_black_desc">在深色模式下使用纯黑色界面背景</string>
+    <string name="theme_text">文字</string>
+    <string name="theme_text_scale">自定义文字大小</string>
+    <string name="theme_text_scale_desc">仅缩放应用文字，不改变界面显示尺寸</string>
     <string name="developer_title">开发者面板</string>
     <string name="developer_diagnostics_section">系统诊断与调试</string>
     <string name="developer_export_logs">导出运行日志</string>

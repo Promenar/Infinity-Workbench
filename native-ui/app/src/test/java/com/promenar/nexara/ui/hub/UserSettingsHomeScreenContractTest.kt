@@ -195,7 +195,8 @@ class UserSettingsHomeScreenContractTest {
     @Test
     fun `provider list is continuous and separates rows without card gaps`() {
         assertThat(providerListSource).contains("verticalArrangement = Arrangement.spacedBy(0.dp)")
-        assertThat(providerListSource).contains("itemsIndexed(")
+        assertThat(providerListSource).contains("ProviderGroupDivider()")
+        assertThat(providerListSource).contains("RoundedCornerShape(20.dp)")
     }
 
     @Test

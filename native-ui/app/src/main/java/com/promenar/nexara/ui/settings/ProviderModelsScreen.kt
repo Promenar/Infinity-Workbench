@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Block
@@ -312,20 +313,39 @@ internal fun ProviderModelsScreenContent(
                     filteredModels,
                     key = { _, model -> model.id },
                 ) { index, model ->
-                    if (index > 0) {
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant,
+                    val shape = when {
+                        filteredModels.size == 1 -> RoundedCornerShape(20.dp)
+                        index == 0 -> RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+                        index == filteredModels.lastIndex -> RoundedCornerShape(
+                            bottomStart = 20.dp,
+                            bottomEnd = 20.dp,
                         )
+                        else -> RoundedCornerShape(0.dp)
                     }
-                    ProviderModelsModelRow(
-                        model = model,
-                        onRowClick = {
-                            focusManager.clearFocus()
-                            keyboardController?.hide()
-                            selectedModelId = model.id
-                        },
-                        onToggle = { actions.onToggle(model.id) },
-                    )
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = shape,
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                    ) {
+                        Column {
+                            if (index > 0) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                )
+                            }
+                            ProviderModelsModelRow(
+                                model = model,
+                                onRowClick = {
+                                    focusManager.clearFocus()
+                                    keyboardController?.hide()
+                                    selectedModelId = model.id
+                                },
+                                onToggle = { actions.onToggle(model.id) },
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                        }
+                    }
                 }
             }
         }

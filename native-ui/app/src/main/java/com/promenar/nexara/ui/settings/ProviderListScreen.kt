@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
@@ -164,42 +165,54 @@ internal fun ProviderListScreenContent(
                     ProviderEmptyState(compactHeight = compactHeightEmptyState)
                 }
             } else {
-                itemsIndexed(state.providers, key = { _, provider -> provider.id }) { index, provider ->
-                    if (index > 0) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    }
-                    ProviderCard(
-                        provider = provider,
-                        onClick = { actions.onProviderModels(provider.id) },
-                        onEdit = { actions.onEditProvider(provider.id) },
-                        onDelete = if (provider.id == "default") {
-                            null
-                        } else {
-                            { actions.onRequestDeleteProvider(provider.id) }
+                item("provider-group") {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 5.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                    ) {
+                        Column {
+                            val allRows = state.providers.size + state.unsupportedProviders.size
+                            var renderedRows = 0
+                            state.providers.forEach { provider ->
+                                ProviderCard(
+                                    provider = provider,
+                                    onClick = { actions.onProviderModels(provider.id) },
+                                    onEdit = { actions.onEditProvider(provider.id) },
+                                    onDelete = if (provider.id == "default") null else {
+                                        { actions.onRequestDeleteProvider(provider.id) }
+                                    },
+                                )
+                                renderedRows += 1
+                                if (renderedRows < allRows) ProviderGroupDivider()
+                            }
+                            state.unsupportedProviders.forEach { provider ->
+                                UnsupportedProviderCard(
+                                    provider = provider,
+                                    onEdit = { actions.onEditProvider(provider.id) },
+                                    onDelete = if (provider.id == "default") null else {
+                                        { actions.onRequestDeleteProvider(provider.id) }
+                                    },
+                                )
+                                renderedRows += 1
+                                if (renderedRows < allRows) ProviderGroupDivider()
+                            }
                         }
-                    )
-                }
-                itemsIndexed(
-                    state.unsupportedProviders,
-                    key = { _, provider -> provider.id },
-                ) { index, provider ->
-                    if (state.providers.isNotEmpty() || index > 0) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
-                    UnsupportedProviderCard(
-                        provider = provider,
-                        onEdit = { actions.onEditProvider(provider.id) },
-                        onDelete = if (provider.id == "default") null else {
-                            { actions.onRequestDeleteProvider(provider.id) }
-                        },
-                    )
-                }
-                item {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ProviderGroupDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+    )
 }
 
 @Composable

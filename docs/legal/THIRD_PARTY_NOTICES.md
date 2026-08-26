@@ -47,3 +47,30 @@ SOFTWARE.
 - Nexara 会基于 `models.dev` 上游快照叠加厂商元数据与本地修正。
 - Nexara 不保证该快照目录单独构成完整真实权威模型库。
 - 任何离线更新与校验行为仅在项目仓库内进行，便于可复现与审计。
+
+---
+
+## Bettbox Material 3 界面参考与转译
+
+### 上游项目
+
+- 名称：Bettbox
+- 上游仓库：`https://github.com/appshubcc/Bettbox`
+- 本地固定来源提交：`714130a3d746d093f6278c0503dac9e2e43fd3e3`
+- 许可：GNU General Public License v3.0
+- Nexara 许可：GNU General Public License v3.0，与上游许可兼容
+
+### 转译范围
+
+Nexara 没有直接引入 Bettbox 的 Flutter/Dart 构建产物，而是将以下界面结构和交互语言按 Jetpack Compose 重新实现：
+
+- `lib/widgets/list.dart`：标准 ListTile 节奏、20dp 圆角填充分组、弱化的组内分隔；
+- `lib/widgets/google_bottom_nav_bar.dart`：36dp 浮动导航座、弱描边与阴影、选中容器、250ms 状态过渡；
+- `lib/views/theme.dart`：三模式选择、种子色盘、纯黑模式与全局文字缩放；
+- `lib/common/color.dart` 与 `lib/providers/state.dart`：种子色和纯黑表面的状态映射思路。
+
+### 交付边界
+
+- 业务模型、数据层、导航目的地、无障碍语义与 Android 触感仍由 Nexara 自身实现负责；Flutter 特有依赖没有进入 Android 运行时。
+- 固定提交只用于复现本次视觉基线；后续上游变化不会自动改变 Nexara 的界面行为。
+- GPLv3 完整条款见仓库根目录 `LICENSE`。

@@ -107,4 +107,4 @@ adb logcat -s NEXARA_METRO | node scripts/nexara-metro-tui.js --stdin --no-color
 
 ## License
 
-Nexara 基于 [GNU General Public License v3.0](LICENSE) 发布。对应 Release 的完整源码由同名 Git tag 固定。
+Nexara 基于 [GNU General Public License v3.0](LICENSE) 发布。设置列表、底部导航与外观页包含基于同为 GPLv3 的 [Bettbox](https://github.com/appshubcc/Bettbox) 视觉实现进行的 Compose 转译，固定来源与范围见 [第三方通知](docs/legal/THIRD_PARTY_NOTICES.md)。对应 Release 的完整源码由同名 Git tag 固定。
