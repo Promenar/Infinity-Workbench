@@ -623,25 +623,33 @@ fun ChatScreenContent(
                         ) {
                             items(selectedImageUris.size) { index ->
                                 val uri = selectedImageUris[index]
-                                Box(modifier = Modifier.size(64.dp).clip(RoundedCornerShape(8.dp))) {
+                                Box(modifier = Modifier.size(72.dp)) {
                                     coil3.compose.AsyncImage(
                                         model = uri,
                                         contentDescription = stringResource(R.string.chat_cd_selected_image),
-                                        modifier = Modifier.fillMaxSize(),
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .align(Alignment.BottomStart)
+                                            .clip(RoundedCornerShape(12.dp)),
                                         contentScale = ContentScale.Crop,
                                     )
-                                    IconButton(
+                                    Surface(
                                         onClick = { actions.onRemoveImage(index) },
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                        shadowElevation = 2.dp,
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
-                                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                            .size(28.dp),
                                     ) {
-                                        Icon(
-                                            Icons.Rounded.Close,
-                                            stringResource(R.string.chat_cd_remove_image),
-                                            tint = MaterialTheme.colorScheme.onPrimary,
-                                            modifier = Modifier.size(18.dp),
-                                        )
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                Icons.Rounded.Close,
+                                                stringResource(R.string.chat_cd_remove_image),
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        }
                                     }
                                 }
                             }

@@ -119,7 +119,7 @@ internal class ParseCache {
     var segments: List<ContentSegment> = emptyList()
 }
 
-internal const val STREAM_TAIL_FADE_DURATION_MS = 140
+internal const val STREAM_TAIL_FADE_DURATION_MS = 220
 
 internal fun shouldAnimateStreamingTail(
     isStreaming: Boolean,
@@ -140,7 +140,7 @@ internal fun streamTailFadeStartAlpha(
     ) {
         return 1f
     }
-    return if (previousContent.isEmpty()) 0.68f else maxOf(0.68f, currentAlpha - 0.12f)
+    return if (previousContent.isEmpty()) 0.84f else maxOf(0.84f, currentAlpha - 0.05f)
 }
 
 @Composable
@@ -176,7 +176,7 @@ private fun Modifier.streamingTailFade(
         compositingStrategy = CompositingStrategy.Offscreen
     }.drawWithContent {
         drawContent()
-        val fadeHeight = 28.dp.toPx().coerceAtMost(size.height)
+        val fadeHeight = 36.dp.toPx().coerceAtMost(size.height)
         if (fadeHeight > 0f && tailAlpha.value < 1f) {
             drawRect(
                 brush = Brush.verticalGradient(

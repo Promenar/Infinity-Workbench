@@ -48,6 +48,30 @@ final result: passed
 
 ---
 
+# 会话错误、思考轨迹与导航触感增量验收
+
+- 验收日期：2026-08-26
+- 真机反馈源图：`/var/folders/tf/qf5lsvm91j91bh107wqfwr9h0000gn/T/codex-clipboard-8290ead1-bb7a-4fe4-972b-94efcacbe077.jpg`
+- 覆盖基线：流式中文会话、思考完成与模型尾注、2.0x 字体错误状态。
+
+## 视觉结论
+
+- 思考框到正文之间的竖线与圆点已经移除，折叠态不再预留空连接段；工具调用步骤仍使用原有链路连接器。
+- 错误信息从正文尾部文本改为独立 `errorContainer/onErrorContainer` 表面，具备至少 48dp 的长按操作区，可单独删除，不再黏附上一条成功回复。
+- 图片附件删除动作使用缩略图右上角 28dp 圆形实体按钮，图标在按钮内居中，缩略图本身保持 64dp 裁切区域。
+- 底部导航宽度、高度、三槽布局、选中水滴胶囊和 340ms 形变动画未改；仅切换到不同标签时请求系统/OEM 调校的 `SEGMENT_TICK`（旧系统回退 `CLOCK_TICK`），重复点击和关闭触感时不触发。
+- 流式尾部遮罩从高对比短闪调整为 220ms、最低 0.84 alpha 的柔和淡入，降低逐字符刷新时的明暗抽动，不引入延迟积压型打字机动画。
+
+## 自动化证据
+
+- 全量 JVM 2552 项（0 failure/error、14 skip）、100/100 Screenshot、AndroidTest 编译、Lint 0 Error/Fatal 与 Debug 构建通过。
+- 3 张受影响会话基线逐张检查并更新，其余 97 张保持一致。
+- 正式签名 R8 APK 为 18,649,988 bytes，SHA-256 `e1b14bf36c0bf0e16aaa7dfd9121ed301b3f4fde59ca73f95077ff5525123698`；当前无连接设备，物理真机与 OEM 线性马达手感仍待用户验收。
+
+final result: passed-with-device-pending
+
+---
+
 # 设置全层级 Solid Explorer 连续列表视觉验收
 
 - 验收日期：2026-08-04

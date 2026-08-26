@@ -29,6 +29,9 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE session_id = :sessionId AND id = :messageId")
     suspend fun deleteByIdInSession(sessionId: String, messageId: String): Int
 
+    @Query("DELETE FROM messages WHERE session_id = :sessionId AND id IN (:messageIds)")
+    suspend fun deleteByIdsInSession(sessionId: String, messageIds: List<String>): Int
+
     @Query("DELETE FROM messages WHERE session_id = :sessionId")
     suspend fun deleteBySessionId(sessionId: String)
 

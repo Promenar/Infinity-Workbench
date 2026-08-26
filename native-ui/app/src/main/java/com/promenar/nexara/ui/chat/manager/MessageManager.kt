@@ -48,6 +48,25 @@ internal data class MessageCoordinationState(
     val purging: Int = 0,
 )
 
+internal fun messageRemovalIds(messages: List<Message>, messageId: String): List<String> {
+    val targetIndex = messages.indexOfFirst { it.id == messageId }
+    if (targetIndex < 0) return listOf(messageId)
+    val removalIds = linkedSetOf(messageId)
+    if (messages[targetIndex].role == MessageRole.USER) {
+        messages.drop(targetIndex + 1)
+            .takeWhile { it.role != MessageRole.USER }
+            .forEach { removalIds += it.id }
+    }
+    var expanded: Boolean
+    do {
+        expanded = false
+        messages.forEach { message ->
+            if (message.parentMessageId in removalIds && removalIds.add(message.id)) expanded = true
+        }
+    } while (expanded)
+    return removalIds.toList()
+}
+
 class MessageManager(
     private val store: ChatStore,
     private val messageRepository: IMessageRepository,
@@ -651,34 +670,21 @@ class MessageManager(
         messageId: String,
         onAbortGeneration: ((String) -> Unit)? = null
     ) {
-        val state = store.get()
-        if (state.currentGeneratingSessionId == sessionId) {
-            val session = store.getSession(sessionId)
-            if (session != null) {
-                val lastMsg = session.messages.lastOrNull()
-                if (lastMsg?.id == messageId) {
-                    onAbortGeneration?.invoke(sessionId)
-                }
-            }
-        }
-
         val storeMessages = store.getSession(sessionId)?.messages.orEmpty()
         val persistedMessages = messageRepository.getBySession(sessionId)
         val allMessages = (storeMessages + persistedMessages).distinctBy { it.id }
-        val removalIds = linkedSetOf(messageId)
-        var expanded: Boolean
-        do {
-            expanded = false
-            allMessages.forEach { message ->
-                if (message.parentMessageId in removalIds && removalIds.add(message.id)) {
-                    expanded = true
-                }
-            }
-        } while (expanded)
+        val removalIds = messageRemovalIds(allMessages, messageId)
+        val state = store.get()
+        if (
+            state.currentGeneratingSessionId == sessionId &&
+            store.getSession(sessionId)?.messages?.lastOrNull()?.id in removalIds
+        ) {
+            onAbortGeneration?.invoke(sessionId)
+        }
 
         val purgeKeys = purgeMessageState(sessionId, removalIds)
         try {
-            check(messageRepository.deleteInSession(sessionId, messageId)) {
+            check(messageRepository.deleteManyInSession(sessionId, removalIds) > 0) {
                 "消息不存在或不属于当前会话"
             }
 

@@ -20,6 +20,35 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MessageManagerTest {
+
+    @Test
+    fun `删除用户消息覆盖同轮旧数据中缺少父ID的助手与工具消息`() {
+        val messages = listOf(
+            Message(id = "u1", role = MessageRole.USER, content = "第一问"),
+            Message(id = "a1", role = MessageRole.ASSISTANT, content = "", isError = true),
+            Message(id = "t1", role = MessageRole.TOOL, content = "旧工具结果"),
+            Message(id = "u2", role = MessageRole.USER, content = "第二问"),
+            Message(id = "a2", role = MessageRole.ASSISTANT, content = "第二答"),
+        )
+
+        assertThat(messageRemovalIds(messages, "u1"))
+            .containsExactly("u1", "a1", "t1")
+            .inOrder()
+    }
+
+    @Test
+    fun `删除助手消息仍只级联其显式子消息`() {
+        val messages = listOf(
+            Message(id = "u1", role = MessageRole.USER, content = "第一问"),
+            Message(id = "a1", role = MessageRole.ASSISTANT, content = "第一答", parentMessageId = "u1"),
+            Message(id = "t1", role = MessageRole.TOOL, content = "结果", parentMessageId = "a1"),
+            Message(id = "a2", role = MessageRole.ASSISTANT, content = "后续", parentMessageId = "u1"),
+        )
+
+        assertThat(messageRemovalIds(messages, "a1"))
+            .containsExactly("a1", "t1")
+            .inOrder()
+    }
     private lateinit var store: ChatStore
     private lateinit var messageManager: MessageManager
     private val testScope = TestScope()

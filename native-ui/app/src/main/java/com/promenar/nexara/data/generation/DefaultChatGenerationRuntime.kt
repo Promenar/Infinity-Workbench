@@ -441,6 +441,7 @@ internal class DefaultChatGenerationRuntime(
                 role = MessageRole.ASSISTANT,
                 content = "",
                 modelId = session.modelId,
+                parentMessageId = request.userMessageId,
                 createdAt = System.currentTimeMillis(),
             ),
         )

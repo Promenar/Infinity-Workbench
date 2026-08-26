@@ -42,7 +42,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -187,7 +186,10 @@ internal fun ProviderListScreenContent(
                     }
                     UnsupportedProviderCard(
                         provider = provider,
-                        onDelete = { actions.onRequestDeleteProvider(provider.id) },
+                        onEdit = { actions.onEditProvider(provider.id) },
+                        onDelete = if (provider.id == "default") null else {
+                            { actions.onRequestDeleteProvider(provider.id) }
+                        },
                     )
                 }
                 item {
@@ -201,7 +203,8 @@ internal fun ProviderListScreenContent(
 @Composable
 private fun UnsupportedProviderCard(
     provider: UnsupportedProviderListItem,
-    onDelete: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: (() -> Unit)?,
 ) {
     var menuExpanded by remember(provider.id) { mutableStateOf(false) }
     val unsupportedDescription = stringResource(R.string.settings_provider_protocol_unsupported)
@@ -210,9 +213,9 @@ private fun UnsupportedProviderCard(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
+            .clickable(onClick = onEdit)
             .testTag(UiTags.settingsProviderCard(provider.id))
             .semantics {
-                disabled()
                 stateDescription = unsupportedDescription
             },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -242,7 +245,14 @@ private fun UnsupportedProviderCard(
             }
         },
         trailingContent = {
-            Box {
+            if (onDelete == null) {
+                IconButton(onClick = onEdit) {
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = stringResource(R.string.common_cd_edit),
+                    )
+                }
+            } else Box {
                 IconButton(
                     onClick = { menuExpanded = true },
                     modifier = Modifier

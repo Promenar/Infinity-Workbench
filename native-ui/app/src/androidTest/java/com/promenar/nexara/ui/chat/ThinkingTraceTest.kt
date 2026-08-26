@@ -50,19 +50,16 @@ class ThinkingTraceTest {
 
         // 默认折叠，内容不可见
         rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsNotDisplayed()
-        rule.onNodeWithTag(UiTags.CHAT_THINKING_COLLAPSED_CONNECTOR).assertIsDisplayed()
 
         // 点击展开
         rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE).performClick()
         assertExpansionState(R.string.common_state_expanded)
         rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsDisplayed()
-        rule.onNodeWithTag(UiTags.CHAT_THINKING_COLLAPSED_CONNECTOR).assertIsNotDisplayed()
 
         // 再次点击折叠
         rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE).performClick()
         assertExpansionState(R.string.common_state_collapsed)
         rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsNotDisplayed()
-        rule.onNodeWithTag(UiTags.CHAT_THINKING_COLLAPSED_CONNECTOR).assertIsDisplayed()
     }
 
     @Test
@@ -85,7 +82,6 @@ class ThinkingTraceTest {
 
         assertExpansionState(R.string.common_state_expanded)
         rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsDisplayed()
-        rule.onNodeWithTag(UiTags.CHAT_THINKING_COLLAPSED_CONNECTOR).assertIsNotDisplayed()
     }
 
     @Test
@@ -110,12 +106,10 @@ class ThinkingTraceTest {
 
         rule.mainClock.advanceTimeBy(299L, ignoreFrameDuration = true)
         assertExpansionState(R.string.common_state_expanded)
-        rule.onNodeWithTag(UiTags.CHAT_THINKING_COLLAPSED_CONNECTOR).assertIsNotDisplayed()
 
         rule.mainClock.advanceTimeBy(1L, ignoreFrameDuration = true)
         rule.mainClock.advanceTimeByFrame()
         assertExpansionState(R.string.common_state_collapsed)
-        rule.onNodeWithTag(UiTags.CHAT_THINKING_COLLAPSED_CONNECTOR).assertIsDisplayed()
     }
 
     @Test

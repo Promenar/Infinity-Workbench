@@ -24,8 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -84,8 +82,12 @@ fun buildPipelineGroups(messages: List<Message>): List<PipelineGroup> {
             // ASSISTANT / TOOL：视作同一轮 AI 响应，全部合并到一组
             val groupMsgs = mutableListOf<Message>()
             while (i < messages.size && messages[i].role != MessageRole.USER) {
-                groupMsgs.add(messages[i])
+                val candidate = messages[i]
+                val candidateIsError = candidate.isError || candidate.errorMessage != null
+                if (candidateIsError && groupMsgs.isNotEmpty()) break
+                groupMsgs.add(candidate)
                 i++
+                if (candidateIsError) break
             }
             groups.add(PipelineGroup(groupMsgs, isUser = false))
         }
@@ -278,13 +280,56 @@ fun PipelineBubble(
                     historicalGenerationFailureNotice(lastMsg.errorMessage),
                 )
             }
-            Text(
+            ErrorMessageSegment(
+                messageId = lastMsg.id,
                 text = stringResource(resolved.resourceId, *resolved.args.toTypedArray()),
-                style = NexaraTypography.bodyMedium.copy(fontSize = (fontSize - 2).coerceAtLeast(10).sp),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 6.dp, start = 4.dp)
+                fontSize = fontSize,
+                onDelete = onDelete,
             )
         }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ErrorMessageSegment(
+    messageId: String,
+    text: String,
+    fontSize: Int,
+    onDelete: ((String) -> Unit)?,
+) {
+    val context = LocalContext.current
+    var showMenu by remember { mutableStateOf(false) }
+    Box(modifier = Modifier.padding(top = NexaraSpacing.Small)) {
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                .combinedClickable(onClick = {}, onLongClick = { showMenu = true }),
+        ) {
+            Text(
+                text = text,
+                style = NexaraTypography.bodyMedium.copy(
+                    fontSize = (fontSize - 2).coerceAtLeast(10).sp,
+                ),
+                modifier = Modifier.padding(
+                    horizontal = NexaraSpacing.Large,
+                    vertical = NexaraSpacing.Medium,
+                ),
+            )
+        }
+        MessageContextMenu(
+            expanded = showMenu,
+            onDismiss = { showMenu = false },
+            onCopy = { copyToClipboard(context, text) },
+            onDelete = {
+                onDelete?.invoke(messageId)
+                showMenu = false
+            },
+        )
     }
 }
 
@@ -552,28 +597,12 @@ internal fun ThinkingTrace(
             }
         }
         if (internalExpanded && reasoning.isNotBlank()) {
-            val lineColor = MaterialTheme.colorScheme.primary
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(UiTags.CHAT_THINKING_CONTENT)
-                    .drawWithContent {
-                        drawContent()
-                        val lineX = NexaraSpacing.XLarge.toPx()
-                        drawLine(
-                            color = lineColor,
-                            start = Offset(lineX, 0f),
-                            end = Offset(lineX, size.height),
-                            strokeWidth = 2.dp.toPx()
-                        )
-                        drawCircle(
-                            color = lineColor,
-                            radius = NexaraSpacing.XSmall.toPx(),
-                            center = Offset(lineX, NexaraSpacing.Large.toPx())
-                        )
-                    }
                     .padding(
-                        start = NexaraSpacing.XLarge + NexaraSpacing.Medium,
+                        start = NexaraSpacing.Large,
                         top = NexaraSpacing.Small,
                         bottom = NexaraSpacing.Small,
                         end = NexaraSpacing.Large
@@ -588,30 +617,6 @@ internal fun ThinkingTrace(
                     compactSpacing = true
                 )
             }
-        } else if (reasoning.isNotBlank()) {
-            val lineColor = MaterialTheme.colorScheme.primary
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(NexaraSpacing.XLarge)
-                    .testTag(UiTags.CHAT_THINKING_COLLAPSED_CONNECTOR)
-                    .drawWithContent {
-                        drawContent()
-                        val lineX = NexaraSpacing.XLarge.toPx()
-                        val nodeY = NexaraSpacing.Large.toPx()
-                        drawLine(
-                            color = lineColor,
-                            start = Offset(lineX, 0f),
-                            end = Offset(lineX, nodeY),
-                            strokeWidth = 2.dp.toPx()
-                        )
-                        drawCircle(
-                            color = lineColor,
-                            radius = NexaraSpacing.XSmall.toPx(),
-                            center = Offset(lineX, nodeY)
-                        )
-                    }
-            )
         }
     }
 }

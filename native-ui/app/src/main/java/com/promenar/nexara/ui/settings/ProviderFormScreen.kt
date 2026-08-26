@@ -150,6 +150,12 @@ internal suspend fun persistVerifiedProviderConnection(
     return savedProviderId
 }
 
+internal fun requiresLegacyCredentialMigration(
+    legacyProtocol: Boolean,
+    hasStoredCredential: Boolean,
+    credentialUpdate: CredentialUpdate,
+): Boolean = legacyProtocol && hasStoredCredential && credentialUpdate is CredentialUpdate.Preserve
+
 val PROVIDER_PRESETS = listOf(
     ProviderPreset("OpenAI", ProtocolType.OpenAI_ChatCompletions, "https://api.openai.com", R.drawable.ic_provider_openai),
     ProviderPreset("DeepSeek", ProtocolType.DeepSeek, "https://api.deepseek.com", R.drawable.ic_provider_deepseek),
@@ -211,6 +217,7 @@ fun ProviderFormScreen(
     var protocolMenuExpanded by remember { mutableStateOf(false) }
     var connectionTestState by remember { mutableStateOf(ProviderConnectionTestState.Idle) }
     var legacyUnsupportedProtocol by remember { mutableStateOf<ProtocolType?>(null) }
+    var recoveringUnknownProtocol by remember { mutableStateOf(false) }
     val connectionProbe = ProviderConnectionProbe.processScoped
     val scope = rememberCoroutineScope()
 
@@ -256,6 +263,20 @@ fun ProviderFormScreen(
                         it is ProtocolType.Local && !app.localInferenceRuntimeGate.isAvailable
                     } ?: ProtocolType.Generic_OpenAI_Compat
                 }
+            } else {
+                viewModel.getUnsupportedProviderSummary(providerId)?.let { unsupported ->
+                    recoveringUnknownProtocol = true
+                    name = unsupported.name
+                    baseUrl = unsupported.baseUrl
+                    hasCredential = unsupported.hasApiKey || unsupported.hasVertexCredentials
+                    originalUsesVertex = when {
+                        unsupported.hasVertexCredentials && !unsupported.hasApiKey -> true
+                        unsupported.hasApiKey && !unsupported.hasVertexCredentials -> false
+                        else -> null
+                    }
+                    selectedPreset = availableProviderPresets.last { it.name == "Custom" }
+                    localProtocol = ProtocolType.Generic_OpenAI_Compat
+                }
             }
         }
     }
@@ -263,8 +284,11 @@ fun ProviderFormScreen(
     val effectiveProtocol = if (selectedPreset.name == "Custom") localProtocol else selectedPreset.protocolType
     val endpointValid = isProviderEndpointAllowed(effectiveProtocol, baseUrl)
     val protocolUnsupported = isRetiredProviderProtocol(effectiveProtocol)
-    val legacyMigrationBlocked = legacyUnsupportedProtocol != null &&
-        credentialUpdate is CredentialUpdate.Preserve
+    val legacyMigrationBlocked = requiresLegacyCredentialMigration(
+        legacyProtocol = legacyUnsupportedProtocol != null || recoveringUnknownProtocol,
+        hasStoredCredential = hasCredential,
+        credentialUpdate = credentialUpdate,
+    )
     val selectedUsesVertex = effectiveProtocol is ProtocolType.Google_VertexAI
     val credentialKindMismatch = hasCredential && credentialUpdate is CredentialUpdate.Preserve &&
         originalUsesVertex != null && originalUsesVertex != selectedUsesVertex

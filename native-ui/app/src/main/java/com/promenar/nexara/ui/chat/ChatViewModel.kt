@@ -61,6 +61,7 @@ import com.promenar.nexara.ui.chat.manager.ContextBuilderParams
 import com.promenar.nexara.ui.chat.manager.ContextBuilderResult
 import com.promenar.nexara.ui.chat.manager.KgProvider
 import com.promenar.nexara.ui.chat.manager.MessageManager
+import com.promenar.nexara.ui.chat.manager.messageRemovalIds
 import com.promenar.nexara.ui.chat.manager.PostProcessor
 import com.promenar.nexara.ui.chat.manager.SessionManager
 import com.promenar.nexara.ui.chat.manager.SummaryManager
@@ -817,6 +818,7 @@ class ChatViewModel(
                 role = MessageRole.ASSISTANT,
                 content = "",
                 modelId = session.modelId,
+                parentMessageId = userMessageId,
                 createdAt = System.currentTimeMillis(),
             ),
         )
@@ -890,6 +892,7 @@ class ChatViewModel(
                 role = MessageRole.ASSISTANT,
                 content = "",
                 modelId = session.modelId,
+                parentMessageId = userMsgId,
                 createdAt = System.currentTimeMillis()
             )
             messageManager.addMessage(sessionId, assistantMessage)
@@ -1448,6 +1451,7 @@ class ChatViewModel(
                 role = MessageRole.ASSISTANT,
                 content = "",
                 modelId = updatedSession.modelId,
+                parentMessageId = messageId,
                 createdAt = System.currentTimeMillis()
             )
             messageManager.addMessage(sessionId, assistantMessage)
@@ -1724,11 +1728,13 @@ class ChatViewModel(
     fun deleteMessage(messageId: String) {
         val sessionId = _currentSessionId.value ?: return
         val session = store.getSession(sessionId) ?: return
-        val message = session.messages.find { it.id == messageId } ?: return
+        session.messages.find { it.id == messageId } ?: return
+        val removalIds = messageRemovalIds(session.messages, messageId).toSet()
+        val messagesToRestore = session.messages.filter { it.id in removalIds }
         
         viewModelScope.launch {
             lastDeletedMessages.clear()
-            lastDeletedMessages.add(sessionId to message)
+            messagesToRestore.forEach { lastDeletedMessages.add(sessionId to it) }
             messageManager.deleteMessage(sessionId, messageId) { stopGeneration() }
         }
     }
@@ -1775,6 +1781,7 @@ class ChatViewModel(
                 role = MessageRole.ASSISTANT,
                 content = "",
                 modelId = session.modelId,
+                parentMessageId = userMessage.id,
                 createdAt = System.currentTimeMillis()
             )
             messageManager.addMessage(sessionId, assistantMessage)

@@ -48,6 +48,17 @@ data class UnsupportedProviderListItem(
     val hasVertexCredentials: Boolean,
 )
 
+/** 未知协议配置的显式修复投影；不把原协议伪装成可执行协议，也不暴露秘密值。 */
+data class UnsupportedProviderSummary(
+    val id: String,
+    val name: String,
+    val rawProtocolId: String,
+    val baseUrl: String,
+    val model: String,
+    val hasApiKey: Boolean,
+    val hasVertexCredentials: Boolean,
+)
+
 data class ProviderSummary(
     val id: String,
     val name: String,

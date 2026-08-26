@@ -7,6 +7,7 @@ import com.promenar.nexara.data.model.CredentialUpdate
 import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.model.ProviderSummary
 import com.promenar.nexara.data.model.UnsupportedProviderListItem
+import com.promenar.nexara.data.model.UnsupportedProviderSummary
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.model.USER_EDITABLE_MODEL_FIELDS
 import com.promenar.nexara.data.model.mergeResolvedMetadata
@@ -259,6 +260,17 @@ class ProviderManager private constructor(
                 )
             )
             _currentModelSummary.value = config.model
+        } else {
+            getUnsupportedProviderSummary("default")?.let { unsupported ->
+                unsupportedItems += UnsupportedProviderListItem(
+                    id = unsupported.id,
+                    name = unsupported.name,
+                    rawProtocolId = unsupported.rawProtocolId,
+                    enabled = true,
+                    hasApiKey = unsupported.hasApiKey,
+                    hasVertexCredentials = unsupported.hasVertexCredentials,
+                )
+            }
         }
         val count = settingsPrefs.getInt("extra_providers_count", 0)
         for (i in 0 until count) {
@@ -496,6 +508,41 @@ class ProviderManager private constructor(
             id = providerId,
             name = name ?: protocolType.displayName,
             protocolType = protocolType,
+            baseUrl = baseUrl,
+            model = model,
+            hasApiKey = secretStore.contains(SecretCatalog.providerApiKey(providerId)),
+            hasVertexCredentials = secretStore.contains(SecretCatalog.vertexServiceAccount(providerId)),
+        )
+    }
+
+    fun getUnsupportedProviderSummary(providerId: String): UnsupportedProviderSummary? {
+        val rawProtocolId: String
+        val baseUrl: String
+        val model: String
+        val name: String
+        if (providerId == "default") {
+            rawProtocolId = providerPrefs.getString("protocol_id", null) ?: return null
+            if (decodePersistedProtocol(rawProtocolId) != null) return null
+            baseUrl = providerPrefs.getString("base_url", "").orEmpty()
+            model = providerPrefs.getString("model", "").orEmpty()
+            name = providerPrefs.getString("provider_name", null) ?: rawProtocolId
+        } else {
+            val count = settingsPrefs.getInt("extra_providers_count", 0)
+            val index = (0 until count).firstOrNull { resolveExtraProviderId(it) == providerId }
+                ?: return null
+            val prefix = "extra_provider_$index"
+            rawProtocolId = settingsPrefs.getString("${prefix}_protocol", null)
+                ?: settingsPrefs.getString("${prefix}_type", null)
+                ?: return null
+            if (decodePersistedProtocol(rawProtocolId) != null) return null
+            baseUrl = settingsPrefs.getString("${prefix}_base_url", "").orEmpty()
+            model = settingsPrefs.getString("${prefix}_model", "").orEmpty()
+            name = settingsPrefs.getString("${prefix}_name", null) ?: providerId
+        }
+        return UnsupportedProviderSummary(
+            id = providerId,
+            name = name,
+            rawProtocolId = rawProtocolId,
             baseUrl = baseUrl,
             model = model,
             hasApiKey = secretStore.contains(SecretCatalog.providerApiKey(providerId)),

@@ -17,6 +17,7 @@ import com.promenar.nexara.data.security.SecretCatalog
 import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.settings.persistVerifiedProviderConnection
+import com.promenar.nexara.ui.settings.requiresLegacyCredentialMigration
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
@@ -31,6 +32,20 @@ import java.util.concurrent.TimeUnit
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ProviderManagerTest {
+
+    @Test
+    fun `未知历史协议仅在确有旧凭证时要求替换或清除`() {
+        assertThat(requiresLegacyCredentialMigration(true, true, CredentialUpdate.Preserve)).isTrue()
+        assertThat(requiresLegacyCredentialMigration(true, false, CredentialUpdate.Preserve)).isFalse()
+        assertThat(requiresLegacyCredentialMigration(true, true, CredentialUpdate.Clear)).isFalse()
+        assertThat(
+            requiresLegacyCredentialMigration(
+                true,
+                true,
+                CredentialUpdate.Replace("replacement"),
+            ),
+        ).isFalse()
+    }
     private lateinit var app: Application
     private lateinit var manager: ProviderManager
 
@@ -197,15 +212,29 @@ class ProviderManagerTest {
     }
 
     @Test
-    fun `未知持久化Provider保持只读且Router在网络前typed fail closed`() {
+    fun `未知主Provider保持可见可恢复且Router在网络前typed fail closed`() {
         app.getSharedPreferences("nexara_provider", 0).edit()
             .putString("protocol_id", "Future_Unknown_Protocol")
+            .putString("provider_name", "历史主提供商")
+            .putString("base_url", "https://legacy.invalid/v1")
             .commit()
 
         val reloaded = ProviderManager.createForTest(app, TestSecretStore())
 
         assertThat(reloaded.getMainProviderConfig()).isNull()
         assertThat(reloaded.providers.value.map { it.id }).doesNotContain("default")
+        assertThat(reloaded.unsupportedProviders.value).containsExactly(
+            UnsupportedProviderListItem(
+                id = "default",
+                name = "历史主提供商",
+                rawProtocolId = "Future_Unknown_Protocol",
+                enabled = true,
+                hasApiKey = false,
+                hasVertexCredentials = false,
+            ),
+        )
+        assertThat(reloaded.getUnsupportedProviderSummary("default")?.baseUrl)
+            .isEqualTo("https://legacy.invalid/v1")
         val failure = DefaultProviderRequestRouter(reloaded)
             .resolve("default::remote-model") as ProviderResolution.Failure
         assertThat(failure.reason).isEqualTo(ProviderResolutionError.PROTOCOL_UNSUPPORTED)

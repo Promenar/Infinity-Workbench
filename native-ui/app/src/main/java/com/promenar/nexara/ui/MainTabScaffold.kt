@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui
 
+import android.os.Build
+import android.view.HapticFeedbackConstants
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -43,6 +45,8 @@ import androidx.compose.ui.semantics.testTag as semanticsTestTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.zIndex
 import com.promenar.nexara.R
 import kotlin.math.PI
@@ -61,6 +65,16 @@ internal fun constrainedBodyWidth(available: androidx.compose.ui.unit.Dp): andro
 
 internal fun fluidNavigationTargetIndex(tab: AppTab): Int =
     AppTab.entries.indexOf(tab).coerceAtLeast(0)
+
+internal fun shouldPerformNavigationHaptic(
+    current: AppTab,
+    target: AppTab,
+    enabled: Boolean,
+): Boolean = enabled && current != target
+
+internal fun navigationHapticConstant(sdkInt: Int): Int =
+    if (sdkInt >= 34) HapticFeedbackConstants.SEGMENT_TICK
+    else HapticFeedbackConstants.CLOCK_TICK
 
 internal data class FluidNavigationScale(val x: Float, val y: Float)
 
@@ -220,6 +234,8 @@ private fun FluidNavigationContent(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
 ) {
+    val view = LocalView.current
+    val app = LocalContext.current.applicationContext as? com.promenar.nexara.NexaraApplication
     val targetIndex = fluidNavigationTargetIndex(selectedTab)
     val animatedIndex = animateFloatAsState(
         targetValue = targetIndex.toFloat(),
@@ -327,7 +343,19 @@ private fun FluidNavigationContent(
                         .clip(CircleShape)
                         .selectable(
                             selected = selected,
-                            onClick = { onTabSelected(tab) },
+                            onClick = {
+                                if (shouldPerformNavigationHaptic(
+                                        current = selectedTab,
+                                        target = tab,
+                                        enabled = app?.hapticEnabled == true,
+                                    )
+                                ) {
+                                    view.performHapticFeedback(
+                                        navigationHapticConstant(Build.VERSION.SDK_INT),
+                                    )
+                                }
+                                onTabSelected(tab)
+                            },
                             role = Role.Tab,
                         )
                         .semantics { contentDescription = label }

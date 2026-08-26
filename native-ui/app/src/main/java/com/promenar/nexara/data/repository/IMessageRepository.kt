@@ -13,6 +13,13 @@ interface IMessageRepository {
         delete(messageId)
         return true
     }
+    suspend fun deleteManyInSession(sessionId: String, messageIds: List<String>): Int {
+        var deleted = 0
+        for (messageId in messageIds) {
+            if (deleteInSession(sessionId, messageId)) deleted += 1
+        }
+        return deleted
+    }
     suspend fun deleteBySessionId(sessionId: String)
     suspend fun deleteMessagesAfter(sessionId: String, timestamp: Long)
     suspend fun getById(messageId: String): Message?

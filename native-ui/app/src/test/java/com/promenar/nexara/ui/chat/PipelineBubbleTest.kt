@@ -10,6 +10,24 @@ import org.junit.jupiter.api.Test
 
 class PipelineBubbleTest {
 
+    @Test
+    fun `孤立错误助手消息不并入上一条成功回复`() {
+        val success = Message(id = "ok", role = MessageRole.ASSISTANT, content = "成功")
+        val error = Message(
+            id = "error",
+            role = MessageRole.ASSISTANT,
+            content = "",
+            isError = true,
+            errorMessage = "failed",
+        )
+
+        val groups = buildPipelineGroups(listOf(success, error))
+
+        assertThat(groups).hasSize(2)
+        assertThat(groups[0].messages.map(Message::id)).containsExactly("ok")
+        assertThat(groups[1].messages.map(Message::id)).containsExactly("error")
+    }
+
     private fun pipelineBubbleSource(): String {
         val moduleRoot = java.io.File(System.getProperty("user.dir") ?: ".").let { root ->
             if (root.resolve("src/main").isDirectory) root else root.resolve("app")
@@ -118,10 +136,10 @@ class PipelineBubbleTest {
         val thinkingTraceSource = source
             .substringAfter("internal fun ThinkingTrace(")
             .substringBefore("//  InlineToolRow")
-        assertThat(thinkingTraceSource).contains(".drawWithContent")
-        assertThat(thinkingTraceSource).contains("drawContent()")
-        assertThat(thinkingTraceSource).doesNotContain(".drawBehind")
-        assertThat(thinkingTraceSource).contains("CHAT_THINKING_COLLAPSED_CONNECTOR")
+        assertThat(thinkingTraceSource).doesNotContain(".drawWithContent")
+        assertThat(thinkingTraceSource).doesNotContain("drawLine(")
+        assertThat(thinkingTraceSource).doesNotContain("drawCircle(")
+        assertThat(thinkingTraceSource).doesNotContain("CHAT_THINKING_COLLAPSED_CONNECTOR")
         assertThat(thinkingTraceSource).doesNotContain("AnimatedVisibility(visible = internalExpanded")
         assertThat(thinkingTraceSource).doesNotContain(".fillMaxHeight()")
         assertThat(source).contains("index < allSteps.lastIndex && step !is PipelineStep.Thinking")

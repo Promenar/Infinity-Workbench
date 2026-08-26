@@ -96,8 +96,9 @@ class SmoothStreamContentTest {
         assertThat(streamTailFadeStartAlpha(false, "", "hello", 1f)).isEqualTo(1f)
         assertThat(streamTailFadeStartAlpha(true, "hello", "other", 0.8f)).isEqualTo(1f)
         assertThat(streamTailFadeStartAlpha(true, "hello", "hello world", 0.9f)).isGreaterThan(0.68f)
-        assertThat(STREAM_TAIL_FADE_DURATION_MS).isAtLeast(100)
-        assertThat(STREAM_TAIL_FADE_DURATION_MS).isAtMost(180)
+        assertThat(streamTailFadeStartAlpha(true, "hello", "hello world", 0.9f)).isAtLeast(0.84f)
+        assertThat(STREAM_TAIL_FADE_DURATION_MS).isAtLeast(180)
+        assertThat(STREAM_TAIL_FADE_DURATION_MS).isAtMost(260)
     }
 
     @Test
