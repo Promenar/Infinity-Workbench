@@ -21,15 +21,15 @@
 
 ## 执行步骤
 
-- [ ] 用离线 fixtures 写四源归一化与发布测试，验证失败再实现；产物结构与真实源交叉核对。
-- [ ] 用 JVM 测试固定原始 ID、作用域、冲突、三态和用户覆盖；实现 richer descriptor 与持久化。
-- [ ] 写传输信封、大小/哈希/签名/回放/失败保留测试；实现 IO 下载和原子缓存、runtime 状态与手动更新。
-- [ ] 将目录成功更新接入已有模型重解析与 UI，恢复完成后启动自动检查。
-- [ ] 更新 PDEC 中公开目录的 Actions 构建和 Pages 发布契约；生成独立密钥，公钥入 App，私钥经主机 CLI 直接注入 GitHub Secret。
-- [ ] 主控冻结 native 源码并串行执行针对性 JVM、全量 JVM、Lint、必要截图和构建；修复失败后仅重跑受影响检查。
-- [ ] 独立串行审阅；本机模拟器验证验签、离线启动、更新、用户覆盖和列表刷新。
-- [ ] 复核暂存并推送候选 SHA，启用 Pages，运行发布工作流；公网回读验签并通过 Android 真实 HTTPS 更新。
-- [ ] 同步 README、CHANGELOG、ADR-020、许可、注册表和运行说明；HLG 结构化追加；验证远端 SHA 后交付。
+- [x] 用离线 fixtures 写四源归一化与发布测试，验证失败再实现；产物结构与真实源交叉核对。
+- [x] 用 JVM 测试固定原始 ID、作用域、冲突、三态和用户覆盖；实现 richer descriptor 与持久化。
+- [x] 写传输信封、大小/哈希/签名/回放/失败保留测试；实现 IO 下载和原子缓存、runtime 状态与手动更新。
+- [x] 将目录成功更新接入已有模型重解析与 UI，恢复完成后启动自动检查。
+- [x] 更新 PDEC 中公开目录的 Actions 构建和 Pages 发布契约；生成独立密钥，公钥入 App，私钥经主机 CLI 直接注入 GitHub Secret。
+- [x] 主控冻结 native 源码并串行执行针对性 JVM、全量 JVM、Lint、必要截图和构建；修复失败后仅重跑受影响检查。
+- [x] 独立串行审阅；本机模拟器验证验签、离线启动、更新、用户覆盖和列表刷新。
+- [x] 复核暂存并推送候选 SHA，启用 Pages，运行发布工作流；公网回读验签并通过 Android 真实 HTTPS 更新。
+- [x] 同步 README、CHANGELOG、ADR-020、许可、注册表和运行说明；HLG 结构化追加；验证远端 SHA 后交付。
 
 ## 验收命令与审阅重点
 
@@ -38,3 +38,7 @@ Python：`python3 -m unittest discover -s scripts/tests -p '*model_catalog*.py'`
 JVM：在 `native-ui` 串行执行 `./gradlew :app:testDebugUnitTest --tests '*ModelCatalog*' --tests '*ModelMetadata*' --tests '*ProviderModelMetadata*' --tests '*GenericModelsEnvelope*'`，随后完整 `:app:testDebugUnitTest :app:lintDebug :app:assembleDebug`。设备构建按 `.pdec/contract.yaml` 的本机 operation 执行。
 
 重点：签名校验先于信任字段、固定下载源、不回放旧版本、崩溃事务、不可变解析器、供应商额度不污染规范模型、wire ID 不被改写、用户编辑与供应商字段可持久化。任何假设失效、文件所有权冲突或新增不可逆边界须交回主控。
+
+## 交付证据
+
+实现与云发布源码为 `6f019e095697f2b93bf25edafe5d70108712ca2b`；逐项结果、APK 哈希、设备范围与未覆盖边界见[验收记录](../../release/2026-09-22-model-catalog-validation.md)。

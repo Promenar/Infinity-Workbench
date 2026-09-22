@@ -1,6 +1,6 @@
 # ADR-020：分层模型元数据注册中心
 
-> 状态：独立更新实现中，验收见专项记录
+> 状态：已实施，Pages 与本机客户端验收通过
 > 日期：2026-09-22
 > 范围：模型目录、Provider 持久化、身份匹配与独立更新
 
@@ -20,7 +20,7 @@
 - P-256 / SHA256withECDSA 签署原始 payload 字节，App 固定 SPKI 公钥。验签后检查 schema、文件名、字节数、SHA-256、记录数和单调版本；同版本不同内容也拒绝。
 - 版本文件落盘后原子提交缓存指针。更新失败保留现用目录；当前文件损坏可回退上一有效版本，但版本高水位不降低。缓存位于 noBackupFilesDir。
 - 发布纠错以更高版本重新签名已知有效数据。网络故障或必需来源异常不发布残缺目录。内置快照刷新工作流保留手动维护入口。
-- 协议与验收见[规范](../superpowers/specs/2026-09-22-independent-model-catalog.md)，操作见[目录运行说明](../model-catalog.md)。
+- 协议与验收见[规范](../superpowers/specs/2026-09-22-independent-model-catalog.md)，操作见[目录运行说明](../model-catalog.md)，交付证据见[独立目录验收记录](../release/2026-09-22-model-catalog-validation.md)。
 
 ## 结果与边界
 

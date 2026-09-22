@@ -31,4 +31,4 @@ App 恢复完成后检查更新，成功检查间隔二十四小时；手动操�
 
 ## 验证记录
 
-入口：[实施计划](superpowers/plans/2026-09-22-independent-model-catalog.md)、[协议规范](superpowers/specs/2026-09-22-independent-model-catalog.md)、[ADR-020](ADR/ADR-020-layered-model-metadata-registry.md)。测试统计、源码版本和 Pages 实际部署证据在验收完成后记录，不继承历史 APK 通过状态。
+入口：[实施计划](superpowers/plans/2026-09-22-independent-model-catalog.md)、[协议规范](superpowers/specs/2026-09-22-independent-model-catalog.md)、[ADR-020](ADR/ADR-020-layered-model-metadata-registry.md)。已上线目录、源码绑定、测试统计和签名 APK 见[验收记录](release/2026-09-22-model-catalog-validation.md)。
