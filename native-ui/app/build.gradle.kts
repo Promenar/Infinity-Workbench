@@ -173,6 +173,7 @@ android {
         }
         getByName("androidTest") {
             assets.directories.add("$projectDir/schemas")
+            assets.directories.add("$projectDir/src/test/resources/legacy")
         }
     }
 
@@ -340,6 +341,22 @@ tasks.withType<Test> {
 afterEvaluate {
     if (deviceE2eEnabled) return@afterEvaluate
     val debugUnitTest = tasks.named<Test>("testDebugUnitTest")
+    tasks.register<Test>("localGatewayIntegrationTest") {
+        group = "verification"
+        description = "显式测试本机无密钥聚合网关的五个模型；只发送有界合成文本与工具夹具。"
+        testClassesDirs = debugUnitTest.get().testClassesDirs
+        classpath = debugUnitTest.get().classpath
+        dependsOn("compileDebugUnitTestSources", "processDebugUnitTestJavaRes")
+        filter { includeTestsMatching("*LocalGatewayIntegrationTest") }
+        systemProperty("nexara.localGatewayIntegration", "true")
+        providers.gradleProperty("nexara.localGatewayModels").orNull?.let {
+            systemProperty("nexara.localGatewayModels", it)
+        }
+        outputs.upToDateWhen { false }
+        outputs.cacheIf { false }
+        maxParallelForks = 1
+        testLogging { showStandardStreams = false }
+    }
     tasks.register<Test>("realLlmIntegrationTest") {
         group = "verification"
         description = "显式运行真实 LLM 集成测试；凭证仅从允许的进程环境变量读取。"

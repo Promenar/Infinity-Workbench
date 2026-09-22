@@ -360,9 +360,10 @@ class GenericOpenAICompatProtocol(
         thinkingDetector: ThinkingDetector,
         toolCallAccumulator: MutableMap<Int, AccumulatedToolCall>
     ): CompletionReason? {
+        check(chunk["error"] == null || chunk["error"] is JsonNull) { "上游流返回错误事件" }
         val choice = (chunk["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
         if (choice == null) {
-            val usageRaw = chunk["usage"] as? JsonObject
+            val usageRaw = chunk["usage"]?.takeUnless { it is JsonNull }?.jsonObject
             if (usageRaw != null) send(StreamChunk.Usage(ProtocolUsage(
                 input = usageRaw["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
                 output = usageRaw["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
@@ -384,7 +385,7 @@ class GenericOpenAICompatProtocol(
         content = cleanSpecialTokens(content)
         reasoning = cleanSpecialTokens(reasoning)
 
-        val deltaToolCalls = delta["tool_calls"]?.jsonArray
+        val deltaToolCalls = delta["tool_calls"]?.takeUnless { it is JsonNull }?.jsonArray
         if (deltaToolCalls != null) {
             for (tcElement in deltaToolCalls) {
                 val tc = tcElement.jsonObject
@@ -425,7 +426,7 @@ class GenericOpenAICompatProtocol(
         // 无条件发送 TextDelta（同 OpenAIProtocol 修复：防止流式假死）
         send(StreamChunk.TextDelta(content, reasoning.ifEmpty { null }))
 
-        val usageRaw = chunk["usage"]?.jsonObject
+        val usageRaw = chunk["usage"]?.takeUnless { it is JsonNull }?.jsonObject
         if (usageRaw != null) {
             val usage = ProtocolUsage(
                 input = usageRaw["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
@@ -437,7 +438,8 @@ class GenericOpenAICompatProtocol(
 
         return when (val finishReason = choice.stringField("finish_reason")) {
             "" -> null
-            "stop" -> CompletionReason.END_TURN
+            // 聚合网关可能把 Responses 的成功状态映射到兼容接口。
+            "stop", "completed" -> CompletionReason.END_TURN
             "tool_calls" -> CompletionReason.TOOL_CALLS
             else -> throw IllegalStateException("Unknown compatible finish_reason: $finishReason")
         }
@@ -480,7 +482,7 @@ class GenericOpenAICompatProtocol(
         content = cleanSpecialTokens(content)
         reasoning = cleanSpecialTokens(reasoning)
 
-        val toolCallElements = message["tool_calls"]?.let { element ->
+        val toolCallElements = message["tool_calls"]?.takeUnless { it is JsonNull }?.let { element ->
             element as? JsonArray
                 ?: throw IllegalStateException("Compatible sync tool_calls is not an array")
         }.orEmpty()
@@ -496,13 +498,13 @@ class GenericOpenAICompatProtocol(
             )
         }
         val completionReason = when (val finishReason = choice.stringField("finish_reason")) {
-            "stop" -> CompletionReason.END_TURN
+            "stop", "completed" -> CompletionReason.END_TURN
             "tool_calls" -> CompletionReason.TOOL_CALLS
             else -> throw IllegalStateException("Unknown compatible finish_reason: $finishReason")
         }
         requireValidSyncCompletion(completionReason, toolCalls)
 
-        val usageRaw = parsed["usage"]?.jsonObject
+        val usageRaw = parsed["usage"]?.takeUnless { it is JsonNull }?.jsonObject
         val usage = if (usageRaw != null) {
             ProtocolUsage(
                 input = usageRaw["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,

@@ -10,6 +10,12 @@ import java.io.OutputStream
 class TestWorkspaceFileOps(
     private val hook: ((WorkspaceFilePhase) -> Unit)? = null,
 ) : WorkspaceFileOps {
+    var inspectedFileKeyOverride: ((Path, String) -> String)? = null
+
+    /** 业务夹具的属性端口；真实FD/xattr持久性由Android仪器测试证明。 */
+    fun removeFileIdentityForTesting(root: Path, node: List<String>) {
+        fileIdentityTokens.remove(attributeKey(root, resolve(root, node, true)))
+    }
     override fun ensureRoot(
         root: Path,
         initializeIdentity: Boolean,
@@ -55,11 +61,12 @@ class TestWorkspaceFileOps(
 
     override fun inspect(root: Path, relative: List<String>): WorkspaceNodeIdentity {
         val target = resolve(root, relative, requireTarget = true)
-        val fileKey = Files.readAttributes(
+        val actualKey = Files.readAttributes(
             target,
             java.nio.file.attribute.BasicFileAttributes::class.java,
             LinkOption.NOFOLLOW_LINKS,
         ).fileKey()?.toString() ?: throw SecurityException("测试节点缺少 fileKey")
+        val fileKey = inspectedFileKeyOverride?.invoke(target, actualKey) ?: actualKey
         return if (Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS)) {
             WorkspaceNodeIdentity("directory", 0, null, fileKey)
         } else {
@@ -72,6 +79,15 @@ class TestWorkspaceFileOps(
         }
     }
 
+    override fun listChildren(root: Path, relative: List<String>): List<String> =
+        Files.newDirectoryStream(resolve(root, relative, true)).use { directory ->
+            directory.map { it.fileName.toString() }
+        }
+
+    override fun deleteNonRecursive(root: Path, relative: List<String>) {
+        Files.delete(resolve(root, relative, true))
+    }
+
     override fun createFile(root: Path, relative: List<String>, bytes: ByteArray) {
         val target = resolve(root, relative)
         if (!Files.isDirectory(target.parent, LinkOption.NOFOLLOW_LINKS)) {
@@ -79,6 +95,93 @@ class TestWorkspaceFileOps(
         }
         hook?.invoke(WorkspaceFilePhase.BEFORE_MUTATION)
         Files.write(target, bytes, java.nio.file.StandardOpenOption.CREATE_NEW)
+        fileIdentityTokens.remove(attributeKey(root, target))
+    }
+
+    override fun retainCreationProof(root: Path, node: List<String>, owner: List<String>, token: String) {
+        requireCreationToken(token)
+        if (inspect(root, node).kind == "directory") {
+            createFile(root, node + CREATE_DIRECTORY_MARKER, token.toByteArray())
+        } else {
+            check(fileIdentityTokens.putIfAbsent(attributeKey(root, resolve(root, node, true)), token) == null) {
+                "测试文件已有持久身份属性"
+            }
+        }
+    }
+
+    override fun verifyCreationProof(
+        root: Path, node: List<String>, owner: List<String>, token: String, expected: WorkspaceNodeIdentity,
+    ) {
+        requireCreationToken(token)
+        if (inspect(root, node) != expected) throw SecurityException("测试创建节点身份改变")
+        if (expected.kind == "directory") {
+            if (readLimited(root, node + CREATE_DIRECTORY_MARKER, 128).toString(Charsets.UTF_8) != token) {
+                throw SecurityException("测试创建目录标记不匹配")
+            }
+        } else if (fileIdentityTokens[attributeKey(root, resolve(root, node, true))] != token) {
+            throw SecurityException("测试创建文件持久身份不匹配")
+        }
+    }
+
+    override fun deleteCreatedNode(
+        root: Path, node: List<String>, owner: List<String>, token: String, expected: WorkspaceNodeIdentity,
+    ) {
+        val quarantine = owner + CREATE_ROLLBACK_NODE
+        val deletionPhase = owner + CREATE_DIRECTORY_DELETE_READY
+        if (node == quarantine && expected.kind == "directory" && exists(root, deletionPhase) &&
+            !exists(root, node + CREATE_DIRECTORY_MARKER)) {
+            if (readLimited(root, deletionPhase, 128).toString(Charsets.UTF_8) != token || inspect(root, node) != expected) {
+                throw SecurityException("测试目录删除阶段证明不匹配")
+            }
+            Files.delete(resolve(root, quarantine, true))
+            return
+        }
+        verifyCreationProof(root, node, owner, token, expected)
+        fun requireOnlyMarker(relative: List<String>) {
+            Files.newDirectoryStream(resolve(root, relative, true)).use { directory ->
+                if (directory.map { it.fileName.toString() } != listOf(CREATE_DIRECTORY_MARKER)) {
+                    throw SecurityException("测试创建目录包含额外内容")
+                }
+            }
+        }
+        if (expected.kind == "directory") requireOnlyMarker(node)
+        val moved = node != quarantine
+        if (moved) move(root, node, quarantine).commit()
+        var markerRemoved = false
+        try {
+            verifyCreationProof(root, quarantine, owner, token, expected)
+            if (expected.kind == "directory") {
+                requireOnlyMarker(quarantine)
+                if (!exists(root, deletionPhase)) createFile(root, deletionPhase, token.toByteArray())
+                if (readLimited(root, deletionPhase, 128).toString(Charsets.UTF_8) != token) {
+                    throw SecurityException("测试目录删除阶段令牌不匹配")
+                }
+                Files.delete(resolve(root, quarantine + CREATE_DIRECTORY_MARKER, true))
+                markerRemoved = true
+                hook?.invoke(WorkspaceFilePhase.CREATION_MARKER_REMOVED)
+            } else {
+                val phase = owner + CREATE_FILE_DELETE_READY
+                if (!exists(root, phase)) createFile(root, phase, token.toByteArray())
+                if (readLimited(root, phase, 128).toString(Charsets.UTF_8) != token) {
+                    throw SecurityException("测试文件删除phase不匹配")
+                }
+                removeFileIdentityForTesting(root, quarantine)
+            }
+            Files.delete(resolve(root, quarantine, true))
+            if (expected.kind == "file") hook?.invoke(WorkspaceFilePhase.CREATION_FILE_DELETED)
+        } catch (failure: Throwable) {
+            if (!markerRemoved && moved && exists(root, quarantine) && !exists(root, node)) move(root, quarantine, node).commit()
+            throw failure
+        }
+    }
+
+    override fun releaseCreationProof(root: Path, node: List<String>, token: String) {
+        val marker = node + CREATE_DIRECTORY_MARKER
+        if (!exists(root, marker)) return
+        if (readLimited(root, marker, 128).toString(Charsets.UTF_8) != token) {
+            throw SecurityException("测试目录归属标记改变")
+        }
+        Files.delete(resolve(root, marker, true))
     }
 
     override fun createFileStreaming(
@@ -113,6 +216,7 @@ class TestWorkspaceFileOps(
             }
             hook?.invoke(WorkspaceFilePhase.BEFORE_MUTATION)
             Files.move(temporary, target)
+            fileIdentityTokens.remove(attributeKey(root, target))
             return WorkspaceStreamWriteResult(
                 size,
                 digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) },
@@ -145,6 +249,7 @@ class TestWorkspaceFileOps(
         val backup = target.resolveSibling(".nexara-previous-$token")
         val replacement = target.resolveSibling(".nexara-write-$token")
         Files.write(replacement, bytes)
+        fileIdentityTokens.remove(attributeKey(root, replacement))
         hook?.invoke(WorkspaceFilePhase.BEFORE_MUTATION)
         Files.move(target, backup)
         Files.move(replacement, target)
@@ -297,5 +402,13 @@ class TestWorkspaceFileOps(
     ) = object : WorkspaceFileRollback {
         override fun commit() = commit.invoke()
         override fun rollback() = rollback.invoke()
+    }
+
+    private fun attributeKey(root: Path, target: Path): String = root.toAbsolutePath().normalize().toString() + "|" +
+        Files.readAttributes(target, java.nio.file.attribute.BasicFileAttributes::class.java,
+            LinkOption.NOFOLLOW_LINKS).fileKey().toString()
+
+    private companion object {
+        val fileIdentityTokens = java.util.concurrent.ConcurrentHashMap<String, String>()
     }
 }

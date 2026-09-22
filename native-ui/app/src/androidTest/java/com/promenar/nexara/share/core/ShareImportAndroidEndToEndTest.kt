@@ -13,7 +13,9 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.MainActivity
 import com.promenar.nexara.ShareEnqueueResult
 import com.promenar.nexara.ShareIntentQueue
+import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.SessionEntity
+import com.promenar.nexara.data.rag.DocumentReferenceExtractor
 import com.promenar.nexara.data.repository.SecureWorkspaceFileOps
 import com.promenar.nexara.data.repository.WorkspaceFileTooLargeException
 import kotlinx.coroutines.runBlocking
@@ -208,6 +210,155 @@ class ShareImportAndroidEndToEndTest {
         }
     }
 
+    @Test
+    fun contentResolverUtf8BoundaryPersistsExactBytesAndSchedulesReference() = runBlocking<Unit> {
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        val authority = "${com.promenar.nexara.test.BuildConfig.APPLICATION_ID}.sharefixture"
+        val uri = Uri.parse("content://$authority/${ShareFixtureProvider.UTF8_BOUNDARY_FILE}")
+        val sessionId = "__share_utf8_boundary_${UUID.randomUUID()}__"
+        val now = System.currentTimeMillis()
+        app.database.sessionDao().insert(
+            SessionEntity(
+                id = sessionId,
+                agentId = "__test__",
+                title = "Share UTF-8 Boundary E2E",
+                createdAt = now,
+                updatedAt = now,
+            )
+        )
+        val root = app.workspaceRepository.ensureSessionRoot(sessionId)
+        val inboxRoot = File(app.noBackupFilesDir, "share-utf8-boundary-${UUID.randomUUID()}").apply { mkdirs() }
+        val inbox = DurableShareInbox(inboxRoot)
+        val queue = ShareIntentQueue(inbox)
+        var leaseToken: String? = null
+        var created: FileEntry? = null
+        try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                putExtra(Intent.EXTRA_STREAM, uri)
+            }
+            assertThat(queue.stageDurably(intent, app.contentResolver))
+                .isEqualTo(ShareEnqueueResult.Accepted)
+            val lease = checkNotNull(queue.claimNextDurably())
+            leaseToken = lease.token
+            val scheduled = mutableListOf<Pair<String, String>>()
+            val result = SharedFileImporter(
+                source = inbox.contentSource(),
+                workspace = app.workspaceRepository,
+                indexScheduler = ShareIndexScheduler { workspaceRootUuid, entry ->
+                    scheduled += workspaceRootUuid to entry.uuid
+                    ShareIndexReceipt("synthetic-reference-${entry.uuid}", entry.uuid)
+                },
+            ).import(lease.request, root.uuid)
+
+            val item = result.created.single()
+            created = checkNotNull(item.created)
+            val physical = File(created!!.physicalRootPath, created!!.materializedPath.trimStart('/'))
+            assertThat(physical.readBytes()).isEqualTo(ShareFixtureProvider.UTF8_BOUNDARY_CONTENT)
+            assertThat(String(physical.readBytes(), Charsets.UTF_8)).contains("界🙂")
+            assertThat(app.workspaceRepository.getByUuid(root.uuid, created!!.uuid)).isEqualTo(created)
+            assertThat(scheduled).containsExactly(root.uuid to created!!.uuid)
+            assertThat(item.indexTaskId).isEqualTo("synthetic-reference-${created!!.uuid}")
+            assertThat(physical.length()).isGreaterThan(8_192L)
+            inbox.recordCreated(lease.request.requestId, result.created)
+            val durableItem = checkNotNull(inbox.contentSource().preflightItem(lease.request.uris.single()))
+            assertThat(durableItem.status).isEqualTo(ShareImportStatus.Created)
+            assertThat(durableItem.fileUuid).isEqualTo(created!!.uuid)
+            assertThat(queue.ackDurably(lease.token)).isTrue()
+        } finally {
+            leaseToken?.let { token ->
+                bestEffort { queue.nackDurably(token) }
+                bestEffort { queue.dropDurably(token) }
+            }
+            created?.let { entry ->
+                bestEffort { app.workspaceRepository.moveToRecycleBin(root.uuid, entry.uuid) }
+                bestEffort { app.workspaceRepository.permanentDelete(root.uuid, entry.uuid) }
+            }
+            bestEffort { app.database.sessionDao().deleteById(sessionId) }
+            inboxRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun contentResolverHtmlPersistsAndProductionExtractorChunksBodyWithoutRemoteContent() = runBlocking<Unit> {
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        val authority = "${com.promenar.nexara.test.BuildConfig.APPLICATION_ID}.sharefixture"
+        val uri = Uri.parse("content://$authority/${ShareFixtureProvider.HTML_FILE}")
+        val sessionId = "__share_html_${UUID.randomUUID()}__"
+        val now = System.currentTimeMillis()
+        app.database.sessionDao().insert(
+            SessionEntity(
+                id = sessionId,
+                agentId = "__test__",
+                title = "Share HTML E2E",
+                createdAt = now,
+                updatedAt = now,
+            )
+        )
+        val root = app.workspaceRepository.ensureSessionRoot(sessionId)
+        val inboxRoot = File(app.noBackupFilesDir, "share-html-${UUID.randomUUID()}").apply { mkdirs() }
+        val inbox = DurableShareInbox(inboxRoot)
+        val queue = ShareIntentQueue(inbox)
+        var leaseToken: String? = null
+        var created: FileEntry? = null
+        try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/html"
+                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                putExtra(Intent.EXTRA_STREAM, uri)
+            }
+            assertThat(queue.stageDurably(intent, app.contentResolver))
+                .isEqualTo(ShareEnqueueResult.Accepted)
+            val lease = checkNotNull(queue.claimNextDurably())
+            leaseToken = lease.token
+            val scheduled = mutableListOf<Pair<String, String>>()
+            val result = SharedFileImporter(
+                source = inbox.contentSource(),
+                workspace = app.workspaceRepository,
+                indexScheduler = ShareIndexScheduler { workspaceRootUuid, entry ->
+                    scheduled += workspaceRootUuid to entry.uuid
+                    ShareIndexReceipt("synthetic-reference-${entry.uuid}", entry.uuid)
+                },
+            ).import(lease.request, root.uuid)
+
+            val item = result.created.single()
+            created = checkNotNull(item.created)
+            val physical = File(created!!.physicalRootPath, created!!.materializedPath.trimStart('/'))
+            assertThat(physical.readBytes()).isEqualTo(ShareFixtureProvider.HTML_CONTENT)
+            assertThat(app.workspaceRepository.getByUuid(root.uuid, created!!.uuid)).isEqualTo(created)
+            assertThat(scheduled).containsExactly(root.uuid to created!!.uuid)
+            assertThat(item.indexTaskId).isEqualTo("synthetic-reference-${created!!.uuid}")
+
+            val extraction = DocumentReferenceExtractor(
+                chunkSize = 24,
+                chunkOverlap = 4,
+            ).extract(created!!)
+            assertThat(extraction.graphText).contains("中文正文一")
+            assertThat(extraction.graphText).contains("中文正文二")
+            assertThat(extraction.graphText).doesNotContain("脚本密文不应被索引")
+            assertThat(extraction.graphText).doesNotContain("https://remote.example")
+            assertThat(extraction.chunks.size).isGreaterThan(1)
+            assertThat(extraction.chunks.joinToString("\n")).contains("中文正文一")
+            inbox.recordCreated(lease.request.requestId, result.created)
+            val durableItem = checkNotNull(inbox.contentSource().preflightItem(lease.request.uris.single()))
+            assertThat(durableItem.status).isEqualTo(ShareImportStatus.Created)
+            assertThat(durableItem.fileUuid).isEqualTo(created!!.uuid)
+            assertThat(queue.ackDurably(lease.token)).isTrue()
+        } finally {
+            leaseToken?.let { token ->
+                bestEffort { queue.nackDurably(token) }
+                bestEffort { queue.dropDurably(token) }
+            }
+            created?.let { entry ->
+                bestEffort { app.workspaceRepository.moveToRecycleBin(root.uuid, entry.uuid) }
+                bestEffort { app.workspaceRepository.permanentDelete(root.uuid, entry.uuid) }
+            }
+            bestEffort { app.database.sessionDao().deleteById(sessionId) }
+            inboxRoot.deleteRecursively()
+        }
+    }
+
     private fun waitForShareSheet(scenario: ActivityScenario<MainActivity>): Boolean {
         repeat(200) {
             var visible = false
@@ -322,5 +473,13 @@ class ShareImportAndroidEndToEndTest {
             check(inbox.drop(lease.token))
         }
         error("测试收件箱超过清理上限")
+    }
+
+    private suspend fun bestEffort(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (_: Exception) {
+            // 清理失败不掩盖验收断言；每个测试使用唯一会话和收件箱目录。
+        }
     }
 }

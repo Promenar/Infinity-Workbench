@@ -720,26 +720,36 @@ class ValidateCatalogFileTestCase(unittest.TestCase):
                 ):
                     MODULE.run_update("https://models.dev/models.json", models, manifest)
 
-    def test_run_update_reproducible_with_fixed_258_source_memory_fixture(self) -> None:
-        source_records = {}
-        for index in range(258):
-            model_id = f"vendor/model-{index:03d}"
-            source_record = {
-                "id": model_id,
-                "name": f"Model {index:03d}",
+    def test_run_update_reproducible_and_accepts_upstream_compatibility_addition(self) -> None:
+        source_records = {
+            "openai/o1-preview": {
+                "id": "openai/o1-preview",
+                "name": "Upstream O1 Preview",
+                "family": "OpenAI",
+                "reasoning": False,
+                "attachment": False,
+                "tool_call": True,
+                "structured_output": True,
+                "knowledge": "2024-06",
+                "release_date": "2024-05-01",
+                "last_updated": "2026-01-01",
+                "limit": {"context": 4096, "input": 3072, "output": 1024},
+                "modalities": {"input": ["text"], "output": ["text"]},
+            },
+            "vendor/optional": {
+                "id": "vendor/optional",
+                "name": "Optional Structured",
                 "family": "model",
-                "reasoning": index % 3 == 0,
+                "reasoning": False,
                 "attachment": False,
                 "tool_call": False,
                 "knowledge": None,
                 "release_date": "2026-01-01",
                 "last_updated": "2026-01-01",
-                "limit": {"context": 1024 + index, "output": 1024},
+                "limit": {"context": 1024, "output": 1024},
                 "modalities": {"input": ["text"], "output": ["text"]},
-            }
-            if index >= 158:
-                source_record["structured_output"] = index % 2 == 0
-            source_records[model_id] = source_record
+            },
+        }
 
         payload = MODULE._canonical_json_bytes(source_records)
         source_sha = MODULE.sha256_hex(payload)
@@ -770,14 +780,38 @@ class ValidateCatalogFileTestCase(unittest.TestCase):
             first_manifest.pop("fetchedAt", None)
             second_manifest.pop("fetchedAt", None)
             self.assertEqual(first_manifest, second_manifest)
-            self.assertEqual(len(normalized), 258)
-            self.assertEqual(manifest_payload["recordCount"], 258)
-            self.assertIn("structured_output", normalized[0])
-            self.assertIsNone(normalized[0]["structured_output"])
-            missing = sum(
-                1 for record in normalized if record.get("structured_output") is None
-            )
-            self.assertEqual(missing, 158)
+            self.assertEqual(len(normalized), len(source_records))
+            self.assertEqual(manifest_payload["recordCount"], len(source_records))
+            self.assertIsNone(next(record for record in normalized if record["canonicalModelId"] == "vendor/optional")["structured_output"])
+
+            source_records["vendor/new-model"] = {
+                "id": "vendor/new-model",
+                "name": "New Upstream Model",
+                "family": "model",
+                "reasoning": True,
+                "attachment": False,
+                "tool_call": False,
+                "structured_output": False,
+                "knowledge": None,
+                "release_date": "2026-07-18",
+                "last_updated": "2026-07-18",
+                "limit": {"context": 8192, "output": 2048},
+                "modalities": {"input": ["text"], "output": ["text"]},
+            }
+            added_payload = MODULE._canonical_json_bytes(source_records)
+            with patch.object(
+                MODULE,
+                "_fetch_source",
+                return_value=(added_payload, MODULE.sha256_hex(added_payload)),
+            ):
+                with patch.object(MODULE, "_utc_now_iso", return_value="2026-07-17T19:24:03Z"):
+                    MODULE.run_update("https://models.dev/models.json", models, manifest)
+
+            updated = json.loads(models.read_text(encoding="utf-8"))
+            updated_manifest = json.loads(manifest.read_text(encoding="utf-8"))
+            self.assertEqual(len(updated), len(source_records))
+            self.assertEqual(updated_manifest["recordCount"], len(source_records))
+            self.assertIn("vendor/new-model", {record["canonicalModelId"] for record in updated})
 
     def test_run_update_rejects_checksum_mismatch(self) -> None:
         source_records = {

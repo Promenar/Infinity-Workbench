@@ -41,6 +41,21 @@ class DocumentParserDeviceE2eTest {
     }
 
     @Test
+    fun pdfOutputWriterStopsAtByteBudgetOnRealAndroidAssets() {
+        val file = copyFixture(PDF_FIXTURE)
+        val complete = productionExtractor().extract(entry(file, "application/pdf"))
+        val bounded = DocumentReferenceExtractor(4, 0, maxExtractedUtf8Bytes = 8)
+            .extract(entry(file, "application/pdf"))
+        assertThat(complete.graphText.length).isGreaterThan(8)
+        assertThat(bounded.truncated).isTrue()
+        assertThat(bounded.graphText).isEqualTo(complete.graphText.take(8))
+        assertThat(bounded.graphText.toByteArray(Charsets.UTF_8).size).isEqualTo(8)
+        bounded.chunks.forEach {
+            assertThat(it.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8)).isEqualTo(it)
+        }
+    }
+
+    @Test
     fun realPdfBinaryUsesProductionPdfBoxPath() {
         val file = copyFixture(PDF_FIXTURE)
 

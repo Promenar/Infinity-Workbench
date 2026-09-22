@@ -35,12 +35,15 @@ object StartupGateTags {
     const val RECOVERING = "startup-recovering"
     const val BLOCKED = "startup-blocked"
     const val RETRY = "startup-retry"
+    const val DUAL_DATABASE = "startup-dual-database"
+    const val RECOVER_BOTH = "startup-recover-both"
 }
 
 @Composable
 fun StartupGate(
     state: BackupStartupState,
     onRetry: () -> Unit,
+    onRecoverBothDatabases: () -> Unit,
     readyContent: @Composable () -> Unit,
 ) {
     when (state) {
@@ -75,6 +78,45 @@ fun StartupGate(
                         .testTag(StartupGateTags.RETRY)
                         .heightIn(min = 48.dp),
                 ) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = null)
+                    Spacer(Modifier.size(8.dp))
+                    Text(stringResource(R.string.startup_retry))
+                }
+            },
+        )
+        is BackupStartupState.DualDatabaseRecoveryRequired -> StartupStatusSurface(
+            stateTag = StartupGateTags.DUAL_DATABASE,
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.WarningAmber,
+                    contentDescription = stringResource(R.string.startup_dual_database_icon_description),
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            },
+            title = stringResource(R.string.startup_dual_database_title),
+            message = state.summary,
+            action = {
+                Button(
+                    onClick = onRecoverBothDatabases,
+                    modifier = Modifier.testTag(StartupGateTags.RECOVER_BOTH).heightIn(min = 48.dp),
+                ) { Text(stringResource(R.string.startup_dual_database_action)) }
+            },
+        )
+        is BackupStartupState.DualDatabaseRecoveryBlocked -> StartupStatusSurface(
+            stateTag = StartupGateTags.BLOCKED,
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.WarningAmber,
+                    contentDescription = stringResource(R.string.startup_blocked_icon_description),
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            },
+            title = stringResource(R.string.startup_dual_database_blocked_title),
+            message = state.detail,
+            action = {
+                Button(onClick = onRetry, modifier = Modifier.testTag(StartupGateTags.RETRY).heightIn(min = 48.dp)) {
                     Icon(Icons.Rounded.Refresh, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
                     Text(stringResource(R.string.startup_retry))

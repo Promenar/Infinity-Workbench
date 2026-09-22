@@ -39,6 +39,221 @@ class AndroidSecureWorkspaceFileOpsTest {
     }
 
     @Test
+    fun moveRefusesTargetCreatedAfterAdmissionAndKeepsBothNodes() {
+        val normal = SecureWorkspaceFileOps()
+        WorkspaceMutationCoordinator.bindIdentityForTesting(root, normal.ensureRoot(root))
+        normal.createFile(root, listOf("原文😀.txt"), "source".toByteArray())
+        var armed = true
+        val racing = SecureWorkspaceFileOps { phase ->
+            if (armed && phase == WorkspaceFilePhase.BEFORE_MUTATION) {
+                armed = false
+                Files.write(root.resolve("目标😀.txt"), "new-user-data".toByteArray())
+            }
+        }
+        val failure = runCatching { racing.move(root, listOf("原文😀.txt"), listOf("目标😀.txt")) }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(java.nio.file.FileAlreadyExistsException::class.java)
+        assertThat(normal.read(root, listOf("原文😀.txt")).toString(Charsets.UTF_8)).isEqualTo("source")
+        assertThat(normal.read(root, listOf("目标😀.txt")).toString(Charsets.UTF_8)).isEqualTo("new-user-data")
+        normal.move(root, listOf("原文😀.txt"), listOf("成功😀.txt")).commit()
+        assertThat(normal.read(root, listOf("成功😀.txt")).toString(Charsets.UTF_8)).isEqualTo("source")
+    }
+
+    @Test
+    fun mkdirRefusesConcurrentEmptyTargetWithoutReplacingItsIdentity() {
+        val normal = SecureWorkspaceFileOps()
+        WorkspaceMutationCoordinator.bindIdentityForTesting(root, normal.ensureRoot(root))
+        var targetKey: String? = null
+        val racing = SecureWorkspaceFileOps { phase ->
+            if (phase == WorkspaceFilePhase.BEFORE_MUTATION && targetKey == null) {
+                val target = Files.createDirectory(root.resolve("created"))
+                targetKey = Files.readAttributes(target, java.nio.file.attribute.BasicFileAttributes::class.java).fileKey().toString()
+            }
+        }
+        val failure = runCatching { racing.createDirectory(root, listOf("created")) }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(java.nio.file.FileAlreadyExistsException::class.java)
+        assertThat(Files.readAttributes(root.resolve("created"), java.nio.file.attribute.BasicFileAttributes::class.java).fileKey().toString())
+            .isEqualTo(targetKey)
+    }
+
+    @Test
+    fun mkdirRootSymlinkSwapCannotCreateEvenTemporaryOutsideNode() {
+        val normal = SecureWorkspaceFileOps()
+        WorkspaceMutationCoordinator.bindIdentityForTesting(root, normal.ensureRoot(root))
+        val outside = Files.createDirectory(root.resolveSibling("${root.fileName}-outside"))
+        val retained = root.resolveSibling("${root.fileName}-retained")
+        var swapped = false
+        val racing = SecureWorkspaceFileOps { phase ->
+            if (phase == WorkspaceFilePhase.DESCRIPTOR_OPENED && !swapped) {
+                swapped = true
+                Files.move(root, retained)
+                Files.createSymbolicLink(root, outside)
+            }
+            if (phase == WorkspaceFilePhase.DIRECTORY_TEMP_CREATED) {
+                assertThat(Files.list(outside).use { it.count() }).isEqualTo(0L)
+            }
+        }
+        try {
+            assertThat(runCatching { racing.createDirectory(root, listOf("created")) }.isFailure).isTrue()
+            assertThat(Files.list(outside).use { it.count() }).isEqualTo(0L)
+            assertThat(Files.exists(retained.resolve("created"))).isFalse()
+        } finally {
+            Files.deleteIfExists(root)
+            Files.move(retained, root)
+            Files.delete(outside)
+        }
+    }
+
+    @Test
+    fun nativeFileIdentityPersistsAcrossDescriptorReopenAndRejectsReplacement() {
+        val file = root.resolve("identity-probe.txt")
+        Files.write(file, "unchanged-content".toByteArray())
+        val token = UUID.randomUUID().toString()
+        fun <T> withFd(path: Path, block: (Int) -> T): T {
+            val fd = android.system.Os.open(path.toString(),
+                android.system.OsConstants.O_RDONLY or android.system.OsConstants.O_NOFOLLOW, 0)
+            return try { android.os.ParcelFileDescriptor.dup(fd).use { block(it.fd) } }
+            finally { android.system.Os.close(fd) }
+        }
+        withFd(file) { fd ->
+            AndroidWorkspaceFileIdentity.create(fd, token)
+            assertThat(AndroidWorkspaceFileIdentity.read(fd)).isEqualTo(token)
+        }
+        withFd(file) { assertThat(AndroidWorkspaceFileIdentity.read(it)).isEqualTo(token) }
+        assertThat(Files.readAllBytes(file).toString(Charsets.UTF_8)).isEqualTo("unchanged-content")
+        val retained = root.resolve("retained-identity-probe.txt")
+        Files.move(file, retained)
+        Files.write(file, "unchanged-content".toByteArray())
+        withFd(file) { assertThat(AndroidWorkspaceFileIdentity.read(it)).isNull() }
+        withFd(retained) { assertThat(AndroidWorkspaceFileIdentity.read(it)).isEqualTo(token) }
+    }
+
+    @Test
+    fun ownerCleanupRequiresV2ProofAndExactInventory() {
+        val ops = SecureWorkspaceFileOps()
+        WorkspaceMutationCoordinator.bindIdentityForTesting(root, ops.ensureRoot(root))
+        ops.createDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        val owner = listOf(CREATE_OWNERSHIP_DIRECTORY, "android-cleanup")
+        ops.createDirectory(root, owner)
+        ops.createFile(root, owner + "keep.txt", "important".toByteArray())
+        assertThat(runCatching { cleanupCompletedCreateOwnership(ops, root, owner) }.isFailure).isTrue()
+        assertThat(ops.read(root, owner + "keep.txt").toString(Charsets.UTF_8)).isEqualTo("important")
+        ops.deleteNonRecursive(root, owner + "keep.txt")
+        val staged = owner + CREATE_STAGED_NODE
+        ops.createFile(root, staged, "payload".toByteArray())
+        val identity = ops.inspect(root, staged)
+        val token = UUID.randomUUID().toString()
+        ops.retainCreationProof(root, staged, owner, token)
+        ops.createFile(root, owner + CREATE_MANIFEST,
+            encodeCreateOwnershipManifest(WorkspaceCreateOwnershipManifest("created.txt", identity)))
+        ops.move(root, staged, listOf("created.txt")).commit()
+        assertThat(runCatching { cleanupCompletedCreateOwnership(ops, root, owner) }.isFailure).isTrue()
+        assertThat(ops.exists(root, owner + CREATE_MANIFEST)).isTrue()
+        ops.deleteNonRecursive(root, owner + CREATE_MANIFEST)
+        ops.createFile(root, owner + CREATE_MANIFEST,
+            encodeCreateOwnershipManifest(WorkspaceCreateOwnershipManifest("created.txt", identity, token)))
+        ops.createFile(root, owner + "keep.txt", "important".toByteArray())
+        assertThat(runCatching { cleanupCompletedCreateOwnership(ops, root, owner) }.isFailure).isTrue()
+        assertThat(ops.read(root, owner + "keep.txt").toString(Charsets.UTF_8)).isEqualTo("important")
+        ops.deleteNonRecursive(root, owner + "keep.txt")
+        cleanupCompletedCreateOwnership(ops, root, owner)
+        assertThat(ops.exists(root, owner)).isFalse()
+        assertThat(ops.read(root, listOf("created.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+    }
+
+    @Test
+    fun ownerCleanupReceiptSurvivesManifestRemoval() {
+        val ops = SecureWorkspaceFileOps()
+        WorkspaceMutationCoordinator.bindIdentityForTesting(root, ops.ensureRoot(root))
+        ops.createDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        val owner = listOf(CREATE_OWNERSHIP_DIRECTORY, "android-receipt")
+        ops.createDirectory(root, owner)
+        ops.createDirectory(root, listOf("created"))
+        val identity = ops.inspect(root, listOf("created"))
+        val token = UUID.randomUUID().toString()
+        ops.retainCreationProof(root, listOf("created"), owner, token)
+        ops.createFile(root, owner + CREATE_MANIFEST,
+            encodeCreateOwnershipManifest(WorkspaceCreateOwnershipManifest("created", identity, token)))
+        val interrupted = object : WorkspaceFileOps by ops {
+            override fun deleteNonRecursive(root: Path, relative: List<String>) {
+                ops.deleteNonRecursive(root, relative)
+                if (relative == owner + CREATE_MANIFEST) throw java.io.IOException("模拟manifest删除后中断")
+            }
+        }
+        assertThat(runCatching { cleanupCompletedCreateOwnership(interrupted, root, owner) }.isFailure).isTrue()
+        assertThat(ops.exists(root, creationCleanupReceiptPath(owner))).isTrue()
+        cleanupCompletedCreateOwnership(SecureWorkspaceFileOps(), root, owner)
+        assertThat(ops.exists(root, owner)).isFalse()
+        assertThat(ops.exists(root, listOf("created", CREATE_DIRECTORY_MARKER))).isFalse()
+        assertThat(ops.exists(root, listOf("created"))).isTrue()
+    }
+
+    @Test
+    fun directoryDeletionPhaseResumesAfterMarkerRemoval() {
+        val ops = SecureWorkspaceFileOps { phase ->
+            if (phase == WorkspaceFilePhase.CREATION_MARKER_REMOVED) throw IllegalStateException("模拟删除阶段中断")
+        }
+        WorkspaceMutationCoordinator.bindIdentityForTesting(root, ops.ensureRoot(root))
+        ops.createDirectory(root, listOf("owner"))
+        ops.createDirectory(root, listOf("created"))
+        val identity = ops.inspect(root, listOf("created"))
+        val token = UUID.randomUUID().toString()
+        ops.retainCreationProof(root, listOf("created"), listOf("owner"), token)
+        assertThat(runCatching {
+            ops.deleteCreatedNode(root, listOf("created"), listOf("owner"), token, identity)
+        }.isFailure).isTrue()
+        val quarantine = listOf("owner", CREATE_ROLLBACK_NODE)
+        assertThat(Files.exists(root.resolve("owner/$CREATE_DIRECTORY_DELETE_READY"))).isTrue()
+        SecureWorkspaceFileOps().deleteCreatedNode(root, quarantine, listOf("owner"), token, identity)
+        assertThat(Files.exists(root.resolve("owner/$CREATE_ROLLBACK_NODE"))).isFalse()
+    }
+
+    @Test
+    fun persistentFileIdentitySurvivesReopenAndProtectsReplacement() {
+        val ops = SecureWorkspaceFileOps()
+        val rootIdentity = ops.ensureRoot(root)
+        WorkspaceMutationCoordinator.bindIdentityForTesting(root, rootIdentity)
+        ops.createDirectory(root, listOf("owner"))
+        ops.createFile(root, listOf("owner", "stage"), "payload".toByteArray())
+        val identity = ops.inspect(root, listOf("owner", "stage"))
+        val token = UUID.randomUUID().toString()
+        ops.retainCreationProof(root, listOf("owner", "stage"), listOf("owner"), token)
+        ops.move(root, listOf("owner", "stage"), listOf("created.txt")).commit()
+        // 重建操作对象验证持久属性；替换后即使调用方观察到相同身份键，也须由nonce拒绝。
+        val reopened = SecureWorkspaceFileOps()
+        reopened.verifyCreationProof(root, listOf("created.txt"), listOf("owner"), token, identity)
+        Files.move(root.resolve("created.txt"), root.resolve("retained-original.txt"))
+        Files.write(root.resolve("created.txt"), "payload".toByteArray())
+        val observedReplacement = identity.copy(fileKey = reopened.inspect(root, listOf("created.txt")).fileKey)
+        assertThat(runCatching {
+            reopened.deleteCreatedNode(root, listOf("created.txt"), listOf("owner"), token, observedReplacement)
+        }.isFailure).isTrue()
+        assertThat(reopened.read(root, listOf("created.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+        Files.delete(root.resolve("created.txt"))
+        Files.move(root.resolve("retained-original.txt"), root.resolve("created.txt"))
+        reopened.deleteCreatedNode(root, listOf("created.txt"), listOf("owner"), token, identity)
+        assertThat(Files.exists(root.resolve("created.txt"))).isFalse()
+    }
+
+    @Test
+    fun persistentDirectoryMarkerDoesNotAuthorizeRecursiveRollback() {
+        val ops = SecureWorkspaceFileOps()
+        WorkspaceMutationCoordinator.bindIdentityForTesting(root, ops.ensureRoot(root))
+        ops.createDirectory(root, listOf("owner"))
+        ops.createDirectory(root, listOf("created"))
+        val identity = ops.inspect(root, listOf("created"))
+        val token = UUID.randomUUID().toString()
+        ops.retainCreationProof(root, listOf("created"), listOf("owner"), token)
+        ops.createFile(root, listOf("created", "keep.txt"), "keep".toByteArray())
+        assertThat(runCatching {
+            SecureWorkspaceFileOps().deleteCreatedNode(root, listOf("created"), listOf("owner"), token, identity)
+        }.isFailure).isTrue()
+        assertThat(ops.read(root, listOf("created", "keep.txt")).toString(Charsets.UTF_8)).isEqualTo("keep")
+        ops.delete(root, listOf("created", "keep.txt"))
+        SecureWorkspaceFileOps().deleteCreatedNode(root, listOf("created"), listOf("owner"), token, identity)
+        assertThat(Files.exists(root.resolve("created"))).isFalse()
+    }
+
+    @Test
     fun appPrivateStorageSupportsSecureDirectoryStreamAndWorkspaceLifecycle() {
         Files.newDirectoryStream(root).use { stream ->
             println("WORKSPACE_SECURE_PROVIDER=${stream.javaClass.name}")

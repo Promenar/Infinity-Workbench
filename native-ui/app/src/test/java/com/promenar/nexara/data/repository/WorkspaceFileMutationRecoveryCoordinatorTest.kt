@@ -125,11 +125,13 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
         fileOps.createDirectory(root, listOf(".nexara_create_operations", "op-1"))
         val staged = listOf(".nexara_create_operations", "op-1", CREATE_STAGED_NODE)
         fileOps.createFile(root, staged, "orphan".toByteArray())
+        val token = java.util.UUID.randomUUID().toString()
+        fileOps.retainCreationProof(root, staged, staged.dropLast(1), token)
         fileOps.createFile(
             root,
             listOf(".nexara_create_operations", "op-1", CREATE_MANIFEST),
             encodeCreateOwnershipManifest(
-                WorkspaceCreateOwnershipManifest("orphan.txt", fileOps.inspect(root, staged)),
+                WorkspaceCreateOwnershipManifest("orphan.txt", fileOps.inspect(root, staged), token),
             ),
         )
         fileOps.move(root, staged, listOf("orphan.txt"))
@@ -194,11 +196,13 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
         fileOps.createDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1"))
         val staged = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1", CREATE_STAGED_NODE)
         fileOps.createFile(root, staged, "payload".toByteArray())
+        val token = java.util.UUID.randomUUID().toString()
+        fileOps.retainCreationProof(root, staged, staged.dropLast(1), token)
         fileOps.createFile(
             root,
             listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1", CREATE_MANIFEST),
             encodeCreateOwnershipManifest(
-                WorkspaceCreateOwnershipManifest("created.txt", fileOps.inspect(root, staged)),
+                WorkspaceCreateOwnershipManifest("created.txt", fileOps.inspect(root, staged), token),
             ),
         )
         insertJournal(
@@ -233,7 +237,8 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
             encodeCreateOwnershipManifest(WorkspaceCreateOwnershipManifest("created.txt", stagedIdentity)),
         )
         fileOps.move(root, staged, listOf("created.txt")).commit()
-        fileOps.delete(root, listOf("created.txt"))
+        // 保留原节点，避免文件系统在删除后复用 inode 使夹具前提失效。
+        fileOps.move(root, listOf("created.txt"), listOf("retained-original.txt")).commit()
         fileOps.createFile(root, listOf("created.txt"), payload)
         assertThat(fileOps.inspect(root, listOf("created.txt")).fileKey)
             .isNotEqualTo(stagedIdentity.fileKey)
@@ -269,7 +274,7 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
             encodeCreateOwnershipManifest(WorkspaceCreateOwnershipManifest("created-dir", stagedIdentity)),
         )
         fileOps.move(root, staged, listOf("created-dir")).commit()
-        fileOps.delete(root, listOf("created-dir"))
+        fileOps.move(root, listOf("created-dir"), listOf("retained-original-dir")).commit()
         fileOps.createDirectory(root, listOf("created-dir"))
         assertThat(fileOps.inspect(root, listOf("created-dir")).fileKey)
             .isNotEqualTo(stagedIdentity.fileKey)
@@ -311,8 +316,7 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
 
     @Test
     fun `无journal的owner维护清理也由coordinator绑定工作区根`() = runTest {
-        fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
-        fileOps.createDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "orphan-owner"))
+        createCurrentProofFixture(directory = false)
 
         bindingRequiredCoordinator().recoverOrThrow()
 
@@ -387,7 +391,340 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
         assertThat(database.workspaceMutationDao().get("op-1")).isNull()
     }
 
+    @Test
+    fun `PREPARED mkdir遇到新增内容保留目录与journal`() = runTest {
+        val ownership = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")
+        val staged = ownership + CREATE_STAGED_NODE
+        fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        fileOps.ensureDirectory(root, ownership)
+        fileOps.createDirectory(root, staged)
+        fileOps.createFile(root, ownership + CREATE_MANIFEST,
+            encodeCreateOwnershipManifest(WorkspaceCreateOwnershipManifest("created-dir", fileOps.inspect(root, staged))))
+        fileOps.move(root, staged, listOf("created-dir")).commit()
+        fileOps.createFile(root, listOf("created-dir", "keep.txt"), "important".toByteArray())
+        insertJournal(WorkspaceMutationType.MKDIR, WorkspaceMutationStage.PREPARED,
+            "created-dir", "created-dir", targetUuid = "created-dir")
+
+        assertThat(runCatching { coordinator().recoverOrThrow() }.exceptionOrNull())
+            .isInstanceOf(WorkspaceMutationRecoveryException::class.java)
+        assertThat(Files.readAllBytes(root.resolve("created-dir/keep.txt")).toString(Charsets.UTF_8)).isEqualTo("important")
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+    }
+
+    @Test
+    fun `PREPARED create遇到复用fileKey的替换节点不删除目标`() = runTest {
+        val ownership = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")
+        val staged = ownership + CREATE_STAGED_NODE
+        fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        fileOps.ensureDirectory(root, ownership)
+        fileOps.createFile(root, staged, "payload".toByteArray())
+        val original = fileOps.inspect(root, staged)
+        fileOps.createFile(root, ownership + CREATE_MANIFEST,
+            encodeCreateOwnershipManifest(WorkspaceCreateOwnershipManifest("created.txt", original)))
+        fileOps.move(root, staged, listOf("retained-original.txt")).commit()
+        fileOps.createFile(root, listOf("created.txt"), "payload".toByteArray())
+        val reusedKeyOps = object : WorkspaceFileOps by fileOps {
+            override fun inspect(root: Path, relative: List<String>): WorkspaceNodeIdentity =
+                fileOps.inspect(root, relative).let { actual ->
+                    if (relative == listOf("created.txt")) actual.copy(fileKey = original.fileKey) else actual
+                }
+        }
+        insertJournal(WorkspaceMutationType.CREATE, WorkspaceMutationStage.PREPARED,
+            "created.txt", "created.txt", targetUuid = "created")
+
+        assertThat(runCatching { WorkspaceFileMutationRecoveryCoordinator(database, reusedKeyOps).recoverOrThrow() }.exceptionOrNull())
+            .isInstanceOf(WorkspaceMutationRecoveryException::class.java)
+        assertThat(Files.readAllBytes(root.resolve("created.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+    }
+
     private fun coordinator() = WorkspaceFileMutationRecoveryCoordinator(database, fileOps)
+
+    @Test
+    fun `v2 PREPARED mkdir有持久标记且为空时自动恢复`() = runTest {
+        createCurrentProofFixture(directory = true)
+        insertJournal(WorkspaceMutationType.MKDIR, WorkspaceMutationStage.PREPARED,
+            "created-dir", "created-dir", targetUuid = "created-dir")
+
+        coordinator().recoverOrThrow()
+
+        assertThat(Files.exists(root.resolve("created-dir"))).isFalse()
+        assertThat(database.workspaceMutationDao().get("op-1")).isNull()
+    }
+
+    @Test
+    fun `v2 PREPARED mkdir新增内容时保留目录标记内容和journal`() = runTest {
+        createCurrentProofFixture(directory = true)
+        fileOps.createFile(root, listOf("created-dir", "keep.txt"), "important".toByteArray())
+        insertJournal(WorkspaceMutationType.MKDIR, WorkspaceMutationStage.PREPARED,
+            "created-dir", "created-dir", targetUuid = "created-dir")
+
+        assertThat(runCatching { coordinator().recoverOrThrow() }.isFailure).isTrue()
+
+        assertThat(fileOps.read(root, listOf("created-dir", "keep.txt")).toString(Charsets.UTF_8)).isEqualTo("important")
+        assertThat(fileOps.exists(root, listOf("created-dir", CREATE_DIRECTORY_MARKER))).isTrue()
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+    }
+
+    @Test
+    fun `v2 DB_COMMITTED mkdir保留新增内容并完成恢复`() = runTest {
+        createCurrentProofFixture(directory = true)
+        fileOps.createFile(root, listOf("created-dir", "keep.txt"), "important".toByteArray())
+        database.fileEntryDao().insertAbort(entry("created-dir", "/created-dir", "created-dir", "root", directory = true))
+        insertJournal(WorkspaceMutationType.MKDIR, WorkspaceMutationStage.DB_COMMITTED,
+            "created-dir", "created-dir", targetUuid = "created-dir")
+
+        coordinator().recoverOrThrow()
+
+        assertThat(fileOps.read(root, listOf("created-dir", "keep.txt")).toString(Charsets.UTF_8)).isEqualTo("important")
+        assertThat(fileOps.exists(root, listOf("created-dir", CREATE_DIRECTORY_MARKER))).isFalse()
+        assertThat(database.workspaceMutationDao().get("op-1")).isNull()
+    }
+
+    @Test
+    fun `v3文件身份属性缺失时即使最终节点未变化也保留`() = runTest {
+        createCurrentProofFixture(directory = false)
+        fileOps.removeFileIdentityForTesting(root, listOf("created.txt"))
+        insertJournal(WorkspaceMutationType.CREATE, WorkspaceMutationStage.PREPARED,
+            "created.txt", "created.txt", targetUuid = "created")
+
+        assertThat(runCatching { coordinator().recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.read(root, listOf("created.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+    }
+
+    @Test
+    fun `v2回滚隔离节点在进程重建后完成恢复`() = runTest {
+        createCurrentProofFixture(directory = false)
+        fileOps.move(root, listOf("created.txt"), listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1", CREATE_ROLLBACK_NODE)).commit()
+        insertJournal(WorkspaceMutationType.CREATE, WorkspaceMutationStage.PREPARED,
+            "created.txt", "created.txt", targetUuid = "created")
+
+        WorkspaceFileMutationRecoveryCoordinator(database, TestWorkspaceFileOps()).recoverOrThrow()
+
+        assertThat(database.workspaceMutationDao().get("op-1")).isNull()
+        assertThat(fileOps.exists(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1"))).isFalse()
+    }
+
+    private fun createCurrentProofFixture(directory: Boolean) {
+        val owner = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")
+        val staged = owner + CREATE_STAGED_NODE
+        fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        fileOps.createDirectory(root, owner)
+        if (directory) fileOps.createDirectory(root, staged)
+        else fileOps.createFile(root, staged, "payload".toByteArray())
+        val token = java.util.UUID.randomUUID().toString()
+        val manifest = WorkspaceCreateOwnershipManifest(
+            if (directory) "created-dir" else "created.txt", fileOps.inspect(root, staged), token,
+        )
+        fileOps.retainCreationProof(root, staged, owner, token)
+        fileOps.createFile(root, owner + CREATE_MANIFEST, encodeCreateOwnershipManifest(manifest))
+        fileOps.move(root, staged, listOf(manifest.targetRelativePath)).commit()
+    }
+
+    @Test
+    fun `v3同内容替换即使观察到复用fileKey也因nonce缺失保留`() = runTest {
+        createCurrentProofFixture(directory = false)
+        val original = fileOps.inspect(root, listOf("created.txt"))
+        fileOps.move(root, listOf("created.txt"), listOf("retained-original.txt")).commit()
+        fileOps.createFile(root, listOf("created.txt"), "payload".toByteArray())
+        fileOps.inspectedFileKeyOverride = { path, actual ->
+            if (path == root.resolve("created.txt")) original.fileKey else actual
+        }
+        assertThat(fileOps.inspect(root, listOf("created.txt"))).isEqualTo(original)
+        insertJournal(WorkspaceMutationType.CREATE, WorkspaceMutationStage.PREPARED,
+            "created.txt", "created.txt", targetUuid = "created")
+        assertThat(runCatching { coordinator().recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.read(root, listOf("created.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+    }
+
+    @Test
+    fun `v3文件unlink后中断由持久删除phase收敛`() = runTest {
+        createCurrentProofFixture(directory = false)
+        insertJournal(WorkspaceMutationType.CREATE, WorkspaceMutationStage.PREPARED,
+            "created.txt", "created.txt", targetUuid = "created")
+        val interrupted = TestWorkspaceFileOps { phase ->
+            if (phase == WorkspaceFilePhase.CREATION_FILE_DELETED) throw java.io.IOException("模拟文件unlink后中断")
+        }
+        assertThat(runCatching { WorkspaceFileMutationRecoveryCoordinator(database, interrupted).recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.exists(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1", CREATE_FILE_DELETE_READY))).isTrue()
+        coordinator().recoverOrThrow()
+        assertThat(database.workspaceMutationDao().get("op-1")).isNull()
+        assertThat(fileOps.exists(root, listOf(CREATE_OWNERSHIP_DIRECTORY))).isFalse()
+    }
+
+    @Test
+    fun `旧v2文件证明即使nonce碰巧匹配也不作为回退`() = runTest {
+        createCurrentProofFixture(directory = false)
+        val owner = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")
+        val current = requireNotNull(decodeCreateOwnershipManifest(fileOps.read(root, owner + CREATE_MANIFEST)))
+        fileOps.deleteNonRecursive(root, owner + CREATE_MANIFEST)
+        fileOps.createFile(root, owner + CREATE_MANIFEST, encodeCreateOwnershipManifest(current.copy(proofVersion = 2)))
+        assertThat(runCatching { coordinator().recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.exists(root, owner + CREATE_MANIFEST)).isTrue()
+        assertThat(fileOps.exists(root, listOf("created.txt"))).isTrue()
+    }
+
+    @Test
+    fun `目录marker移除后中断可由持久删除phase自动收敛`() = runTest {
+        createCurrentProofFixture(directory = true)
+        insertJournal(WorkspaceMutationType.MKDIR, WorkspaceMutationStage.PREPARED,
+            "created-dir", "created-dir", targetUuid = "created-dir")
+        val interrupted = TestWorkspaceFileOps { phase ->
+            if (phase == WorkspaceFilePhase.CREATION_MARKER_REMOVED) throw IllegalStateException("模拟marker移除后中断")
+        }
+
+        assertThat(runCatching { WorkspaceFileMutationRecoveryCoordinator(database, interrupted).recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.exists(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1", CREATE_DIRECTORY_DELETE_READY))).isTrue()
+        assertThat(fileOps.exists(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1", CREATE_ROLLBACK_NODE))).isTrue()
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+
+        WorkspaceFileMutationRecoveryCoordinator(database, TestWorkspaceFileOps()).recoverOrThrow()
+
+        assertThat(database.workspaceMutationDao().get("op-1")).isNull()
+        assertThat(fileOps.exists(root, listOf("created-dir"))).isFalse()
+        assertThat(fileOps.exists(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1"))).isFalse()
+    }
+
+    @Test
+    fun `目录删除phase之后新增内容在首次和重试恢复中均保留`() = runTest {
+        createCurrentProofFixture(directory = true)
+        insertJournal(WorkspaceMutationType.MKDIR, WorkspaceMutationStage.PREPARED,
+            "created-dir", "created-dir", targetUuid = "created-dir")
+        val quarantine = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1", CREATE_ROLLBACK_NODE)
+        val addingContent = TestWorkspaceFileOps { phase ->
+            if (phase == WorkspaceFilePhase.CREATION_MARKER_REMOVED) {
+                fileOps.createFile(root, quarantine + "keep.txt", "important".toByteArray())
+            }
+        }
+
+        assertThat(runCatching { WorkspaceFileMutationRecoveryCoordinator(database, addingContent).recoverOrThrow() }.isFailure).isTrue()
+        assertThat(runCatching { coordinator().recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.read(root, quarantine + "keep.txt").toString(Charsets.UTF_8)).isEqualTo("important")
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+    }
+
+    @Test
+    fun `journal完成后marker清理失败保留owner并由下次启动收敛`() = runTest {
+        createCurrentProofFixture(directory = true)
+        val failing = object : WorkspaceFileOps by fileOps {
+            override fun releaseCreationProof(root: Path, node: List<String>, token: String) {
+                throw java.io.IOException("模拟marker清理失败")
+            }
+        }
+        assertThat(runCatching { WorkspaceFileMutationRecoveryCoordinator(database, failing).recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.exists(root, listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1", CREATE_MANIFEST))).isTrue()
+        assertThat(fileOps.exists(root, listOf("created-dir", CREATE_DIRECTORY_MARKER))).isTrue()
+
+        coordinator().recoverOrThrow()
+
+        assertThat(fileOps.exists(root, listOf("created-dir"))).isTrue()
+        assertThat(fileOps.exists(root, listOf("created-dir", CREATE_DIRECTORY_MARKER))).isFalse()
+        assertThat(fileOps.exists(root, listOf(CREATE_OWNERSHIP_DIRECTORY))).isFalse()
+    }
+
+    @Test
+    fun `同进程rename须先收敛已提交目录owner而不允许清理目标路径失效`() = runTest {
+        var failRelease = true
+        val failing = object : WorkspaceFileOps by fileOps {
+            override fun releaseCreationProof(root: Path, node: List<String>, token: String) {
+                if (failRelease) throw java.io.IOException("模拟marker清理失败")
+                fileOps.releaseCreationProof(root, node, token)
+            }
+        }
+        val repository = WorkspaceRepository(
+            database.fileEntryDao(), database.workspaceSeqDao(), fileOps = failing,
+            mutationJournal = RoomWorkspaceFileMutationJournal(database),
+        )
+        repository.createDirectoryInWorkspace(rootEntry.uuid, "directory", "directory", rootEntry.uuid, "/directory")
+        assertThat(database.workspaceMutationDao().getUnfinished()).isEmpty()
+        assertThat(fileOps.exists(root, listOf("directory", CREATE_DIRECTORY_MARKER))).isTrue()
+
+        assertThat(runCatching { repository.rename(rootEntry.uuid, "directory", "renamed", "directory") }.isFailure).isTrue()
+        assertThat(fileOps.exists(root, listOf("directory"))).isTrue()
+        assertThat(fileOps.exists(root, listOf("renamed"))).isFalse()
+        failRelease = false
+        repository.rename(rootEntry.uuid, "directory", "renamed", "directory")
+
+        assertThat(fileOps.exists(root, listOf("renamed"))).isTrue()
+        assertThat(fileOps.exists(root, listOf("renamed", CREATE_DIRECTORY_MARKER))).isFalse()
+    }
+
+    @Test
+    fun `无journal owner缺manifest时保留未知文件并阻断维护`() = runTest {
+        val owner = listOf(CREATE_OWNERSHIP_DIRECTORY, "unknown")
+        fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        fileOps.createDirectory(root, owner)
+        fileOps.createFile(root, owner + "keep.txt", "important".toByteArray())
+        assertThat(runCatching { coordinator().recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.read(root, owner + "keep.txt").toString(Charsets.UTF_8)).isEqualTo("important")
+    }
+
+    @Test
+    fun `无journal旧v1 owner即使目标匹配也不清理`() = runTest {
+        createCurrentProofFixture(directory = false)
+        val owner = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")
+        val old = WorkspaceCreateOwnershipManifest("created.txt", fileOps.inspect(root, listOf("created.txt")))
+        fileOps.deleteNonRecursive(root, owner + CREATE_MANIFEST)
+        fileOps.createFile(root, owner + CREATE_MANIFEST, encodeCreateOwnershipManifest(old))
+        assertThat(runCatching { coordinator().recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.exists(root, listOf("created.txt"))).isTrue()
+        assertThat(fileOps.exists(root, owner + CREATE_MANIFEST)).isTrue()
+    }
+
+    @Test
+    fun `无journal v3file缺持久身份时保留manifest并阻断维护`() = runTest {
+        createCurrentProofFixture(directory = false)
+        val owner = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")
+        fileOps.removeFileIdentityForTesting(root, listOf("created.txt"))
+        assertThat(runCatching { coordinator().recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.exists(root, owner + CREATE_MANIFEST)).isTrue()
+        assertThat(fileOps.read(root, listOf("created.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+    }
+
+    @Test
+    fun `无journal v2 owner额外内容不进入递归清理`() = runTest {
+        createCurrentProofFixture(directory = false)
+        val owner = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")
+        fileOps.createDirectory(root, owner + "extra")
+        fileOps.createFile(root, owner + listOf("extra", "keep.txt"), "important".toByteArray())
+        assertThat(runCatching { coordinator().recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.read(root, owner + listOf("extra", "keep.txt")).toString(Charsets.UTF_8)).isEqualTo("important")
+        assertThat(fileOps.exists(root, owner + CREATE_MANIFEST)).isTrue()
+    }
+
+    @Test
+    fun `PREPARED回滚后的owner额外内容保留且journal不丢弃`() = runTest {
+        createCurrentProofFixture(directory = false)
+        val owner = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")
+        fileOps.createFile(root, owner + "keep.txt", "important".toByteArray())
+        insertJournal(WorkspaceMutationType.CREATE, WorkspaceMutationStage.PREPARED,
+            "created.txt", "created.txt", targetUuid = "created")
+        assertThat(runCatching { coordinator().recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.read(root, owner + "keep.txt").toString(Charsets.UTF_8)).isEqualTo("important")
+        assertThat(database.workspaceMutationDao().get("op-1")).isNotNull()
+    }
+
+    @Test
+    fun `owner清到manifest删除后中断可用同级receipt收敛`() = runTest {
+        createCurrentProofFixture(directory = false)
+        val owner = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")
+        val interrupted = object : WorkspaceFileOps by fileOps {
+            override fun deleteNonRecursive(root: Path, relative: List<String>) {
+                fileOps.deleteNonRecursive(root, relative)
+                if (relative == owner + CREATE_MANIFEST) throw java.io.IOException("模拟manifest删除后中断")
+            }
+        }
+        assertThat(runCatching { WorkspaceFileMutationRecoveryCoordinator(database, interrupted).recoverOrThrow() }.isFailure).isTrue()
+        assertThat(fileOps.exists(root, creationCleanupReceiptPath(owner))).isTrue()
+        assertThat(fileOps.listChildren(root, owner)).isEmpty()
+
+        coordinator().recoverOrThrow()
+
+        assertThat(fileOps.exists(root, listOf(CREATE_OWNERSHIP_DIRECTORY))).isFalse()
+        assertThat(fileOps.read(root, listOf("created.txt")).toString(Charsets.UTF_8)).isEqualTo("payload")
+    }
 
     private fun bindingRequiredCoordinator(): WorkspaceFileMutationRecoveryCoordinator {
         val bindingRequiredOps = object : WorkspaceFileOps by fileOps {

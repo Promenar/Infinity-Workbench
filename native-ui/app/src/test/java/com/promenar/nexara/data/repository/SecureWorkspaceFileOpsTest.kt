@@ -7,6 +7,87 @@ import java.nio.file.SecureDirectoryStream
 
 class SecureWorkspaceFileOpsTest {
     @Test
+    fun `directory deletion phase resumes after marker removal without recursive delete`() {
+        val root = Files.createTempDirectory("workspace-creation-phase")
+        if (!verifySecureSupport(root)) { root.toFile().deleteRecursively(); return }
+        try {
+            val ops = SecureWorkspaceFileOps { phase ->
+                if (phase == WorkspaceFilePhase.CREATION_MARKER_REMOVED) throw IllegalStateException("模拟进程中断")
+            }
+            claim(ops, root)
+            ops.createDirectory(root, listOf("owner"))
+            ops.createDirectory(root, listOf("created"))
+            val identity = ops.inspect(root, listOf("created"))
+            val token = java.util.UUID.randomUUID().toString()
+            ops.retainCreationProof(root, listOf("created"), listOf("owner"), token)
+            assertThat(runCatching {
+                ops.deleteCreatedNode(root, listOf("created"), listOf("owner"), token, identity)
+            }.isFailure).isTrue()
+            val quarantine = listOf("owner", CREATE_ROLLBACK_NODE)
+            assertThat(Files.exists(root.resolve("owner/$CREATE_DIRECTORY_DELETE_READY"))).isTrue()
+            assertThat(Files.exists(root.resolve("owner/$CREATE_ROLLBACK_NODE/$CREATE_DIRECTORY_MARKER"))).isFalse()
+            SecureWorkspaceFileOps().deleteCreatedNode(root, quarantine, listOf("owner"), token, identity)
+            assertThat(Files.exists(root.resolve("owner/$CREATE_ROLLBACK_NODE"))).isFalse()
+        } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test
+    fun `creation directory rollback uses marker and never recursively deletes added files`() {
+        val root = Files.createTempDirectory("workspace-creation-proof")
+        if (!verifySecureSupport(root)) { root.toFile().deleteRecursively(); return }
+        try {
+            val ops = SecureWorkspaceFileOps()
+            claim(ops, root)
+            ops.createDirectory(root, listOf("owner"))
+            ops.createDirectory(root, listOf("owner", "stage"))
+            val identity = ops.inspect(root, listOf("owner", "stage"))
+            val token = java.util.UUID.randomUUID().toString()
+            ops.retainCreationProof(root, listOf("owner", "stage"), listOf("owner"), token)
+            ops.move(root, listOf("owner", "stage"), listOf("created")).commit()
+            ops.createFile(root, listOf("created", "keep.txt"), "keep".toByteArray())
+
+            assertThat(runCatching {
+                ops.deleteCreatedNode(root, listOf("created"), listOf("owner"), token, identity)
+            }.isFailure).isTrue()
+            assertThat(ops.read(root, listOf("created", "keep.txt")).toString(Charsets.UTF_8)).isEqualTo("keep")
+
+            ops.delete(root, listOf("created", "keep.txt"))
+            ops.deleteCreatedNode(root, listOf("created"), listOf("owner"), token, identity)
+            assertThat(Files.exists(root.resolve("created"))).isFalse()
+        } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test
+    fun `creation rollback retains a node replaced between proof and quarantine move`() {
+        val root = Files.createTempDirectory("workspace-creation-race")
+        if (!verifySecureSupport(root)) { root.toFile().deleteRecursively(); return }
+        try {
+            var armed = false
+            val ops = SecureWorkspaceFileOps { phase ->
+                if (armed && phase == WorkspaceFilePhase.BEFORE_MUTATION) {
+                    armed = false
+                    Files.move(root.resolve("created"), root.resolve("original"))
+                    Files.createDirectory(root.resolve("created"))
+                    Files.write(root.resolve("created/keep.txt"), "keep".toByteArray())
+                }
+            }
+            claim(ops, root)
+            ops.createDirectory(root, listOf("owner"))
+            ops.createDirectory(root, listOf("created"))
+            val identity = ops.inspect(root, listOf("created"))
+            val token = java.util.UUID.randomUUID().toString()
+            ops.retainCreationProof(root, listOf("created"), listOf("owner"), token)
+            armed = true
+
+            assertThat(runCatching {
+                ops.deleteCreatedNode(root, listOf("created"), listOf("owner"), token, identity)
+            }.isFailure).isTrue()
+            assertThat(ops.read(root, listOf("created", "keep.txt")).toString(Charsets.UTF_8)).isEqualTo("keep")
+            assertThat(Files.isDirectory(root.resolve("original"))).isTrue()
+        } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test
     fun `parent symlink swap after descriptor open fails closed without outside write`() {
         val projectRoot = java.nio.file.Path.of(System.getProperty("user.dir"))
         val root = Files.createTempDirectory(projectRoot, ".workspace-secure-root")

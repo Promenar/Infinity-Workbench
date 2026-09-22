@@ -122,6 +122,10 @@
     <string name="startup_blocked_title">Safe recovery needs attention</string>
     <string name="startup_blocked_message">Nexara could not finish restoring local data. Your data remains protected and app features stay locked.</string>
     <string name="startup_blocked_icon_description">Safe recovery blocked</string>
+    <string name="startup_dual_database_title">Two local databases were found</string>
+    <string name="startup_dual_database_icon_description">Two local databases need recovery</string>
+    <string name="startup_dual_database_action">Preserve both and recover</string>
+    <string name="startup_dual_database_blocked_title">Dual-database recovery stopped safely</string>
     <string name="startup_retry">Retry safe recovery</string>
     <string name="startup_importing_files">Importing %1$d files</string>
     <string name="share_intent_invalid">This shared content cannot be imported safely</string>
@@ -1467,4 +1471,6 @@
         <item quantity="other">Code block in %1$s, %2$d lines</item>
     </plurals>
     <string name="sessions_operation_failed">Could not update the conversation. Try again.</string>
+    <string name="chat_legacy_attachments_title">Recovered attachments</string>
+    <string name="chat_legacy_attachment_unreadable">This recovered attachment cannot be read</string>
 </resources>

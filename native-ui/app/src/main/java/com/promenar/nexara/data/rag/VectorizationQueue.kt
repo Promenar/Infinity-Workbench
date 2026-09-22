@@ -5,6 +5,7 @@ import com.promenar.nexara.data.local.db.dao.VectorDao
 import com.promenar.nexara.data.local.db.dao.VectorizationTaskDao
 import com.promenar.nexara.data.local.db.dao.VectorizationTaskTargetUpsertOutcome
 import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
+import com.promenar.nexara.data.local.db.recovery.DUAL_DATABASE_RECOVERY_INDEX_HOLD
 import com.promenar.nexara.data.repository.WorkspaceDeleteBarrierLease
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.*
@@ -896,6 +897,12 @@ class VectorizationQueue(
                 if (synchronized(queueLock) {
                         WorkspaceDocKey(entry.workspaceRootUuid, entry.uuid) in fencedTargets
                     }
+                ) return@forEach
+                if (vectorizationTaskDao.hasRecoveryHold(
+                        entry.workspaceRootUuid,
+                        entry.uuid,
+                        DUAL_DATABASE_RECOVERY_INDEX_HOLD,
+                    )
                 ) return@forEach
                 if (vectorizationTaskDao.countActiveForFile(entry.workspaceRootUuid, entry.uuid) == 0) {
                     enqueueDocumentReference(

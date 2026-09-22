@@ -13,6 +13,7 @@ class ShareImportMimeTypeTest {
             ),
         ).isEqualTo("DOCX")
         assertThat(compactMimeType("text/plain")).isEqualTo("TXT")
+        assertThat(compactMimeType("text/html")).isEqualTo("HTML")
         assertThat(compactMimeType("application/x-custom-format"))
             .isEqualTo("application/x-custom-format")
         assertThat(compactMimeType(null)).isNull()

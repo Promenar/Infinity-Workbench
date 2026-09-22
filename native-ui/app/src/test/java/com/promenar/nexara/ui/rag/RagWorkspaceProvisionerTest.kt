@@ -204,18 +204,54 @@ class RagWorkspaceProvisionerTest {
         assertThat(root.physicalRootPath).isNotEqualTo(missingLegacyRoot.absolutePath)
     }
 
-    private fun provisioner(): RagWorkspaceProvisioner {
-        val repository = WorkspaceRepository(
-            dao = database.fileEntryDao(),
-            seqDao = database.workspaceSeqDao(),
-            defaultWorkspaceParent = trustedParent,
-            fileOps = TestWorkspaceFileOps(),
-        )
-        return RagWorkspaceProvisioner(
+    @Test
+    fun `来源列表按受控系统Session验证根并保留同名来源`() = runBlocking<Unit> {
+        val repository = workspaceRepository()
+        val provisioner = RagWorkspaceProvisioner(
             filesDir = filesDir,
             database = database,
             workspaceRepository = repository,
             now = { 1L },
+        )
+        val current = provisioner.ensureRoot()
+        database.sessionDao().insert(
+            com.promenar.nexara.data.local.db.entity.SessionEntity(
+                id = "legacy-session",
+                agentId = RagWorkspaceProvisioner.SYSTEM_AGENT_ID,
+                title = "RAG Workspace",
+                createdAt = 2L,
+                updatedAt = 2L,
+            ),
+        )
+        val legacy = repository.ensureSessionRoot("legacy-session")
+
+        val sources = provisioner.listAvailableRoots()
+
+        assertThat(sources.map { it.sessionId })
+            .containsExactly(RagWorkspaceProvisioner.SESSION_ID, "legacy-session")
+            .inOrder()
+        assertThat(sources.map { it.title }).containsExactly("RAG Workspace", "RAG Workspace").inOrder()
+        assertThat(sources.map { it.workspaceRootUuid })
+            .containsExactly(current.uuid, legacy.uuid)
+            .inOrder()
+        assertThat(provisioner.ensureRoot("legacy-session").uuid).isEqualTo(legacy.uuid)
+    }
+
+    private fun provisioner(): RagWorkspaceProvisioner {
+        return RagWorkspaceProvisioner(
+            filesDir = filesDir,
+            database = database,
+            workspaceRepository = workspaceRepository(),
+            now = { 1L },
+        )
+    }
+
+    private fun workspaceRepository(): WorkspaceRepository {
+        return WorkspaceRepository(
+            dao = database.fileEntryDao(),
+            seqDao = database.workspaceSeqDao(),
+            defaultWorkspaceParent = trustedParent,
+            fileOps = TestWorkspaceFileOps(),
         )
     }
 }

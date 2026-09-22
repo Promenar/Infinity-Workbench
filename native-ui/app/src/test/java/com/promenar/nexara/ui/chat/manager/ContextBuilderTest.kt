@@ -14,6 +14,9 @@ import com.promenar.nexara.data.model.TaskStep
 import com.promenar.nexara.data.model.json
 import com.promenar.nexara.domain.repository.PlanPatchOp
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
@@ -666,70 +669,162 @@ class ContextBuilderTest {
             options = com.promenar.nexara.data.model.SessionOptions(webSearch = true)
         )
 
-        // 场景 1：中文前缀与后缀清洗
+        // 搜索查询默认只做 trim 与连续空白规范化，保留模型名、运算符和语义词。
         builder.buildContext(ContextBuilderParams(
             sessionId = "s1",
-            content = "帮我搜索一下2026年人工智能最新进展，并写个总结",
+            content = "  C++   C#   defineProperty   geometric mean  ",
             assistantMsgId = "m1",
             session = session
         ))
-        assertThat(capturedQuery).isEqualTo("2026年人工智能最新进展")
+        assertThat(capturedQuery).isEqualTo("C++ C# defineProperty geometric mean")
 
-        // 场景 2：英文前缀、后缀清洗与标点过滤
+        // 否定、版本号和比较运算符属于查询语义，不能被规则误删。
         builder.buildContext(ContextBuilderParams(
             sessionId = "s1",
-            content = "please search about the latest architectural changes in React 19, thanks!",
+            content = "  not defineProperty(x) && version >= 2.0?  ",
             assistantMsgId = "m1",
             session = session
         ))
-        assertThat(capturedQuery).isEqualTo("the latest architectural changes in React 19")
+        assertThat(capturedQuery).isEqualTo("not defineProperty(x) && version >= 2.0?")
 
-        // 场景 3：英文长句多国语智能截断（在 80 个字符的单词空格边界做截断，不打碎 React）
+        // 长查询不能按语言或任意长度截断。
+        val longQuery = "compare geometric mean and arithmetic mean in C++ C# defineProperty version 2026 with negation preserved"
         builder.buildContext(ContextBuilderParams(
             sessionId = "s1",
-            content = "please search for a comprehensive guide on building highly scalable backend architectures using Kotlin Ktor WebSockets and Postgres in 2026, thank you",
+            content = "  $longQuery  ",
             assistantMsgId = "m1",
             session = session
         ))
-        // "a comprehensive guide on building highly scalable backend architectures using Kotlin Ktor"
-        // 长度为 79 字符，加上下一个单词 "WebSockets" 会超 80。因此它会安全截断到 Kotlin Ktor 之前的空格
-        assertThat(capturedQuery).isEqualTo("a comprehensive guide on building highly scalable backend architectures using")
+        assertThat(capturedQuery).isEqualTo(longQuery)
 
-        // 场景 4：中英文疑问与助词过滤
+        // 中文疑问词和标点也属于原始查询内容。
         builder.buildContext(ContextBuilderParams(
             sessionId = "s1",
-            content = "请问什么是量子计算呢",
+            content = "  请问什么是量子计算呢？  ",
             assistantMsgId = "m1",
             session = session
         ))
-        assertThat(capturedQuery).isEqualTo("量子计算")
+        assertThat(capturedQuery).isEqualTo("请问什么是量子计算呢？")
 
-        // 场景 5：中英文长段口语化前缀/后缀与语气词综合净化
+        // 仅连续空白应被规范化。
         builder.buildContext(ContextBuilderParams(
             sessionId = "s1",
-            content = "你能帮我科普一下生成式AI到底是什么意思吗，谢谢你",
+            content = "  geometric\t\tmean\n  C++  ",
             assistantMsgId = "m1",
             session = session
         ))
-        assertThat(capturedQuery).isEqualTo("生成式AI")
+        assertThat(capturedQuery).isEqualTo("geometric mean C++")
+    }
 
-        // 场景 6：英文疑问式首尾与停用词修剪
-        builder.buildContext(ContextBuilderParams(
-            sessionId = "s1",
-            content = "tell me about the difference between quantum mechanics and classical mechanics please",
-            assistantMsgId = "m1",
-            session = session
-        ))
-        assertThat(capturedQuery).isEqualTo("quantum mechanics and classical mechanics")
+    @Test
+    fun webSearchCancellationIsRethrownThroughBuildContext() = testScope.runTest {
+        val cancellation = CancellationException("search cancelled")
+        var ragCalled = false
+        var kgCalled = false
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                ragCalled = true
+                return Triple("RAG", listOf(RagReference("r1", "reference", "doc")), null)
+            }
+        }
+        val kgProvider = object : KgProvider {
+            override suspend fun extractContext(
+                query: String,
+                sessionId: String,
+                topKResults: List<RagReference>
+            ): KgContextResult {
+                kgCalled = true
+                return KgContextResult("KG")
+            }
+        }
+        val webSearchProvider = object : WebSearchProvider {
+            override suspend fun search(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>> {
+                throw cancellation
+            }
+        }
+        val builder = ContextBuilder(
+            webSearchProvider = webSearchProvider,
+            ragProvider = ragProvider,
+            kgProvider = kgProvider,
+        )
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            options = com.promenar.nexara.data.model.SessionOptions(webSearch = true),
+            ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = true),
+        )
 
-        // 场景 7：极端空字符回退降级防御测试
-        builder.buildContext(ContextBuilderParams(
-            sessionId = "s1",
-            content = "什么是",
-            assistantMsgId = "m1",
-            session = session
-        ))
-        assertThat(capturedQuery).isEqualTo("什么是")
+        var caught: Throwable? = null
+        try {
+            builder.buildContext(ContextBuilderParams("s1", "query", assistantMsgId = "m1", session = session))
+        } catch (error: Throwable) {
+            caught = error
+        }
+
+        assertThat(caught).isSameInstanceAs(cancellation)
+        assertThat(ragCalled).isFalse()
+        assertThat(kgCalled).isFalse()
+    }
+
+    @Test
+    fun parentJobCancellationDuringWebSearchDoesNotContinueIntoRagOrKg() = testScope.runTest {
+        val searchStarted = CompletableDeferred<Unit>()
+        var ragCalled = false
+        var kgCalled = false
+        val webSearchProvider = object : WebSearchProvider {
+            override suspend fun search(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>> {
+                searchStarted.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+            ): Triple<String, List<RagReference>, RagUsage?> {
+                ragCalled = true
+                return Triple("RAG", listOf(RagReference("r1", "reference", "doc")), null)
+            }
+        }
+        val kgProvider = object : KgProvider {
+            override suspend fun extractContext(
+                query: String,
+                sessionId: String,
+                topKResults: List<RagReference>
+            ): KgContextResult {
+                kgCalled = true
+                return KgContextResult("KG")
+            }
+        }
+        val builder = ContextBuilder(
+            webSearchProvider = webSearchProvider,
+            ragProvider = ragProvider,
+            kgProvider = kgProvider,
+        )
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            options = com.promenar.nexara.data.model.SessionOptions(webSearch = true),
+            ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = true),
+        )
+
+        val job = launch {
+            builder.buildContext(ContextBuilderParams("s1", "query", assistantMsgId = "m1", session = session))
+        }
+        searchStarted.await()
+        job.cancel()
+        job.join()
+
+        assertThat(job.isCancelled).isTrue()
+        assertThat(ragCalled).isFalse()
+        assertThat(kgCalled).isFalse()
     }
 
     @Test

@@ -59,7 +59,11 @@ class StartupGateTestActivity : ComponentActivity() {
         setContent {
             val startupState by state.collectAsStateWithLifecycle()
             NexaraTheme {
-                StartupGate(startupState, onRetry = ::launchRecovery) {
+                StartupGate(
+                    startupState,
+                    onRetry = ::launchRecovery,
+                    onRecoverBothDatabases = ::launchRecovery,
+                ) {
                     Text(
                         text = "STARTUP_READY_MARKER_WRITERS_${writerCalls.get()}",
                         modifier = Modifier.testTag("startup-ready-content"),

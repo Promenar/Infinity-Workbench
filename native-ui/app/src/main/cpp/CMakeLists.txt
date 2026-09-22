@@ -3,9 +3,12 @@ project("nexara_llama")
 
 option(NEXARA_ENABLE_LOCAL_INFERENCE "Build the local llama.cpp inference engine" OFF)
 
+# 工作区持久文件身份只依赖NDK/libc；所有变体均提供，不触发推理引擎下载或初始化。
+add_library(nexara_workspace_fs SHARED workspace-file-identity.cpp)
+set_target_properties(nexara_workspace_fs PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
 if(NOT NEXARA_ENABLE_LOCAL_INFERENCE)
-    # AGP 会为 externalNativeBuild 注入这些通用变量；显式读取可避免在无 target
-    # 的发行变体中产生“manually-specified variables were not used”噪声。
+    # 推理关闭时仍构建工作区文件身份桥接。
     set(_nexara_disabled_variant_inputs
         "${CMAKE_EXPORT_COMPILE_COMMANDS}"
         "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"

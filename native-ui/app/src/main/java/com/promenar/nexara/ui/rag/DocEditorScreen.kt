@@ -729,19 +729,9 @@ private fun LoadedDocumentContent(
                         onCopyFullContent = actions.onCopyLocalContent,
                         previewScrollState = previewVerticalScrollState,
                     )
-                } else when (viewMode) {
-                    DocEditorViewMode.EDIT -> EditorPane(
-                        content = editor.content,
-                        onContentChange = actions.onContentChange,
-                        verticalScrollState = editorVerticalScrollState,
-                        horizontalScrollState = editorHorizontalScrollState,
-                    )
-                    DocEditorViewMode.PREVIEW -> PreviewPane(
-                        content = previewSnapshot.content,
-                        isTruncated = previewSnapshot.isTruncated,
-                        verticalScrollState = previewVerticalScrollState,
-                    )
-                    DocEditorViewMode.SPLIT -> Row(Modifier.fillMaxSize()) {
+                } else Row(Modifier.fillMaxSize()) {
+                    // 共享面板保持同一组合位置，切换分栏时保留选区并避免重复初始化。
+                    if (viewMode != DocEditorViewMode.PREVIEW) {
                         EditorPane(
                             content = editor.content,
                             onContentChange = actions.onContentChange,
@@ -749,6 +739,8 @@ private fun LoadedDocumentContent(
                             horizontalScrollState = editorHorizontalScrollState,
                             modifier = Modifier.weight(1f),
                         )
+                    }
+                    if (viewMode == DocEditorViewMode.SPLIT) {
                         VerticalDivider(
                             modifier = Modifier
                                 .fillMaxHeight()
@@ -756,6 +748,8 @@ private fun LoadedDocumentContent(
                             thickness = 1.dp,
                             color = MaterialTheme.colorScheme.outlineVariant,
                         )
+                    }
+                    if (viewMode != DocEditorViewMode.EDIT) {
                         PreviewPane(
                             content = previewSnapshot.content,
                             isTruncated = previewSnapshot.isTruncated,

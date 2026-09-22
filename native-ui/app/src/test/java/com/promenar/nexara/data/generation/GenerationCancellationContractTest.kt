@@ -13,12 +13,54 @@ import com.promenar.nexara.domain.generation.GenerationToolCall
 import com.promenar.nexara.domain.generation.GenerationToolDecision
 import com.promenar.nexara.domain.generation.CompletionReason
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class GenerationCancellationContractTest {
+    @Test
+    fun `预检索真正停止后不调用模型工具后处理或成功终态`() = runTest {
+        val searchEntered = CompletableDeferred<Unit>()
+        val builder = com.promenar.nexara.ui.chat.manager.ContextBuilder(
+            webSearchProvider = object : com.promenar.nexara.ui.chat.manager.WebSearchProvider {
+                override suspend fun search(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>> {
+                    searchEntered.complete(Unit)
+                    awaitCancellation()
+                }
+            },
+        )
+        val runtime = CancellationRuntime().apply {
+            contextAction = {
+                builder.buildContext(com.promenar.nexara.ui.chat.manager.ContextBuilderParams(
+                    sessionId = "session",
+                    content = "C++ coroutine cancellation",
+                    assistantMsgId = "assistant",
+                    session = com.promenar.nexara.data.model.Session(
+                        id = "session", agentId = "agent",
+                        options = com.promenar.nexara.data.model.SessionOptions(webSearch = true),
+                    ),
+                ))
+            }
+        }
+        val events = mutableListOf<GenerationEvent>()
+        val job = launch { ChatGenerationRunner(runtime).run(request(), events::add) }
+        searchEntered.await()
+        job.cancel()
+        job.join()
+
+        assertThat(job.isCancelled).isTrue()
+        assertThat(runtime.streamCalls).isEqualTo(0)
+        assertThat(runtime.toolCalls).isEqualTo(0)
+        assertThat(runtime.postProcessCalls).isEqualTo(0)
+        assertThat(runtime.terminals).doesNotContain(GenerationTerminalStatus.SUCCESS)
+        assertThat(events.filterIsInstance<GenerationEvent.PhaseChanged>().map { it.phase })
+            .doesNotContain(GenerationPhase.COMPLETED)
+    }
+
     @Test
     fun `成功终态markTerminal取消不得转为持久化失败或完成`() = runTest {
         val cancellation = CancellationException("terminal-cancel")
@@ -227,18 +269,32 @@ class GenerationCancellationContractTest {
         var toolDecision = GenerationToolDecision.COMPLETE
         var preparationOutcome: GenerationPreparationOutcome = GenerationPreparationOutcome.Ready
         var flushCalls = 0
+        var streamCalls = 0
+        var toolCalls = 0
+        var postProcessCalls = 0
+        var contextAction: suspend () -> Unit = {}
 
         override suspend fun prepare(request: GenerationRequest) = Unit
-        override suspend fun buildContext(request: GenerationRequest) = preparationOutcome
-        override suspend fun stream(request: GenerationRequest, attempt: Int): Flow<GenerationChunk> =
-            chunks
+        override suspend fun buildContext(request: GenerationRequest): GenerationPreparationOutcome {
+            contextAction()
+            return preparationOutcome
+        }
+        override suspend fun stream(request: GenerationRequest, attempt: Int): Flow<GenerationChunk> {
+            streamCalls++
+            return chunks
+        }
         override suspend fun persist(request: GenerationRequest, snapshot: GenerationSnapshot) = Unit
         override fun knownToolNames(request: GenerationRequest): Set<String> = setOf("search", "write")
         override suspend fun handleTools(
             request: GenerationRequest,
             toolCalls: List<GenerationToolCall>,
-        ) = toolDecision
-        override suspend fun postProcess(request: GenerationRequest, snapshot: GenerationSnapshot) = Unit
+        ): GenerationToolDecision {
+            this.toolCalls++
+            return toolDecision
+        }
+        override suspend fun postProcess(request: GenerationRequest, snapshot: GenerationSnapshot) {
+            postProcessCalls++
+        }
         override suspend fun markTerminal(
             request: GenerationRequest,
             status: GenerationTerminalStatus,

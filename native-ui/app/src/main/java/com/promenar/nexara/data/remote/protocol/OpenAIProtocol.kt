@@ -342,9 +342,10 @@ class OpenAIProtocol(
         thinkingDetector: ThinkingDetector,
         toolCallAccumulator: MutableMap<Int, AccumulatedToolCall>
     ): CompletionReason? {
+        check(chunk["error"] == null || chunk["error"] is JsonNull) { "上游流返回错误事件" }
         val choice = (chunk["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
         if (choice == null) {
-            val usageRaw = chunk["usage"] as? JsonObject
+            val usageRaw = chunk["usage"]?.takeUnless { it is JsonNull }?.jsonObject
             if (usageRaw != null) send(StreamChunk.Usage(usageRaw.toOpenAIUsage()))
             return null
         }
@@ -360,7 +361,7 @@ class OpenAIProtocol(
         content = cleanSpecialTokens(content)
         reasoning = cleanSpecialTokens(reasoning)
 
-        val deltaToolCalls = delta["tool_calls"]?.jsonArray
+        val deltaToolCalls = delta["tool_calls"]?.takeUnless { it is JsonNull }?.jsonArray
         if (deltaToolCalls != null) {
             for (tcElement in deltaToolCalls) {
                 val tc = tcElement.jsonObject
@@ -403,7 +404,7 @@ class OpenAIProtocol(
         // 空 TextDelta 仅触发轻量 recomposition，性能影响可忽略。
         send(StreamChunk.TextDelta(content, reasoning.ifEmpty { null }))
 
-        val usageRaw = chunk["usage"]?.jsonObject
+        val usageRaw = chunk["usage"]?.takeUnless { it is JsonNull }?.jsonObject
         if (usageRaw != null) {
             val usage = ProtocolUsage(
                 input = usageRaw["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
@@ -464,7 +465,7 @@ class OpenAIProtocol(
         content = cleanSpecialTokens(content)
         reasoning = cleanSpecialTokens(reasoning)
 
-        val toolCallElements = message["tool_calls"]?.let { element ->
+        val toolCallElements = message["tool_calls"]?.takeUnless { it is JsonNull }?.let { element ->
             element as? JsonArray
                 ?: throw IllegalStateException("OpenAI sync tool_calls is not an array")
         }.orEmpty()
@@ -486,7 +487,7 @@ class OpenAIProtocol(
         }
         requireValidSyncCompletion(completionReason, toolCalls)
 
-        val usageRaw = parsed["usage"]?.jsonObject
+        val usageRaw = parsed["usage"]?.takeUnless { it is JsonNull }?.jsonObject
         val usage = if (usageRaw != null) {
             ProtocolUsage(
                 input = usageRaw["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,

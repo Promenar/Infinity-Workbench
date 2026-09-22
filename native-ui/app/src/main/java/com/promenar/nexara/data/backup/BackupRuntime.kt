@@ -19,6 +19,8 @@ sealed interface BackupStartupState {
     data object Recovering : BackupStartupState
     data object Ready : BackupStartupState
     data object Blocked : BackupStartupState
+    data class DualDatabaseRecoveryRequired(val summary: String, val offerToken: String) : BackupStartupState
+    data class DualDatabaseRecoveryBlocked(val detail: String) : BackupStartupState
 }
 
 /** 启动期安全恢复闸门；只有 recovery 成功后才允许业务 writer 启动。 */

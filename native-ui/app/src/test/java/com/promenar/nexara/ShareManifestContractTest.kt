@@ -16,6 +16,7 @@ class ShareManifestContractTest {
             "text/plain",
             "text/markdown",
             "text/csv",
+            "text/html",
             "application/json",
             "application/pdf",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

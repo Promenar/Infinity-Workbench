@@ -94,6 +94,18 @@ interface VectorizationTaskDao {
     """)
     suspend fun countActiveForFile(workspaceRootUuid: String, docId: String): Int
 
+    @Query("""
+        SELECT EXISTS(
+            SELECT 1 FROM vectorization_tasks
+            WHERE workspace_root_uuid = :workspaceRootUuid
+              AND doc_id = :docId
+              AND type = 'document_reference'
+              AND status = 'failed'
+              AND sub_status = :holdMarker
+        )
+    """)
+    suspend fun hasRecoveryHold(workspaceRootUuid: String, docId: String, holdMarker: String): Boolean
+
     @Query("SELECT * FROM vectorization_tasks WHERE session_id = :sessionId")
     suspend fun getBySessionId(sessionId: String): List<VectorizationTaskEntity>
 

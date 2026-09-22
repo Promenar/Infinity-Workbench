@@ -8,6 +8,7 @@ import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.VectorEntity
 import com.promenar.nexara.data.local.db.entity.VectorizationTaskEntity
+import com.promenar.nexara.data.local.db.recovery.DUAL_DATABASE_RECOVERY_INDEX_HOLD
 import io.mockk.mockk
 import io.mockk.coEvery
 import io.mockk.coJustRun
@@ -71,6 +72,44 @@ class VectorizationQueueRoomTest {
 
         assertThat(result.isSuccess).isTrue()
         assertThat(database.vectorizationTaskDao().getById(TASK)?.status).isEqualTo("pending")
+        assertThat(queue.snapshotState().queue.map { it.id }).containsExactly(TASK)
+        queue.shutdown()
+    }
+
+    @Test
+    fun `双库恢复hold阻止启动自动索引且显式重试会解除`() = runTest {
+        seedFilesWithoutTask()
+        database.vectorizationTaskDao().insert(
+            VectorizationTaskEntity(
+                id = TASK,
+                type = VectorizationQueue.TYPE_DOCUMENT_REFERENCE,
+                status = "failed",
+                docId = DOC,
+                docTitle = source.name,
+                workspaceRootUuid = ROOT,
+                progress = 0.0,
+                error = "双库恢复保留了未索引文件；请由用户显式重试",
+                subStatus = DUAL_DATABASE_RECOVERY_INDEX_HOLD,
+                sourceMimeType = "text/plain",
+                targetContentHash = "hash-v1",
+                targetEpoch = 2,
+                createdAt = 1,
+                updatedAt = 2,
+            ),
+        )
+        val service = BlockingDocumentIndexService()
+        val queue = queue(StandardTestDispatcher(testScheduler), documentIndexService = service)
+
+        assertThat(queue.resumeInterruptedTasks().isSuccess).isTrue()
+        runCurrent()
+        assertThat(service.firstStarted.isCompleted).isFalse()
+        assertThat(database.vectorizationTaskDao().getById(TASK)?.subStatus)
+            .isEqualTo(DUAL_DATABASE_RECOVERY_INDEX_HOLD)
+
+        assertThat(queue.retryDocumentReference(ROOT, DOC)).isTrue()
+        val retried = database.vectorizationTaskDao().getById(TASK)
+        assertThat(retried?.status).isEqualTo("pending")
+        assertThat(retried?.subStatus).isNotEqualTo(DUAL_DATABASE_RECOVERY_INDEX_HOLD)
         assertThat(queue.snapshotState().queue.map { it.id }).containsExactly(TASK)
         queue.shutdown()
     }

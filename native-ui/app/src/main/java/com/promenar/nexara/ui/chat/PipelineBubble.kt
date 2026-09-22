@@ -37,11 +37,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageDocumentAttachment
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.local.db.recovery.LegacyAttachmentCodec
+import com.promenar.nexara.data.local.db.recovery.LegacyAttachmentItem
+import com.promenar.nexara.data.local.db.recovery.LegacyAttachmentOpenResult
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.renderer.ImageLightbox
@@ -50,6 +54,9 @@ import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -1024,6 +1031,20 @@ fun UserMessageBubble(
                             }
                         }
                     }
+                    val legacyAttachments by produceState(
+                        initialValue = emptyList(),
+                        key1 = message.legacyAttachmentsPayload,
+                        key2 = message.userImages,
+                    ) {
+                        value = withContext(Dispatchers.Default) {
+                            LegacyAttachmentCodec.parse(message.legacyAttachmentsPayload).filterNot { item ->
+                                item.type == "IMAGE" && item.uri in message.userImages.orEmpty()
+                            }
+                        }
+                    }
+                    if (legacyAttachments.isNotEmpty()) {
+                        LegacyAttachmentSummary(legacyAttachments)
+                    }
                     if (message.content.isNotBlank()) {
                         Text(
                             text = message.content,
@@ -1063,6 +1084,53 @@ fun UserMessageBubble(
             ),
             modifier = Modifier.padding(top = 4.dp, end = 4.dp)
         )
+    }
+}
+
+@Composable
+private fun LegacyAttachmentSummary(items: List<LegacyAttachmentItem>) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    Column(
+        modifier = Modifier
+            .padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Small)
+            .testTag(UiTags.CHAT_LEGACY_ATTACHMENTS),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+    ) {
+        Text(stringResource(R.string.chat_legacy_attachments_title), style = NexaraTypography.labelMedium)
+        items.forEach { item ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(UiTags.CHAT_LEGACY_ATTACHMENT_ENTRY)
+                    .clickable {
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) { LegacyAttachmentCodec.open(context, item) }
+                            when (result) {
+                                is LegacyAttachmentOpenResult.Ready -> runCatching { context.startActivity(result.intent) }
+                                    .onFailure {
+                                        Toast.makeText(context, R.string.chat_legacy_attachment_unreadable, Toast.LENGTH_SHORT).show()
+                                    }
+                                is LegacyAttachmentOpenResult.Unreadable ->
+                                    Toast.makeText(context, R.string.chat_legacy_attachment_unreadable, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    .padding(vertical = NexaraSpacing.XSmall),
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.AttachFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(item.fileName, style = NexaraTypography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        if (item.unreadableReason == null) item.mimeType else stringResource(R.string.chat_legacy_attachment_unreadable),
+                        style = NexaraTypography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                    )
+                }
+            }
+        }
     }
 }
 

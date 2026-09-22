@@ -128,6 +128,80 @@ class RagViewModelTest {
     }
 
     @Test
+    fun `同名知识库按Session与根身份切换而不是按标题`() = runTest {
+        val sources = listOf(
+            RagWorkspaceSource(
+                sessionId = RagWorkspaceProvisioner.SESSION_ID,
+                workspaceRootUuid = "rag-root",
+                title = "同名知识库",
+            ),
+            RagWorkspaceSource(
+                sessionId = "legacy-session",
+                workspaceRootUuid = "legacy-root",
+                title = "同名知识库",
+            ),
+        )
+        val ensuredSessions = mutableListOf<String>()
+        val viewModel = createViewModel(
+            listRoots = { sources },
+            ensureForSession = { sessionId ->
+                ensuredSessions += sessionId
+                rootEntry().copy(uuid = if (sessionId == "legacy-session") "legacy-root" else "rag-root")
+            },
+        )
+        advanceUntilIdle()
+
+        viewModel.selectWorkspaceSource("legacy-session")
+        advanceUntilIdle()
+
+        assertThat(viewModel.workspaceRootUuid.value).isEqualTo("legacy-root")
+        assertThat(viewModel.selectedWorkspaceSessionId.value).isEqualTo("legacy-session")
+        assertThat(ensuredSessions).containsExactly("legacy-session")
+    }
+
+    @Test
+    fun `快速切换时忽略已取消来源的晚到根`() = runTest {
+        val lateResultGate = CompletableDeferred<Unit>()
+        val firstSwitchStarted = CompletableDeferred<Unit>()
+        val sources = listOf(
+            RagWorkspaceSource(
+                sessionId = RagWorkspaceProvisioner.SESSION_ID,
+                workspaceRootUuid = "rag-root",
+                title = "当前",
+            ),
+            RagWorkspaceSource("legacy-a", "legacy-root-a", "旧库 A"),
+            RagWorkspaceSource("legacy-b", "legacy-root-b", "旧库 B"),
+        )
+        val viewModel = createViewModel(
+            listRoots = { sources },
+            ensureForSession = { sessionId ->
+                when (sessionId) {
+                    "legacy-a" -> {
+                        firstSwitchStarted.complete(Unit)
+                        withContext(NonCancellable) { lateResultGate.await() }
+                        rootEntry().copy(uuid = "legacy-root-a")
+                    }
+                    "legacy-b" -> rootEntry().copy(uuid = "legacy-root-b")
+                    else -> rootEntry().copy(uuid = "rag-root")
+                }
+            },
+        )
+        advanceUntilIdle()
+
+        viewModel.selectWorkspaceSource("legacy-a")
+        firstSwitchStarted.await()
+        viewModel.selectWorkspaceSource("legacy-b")
+        advanceUntilIdle()
+        assertThat(viewModel.workspaceRootUuid.value).isEqualTo("legacy-root-b")
+
+        lateResultGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertThat(viewModel.workspaceRootUuid.value).isEqualTo("legacy-root-b")
+        assertThat(viewModel.selectedWorkspaceSessionId.value).isEqualTo("legacy-b")
+    }
+
+    @Test
     fun `queue callback在resource reset latch期间只读捕获实例不自锁`() = runTest {
         var callback: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
         val firstQueueTokenClosed = java.util.concurrent.atomic.AtomicInteger()
@@ -236,6 +310,8 @@ class RagViewModelTest {
         requestFactory: ((android.net.Uri, String) -> ShareRequest)? = null,
         pendingIndexCoordinator: PendingDocumentIndexCoordinator? = null,
         configSaver: ((com.promenar.nexara.data.rag.RagConfiguration) -> Unit)? = null,
+        listRoots: (suspend () -> List<RagWorkspaceSource>)? = null,
+        ensureForSession: (suspend (String) -> FileEntry)? = null,
     ): RagViewModel {
         assertThat(app.vectorizationQueue).isSameInstanceAs(vectorizationQueue)
         val ragPrefs = mockk<android.content.SharedPreferences>(relaxed = true)
@@ -248,6 +324,8 @@ class RagViewModelTest {
             injectedPendingIndexCoordinator = pendingIndexCoordinator,
             injectedConfigSaver = configSaver,
             injectedEnsureRagWorkspaceRoot = ensureRagWorkspaceRoot,
+            injectedListRagWorkspaceRoots = listRoots,
+            injectedEnsureRagWorkspaceRootForSession = ensureForSession,
         )
     }
 
@@ -260,13 +338,13 @@ class RagViewModelTest {
         val saved = Collections.synchronizedList(
             mutableListOf<com.promenar.nexara.data.rag.RagConfiguration>(),
         )
-        val vm = createViewModel { config ->
+        val vm = createViewModel(configSaver = { config ->
             if (saved.isEmpty()) {
                 firstSaveEntered.countDown()
                 assertThat(releaseFirstSave.await(2, TimeUnit.SECONDS)).isTrue()
             }
             saved += config
-        }
+        })
         val initialConfig = vm.config.value
 
         val memoryUpdate = Thread {

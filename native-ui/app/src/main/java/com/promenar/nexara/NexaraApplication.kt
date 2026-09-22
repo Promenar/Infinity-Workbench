@@ -23,6 +23,13 @@ import com.promenar.nexara.data.local.db.LegacyDatabasePromoter
 import com.promenar.nexara.data.backup.BackupRuntime
 import com.promenar.nexara.data.backup.BackupStartupState
 import com.promenar.nexara.data.backup.RestoreRelayActivity
+import com.promenar.nexara.data.backup.AndroidRestoreJournalAuthenticator
+import com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseRecoveryExecutor
+import com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseSourceProbe
+import com.promenar.nexara.data.local.db.recovery.DualDatabaseBootstrapResult
+import com.promenar.nexara.data.local.db.recovery.DualDatabaseRecoveryBootstrap
+import com.promenar.nexara.data.local.db.recovery.FileDualDatabaseRecoveryJournal
+import com.promenar.nexara.data.local.db.recovery.RecoverySnapshotStore
 import com.promenar.nexara.utils.NexaraLogger
 import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.GraphStore
@@ -141,6 +148,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         ChatRouteDependencies.production(this)
 
     private lateinit var backupRuntime: BackupRuntime
+    private val dualDatabaseRecoveryBootstrap: DualDatabaseRecoveryBootstrap by lazy {
+        createDualDatabaseRecoveryBootstrap()
+    }
+    private var acceptedDualDatabaseOfferToken: String? = null
     var restoreRelayEarlyExit: Boolean = false
         private set
     private val _startupState = MutableStateFlow<BackupStartupState>(BackupStartupState.Recovering)
@@ -606,11 +617,38 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         startBackupRecovery()
     }
 
+    fun startDualDatabaseRecovery() {
+        val required = _startupState.value as? BackupStartupState.DualDatabaseRecoveryRequired ?: return
+        acceptedDualDatabaseOfferToken = required.offerToken
+        startBackupRecovery()
+    }
+
     private fun startBackupRecovery() {
         if (startupRecoveryJob?.isActive == true || _startupState.value == BackupStartupState.Ready) return
         _startupState.value = BackupStartupState.Recovering
         startupRecoveryJob = startupScope.launch {
             try {
+                val dualResult = withContext(Dispatchers.IO) {
+                    acceptedDualDatabaseOfferToken?.let { token ->
+                        acceptedDualDatabaseOfferToken = null
+                        dualDatabaseRecoveryBootstrap.recover(token)
+                    } ?: dualDatabaseRecoveryBootstrap.inspectOrResume()
+                }
+                when (dualResult) {
+                    DualDatabaseBootstrapResult.Normal,
+                    is DualDatabaseBootstrapResult.Completed -> Unit
+                    is DualDatabaseBootstrapResult.RecoveryRequired -> {
+                        _startupState.value = BackupStartupState.DualDatabaseRecoveryRequired(
+                            dualResult.offer.summary,
+                            dualResult.offer.offerToken,
+                        )
+                        return@launch
+                    }
+                    is DualDatabaseBootstrapResult.Blocked -> {
+                        _startupState.value = BackupStartupState.DualDatabaseRecoveryBlocked(dualResult.detail)
+                        return@launch
+                    }
+                }
                 val runtime = withContext(Dispatchers.IO) {
                     if (!::backupRuntime.isInitialized) backupRuntime = createBackupRuntime()
                     backupRuntime
@@ -840,6 +878,29 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     /** 仅供测试应用替换 AndroidKeyStore/真实文件系统依赖；生产始终使用安全 runtime。 */
     protected open fun createBackupRuntime(): BackupRuntime =
         BackupRuntime.createAndroid(this, database, secretStore)
+
+    internal open fun createDualDatabaseRecoveryBootstrap(): DualDatabaseRecoveryBootstrap {
+        val databaseDirectory = requireNotNull(getDatabasePath("nexara_v2.db").parentFile).toPath()
+        val noBackupDirectory = requireNotNull(androidx.core.content.ContextCompat.getNoBackupFilesDir(this)).toPath()
+        val journal = FileDualDatabaseRecoveryJournal(
+            noBackupDirectory,
+            AndroidRestoreJournalAuthenticator("nexara.dual.database.recovery.hmac.v1"),
+        )
+        return DualDatabaseRecoveryBootstrap(
+            lockDirectory = noBackupDirectory,
+            sourceProbe = AndroidDualDatabaseSourceProbe(this),
+            journal = journal,
+            executorProvider = {
+                val snapshotStore = RecoverySnapshotStore(
+                    allowedSourceRoots = setOf(databaseDirectory, filesDir.toPath()),
+                    maxFiles = 200_000,
+                    maxTotalBytes = 16L * 1024L * 1024L * 1024L,
+                    trustedAppDataRoot = dataDir.toPath(),
+                )
+                AndroidDualDatabaseRecoveryExecutor(this, journal, snapshotStore)
+            },
+        )
+    }
 
     private var _embeddingClient: EmbeddingClient? = null
     val embeddingClient: EmbeddingClient

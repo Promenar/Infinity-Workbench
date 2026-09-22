@@ -1851,11 +1851,11 @@ class WorkspaceRepositoryTest {
         val delegate = TestWorkspaceFileOps()
         var failOwnerCleanup = true
         val cleanupFailingOps = object : WorkspaceFileOps by delegate {
-            override fun delete(root: java.nio.file.Path, source: List<String>) {
+            override fun deleteNonRecursive(root: java.nio.file.Path, source: List<String>) {
                 if (failOwnerCleanup && source.size == 2 && source.first() == CREATE_OWNERSHIP_DIRECTORY) {
                     throw java.io.IOException("injected owner cleanup failure")
                 }
-                delegate.delete(root, source)
+                delegate.deleteNonRecursive(root, source)
             }
         }
         repo = WorkspaceRepository(

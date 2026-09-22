@@ -904,7 +904,20 @@ class WorkspaceRepository(
         ) {
             val currentRoot = requireRoot(workspaceRootUuid)
             recoverPendingTombstonesLocked(currentRoot)
+            cleanupCompletedOwnersBeforeMutation(currentRoot)
             block(requireRoot(workspaceRootUuid))
+        }
+    }
+
+    private suspend fun cleanupCompletedOwnersBeforeMutation(root: FileEntry) {
+        val rootPath = File(root.physicalRootPath).toPath()
+        val ownerRoot = listOf(CREATE_OWNERSHIP_DIRECTORY)
+        if (!fileOps.exists(rootPath, ownerRoot)) return
+        for (operationId in creationOwnershipOperationIds(fileOps, rootPath)) {
+            if (mutationJournal?.isPending(operationId) != false) {
+                throw WorkspaceMutationRecoveryException("存在尚未收敛的创建操作，请先恢复后再修改工作区")
+            }
+            cleanupCompletedCreateOwnership(fileOps, rootPath, ownerRoot + operationId)
         }
     }
 
@@ -1168,13 +1181,18 @@ class WorkspaceRepository(
         val stagedNode = createOwnershipRelative(staged) + CREATE_STAGED_NODE
         val result = create(stagedNode)
         val identity = fileOps.inspect(root, stagedNode)
-        val manifest = WorkspaceCreateOwnershipManifest(target.joinToString("/"), identity)
+        val token = UUID.randomUUID().toString()
+        fileOps.retainCreationProof(root, stagedNode, createOwnershipRelative(staged), token)
+        val manifest = WorkspaceCreateOwnershipManifest(target.joinToString("/"), identity, token)
         fileOps.createFile(
             root,
             createOwnershipRelative(staged) + CREATE_MANIFEST,
             encodeCreateOwnershipManifest(manifest),
         )
-        return result to fileOps.move(root, stagedNode, target)
+        fileOps.verifyCreationProof(root, stagedNode, createOwnershipRelative(staged), token, identity)
+        val placement = fileOps.move(root, stagedNode, target)
+        fileOps.verifyCreationProof(root, target, createOwnershipRelative(staged), token, identity)
+        return result to placement
     }
 
     private suspend fun handleCreateAttemptFailure(
@@ -1198,7 +1216,14 @@ class WorkspaceRepository(
         failure: Throwable,
     ) {
         val cleanupFailure = runCatching {
-            if (placement != null) placement.rollback()
+            if (placement != null && staged != null) {
+                val ownership = createOwnershipRelative(staged)
+                val manifest = decodeCreateOwnershipManifest(fileOps.read(root, ownership + CREATE_MANIFEST))
+                    ?: throw SecurityException("创建回滚缺少归属 manifest")
+                requireCurrentCreationProof(manifest)
+                val token = manifest.proofToken ?: throw SecurityException("创建回滚缺少持续归属证明")
+                fileOps.deleteCreatedNode(root, target, ownership, token, manifest.identity)
+            }
             else if (staged == null && fileOps.exists(root, target)) fileOps.delete(root, target)
             cleanupCreateOwnership(root, staged)
         }.exceptionOrNull()
@@ -1225,14 +1250,24 @@ class WorkspaceRepository(
     ) {
         if (staged == null) return
         completeMutation(staged)
-        runCatching { cleanupCreateOwnership(root, staged) }
+        runCatching { cleanupCompletedCreateOwnership(fileOps, root, createOwnershipRelative(staged)) }
             .onFailure { NexaraLogger.logError("WorkspaceCreate.cleanupOwnership", it) }
     }
 
     private fun cleanupCreateOwnership(root: java.nio.file.Path, staged: StagedWorkspaceFileMutation?) {
         if (staged == null) return
         val ownership = createOwnershipRelative(staged)
-        if (fileOps.exists(root, ownership)) fileOps.delete(root, ownership)
+        if (fileOps.exists(root, ownership)) {
+            val manifest = decodeCreateOwnershipManifest(fileOps.readLimited(root, ownership + CREATE_MANIFEST, 8192))
+                ?: throw SecurityException("创建回滚缺少有效manifest")
+            requireCurrentCreationProof(manifest)
+            val token = manifest.proofToken ?: throw SecurityException("旧创建回滚缺少持续证明")
+            listOf(CREATE_STAGED_NODE, CREATE_ROLLBACK_NODE).forEach { name ->
+                val node = ownership + name
+                if (fileOps.exists(root, node)) fileOps.deleteCreatedNode(root, node, ownership, token, manifest.identity)
+            }
+            cleanupCompletedCreateOwnership(fileOps, root, ownership, rolledBack = true)
+        }
     }
 
     private fun createOwnershipRelative(staged: StagedWorkspaceFileMutation): List<String> =

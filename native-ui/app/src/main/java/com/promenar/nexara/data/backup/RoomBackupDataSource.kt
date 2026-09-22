@@ -1030,15 +1030,27 @@ class RoomBackupDataSource(
         val root = Paths.get(value).toAbsolutePath().normalize()
         FileRestoreJournal.rejectSymlinkAncestors(root)
         val real = root.toRealPath(LinkOption.NOFOLLOW_LINKS)
-        val directSource = trustedSourceBases.count { real.parent == it } == 1
-        val restoredContainer = real.parent?.takeIf { container ->
-            container.parent == restoreParent && RESTORE_ROOT.matches(container.fileName.toString()) &&
-                isOwnedRestoreContainer(container)
+        if (!Files.isDirectory(real, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(real) ||
+            !SAFE_TOKEN.matches(real.fileName.toString())
+        ) throw BackupValidationException("文件根目录不存在或身份无效")
+        val expectedKey = fileKey(real)
+        fun sameDirectory(left: Path?, right: Path): Boolean = left != null &&
+            runCatching { Files.isSameFile(left, right) }.getOrDefault(false)
+        val directBases = trustedSourceBases.filter { sameDirectory(real.parent, it) }
+        if (directBases.size > 1) throw BackupValidationException("文件根目录匹配多个受信父目录")
+        // 系统别名只在父目录身份相同后重拼；保留 base 顺序和拼法，兼容旧 journal 的 baseIndex。
+        val rebound = directBases.singleOrNull()?.resolve(real.fileName) ?: run {
+            val container = real.parent ?: throw BackupValidationException("文件根目录没有父目录")
+            if (!sameDirectory(container.parent, restoreParent) ||
+                !RESTORE_ROOT.matches(container.fileName.toString()) || !isOwnedRestoreContainer(container)
+            ) throw BackupValidationException("文件根目录不属于受信 app-private base 的直接子目录")
+            restoreParent.resolve(container.fileName).resolve(real.fileName)
         }
-        if ((!directSource && restoredContainer == null) || !SAFE_TOKEN.matches(real.fileName.toString())) {
-            throw BackupValidationException("文件根目录不属于受信 app-private base 的直接子目录")
-        }
-        return real
+        FileRestoreJournal.rejectSymlinkAncestors(rebound)
+        if (!Files.isDirectory(rebound, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(rebound) ||
+            fileKey(rebound) != expectedKey || fileKey(real) != expectedKey
+        ) throw BackupValidationException("文件根目录在系统别名核验期间发生变化")
+        return rebound
     }
 
     private fun fingerprint(payload: DatabaseBackupPayload): String {

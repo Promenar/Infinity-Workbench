@@ -1,6 +1,6 @@
 # Nexara Architecture 全景
 
-> **最后更新**: 2026-08-25
+> **最后更新**: 2026-09-22
 > **注意**: 本文档为快速参考。完整架构设计见 [ARCHITECTURE_DESIGN.md](./ARCHITECTURE_DESIGN.md)（理想架构 + 技术路线择优），实现进度与差距分析见 [IMPLEMENTATION_ANALYSIS.md](./IMPLEMENTATION_ANALYSIS.md)。
 
 ## 核心架构
@@ -40,18 +40,20 @@ graph TD
 - **DefaultModelsScreen**: 四角色（摘要、图像、向量、重排）默认模型统一配置页面，直接触发持久化。
 - **RAG/Search 设置表面**: Global、Search、Advanced、KG 与 Agent 检索设置共用连续 Material 3 列表/参数区视觉，但保持 `RagViewModel`、`SearchConfigViewModel` 与 `AgentEditViewModel` 三个状态所有者；可测试 Content 层只接收 receiver transform，不持有或回写过期配置快照，`RagViewModel` 以串行临界区保证状态发布与最终持久化顺序一致。
 - **Domain 层**: `domain/model/`（6 文件）+ `domain/repository/`（9 接口）+ `domain/usecase/`（6 UseCase），零 Android 依赖。
-- **Repository 层**: 9 个数据仓库实现（Agent/Document/Folder/KG/Message/Provider/Session/TokenStats/Vector），覆盖率 100%。
-- **ContextBuilder**: 负责多源上下文（RAG/Web/KG/History）的异步调度、打分与 Prompt 合成，支持实时观测回调。所有子源均已接入 NexaraLogger 错误追踪。
+- **Repository 层**: 通过领域接口隔离 Room 持久化、工作区文件操作与业务状态；测试数量和实现范围不等同于代码覆盖率，覆盖率目标按独立测量报告验收。
+- **ContextBuilder**: 负责多源上下文（RAG/Web/KG/History）的异步调度、打分与 Prompt 合成，支持实时观测回调。查询只规范空白，保留技术符号、否定与实体信息；取消异常向父协程传播，阻止后续检索、模型及工具执行。所有子源接入 NexaraLogger 错误追踪。
 - **MemoryManager**: 核心 RAG 检索引擎，集成 Embedding/Rerank/Hybrid Search 三阶段检索管线。embedQuery/search/rerank 全路径接入日志。
 - **VectorizationQueue / DocumentIndexService / PendingDocumentIndexCoordinator**: 文档/记忆持久队列、候选索引事务服务与应用级补偿目标协调器。文件内容先构建隔离向量/KG 候选，事务内复核 hash+epoch 后原子切换；旧 worker 使用目标 CAS，删除通过 cancel-and-join/fence 屏障线性化。Queue 尚未接收的已提交目标可跨页面重试，并由冷启动 missing-scan 按当前文件版本与 KG 配置恢复。启动恢复只清理缺少身份或已确认文件不存在的旧版 `document` 孤儿任务，现代 `document_reference` 目标继续遵守 hash+epoch 契约。
-- **WorkspaceRepository / WorkspaceDeletionTransaction**: Session root 作用域文件仓储。永久删除把派生索引与文件记录纳入同一 Room 事务，并用稳定 tombstone 恢复物理删除的进程死亡窗口。
-- **DocEditorContentAccess / DocEditorViewModel**: 文档内容访问使用 `Editable / PerformanceProtected / MetadataOnly` 单一事实。文件大小严格超过 1 MiB 时不读取全文；已读取内容严格超过 32K 个 UTF-16 代码单元、2,000 行或单行 16K 个 UTF-16 代码单元时，仅向 Markdown 提供最多 16K 个 UTF-16 代码单元的快照，不构建全文 `BasicTextField`。完整 `content/persistedContent` 仍是复制、dirty、expected-hash CAS 保存与冲突处理的唯一数据源，预览 snippet 不得进入持久化路径。
-- **SharedFileImporter / DurableShareInbox**: SAF 与系统分享共用的逐项导入管线；支持去重、容量重试、部分失败、崩溃恢复及索引回执。
+- **WorkspaceRepository / WorkspaceDeletionTransaction**: Session root 作用域文件仓储。创建使用持续身份证明与不可覆盖的原子发布；回滚先隔离再核验归属，仅清理已证明属于该操作的节点。私有操作目录由根锁独占。永久删除把派生索引与文件记录纳入同一 Room 事务，并用稳定 tombstone 恢复物理删除的进程死亡窗口。
+- **DualDatabaseRecoveryBootstrap / RecoverySnapshotStore / AndroidDualDatabaseRecoveryExecutor**: 正常 Room 和业务写入启动前识别公开 v17+v2 及内部 v17+v5 双库，用户选择后保存一致快照，在独立 working 副本迁移与映射。旧侧业务 ID 进入稳定命名空间；文件发布到受信目录的新根并绑定新物理身份，已确认归档只从认证副本读取。可信 Android 系统路径别名仅在应用根身份一致时规范化，用户子路径继续使用目录 FD 与 NOFOLLOW。journal 覆盖归档、文件发布、数据库切换及中断重试；源数据保留，终态后不回放新业务写入。
+- **RagWorkspaceProvisioner / LegacyAttachmentCodec**: 恢复的全局知识库以受控系统 Session 独立浏览；多来源切换取消旧观察和搜索，默认分享保持固定知识库入口。历史附件原 payload 保留，打开时才有界读取并发布 FileProvider 只读 URI；损坏或超预算记录显示原因，内容哈希缓存最多 16 项/64 MiB。恢复中的旧索引任务保持人工重试状态，不自动重放。
+- **DocEditorContentAccess / DocEditorViewModel**: 文档内容访问使用 `Editable / PerformanceProtected / MetadataOnly` 单一事实。文件大小严格超过 1 MiB 时不读取全文；已读取内容严格超过 32K 个 UTF-16 代码单元、2,000 行或单行 16K 个 UTF-16 代码单元时，仅向 Markdown 提供最多 16K 个 UTF-16 代码单元的快照，不构建全文 `BasicTextField`。完整 `content/persistedContent` 仍是复制、dirty、expected-hash CAS 保存与冲突处理的唯一数据源，预览 snippet 不得进入持久化路径。 编辑/预览/分屏使用同一 Row 内的稳定面板调用位置，模式间共同面板保留选区与内部状态；隐藏面板卸载，避免隐藏焦点树。
+- **SharedFileImporter / DurableShareInbox**: SAF 与系统分享共用的逐项导入管线；UTF-8 前缀允许有限续读，全文保持严格编码验证。HTML 走有界离线正文提取，不加载脚本或远程资源；DOCX 按实际展开字节及条目数预检，PDF 输出和文本分块遵守 Unicode 与字节预算。逐项回滚、批次容量和索引回执保持一致。
 - **GenerationCoordinator / ChatGenerationRunner**: 应用级唯一生成任务源。初版全局只允许一个活动任务；统一处理 Provider 路由、RAG/工具循环、流式增量持久化、取消与结构化错误终态。成功、失败与取消路径必须先把终态发布到 `GenerationPresentationStore`，再结束协调器活动状态，避免 UI 因事件顺序停留在生成中。
 - **MessageDocumentAttachment / PreparedPromptBudgetGate / BranchSessionUseCase**: 输入栏 TXT/Markdown 以版本化消息快照进入完整用户上下文，与知识库检索分离；最终路由 Prompt 在 Provider 网络前按稳定模型覆盖和远端目录容量执行 fail-closed 门禁。重试只在新回复成功后替换旧回复；导出可回传，稳定消息分支重映射历史并清空运行态与工作区身份。
 - **GenerationForegroundService**: 观察 Coordinator 的同一任务状态，通过 `dataSync` 前台服务在切后台、锁屏、旋转或 Activity 重建后继续当前生成；通知可返回准确会话或停止任务。设备重启续传、多会话并行和定时任务不在 `v0.2.1-beta` 范围。
 - **SecretStore / SecretCatalog**: Android Keystore 生成不可导出的 AES-GCM 主密钥；普通偏好只保存密文、IV 与格式版本。Provider、Vertex、搜索、Embedding 和 WebDAV 凭据由稳定 SecretId 管理，UI 只持有存在性和短生命周期 reveal 内容。
-- **BackupRepository / BackupPackageCodec**: 核心数据采用清单、逐项 SHA-256 和事务恢复；可在不导出密钥时独立加密整个备份，导出密钥则强制启用密码与 PBKDF2-HMAC-SHA256/AES-256-GCM。快照在配置 revision 前后复核，持续变化时失败关闭；个人及 Agent 头像路径属于设备本地数据，跨设备备份会剥离。恢复先验证再写入，错误密码、损坏包和越界内容不得产生部分写入。
+- **BackupRepository / BackupPackageCodec**: 核心数据采用清单、逐项 SHA-256 和事务恢复；可在不导出密钥时独立加密整个备份，导出密钥则强制启用密码与 PBKDF2-HMAC-SHA256/AES-256-GCM。快照在配置 revision 前后复核，持续变化时失败关闭；个人及 Agent 头像路径属于设备本地数据，跨设备备份会剥离。备份根的系统别名先按父目录身份唯一匹配，再重拼到既有受信 base，保留旧 journal 的 baseIndex/fileKey 合同。恢复先验证再写入，错误密码、损坏包和越界内容不得产生部分写入。
 - **ToolExecutionLedgerRepository / McpClient / SessionToolResolver**: 工具执行以 runtime id、规范化参数摘要和定义摘要组成稳定身份，注册、审批、认领、取消及恢复均以精确身份 CAS；取消后只允许一个 `CANCELLED` 终态。MCP 仅支持 HTTPS Streamable HTTP，增量 SSE 只接受首个精确响应 ID，合法 notification 可忽略，错误版本、错 ID、畸形/截断事件及行、事件、总量上限全部失败关闭。
 - **ModelMetadataResolver / ModelCatalogRuntime**: 模型元数据唯一领域入口。运行时只读取仓库内固定的 models.dev 离线快照和 Nexara 精确修正，再按字段叠加 Provider 元数据与用户覆盖；精确名称、工作负载、三态能力、token 限制和来源可追踪，家族规则不得覆盖精确字段。
 - **ModelSelectionUiModel / ModelSelectionListItem**: 模型选择 UI 的统一投影与渲染契约。`ModelInfo` 先把 Provider 数据和 `userEditedFields` 转换为分层 override，再调用 `ModelMetadataResolver.resolve(...)`；所有选择入口消费同一冻结投影与连续 Material 3 `ListItem`。`CHAT_ENDPOINT` 不混入一般能力集合，显式不兼容优先于生成式工作负载，未知能力不得被 UI 制造为支持。

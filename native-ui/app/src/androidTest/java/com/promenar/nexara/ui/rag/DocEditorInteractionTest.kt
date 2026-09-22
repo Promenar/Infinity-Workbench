@@ -44,8 +44,10 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.then
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -838,6 +840,58 @@ class DocEditorInteractionTest {
     }
 
     @Test
+    fun nonTerminalTextSelectionSurvivesEditSplitEditModeTransitions() {
+        rule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        rule.waitUntil(8_000) {
+            rule.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        }
+        val content = "prefix--SELECTED-MIDDLE--suffix"
+        val selectedRange = TextRange(start = 8, end = 23)
+        var screenState by mutableStateOf(
+            DocEditorScreenState(
+                editorState = readyEditorState().copy(
+                    content = content,
+                    persistedContent = content,
+                    sizeBytes = content.toByteArray().size.toLong(),
+                ),
+                viewMode = DocEditorViewMode.EDIT,
+            ),
+        )
+        rule.setContent {
+            TestContent(
+                screenState = screenState,
+                actions = DocEditorScreenActions(
+                    onContentChange = { value ->
+                        screenState = screenState.copy(
+                            editorState = screenState.editorState.copy(content = value),
+                        )
+                    },
+                    onViewModeChange = { mode ->
+                        screenState = screenState.copy(viewMode = mode)
+                    },
+                ),
+            )
+        }
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT).assertIsDisplayed().performClick()
+        assertThat(awaitImeOpened()).isGreaterThan(0)
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT).performTextInputSelection(selectedRange)
+        // 用户收起键盘后切换模式；使用真实横屏，避免虚拟窗口超出屏幕的可见性干扰。
+        Espresso.closeSoftKeyboard()
+        assertThat(awaitImeClosed()).isTrue()
+        settleLayout()
+        assertTextSelectionRange(selectedRange)
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_SPLIT).assertIsDisplayed().performClick()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_SPLIT).assertIsSelected()
+        assertTextSelectionRange(selectedRange)
+
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_EDIT).assertIsDisplayed().performClick()
+        rule.onNodeWithTag(UiTags.DOC_EDITOR_MODE_EDIT).assertIsSelected()
+        assertTextSelectionRange(selectedRange)
+    }
+
+    @Test
     fun physicalLandscapeRealImeKeepsCurrentEditorSurfaceAndSaveActionAboveKeyboard() {
         rule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         rule.waitUntil(8_000) {
@@ -1253,6 +1307,13 @@ class DocEditorInteractionTest {
 
         val comparedPixels = (sentinelImage.width - scanStartX) * sentinelImage.height
         assertThat(changedPixels).isGreaterThan(comparedPixels / 500)
+    }
+
+    private fun assertTextSelectionRange(expected: TextRange) {
+        val actual = rule.onNodeWithTag(UiTags.DOC_EDITOR_INPUT)
+            .fetchSemanticsNode()
+            .config[SemanticsProperties.TextSelectionRange]
+        assertThat(actual).isEqualTo(expected)
     }
 
     @Composable

@@ -128,6 +128,28 @@ class DurableShareInboxTest {
     }
 
     @Test
+    fun `HTML分享按UTF8原文件持久化且不执行或加载页面资源`() = runTest {
+        val uri = Uri.parse("content://fixture/offline.html")
+        val html = """
+            <!doctype html><html><body>
+            <p>离线正文 &amp; 😀</p>
+            <script>fetch('https://example.invalid/remote')</script>
+            <iframe src="https://example.invalid/frame">隐藏内容</iframe>
+            </body></html>
+        """.trimIndent().toByteArray(Charsets.UTF_8)
+        val inbox = DurableShareInbox(temporary.newFolder("html"))
+
+        assertThat(inbox.stage(share(uri, "text/html"), resolver(
+            mapOf(uri to Fixture("offline.html", "text/html", html)),
+        ))).isEqualTo(ShareEnqueueResult.Accepted)
+
+        val lease = inbox.claimNext()!!
+        val staged = lease.request.uris.single()
+        assertThat(inbox.contentSource().preflightReason(staged)).isNull()
+        assertThat(inbox.contentSource().open(staged).readBytes()).isEqualTo(html)
+    }
+
+    @Test
     fun `未知长度流超限后不遗留部分staging文件`() = runTest {
         val uri = Uri.parse("content://fixture/large.txt")
         val root = temporary.newFolder("oversize")

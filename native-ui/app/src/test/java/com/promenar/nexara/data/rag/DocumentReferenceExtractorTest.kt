@@ -23,6 +23,36 @@ class DocumentReferenceExtractorTest {
     }
 
     @Test
+    fun `emoji跨读取与分块边界时每块都是完整Unicode`() {
+        val root = temporary.newFolder("unicode-chunks")
+        val source = "abc😀def😀末"
+        root.resolve("emoji.txt").writeText(source)
+        val chunks = DocumentReferenceExtractor(4, 0).extract(entry(root.path, "emoji.txt", "text/plain")).chunks
+        assertThat(chunks.joinToString("")).isEqualTo(source)
+        chunks.forEach { assertThat(it.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8)).isEqualTo(it) }
+        for (overlap in 0..3) {
+            val result = DocumentReferenceExtractor(4, overlap).extract(entry(root.path, "emoji.txt", "text/plain"))
+            result.chunks.forEach { assertThat(it.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8)).isEqualTo(it) }
+        }
+        val boundary = "a".repeat(16_383) + "😀末"
+        root.resolve("reader.txt").writeText(boundary)
+        val result = DocumentReferenceExtractor(256, 16).extract(entry(root.path, "reader.txt", "text/plain"))
+        assertThat(result.graphText).isEqualTo(boundary)
+        result.chunks.forEach { assertThat(it.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8)).isEqualTo(it) }
+    }
+
+    @Test
+    fun `分块和提取预算的非法参数立即拒绝`() {
+        listOf(0 to 0, -1 to 0, 4 to -1, 4 to 4).forEach { (size, overlap) ->
+            assertThat(runCatching { DocumentReferenceExtractor(size, overlap) }.exceptionOrNull()).isInstanceOf(IllegalArgumentException::class.java)
+        }
+        listOf(Long.MIN_VALUE, DocumentReferenceExtractor.MAX_EXTRACTED_UTF8_BYTES + 1).forEach { budget ->
+            assertThat(runCatching { DocumentReferenceExtractor(4, 0, budget) }.exceptionOrNull())
+                .isInstanceOf(IllegalArgumentException::class.java)
+        }
+    }
+
+    @Test
     fun `非法UTF8文本失败关闭而不是替换字符继续索引`() {
         val root = temporary.newFolder("invalid")
         root.resolve("bad.txt").writeBytes(byteArrayOf(0x61, 0xC3.toByte(), 0x28))
@@ -32,6 +62,151 @@ class DocumentReferenceExtractorTest {
         }.exceptionOrNull()
 
         assertThat(failure).isNotNull()
+    }
+
+    @Test
+    fun `HTML离线提取保留段落列表表格并移除非正文内容`() {
+        val root = temporary.newFolder("html")
+        root.resolve("article.html").writeText(
+            """
+                <!doctype html><html><head>
+                <style>.secret { color: red }</style>
+                <script>fetch('https://example.invalid/remote')</script>
+                </head><body>
+                <h1>标题 &amp; 中文</h1>
+                <p>第一段😀<strong>强调</strong></p>
+                <ul><li>条目甲</li><li>条目乙</li></ul>
+                <table><tr><th>名称</th><th>值</th></tr><tr><td>温度</td><td>21</td></tr></table>
+                <iframe src="https://example.invalid/frame">远程框架隐藏正文</iframe>
+                <p>未闭合段落
+                </body></html>
+            """.trimIndent(),
+            Charsets.UTF_8,
+        )
+
+        val result = DocumentReferenceExtractor(256, 16)
+            .extract(entry(root.path, "article.html", "text/html"))
+
+        assertThat(result.graphText).contains("标题 & 中文")
+        assertThat(result.graphText).contains("第一段😀强调")
+        assertThat(result.graphText).contains("条目甲")
+        assertThat(result.graphText).contains("条目乙")
+        assertThat(result.graphText).contains("名称 | 值")
+        assertThat(result.graphText).contains("温度 | 21")
+        assertThat(result.graphText).contains("未闭合段落")
+        assertThat(result.graphText).doesNotContain("fetch")
+        assertThat(result.graphText).doesNotContain("secret")
+        assertThat(result.graphText).doesNotContain("远程框架隐藏正文")
+        assertThat(result.truncated).isFalse()
+    }
+
+    @Test
+    fun `HTML容器嵌套仍保持段落列表表格边界和行内文字`() {
+        val html = """<main><article><h1>标题</h1><p>甲<strong>强调</strong>尾</p><p>乙</p><section><ul><li>丙</li><li>丁</li></ul><table><tr><td>戊</td><td>己</td></tr></table></section></article></main>"""
+        val text = OfflineHtmlDocumentExtractor.extract(html)
+        assertThat(text).contains("标题\n甲强调尾\n乙")
+        assertThat(text).contains("- 丙\n- 丁")
+        assertThat(text).contains("戊 | 己")
+    }
+
+    @Test
+    fun `HTML表格块级单元格保持列分隔且pre换行不丢失`() {
+        val html = """
+            <table><tr><td><p>甲</p></td><td><div>乙</div></td></tr></table>
+            <pre>保留第一行
+保留第二行</pre>
+        """.trimIndent()
+
+        val text = OfflineHtmlDocumentExtractor.extract(html)
+
+        assertThat(text).contains("甲 | 乙")
+        assertThat(text).contains("保留第一行\n保留第二行")
+    }
+
+    @Test
+    fun `HTML读取按实际字节拒绝超限并处理零长度读取`() {
+        val source = "<p>中文</p>".toByteArray()
+        val zeroReadStream = object : java.io.ByteArrayInputStream(source) {
+            override fun read(buffer: ByteArray, off: Int, len: Int): Int = 0
+        }
+        assertThat(DocumentReferenceExtractor.readHtmlSource(zeroReadStream)).isEqualTo(source)
+        val oversized = java.io.ByteArrayInputStream(ByteArray((DocumentReferenceExtractor.MAX_HTML_SOURCE_BYTES + 1).toInt()))
+        val failure = runCatching { DocumentReferenceExtractor.readHtmlSource(oversized) }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `HTML必须是合法UTF8且不会按平台默认编码替换`() {
+        val root = temporary.newFolder("html-invalid")
+        root.resolve("bad.html").writeBytes(
+            "<p>ok".toByteArray() + byteArrayOf(0xC3.toByte(), 0x28) + "</p>".toByteArray(),
+        )
+
+        val failure = runCatching {
+            DocumentReferenceExtractor(64, 8).extract(entry(root.path, "bad.html", "text/html"))
+        }.exceptionOrNull()
+
+        assertThat(failure).isNotNull()
+    }
+
+    @Test
+    fun `HTML提取文本遵守统一十六MiB上限并报告截断`() {
+        val root = temporary.newFolder("html-limit")
+        val testLimit = 1_024L
+        val payload = "a".repeat(testLimit.toInt() + 1)
+        root.resolve("large.html").writeText("<html><body><p>$payload</p></body></html>", Charsets.UTF_8)
+
+        val result = DocumentReferenceExtractor(
+            chunkSize = 256,
+            chunkOverlap = 0,
+            maxExtractedUtf8Bytes = testLimit,
+        )
+            .extract(entry(root.path, "large.html", "text/html"))
+
+        assertThat(result.truncated).isTrue()
+        assertThat(result.graphText.toByteArray(Charsets.UTF_8).size.toLong())
+            .isEqualTo(testLimit)
+    }
+
+    @Test
+    fun `HTML源文件超过独立四MiB预算时在DOM解析前拒绝`() {
+        val root = temporary.newFolder("html-source-limit")
+        val file = root.resolve("oversized.html")
+        file.outputStream().use { output ->
+            val block = ByteArray(8 * 1024) { 'a'.code.toByte() }
+            var remaining = DocumentReferenceExtractor.MAX_HTML_SOURCE_BYTES + 1
+            while (remaining > 0) {
+                val count = minOf(remaining, block.size.toLong()).toInt()
+                output.write(block, 0, count)
+                remaining -= count
+            }
+        }
+
+        val failure = runCatching {
+            DocumentReferenceExtractor(256, 16).extract(entry(root.path, file.name, "text/html"))
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalArgumentException::class.java)
+        assertThat(failure?.message).contains("HTML 源文件超过安全阈值")
+    }
+
+    @Test
+    fun `HTML标记数量预算在DOM构建前拒绝节点放大输入`() {
+        val html = buildString {
+            repeat(100_001) { append("<i>") }
+        }
+
+        val failure = runCatching { OfflineHtmlDocumentExtractor.extract(html) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalArgumentException::class.java)
+        assertThat(failure?.message).contains("HTML 标记数量超过安全阈值")
+    }
+
+    @Test
+    fun `HTML属于文件引用索引白名单且旧DOC不在承诺内`() {
+        assertThat(DocumentReferenceExtractor.SUPPORTED_MIME_TYPES).contains("text/html")
+        assertThat(DocumentReferenceExtractor.SUPPORTED_MIME_TYPES).contains(DocumentReferenceExtractor.DOCX_MIME)
+        assertThat(DocumentReferenceExtractor.SUPPORTED_MIME_TYPES).doesNotContain("application/msword")
     }
 
     private fun entry(root: String, name: String, mime: String) = FileEntry(
@@ -47,4 +222,5 @@ class DocumentReferenceExtractorTest {
         createdAt = 1,
         updatedAt = 1,
     )
+
 }

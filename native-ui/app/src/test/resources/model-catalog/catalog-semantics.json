@@ -1,0 +1,66 @@
+[
+  {
+    "canonicalModelId": "deepseek/deepseek-v4-flash",
+    "displayName": "Upstream DeepSeek V4 Flash",
+    "family": "DeepSeek",
+    "reasoning": false,
+    "tool_call": true,
+    "structured_output": true,
+    "contextTokens": 1000000,
+    "inputTokens": 900000,
+    "outputTokens": 384000,
+    "knowledge": "2026-01",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    }
+  },
+  {
+    "canonicalModelId": "minimax/MiniMax-M3",
+    "displayName": "Upstream MiniMax M3",
+    "family": "MiniMax",
+    "reasoning": true,
+    "tool_call": true,
+    "structured_output": true,
+    "contextTokens": 196608,
+    "inputTokens": 131072,
+    "outputTokens": 65536,
+    "knowledge": "2026-01",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    }
+  },
+  {
+    "canonicalModelId": "openai/o1-preview",
+    "displayName": "Upstream O1 Preview",
+    "family": "OpenAI",
+    "reasoning": false,
+    "tool_call": true,
+    "structured_output": true,
+    "contextTokens": 4096,
+    "inputTokens": 3072,
+    "outputTokens": 1024,
+    "knowledge": "2024-06",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    }
+  },
+  {
+    "canonicalModelId": "fixture/vision-model",
+    "displayName": "Fixture Vision Model",
+    "family": "Fixture",
+    "reasoning": null,
+    "tool_call": false,
+    "structured_output": null,
+    "contextTokens": 8192,
+    "inputTokens": null,
+    "outputTokens": 2048,
+    "knowledge": null,
+    "modalities": {
+      "input": ["text", "image"],
+      "output": ["text"]
+    }
+  }
+]

@@ -111,8 +111,16 @@ if [[ -z "${PID}" ]]; then
     exit 1
 fi
 
+is_expected_resumed_activity() {
+    local activities_file="$1"
+    local package_regex="${PACKAGE_NAME//./\.}"
+    grep -Eq \
+        "(^|[[:space:]])(topResumedActivity|mResumedActivity)[[:space:]]*[:=][[:space:]]*.*[^[:alnum:]_.]${package_regex}/" \
+        "${activities_file}"
+}
+
 adb shell dumpsys activity activities | tr -d '\r' > "${ARTIFACT_DIR}/activities-after-start.txt"
-if ! grep -Eq "(topResumedActivity|mResumedActivity)=.*${PACKAGE_NAME//./\.}" "${ARTIFACT_DIR}/activities-after-start.txt"; then
+if ! is_expected_resumed_activity "${ARTIFACT_DIR}/activities-after-start.txt"; then
     echo "发行包未成为前台 resumed Activity" >&2
     exit 1
 fi

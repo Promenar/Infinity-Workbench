@@ -138,6 +138,7 @@ open class MainActivity : ComponentActivity() {
                 StartupGate(
                     state = startupState,
                     onRetry = app::retryStartupRecovery,
+                    onRecoverBothDatabases = app::startDualDatabaseRecovery,
                 ) {
                     val chatRouteDependencies = remember(app) {
                         provideChatRouteDependencies(app)

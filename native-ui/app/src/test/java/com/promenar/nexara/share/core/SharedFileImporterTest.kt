@@ -19,6 +19,72 @@ import java.io.InputStream
 @RunWith(RobolectricTestRunner::class)
 class SharedFileImporterTest {
     @Test
+    fun `DOCX嗅探跳过条目时也限制实际解压量`() = runTest {
+        for (expandedMiB in listOf(1, 65)) {
+            val uri = Uri.parse("content://fixture/skipped-$expandedMiB.docx")
+            val output = ByteArrayOutputStream()
+            java.util.zip.ZipOutputStream(output).use { zip ->
+                zip.putNextEntry(java.util.zip.ZipEntry("padding.bin"))
+                val block = ByteArray(64 * 1024)
+                repeat(expandedMiB * 16) { zip.write(block) }
+                zip.closeEntry()
+                listOf("[Content_Types].xml", "word/document.xml").forEach { name ->
+                    zip.putNextEntry(java.util.zip.ZipEntry(name))
+                    zip.write("<fixture/>".toByteArray())
+                    zip.closeEntry()
+                }
+            }
+            val bytes = output.toByteArray()
+            val mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            val source = FakeSource(mapOf(uri to meta("fixture.docx", mime, bytes.size.toLong())), mapOf(uri to bytes))
+            val repo = repository()
+            val result = SharedFileImporter(source, repo).import(request(listOf(uri), mime), ROOT)
+            if (expandedMiB == 1) assertThat(result.created).hasSize(1)
+            else {
+                assertThat(result.created).isEmpty()
+                assertThat(result.rejected).hasSize(1)
+                coVerify(exactly = 0) { repo.createFileInWorkspaceStreaming(any(), any(), any(), any(), any(), any(), any(), any()) }
+            }
+        }
+    }
+
+    @Test
+    fun `DOCX标志条目不能让后续解压量与条目数绕过预算`() = runTest {
+        for ((paddingMiB, extras) in listOf(1 to 0, 0 to 2_046, 65 to 0, 0 to 2_047)) {
+            val uri = Uri.parse("content://fixture/markers-first-$paddingMiB-$extras.docx")
+            val output = ByteArrayOutputStream()
+            java.util.zip.ZipOutputStream(output).use { zip ->
+                listOf("[Content_Types].xml", "word/document.xml").forEach { name ->
+                    zip.putNextEntry(java.util.zip.ZipEntry(name))
+                    zip.write("<fixture/>".toByteArray())
+                    zip.closeEntry()
+                }
+                if (paddingMiB > 0) {
+                    zip.putNextEntry(java.util.zip.ZipEntry("padding.bin"))
+                    val block = ByteArray(64 * 1024)
+                    repeat(paddingMiB * 16) { zip.write(block) }
+                    zip.closeEntry()
+                }
+                repeat(extras) { index ->
+                    zip.putNextEntry(java.util.zip.ZipEntry("extra-$index.bin"))
+                    zip.closeEntry()
+                }
+            }
+            val bytes = output.toByteArray()
+            val mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            val source = FakeSource(mapOf(uri to meta("fixture.docx", mime, bytes.size.toLong())), mapOf(uri to bytes))
+            val repo = repository()
+            val result = SharedFileImporter(source, repo).import(request(listOf(uri), mime), ROOT)
+            if (paddingMiB == 1 || extras == 2_046) assertThat(result.created).hasSize(1)
+            else {
+                assertThat(result.created).isEmpty()
+                assertThat(result.rejected).hasSize(1)
+                coVerify(exactly = 0) { repo.createFileInWorkspaceStreaming(any(), any(), any(), any(), any(), any(), any(), any()) }
+            }
+        }
+    }
+
+    @Test
     fun `inspect直接呈现staging预检拒绝而不伪装成可导入`() = runTest {
         val uri = Uri.parse("content://fixture/unreadable.pdf")
         val source = FakeSource(
@@ -75,6 +141,132 @@ class SharedFileImporterTest {
 
         assertThat(pdfResult.rejected.single().reason).isEqualTo(ShareRejectReason.MimeMismatch)
         assertThat(emptyResult.rejected.single().reason).isEqualTo(ShareRejectReason.EmptyFile)
+    }
+
+    @Test
+    fun `采样上限落在中文或emoji中间时继续读取并接受完整UTF8`() = runTest {
+        val chinese = Uri.parse("content://fixture/chinese.txt")
+        val emoji = Uri.parse("content://fixture/emoji.txt")
+        val chineseBytes = ("a".repeat(8_191) + "中文").toByteArray(Charsets.UTF_8)
+        val emojiBytes = ("b".repeat(8_190) + "😀结尾").toByteArray(Charsets.UTF_8)
+        val source = FakeSource(
+            metadata = mapOf(
+                chinese to meta("chinese.txt", "text/plain", chineseBytes.size.toLong()),
+                emoji to meta("emoji.txt", "text/plain", emojiBytes.size.toLong()),
+            ),
+            bytes = mapOf(chinese to chineseBytes, emoji to emojiBytes),
+        )
+
+        val result = SharedFileImporter(source, repository()).import(
+            request(listOf(chinese, emoji)),
+            ROOT,
+        )
+
+        assertThat(result.created.map { it.displayName })
+            .containsExactly("chinese.txt", "emoji.txt")
+            .inOrder()
+    }
+
+    @Test
+    fun `每次只返回一个字节的短读不会把完整UTF8误判为非法`() = runTest {
+        val uri = Uri.parse("content://fixture/short-read.txt")
+        val bytes = "中文与 emoji 😀".toByteArray(Charsets.UTF_8)
+        val source = FakeSource(
+            metadata = mapOf(uri to meta("short-read.txt", "text/plain", bytes.size.toLong())),
+            bytes = mapOf(uri to bytes),
+            maxReadBytes = 1,
+        )
+
+        val result = SharedFileImporter(source, repository()).import(request(listOf(uri)), ROOT)
+
+        assertThat(result.created.single().displayName).isEqualTo("short-read.txt")
+    }
+
+    @Test
+    fun `零长度批量读取通过单字节回退完成嗅探和文本复制`() = runTest {
+        val uri = Uri.parse("content://fixture/zero-read.txt")
+        val bytes = "中文😀".toByteArray(Charsets.UTF_8)
+        val source = FakeSource(
+            metadata = mapOf(uri to meta("zero-read.txt", "text/plain", bytes.size.toLong())),
+            bytes = mapOf(uri to bytes),
+            maxReadBytes = 0,
+        )
+        val result = SharedFileImporter(source, repository()).import(request(listOf(uri)), ROOT)
+        assertThat(result.created.single().displayName).isEqualTo("zero-read.txt")
+    }
+
+    @Test
+    fun `真EOF留下不完整UTF8时仍拒绝`() = runTest {
+        val uri = Uri.parse("content://fixture/truncated.txt")
+        val truncated = byteArrayOf(0xE4.toByte(), 0xB8.toByte())
+        val source = FakeSource(
+            metadata = mapOf(uri to meta("truncated.txt", "text/plain", truncated.size.toLong())),
+            bytes = mapOf(uri to truncated),
+        )
+
+        val result = SharedFileImporter(source, repository()).import(request(listOf(uri)), ROOT)
+
+        assertThat(result.rejected.single().reason).isEqualTo(ShareRejectReason.MimeMismatch)
+    }
+
+    @Test
+    fun `采样区之后出现非法UTF8时由完整文件校验拒绝`() = runTest {
+        val uri = Uri.parse("content://fixture/late-invalid.txt")
+        val bytes = ByteArray(8_193) { 'a'.code.toByte() }.also {
+            it[it.lastIndex] = 0xFF.toByte()
+        }
+        val source = FakeSource(
+            metadata = mapOf(uri to meta("late-invalid.txt", "text/plain", bytes.size.toLong())),
+            bytes = mapOf(uri to bytes),
+        )
+
+        val result = SharedFileImporter(source, repository()).import(request(listOf(uri)), ROOT)
+
+        assertThat(result.rejected.single().reason).isEqualTo(ShareRejectReason.ReadFailed)
+    }
+
+    @Test
+    fun `非法UTF8 NUL PDF与ZIP魔数不能伪装成文本`() = runTest {
+        val fixtures = linkedMapOf(
+            Uri.parse("content://fixture/invalid.txt") to byteArrayOf(0x61, 0xC3.toByte(), 0x28),
+            Uri.parse("content://fixture/embedded-nul.txt") to byteArrayOf(0x61, 0x00, 0x62),
+            Uri.parse("content://fixture/pdf.txt") to "%PDF-1.7".toByteArray(),
+            Uri.parse("content://fixture/zip.txt") to byteArrayOf(0x50, 0x4B, 0x03, 0x04),
+        )
+        val source = FakeSource(
+            metadata = fixtures.mapValues { (uri, bytes) ->
+                meta(uri.lastPathSegment!!, "text/plain", bytes.size.toLong())
+            },
+            bytes = fixtures,
+        )
+
+        val result = SharedFileImporter(source, repository()).import(request(fixtures.keys.toList()), ROOT)
+
+        assertThat(result.rejected).hasSize(fixtures.size)
+        assertThat(result.rejected.map { it.reason }).containsExactlyElementsIn(
+            List(fixtures.size) { ShareRejectReason.MimeMismatch },
+        )
+    }
+
+    @Test
+    fun `完整HTML以UTF8离线文件导入并进入索引调度`() = runTest {
+        val uri = Uri.parse("content://fixture/article.html")
+        val bytes = "<!doctype html><html><body><p>中文 &amp; emoji 😀</p></body></html>"
+            .toByteArray(Charsets.UTF_8)
+        val source = FakeSource(
+            metadata = mapOf(uri to meta("article.html", "text/html", bytes.size.toLong())),
+            bytes = mapOf(uri to bytes),
+        )
+        val scheduled = mutableListOf<FileEntry>()
+        val importer = SharedFileImporter(source, repository(), ShareIndexScheduler { _, entry ->
+            scheduled += entry
+            ShareIndexReceipt("task-html", entry.uuid)
+        })
+
+        val result = importer.import(request(listOf(uri), "text/html"), ROOT)
+
+        assertThat(result.created.single().mimeType).isEqualTo("text/html")
+        assertThat(scheduled.single().name).isEqualTo("article.html")
     }
 
     @Test
@@ -179,6 +371,59 @@ class SharedFileImporterTest {
 
         assertThat(result.rejected.single().reason).isEqualTo(ShareRejectReason.IndexScheduleFailed)
         coVerify(exactly = 1) { repository.rollbackCreatedEntry(ROOT, "entry-rollback.txt") }
+    }
+
+    @Test
+    fun `索引失败成功回滚后释放预算让后续文件可导入`() = runTest {
+        val first = Uri.parse("content://fixture/failed.txt")
+        val second = Uri.parse("content://fixture/next.txt")
+        val firstSize = 60L * 1024 * 1024
+        val secondSize = 50L * 1024 * 1024
+        val source = FakeSource(
+            metadata = mapOf(first to meta("failed.txt", "text/plain", firstSize), second to meta("next.txt", "text/plain", secondSize)),
+            bytes = mapOf(first to "first".toByteArray(), second to "next".toByteArray()),
+        )
+        val repo = repository(reportedSizes = mapOf("failed.txt" to firstSize, "next.txt" to secondSize))
+        val importer = SharedFileImporter(source, repo, ShareIndexScheduler { _, entry ->
+            if (entry.name == "failed.txt") throw IOException("synthetic queue failure")
+            ShareIndexReceipt("task-${entry.uuid}", entry.uuid)
+        })
+        val result = importer.import(request(listOf(first, second)), ROOT)
+        assertThat(result.rejected.single().reason).isEqualTo(ShareRejectReason.IndexScheduleFailed)
+        assertThat(result.created.single().displayName).isEqualTo("next.txt")
+        coVerify(exactly = 1) { repo.rollbackCreatedEntry(ROOT, "entry-failed.txt") }
+    }
+
+    @Test
+    fun `索引失败且回滚未完成时保留预算不把残留文件忽略`() = runTest {
+        val first = Uri.parse("content://fixture/retained.txt")
+        val second = Uri.parse("content://fixture/next.txt")
+        val size = 60L * 1024 * 1024
+        val source = FakeSource(
+            metadata = mapOf(first to meta("retained.txt", "text/plain", size), second to meta("next.txt", "text/plain", size)),
+            bytes = mapOf(first to "first".toByteArray(), second to "next".toByteArray()),
+        )
+        val repo = repository(reportedSizes = mapOf("retained.txt" to size))
+        coEvery { repo.rollbackCreatedEntry(ROOT, "entry-retained.txt") } throws IOException("synthetic rollback failure")
+        val result = SharedFileImporter(source, repo, ShareIndexScheduler { _, _ ->
+            throw IOException("synthetic scheduling failure")
+        }).import(request(listOf(first, second)), ROOT)
+        assertThat(result.created).isEmpty()
+        assertThat(result.rejected.map { it.reason }).containsExactly(ShareRejectReason.IndexScheduleFailed, ShareRejectReason.BatchTooLarge).inOrder()
+    }
+
+    @Test
+    fun `创建确认失败只生成一条拒绝结果并回滚`() = runTest {
+        val uri = Uri.parse("content://fixture/confirm.txt")
+        val source = FakeSource(mapOf(uri to meta("confirm.txt", "text/plain", 4)), mapOf(uri to "body".toByteArray()))
+        val repo = repository()
+        coEvery { repo.confirmCreatedEntry(ROOT, "entry-confirm.txt") } throws IOException("synthetic confirmation failure")
+        val result = SharedFileImporter(source, repo, ShareIndexScheduler { _, entry ->
+            ShareIndexReceipt("task-${entry.uuid}", entry.uuid)
+        }).import(request(listOf(uri)), ROOT)
+        assertThat(result.created).isEmpty()
+        assertThat(result.rejected).hasSize(1)
+        coVerify(exactly = 1) { repo.rollbackCreatedEntry(ROOT, "entry-confirm.txt") }
     }
 
     @Test
@@ -400,13 +645,22 @@ class SharedFileImporterTest {
         private val denied: Set<Uri> = emptySet(),
         private val hashes: Map<Uri, String> = emptyMap(),
         private val preflightReasons: Map<Uri, ShareRejectReason> = emptyMap(),
+        private val maxReadBytes: Int? = null,
     ) : SharedContentSource {
         override fun metadata(uri: Uri): SharedContentMetadata {
             if (uri in denied) throw SecurityException("denied")
             return checkNotNull(metadata[uri])
         }
 
-        override fun open(uri: Uri): InputStream = ByteArrayInputStream(checkNotNull(bytes[uri]))
+        override fun open(uri: Uri): InputStream {
+            val delegate = ByteArrayInputStream(checkNotNull(bytes[uri]))
+            val limit = maxReadBytes ?: return delegate
+            return object : InputStream() {
+                override fun read(): Int = delegate.read()
+                override fun read(target: ByteArray, offset: Int, length: Int): Int =
+                    delegate.read(target, offset, minOf(length, limit))
+            }
+        }
         override fun preflightReason(uri: Uri): ShareRejectReason? = preflightReasons[uri]
         override fun contentSha256(uri: Uri): String? = hashes[uri]
     }

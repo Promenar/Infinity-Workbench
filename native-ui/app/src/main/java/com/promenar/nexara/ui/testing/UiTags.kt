@@ -42,6 +42,8 @@ object UiTags {
     const val CHAT_DOCUMENT_CHIPS = "chat_document_chips"
     const val CHAT_DOCUMENT_IMPORTING = "chat_document_importing"
     const val CHAT_MESSAGE_DOCUMENTS = "chat_message_documents"
+    const val CHAT_LEGACY_ATTACHMENTS = "chat_legacy_attachments"
+    const val CHAT_LEGACY_ATTACHMENT_ENTRY = "chat_legacy_attachment_entry"
     const val CHAT_MESSAGE_BRANCH = "chat_message_branch"
     private const val CHAT_DOCUMENT_CHIP_PREFIX = "chat_document_chip:"
     private const val CHAT_DOCUMENT_REMOVE_PREFIX = "chat_document_remove:"

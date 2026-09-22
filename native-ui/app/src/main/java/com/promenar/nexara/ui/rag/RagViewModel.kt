@@ -30,8 +30,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -73,6 +74,8 @@ class RagViewModel(
     injectedPendingIndexCoordinator: PendingDocumentIndexCoordinator? = null,
     injectedConfigSaver: ((RagConfiguration) -> Unit)? = null,
     injectedEnsureRagWorkspaceRoot: (suspend () -> FileEntry)? = null,
+    injectedListRagWorkspaceRoots: (suspend () -> List<RagWorkspaceSource>)? = null,
+    injectedEnsureRagWorkspaceRootForSession: (suspend (String) -> FileEntry)? = null,
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
@@ -85,14 +88,28 @@ class RagViewModel(
     private val importRequestFactory = injectedRequestFactory
         ?: AndroidSafImportRequestFactory(app.contentResolver)::create
     private val pendingIndexCoordinator = injectedPendingIndexCoordinator
-    private val ensureGlobalKnowledgeRoot = injectedEnsureRagWorkspaceRoot
-        ?: app.globalKnowledgeWorkspaceProvisioner::ensureRoot
+    private val ensureGlobalKnowledgeRoot: suspend () -> FileEntry = injectedEnsureRagWorkspaceRoot
+        ?: { app.globalKnowledgeWorkspaceProvisioner.ensureRoot() }
+    private val listAvailableRagWorkspaceRoots: suspend () -> List<RagWorkspaceSource> = injectedListRagWorkspaceRoots
+        ?: { app.globalKnowledgeWorkspaceProvisioner.listAvailableRoots() }
+    private val ensureRagWorkspaceRootForSession: suspend (String) -> FileEntry = injectedEnsureRagWorkspaceRootForSession
+        ?: { sessionId: String -> app.globalKnowledgeWorkspaceProvisioner.ensureRoot(sessionId) }
 
     private val vectorStatsService = VectorStatsService(vectorRepository)
 
     /** 当前工作区根目录的 FileEntry UUID（首个根目录，用于 FilesPanel） */
     private val _workspaceRootUuid = MutableStateFlow<String?>(null)
     val workspaceRootUuid: StateFlow<String?> = _workspaceRootUuid.asStateFlow()
+
+    private val _availableWorkspaceRoots = MutableStateFlow<List<RagWorkspaceSource>>(emptyList())
+    val availableWorkspaceRoots: StateFlow<List<RagWorkspaceSource>> =
+        _availableWorkspaceRoots.asStateFlow()
+
+    private val _selectedWorkspaceSessionId = MutableStateFlow<String?>(null)
+    val selectedWorkspaceSessionId: StateFlow<String?> =
+        _selectedWorkspaceSessionId.asStateFlow()
+    private var workspaceSwitchJob: Job? = null
+    private var workspaceSwitchGeneration = 0L
 
     private val _folders = MutableStateFlow<List<Folder>>(emptyList())
     val folders: StateFlow<List<Folder>> = _folders.asStateFlow()
@@ -110,6 +127,8 @@ class RagViewModel(
     val searchState: StateFlow<RagSearchUiState> = _searchState.asStateFlow()
     private var searchJob: Job? = null
     private var searchGeneration = 0L
+    private var folderDocumentsObservationJob: Job? = null
+    private var folderStatsJob: Job? = null
 
     private val _memoryVectors = MutableStateFlow<List<MemoryVectorRecord>>(emptyList())
     val memoryVectors: StateFlow<List<MemoryVectorRecord>> = _memoryVectors.asStateFlow()
@@ -187,8 +206,11 @@ class RagViewModel(
     private fun ensureRagWorkspaceRoot() {
         viewModelScope.launch {
             try {
-                _workspaceRootUuid.value = ensureGlobalKnowledgeRoot().uuid
+                val root = ensureGlobalKnowledgeRoot()
+                _selectedWorkspaceSessionId.value = RagWorkspaceProvisioner.SESSION_ID
+                _workspaceRootUuid.value = root.uuid
                 synchronizeSharedPendingTargets()
+                _availableWorkspaceRoots.value = listAvailableRagWorkspaceRoots()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -198,6 +220,64 @@ class RagViewModel(
                     code = IndexingNotice.CODE_FAILED,
                     technical = failure::class.simpleName,
                 )
+            }
+        }
+    }
+
+    /**
+     * 切换知识库浏览来源。切换期间先撤销旧根的观察与搜索，只有目标 Session 重新通过
+     * 根身份校验后才发布新的 UUID，避免旧来源的晚到结果落入当前面板。
+     */
+    fun selectWorkspaceSource(sessionId: String) {
+        val source = _availableWorkspaceRoots.value.firstOrNull { it.sessionId == sessionId }
+            ?: return
+        if (_selectedWorkspaceSessionId.value == sessionId &&
+            _workspaceRootUuid.value == source.workspaceRootUuid
+        ) {
+            return
+        }
+
+        val previousSessionId = _selectedWorkspaceSessionId.value
+        val previousRootUuid = _workspaceRootUuid.value
+        workspaceSwitchGeneration += 1
+        val generation = workspaceSwitchGeneration
+        workspaceSwitchJob?.cancel()
+        searchGeneration += 1
+        searchJob?.cancel()
+        searchJob = null
+        folderDocumentsObservationJob?.cancel()
+        folderDocumentsObservationJob = null
+        _searchResults.value = emptyList()
+        _searchState.value = RagSearchUiState.Idle
+        _workspaceRootUuid.value = null
+        _documents.value = emptyList()
+        _folders.value = emptyList()
+        _folderStats.value = emptyMap()
+        _pendingRenameIndexTargets.value = emptyList()
+
+        workspaceSwitchJob = viewModelScope.launch {
+            try {
+                val root = ensureRagWorkspaceRootForSession(sessionId)
+                check(root.uuid == source.workspaceRootUuid) {
+                    "知识库来源根身份在切换期间发生变化"
+                }
+                if (generation != workspaceSwitchGeneration) return@launch
+                _selectedWorkspaceSessionId.value = sessionId
+                _workspaceRootUuid.value = root.uuid
+                synchronizeSharedPendingTargets()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (generation != workspaceSwitchGeneration) return@launch
+                NexaraLogger.logError("[RagViewModel] selectWorkspaceSource failed", failure)
+                _indexingNotice.value = UiStatusNotice(
+                    severity = NoticeSeverity.Error,
+                    code = IndexingNotice.CODE_FAILED,
+                    technical = failure::class.simpleName,
+                )
+                // 目标未通过校验时恢复此前已经验证的来源，不能把 UI 绑定到未验证根。
+                _selectedWorkspaceSessionId.value = previousSessionId
+                _workspaceRootUuid.value = previousRootUuid
             }
         }
     }
@@ -270,6 +350,9 @@ class RagViewModel(
     }
 
     override fun onCleared() {
+        workspaceSwitchJob?.cancel()
+        folderDocumentsObservationJob?.cancel()
+        folderStatsJob?.cancel()
         observedQueue = null
         queueResourceObservation?.close()
         queueResourceObservation = null
@@ -395,21 +478,30 @@ class RagViewModel(
 
     private fun startDataObservation() {
         viewModelScope.launch {
-            workspaceRootUuid.filterNotNull().flatMapLatest { root ->
-                workspaceRepository.observeChildren(root, root)
-            }.collect { roots ->
+            workspaceRootUuid.flatMapLatest { root ->
+                if (root == null) {
+                    flowOf<Pair<String?, List<FileEntry>>>(null to emptyList<FileEntry>())
+                } else {
+                    workspaceRepository.observeChildren(root, root).map { entries -> root to entries }
+                }
+            }.collect { (root, roots) ->
                 val allFiles = roots.filter { !it.isDirectory }
                 _documents.value = allFiles.map { it.toDocument() }
+                if (root == null) _folderStats.value = emptyMap()
             }
         }
 
         viewModelScope.launch {
-            workspaceRootUuid.filterNotNull().flatMapLatest { root ->
-                workspaceRepository.observeChildren(root, root)
-            }.collect { entries ->
+            workspaceRootUuid.flatMapLatest { root ->
+                if (root == null) {
+                    flowOf<Pair<String?, List<FileEntry>>>(null to emptyList<FileEntry>())
+                } else {
+                    workspaceRepository.observeChildren(root, root).map { entries -> root to entries }
+                }
+            }.collect { (root, entries) ->
                 val dirs = entries.filter { it.isDirectory }
                 _folders.value = dirs.map { it.toFolder() }
-                updateFolderStats(_folders.value)
+                updateFolderStats(root, _folders.value)
             }
         }
     }
@@ -417,19 +509,25 @@ class RagViewModel(
     private fun refreshStats() {
         viewModelScope.launch {
             loadStats()
-            updateFolderStats(_folders.value)
+            updateFolderStats(_workspaceRootUuid.value, _folders.value)
         }
     }
 
-    private fun updateFolderStats(folderList: List<Folder>) {
-        viewModelScope.launch {
+    private fun updateFolderStats(rootUuid: String?, folderList: List<Folder>) {
+        folderStatsJob?.cancel()
+        if (rootUuid == null) {
+            _folderStats.value = emptyMap()
+            return
+        }
+        folderStatsJob = viewModelScope.launch {
             val stats = mutableMapOf<String, Int>()
             for (folder in folderList) {
-                val root = _workspaceRootUuid.value ?: continue
-                val children = workspaceRepository.observeChildren(root, folder.id).first()
+                val children = workspaceRepository.observeChildren(rootUuid, folder.id).first()
                 stats[folder.id] = children.size
             }
-            _folderStats.value = stats
+            if (_workspaceRootUuid.value == rootUuid) {
+                _folderStats.value = stats
+            }
         }
     }
 
@@ -582,11 +680,14 @@ class RagViewModel(
     }
 
     fun loadDocumentsForFolder(folderId: String) {
-        viewModelScope.launch {
+        folderDocumentsObservationJob?.cancel()
+        folderDocumentsObservationJob = viewModelScope.launch {
             try {
                 val rootUuid = _workspaceRootUuid.value ?: return@launch
                 workspaceRepository.observeChildren(rootUuid, folderId).collect { entries ->
-                    _documents.value = entries.filter { !it.isDirectory }.map { it.toDocument() }
+                    if (_workspaceRootUuid.value == rootUuid) {
+                        _documents.value = entries.filter { !it.isDirectory }.map { it.toDocument() }
+                    }
                 }
             } catch (_: Exception) { }
         }

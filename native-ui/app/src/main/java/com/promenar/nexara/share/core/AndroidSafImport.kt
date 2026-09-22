@@ -72,6 +72,8 @@ class AndroidSafImportRequestFactory(
                 name?.endsWith(".txt", ignoreCase = true) == true -> "text/plain"
                 name?.endsWith(".md", ignoreCase = true) == true -> "text/markdown"
                 name?.endsWith(".csv", ignoreCase = true) == true -> "text/csv"
+                name?.endsWith(".html", ignoreCase = true) == true ||
+                    name?.endsWith(".htm", ignoreCase = true) == true -> "text/html"
                 name?.endsWith(".json", ignoreCase = true) == true -> "application/json"
                 name?.endsWith(".pdf", ignoreCase = true) == true -> "application/pdf"
                 name?.endsWith(".docx", ignoreCase = true) == true ->

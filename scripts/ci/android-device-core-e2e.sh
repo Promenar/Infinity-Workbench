@@ -368,6 +368,23 @@ printf '%s\n' "${MAIN_ACTIVITY_RUNNER}" > "${ARTIFACT_DIR}/mainactivity-runner.t
 
 adb logcat -c
 
+run_test workspace-filesystem-contracts "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.repository.AndroidSecureWorkspaceFileOpsTest
+run_test recovery-snapshot-contracts "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.local.db.recovery.AndroidRecoverySnapshotStoreTest
+run_test dual-database-recovery "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseRecoveryDeviceTest
+run_test dual-database-interruption "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseRecoveryInterruptionTest
+run_test dual-database-source-probe "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseSourceProbeSafetyTest
+run_test dual-database-workspace-recovery "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseWorkspaceRecoveryTest
+run_test legacy-attachment-access "${APP_RUNNER}" \
+    -e class com.promenar.nexara.ui.chat.LegacyAttachmentDeviceTest
+run_test rag-workspace-source-selector "${APP_RUNNER}" \
+    -e class com.promenar.nexara.ui.rag.RagWorkspaceSourceSelectorDeviceTest
+
 if [[ "${DEVICE_E2E_SCOPE}" == "full" ]]; then
     if (( API_LEVEL >= 33 )); then
         run_notification_permission_contracts
@@ -456,6 +473,10 @@ run_test generation-foreground-service "${APP_RUNNER}" \
 
 run_test document-parser-fixtures "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.rag.DocumentParserDeviceE2eTest
+run_test share-import-contracts "${APP_RUNNER}" \
+    -e class com.promenar.nexara.share.core.ShareImportAndroidEndToEndTest
+run_test rag-files-navigation "${APP_RUNNER}" \
+    -e class com.promenar.nexara.ui.rag.RagFilesPanelNavigationTest
 
 force_stop_target
 run_test generation-cold-track "${APP_RUNNER}" \

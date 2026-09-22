@@ -47,6 +47,8 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -70,6 +72,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -238,6 +241,8 @@ fun RagHomeScreen(
     val memoryVectors by viewModel.memoryVectors.collectAsState()
     val kgExtractionStates by viewModel.kgExtractionStates.collectAsState()
     val workspaceRootUuid by viewModel.workspaceRootUuid.collectAsState()
+    val availableWorkspaceRoots by viewModel.availableWorkspaceRoots.collectAsState()
+    val selectedWorkspaceSessionId by viewModel.selectedWorkspaceSessionId.collectAsState()
     val indexingFileIds by viewModel.indexingDocIds.collectAsState()
     val searchState by viewModel.searchState.collectAsState()
 
@@ -345,33 +350,50 @@ fun RagHomeScreen(
         searchState,
         indexingFileIds,
         kgExtractionStates,
+        availableWorkspaceRoots,
+        selectedWorkspaceSessionId,
     ) {
         { modifier, selectedDocumentIds, requestDelete ->
             Box(modifier = modifier) {
                 if (searchQuery.isBlank()) {
-                    FilesPanel(
-                        workspaceRootUuid = workspaceRootUuid,
-                        workspaceRepo = viewModel.getWorkspaceRepo(),
-                        searchQuery = "",
-                        useScroll = true,
-                        onReindex = { actions.onReindexFile(it) },
-                        onDelete = requestDelete,
-                        onRename = { uuid, name -> actions.onRenameFolder(uuid, name) },
-                        onMove = { uuid, targetId -> actions.onMoveFile(uuid, targetId) {} },
-                        onExtractKG = actions.onExtractKG,
-                        onViewKG = { onNavigateToGraph() },
-                        onCopy = actions.onCopyFile,
-                        indexingFileIds = indexingFileIds,
-                        kgExtractionStates = kgExtractionStates,
-                        externalSelectedIds = selectedDocumentIds,
-                        showSelectionOverlay = false,
-                        onFolderClick = onNavigateToFolder,
-                        onFileClick = { docId ->
-                            workspaceRootUuid?.let { root ->
-                                actions.onNavigateToDocEditor(root, docId)
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        RagWorkspaceSourceSelector(
+                            sources = availableWorkspaceRoots,
+                            selectedSessionId = selectedWorkspaceSessionId,
+                            onSelect = viewModel::selectWorkspaceSource,
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        ) {
+                            key(workspaceRootUuid) {
+                                FilesPanel(
+                                    workspaceRootUuid = workspaceRootUuid,
+                                    workspaceRepo = viewModel.getWorkspaceRepo(),
+                                    searchQuery = "",
+                                    useScroll = true,
+                                    onReindex = { actions.onReindexFile(it) },
+                                    onDelete = requestDelete,
+                                    onRename = { uuid, name -> actions.onRenameFolder(uuid, name) },
+                                    onMove = { uuid, targetId -> actions.onMoveFile(uuid, targetId) {} },
+                                    onExtractKG = actions.onExtractKG,
+                                    onViewKG = { onNavigateToGraph() },
+                                    onCopy = actions.onCopyFile,
+                                    indexingFileIds = indexingFileIds,
+                                    kgExtractionStates = kgExtractionStates,
+                                    externalSelectedIds = selectedDocumentIds,
+                                    showSelectionOverlay = false,
+                                    onFolderClick = onNavigateToFolder,
+                                    onFileClick = { docId ->
+                                        workspaceRootUuid?.let { root ->
+                                            actions.onNavigateToDocEditor(root, docId)
+                                        }
+                                    },
+                                )
                             }
-                        },
-                    )
+                        }
+                    }
                 } else {
                     RagSearchResults(
                         state = searchState,
@@ -392,6 +414,73 @@ fun RagHomeScreen(
         actions = actions,
         documentsContent = documentsContent,
     )
+}
+
+internal object RecoveryRagUiTags {
+    const val SOURCE_SELECTOR = "recovery_rag_source_selector"
+    const val SOURCE_OPTION_PREFIX = "recovery_rag_source_option:"
+
+    fun sourceOption(sessionId: String): String = SOURCE_OPTION_PREFIX + sessionId
+}
+
+@Composable
+internal fun RagWorkspaceSourceSelector(
+    sources: List<RagWorkspaceSource>,
+    selectedSessionId: String?,
+    onSelect: (String) -> Unit,
+) {
+    if (sources.size <= 1) return
+    val selected = sources.firstOrNull { it.sessionId == selectedSessionId } ?: sources.first()
+    var expanded by remember(selected.sessionId) { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = NexaraSpacing.Small, vertical = NexaraSpacing.XSmall),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+    ) {
+        Text(
+            text = stringResource(R.string.rag_recovery_source_label),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = { expanded = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(RecoveryRagUiTags.SOURCE_SELECTOR),
+                contentPadding = PaddingValues(horizontal = NexaraSpacing.Medium),
+            ) {
+                Text(
+                    text = selected.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                sources.forEach { source ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = source.title,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        onClick = {
+                            expanded = false
+                            onSelect(source.sessionId)
+                        },
+                        modifier = Modifier.testTag(RecoveryRagUiTags.sourceOption(source.sessionId)),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

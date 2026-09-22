@@ -236,6 +236,7 @@ internal fun compactMimeType(mimeType: String?): String? {
     return when (mimeType.lowercase(Locale.ROOT)) {
         "application/pdf" -> "PDF"
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> "DOCX"
+        "text/html" -> "HTML"
         "text/plain" -> "TXT"
         else -> mimeType
     }

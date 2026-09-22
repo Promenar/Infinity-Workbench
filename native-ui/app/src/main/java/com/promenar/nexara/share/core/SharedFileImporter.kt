@@ -11,6 +11,10 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
 import java.util.UUID
 
 interface SharedContentSource {
@@ -143,7 +147,11 @@ class SharedFileImporter(
                 ) {
                     openSource(uri).use { input ->
                         try {
-                            input.copyTo(it, DEFAULT_BUFFER_SIZE)
+                            if (resolved in TEXT_MIME_TYPES) {
+                                copyUtf8Validated(input, it)
+                            } else {
+                                input.copyTo(it, DEFAULT_BUFFER_SIZE)
+                            }
                         } catch (failure: IOException) {
                             throw ShareSourceReadException(failure)
                         }
@@ -164,6 +172,9 @@ class SharedFileImporter(
                 acceptedBytes += entry.sizeBytes
                 try {
                     val receipt = indexScheduler.schedule(workspaceRootUuid, entry)
+                    if (creation.createdNow) {
+                        workspace.confirmCreatedEntry(workspaceRootUuid, entry.uuid)
+                    }
                     results += initial.copy(
                         displayName = entry.name,
                         mimeType = resolved,
@@ -174,9 +185,6 @@ class SharedFileImporter(
                         fileUuid = receipt.fileUuid,
                         indexTaskId = receipt.taskId,
                     )
-                    if (creation.createdNow) {
-                        workspace.confirmCreatedEntry(workspaceRootUuid, entry.uuid)
-                    }
                 } catch (cancelled: CancellationException) {
                     try {
                         rollbackIfCreatedNow(workspaceRootUuid, creation, nonCancellable = true)
@@ -187,6 +195,8 @@ class SharedFileImporter(
                 } catch (failure: Exception) {
                     try {
                         rollbackIfCreatedNow(workspaceRootUuid, creation)
+                        // 已成功回滚的项目不占成功导入批次预算；清理失败时保留占额。
+                        acceptedBytes -= entry.sizeBytes
                     } catch (cleanupFailure: Exception) {
                         failure.addSuppressed(cleanupFailure)
                     }
@@ -334,6 +344,7 @@ class SharedFileImporter(
             "text/plain",
             "text/markdown",
             "text/csv",
+            "text/html",
             "application/json",
             "application/pdf",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -372,35 +383,116 @@ class SharedFileImporter(
                 var wordDocument = false
                 java.util.zip.ZipInputStream(input).use { zip ->
                     var inspected = 0
-                    while (inspected < 256) {
+                    var expandedBytes = 0L
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
                         val entry = zip.nextEntry ?: break
                         inspected += 1
+                        if (inspected > 2_048) throw IOException("DOCX预检条目数超过2048")
                         when (entry.name) {
                             "[Content_Types].xml" -> contentTypes = true
                             "word/document.xml" -> wordDocument = true
                         }
-                        if (contentTypes && wordDocument) return expectedMime
+                        // nextEntry会隐式读完上一条目；先按实际展开字节有界消费，避免压缩小包绕过导入限额。
+                        while (true) {
+                            val remaining = DOCX_SNIFF_EXPANDED_BYTES - expandedBytes
+                            val count = zip.read(buffer, 0, minOf(buffer.size.toLong(), remaining + 1).toInt())
+                            if (count < 0) break
+                            if (count == 0) throw IOException("DOCX预检读取无进展")
+                            expandedBytes += count
+                            if (expandedBytes > DOCX_SNIFF_EXPANDED_BYTES) {
+                                throw IOException("DOCX预检解压量超过64MiB")
+                            }
+                        }
                     }
                 }
-                return "application/zip"
+                return if (contentTypes && wordDocument) expectedMime else "application/zip"
             }
-            val prefix = ByteArray(8_192)
-            val count = input.read(prefix)
-            if (count <= 0) return null
-            val bytes = prefix.copyOf(count)
-            if (count >= 5 && bytes.copyOfRange(0, 5).toString(Charsets.US_ASCII) == "%PDF-") {
+            val sampled = java.io.ByteArrayOutputStream(SNIFF_BYTES + MAX_UTF8_SEQUENCE_BYTES - 1)
+            var eof = false
+            while (sampled.size() < SNIFF_BYTES) {
+                val count = readSome(input, sampled, SNIFF_BYTES - sampled.size())
+                if (count < 0) {
+                    eof = true
+                    break
+                }
+            }
+            if (sampled.size() == 0) return null
+            var bytes = sampled.toByteArray()
+            if (bytes.size >= 5 && bytes.copyOfRange(0, 5).toString(Charsets.US_ASCII) == "%PDF-") {
                 return "application/pdf"
             }
-            if (count >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4b.toByte() &&
+            if (bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4b.toByte() &&
                 bytes[2] == 0x03.toByte() && bytes[3] == 0x04.toByte()
             ) return "application/zip"
             if (bytes.any { it == 0.toByte() }) return "application/octet-stream"
-            return try {
-                Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes))
-                "text/plain"
-            } catch (_: java.nio.charset.CharacterCodingException) {
-                "application/octet-stream"
+
+            while (true) {
+                if (isValidUtf8(bytes)) return "text/plain"
+                if (eof || sampled.size() >= SNIFF_BYTES + MAX_UTF8_SEQUENCE_BYTES - 1) {
+                    return "application/octet-stream"
+                }
+                val count = readSome(input, sampled, 1)
+                if (count < 0) eof = true
+                bytes = sampled.toByteArray()
+                if (bytes.any { it == 0.toByte() }) return "application/octet-stream"
             }
+        }
+
+        private fun readSome(input: InputStream, target: java.io.ByteArrayOutputStream, limit: Int): Int {
+            val buffer = ByteArray(limit.coerceAtLeast(1))
+            val count = input.read(buffer, 0, buffer.size)
+            if (count > 0) target.write(buffer, 0, count)
+            if (count != 0) return count
+            val single = input.read()
+            if (single >= 0) target.write(single)
+            return if (single >= 0) 1 else -1
+        }
+
+        private fun isValidUtf8(bytes: ByteArray): Boolean = try {
+            Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+            true
+        } catch (_: java.nio.charset.CharacterCodingException) {
+            false
+        }
+
+        private fun copyUtf8Validated(input: InputStream, output: OutputStream) {
+            val decoder = Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var carry = ByteArray(0)
+            while (true) {
+                var count = input.read(buffer)
+                if (count < 0) break
+                if (count == 0) {
+                    val byte = input.read()
+                    if (byte < 0) break
+                    buffer[0] = byte.toByte()
+                    count = 1
+                }
+                if (buffer.copyOfRange(0, count).any { it == 0.toByte() }) {
+                    throw IOException("文本包含 NUL 字节")
+                }
+                val combined = ByteArray(carry.size + count)
+                carry.copyInto(combined)
+                buffer.copyInto(combined, carry.size, 0, count)
+                val bytes = ByteBuffer.wrap(combined)
+                val chars = CharBuffer.allocate(combined.size.coerceAtLeast(1))
+                val result = decoder.decode(bytes, chars, false)
+                if (result.isError) result.throwException()
+                carry = ByteArray(bytes.remaining()).also { bytes.get(it) }
+                output.write(buffer, 0, count)
+            }
+            val bytes = ByteBuffer.wrap(carry)
+            val chars = CharBuffer.allocate(carry.size.coerceAtLeast(1))
+            val decoded = decoder.decode(bytes, chars, true)
+            if (decoded.isError) decoded.throwException()
+            val flushed = decoder.flush(chars)
+            if (flushed.isError) flushed.throwException()
         }
 
         private fun mimeCompatible(declared: String, resolved: String, sniffed: String?, name: String): Boolean {
@@ -429,6 +521,16 @@ class SharedFileImporter(
 
         private val WINDOWS_RESERVED = setOf("CON", "PRN", "AUX", "NUL")
         private val RESERVED_DEVICE = Regex("(?:COM|LPT)[1-9]")
+        private const val SNIFF_BYTES = 8_192
+        private const val MAX_UTF8_SEQUENCE_BYTES = 4
+        private const val DOCX_SNIFF_EXPANDED_BYTES = 64L * 1024 * 1024
+        private val TEXT_MIME_TYPES = setOf(
+            "text/plain",
+            "text/markdown",
+            "text/csv",
+            "text/html",
+            "application/json",
+        )
     }
 }
 

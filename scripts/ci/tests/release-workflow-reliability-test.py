@@ -342,6 +342,54 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("zipalign", SMOKE)
         self.assertIn("-c -P 16 4 \"${APK_PATH}\"", SMOKE)
 
+    def run_smoke_resumed_activity_match(self, dump_line: str, package: str = "com.promenar.nexara.native") -> bool:
+        function_match = re.search(
+            r"(?ms)^is_expected_resumed_activity\(\) \{\n.*?^\}",
+            SMOKE,
+        )
+        self.assertIsNotNone(function_match)
+        assert function_match is not None
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dump_path = Path(tmp_dir) / "activities.txt"
+            dump_path.write_text(dump_line + "\n", encoding="utf-8")
+            runner = f'''PACKAGE_NAME="$1"
+{function_match.group(0)}
+is_expected_resumed_activity "$2"
+'''
+            result = subprocess.run(
+                ["bash", "-c", runner, "resumed-activity-test", package, str(dump_path)],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            return result.returncode == 0
+
+    def test_smoke_resumed_activity_parser_accepts_api31_and_modern_formats(self) -> None:
+        accepted = (
+            "topResumedActivity: ActivityRecord{a1 u0 "
+            "com.promenar.nexara.native/com.promenar.nexara.MainActivity}",
+            "mResumedActivity = ActivityRecord{a2 u0 "
+            "com.promenar.nexara.native/com.promenar.nexara.MainActivity}",
+        )
+        for dump_line in accepted:
+            with self.subTest(dump_line=dump_line):
+                self.assertTrue(self.run_smoke_resumed_activity_match(dump_line))
+
+    def test_smoke_resumed_activity_parser_rejects_wrong_package_and_non_resumed_records(self) -> None:
+        rejected = (
+            "topResumedActivity: ActivityRecord{a1 u0 "
+            "com.promenar.other/com.promenar.nexara.MainActivity}",
+            "mResumedActivity=ActivityRecord{a2 u0 "
+            "com.promenar.nexara.native2/com.promenar.nexara.MainActivity}",
+            "mFocusedActivity: ActivityRecord{a3 u0 "
+            "com.promenar.nexara.native/com.promenar.nexara.MainActivity}",
+            "mLastResumedActivity: ActivityRecord{a4 u0 "
+            "com.promenar.nexara.native/com.promenar.nexara.MainActivity}",
+        )
+        for dump_line in rejected:
+            with self.subTest(dump_line=dump_line):
+                self.assertFalse(self.run_smoke_resumed_activity_match(dump_line))
+
     def test_smoke_reuses_fail_closed_apk_identity_and_signer_verifier(self) -> None:
         verifier_call = 'python3 "${REPO_ROOT}/scripts/verify-release-apk.py"'
         self.assertIn(verifier_call, SMOKE)
