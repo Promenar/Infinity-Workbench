@@ -30,14 +30,18 @@ class ModelMetadataResolver private constructor(
     fun resolve(
         remoteModelId: String,
         providerId: String? = null,
+        sourceProviderId: String? = null,
+        ownedBy: String? = null,
         providerMetadata: ModelMetadataOverride? = null,
         userOverride: ModelMetadataOverride? = null,
     ): ResolvedModelMetadata {
-        val normalizedId = normalizeRemoteModelId(remoteModelId)
-        val remoteId = remoteModelId.substringAfter("::", remoteModelId)
-        val allCandidates = exactCandidatesById[normalizedId].orEmpty()
-        val exactRecords = exactRecordsFor(allCandidates)
-        val diagnostics = if (isTopPriorityAmbiguous(allCandidates)) {
+        val lookupIds = lookupCandidates(remoteModelId, ownedBy)
+        val normalizedId = lookupIds.first()
+        val remoteId = remoteModelId
+        val allCandidates = lookupIds.flatMap { exactCandidatesById[it].orEmpty() }.distinct()
+        val candidateResolution = resolveCatalogCandidates(allCandidates, sourceProviderId)
+        val exactRecords = candidateResolution.fieldRecords
+        val diagnostics = if (candidateResolution.ambiguous) {
             setOf(AMBIGUOUS_EXACT_MATCH)
         } else {
             emptySet()
@@ -50,7 +54,7 @@ class ModelMetadataResolver private constructor(
             fallback = remoteId,
         )
         val workload = resolveField(
-            catalog = exactField(exactRecords) { it.workload },
+            catalog = exactFieldPreferKnown(exactRecords, ModelWorkload.UNKNOWN) { it.workload },
             providerValue = providerMetadata?.workload,
             userValue = userOverride?.workload,
             fallback = ModelWorkload.UNKNOWN,
@@ -65,6 +69,11 @@ class ModelMetadataResolver private constructor(
             providerValue = providerMetadata?.outputTokens,
             userValue = userOverride?.outputTokens,
         )
+        val providerInputTokens = resolveNullableField(
+            catalog = exactField(exactRecords) { it.inputTokens },
+            providerValue = providerMetadata?.inputTokens,
+            userValue = userOverride?.inputTokens,
+        )
         val capabilityResolution = ModelCapability.values().associateWith { capability ->
             resolveCapability(capability, exactRecords, providerMetadata, userOverride)
         }
@@ -75,30 +84,32 @@ class ModelMetadataResolver private constructor(
             familyName != null -> MetadataSource.FAMILY
             else -> MetadataSource.FALLBACK
         }
-        val canonical = exactRecords.firstOrNull()
-        val inputTokens = exactField(exactRecords) { it.inputTokens }
+        val canonical = candidateResolution.canonicalRecord
+        val offering = candidateResolution.offeringRecord
         val knowledgeCutoff = exactField(exactRecords) { it.knowledgeCutoff }
 
         return ResolvedModelMetadata(
             remoteModelId = remoteId,
             canonicalModelId = canonical?.canonicalModelId,
+            offeringId = offering?.canonicalModelId,
             displayName = displayName.value,
             familyName = familyName,
             workload = workload.value,
             capabilities = immutableMap(capabilityResolution.mapValues { it.value.value }),
             contextTokens = contextTokens.value,
-            inputTokens = inputTokens.value,
+            inputTokens = providerInputTokens.value,
             outputTokens = outputTokens.value,
             knowledgeCutoff = knowledgeCutoff.value,
             sourceByField = immutableMap(buildMap {
                 put("canonicalModelId", canonical?.source ?: MetadataSource.FALLBACK)
+                put("offeringId", offering?.source ?: MetadataSource.FALLBACK)
                 put("displayName", displayName.source)
                 put("familyName", familySource)
                 put("workload", workload.source)
                 put("contextTokens", contextTokens.source)
                 put(
                     "inputTokens",
-                    inputTokens.source,
+                    providerInputTokens.source,
                 )
                 put("outputTokens", outputTokens.source)
                 put(
@@ -111,6 +122,55 @@ class ModelMetadataResolver private constructor(
             }),
             diagnostics = immutableSet(diagnostics),
         )
+    }
+
+    private fun resolveCatalogCandidates(
+        candidates: List<ModelMetadataRecord>,
+        sourceProviderId: String?,
+    ): CandidateResolution {
+        val globalCandidates = candidates.filter { it.providerScope == null }
+        val scopedCandidates = sourceProviderId?.let { scope ->
+            candidates.filter { it.providerScope == scope }
+        }.orEmpty()
+        if (scopedCandidates.isEmpty()) {
+            val ambiguous = isTopPriorityAmbiguous(globalCandidates)
+            val records = exactRecordsFor(globalCandidates)
+            return CandidateResolution(
+                fieldRecords = records,
+                canonicalRecord = records.firstOrNull(),
+                offeringRecord = null,
+                ambiguous = ambiguous,
+            )
+        }
+        if (isTopPriorityAmbiguous(scopedCandidates)) {
+            return CandidateResolution(emptyList(), null, null, ambiguous = true)
+        }
+        val scopedRecords = exactRecordsFor(scopedCandidates)
+        val offering = scopedRecords.firstOrNull()
+            ?: return CandidateResolution(emptyList(), null, null, ambiguous = true)
+        val matchingGlobalCandidates = globalCandidates.filter { global ->
+            normalizeRemoteModelId(global.canonicalModelId) == normalizeRemoteModelId(offering.canonicalModelId)
+        }
+        val globalAmbiguous = isTopPriorityAmbiguous(matchingGlobalCandidates)
+        val globalRecords = exactRecordsFor(matchingGlobalCandidates)
+        return CandidateResolution(
+            fieldRecords = scopedRecords + globalRecords,
+            canonicalRecord = globalRecords.firstOrNull(),
+            offeringRecord = offering,
+            ambiguous = globalAmbiguous,
+        )
+    }
+
+    private fun lookupCandidates(remoteModelId: String, ownedBy: String?): List<String> {
+        val exact = normalizeRemoteModelId(remoteModelId)
+        val prefixCandidate = when {
+            ownedBy.equals("NEWAPI", ignoreCase = true) && remoteModelId.startsWith("newapi/") ->
+                normalizeRemoteModelId(remoteModelId.removePrefix("newapi/"))
+            ownedBy.equals("OpenAI ChatGPT", ignoreCase = true) && remoteModelId.startsWith("openai-chatgpt/") ->
+                normalizeRemoteModelId(remoteModelId.removePrefix("openai-chatgpt/"))
+            else -> null
+        }
+        return listOfNotNull(exact, prefixCandidate).distinct()
     }
 
     internal fun resolveExactOrNull(remoteModelId: String): ResolvedModelMetadata? {
@@ -133,7 +193,9 @@ class ModelMetadataResolver private constructor(
         providerMetadata: ModelMetadataOverride?,
         userOverride: ModelMetadataOverride?,
     ): FieldResolution<SupportState> {
-        var result = exactField(exactRecords) { it.capabilities[capability] }
+        var result = exactFieldPreferKnown(exactRecords, SupportState.UNKNOWN) {
+            it.capabilities[capability]
+        }
             .withFallback(SupportState.UNKNOWN)
         if (providerMetadata?.capabilities?.containsKey(capability) == true) {
             result = FieldResolution(providerMetadata.capabilities.getValue(capability), MetadataSource.PROVIDER)
@@ -182,18 +244,37 @@ class ModelMetadataResolver private constructor(
     }
 
     private fun exactSourcePriority(source: MetadataSource): Int = when (source) {
-        MetadataSource.NEXARA_OVERRIDE -> 2
-        MetadataSource.MODELS_DEV -> 1
+        MetadataSource.NEXARA_OVERRIDE -> 4
+        MetadataSource.MODELS_DEV -> 3
+        MetadataSource.LITELLM -> 2
+        MetadataSource.OPENROUTER -> 1
         else -> 0
     }
 
     private data class FieldResolution<T>(val value: T, val source: MetadataSource)
+
+    private data class CandidateResolution(
+        val fieldRecords: List<ModelMetadataRecord>,
+        val canonicalRecord: ModelMetadataRecord?,
+        val offeringRecord: ModelMetadataRecord?,
+        val ambiguous: Boolean,
+    )
 
     private fun <T> exactField(
         records: List<ModelMetadataRecord>,
         selector: (ModelMetadataRecord) -> T?,
     ): FieldResolution<T?> {
         val record = records.firstOrNull { selector(it) != null }
+        return FieldResolution(record?.let(selector), record?.source ?: MetadataSource.FALLBACK)
+    }
+
+    private fun <T> exactFieldPreferKnown(
+        records: List<ModelMetadataRecord>,
+        unknown: T,
+        selector: (ModelMetadataRecord) -> T?,
+    ): FieldResolution<T?> {
+        val record = records.firstOrNull { selector(it)?.let { value -> value != unknown } == true }
+            ?: records.firstOrNull { selector(it) != null }
         return FieldResolution(record?.let(selector), record?.source ?: MetadataSource.FALLBACK)
     }
 
@@ -221,7 +302,6 @@ class ModelMetadataResolver private constructor(
 
 internal fun normalizeRemoteModelId(value: String): String = value
     .trim()
-    .substringAfter("::", value.trim())
     .removePrefix("models/")
     .lowercase()
 

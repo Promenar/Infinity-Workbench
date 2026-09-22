@@ -1,0 +1,87 @@
+{
+  "acme/text-pro": {
+    "id": "acme/text-pro",
+    "name": "Text Pro",
+    "family": "text-pro",
+    "reasoning": false,
+    "tool_call": true,
+    "structured_output": false,
+    "knowledge": "2026-01",
+    "release_date": "2026-02-03",
+    "last_updated": "2026-03-04",
+    "modalities": {
+      "input": ["text", "image"],
+      "output": ["text"]
+    },
+    "limit": {
+      "context": 128000,
+      "input": 96000,
+      "output": 32000
+    }
+  },
+  "acme/unknown-state": {
+    "id": "acme/unknown-state",
+    "name": "Unknown State",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    },
+    "limit": {
+      "context": 8192
+    }
+  },
+  "acme/audio-transcribe": {
+    "id": "acme/audio-transcribe",
+    "name": "Audio Transcribe",
+    "reasoning": false,
+    "tool_call": false,
+    "modalities": {
+      "input": ["audio"],
+      "output": ["text"]
+    },
+    "limit": {
+      "context": 0,
+      "output": 0
+    }
+  },
+  "other/text-pro": {
+    "id": "other/text-pro",
+    "name": "Other Text Pro",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    }
+  },
+  "org/team/model": {
+    "id": "org/team/model",
+    "name": "Multi-level Namespace Model",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    }
+  },
+  "acme/image-gen": {
+    "id": "acme/image-gen",
+    "name": "Image Generator",
+    "modalities": {
+      "input": ["text"],
+      "output": ["image"]
+    }
+  },
+  "acme/input-only": {
+    "id": "acme/input-only",
+    "name": "Input Only",
+    "modalities": {
+      "input": ["text"]
+    }
+  },
+  "acme/decision-canonical": {
+    "id": "acme/decision-canonical",
+    "name": "Decision Model",
+    "type": "decision",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    }
+  }
+}

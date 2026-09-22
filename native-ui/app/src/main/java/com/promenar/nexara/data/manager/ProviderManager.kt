@@ -15,6 +15,11 @@ import com.promenar.nexara.data.model.migrateLegacyMetadata
 import com.promenar.nexara.data.model.toModelInfo
 import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.data.model.catalog.SupportState
+import com.promenar.nexara.data.model.catalog.MetadataSource
+import com.promenar.nexara.data.model.catalog.ModelCapability
+import com.promenar.nexara.data.model.catalog.ModelMetadataOverride
+import com.promenar.nexara.data.model.catalog.ModelWorkload
+import com.promenar.nexara.data.remote.protocol.RemoteModelDescriptor
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.stableModelId
 import com.promenar.nexara.data.security.AndroidKeystoreSecretStore
@@ -28,6 +33,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.util.Collections
 
 enum class ModelSyncResult {
     ADDED,
@@ -706,7 +712,10 @@ class ProviderManager private constructor(
             val providerName = settingsPrefs.getString("${prefix}_provider", "Cloud") ?: "Cloud"
             val storedProviderId = settingsPrefs.getString("${prefix}_provider_id", null)
             val remoteModelId = settingsPrefs.getString("${prefix}_remote_model_id", null)
-                ?: id.substringAfter("::", id)
+                ?: storedProviderId?.let { providerId ->
+                    id.removePrefix("$providerId::").takeIf { it != id }
+                }
+                ?: id
             val enabled = enabledSet.contains(id)
             val maxOutput = settingsPrefs.getInt("${prefix}_maxoutput", 0)
             val cutoff = settingsPrefs.getString("${prefix}_cutoff", null)
@@ -716,6 +725,20 @@ class ProviderManager private constructor(
                 ?.let { value -> runCatching { SupportState.valueOf(value) }.getOrNull() }
                 ?: SupportState.UNKNOWN
             val autoFingerprint = settingsPrefs.getString("${prefix}_auto_fingerprint", null)
+            val inputTokens = settingsPrefs.getInt("${prefix}_input", 0)
+            val metadataSourceByField = settingsPrefs.getStringSet("${prefix}_metadata_sources", emptySet())
+                .orEmpty().mapNotNull { entry ->
+                    val separator = entry.lastIndexOf('=')
+                    if (separator <= 0) return@mapNotNull null
+                    val source = runCatching { MetadataSource.valueOf(entry.substring(separator + 1)) }.getOrNull()
+                        ?: return@mapNotNull null
+                    entry.substring(0, separator) to source
+                }.toMap()
+            val metadataDiagnostics = settingsPrefs.getStringSet("${prefix}_metadata_diagnostics", emptySet())
+                .orEmpty().toSet()
+            val providerOwnedBy = settingsPrefs.getString("${prefix}_provider_owned_by", null)
+            val sourceProviderId = settingsPrefs.getString("${prefix}_source_provider_id", null)
+            val providerMetadata = loadProviderMetadata(prefix)
             val userEditedFields = settingsPrefs
                 .getStringSet("${prefix}_user_edited_fields", emptySet())
                 ?.intersect(USER_EDITABLE_MODEL_FIELDS)
@@ -733,15 +756,27 @@ class ProviderManager private constructor(
                 providerId = storedProviderId,
                 remoteModelId = remoteModelId,
                 maxOutputTokens = maxOutput,
+                inputTokens = inputTokens,
                 knowledgeCutoff = cutoff,
                 familyName = familyName,
                 canonicalModelId = canonicalModelId,
                 chatEndpointCompatible = chatEndpoint,
                 autoMetadataFingerprint = autoFingerprint,
                 userEditedFields = userEditedFields,
+                metadataSourceByField = metadataSourceByField,
+                metadataDiagnostics = metadataDiagnostics,
+                providerOwnedBy = providerOwnedBy,
+                sourceProviderId = sourceProviderId,
+                providerMetadata = providerMetadata,
             )
 
-            val resolved = ModelCatalogRuntime.resolver.resolve(remoteModelId, storedProviderId)
+            val resolved = ModelCatalogRuntime.resolver.resolve(
+                remoteModelId = remoteModelId,
+                providerId = storedProviderId,
+                sourceProviderId = sourceProviderId,
+                ownedBy = providerOwnedBy,
+                providerMetadata = providerMetadata,
+            )
             val storedFieldPresence = buildSet {
                 if (settingsPrefs.contains("${prefix}_name")) add("name")
                 if (settingsPrefs.contains("${prefix}_type")) add("type")
@@ -833,11 +868,30 @@ class ProviderManager private constructor(
         providerName: String,
         remoteModelId: String,
     ): ModelSyncResult {
-        val resolved = ModelCatalogRuntime.resolver.resolve(remoteModelId, providerId)
+        return syncModelMetadata(providerId, providerName, RemoteModelDescriptor(id = remoteModelId))
+    }
+
+    fun syncModelMetadata(
+        providerId: String,
+        providerName: String,
+        descriptor: RemoteModelDescriptor,
+    ): ModelSyncResult {
+        val remoteModelId = descriptor.id
+        val incomingMetadata = descriptor.metadata.copy(
+            capabilities = Collections.unmodifiableMap(LinkedHashMap(descriptor.metadata.capabilities)),
+        )
         val id = stableModelId(providerId, remoteModelId)
         var result = ModelSyncResult.UNCHANGED
         _providerModels.update { models ->
             val existing = models.firstOrNull { it.id == id }
+            val effective = mergeProviderDescriptor(existing, descriptor, incomingMetadata)
+            val resolved = ModelCatalogRuntime.resolver.resolve(
+                remoteModelId = remoteModelId,
+                providerId = providerId,
+                sourceProviderId = effective.sourceProviderId,
+                ownedBy = effective.ownedBy,
+                providerMetadata = effective.metadata,
+            )
             if (existing == null) {
                 result = ModelSyncResult.ADDED
                 models + resolved.toModelInfo(
@@ -845,10 +899,17 @@ class ProviderManager private constructor(
                     providerName = providerName,
                     enabled = false,
                     description = resolved.familyName ?: "Fetched model",
+                    providerOwnedBy = effective.ownedBy,
+                    sourceProviderId = effective.sourceProviderId,
+                    providerMetadata = effective.metadata,
                 )
             } else {
                 beforeModelMetadataTransform()
-                val merged = existing.mergeResolvedMetadata(resolved)
+                val merged = existing.mergeResolvedMetadata(resolved).copy(
+                    providerOwnedBy = effective.ownedBy,
+                    sourceProviderId = effective.sourceProviderId,
+                    providerMetadata = effective.metadata,
+                )
                 result = if (merged == existing) ModelSyncResult.UNCHANGED else ModelSyncResult.UPDATED
                 if (result == ModelSyncResult.UNCHANGED) models
                 else models.map { if (it.id == id) merged else it }
@@ -859,6 +920,65 @@ class ProviderManager private constructor(
             persistModels()
         }
         return result
+    }
+
+    private fun mergeProviderDescriptor(
+        existing: ModelInfo?,
+        incoming: RemoteModelDescriptor,
+        incomingMetadata: ModelMetadataOverride,
+    ): EffectiveProviderDescriptor {
+        if (existing == null) {
+            return EffectiveProviderDescriptor(incoming.ownedBy, incoming.sourceProviderId, incomingMetadata)
+        }
+        val ownerChanged = incoming.ownedBy != null && incoming.ownedBy != existing.providerOwnedBy
+        val scopeChanged = incoming.sourceProviderId != null && incoming.sourceProviderId != existing.sourceProviderId
+        val identityChanged = ownerChanged || scopeChanged
+        val previous = if (identityChanged) null else existing.providerMetadata
+        val capabilities = LinkedHashMap(previous?.capabilities.orEmpty()).apply {
+            putAll(incomingMetadata.capabilities)
+        }
+        return EffectiveProviderDescriptor(
+            ownedBy = if (identityChanged) incoming.ownedBy else incoming.ownedBy ?: existing.providerOwnedBy,
+            sourceProviderId = if (identityChanged) {
+                incoming.sourceProviderId
+            } else {
+                incoming.sourceProviderId ?: existing.sourceProviderId
+            },
+            metadata = ModelMetadataOverride(
+                displayName = incomingMetadata.displayName ?: previous?.displayName,
+                workload = incomingMetadata.workload ?: previous?.workload,
+                capabilities = Collections.unmodifiableMap(capabilities),
+                contextTokens = incomingMetadata.contextTokens ?: previous?.contextTokens,
+                inputTokens = incomingMetadata.inputTokens ?: previous?.inputTokens,
+                outputTokens = incomingMetadata.outputTokens ?: previous?.outputTokens,
+            ),
+        )
+    }
+
+    private data class EffectiveProviderDescriptor(
+        val ownedBy: String?,
+        val sourceProviderId: String?,
+        val metadata: ModelMetadataOverride,
+    )
+
+    fun refreshCatalogMetadata(): Int {
+        var changed = 0
+        _providerModels.update { models ->
+            val refreshed = models.map { existing ->
+                val resolved = ModelCatalogRuntime.resolver.resolve(
+                    remoteModelId = existing.remoteModelId,
+                    providerId = existing.providerId,
+                    sourceProviderId = existing.sourceProviderId,
+                    ownedBy = existing.providerOwnedBy,
+                    providerMetadata = existing.providerMetadata,
+                )
+                existing.mergeResolvedMetadata(resolved)
+            }
+            changed = refreshed.zip(models).count { (after, before) -> after != before }
+            if (changed == 0) models else refreshed
+        }
+        if (changed > 0) persistModels()
+        return changed
     }
 
     fun applyUserModelUpdate(submitted: ModelInfo) {
@@ -971,11 +1091,20 @@ class ProviderManager private constructor(
                     putString("${prefix}_provider_id", model.providerId)
                     putString("${prefix}_remote_model_id", model.remoteModelId)
                     putInt("${prefix}_maxoutput", model.maxOutputTokens)
+                    putInt("${prefix}_input", model.inputTokens)
                     putString("${prefix}_chat_endpoint", model.chatEndpointCompatible.name)
                     putStringSet(
                         "${prefix}_user_edited_fields",
                         LinkedHashSet(model.userEditedFields.intersect(USER_EDITABLE_MODEL_FIELDS)),
                     )
+                    putStringSet(
+                        "${prefix}_metadata_sources",
+                        model.metadataSourceByField.mapTo(LinkedHashSet()) { (field, source) -> "$field=${source.name}" },
+                    )
+                    putStringSet("${prefix}_metadata_diagnostics", LinkedHashSet(model.metadataDiagnostics))
+                    putNullableString("${prefix}_provider_owned_by", model.providerOwnedBy)
+                    putNullableString("${prefix}_source_provider_id", model.sourceProviderId)
+                    persistProviderMetadata(prefix, model.providerMetadata)
                     if (model.knowledgeCutoff == null) remove("${prefix}_cutoff")
                     else putString("${prefix}_cutoff", model.knowledgeCutoff)
                     if (model.familyName == null) remove("${prefix}_family")
@@ -989,6 +1118,45 @@ class ProviderManager private constructor(
             beforeModelPersistenceApply(models)
             editor.apply()
         }
+    }
+
+    private fun SharedPreferences.Editor.putNullableString(key: String, value: String?) {
+        if (value == null) remove(key) else putString(key, value)
+    }
+
+    private fun SharedPreferences.Editor.persistProviderMetadata(prefix: String, metadata: ModelMetadataOverride?) {
+        putNullableString("${prefix}_provider_display_name", metadata?.displayName)
+        putNullableString("${prefix}_provider_workload", metadata?.workload?.name)
+        putNullableString("${prefix}_provider_context", metadata?.contextTokens?.toString())
+        putNullableString("${prefix}_provider_input", metadata?.inputTokens?.toString())
+        putNullableString("${prefix}_provider_output", metadata?.outputTokens?.toString())
+        putStringSet(
+            "${prefix}_provider_capabilities",
+            metadata?.capabilities?.mapTo(LinkedHashSet()) { (capability, state) ->
+                "${capability.name}=${state.name}"
+            } ?: emptySet(),
+        )
+    }
+
+    private fun loadProviderMetadata(prefix: String): ModelMetadataOverride? {
+        val displayName = settingsPrefs.getString("${prefix}_provider_display_name", null)
+        val workload = settingsPrefs.getString("${prefix}_provider_workload", null)
+            ?.let { runCatching { ModelWorkload.valueOf(it) }.getOrNull() }
+        val context = settingsPrefs.getString("${prefix}_provider_context", null)?.toIntOrNull()
+        val input = settingsPrefs.getString("${prefix}_provider_input", null)?.toIntOrNull()
+        val output = settingsPrefs.getString("${prefix}_provider_output", null)?.toIntOrNull()
+        val capabilities = settingsPrefs.getStringSet("${prefix}_provider_capabilities", emptySet())
+            .orEmpty().mapNotNull { entry ->
+                val parts = entry.split('=', limit = 2)
+                if (parts.size != 2) return@mapNotNull null
+                val capability = runCatching { ModelCapability.valueOf(parts[0]) }.getOrNull()
+                    ?: return@mapNotNull null
+                val state = runCatching { SupportState.valueOf(parts[1]) }.getOrNull()
+                    ?: return@mapNotNull null
+                capability to state
+            }.toMap()
+        return ModelMetadataOverride(displayName, workload, capabilities, context, input, output)
+            .takeUnless { it == ModelMetadataOverride() }
     }
 
     // ── 预设模型管理 ────────────────────────────────────────────────

@@ -1,0 +1,37 @@
+{
+  "sample_spec": {
+    "litellm_provider": "example"
+  },
+  "fallback_generalizations": {
+    "bedrock": ["aws"]
+  },
+  "text-pro": {
+    "litellm_provider": "acme",
+    "mode": "chat",
+    "max_input_tokens": 48000,
+    "max_output_tokens": 16000,
+    "supports_function_calling": false,
+    "supports_response_schema": true,
+    "supports_reasoning": true,
+    "supports_vision": false
+  },
+  "acme/text-pro": {
+    "litellm_provider": "acme",
+    "mode": "chat",
+    "max_input_tokens": 32000,
+    "max_output_tokens": 4000,
+    "supports_function_calling": true
+  },
+  "decision-model": {
+    "litellm_provider": "acme",
+    "mode": "decision",
+    "max_input_tokens": 4096,
+    "max_output_tokens": 1024
+  },
+  "image-model": {
+    "litellm_provider": "acme",
+    "mode": "image",
+    "max_input_tokens": 4096,
+    "max_output_tokens": 1024
+  }
+}

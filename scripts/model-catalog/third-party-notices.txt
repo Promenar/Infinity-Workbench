@@ -1,0 +1,96 @@
+Nexara Model Catalog Third-Party Notices
+=========================================
+
+This file accompanies the independently published model catalog. It records
+the notices and source terms for metadata incorporated into the catalog.
+
+models.dev
+----------
+Source: https://github.com/anomalyco/models.dev
+License: https://github.com/anomalyco/models.dev/blob/dev/LICENSE
+
+MIT License
+
+Copyright (c) 2025 models.dev
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+LiteLLM model_prices_and_context_window.json
+---------------------------------------------
+Source: https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json
+License: https://github.com/BerriAI/litellm/blob/main/LICENSE
+
+Portions of this software are licensed as follows:
+
+* All content that resides under the "enterprise/" directory of this
+  repository, if that directory exists, is licensed under the license defined
+  in "enterprise/LICENSE".
+* Content outside of the above mentioned directories or restrictions above is
+  available under the MIT license as defined below.
+
+The catalog input named above is outside the enterprise/ directory.
+
+MIT License
+
+Copyright (c) 2023 Berri AI
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+OpenRouter API metadata
+-----------------------
+Source: https://openrouter.ai/api/v1/models?output_modalities=all
+Terms: https://openrouter.ai/terms
+
+OpenRouter metadata is identified as subject to the OpenRouter Terms of
+Service. This notice does not characterize it as MIT-licensed content.
+
+Google Gemini 3.8 Flash documentation
+--------------------------------------
+Evidence: https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash
+License: Creative Commons Attribution 4.0
+License URL: https://creativecommons.org/licenses/by/4.0/
+
+Nexara transcribes selected structured facts from the cited Google page,
+including the model code, token limits, modalities, supported capabilities,
+and page update date. It does not reproduce the page as a whole.
+
+SenseNova 6.8 Flash Lite Preview documentation
+-----------------------------------------------
+Evidence: https://github.com/OpenSenseNova/SenseNova6.8/blob/main/API_CN.md
+
+The cited repository declares no license. Nexara records only narrowly scoped
+facts verified in the official API documentation: model identifier, preview
+status, reasoning behavior, and text/image input with text output. No long
+passage from that document is reproduced here or in the catalog.

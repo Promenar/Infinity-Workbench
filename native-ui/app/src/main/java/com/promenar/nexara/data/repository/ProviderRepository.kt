@@ -9,6 +9,7 @@ import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.remote.provider.ProviderConnectionProbe
 import com.promenar.nexara.data.remote.provider.ProviderConnectionProbeResult
 import com.promenar.nexara.data.remote.UnifiedProviderConfig
+import com.promenar.nexara.data.remote.protocol.RemoteModelDescriptor
 import com.promenar.nexara.domain.model.ConnectionResult
 import com.promenar.nexara.domain.model.ModelCapability
 import com.promenar.nexara.domain.model.ModelSpec
@@ -23,6 +24,7 @@ class ProviderRepository(
     private val providerManager: ProviderManager,
     private val connectionProbe: ProviderConnectionProbe = ProviderConnectionProbe.processScoped,
     private val modelListFetcher: (suspend (UnifiedProviderConfig) -> List<String>)? = null,
+    private val modelDescriptorFetcher: (suspend (UnifiedProviderConfig) -> List<RemoteModelDescriptor>)? = null,
 ) : IProviderRepository {
 
     override fun observeAll(): Flow<List<ProviderConfig>> {
@@ -71,6 +73,18 @@ class ProviderRepository(
     }
 
     override suspend fun fetchModels(providerId: String): List<ModelSpec> {
+        return fetchModelDescriptors(providerId).map { descriptor ->
+            ModelSpec(
+                id = descriptor.id,
+                name = descriptor.metadata.displayName ?: descriptor.id,
+                type = descriptor.metadata.workload.toDomainModelType(),
+                capabilities = emptyList(),
+                providerId = providerId,
+            )
+        }
+    }
+
+    suspend fun fetchModelDescriptors(providerId: String): List<RemoteModelDescriptor> {
         val config = providerManager.getProviderConfig(providerId)
             ?: return emptyList()
         val unifiedConfig = UnifiedProviderConfig(
@@ -83,30 +97,30 @@ class ProviderRepository(
             location = VERTEX_DEFAULT_LOCATION,
         )
         return try {
-            val modelIds = modelListFetcher?.invoke(unifiedConfig) ?: LlmProvider.builder()
-                .protocolType(unifiedConfig.protocolType)
-                .baseUrl(unifiedConfig.baseUrl)
-                .apiKey(unifiedConfig.apiKey)
-                .model(unifiedConfig.defaultModel)
-                .serviceAccountJson(unifiedConfig.serviceAccountJson)
-                .projectId(unifiedConfig.projectId)
-                .location(unifiedConfig.location)
-                .build()
-                .listModels()
-            modelIds.map { modelId ->
-                ModelSpec(
-                    id = modelId,
-                    name = modelId,
-                    type = ModelType.CHAT,
-                    capabilities = emptyList(),
-                    providerId = providerId
-                )
-            }
+            modelDescriptorFetcher?.invoke(unifiedConfig)
+                ?: modelListFetcher?.invoke(unifiedConfig)?.map { RemoteModelDescriptor(id = it) }
+                ?: LlmProvider.builder()
+                    .protocolType(unifiedConfig.protocolType)
+                    .baseUrl(unifiedConfig.baseUrl)
+                    .apiKey(unifiedConfig.apiKey)
+                    .model(unifiedConfig.defaultModel)
+                    .serviceAccountJson(unifiedConfig.serviceAccountJson)
+                    .projectId(unifiedConfig.projectId)
+                    .location(unifiedConfig.location)
+                    .build()
+                    .listModelDescriptors()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    private fun com.promenar.nexara.data.model.catalog.ModelWorkload?.toDomainModelType(): ModelType = when (this) {
+        com.promenar.nexara.data.model.catalog.ModelWorkload.EMBEDDING -> ModelType.EMBEDDING
+        com.promenar.nexara.data.model.catalog.ModelWorkload.RERANK -> ModelType.RERANK
+        com.promenar.nexara.data.model.catalog.ModelWorkload.IMAGE_GENERATION -> ModelType.IMAGE
+        else -> ModelType.CHAT
     }
 
     override suspend fun save(config: ProviderConfig) {

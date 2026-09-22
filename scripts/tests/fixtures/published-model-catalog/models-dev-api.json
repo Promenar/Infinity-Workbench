@@ -1,0 +1,37 @@
+{
+  "acme": {
+    "id": "acme",
+    "name": "Acme Cloud",
+    "models": {
+      "text-pro": {
+        "id": "text-pro",
+        "name": "Text Pro 2026 on Acme Cloud",
+        "reasoning": true,
+        "tool_call": false,
+        "structured_output": true,
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "limit": {
+          "context": 64000,
+          "output": 8192
+        }
+      }
+    }
+  },
+  "openrouter": {
+    "id": "openrouter",
+    "name": "OpenRouter",
+    "models": {
+      "acme/text-pro": {
+        "id": "acme/text-pro",
+        "name": "Stale OpenRouter copy from models.dev",
+        "tool_call": false,
+        "limit": {
+          "context": 4096
+        }
+      }
+    }
+  }
+}

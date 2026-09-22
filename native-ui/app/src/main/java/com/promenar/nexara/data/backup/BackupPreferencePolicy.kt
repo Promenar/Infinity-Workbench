@@ -49,7 +49,10 @@ internal object BackupPreferencePolicy {
             Regex("extra_provider_[0-9]+_(id|name|protocol|type|base_url|model|enabled)"),
             Regex(
                 "model_info_.+_(name|type|context|provider|provider_id|remote_model_id|maxoutput|cutoff|caps|" +
-                    "family|canonical_id|chat_endpoint|auto_fingerprint|user_edited_fields)"
+                    "input|family|canonical_id|chat_endpoint|auto_fingerprint|user_edited_fields|" +
+                    "metadata_sources|metadata_diagnostics|provider_owned_by|source_provider_id|" +
+                    "provider_display_name|provider_workload|provider_context|provider_input|provider_output|" +
+                    "provider_capabilities)"
             ),
         ),
         "provider" to listOf(
@@ -65,6 +68,7 @@ internal object BackupPreferencePolicy {
         "onboarding" to setOf(
             "step", "language", "provider_id", "model_id", "agent_id", "session_id",
         ),
+        "catalog_update_schedule" to setOf("checkedat"),
     )
 
     // 只为读取旧备份时识别并丢弃；不得继续导出或写回设备。

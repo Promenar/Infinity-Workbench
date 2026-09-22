@@ -11,6 +11,8 @@
 
 `v0.2.1-beta` 已完成文件事务身份、中文与 HTML 导入、搜索语义及取消、模型目录测试、公开旧版迁移、显式双库恢复和编辑器选区保持的审计修复。验证按源码、设备与签名制品分别记账，真实网关服务失败、物理设备验收及未测产品指标保持可见。逐项状态见[发行需求验收总账](docs/audit/20260922-requirements-acceptance.md)和[发行验证记录](docs/release/v0.2.1-beta-validation.md)。公开 tag 与 Release 需要单独授权。
 
+模型管理支持独立公共目录更新：GitHub Actions 聚合来源并签名发布，App 验签缓存并保留用户编辑。使用与维护方法见[模型目录说明](docs/model-catalog.md)。
+
 ## 主要能力
 
 - **多服务商 BYOK 对话**：支持 OpenAI、Anthropic、Google Vertex AI、DeepSeek、GLM、Kimi 及 OpenAI-compatible 接口，包含 SSE 流式响应、多模态输入、Markdown/LaTeX/Mermaid/ECharts 渲染和会话内模型切换。

@@ -39,6 +39,8 @@ class VectorizationQueue(
     private val retryCountMap = mutableMapOf<TaskTargetKey, Int>()
     private val scope = CoroutineScope(dispatcher + SupervisorJob())
     private val enqueueMutex = Mutex()
+    private val recoveryMutex = Mutex()
+    private var recoveryInProgress = false
     private val deletionBarrierMutex = Mutex()
     private val fencedTargets = mutableSetOf<WorkspaceDocKey>()
     private val fencedSessions = mutableSetOf<String>()
@@ -52,6 +54,7 @@ class VectorizationQueue(
     internal var beforeRetryDelayForTest: suspend () -> Unit = {}
     internal var beforeFailureDisplayDelayForTest: suspend () -> Unit = {}
     internal var beforePersistentCancelDeleteForTest: suspend () -> Unit = {}
+    internal var beforeRecoveryMissingScanForTest: suspend () -> Unit = {}
 
     private val stateListenerLock = Any()
     private var stateListener: StateListener? = null
@@ -426,15 +429,14 @@ class VectorizationQueue(
                     if (processingJob === currentJob) {
                         processingJob = null
                         processingTask = null
-                        nextJob = prepareNextProcessorLocked()
-                        if (nextJob == null && (queue.isEmpty() || !scope.isActive)) {
+                        nextJob = startNextProcessorLocked()
+                        if (nextJob == null) {
                             isProcessing = false
                             shouldCleanup = queue.isEmpty()
                         }
                     }
                 }
                 notifyStateChange()
-                nextJob?.start()
                 if (shouldCleanup && !processingCancelled) cleanupCompletedTasks()
             }
         }
@@ -859,7 +861,13 @@ class VectorizationQueue(
         vectorizationTaskDao.deleteCompletedNonReferenceTasks()
     }
 
-    suspend fun resumeInterruptedTasks(): Result<Unit> = try {
+    suspend fun resumeInterruptedTasks(): Result<Unit> = recoveryMutex.withLock {
+        synchronized(queueLock) {
+            recoveryInProgress = true
+            restored = false
+        }
+        var recovered = false
+        try {
             cleanupCompletedTasks()
             vectorizationTaskDao.markStaleAsInterrupted(System.currentTimeMillis() - 30_000)
             val interruptedTasks = normalizeRecoverableTasks(
@@ -878,16 +886,23 @@ class VectorizationQueue(
                     if (!isFencedLocked(task) && queue.none { it.id == task.id }) queue.add(0, task)
                 }
             }
-            restored = true
             notifyStateChange()
 
-            if (tasks.isNotEmpty()) startProcessorIfNeeded()
+            beforeRecoveryMissingScanForTest()
             enqueueMissingDocumentReferences()
+            restored = true
+            recovered = true
             Result.success(Unit)
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (failure: Exception) {
-        Result.failure(failure)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            Result.failure(failure)
+        } finally {
+            // 扫描失败或取消后保持启动门禁，重试恢复成功后才允许处理队列。
+            synchronized(queueLock) { if (recovered) recoveryInProgress = false }
+            notifyStateChange()
+            if (recovered) startProcessorIfNeeded()
+        }
     }
 
     private suspend fun enqueueMissingDocumentReferences() {
@@ -1083,12 +1098,11 @@ class VectorizationQueue(
     }
 
     private fun startProcessorIfNeeded() {
-        val nextJob = synchronized(queueLock) { prepareNextProcessorLocked() }
-        nextJob?.start()
+        synchronized(queueLock) { startNextProcessorLocked() }
     }
 
-    private fun prepareNextProcessorLocked(): Job? {
-        if (!scope.isActive || processingJob != null || queue.isEmpty()) return null
+    private fun startNextProcessorLocked(): Job? {
+        if (!scope.isActive || recoveryInProgress || processingJob != null || queue.isEmpty()) return null
         val task = queue.first()
         isProcessing = true
         processingTask = task
@@ -1103,8 +1117,8 @@ class VectorizationQueue(
                     queue.removeAll { it === task }
                     processingJob = null
                     processingTask = null
-                    nextJob = prepareNextProcessorLocked()
-                    if (nextJob == null && (queue.isEmpty() || !scope.isActive)) {
+                    nextJob = startNextProcessorLocked()
+                    if (nextJob == null) {
                         isProcessing = false
                     }
                     recoveredBeforeBody = true
@@ -1112,9 +1126,10 @@ class VectorizationQueue(
             }
             if (recoveredBeforeBody) {
                 notifyStateChange()
-                nextJob?.start()
             }
         }
+        // 恢复门禁检查与启动在同一锁内，避免 LAZY job 越过刚建立的恢复门禁。
+        job.start()
         return job
     }
 

@@ -84,6 +84,11 @@ object ModelCatalogRuntime {
         catalog?.records.orEmpty() + NEXARA_EXACT_MODEL_OVERRIDES.values,
     )
 
+    internal fun installPublished(catalog: PublishedModelCatalog) {
+        val replacement = ModelMetadataResolver(catalog.records + NEXARA_EXACT_MODEL_OVERRIDES.values)
+        synchronized(initializationLock) { resolver = replacement }
+    }
+
     internal fun <T> withTestResolver(
         replacement: ModelMetadataResolver,
         block: () -> T,

@@ -241,9 +241,14 @@ internal class AndroidTransactionalBackupPreferenceStore(
     private fun expectedType(namespace: String, key: String): PreferenceValueType {
         if (namespace == "settings" && key.startsWith("model_info_")) {
             return when {
-                key.endsWith("_caps") || key.endsWith("_user_edited_fields") ->
+                key.endsWith("_caps") || key.endsWith("_user_edited_fields") ||
+                    key.endsWith("_metadata_sources") || key.endsWith("_metadata_diagnostics") ||
+                    key.endsWith("_provider_capabilities") ->
                     PreferenceValueType.STRING_SET
-                key.endsWith("_context") || key.endsWith("_maxoutput") -> PreferenceValueType.INT
+                key.endsWith("_provider_context") || key.endsWith("_provider_input") ||
+                    key.endsWith("_provider_output") -> PreferenceValueType.STRING
+                key.endsWith("_context") || key.endsWith("_maxoutput") || key.endsWith("_input") ->
+                    PreferenceValueType.INT
                 else -> PreferenceValueType.STRING
             }
         }

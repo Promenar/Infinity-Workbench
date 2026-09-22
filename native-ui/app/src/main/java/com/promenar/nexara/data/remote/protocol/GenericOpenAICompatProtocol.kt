@@ -212,27 +212,31 @@ class GenericOpenAICompatProtocol(
     }
 
     override suspend fun listModels(): List<String> {
+        return listModelDescriptors().map { it.id }
+    }
+
+    override suspend fun listModelDescriptors(): List<RemoteModelDescriptor> {
         val endpoint = ProviderEndpointResolver.resolve(
             protocolType,
             baseUrl,
             ProviderEndpointOperation.MODELS,
         )
-        val response: HttpResponse
-        try {
-            response = httpClient.get(endpoint) {
+        return try {
+            httpClient.prepareGet(endpoint) {
                 if (apiKey.isNotEmpty()) {
                     header("Authorization", "Bearer $apiKey")
                 }
+            }.execute { response ->
+                if (!response.status.isSuccess()) return@execute emptyList()
+                response.readBoundedModelListBody()
+                    ?.let(GenericModelsEnvelopeParser::parseDescriptors)
+                    .orEmpty()
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            return emptyList()
+            emptyList()
         }
-
-        if (!response.status.isSuccess()) return emptyList()
-
-        return GenericModelsEnvelopeParser.parse(response.bodyAsText()).orEmpty()
     }
 
     override fun cancel() {

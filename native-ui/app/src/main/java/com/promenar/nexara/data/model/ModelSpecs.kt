@@ -1745,8 +1745,12 @@ fun extractContextLengthFromName(text: String): Int? {
     return null
 }
 
+/** 兼容旧调用点的持久化选择 ID；实际请求 ID 必须使用 findRemoteModelSpec。 */
 fun findModelSpec(modelId: String): ModelSpec? =
-    ModelCatalogRuntime.resolver.resolveExactOrNull(modelId)?.toLegacyModelSpec()
+    findRemoteModelSpec(modelId.substringAfter("::", modelId))
+
+fun findRemoteModelSpec(remoteModelId: String): ModelSpec? =
+    ModelCatalogRuntime.resolver.resolveExactOrNull(remoteModelId)?.toLegacyModelSpec()
 
 private fun ResolvedModelMetadata.toLegacyModelSpec(): ModelSpec = ModelSpec(
     pattern = ModelPattern.StringPattern(canonicalModelId ?: remoteModelId),

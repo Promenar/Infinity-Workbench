@@ -78,6 +78,7 @@ private val EditorTypeToBaseCaps = mapOf(
 )
 private val EditorAllBaseCapKeys = EditorTypeToBaseCaps.values.flatten().toSet()
 private val EditorCapabilityTags = listOf(
+    "toolcalling" to R.string.provider_models_capability_tools,
     "vision" to R.string.provider_models_capability_vision,
     "internet" to R.string.provider_models_capability_internet,
     "audioinput" to R.string.provider_models_capability_audio_input,
@@ -304,9 +305,16 @@ internal fun ModelEditorSheet(
                         .testTag(UiTags.providerModelsContextField(model.id)),
                 )
             }
-            if (model.maxOutputTokens > 0 || model.knowledgeCutoff != null) {
+            if (model.inputTokens > 0 || model.maxOutputTokens > 0 || model.knowledgeCutoff != null) {
                 item("limits") {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (model.inputTokens > 0) {
+                            Text(
+                                text = stringResource(R.string.provider_models_input_tokens, formatModelEditorTokens(model.inputTokens)),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         if (model.maxOutputTokens > 0) {
                             Text(
                                 text = stringResource(

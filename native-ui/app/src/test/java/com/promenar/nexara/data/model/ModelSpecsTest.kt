@@ -18,7 +18,25 @@ import java.io.File
 
 class ModelSpecsTest {
     @Test
-    fun `旧 findModelSpec 只适配精确目录记录`() = withBundledCatalog {
+    fun `实际目录资产保持可加载且额度非负`() {
+        val catalog = com.promenar.nexara.data.model.catalog.BundledModelCatalog.fromJson(bundledCatalogFile().readText())
+        assertThat(catalog.records).isNotEmpty()
+        catalog.records.forEach { record ->
+            assertThat(record.canonicalModelId).isNotEmpty()
+            assertThat(record.displayName).isNotEmpty()
+            listOfNotNull(record.contextTokens, record.inputTokens, record.outputTokens).forEach {
+                assertThat(it).isAtLeast(0)
+            }
+        }
+    }
+
+    @Test
+    fun `实际请求ID中的双冒号不能作为持久化前缀拆解`() = withFrozenCatalog {
+        assertThat(findRemoteModelSpec("tenant::qwen-flash")).isNull()
+        assertThat(findRemoteModelSpec("models/qwen-flash")?.note).isEqualTo("Qwen Flash")
+    }
+    @Test
+    fun `旧 findModelSpec 只适配精确目录记录`() = withFrozenCatalog {
         val spec = findModelSpec("alibaba/qwen-flash")
 
         assertThat(spec).isNotNull()
@@ -28,13 +46,13 @@ class ModelSpecsTest {
     }
 
     @Test
-    fun `旧 findModelSpec 不再按子串或声明顺序猜测身份`() = withBundledCatalog {
+    fun `旧 findModelSpec 不再按子串或声明顺序猜测身份`() = withFrozenCatalog {
         assertThat(findModelSpec("custom-qwen-flash-proxy")).isNull()
         assertThat(findModelSpec("future-gemini-1.5-pro-wrapper")).isNull()
     }
 
     @Test
-    fun `公共目录关键精确型号保持可达`() = withBundledCatalog {
+    fun `公共目录关键精确型号保持可达`() = withFrozenCatalog {
         val expectations = listOf(
             CatalogExpectation("gpt-4o", 128_000, 16_384, ModelType.CHAT, vision = true, structuredOutput = true),
             CatalogExpectation("deepseek-r1", 128_000, 32_768, ModelType.REASONING, reasoning = true),
@@ -58,7 +76,7 @@ class ModelSpecsTest {
     }
 
     @Test
-    fun `冻结的旧明确型号精确兼容矩阵可达`() = withBundledCatalog {
+    fun `冻结的旧明确型号精确兼容矩阵可达`() = withFrozenCatalog {
         val expectations = listOf(
             LegacyExpectation("o1-preview", 128_000, ModelType.REASONING, reasoning = true),
             LegacyExpectation("gemini-1.5-pro", 2_000_000, ModelType.REASONING, reasoning = true, vision = true),
@@ -87,7 +105,7 @@ class ModelSpecsTest {
     }
 
     @Test
-    fun `专用 workload 适配为 embedding 和 rerank`() = withBundledCatalog {
+    fun `专用 workload 适配为 embedding 和 rerank`() = withFrozenCatalog {
         val textEmbedding = findModelSpec("google/gemini-embedding-001")
         val visualEmbedding = findModelSpec("nvidia/llama-nemotron-embed-vl-1b-v2")
         val visualRerank = findModelSpec("nvidia/llama-nemotron-rerank-vl-1b-v2")
@@ -132,14 +150,14 @@ class ModelSpecsTest {
     }
 
     @Test
-    fun `findContextLength 只返回精确适配结果中的正数`() = withBundledCatalog {
+    fun `findContextLength 只返回精确适配结果中的正数`() = withFrozenCatalog {
         assertThat(findContextLength("qwen-flash")).isEqualTo(1_000_000)
         assertThat(findContextLength("deepseek-v4-flash")).isEqualTo(1_000_000)
         assertThat(findContextLength("future-provider/model-x")).isNull()
     }
 
     @Test
-    fun `稳定和 API 前缀仍在精确目录边界内规范化`() = withBundledCatalog {
+    fun `稳定和 API 前缀仍在精确目录边界内规范化`() = withFrozenCatalog {
         val spec = findModelSpec("default::models/QWEN-FLASH")
 
         assertThat(spec?.note).isEqualTo("Qwen Flash")
@@ -160,10 +178,10 @@ class ModelSpecsTest {
         assertThat(extractContextLengthFromName("qwen-flash")).isNull()
     }
 
-    private fun applicationWithBundledCatalog(): Application {
+    private fun applicationWithFrozenCatalog(): Application {
         val assets = mockk<AssetManager>()
         every { assets.open("model-catalog/models-dev.normalized.json") } answers {
-            bundledCatalogFile().inputStream()
+            requireNotNull(javaClass.getResourceAsStream("/model-catalog/model-specs-compatibility.json"))
         }
         return mockk<Application>().also { application ->
             every { application.assets } returns assets
@@ -177,9 +195,9 @@ class ModelSpecsTest {
     ).firstOrNull(File::isFile)
         ?: error("models-dev.normalized.json fixture is unavailable")
 
-    private fun <T> withBundledCatalog(block: () -> T): T {
+    private fun <T> withFrozenCatalog(block: () -> T): T {
         val catalog = com.promenar.nexara.data.model.catalog.BundledModelCatalog.load(
-            applicationWithBundledCatalog(),
+            applicationWithFrozenCatalog(),
         )
         return ModelCatalogRuntime.withTestResolver(
             replacement = ModelCatalogRuntime.resolverFor(catalog),

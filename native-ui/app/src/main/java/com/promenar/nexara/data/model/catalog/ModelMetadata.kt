@@ -35,6 +35,8 @@ enum class MetadataSource {
     PROVIDER,
     NEXARA_OVERRIDE,
     MODELS_DEV,
+    LITELLM,
+    OPENROUTER,
     FAMILY,
     FALLBACK,
 }
@@ -51,6 +53,7 @@ data class ModelMetadataRecord(
     val outputTokens: Int?,
     val knowledgeCutoff: String?,
     val source: MetadataSource,
+    val providerScope: String? = null,
 )
 
 data class ModelMetadataOverride(
@@ -58,12 +61,14 @@ data class ModelMetadataOverride(
     val workload: ModelWorkload? = null,
     val capabilities: Map<ModelCapability, SupportState> = emptyMap(),
     val contextTokens: Int? = null,
+    val inputTokens: Int? = null,
     val outputTokens: Int? = null,
 )
 
 data class ResolvedModelMetadata(
     val remoteModelId: String,
     val canonicalModelId: String?,
+    val offeringId: String? = null,
     val displayName: String,
     val familyName: String?,
     val workload: ModelWorkload,

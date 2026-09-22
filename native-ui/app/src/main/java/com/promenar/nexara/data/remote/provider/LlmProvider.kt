@@ -2,6 +2,7 @@ package com.promenar.nexara.data.remote.provider
 
 import com.promenar.nexara.data.local.inference.LocalInferenceEngine
 import com.promenar.nexara.data.remote.protocol.LlmProtocol
+import com.promenar.nexara.data.remote.protocol.RemoteModelDescriptor
 import com.promenar.nexara.data.remote.protocol.LocalProtocol
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.PromptResponse
@@ -26,6 +27,7 @@ class LlmProvider(internal val protocol: LlmProtocol) {
         protocol.sendPromptSync(request)
 
     suspend fun listModels(): List<String> = protocol.listModels()
+    suspend fun listModelDescriptors(): List<RemoteModelDescriptor> = protocol.listModelDescriptors()
 
     fun cancel() = protocol.cancel()
 
@@ -125,6 +127,16 @@ private class ResolvingLlmProtocol(
         active = delegate
         return try {
             delegate.listModels()
+        } finally {
+            if (active === delegate) active = null
+        }
+    }
+
+    override suspend fun listModelDescriptors(): List<RemoteModelDescriptor> {
+        val delegate = resolver()
+        active = delegate
+        return try {
+            delegate.listModelDescriptors()
         } finally {
             if (active === delegate) active = null
         }

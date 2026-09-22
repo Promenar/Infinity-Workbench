@@ -212,27 +212,25 @@ class AnthropicProtocol(
     }
 
     override suspend fun listModels(): List<String> {
+        return listModelDescriptors().map { it.id }
+    }
+
+    override suspend fun listModelDescriptors(): List<RemoteModelDescriptor> {
         val endpoint = ProviderEndpointResolver.resolve(
             protocolType,
             baseUrl,
             ProviderEndpointOperation.MODELS,
         )
-        val response = try {
-            httpClient.get(endpoint) {
+        return try {
+            httpClient.prepareGet(endpoint) {
                 header("x-api-key", apiKey)
                 header("anthropic-version", anthropicVersion)
+            }.execute { response ->
+                if (!response.status.isSuccess()) return@execute emptyList()
+                response.readBoundedModelListBody()
+                    ?.let(GenericModelsEnvelopeParser::parseDescriptors)
+                    .orEmpty()
             }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            return emptyList()
-        }
-        if (!response.status.isSuccess()) return emptyList()
-        return try {
-            json.parseToJsonElement(response.bodyAsText()).jsonObject["data"]
-                ?.jsonArray
-                ?.mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.contentOrNull }
-                .orEmpty()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

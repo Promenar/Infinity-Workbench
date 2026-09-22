@@ -51,6 +51,17 @@ class AndroidTransactionalBackupPreferenceStoreTest {
             .putString("model_info_sample_chat_endpoint", "SUPPORTED")
             .putString("model_info_sample_auto_fingerprint", "catalog:v2")
             .putStringSet("model_info_sample_user_edited_fields", setOf("name", "familyName"))
+            .putInt("model_info_sample_input", 120000)
+            .putStringSet("model_info_sample_metadata_sources", setOf("displayName=PROVIDER", "capabilities.REASONING=PROVIDER"))
+            .putStringSet("model_info_sample_metadata_diagnostics", setOf("provider_notice"))
+            .putString("model_info_sample_provider_owned_by", "NEWAPI")
+            .putString("model_info_sample_source_provider_id", "openrouter")
+            .putString("model_info_sample_provider_display_name", "Remote Model")
+            .putString("model_info_sample_provider_workload", "GENERATIVE_TEXT")
+            .putString("model_info_sample_provider_context", "128000")
+            .putString("model_info_sample_provider_input", "120000")
+            .putString("model_info_sample_provider_output", "8000")
+            .putStringSet("model_info_sample_provider_capabilities", setOf("REASONING=UNSUPPORTED", "TOOL_CALLING=SUPPORTED"))
             .putInt("extra_providers_count", 3)
             .putString("extra_providers_ids", "provider-zero,provider-one")
             .putString("extra_provider_0_id", "provider-zero")
@@ -91,6 +102,17 @@ class AndroidTransactionalBackupPreferenceStoreTest {
                 ("settings" to "model_info_sample_chat_endpoint") to entry("settings", "model_info_sample_chat_endpoint", PreferenceValueType.STRING, "SUPPORTED"),
                 ("settings" to "model_info_sample_auto_fingerprint") to entry("settings", "model_info_sample_auto_fingerprint", PreferenceValueType.STRING, "catalog:v2"),
                 ("settings" to "model_info_sample_user_edited_fields") to entry("settings", "model_info_sample_user_edited_fields", PreferenceValueType.STRING_SET, "[\"familyName\",\"name\"]"),
+                ("settings" to "model_info_sample_input") to entry("settings", "model_info_sample_input", PreferenceValueType.INT, "120000"),
+                ("settings" to "model_info_sample_metadata_sources") to entry("settings", "model_info_sample_metadata_sources", PreferenceValueType.STRING_SET, "[\"capabilities.REASONING=PROVIDER\",\"displayName=PROVIDER\"]"),
+                ("settings" to "model_info_sample_metadata_diagnostics") to entry("settings", "model_info_sample_metadata_diagnostics", PreferenceValueType.STRING_SET, "[\"provider_notice\"]"),
+                ("settings" to "model_info_sample_provider_owned_by") to entry("settings", "model_info_sample_provider_owned_by", PreferenceValueType.STRING, "NEWAPI"),
+                ("settings" to "model_info_sample_source_provider_id") to entry("settings", "model_info_sample_source_provider_id", PreferenceValueType.STRING, "openrouter"),
+                ("settings" to "model_info_sample_provider_display_name") to entry("settings", "model_info_sample_provider_display_name", PreferenceValueType.STRING, "Remote Model"),
+                ("settings" to "model_info_sample_provider_workload") to entry("settings", "model_info_sample_provider_workload", PreferenceValueType.STRING, "GENERATIVE_TEXT"),
+                ("settings" to "model_info_sample_provider_context") to entry("settings", "model_info_sample_provider_context", PreferenceValueType.STRING, "128000"),
+                ("settings" to "model_info_sample_provider_input") to entry("settings", "model_info_sample_provider_input", PreferenceValueType.STRING, "120000"),
+                ("settings" to "model_info_sample_provider_output") to entry("settings", "model_info_sample_provider_output", PreferenceValueType.STRING, "8000"),
+                ("settings" to "model_info_sample_provider_capabilities") to entry("settings", "model_info_sample_provider_capabilities", PreferenceValueType.STRING_SET, "[\"REASONING=UNSUPPORTED\",\"TOOL_CALLING=SUPPORTED\"]"),
                 ("search" to "result_count") to entry("search", "result_count", PreferenceValueType.INT, "7"),
                 ("rag" to "hybrid_alpha") to entry("rag", "hybrid_alpha", PreferenceValueType.FLOAT, "0.65"),
                 ("ui" to "has_shown_welcome") to entry("ui", "has_shown_welcome", PreferenceValueType.BOOLEAN, "true"),
@@ -106,6 +128,49 @@ class AndroidTransactionalBackupPreferenceStoreTest {
             "enable_incremental_hash",
             "enable_local_preprocess",
         )
+    }
+
+    @Test
+    fun `provider富元数据owner scope和三态字段可备份并完整回读`(): Unit = runBlocking {
+        val settings = context.getSharedPreferences("nexara_settings", 0)
+        settings.edit()
+            .putInt("model_info_sample_input", 120000)
+            .putStringSet("model_info_sample_metadata_sources", setOf("displayName=PROVIDER"))
+            .putStringSet("model_info_sample_metadata_diagnostics", setOf("ambiguous_exact_match"))
+            .putString("model_info_sample_provider_owned_by", "NEWAPI")
+            .putString("model_info_sample_source_provider_id", "openrouter")
+            .putString("model_info_sample_provider_display_name", "Remote Model")
+            .putString("model_info_sample_provider_workload", "GENERATIVE_TEXT")
+            .putString("model_info_sample_provider_context", "128000")
+            .putString("model_info_sample_provider_input", "120000")
+            .putString("model_info_sample_provider_output", "8000")
+            .putStringSet(
+                "model_info_sample_provider_capabilities",
+                setOf("REASONING=UNSUPPORTED", "TOOL_CALLING=SUPPORTED"),
+            )
+            .commit()
+        val originalStore = store()
+        val desired = originalStore.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
+
+        settings.edit().clear().commit()
+        val empty = store().snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
+        val restoring = store()
+        restoring.prepare("tx-provider-metadata", empty, desired)
+        restoring.commitPrepared("tx-provider-metadata")
+
+        assertThat(settings.getInt("model_info_sample_input", 0)).isEqualTo(120000)
+        assertThat(settings.getStringSet("model_info_sample_metadata_sources", emptySet()))
+            .containsExactly("displayName=PROVIDER")
+        assertThat(settings.getStringSet("model_info_sample_metadata_diagnostics", emptySet()))
+            .containsExactly("ambiguous_exact_match")
+        assertThat(settings.getString("model_info_sample_provider_owned_by", null)).isEqualTo("NEWAPI")
+        assertThat(settings.getString("model_info_sample_source_provider_id", null)).isEqualTo("openrouter")
+        assertThat(settings.getString("model_info_sample_provider_display_name", null)).isEqualTo("Remote Model")
+        assertThat(settings.getString("model_info_sample_provider_context", null)).isEqualTo("128000")
+        assertThat(settings.getString("model_info_sample_provider_input", null)).isEqualTo("120000")
+        assertThat(settings.getString("model_info_sample_provider_output", null)).isEqualTo("8000")
+        assertThat(settings.getStringSet("model_info_sample_provider_capabilities", emptySet()))
+            .containsExactly("REASONING=UNSUPPORTED", "TOOL_CALLING=SUPPORTED")
     }
 
     @Test

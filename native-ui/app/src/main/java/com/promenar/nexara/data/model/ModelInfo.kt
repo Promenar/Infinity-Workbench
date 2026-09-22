@@ -4,6 +4,8 @@ import com.promenar.nexara.data.model.catalog.SupportState
 import com.promenar.nexara.data.model.catalog.ModelCapability
 import com.promenar.nexara.data.model.catalog.ModelWorkload
 import com.promenar.nexara.data.model.catalog.ResolvedModelMetadata
+import com.promenar.nexara.data.model.catalog.MetadataSource
+import com.promenar.nexara.data.model.catalog.ModelMetadataOverride
 import com.promenar.nexara.data.remote.stableModelId
 
 internal val USER_EDITABLE_MODEL_FIELDS = setOf(
@@ -25,15 +27,21 @@ data class ModelInfo(
     val capabilities: List<String> = emptyList(),
     val providerName: String = "Cloud",
     val providerId: String? = null,
-    val remoteModelId: String = id.substringAfter("::", id),
+    val remoteModelId: String = id,
     val testStatus: String? = null,
     val maxOutputTokens: Int = 0,
+    val inputTokens: Int = 0,
     val knowledgeCutoff: String? = null,
     val familyName: String? = null,
     val canonicalModelId: String? = null,
     val chatEndpointCompatible: SupportState = SupportState.UNKNOWN,
     val autoMetadataFingerprint: String? = null,
     val userEditedFields: Set<String> = emptySet(),
+    val metadataSourceByField: Map<String, MetadataSource> = emptyMap(),
+    val metadataDiagnostics: Set<String> = emptySet(),
+    val providerOwnedBy: String? = null,
+    val sourceProviderId: String? = null,
+    val providerMetadata: ModelMetadataOverride? = null,
 )
 
 internal fun ResolvedModelMetadata.toLegacyType(): String = when (workload) {
@@ -68,6 +76,7 @@ internal fun ResolvedModelMetadata.toLegacySupportedCapabilities(): List<String>
         ModelCapability.AUDIO_OUTPUT to "audiooutput",
         ModelCapability.VIDEO_INPUT to "videounderstanding",
         ModelCapability.STRUCTURED_OUTPUT to "structuredoutput",
+        ModelCapability.TOOL_CALLING to "toolcalling",
         ModelCapability.PROMPT_CACHING to "promptcaching",
         ModelCapability.COMPUTER_USE to "computeruse",
         ModelCapability.WEB_ACCESS to "internet",
@@ -86,6 +95,7 @@ internal fun ResolvedModelMetadata.autoFingerprint(): String = listOf(
     toLegacySupportedCapabilities().joinToString(","),
     contextTokens?.toString().orEmpty(),
     outputTokens?.toString().orEmpty(),
+    inputTokens?.toString().orEmpty(),
     knowledgeCutoff.orEmpty(),
     familyName.orEmpty(),
     canonicalModelId.orEmpty(),
@@ -97,6 +107,9 @@ internal fun ResolvedModelMetadata.toModelInfo(
     providerName: String,
     enabled: Boolean,
     description: String = familyName ?: remoteModelId,
+    providerOwnedBy: String? = null,
+    sourceProviderId: String? = null,
+    providerMetadata: ModelMetadataOverride? = null,
 ): ModelInfo = ModelInfo(
     name = displayName,
     id = stableModelId(providerId, remoteModelId),
@@ -109,11 +122,17 @@ internal fun ResolvedModelMetadata.toModelInfo(
     providerId = providerId,
     remoteModelId = remoteModelId,
     maxOutputTokens = outputTokens ?: 0,
+    inputTokens = inputTokens ?: 0,
     knowledgeCutoff = knowledgeCutoff,
     familyName = familyName,
     canonicalModelId = canonicalModelId,
     chatEndpointCompatible = capabilities[ModelCapability.CHAT_ENDPOINT] ?: SupportState.UNKNOWN,
     autoMetadataFingerprint = autoFingerprint(),
+    metadataSourceByField = sourceByField,
+    metadataDiagnostics = diagnostics,
+    providerOwnedBy = providerOwnedBy,
+    sourceProviderId = sourceProviderId,
+    providerMetadata = providerMetadata,
 )
 
 internal fun ModelInfo.mergeResolvedMetadata(resolved: ResolvedModelMetadata): ModelInfo {
@@ -131,6 +150,7 @@ internal fun ModelInfo.mergeResolvedMetadata(resolved: ResolvedModelMetadata): M
         } else {
             resolved.outputTokens ?: 0
         },
+        inputTokens = resolved.inputTokens ?: 0,
         knowledgeCutoff = resolved.knowledgeCutoff,
         familyName = resolved.familyName,
         canonicalModelId = resolved.canonicalModelId,
@@ -140,6 +160,8 @@ internal fun ModelInfo.mergeResolvedMetadata(resolved: ResolvedModelMetadata): M
             resolvedChatEndpoint
         },
         autoMetadataFingerprint = resolved.autoFingerprint(),
+        metadataSourceByField = resolved.sourceByField,
+        metadataDiagnostics = resolved.diagnostics,
         userEditedFields = userFields,
     )
 }
@@ -205,7 +227,7 @@ private fun legacyAutoMetadataCandidates(remoteModelId: String): List<LegacyAuto
     buildList {
         MODEL_SPECS.firstOrNull { it.pattern.matches(remoteModelId) }
             ?.let { add(it.toLegacyAutoMetadataCandidate(remoteModelId)) }
-        findModelSpec(remoteModelId)
+        findRemoteModelSpec(remoteModelId)
             ?.let { add(it.toLegacyAutoMetadataCandidate(remoteModelId)) }
         add(
             LegacyAutoMetadataCandidate(

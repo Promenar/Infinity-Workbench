@@ -1,0 +1,229 @@
+[
+  {
+    "attachment": false,
+    "canonicalModelId": "alibaba/qwen-flash",
+    "contextTokens": 1000000,
+    "displayName": "Qwen Flash",
+    "family": "qwen",
+    "knowledge": "2024-04",
+    "last_updated": "2025-07-28",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2025-07-28",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "deepseek/deepseek-r1",
+    "contextTokens": 128000,
+    "displayName": "DeepSeek-R1",
+    "family": "deepseek-thinking",
+    "knowledge": "2024-07",
+    "last_updated": "2025-05-29",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 32768,
+    "reasoning": true,
+    "release_date": "2025-01-20",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "deepseek/deepseek-v4-flash",
+    "contextTokens": 1000000,
+    "displayName": "DeepSeek V4 Flash",
+    "family": "deepseek-flash",
+    "knowledge": "2025-05",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 384000,
+    "reasoning": true,
+    "release_date": "2026-04-24",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "deepseek/deepseek-v4-pro",
+    "contextTokens": 1000000,
+    "displayName": "DeepSeek V4 Pro",
+    "family": "deepseek-thinking",
+    "knowledge": "2025-05",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 384000,
+    "reasoning": true,
+    "release_date": "2026-04-24",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": false,
+    "canonicalModelId": "google/gemini-embedding-001",
+    "contextTokens": 2048,
+    "displayName": "Gemini Embedding 001",
+    "family": "gemini",
+    "knowledge": "2025-05",
+    "last_updated": "2025-05-20",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 1,
+    "reasoning": false,
+    "release_date": "2025-05-20",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "minimax/MiniMax-M3",
+    "contextTokens": 512000,
+    "displayName": "MiniMax-M3",
+    "family": "minimax",
+    "knowledge": null,
+    "last_updated": "2026-06-01",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 128000,
+    "reasoning": true,
+    "release_date": "2026-06-01",
+    "structured_output": null,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "nvidia/llama-nemotron-embed-vl-1b-v2",
+    "contextTokens": 32768,
+    "displayName": "Llama Nemotron Embed VL 1B v2",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2026-02-10",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 2048,
+    "reasoning": false,
+    "release_date": "2026-02-10",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "nvidia/llama-nemotron-rerank-vl-1b-v2",
+    "contextTokens": 128000,
+    "displayName": "Llama Nemotron Rerank VL 1B v2",
+    "family": "nemotron",
+    "knowledge": null,
+    "last_updated": "2026-03-31",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 4096,
+    "reasoning": false,
+    "release_date": "2026-03-31",
+    "structured_output": null,
+    "tool_call": false
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/gpt-4o",
+    "contextTokens": 128000,
+    "displayName": "GPT-4o",
+    "family": "gpt",
+    "knowledge": "2023-09",
+    "last_updated": "2024-08-06",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 16384,
+    "reasoning": false,
+    "release_date": "2024-05-13",
+    "structured_output": true,
+    "tool_call": true
+  },
+  {
+    "attachment": true,
+    "canonicalModelId": "openai/o3-pro",
+    "contextTokens": 200000,
+    "displayName": "o3-pro",
+    "family": "o-pro",
+    "knowledge": "2024-05",
+    "last_updated": "2025-06-10",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "outputTokens": 100000,
+    "reasoning": true,
+    "release_date": "2025-06-10",
+    "structured_output": true,
+    "tool_call": true
+  }
+]

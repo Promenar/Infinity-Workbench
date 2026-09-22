@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "id": "acme/text-pro",
+      "canonical_slug": "acme/text-pro-20260203",
+      "name": "Acme: Text Pro",
+      "created": 1770076800,
+      "context_length": 128000,
+      "architecture": {
+        "input_modalities": ["text", "image"],
+        "output_modalities": ["text"]
+      },
+      "top_provider": {
+        "context_length": 128000,
+        "max_completion_tokens": 24000
+      },
+      "supported_parameters": ["tools", "structured_outputs", "reasoning"],
+      "knowledge_cutoff": "2025-12-31",
+      "expiration_date": null
+    }
+  ],
+  "total_count": 1,
+  "links": {}
+}

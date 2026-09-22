@@ -4,8 +4,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
-import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.core.ByteReadPacket
+import io.ktor.utils.io.ByteChannel
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.fail
@@ -50,11 +50,8 @@ class ProviderListModelsCancellationTest {
 
     @Test
     fun `Anthropic listModels preserves cancellation while reading response body`() = runTest {
-        val responseBody = object : ByteReadChannel by ByteReadChannel(ByteArray(0)) {
-            override suspend fun readRemaining(limit: Long): ByteReadPacket {
-                throw CancellationException("list-models-body-cancelled")
-            }
-        }
+        val responseBody = ByteChannel(autoFlush = true)
+        responseBody.close(CancellationException("list-models-body-cancelled"))
         val protocol = AnthropicProtocol(
             baseUrl = "https://api.anthropic.com",
             apiKey = "fake-key",
@@ -72,6 +69,24 @@ class ProviderListModelsCancellationTest {
                 "应原样传播响应体通道的取消异常"
             }
         }
+    }
+
+    @Test
+    fun `Anthropic listModels fails closed when response channel truncates with IO error`() = runTest {
+        val responseBody = ByteChannel(autoFlush = true)
+        val partial = """{"data":[""".toByteArray()
+        responseBody.writeFully(partial, 0, partial.size)
+        responseBody.close(IOException("truncated-model-list"))
+        val protocol = AnthropicProtocol(
+            baseUrl = "https://api.anthropic.com",
+            apiKey = "fake-key",
+            model = "",
+            httpClient = HttpClient(MockEngine {
+                respond(responseBody, HttpStatusCode.OK)
+            }),
+        )
+
+        check(protocol.listModels().isEmpty()) { "截断的模型列表响应必须失败关闭" }
     }
 
     @Test

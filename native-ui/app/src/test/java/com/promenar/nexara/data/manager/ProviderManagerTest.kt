@@ -498,7 +498,7 @@ class ProviderManagerTest {
             assertThat(migrated.type).isEqualTo("reasoning")
             assertThat(migrated.contextLength).isEqualTo(1000000)
             assertThat(migrated.capabilities)
-                .containsExactly("chat", "reasoning", "structuredoutput")
+                .containsExactly("chat", "reasoning", "structuredoutput", "toolcalling")
             assertThat(migrated.maxOutputTokens).isEqualTo(384000)
             assertThat(migrated.knowledgeCutoff).isEqualTo("2025-05")
         }
@@ -518,7 +518,7 @@ class ProviderManagerTest {
             assertThat(preserved.type).isEqualTo("reasoning")
             assertThat(preserved.contextLength).isEqualTo(1000000)
             assertThat(preserved.capabilities)
-                .containsExactly("chat", "reasoning", "structuredoutput")
+                .containsExactly("chat", "reasoning", "structuredoutput", "toolcalling")
             assertThat(preserved.maxOutputTokens).isEqualTo(384000)
             assertThat(preserved.knowledgeCutoff).isEqualTo("2025-05")
         }
@@ -538,7 +538,7 @@ class ProviderManagerTest {
             assertThat(preserved.type).isEqualTo("reasoning")
             assertThat(preserved.contextLength).isEqualTo(131072)
             assertThat(preserved.capabilities)
-                .containsExactly("chat", "reasoning", "structuredoutput")
+                .containsExactly("chat", "reasoning", "structuredoutput", "toolcalling")
             assertThat(preserved.maxOutputTokens).isEqualTo(384000)
             assertThat(preserved.knowledgeCutoff).isEqualTo("2025-05")
         }

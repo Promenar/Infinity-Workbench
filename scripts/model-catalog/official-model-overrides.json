@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "id": "nexara-official-overrides",
+    "url": "https://github.com/promenar/Nexara/blob/main/scripts/model-catalog/official-model-overrides.json",
+    "license": "Google documentation: CC BY 4.0; SenseNova official API documentation: no repository license declared"
+  },
+  "records": [
+    {
+      "canonicalModelId": "google/gemini-3.8-flash",
+      "displayName": "Gemini 3.8 Flash",
+      "source": "NEXARA_OVERRIDE",
+      "exactAliases": [
+        "gemini-3.8-flash"
+      ],
+      "family": "gemini-flash",
+      "workload": "GENERATIVE_TEXT",
+      "reasoning": true,
+      "tool_call": true,
+      "structured_output": true,
+      "inputTokens": 1048576,
+      "outputTokens": 65536,
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "last_updated": "2026-09-02",
+      "status": "stable",
+      "evidenceUrl": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash",
+      "reviewedAt": "2026-09-22"
+    },
+    {
+      "canonicalModelId": "sensenova/sensenova-6.8-flash-lite",
+      "displayName": "SenseNova 6.8 Flash Lite Preview",
+      "source": "NEXARA_OVERRIDE",
+      "exactAliases": [
+        "sensenova-6.8-flash-lite"
+      ],
+      "family": "sensenova",
+      "workload": "GENERATIVE_TEXT",
+      "reasoning": true,
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "status": "preview",
+      "evidenceUrl": "https://github.com/OpenSenseNova/SenseNova6.8/blob/main/API_CN.md",
+      "reviewedAt": "2026-09-22"
+    }
+  ]
+}

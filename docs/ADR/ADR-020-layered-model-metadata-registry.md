@@ -1,39 +1,32 @@
 # ADR-020：分层模型元数据注册中心
 
-> 状态：已实施；当前候选真实 Provider 复验待完成
-> 日期：2026-07-18
-> 范围：模型目录、Provider 模型持久化、首次引导探测、会话模型名称与 AI 消息尾注
-
-## 背景
-
-原有 `ModelSpecs` 同时承担模型身份、名称、类型与能力推断，并使用部分字符串匹配。系列规则可能覆盖精确型号，unknown 会被默认成 chat，聊天探测还会改写模型主要类型。Provider 模型页、会话输入区与历史消息各自生成名称，导致同一远端 ID 显示不一致。手写表也缺少可复现的广覆盖更新来源。
+> 状态：独立更新实现中，验收见专项记录
+> 日期：2026-09-22
+> 范围：模型目录、Provider 持久化、身份匹配与独立更新
 
 ## 决策
 
-1. 唯一领域入口为 `ModelMetadataResolver.resolve(...)`，不提供第二个顶层 facade。调用者传入稳定远端模型 ID、可选 Provider 精确元数据和用户覆盖。
-2. 解析采用逐字段优先级：`USER > PROVIDER > NEXARA_OVERRIDE > MODELS_DEV > FAMILY > FALLBACK`。其中 `FAMILY` 只补充家族展示信息；缺失字段保持 unknown 或原始远端 ID，不从家族猜测精确能力。
-3. 目录匹配只接受规范化后的精确 canonical ID 或精确 alias。最高优先级出现冲突时返回诊断并回退，不使用 `contains()` 猜测身份。
-4. 工作负载、推理能力和 Chat endpoint 兼容性是三个独立事实。能力使用 `SUPPORTED / UNSUPPORTED / UNKNOWN` 三态，未知不等于不支持，也不等于 chat。
-5. APK 运行时不联网读取第三方目录。维护脚本把固定 `https://models.dev/models.json` 规范化为仓库内快照；manifest 记录来源、许可、源字节与 SHA-256、目录 SHA-256、条数、schema 和未知字段数。Nexara 精确修正覆盖目录中的已知错误或缺口。
-6. Provider 持久化保存 family、canonical ID、Chat endpoint 三态、自动指纹和用户编辑字段。自动刷新只更新未被用户编辑的字段；旧数据仅在可证明仍是旧自动值时机械迁移。
-7. 首次引导的真实聊天探测只更新 Chat endpoint 兼容性，不改变主要工作负载或补写 chat capability。会话输入区和 AI 尾注共享同一纯函数名称解析，历史消息优先使用已持久化名称。
-8. AI 尾注把模型名与时间作为左侧弱化信息组；用户消息时间继续右对齐。长名称允许收缩，但不得用填充权重吞掉时间。
+1. 领域入口为 `ModelMetadataResolver.resolve(...)`，逐字段采用用户编辑、实际供应商字段、Nexara 精确修正、匹配作用域的公开目录、保守回退。家族规则只补充展示信息。
+2. models.dev 提供规范模型；models.dev provider、LiteLLM、OpenRouter 提供具有明确作用域的供应商条目。不同供应商的额度和能力不能合并成基础模型事实。
+3. 原始请求 ID、供应商实例 ID、规范模型 ID 和目录供应商作用域分别保存。只接受精确 ID/别名匹配；未知前缀、版本变体和冲突保持未匹配。仅在列表 owned_by 对应时，newapi/openai-chatgpt 路由前缀可用于生成查找候选；wire ID 保持不变。
+4. 工作负载、推理能力和 Chat endpoint 兼容性相互独立。能力使用 SUPPORTED / UNSUPPORTED / UNKNOWN，缺失不等于不支持，也不默认 chat。
+5. GitHub Actions 每六小时聚合公开数据，校验后签名发布到 Pages。App 恢复完成后按二十四小时检查，也提供手动更新。APK 内置快照与验签缓存支持离线使用；关闭 App 期间不保证准点检查。
+6. Provider 持久化保留供应商描述字段、三态能力、字段来源、诊断、自动指纹和用户编辑字段。目录更新重新解析现有模型，保留用户编辑、启用状态、测试结果、稳定 ID 和供应商原始字段。
+7. 首次引导的真实聊天探测只更新 Chat endpoint 兼容性。会话输入区和 AI 尾注共享纯函数名称解析，历史消息优先使用持久化名称；AI 尾注的模型名与时间保持左侧信息组。
 
-## 供应链与回滚
+## 信任与回滚
 
-- 刷新流程只创建或更新 draft PR，不自动 merge；第三方 action 固定到完整 commit SHA，产品 API Key 不进入 workflow。
-- 更新前后生成差异报告并运行 Python、离线清单和 Kotlin 目录门禁。重复 JSON key、alias 冲突、排序或哈希漂移均 fail-closed。
-- 快照与 manifest 使用同一事务替换；任一 replace/fsync 失败时尝试同时回滚两者并聚合回滚错误。
-- 上游异常时继续使用上一个已审阅快照。回滚只需恢复快照、manifest 与对应精确修正，不需要改动 Provider 或会话稳定 ID。
+- 公共目录工作流只发布目录和说明。Actions 固定 commit SHA；独立目录签名私钥由 Secret 注入，产品 API Key 和 APK 私钥不进入工作流。
+- P-256 / SHA256withECDSA 签署原始 payload 字节，App 固定 SPKI 公钥。验签后检查 schema、文件名、字节数、SHA-256、记录数和单调版本；同版本不同内容也拒绝。
+- 版本文件落盘后原子提交缓存指针。更新失败保留现用目录；当前文件损坏可回退上一有效版本，但版本高水位不降低。缓存位于 noBackupFilesDir。
+- 发布纠错以更高版本重新签名已知有效数据。网络故障或必需来源异常不发布残缺目录。内置快照刷新工作流保留手动维护入口。
+- 协议与验收见[规范](../superpowers/specs/2026-09-22-independent-model-catalog.md)，操作见[目录运行说明](../model-catalog.md)。
 
-## 结果
+## 结果与边界
 
-- 精确型号不再被系列泛称覆盖，unknown 不再默认 chat。
-- 用户覆盖、Provider 元数据、Nexara 修正和公共目录能够按字段共存，来源可追踪。
-- 目录更新可离线复现、审阅和回滚，APK 不增加第三方运行时依赖。
-- 当前本地 JVM、Lint、截图及 API 35/36 聚焦设备门禁已通过；由于当前 shell 缺少真实 Provider 的六项环境变量，本候选的网络复验仍为 PENDING，整体发行保持 NO-GO。
+目录更新独立于 APK，无需常驻服务器或新后台服务。来源声明不等于实际端点测试通过，也不保证全网新模型都有完整字段；未匹配或缺失字段明确保持未知。
 
-## 验证
+## 历史验证（2026-07-18，不能替代独立更新验收）
 
 - Task 1-9 均完成独立 Terra/Sol 复审；Task 9 最终限定 diff SHA-256 为 `4414db3077a0d004f22920c25d681f72a1d7d70b65e25f74f1968d8149189020`。
 - Python 更新脚本 64/64、离线 snapshot/manifest check、Kotlin catalog 26/26 通过。

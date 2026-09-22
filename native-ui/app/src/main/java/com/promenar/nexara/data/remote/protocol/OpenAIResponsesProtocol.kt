@@ -6,9 +6,9 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.prepareGet
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -177,25 +177,26 @@ class OpenAIResponsesProtocol(
     }
 
     override suspend fun listModels(): List<String> {
+        return listModelDescriptors().map { it.id }
+    }
+
+    override suspend fun listModelDescriptors(): List<RemoteModelDescriptor> {
         val endpoint = ProviderEndpointResolver.resolve(
             protocolType,
             baseUrl,
             ProviderEndpointOperation.MODELS,
         )
-        val response = try {
-            httpClient.get(endpoint) {
+        return try {
+            httpClient.prepareGet(endpoint) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
+            }.execute { response ->
+                if (!response.status.isSuccess()) return@execute emptyList()
+                response.readBoundedModelListBody()
+                    ?.let(GenericModelsEnvelopeParser::parseDescriptors)
+                    .orEmpty()
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
-            return emptyList()
-        }
-        if (!response.status.isSuccess()) return emptyList()
-        val responseText = response.bodyAsText()
-        return try {
-            val root = json.parseToJsonElement(responseText).jsonObject
-            root["data"]?.jsonArray?.mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.contentOrNull } ?: emptyList()
         } catch (_: Exception) {
             emptyList()
         }

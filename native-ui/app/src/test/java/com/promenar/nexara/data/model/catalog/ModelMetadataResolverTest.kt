@@ -35,6 +35,8 @@ class ModelMetadataResolverTest {
             MetadataSource.PROVIDER,
             MetadataSource.NEXARA_OVERRIDE,
             MetadataSource.MODELS_DEV,
+            MetadataSource.LITELLM,
+            MetadataSource.OPENROUTER,
             MetadataSource.FAMILY,
             MetadataSource.FALLBACK,
         )
@@ -170,11 +172,13 @@ class ModelMetadataResolverTest {
     }
 
     @Test
-    fun `稳定前缀与 API 前缀被规范化而语义后缀被保留`() {
+    fun `双冒号稳定ID不再作为远端ID拆解而models前缀仍仅用于查找`() {
         val resolved = resolver.resolve("default::models/MINIMAX-M2.7-HIGHSPEED")
 
-        assertThat(resolved.displayName).isEqualTo("MiniMax M2.7 Highspeed")
-        assertThat(resolved.remoteModelId).isEqualTo("models/MINIMAX-M2.7-HIGHSPEED")
+        assertThat(resolved.canonicalModelId).isNull()
+        assertThat(resolved.remoteModelId).isEqualTo("default::models/MINIMAX-M2.7-HIGHSPEED")
+        assertThat(resolver.resolve("models/MINIMAX-M2.7-HIGHSPEED").canonicalModelId)
+            .isEqualTo("minimax/MiniMax-M2.7-highspeed")
         assertThat(normalizeRemoteModelId("models/MiniMax-M2.7-Highspeed"))
             .isEqualTo("minimax-m2.7-highspeed")
     }
@@ -338,6 +342,149 @@ class ModelMetadataResolverTest {
         assertThat(resolved.capabilities[ModelCapability.TOOL_CALLING])
             .isEqualTo(SupportState.UNKNOWN)
         assertThat(lateAlias.canonicalModelId).isNull()
+    }
+
+    @Test
+    fun `作用域记录仅在明确sourceProviderId一致时参与且不冒充canonical`() {
+        val scoped = record(
+            canonicalId = "offering/model-x",
+            displayName = "Scoped X",
+            workload = ModelWorkload.GENERATIVE_TEXT,
+            source = MetadataSource.OPENROUTER,
+        ).copy(providerScope = "openrouter")
+        val scopedResolver = ModelMetadataResolver(listOf(scoped))
+
+        assertThat(scopedResolver.resolve("shared-model").canonicalModelId).isNull()
+        assertThat(scopedResolver.resolve("shared-model", sourceProviderId = "other").offeringId).isNull()
+        val resolved = scopedResolver.resolve("shared-model", sourceProviderId = "openrouter")
+        assertThat(resolved.canonicalModelId).isNull()
+        assertThat(resolved.offeringId).isEqualTo("offering/model-x")
+        assertThat(resolved.displayName).isEqualTo("Scoped X")
+    }
+
+    @Test
+    fun `同provider不同source按优先级逐字段补全且不跨provider`() {
+        val modelsDev = record(
+            canonicalId = "provider/model-x",
+            displayName = "Models Dev X",
+            workload = ModelWorkload.GENERATIVE_TEXT,
+            source = MetadataSource.MODELS_DEV,
+        ).copy(providerScope = "openai", contextTokens = 128_000)
+        val liteLlm = record(
+            canonicalId = "provider/model-x",
+            displayName = "LiteLLM X",
+            workload = ModelWorkload.UNKNOWN,
+            source = MetadataSource.LITELLM,
+        ).copy(providerScope = "openai", outputTokens = 8_000)
+        val scopedResolver = ModelMetadataResolver(listOf(liteLlm, modelsDev))
+
+        val resolved = scopedResolver.resolve("shared-model", sourceProviderId = "openai")
+        assertThat(resolved.displayName).isEqualTo("Models Dev X")
+        assertThat(resolved.contextTokens).isEqualTo(128_000)
+        assertThat(resolved.outputTokens).isEqualTo(8_000)
+        assertThat(resolved.canonicalModelId).isNull()
+        assertThat(resolved.offeringId).isEqualTo("provider/model-x")
+        assertThat(scopedResolver.resolve("shared-model", sourceProviderId = "other").offeringId).isNull()
+    }
+
+    @Test
+    fun `同源global与scope分层不冲突且scoped false覆盖global true`() {
+        val global = record(
+            canonicalId = "base/model-x",
+            displayName = "Global X",
+            workload = ModelWorkload.GENERATIVE_TEXT,
+            source = MetadataSource.MODELS_DEV,
+            capabilities = mapOf(ModelCapability.TOOL_CALLING to SupportState.SUPPORTED),
+        ).copy(contextTokens = 128_000)
+        val scoped = record(
+            canonicalId = "base/model-x",
+            displayName = "Scoped X",
+            workload = ModelWorkload.GENERATIVE_TEXT,
+            source = MetadataSource.MODELS_DEV,
+            capabilities = mapOf(ModelCapability.TOOL_CALLING to SupportState.UNSUPPORTED),
+        ).copy(providerScope = "openai", outputTokens = 8_000)
+        val scopedResolver = ModelMetadataResolver(listOf(global, scoped))
+
+        val resolved = scopedResolver.resolve("shared-model", sourceProviderId = "openai")
+        assertThat(resolved.diagnostics).isEmpty()
+        assertThat(resolved.canonicalModelId).isEqualTo("base/model-x")
+        assertThat(resolved.offeringId).isEqualTo("base/model-x")
+        assertThat(resolved.displayName).isEqualTo("Scoped X")
+        assertThat(resolved.contextTokens).isEqualTo(128_000)
+        assertThat(resolved.outputTokens).isEqualTo(8_000)
+        assertThat(resolved.capabilities[ModelCapability.TOOL_CALLING])
+            .isEqualTo(SupportState.UNSUPPORTED)
+    }
+
+    @Test
+    fun `scoped offering不从其它厂商同名global补额度或canonical`() {
+        val otherVendor = record(
+            canonicalId = "other-vendor/model-x",
+            displayName = "Other Vendor X",
+            workload = ModelWorkload.GENERATIVE_TEXT,
+            source = MetadataSource.NEXARA_OVERRIDE,
+        ).copy(contextTokens = 999_999)
+        val scoped = record(
+            canonicalId = "provider-a/model-x",
+            displayName = "Provider A X",
+            workload = ModelWorkload.GENERATIVE_TEXT,
+            source = MetadataSource.OPENROUTER,
+        ).copy(providerScope = "openrouter")
+        val scopedResolver = ModelMetadataResolver(listOf(otherVendor, scoped))
+
+        val resolved = scopedResolver.resolve("shared-model", sourceProviderId = "openrouter")
+        assertThat(resolved.canonicalModelId).isNull()
+        assertThat(resolved.offeringId).isEqualTo("provider-a/model-x")
+        assertThat(resolved.displayName).isEqualTo("Provider A X")
+        assertThat(resolved.contextTokens).isNull()
+    }
+
+    @Test
+    fun `wire id含双冒号与大小写逐字符保留`() {
+        val exact = record(
+            canonicalId = "Vendor/Model-X",
+            displayName = "Model X",
+            workload = ModelWorkload.GENERATIVE_TEXT,
+            exactAliases = setOf("Tenant::Model-X"),
+        )
+        val resolved = ModelMetadataResolver(listOf(exact)).resolve("Tenant::Model-X")
+
+        assertThat(resolved.remoteModelId).isEqualTo("Tenant::Model-X")
+        assertThat(resolved.canonicalModelId).isEqualTo("Vendor/Model-X")
+    }
+
+    @Test
+    fun `路由前缀仅在ownedBy证据一致时生成查找候选`() {
+        val exact = record(
+            canonicalId = "vendor/model-x",
+            displayName = "Model X",
+            workload = ModelWorkload.GENERATIVE_TEXT,
+            exactAliases = setOf("model-x"),
+        )
+        val prefixResolver = ModelMetadataResolver(listOf(exact))
+
+        assertThat(prefixResolver.resolve("newapi/model-x").canonicalModelId).isNull()
+        assertThat(prefixResolver.resolve("newapi/model-x", ownedBy = "other").canonicalModelId).isNull()
+        val resolved = prefixResolver.resolve("newapi/model-x", ownedBy = "NEWAPI")
+        assertThat(resolved.remoteModelId).isEqualTo("newapi/model-x")
+        assertThat(resolved.canonicalModelId).isEqualTo("vendor/model-x")
+    }
+
+    @Test
+    fun `当前五个网关ID只按明确证据精确匹配且未知版本不编造`() {
+        val cases = listOf(
+            Triple("newapi/deepseek-v4-flash", "NEWAPI", "deepseek/deepseek-v4-flash"),
+            Triple("newapi/gemini-3.8-flash", "NEWAPI", null),
+            Triple("newapi/sensenova-6.8-flash-lite", "NEWAPI", null),
+            Triple("openai-chatgpt/gpt-5.6-luna", "OpenAI ChatGPT", null),
+            Triple("newapi/MiniMax-M3", "NEWAPI", "minimax/MiniMax-M3"),
+        )
+
+        cases.forEach { (wireId, ownedBy, expectedCanonical) ->
+            val resolved = resolver.resolve(wireId, ownedBy = ownedBy)
+            assertThat(resolved.remoteModelId).isEqualTo(wireId)
+            assertThat(resolved.canonicalModelId).isEqualTo(expectedCanonical)
+        }
     }
 
     private fun metadata(

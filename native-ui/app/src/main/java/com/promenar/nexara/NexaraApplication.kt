@@ -158,6 +158,27 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val startupState: StateFlow<BackupStartupState> = _startupState.asStateFlow()
 
     private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    internal val modelCatalogUpdater by lazy {
+        com.promenar.nexara.data.model.catalog.ModelCatalogUpdater.create(this) { catalog ->
+            ModelCatalogRuntime.installPublished(catalog)
+            ProviderManager.getInstance().refreshCatalogMetadata()
+        }
+    }
+    private var catalogObserverRegistered = false
+
+    private fun startModelCatalogUpdates() {
+        if (!catalogObserverRegistered) {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+                override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
+                    if (_startupState.value == BackupStartupState.Ready) {
+                        startupScope.launch { modelCatalogUpdater.refresh() }
+                    }
+                }
+            })
+            catalogObserverRegistered = true
+        }
+        startupScope.launch { modelCatalogUpdater.refresh() }
+    }
     private var startupRecoveryJob: Job? = null
     private var writersInitialized = false
     private var startupWriterSession: StartupWriterSession<PreparedStartupWriters>? = null
@@ -695,6 +716,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                         },
                     ).runOrThrow()
                     _startupState.value = BackupStartupState.Ready
+                    startModelCatalogUpdates()
                 } else {
                     _startupState.value = BackupStartupState.Blocked
                 }

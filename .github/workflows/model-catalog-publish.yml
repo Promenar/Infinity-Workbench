@@ -1,0 +1,93 @@
+name: 发布独立模型目录到 GitHub Pages
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-catalog-pages-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 校验、构建并签名目录
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: 检出默认分支
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: 配置 Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.13"
+
+      - name: 运行离线发布契约测试
+        run: python3 -m unittest scripts.tests.test_published_model_catalog
+
+      - name: 固定本次目录版本与生成时间
+        id: timestamp
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          from datetime import datetime, timezone
+          now = datetime.now(timezone.utc).replace(microsecond=0)
+          print(f"unix={int(now.timestamp())}")
+          print(f"iso={now.isoformat().replace('+00:00', 'Z')}")
+          PY
+
+      - name: 抓取四个必需源并构建签名目录
+        env:
+          NEXARA_MODEL_CATALOG_SIGNING_KEY: ${{ secrets.NEXARA_MODEL_CATALOG_SIGNING_KEY }}
+        run: |
+          python3 scripts/model-catalog/build-published-catalog.py \
+            --output-root public \
+            --key-id nexara-catalog-p256-20260922 \
+            --catalog-version "${{ steps.timestamp.outputs.unix }}" \
+            --generated-at "${{ steps.timestamp.outputs.iso }}" \
+            --signing-key-env NEXARA_MODEL_CATALOG_SIGNING_KEY
+
+      - name: 添加 Pages 说明文件
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          Path("public/.nojekyll").touch()
+          Path("public/index.html").write_text(
+              "<!doctype html><meta charset=\"utf-8\"><title>Nexara Model Catalog</title>"
+              "<p>Nexara signed model catalog: <a href=\"model-catalog/v1/manifest.json\">v1 manifest</a></p>\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: 上传 Pages 原子部署制品
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: public
+
+  deploy:
+    name: 部署 GitHub Pages
+    needs: build
+    if: ${{ needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 原子部署 Pages 制品
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

@@ -46,7 +46,7 @@ SOFTWARE.
 
 - Nexara 会基于 `models.dev` 上游快照叠加厂商元数据与本地修正。
 - Nexara 不保证该快照目录单独构成完整真实权威模型库。
-- 任何离线更新与校验行为仅在项目仓库内进行，便于可复现与审计。
+- 规范数据与供应商条目经归一化、签名后通过 GitHub Pages 分发；来源与许可随目录保存，客户端保持验签与离线回退。
 
 ---
 
@@ -74,3 +74,13 @@ Nexara 没有直接引入 Bettbox 的 Flutter/Dart 构建产物，而是将以�
 - 业务模型、数据层、导航目的地、无障碍语义与 Android 触感仍由 Nexara 自身实现负责；Flutter 特有依赖没有进入 Android 运行时。
 - 固定提交只用于复现本次视觉基线；后续上游变化不会自动改变 Nexara 的界面行为。
 - GPLv3 完整条款见仓库根目录 `LICENSE`。
+
+
+## 独立模型目录新增来源
+
+- LiteLLM 根目录模型价格与上下文文件：MIT，Copyright (c) 2023 Berri AI；不包含 enterprise/ 内容。[上游许可](https://github.com/BerriAI/litellm/blob/main/LICENSE)。
+- OpenRouter 公共模型 API：按[OpenRouter 服务条款](https://openrouter.ai/terms)使用，不能将其数据声明为 MIT。公开事实经过结构化筛选，不含账号凭据或用户请求。
+- Google Gemini 官方模型文档：CC BY 4.0；补充文件记录来源与核验日期，Nexara 将公开规格转换为结构化字段。[Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)。
+- SenseNova 官方 API 文档：仅整理模型 ID、公开模态与推理事实并保留来源，不复制文档长段原文；仓库未声明统一再发布许可。[官方文档](https://github.com/OpenSenseNova/SenseNova6.8/blob/main/API_CN.md)。
+
+发布产物附带 `third-party-notices.txt`，保留 models.dev 与 LiteLLM 的完整 MIT 许可及上述出处。抓取时点和摘要以该次签名目录的 sources 为准；人工补充在规范源接管后自动停用。

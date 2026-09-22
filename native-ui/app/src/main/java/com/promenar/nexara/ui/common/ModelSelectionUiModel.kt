@@ -24,6 +24,7 @@ private fun ModelCapability.toLegacyName(): String? = when (this) {
     ModelCapability.AUDIO_INPUT -> "audioinput"
     ModelCapability.AUDIO_OUTPUT -> "audiooutput"
     ModelCapability.VIDEO_INPUT -> "videounderstanding"
+    ModelCapability.TOOL_CALLING -> "toolcalling"
     ModelCapability.STRUCTURED_OUTPUT -> "structuredoutput"
     ModelCapability.PROMPT_CACHING -> "promptcaching"
     ModelCapability.COMPUTER_USE -> "computeruse"
@@ -111,7 +112,9 @@ fun ModelInfo.toModelSelectionUiModel(resolver: ModelMetadataResolver): ModelSel
     val resolved = resolver.resolve(
         remoteModelId = remoteModelId,
         providerId = providerId,
-        providerMetadata = toModelSelectionProviderMetadata(),
+        sourceProviderId = sourceProviderId,
+        ownedBy = providerOwnedBy,
+        providerMetadata = providerMetadata ?: toModelSelectionProviderMetadata(),
         userOverride = userOverride
     )
 

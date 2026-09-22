@@ -6,7 +6,7 @@ import com.promenar.nexara.data.document.ContextBudgetGate
 import com.promenar.nexara.data.document.ContextBudgetRequest
 import com.promenar.nexara.data.document.ConservativeContextTokenEstimator
 import com.promenar.nexara.data.model.Session
-import com.promenar.nexara.data.model.findModelSpec
+import com.promenar.nexara.data.model.findRemoteModelSpec
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 
 object PreparedPromptBudgetGate {
@@ -23,7 +23,7 @@ object PreparedPromptBudgetGate {
         val persistedModelId = stableModelId?.takeIf(String::isNotBlank)
             ?: session.modelId?.takeIf(String::isNotBlank)
             ?: remoteModelId
-        val modelSpec = findModelSpec(remoteModelId)
+        val modelSpec = findRemoteModelSpec(remoteModelId)
         val savedContext = settings.getInt("model_info_${persistedModelId}_context", 0)
         val modelContext = savedContext.takeIf { it > 0 }
             ?: modelSpec?.contextLength?.takeIf { it > 0 }

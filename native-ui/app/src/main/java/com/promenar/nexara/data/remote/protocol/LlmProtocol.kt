@@ -283,6 +283,8 @@ interface LlmProtocol {
 
     suspend fun sendPromptSync(request: PromptRequest): PromptResponse
     suspend fun listModels(): List<String> = emptyList()
+    suspend fun listModelDescriptors(): List<RemoteModelDescriptor> =
+        listModels().map { RemoteModelDescriptor(id = it) }
     fun cancel()
 }
 

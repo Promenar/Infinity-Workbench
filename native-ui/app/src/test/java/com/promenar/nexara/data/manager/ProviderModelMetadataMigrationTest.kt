@@ -12,9 +12,15 @@ import com.promenar.nexara.data.model.toLegacyType
 import com.promenar.nexara.data.model.withRecordedUserEdits
 import com.promenar.nexara.data.model.catalog.ModelCapability
 import com.promenar.nexara.data.model.catalog.ModelWorkload
+import com.promenar.nexara.data.model.catalog.MetadataSource
+import com.promenar.nexara.data.model.catalog.ModelMetadataOverride
+import com.promenar.nexara.data.model.catalog.ModelMetadataRecord
+import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.data.model.catalog.ResolvedModelMetadata
 import com.promenar.nexara.data.model.catalog.SupportState
 import com.promenar.nexara.data.remote.protocol.ProtocolType
+import com.promenar.nexara.data.remote.protocol.RemoteModelDescriptor
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import org.junit.Before
@@ -407,6 +413,152 @@ class ProviderModelMetadataMigrationTest {
         assertThat(model.contextLength).isEqualTo(0)
         assertThat(model.maxOutputTokens).isEqualTo(0)
         assertThat(model.capabilities).isEmpty()
+    }
+
+    @Test
+    fun `富descriptor供应商字段三态和scope持久化回读`() {
+        val manager = manager()
+        val mutableCapabilities = mutableMapOf(
+            ModelCapability.TOOL_CALLING to SupportState.SUPPORTED,
+            ModelCapability.REASONING to SupportState.UNSUPPORTED,
+        )
+        val descriptor = RemoteModelDescriptor(
+            id = "Tenant::Model-X",
+            ownedBy = "NEWAPI",
+            sourceProviderId = "openrouter",
+            metadata = ModelMetadataOverride(
+                displayName = "Remote X",
+                capabilities = mutableCapabilities,
+                contextTokens = 128_000,
+                inputTokens = 120_000,
+                outputTokens = 8_000,
+            ),
+        )
+
+        assertThat(manager.syncModelMetadata("default", "测试提供商", descriptor))
+            .isEqualTo(ModelSyncResult.ADDED)
+        mutableCapabilities.clear()
+        val reloaded = ProviderManager.createForTest(app, MemorySecretStore())
+        val stored = reloaded.providerModels.value.single { it.remoteModelId == descriptor.id }
+        assertThat(stored.remoteModelId).isEqualTo("Tenant::Model-X")
+        assertThat(stored.providerOwnedBy).isEqualTo("NEWAPI")
+        assertThat(stored.sourceProviderId).isEqualTo("openrouter")
+        assertThat(stored.inputTokens).isEqualTo(120_000)
+        assertThat(stored.capabilities).contains("toolcalling")
+        assertThat(stored.providerMetadata?.capabilities?.get(ModelCapability.REASONING))
+            .isEqualTo(SupportState.UNSUPPORTED)
+    }
+
+    @Test
+    fun `同identity稀疏descriptor逐字段合并且明确false覆盖`() {
+        val manager = manager()
+        val first = RemoteModelDescriptor(
+            id = "model-x",
+            ownedBy = "Vendor",
+            sourceProviderId = "vendor-scope",
+            metadata = ModelMetadataOverride(
+                displayName = "Model X",
+                capabilities = mapOf(ModelCapability.REASONING to SupportState.SUPPORTED),
+                contextTokens = 128_000,
+                inputTokens = 120_000,
+                outputTokens = 8_000,
+            ),
+        )
+        manager.syncModelMetadata("default", "测试提供商", first)
+
+        manager.syncModelMetadata(
+            "default",
+            "测试提供商",
+            RemoteModelDescriptor(
+                id = "model-x",
+                metadata = ModelMetadataOverride(
+                    capabilities = mapOf(ModelCapability.REASONING to SupportState.UNSUPPORTED),
+                    outputTokens = 16_000,
+                ),
+            ),
+        )
+
+        val merged = manager.providerModels.value.single { it.remoteModelId == "model-x" }
+        assertThat(merged.providerOwnedBy).isEqualTo("Vendor")
+        assertThat(merged.sourceProviderId).isEqualTo("vendor-scope")
+        assertThat(merged.providerMetadata?.displayName).isEqualTo("Model X")
+        assertThat(merged.providerMetadata?.contextTokens).isEqualTo(128_000)
+        assertThat(merged.providerMetadata?.inputTokens).isEqualTo(120_000)
+        assertThat(merged.providerMetadata?.outputTokens).isEqualTo(16_000)
+        assertThat(merged.providerMetadata?.capabilities?.get(ModelCapability.REASONING))
+            .isEqualTo(SupportState.UNSUPPORTED)
+    }
+
+    @Test
+    fun `明确owner或scope变化不继承旧identity元数据`() {
+        val manager = manager()
+        manager.syncModelMetadata(
+            "default",
+            "测试提供商",
+            RemoteModelDescriptor(
+                id = "model-x",
+                ownedBy = "Vendor A",
+                sourceProviderId = "scope-a",
+                metadata = ModelMetadataOverride(displayName = "A", contextTokens = 128_000),
+            ),
+        )
+
+        manager.syncModelMetadata(
+            "default",
+            "测试提供商",
+            RemoteModelDescriptor(
+                id = "model-x",
+                ownedBy = "Vendor B",
+                metadata = ModelMetadataOverride(outputTokens = 4_000),
+            ),
+        )
+
+        val changed = manager.providerModels.value.single { it.remoteModelId == "model-x" }
+        assertThat(changed.providerOwnedBy).isEqualTo("Vendor B")
+        assertThat(changed.sourceProviderId).isNull()
+        assertThat(changed.providerMetadata?.displayName).isNull()
+        assertThat(changed.providerMetadata?.contextTokens).isNull()
+        assertThat(changed.providerMetadata?.outputTokens).isEqualTo(4_000)
+    }
+
+    @Test
+    fun `目录刷新不增删模型且保留用户编辑启用状态测试状态和供应商字段`() {
+        val manager = manager()
+        val original = model(name = "用户名称", userEditedFields = setOf("name")).copy(
+            enabled = false,
+            testStatus = "success",
+            providerOwnedBy = "NEWAPI",
+            sourceProviderId = "openrouter",
+            providerMetadata = ModelMetadataOverride(inputTokens = 12_000),
+        )
+        manager.addModel(original)
+        val catalogRecord = ModelMetadataRecord(
+            canonicalModelId = "deepseek-v4-flash",
+            exactAliases = setOf("deepseek-v4-flash"),
+            displayName = "目录新名称",
+            familyName = "DeepSeek",
+            workload = ModelWorkload.GENERATIVE_TEXT,
+            capabilities = mapOf(ModelCapability.TOOL_CALLING to SupportState.SUPPORTED),
+            contextTokens = 200_000,
+            inputTokens = 180_000,
+            outputTokens = 20_000,
+            knowledgeCutoff = null,
+            source = MetadataSource.MODELS_DEV,
+        )
+
+        ModelCatalogRuntime.withTestResolver(ModelMetadataResolver(listOf(catalogRecord))) {
+            assertThat(manager.refreshCatalogMetadata()).isEqualTo(1)
+        }
+
+        val refreshed = manager.providerModels.value.single()
+        assertThat(refreshed.id).isEqualTo(original.id)
+        assertThat(refreshed.name).isEqualTo("用户名称")
+        assertThat(refreshed.enabled).isFalse()
+        assertThat(refreshed.testStatus).isEqualTo("success")
+        assertThat(refreshed.providerOwnedBy).isEqualTo("NEWAPI")
+        assertThat(refreshed.sourceProviderId).isEqualTo("openrouter")
+        assertThat(refreshed.inputTokens).isEqualTo(12_000)
+        assertThat(refreshed.capabilities).contains("toolcalling")
     }
 
     private fun manager(): ProviderManager = ProviderManager.createForTest(app, MemorySecretStore()).also {

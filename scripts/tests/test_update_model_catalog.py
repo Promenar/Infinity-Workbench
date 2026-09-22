@@ -2051,7 +2051,7 @@ class Task9CatalogDiffTestCase(unittest.TestCase):
         ).resolve().parents[2] / ".github/workflows/model-catalog-refresh.yml"
         workflow_text = content.read_text(encoding="utf-8")
         self.assertIn("on:", workflow_text)
-        self.assertIn("23 3 * * 1", workflow_text)
+        self.assertNotIn("schedule:", workflow_text)
         self.assertIn("workflow_dispatch", workflow_text)
         self.assertIn(
             "permissions:\n  contents: write\n  pull-requests: write\n\nconcurrency:",

@@ -50,6 +50,7 @@ class BackupPreferenceInventoryTest {
             "data/manager/ProviderManager.kt#settingsPrefs" to "nexara_settings",
             "data/manager/ProviderManager.kt#searchPrefs" to "nexara_search",
             "data/manager/ProviderManager.kt#backupPrefs" to "nexara_backup_settings",
+            "data/model/catalog/ModelCatalogUpdater.kt#prefs" to "catalog_update_schedule",
         )
         val editorChain = Regex("(\\w+)\\s*\\.edit\\(\\)([\\s\\S]{0,2000}?)\\.apply\\(\\)")
         val editorPut = Regex("\\.put(?:String|StringSet|Boolean|Int|Long|Float)\\(\\s*\"([^\"]+)\"")
@@ -230,6 +231,12 @@ class BackupPreferenceInventoryTest {
                     "post_notifications_asked",
                 ),
             ).isFalse()
+    }
+
+    @Test
+    fun `目录刷新节流状态属于设备本地状态且不得进入备份`() {
+        assertThat(BackupPreferencePolicy.isKnown("catalog_update_schedule", "checkedAt")).isTrue()
+        assertThat(BackupPreferencePolicy.isAllowed("catalog_update_schedule", "checkedAt")).isFalse()
     }
 
     @Test

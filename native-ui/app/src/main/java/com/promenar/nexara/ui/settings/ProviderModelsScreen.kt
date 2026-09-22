@@ -47,6 +47,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -97,6 +98,7 @@ private data class CapabilityTag(
 )
 
 private val CapabilityTags = listOf(
+    CapabilityTag("toolcalling", R.string.provider_models_capability_tools),
     CapabilityTag("vision", R.string.provider_models_capability_vision),
     CapabilityTag("internet", R.string.provider_models_capability_internet),
     CapabilityTag("audioinput", R.string.provider_models_capability_audio_input),
@@ -114,6 +116,7 @@ internal data class ProviderModelsScreenState(
     val syncNotice: UiStatusNotice?,
     val models: List<ModelInfo>,
     val modelTestStates: Map<String, ModelTestState>,
+    val catalogStatus: com.promenar.nexara.data.model.catalog.CatalogUpdateStatus? = null,
 )
 
 internal data class ProviderModelsScreenActions(
@@ -127,6 +130,7 @@ internal data class ProviderModelsScreenActions(
     val onCancelTest: (String) -> Unit,
     val onDelete: (String) -> Unit,
     val onClearNotice: () -> Unit,
+    val onRefreshCatalog: () -> Unit = {},
 )
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -143,6 +147,7 @@ fun ProviderModelsScreen(
     val providers by viewModel.providers.collectAsState()
     val isFetching by viewModel.isFetchingModels.collectAsState()
     val syncNotice by viewModel.modelSyncNotice.collectAsState()
+    val catalogStatus by viewModel.modelCatalogStatus.collectAsState()
 
     val provider = remember(providers, providerId) {
         providers.find { it.id == providerId }
@@ -163,6 +168,7 @@ fun ProviderModelsScreen(
         syncNotice = syncNotice,
         models = scopedModels,
         modelTestStates = modelTestStates,
+        catalogStatus = catalogStatus,
     )
 
     val actions = ProviderModelsScreenActions(
@@ -176,6 +182,7 @@ fun ProviderModelsScreen(
         onCancelTest = { modelId -> viewModel.cancelModelTest(modelId) },
         onDelete = { modelId -> viewModel.deleteModel(modelId) },
         onClearNotice = { viewModel.clearSyncNotice() },
+        onRefreshCatalog = { viewModel.refreshModelCatalog() },
     )
 
     ProviderModelsScreenContent(
@@ -244,6 +251,39 @@ internal fun ProviderModelsScreenContent(
             onDisableAll = actions.onDisableAll,
             onDeleteAll = { showDeleteAllDialog = true },
         )
+
+        state.catalogStatus?.let { catalog ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (catalog.cached) {
+                            stringResource(R.string.model_catalog_version, catalog.generatedAt.orEmpty().take(10), catalog.recordCount)
+                        } else stringResource(R.string.model_catalog_bundled),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (catalog.phase == com.promenar.nexara.data.model.catalog.CatalogUpdatePhase.FAILED) {
+                        Text(stringResource(R.string.model_catalog_failed), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error)
+                    }
+                    if (catalog.phase == com.promenar.nexara.data.model.catalog.CatalogUpdatePhase.APPLY_FAILED) {
+                        Text(stringResource(R.string.model_catalog_apply_failed), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                TextButton(
+                    onClick = actions.onRefreshCatalog,
+                    enabled = catalog.phase != com.promenar.nexara.data.model.catalog.CatalogUpdatePhase.UPDATING,
+                    modifier = Modifier.testTag("model_catalog_refresh"),
+                ) {
+                    Text(stringResource(if (catalog.phase == com.promenar.nexara.data.model.catalog.CatalogUpdatePhase.UPDATING)
+                        R.string.model_catalog_updating else R.string.model_catalog_update))
+                }
+            }
+        }
 
         // 同步反馈消息：据 severity 着色，据 code+args 经 stringResource 双语格式化
         val effectiveSyncNotice = state.syncNotice ?: if (state.isFetching) ModelSyncNotice.loading() else null

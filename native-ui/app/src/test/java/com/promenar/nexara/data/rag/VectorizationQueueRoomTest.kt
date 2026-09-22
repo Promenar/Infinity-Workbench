@@ -200,6 +200,94 @@ class VectorizationQueueRoomTest {
     }
 
     @Test
+    fun `恢复缺失扫描完成前不得启动已恢复任务`() = runTest {
+        seedFileAndTask("interrupted")
+        val service = BlockingDocumentIndexService()
+        val queue = queue(StandardTestDispatcher(testScheduler), documentIndexService = service)
+        val beforeScan = CompletableDeferred<Unit>()
+        val allowScan = CompletableDeferred<Unit>()
+        queue.beforeRecoveryMissingScanForTest = {
+            beforeScan.complete(Unit)
+            allowScan.await()
+        }
+        val recovery = async { queue.resumeInterruptedTasks() }
+        try {
+            beforeScan.await()
+            runCurrent()
+            assertThat(queue.snapshotState().isProcessing).isFalse()
+            assertThat(service.firstStarted.isCompleted).isFalse()
+            allowScan.complete(Unit)
+            assertThat(recovery.await().isSuccess).isTrue()
+            service.firstStarted.await()
+        } finally {
+            allowScan.complete(Unit)
+            queue.shutdown()
+            recovery.cancel()
+        }
+    }
+
+    @Test
+    fun `恢复扫描失败后普通入队不会提前启动且恢复重试可继续`() = runTest {
+        seedFileAndTask("interrupted")
+        val service = BlockingDocumentIndexService()
+        val queue = queue(StandardTestDispatcher(testScheduler), documentIndexService = service)
+        try {
+            queue.beforeRecoveryMissingScanForTest = { error("模拟扫描失败") }
+            assertThat(queue.resumeInterruptedTasks().isFailure).isTrue()
+            queue.enqueueDocumentReference(ROOT, DOC, source.name, "text/plain", "hash-v1", 2)
+            runCurrent()
+            assertThat(queue.snapshotState().restored).isFalse()
+            assertThat(queue.snapshotState().isProcessing).isFalse()
+            assertThat(service.firstStarted.isCompleted).isFalse()
+
+            queue.beforeRecoveryMissingScanForTest = {}
+            assertThat(queue.resumeInterruptedTasks().isSuccess).isTrue()
+            service.firstStarted.await()
+            assertThat(queue.snapshotState().restored).isTrue()
+        } finally {
+            queue.shutdown()
+        }
+    }
+
+    @Test
+    fun `已有任务在恢复扫描期间结束时排队任务不再显示处理中`() = runTest {
+        seedFilesWithoutTask()
+        val secondDoc = "second-doc"
+        val original = requireNotNull(database.fileEntryDao().getByUuid(ROOT, DOC))
+        database.fileEntryDao().insert(original.copy(uuid = secondDoc, name = "second.txt", materializedPath = "/second.txt"))
+        val service = BlockingDocumentIndexService()
+        val queue = queue(StandardTestDispatcher(testScheduler), documentIndexService = service)
+        val beforeScan = CompletableDeferred<Unit>()
+        val allowScan = CompletableDeferred<Unit>()
+        val finalEntered = CompletableDeferred<Unit>()
+        var recovery: kotlinx.coroutines.Deferred<Result<Unit>>? = null
+        try {
+            queue.enqueueDocumentReference(ROOT, DOC, source.name, "text/plain", "hash-v1", 2)
+            service.firstStarted.await()
+            queue.enqueueDocumentReference(ROOT, secondDoc, "second.txt", "text/plain", "hash-v1", 2)
+            queue.beforeRecoveryMissingScanForTest = { beforeScan.complete(Unit); allowScan.await() }
+            queue.beforeFinalQueueTransitionForTest = { finalEntered.complete(Unit) }
+            recovery = async { queue.resumeInterruptedTasks() }
+            beforeScan.await()
+            updateTarget("hash-v1", 2, vectorizedAt = 2)
+            service.firstResult.complete(DocumentIndexResult.Rebuilt(DOC))
+            finalEntered.await()
+            runCurrent()
+            assertThat(queue.snapshotState().queue.map { it.docId }).containsExactly(secondDoc)
+            assertThat(queue.snapshotState().isProcessing).isFalse()
+            assertThat(service.secondStarted.isCompleted).isFalse()
+            allowScan.complete(Unit)
+            assertThat(recovery.await().isSuccess).isTrue()
+            service.secondStarted.await()
+            assertThat(queue.snapshotState().isProcessing).isTrue()
+        } finally {
+            allowScan.complete(Unit)
+            queue.shutdown()
+            recovery?.cancel()
+        }
+    }
+
+    @Test
     fun `文件型Room数据库关闭后重开能恢复失败任务并由Queue复用同一task_id重置为pending`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         // 测试上下文下的唯一数据库文件名，避免与其它用例或历史残留冲突

@@ -19,6 +19,24 @@ import org.junit.Test
  */
 class ModelSelectionUiModelTest {
 
+    @Test
+    fun `投影保留供应商显式不支持和网关身份`() {
+        val item = ModelInfo(
+            name = "provider", id = "p::newapi/deepseek-v4-flash", description = "", enabled = true,
+            remoteModelId = "newapi/deepseek-v4-flash", providerId = "p", providerOwnedBy = "NEWAPI",
+            providerMetadata = com.promenar.nexara.data.model.catalog.ModelMetadataOverride(
+                capabilities = mapOf(ModelCapability.TOOL_CALLING to SupportState.UNSUPPORTED),
+            ),
+        )
+        val result = item.toModelSelectionUiModel(ModelMetadataResolver())
+        assertThat(result.remoteModelId).isEqualTo(item.remoteModelId)
+        assertThat(result.displayName).isEqualTo("DeepSeek V4 Flash")
+        assertThat(result.capabilityStates[ModelCapability.TOOL_CALLING]).isEqualTo(SupportState.UNSUPPORTED)
+        val edited = item.copy(capabilities = listOf("toolcalling"), userEditedFields = setOf("capabilities"))
+            .toModelSelectionUiModel(ModelMetadataResolver())
+        assertThat(edited.capabilityStates[ModelCapability.TOOL_CALLING]).isEqualTo(SupportState.SUPPORTED)
+    }
+
     private val resolver = ModelMetadataResolver()
 
     // ------------------------------------------------------------------
@@ -167,7 +185,7 @@ class ModelSelectionUiModelTest {
     }
 
     @Test
-    fun `user edited capabilities do not mark non editable tool calling as unsupported`() {
+    fun `用户取消勾选工具调用时保留显式不支持`() {
         val projection = model(
             remoteModelId = "vendor-unknown-model-x",
             capabilities = emptyList(),
@@ -175,7 +193,7 @@ class ModelSelectionUiModelTest {
         ).toModelSelectionUiModel(resolver)
 
         assertThat(projection.capabilityStates[ModelCapability.TOOL_CALLING])
-            .isEqualTo(SupportState.UNKNOWN)
+            .isEqualTo(SupportState.UNSUPPORTED)
     }
 
     @Test

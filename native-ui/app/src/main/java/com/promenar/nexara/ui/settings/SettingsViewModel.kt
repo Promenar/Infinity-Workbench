@@ -282,6 +282,11 @@ class SettingsViewModel(
 
     /** 统一单例数据源 — 所有提供商/模型操作均通过 ProviderManager */
     private val pm: ProviderManager = ProviderManager.getInstance()
+    val modelCatalogStatus get() = app.modelCatalogUpdater.status
+
+    fun refreshModelCatalog() {
+        viewModelScope.launch { app.modelCatalogUpdater.refresh(force = true) }
+    }
 
     val providerModels: StateFlow<List<ModelInfo>> = pm.providerModels
 
@@ -431,7 +436,7 @@ class SettingsViewModel(
                 val providerName = pm.providers.value.find { it.id == providerId }?.name ?: "Provider"
 
                 // 步骤 1: 尝试远程拉取模型列表
-                var fetchedIds: List<String> = emptyList()
+                var fetchedModels: List<com.promenar.nexara.data.remote.protocol.RemoteModelDescriptor> = emptyList()
                 var usedBuiltInFallback = false
                 try {
                     val tmpProvider = if (config.protocolType is com.promenar.nexara.data.remote.protocol.ProtocolType.Local) {
@@ -447,25 +452,27 @@ class SettingsViewModel(
                             .location(VERTEX_DEFAULT_LOCATION)
                             .build()
                     }
-                    fetchedIds = tmpProvider.listModels()
+                    fetchedModels = tmpProvider.listModelDescriptors()
                     currentCoroutineContext().ensureActive()
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Exception) { /* 远程拉取失败，回退到数据库 */ }
 
                 // 步骤 2: 回退 — 从 ModelSpecs 数据库匹配该协议类型的已知模型
-                if (fetchedIds.isEmpty()) {
+                if (fetchedModels.isEmpty()) {
                     usedBuiltInFallback = true
-                    fetchedIds = getFallbackModelIds(config.protocolType)
+                    fetchedModels = getFallbackModelIds(config.protocolType).map {
+                        com.promenar.nexara.data.remote.protocol.RemoteModelDescriptor(it)
+                    }
                 }
 
                 // 步骤 3: 合并模型（新增 + 更新元数据）
-                if (fetchedIds.isNotEmpty()) {
+                if (fetchedModels.isNotEmpty()) {
                     var newCount = 0
                     var updatedCount = 0
 
-                    for (id in fetchedIds) {
-                        when (pm.syncModelMetadata(providerId, providerName, id)) {
+                    for (descriptor in fetchedModels) {
+                        when (pm.syncModelMetadata(providerId, providerName, descriptor)) {
                             com.promenar.nexara.data.manager.ModelSyncResult.ADDED -> newCount++
                             com.promenar.nexara.data.manager.ModelSyncResult.UPDATED -> updatedCount++
                             com.promenar.nexara.data.manager.ModelSyncResult.UNCHANGED -> Unit
