@@ -4,26 +4,27 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
@@ -45,6 +46,10 @@ private fun ModelCapability.selectionLabel(): String? = when (this) {
     ModelCapability.CHAT_ENDPOINT -> null
 }
 
+/**
+ * 模型选择行：自绘紧凑布局（品牌圆标 + 名称 + 单行元信息 + 选中勾）。
+ * 不使用 ListItem 默认行高，保证选择器列表的密度与商业应用一致。
+ */
 @Composable
 fun ModelSelectionListItem(
     model: ModelSelectionUiModel,
@@ -55,7 +60,7 @@ fun ModelSelectionListItem(
     val supportedCapabilities = model.capabilityStates
         .filter { it.value == SupportState.SUPPORTED }
         .keys
-        .take(3)
+        .take(2)
     val capabilitySummary = supportedCapabilities.mapNotNull { it.selectionLabel() }
     val contextSummary = model.contextTokens?.let { tokens ->
         when {
@@ -64,74 +69,73 @@ fun ModelSelectionListItem(
             else -> tokens.toString()
         }
     }
+    val metaText = buildList {
+        contextSummary?.let { add(it) }
+        addAll(capabilitySummary)
+        add(model.providerName)
+    }.joinToString(" · ")
 
-    ListItem(
-        leadingContent = {
-            ModelBrandTile(
-                modelId = model.remoteModelId,
-                size = 32.dp,
-                contentDescription = model.displayName,
-            )
-        },
-        headlineContent = {
-            Text(
-                text = model.displayName,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        supportingContent = {
-            Column {
-                Text(
-                    text = listOfNotNull(model.providerName, contextSummary).joinToString(" · "),
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (capabilitySummary.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        capabilitySummary.forEach { label ->
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .background(
-                                        MaterialTheme.colorScheme.surfaceContainerHigh,
-                                        RoundedCornerShape(4.dp),
-                                    )
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        trailingContent = {
-            if (selected) {
-                Icon(
-                    imageVector = Icons.Rounded.Check,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-        },
-        colors = ListItemDefaults.colors(
-            containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
-        ),
+    Row(
         modifier = modifier
+            .fillMaxWidth()
             .minimumInteractiveComponentSize()
-            .semantics {
-                this.selected = selected
-            }
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                if (selected) {
+                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
+                } else {
+                    Color.Transparent
+                },
+            )
+            .semantics { this.selected = selected }
             .selectable(
                 selected = selected,
                 onClick = onClick,
                 role = Role.RadioButton,
             )
-    )
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ModelBrandTile(
+            modelId = model.remoteModelId,
+            size = 30.dp,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
+        ) {
+            Text(
+                text = model.displayName,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = metaText,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (selected) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
 }

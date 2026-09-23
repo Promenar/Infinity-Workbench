@@ -51,6 +51,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import com.promenar.nexara.ui.common.ModelBrandIcon
 import com.promenar.nexara.ui.common.NexaraBackButton
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
@@ -602,6 +603,7 @@ fun ChatScreenContent(
                         .orEmpty()
                     ChatInputTopBar(
                         modelName = modelDisplayName,
+                        modelId = uiState.session?.modelId,
                         tokenState = tokenState,
                         taskPanel = state.taskPanel,
                         postProcessTasks = state.postProcessTasks,
@@ -862,6 +864,7 @@ fun ContextCircularIndicator(
 @Composable
 private fun ChatInputTopBar(
     modelName: String,
+    modelId: String?,
     tokenState: ChatViewModel.TokenIndicatorState,
     taskPanel: TaskPanelUiState?,
     postProcessTasks: List<PostProcessTask>,
@@ -905,7 +908,11 @@ private fun ChatInputTopBar(
                 )
             },
             leadingIcon = {
-                Icon(Icons.Rounded.Memory, contentDescription = null)
+                ModelBrandIcon(
+                    modelId = modelId,
+                    modifier = Modifier.size(20.dp),
+                    fallbackTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             },
         )
 

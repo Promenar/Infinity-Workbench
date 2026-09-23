@@ -91,8 +91,8 @@ class ImageGenerationSkill(
             return ToolResult(id = resultId, content = "Prompt must not be blank", status = "error")
         }
 
-        val size = args.stringArgument("size") ?: "1024x1024"
-        val quality = args.stringArgument("quality") ?: "standard"
+        val size = args.stringArgument("size")
+        val quality = args.stringArgument("quality")
         val style = args.stringArgument("style")
 
         // ── 读取图像模型配置 ──

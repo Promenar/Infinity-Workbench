@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.common
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -13,7 +14,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DeveloperBoard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -142,7 +142,10 @@ internal fun ModelPickerSheetContent(
                 }
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxWidth()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
                 itemsIndexed(models, key = { _, model -> model.selectionId }) { index, model ->
                     val isSelected = model.selectionId == currentModelId
 
@@ -154,13 +157,6 @@ internal fun ModelPickerSheetContent(
                             .fillMaxWidth()
                             .testTag("model_picker_item:${model.selectionId}"),
                     )
-
-                    if (index < models.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                        )
-                    }
                 }
             }
         }

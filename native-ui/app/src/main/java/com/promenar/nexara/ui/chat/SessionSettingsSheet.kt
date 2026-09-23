@@ -322,7 +322,8 @@ internal fun ModelPanel(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .testTag(UiTags.CHAT_MODEL_LIST)
+                .testTag(UiTags.CHAT_MODEL_LIST),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             itemsIndexed(filtered, key = { _, it -> it.selectionId }) { index, model ->
                 val isSelected = model.selectionId == selectedModelId
@@ -334,13 +335,6 @@ internal fun ModelPanel(
                         .fillMaxWidth()
                         .testTag(UiTags.chatModelOption(model.selectionId))
                 )
-
-                if (index < filtered.lastIndex) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(start = 16.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant
-                    )
-                }
             }
         }
     }

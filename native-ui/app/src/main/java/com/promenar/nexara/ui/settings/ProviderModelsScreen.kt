@@ -71,6 +71,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -654,8 +655,8 @@ internal fun ProviderModelsModelRow(
             .fillMaxWidth()
             .clickable(role = Role.Button, onClick = onRowClick)
             .testTag(UiTags.providerModelsModelCard(model.id))
-            .padding(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -663,20 +664,21 @@ internal fun ProviderModelsModelRow(
         ) {
             ModelBrandTile(
                 modelId = remoteModelId,
-                size = 36.dp,
+                size = 32.dp,
                 contentDescription = model.name,
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = model.name,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = remoteModelId,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -696,7 +698,7 @@ internal fun ProviderModelsModelRow(
         }
         Text(
             text = capabilitySummary,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,

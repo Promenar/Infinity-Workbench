@@ -7,8 +7,9 @@ import org.junit.Test
 /**
  * Task 7 RED — 锁定统一模型选择表面的 Material 3 视觉合同。
  *
- * 模型选择器必须使用连续 ListItem、secondaryContainer tonal 选中态、稳定 key、
- * selected 语义和勾选尾标；共享 [ModelSelectionListItem]；最多两个能力摘要；
+ * 模型选择器必须使用共享紧凑行（品牌圆标 + 单行元信息，自绘 Row）、
+ * secondaryContainer tonal 选中态、稳定 key、selected 语义和勾选尾标；
+ * 共享 [ModelSelectionListItem]；最多两个能力摘要；
  * 禁止 NexaraGlassCard、硬编码能力色以及旧 UI 专用 ModelItem / ModelCapability。
  *
  * 见 docs/superpowers/specs/2026-07-20-nexara-md3-convergence-design.md §9。
@@ -43,16 +44,15 @@ class ModelPickerMaterialContractTest {
     }
 
     @Test
-    fun `selection list item renders continuous Material ListItem with headline and supporting slots`() {
+    fun `selection list item renders compact custom row with brand tile and meta line`() {
         val source = commonSource("ModelSelectionListItem")
 
         assertThat(source).contains("fun ModelSelectionListItem(")
-        assertThat(source).contains("ListItem(")
-        assertThat(source).contains("headlineContent")
-        assertThat(source).contains("supportingContent")
+        assertThat(source).contains("ModelBrandTile(")
+        assertThat(source).contains("MaterialTheme.typography.titleSmall")
+        assertThat(source).contains("MaterialTheme.typography.labelSmall")
         assertThat(source).contains("MaterialTheme.colorScheme")
         assertThat(source).doesNotContain("NexaraGlassCard(")
-        assertThat(source).doesNotContain("Surface(")
     }
 
     @Test

@@ -47,8 +47,8 @@ class ImageGenClient(
      */
     suspend fun generate(
         prompt: String,
-        size: String = "1024x1024",
-        quality: String = "standard",
+        size: String? = null,
+        quality: String? = null,
         style: String? = null,
         n: Int = 1
     ): ImageGenResult {
@@ -60,14 +60,15 @@ class ImageGenClient(
         val endpoint = if (cleanBase.endsWith("/v1")) "$cleanBase/images/generations"
         else "$cleanBase/v1/images/generations"
 
+        // 审计缺陷 P0-4：部分聚合网关对 DALL-E 专有参数（quality/style/response_format）返回 400，
+        // 只发送调用方显式给出的参数；服务端默认返回 b64_json，客户端两种格式均可解析。
         val requestBody = buildJsonObject {
             put("model", model)
             put("prompt", prompt)
             put("n", n)
-            put("size", size)
-            put("quality", quality)
-            if (style != null) put("style", style)
-            put("response_format", "url")     // 请求返回 URL（而非 b64_json，节省带宽）
+            size?.let { put("size", it) }
+            quality?.let { put("quality", it) }
+            style?.let { put("style", it) }
         }
 
         val response: HttpResponse = httpClient.post(endpoint) {

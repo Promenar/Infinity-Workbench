@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 模型品牌 Logo 体系与选择器商业级改版（2026-09-24）
+
+- 新增品牌 Logo 体系：引入 lobehub/lobe-icons（MIT）SVG 资产（22 个品牌），Coil3 注册 `SvgDecoder`，新增 `ModelBrandResolver`（模型 ID/family → 品牌键，含前缀映射规则）与 `ModelBrandIcon`/`ModelBrandTile` 共享组件，未知品牌优雅回退通用图标。
+- **模型选择列表重设计**：`ModelSelectionListItem` 弃用 ListItem 槽位，重写为紧凑自绘行——30dp 圆形品牌底座、名称 titleSmall（14sp）单行、元信息 labelSmall（11sp）单行（上下文 · 能力最多 2 项 · 提供方），选中态为 14dp 圆角 tonal 高亮块，列表不再绘制行间分隔线。
+- **多场景复用**：聊天胶囊模型指示器前缀替换为品牌 Logo（`modelId` 透传至 `ChatInputTopBar`）；Provider 模型页卡片同步降档（32dp 圆形底座、名称 titleSmall 单行、模型 ID 改等宽 labelSmall）；会话设置模型列表与默认模型槽位共用同一行组件。
+- 契约测试同步：`ModelPickerMaterialContractTest` 以"紧凑自绘行 + 品牌圆标 + 单行元信息"契约替换旧 ListItem 槽位断言。
+
 ### 占用圈胶囊瘦身与提示浮窗圆角（2026-09-24）
 
 - 聊天页模型/上下文/任务三胶囊高度 48dp → 36dp，降低文字上下留白（用户裁决：展示胶囊接受低于 48dp 触控标准）。
