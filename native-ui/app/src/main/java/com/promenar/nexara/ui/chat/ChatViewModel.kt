@@ -1,8 +1,11 @@
 package com.promenar.nexara.ui.chat
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
+import java.io.ByteArrayOutputStream
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -865,10 +868,21 @@ class ChatViewModel(
     }
 
     private fun uriToDataUrl(uri: Uri): String? {
+        // 审计缺陷 B：原图全量 base64 编码会让发送准备阻塞数秒，先降采样到视觉模型输入上限
         return try {
-            val bytes = application.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
-            val mimeType = application.contentResolver.getType(uri) ?: "image/jpeg"
-            "data:$mimeType;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
+            val resolver = application.contentResolver
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return null
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= IMAGE_MAX_DIMENSION_PX) sample *= 2
+            val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bitmap = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOptions) }
+                ?: return null
+            val output = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, IMAGE_COMPRESSION_QUALITY, output)
+            bitmap.recycle()
+            val bytes = output.toByteArray()
+            "data:image/jpeg;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
         } catch (_: Exception) {
             null
         }
@@ -1865,6 +1879,19 @@ class ChatViewModel(
     }
 
     companion object {
+        /** 审计缺陷 A：<1K 显示原始 token 数，避免整数截断把数百 token 吞成 0K。 */
+        fun formatTokenCount(tokens: Int): String {
+            if (tokens < 0) return "0"
+            if (tokens < 1000) return tokens.toString()
+            if (tokens >= 999_500) {
+                val m = tokens / 1_000_000.0
+                val text = if (m < 100) String.format(java.util.Locale.US, "%.1f", m) else String.format(java.util.Locale.US, "%.0f", m)
+                return text.removeSuffix(".0") + "M"
+            }
+            val k = tokens / 1000.0
+            val text = if (k < 100) String.format(java.util.Locale.US, "%.1f", k) else String.format(java.util.Locale.US, "%.0f", k)
+            return text.removeSuffix(".0") + "K"
+        }
         private val TERMINAL_GENERATION_PHASES = setOf(
             com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED,
             com.promenar.nexara.domain.generation.GenerationPhase.FAILED,
@@ -1874,6 +1901,8 @@ class ChatViewModel(
         private val FOREGROUND_STOPPING_PHASES = TERMINAL_GENERATION_PHASES +
             com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL
         private const val FONT_SIZE_PERSISTENCE_DEBOUNCE_MS = 180L
+        private const val IMAGE_MAX_DIMENSION_PX = 1568
+        private const val IMAGE_COMPRESSION_QUALITY = 85
         private const val DRAFT_PENDING_START = "__pending_generation_start__"
 
         fun factory(
@@ -1994,8 +2023,8 @@ class ChatViewModel(
             val prefs = application.getSharedPreferences("nexara_settings", 0)
             val savedContext = prefs.getInt("model_info_${modelId}_context", 0)
             
-            val max = if (savedContext > 0) savedContext 
-                     else findModelSpec(modelId)?.contextLength ?: 128000
+            val max = if (savedContext > 0) savedContext
+                     else findModelSpec(modelId)?.contextLength?.takeIf { it > 0 } ?: 128000
             
             _tokenIndicatorState.update { 
                 it.copy(

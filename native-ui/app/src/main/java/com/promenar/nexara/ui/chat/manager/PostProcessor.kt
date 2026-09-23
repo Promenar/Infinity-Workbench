@@ -185,7 +185,18 @@ class PostProcessor(
 
         fun estimateTokens(text: String): Int {
             if (text.isEmpty()) return 0
-            return (text.length / 4.0).toInt().coerceAtLeast(1)
+            // 英文 BPE ≈ 4 字符/token；CJK ≈ 1.5 字符/token（统一按 4 字符会低估中文 2–3 倍）
+            var cjk = 0
+            var other = 0
+            for (ch in text) {
+                if (isCjkCodePoint(ch.code)) cjk++ else other++
+            }
+            val estimated = (other / 4.0) + (cjk / 1.5)
+            return estimated.toInt().coerceAtLeast(1)
         }
+
+        private fun isCjkCodePoint(code: Int): Boolean =
+            code in 0x2E80..0x9FFF || code in 0x3400..0x4DBF ||
+                code in 0xF900..0xFAFF || code in 0x3000..0x303F || code in 0xFF00..0xFFEF
     }
 }

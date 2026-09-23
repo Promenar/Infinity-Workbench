@@ -107,6 +107,8 @@
 
 ### 缺陷 A：会话上下文占用圈恒显「0K / 1000K」
 
+> **修复记录（2026-09-23 第三轮）**：已实施——①`formatTokenCount` 自适应显示（<1K 原始数、≥999.5K 进 M）+ contextLength≤0 兜底 128K；②`estimateTokens` CJK 感知估算。设备实测：占用圈由「0K / 1000K」变为「412 / 1M」。新增单测 `PostProcessorEstimateTokensTest`、`ChatViewModelFormatTokenCountTest` 全绿，全量 JVM 单测 0 失败。
+
 - **取数链**：`ChatScreen.kt:1003` 显示 `state.used / 1000`；`used` 由 `ChatViewModel.updateTokenIndicator`（`ChatViewModel.kt:1951`）计算 = 系统提示 + 摘要 + 最近 10 条消息 + RAG，全部按 `PostProcessor.estimateTokens = 字符数/4` 估算。
 - **实测根因（DB 佐证）**：最富会话消息共 3024 字符 ≈ 756 token → `756/1000 = 0`（整数除法截断）→ 恒显 "0K"。分母为 1M 上下文时，进度环占比 0.08%，环与数字在该量级**均无有效分辨率**——用户感知「完全没纳入统计」成立。
 - **精度复核（用户质询后追加）**：对纯英文内容估算器本身自洽——生图会话 DB 逐条对账（user 85 / assistant 1207 / tool 21×3 字符）与弹层「活跃对话 337」完全吻合，且英文 chars/4 ≈ 真实 BPE 量级。**真正的失真是统计范围**：①工具 schema 定义（1–3K token）未计入；②多模态图片 token（数百/张）未计入；③`字符数/4` 对中文低估约 2–3 倍（中文 BPE ≈ 1.5–1.8 字符/token），中文会话活跃 token 被显著低报；④系统指令仅 39 是默认提示词近乎为空所致。
@@ -114,6 +116,8 @@
 - **修复建议**：①显示改自适应单位（<1K 显示原始 token 数或一位小数，≥1K 才用 K）；②max 兜底把 `<=0` 一并视为未提供；③低占比下指示器给出最小可视进度。
 
 ### 缺陷 B：带附件发送时输入框卡「待发」数秒
+
+> **修复记录（2026-09-23 第三轮）**：已实施降采样修复——`uriToDataUrl` 两段式解码 + `inSampleSize`（最长边 1568px）+ JPEG 85%，单测全绿；设备端附件流验证受自动化环境限制未走通，待人工确认（步骤：会话中 + → 图片 → 选大图 → 发送，观察输入框清空耗时）。
 
 - **链路**：`sendMessage`（`ChatViewModel.kt:643`）置 `GenerationStatus.UPLOADING` 后，在发送准备锁内同步执行 `uriToDataUrl`（`ChatViewModel.kt:867`）：`readBytes()` 全量读图 + `Base64.encodeToString`，**无降采样/压缩**。相机原图 3–8MB 时读取+编码即秒级阻塞，且发生在输入框清空之前——即用户看到的「卡在待发」。
 - **用户猜测的 RAG 检索**发生在消息入队后的生成管线（ContextBuilder），此时输入框已让位，不是本阻塞的成因。

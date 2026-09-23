@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 上下文占用圈与附件发送体验修复（2026-09-23）
+
+- **上下文占用圈自适应显示**：`formatTokenCount` 替换整数除法，<1K 显示原始 token 数（修复 756 token 恒显 "0K" 的截断），≥999.5K 进位 M 单位；模型 contextLength 为 0 时兜底 128K（此前 sensenova 类目录缺失项显示 "0K / 0K"）。
+- **CJK 感知 token 估算**：`PostProcessor.estimateTokens` 从统一 `字符数/4` 改为英文 4 字符/token、CJK 1.5 字符/token 分段计数，修正中文会话活跃 token 低估 2–3 倍。
+- **附件发送降采样**：`uriToDataUrl` 改为两段式解码（bounds 探测 + `inSampleSize`），最长边压至 1568px、JPEG 85% 后再 base64，消除原图全量编码造成的发送前数秒阻塞，并大幅缩减入库 data URL 体积。已知残留：图片 token 与工具 schema 仍未计入占用圈统计（见视觉审计报告缺陷 A 精度复核）。
+
 ### 视觉审计缺陷与渲染健壮性修复（2026-09-23）
 
 - **WebView UTF-8 安全解码**：在 `EChartsRenderer`、`MermaidRenderer` 与 `LatexRenderer` 的 Base64 解码流程中引入 `TextDecoder('utf-8')`，彻底解决原生 `atob` 按 Latin-1 解析导致的中文及多字节文本乱码。

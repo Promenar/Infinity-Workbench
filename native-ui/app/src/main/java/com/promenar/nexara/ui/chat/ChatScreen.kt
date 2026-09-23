@@ -1000,7 +1000,7 @@ private fun TokenIndicator(
             ),
             label = {
                 Text(
-                    text = "${state.used / 1000}K / ${state.max / 1000}K",
+                    text = "${ChatViewModel.formatTokenCount(state.used)} / ${ChatViewModel.formatTokenCount(state.max)}",
                     style = NexaraTypography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
