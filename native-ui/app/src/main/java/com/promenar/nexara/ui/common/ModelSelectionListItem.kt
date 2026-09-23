@@ -69,7 +69,7 @@ fun ModelSelectionListItem(
         leadingContent = {
             ModelBrandTile(
                 modelId = model.remoteModelId,
-                size = 36.dp,
+                size = 32.dp,
                 contentDescription = model.displayName,
             )
         },

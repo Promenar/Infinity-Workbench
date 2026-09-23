@@ -663,7 +663,7 @@ internal fun ProviderModelsModelRow(
         ) {
             ModelBrandTile(
                 modelId = remoteModelId,
-                size = 40.dp,
+                size = 36.dp,
                 contentDescription = model.name,
             )
             Column(modifier = Modifier.weight(1f)) {

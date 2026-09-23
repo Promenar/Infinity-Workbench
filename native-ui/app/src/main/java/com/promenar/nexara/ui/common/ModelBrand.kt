@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.SubcomposeAsyncImage
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 
@@ -114,7 +115,7 @@ fun ModelBrandIcon(
     )
 }
 
-/** 品牌 Logo 的标准底座：圆角浅色衬底，保证任意底色上的可读性。 */
+/** 品牌 Logo 的标准底座：圆形浅色衬底，与全站圆形/胶囊视觉语言一致。 */
 @Composable
 fun ModelBrandTile(
     modelId: String?,
@@ -126,14 +127,14 @@ fun ModelBrandTile(
         modifier = modifier
             .size(size)
             .background(
-                MaterialTheme.colorScheme.surfaceContainerHigh,
-                RoundedCornerShape(8.dp),
+                MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                CircleShape,
             ),
         contentAlignment = Alignment.Center,
     ) {
         ModelBrandIcon(
             modelId = modelId,
-            modifier = Modifier.size(size * 0.62f),
+            modifier = Modifier.size(size * 0.58f),
             contentDescription = contentDescription,
             fallbackTint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
