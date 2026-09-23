@@ -85,7 +85,18 @@
 
 **结论：部分通过。** P0 中 2 项修复确认、1 项未生效、1 项半通过（暴露修复但执行断）；P1 中 3 项确认、2 项未决。
 
-**新增待查**：`generate_image` 审批通过后执行必失败（参数从完整到最小均被拒），错误文案「工具执行失败」出自工具执行层而非模型参数——需查 ImageGenerationSkill/工具执行器与图像模型配置的解析链路。
+### 第三轮修复与验收（2026-09-24，用户裁决项 + 验收未过项，主控直修）
+
+| 项 | 结果 | 实证 |
+|---|---|---|
+| P0-3 行内 LaTeX | ✅ 已修复并实证 | 根因：`repairCompressedMarkdownBoundaries` 的内联列表符号规则把公式内 " - " 折为换行，`$...$` 跨行失配。修复：LaTeX span 纳入压缩修复预保护。设备实测求根公式渲染为 KaTeX 图形。逐级管线诊断测试固化（`InlineLatexPipelineBreakTest`） |
+| P1-10 会话删除 | ✅ 已修复并实证 | 根因：DB 工作区路径以 `/data/data/<pkg>` 别名落库，与运行时 `/data/user/0/<pkg>` 父目录做字符串前缀比对误判越界（SecurityException）。修复：resolver 与 journal 全部路径比对 canonical 归一。设备实测删除成功（无失败文案，DB 会话数 8→7，workspace 目录清理） |
+| P0-4 生图执行 | ⚠️ 网关侧 | 注入与审批流正常；执行返回 503/model_not_found「No available channel for model sensenova-u1.5-lite」——网关通道不可用，非应用缺陷。应用侧已做两项增强：请求参数最小化（去掉网关不接受的 quality/response_format 默认注入）+ 工具错误详情透传（原先统一文案致模型盲试） |
+| P1-5 悬浮按钮遮挡 | ⚠️ 部分 | ECharts 原生 toolbox 已消除；「回到底部」FAB 在长会话仍可能与内容视觉重叠（低优先） |
+| 管线气泡样式统一（用户验收意见） | ✅ | 工具气泡改无边框 `surfaceContainerLow` 全宽（与思考框一致）；步骤间 6dp 间距；引导线与死代码 PipelineConnector 删除 |
+| P2-15/16/17/18/19 | ✅/未复核 | 由 Gemini 第一轮修复覆盖（unknown 标签、RAG 标题清洗、编辑器边距、Badge 展开、Provider 探测错误），本轮未逐项复拍 |
+
+**本轮验证**：新增/更新单测全绿（估算器、格式化、分段管线诊断、会话删除协调器）；全量 JVM 单测 0 失败；设备端删除/LaTeX/管线样式/上下文圈逐项目视确认。
 
 ## 四、修复优先级建议
 

@@ -562,6 +562,8 @@ internal fun repairCompressedMarkdownBoundaries(text: String): String {
     var processed = text
     processed = protect(Regex("""`[^`]*`"""), processed)
     processed = protect(Regex("""\[[^\]]+]\([^)]+\)"""), processed)
+    // 审计缺陷 P0-3：列表符号等压缩修复规则会把公式内 " - " 折成换行列表，导致 $...$ 跨行失配，先整体保护
+    processed = protect(Regex("""\$\$[\s\S]*?\$\$|\$[^\$\n]+\$"""), processed)
 
     processed = processed.replace(Regex("""[ \t]+---(?=#{1,6}(?!#))""")) {
         "\n\n---\n\n"

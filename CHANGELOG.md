@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 管线气泡统一与验收遗留项修复（2026-09-24）
+
+- **管线气泡样式统一**：工具执行气泡移除 tertiary 边框与 70% 宽度限制，与思考气泡统一为无边框 `surfaceContainerLow` 全宽样式；步骤间垂直引导线移除，改为 6dp 呼吸间距；死代码 `PipelineConnector` 一并清理。
+- **行内 LaTeX 在列表项中不渲染**：`repairCompressedMarkdownBoundaries` 的内联列表符号规则会把公式内 " - " 折成换行，导致 `$...$` 跨行失配；修复为与内联代码/链接一致，将 `$$` 块与 `$` 行内 LaTeX span 纳入压缩修复的预先保护。
+- **会话删除 SecurityException 根因修复**：DB 工作区路径以 `/data/data/<pkg>` 别名落库、运行时父目录为 `/data/user/0/<pkg>`，字符串前缀比对误判越界。`RoomSessionDeletionTargetResolver` 与 `RoomSessionWorkspaceMutationJournal` 全部路径比对改为 canonical 归一（显式符号链接仍拒绝），并新增删除失败的结构化日志（错误码+cause 栈）。
+- **工具执行错误透传**：`ToolExecutor` 不再用统一文案覆盖技能层错误详情，截断透传给模型供自我修正与用户定位；据此确认 `generate_image` 当前失败为网关侧 `sensenova-u1.5-lite` 通道不可用（503/model_not_found），非应用缺陷。
+
 ### 上下文占用圈与附件发送体验修复（2026-09-23）
 
 - **上下文占用圈自适应显示**：`formatTokenCount` 替换整数除法，<1K 显示原始 token 数（修复 756 token 恒显 "0K" 的截断），≥999.5K 进位 M 单位；模型 contextLength 为 0 时兜底 128K（此前 sensenova 类目录缺失项显示 "0K / 0K"）。

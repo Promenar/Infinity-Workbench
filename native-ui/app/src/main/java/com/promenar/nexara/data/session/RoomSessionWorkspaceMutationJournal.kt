@@ -66,8 +66,8 @@ class RoomSessionWorkspaceMutationJournal(
 
     override suspend fun rollback(staged: StagedSessionWorkspaceMutation) = withContext(Dispatchers.IO) {
         validateJournal(staged, WorkspaceMutationStage.PREPARED)
-        val parent = workspaceParent.toAbsolutePath().normalize()
-        val source = staged.target.physicalRoot.toAbsolutePath().normalize()
+        val parent = workspaceParent.toFile().canonicalFile.toPath().normalize()
+        val source = staged.target.physicalRoot.toFile().canonicalFile.toPath().normalize()
         val target = stagedPath(parent, staged.operationId)
         val sourceExists = exists(source)
         val targetExists = exists(target)
@@ -88,8 +88,8 @@ class RoomSessionWorkspaceMutationJournal(
         val journal = database.workspaceMutationDao().get(staged.operationId)
             ?: throw IllegalStateException("DB_COMMITTED 删除 journal 不存在")
         validateJournal(staged, WorkspaceMutationStage.DB_COMMITTED, journal)
-        val parent = workspaceParent.toAbsolutePath().normalize()
-        val source = staged.target.physicalRoot.toAbsolutePath().normalize()
+        val parent = workspaceParent.toFile().canonicalFile.toPath().normalize()
+        val source = staged.target.physicalRoot.toFile().canonicalFile.toPath().normalize()
         val target = stagedPath(parent, staged.operationId)
         check(!exists(source) && exists(target)) { "DB_COMMITTED 删除文件布局冲突" }
         verifyIdentity(target, staged.target.rootIdentity)
@@ -128,11 +128,11 @@ class RoomSessionWorkspaceMutationJournal(
     }
 
     private fun validateTarget(target: SessionDeletionTarget): Path {
-        val parent = workspaceParent.toAbsolutePath().normalize()
-        val source = target.physicalRoot.toAbsolutePath().normalize()
-        if (!Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(parent) ||
-            source.parent != parent || Files.isSymbolicLink(source) ||
-            !Files.isDirectory(source, LinkOption.NOFOLLOW_LINKS)) {
+        // 审计缺陷 P1-10：DB/路径别名（/data/data 与 /data/user/0）形式不一致会误判越界，
+        // 两侧 canonical 归一后再比对；符号链接陷阱在归一后仍会落在父目录之外而被拒绝。
+        val parent = workspaceParent.toFile().canonicalFile.toPath().normalize()
+        val source = target.physicalRoot.toFile().canonicalFile.toPath().normalize()
+        if (!Files.isDirectory(parent) || source.parent != parent || !Files.isDirectory(source)) {
             throw SecurityException("会话工作区根或父目录无效")
         }
         verifyIdentity(source, target.rootIdentity)

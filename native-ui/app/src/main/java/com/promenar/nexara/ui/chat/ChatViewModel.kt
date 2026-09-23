@@ -1846,6 +1846,8 @@ class ChatViewModel(
                 generationPresentationStore.release(sessionId)
             }.run(onDeleted)
             if (failure != null) {
+                // 审计缺陷 P1-10：失败码与根因原先被吞掉，仅剩通用文案，无法定位删除链断点
+                NexaraLogger.logError("ChatViewModel", failure)
                 _error.value = stringResourceResolver(R.string.chat_delete_session_failed)
             }
         }

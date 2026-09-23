@@ -516,6 +516,15 @@ class MarkdownTextTest {
             assertThat(result).hasSize(1)
             assertThat(result[0]).isInstanceOf(ContentSegment.Mermaid::class.java)
         }
+
+        @Test
+        fun `inline latex inside ordered list item with latex commands is segmented`() {
+            // 审计缺陷 P0-3 实测原文：真实模型回复中位于有序列表项内的行内公式
+            val input = "3. 行内 LaTeX 二次方程求根公式：\$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}\$\n\n4. Mermaid 流程图"
+            val result = splitRichSegments(input)
+            assertThat(result.any { it is ContentSegment.InlineLatex }).isTrue()
+            assertThat(result.none { (it as? ContentSegment.Markdown)?.content?.contains("\\frac") == true }).isTrue()
+        }
     }
 
     @Nested

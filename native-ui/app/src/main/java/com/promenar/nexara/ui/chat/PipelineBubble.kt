@@ -2,9 +2,7 @@ package com.promenar.nexara.ui.chat
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -193,7 +191,8 @@ fun PipelineBubble(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp)
+                .padding(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             allSteps.forEachIndexed { index, step ->
                 val isLastInGroup = index == allSteps.lastIndex
@@ -241,15 +240,9 @@ fun PipelineBubble(
                     }
                 }
 
-                // ── 步骤间的垂直连接线（思考轨迹自行绘制连接）──
+                // ── 步骤间仅保留呼吸间距（用户裁决：引导线多余，无边框样式无需额外间隔线）──
                 if (index < allSteps.lastIndex && step !is PipelineStep.Thinking) {
-                    Box(
-                        modifier = Modifier
-                            .padding(start = 20.dp, top = 2.dp, bottom = 2.dp)
-                            .width(1.dp)
-                            .height(12.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f))
-                    )
+                    Spacer(modifier = Modifier.height(2.dp))
                 }
             }
 
@@ -697,11 +690,10 @@ private fun InlineToolRow(
         ) {
             Row(
                 modifier = Modifier
-                    .fillMaxWidth(0.7f) // 进一步缩减指示器宽度
+                    .fillMaxWidth()
                     .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.08f))
-                    .border(0.5.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
                     .clickable { isExpanded = !isExpanded } // 移到此处修复涟漪超出容器 Bug
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -910,35 +902,8 @@ private fun ContentSegment(
 // ─────────────────────────────────────────────────────────────────
 //  PipelineConnector — 竖线连接器
 // ─────────────────────────────────────────────────────────────────
-
-@Composable
-private fun PipelineConnector(
-    isLast: Boolean,
-    withLine: Boolean = false,
-    color: Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .width(20.dp)
-            .then(if (withLine) Modifier.height(IntrinsicSize.Max) else Modifier.height(24.dp))
-    ) {
-        Box(
-            modifier = Modifier
-                .size(6.dp)
-                .clip(CircleShape)
-                .background(color)
-        )
-        if (!isLast || withLine) {
-            Box(
-                modifier = Modifier
-                    .width(1.5.dp)
-                    .weight(1f)
-                    .background(color)
-            )
-        }
-    }
-}
+// PipelineConnector 已移除（用户裁决：竖向引导线多余，步骤间以间距代替）
+// ─────────────────────────────────────────────────────────────────
 
 private fun extractToolImageModels(data: String?): List<String> {
     if (data.isNullOrBlank()) return emptyList()
