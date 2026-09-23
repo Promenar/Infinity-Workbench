@@ -103,4 +103,22 @@
 
 ---
 
+## 六、补充：用户报告体验缺陷诊断（2026-09-23，验收后追加）
+
+### 缺陷 A：会话上下文占用圈恒显「0K / 1000K」
+
+- **取数链**：`ChatScreen.kt:1003` 显示 `state.used / 1000`；`used` 由 `ChatViewModel.updateTokenIndicator`（`ChatViewModel.kt:1951`）计算 = 系统提示 + 摘要 + 最近 10 条消息 + RAG，全部按 `PostProcessor.estimateTokens = 字符数/4` 估算。
+- **实测根因（DB 佐证）**：最富会话消息共 3024 字符 ≈ 756 token → `756/1000 = 0`（整数除法截断）→ 恒显 "0K"。分母为 1M 上下文时，进度环占比 0.08%，环与数字在该量级**均无有效分辨率**——用户感知「完全没纳入统计」成立。
+- **次生缺陷**：sensenova 模型目录缺 contextLength 时 `max = 0`，显示「0K / 0K」——`ChatViewModel.kt:1997-1999` 的 `?: 128000` 兜底只兜 null 不兜 0。
+- **修复建议**：①显示改自适应单位（<1K 显示原始 token 数或一位小数，≥1K 才用 K）；②max 兜底把 `<=0` 一并视为未提供；③低占比下指示器给出最小可视进度。
+
+### 缺陷 B：带附件发送时输入框卡「待发」数秒
+
+- **链路**：`sendMessage`（`ChatViewModel.kt:643`）置 `GenerationStatus.UPLOADING` 后，在发送准备锁内同步执行 `uriToDataUrl`（`ChatViewModel.kt:867`）：`readBytes()` 全量读图 + `Base64.encodeToString`，**无降采样/压缩**。相机原图 3–8MB 时读取+编码即秒级阻塞，且发生在输入框清空之前——即用户看到的「卡在待发」。
+- **用户猜测的 RAG 检索**发生在消息入队后的生成管线（ContextBuilder），此时输入框已让位，不是本阻塞的成因。
+- **附加缺陷**：base64 data URL 直接写入 Room 消息行（`userImages`），库体积随附件数膨胀、历史加载变慢。
+- **修复建议**：发送前按视觉模型输入上限降采样再编码（或先清输入框、转换移入后台服务并给附件级进度）；长期应避免把 data URL 整块入库。
+
+---
+
 *审计执行：ZCode 定时会话（GLM-5.3-Flash 主控 + k3-256k 视觉子代理）；密钥与计费纪律：全程仅 5 个免费模型 ID，密钥未入库未落报告，审计结束即删除。*
