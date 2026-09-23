@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-09-23T17:25:21.147Z",
+  "sessionId": "sess_bde02238-44f8-4215-9691-3dcb25c762ac",
+  "event": "PostToolUse",
+  "toolName": "Edit",
+  "file": "/Users/promenar/Codex/Nexara/native-ui/app/src/main/java/com/promenar/nexara/ui/common/ModelSelectionListItem.kt",
+  "outcome": "inconclusive",
+  "coverage": "partial",
+  "findingCount": 0,
+  "durationMs": 4,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}

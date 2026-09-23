@@ -279,6 +279,7 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.0.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.0")
     implementation("io.coil-kt.coil3:coil-video:3.0.0")
+    implementation("io.coil-kt.coil3:coil-svg:3.0.0")
 
     // ─── 数据存储 (Multiplatform-Ready) ───
     implementation("androidx.datastore:datastore-preferences:1.0.0")

@@ -1,8 +1,13 @@
 package com.promenar.nexara.ui.common
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -50,7 +55,7 @@ fun ModelSelectionListItem(
     val supportedCapabilities = model.capabilityStates
         .filter { it.value == SupportState.SUPPORTED }
         .keys
-        .take(2)
+        .take(3)
     val capabilitySummary = supportedCapabilities.mapNotNull { it.selectionLabel() }
     val contextSummary = model.contextTokens?.let { tokens ->
         when {
@@ -61,11 +66,18 @@ fun ModelSelectionListItem(
     }
 
     ListItem(
+        leadingContent = {
+            ModelBrandTile(
+                modelId = model.remoteModelId,
+                size = 36.dp,
+                contentDescription = model.displayName,
+            )
+        },
         headlineContent = {
             Text(
                 text = model.displayName,
                 style = MaterialTheme.typography.bodyLarge,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         },
@@ -74,18 +86,28 @@ fun ModelSelectionListItem(
                 Text(
                     text = listOfNotNull(model.providerName, contextSummary).joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (capabilitySummary.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = capabilitySummary.joinToString(" · "),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(
+                        modifier = Modifier.padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        capabilitySummary.forEach { label ->
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .background(
+                                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        RoundedCornerShape(4.dp),
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
                 }
             }
         },

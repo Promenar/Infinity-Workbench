@@ -131,6 +131,7 @@ import com.promenar.nexara.data.repository.LegacyWorkspaceRootAdoptionCoordinato
 import com.promenar.nexara.ui.rag.RagWorkspaceProvisioner
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
+import coil3.svg.SvgDecoder
 import coil3.video.VideoFrameDecoder
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 
@@ -612,6 +613,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         return ImageLoader.Builder(context)
             .components {
                 add(VideoFrameDecoder.Factory())
+                add(SvgDecoder.Factory())
             }
             .build()
     }

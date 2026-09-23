@@ -1,0 +1,51 @@
+package com.promenar.nexara.ui.common
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+/** 审计打磨：模型 ID → 品牌 Logo 资产键映射。 */
+class ModelBrandResolverTest {
+
+    @Test
+    fun `maps gateway free models`() {
+        assertEquals("deepseek", ModelBrandResolver.brandKey("deepseek-v4-flash"))
+        assertEquals("sensenova", ModelBrandResolver.brandKey("sensenova-6.8-flash-lite"))
+        assertEquals("sensenova", ModelBrandResolver.brandKey("sensenova-u1.5-lite"))
+    }
+
+    @Test
+    fun `maps major brands`() {
+        assertEquals("anthropic", ModelBrandResolver.brandKey("claude-opus-4-6"))
+        assertEquals("google", ModelBrandResolver.brandKey("gemini-3.7-flash"))
+        assertEquals("google", ModelBrandResolver.brandKey("gemma-3"))
+        assertEquals("openai", ModelBrandResolver.brandKey("gpt-5"))
+        assertEquals("openai", ModelBrandResolver.brandKey("codex-mini"))
+        assertEquals("openai", ModelBrandResolver.brandKey("openai/o4-mini"))
+        assertEquals("zhipu", ModelBrandResolver.brandKey("GLM-5.3"))
+        assertEquals("kimi", ModelBrandResolver.brandKey("kimi-k3"))
+        assertEquals("volcengine", ModelBrandResolver.brandKey("doubao-seed-2-1-pro"))
+        assertEquals("minimax", ModelBrandResolver.brandKey("MiniMax-M3"))
+        assertEquals("qwen", ModelBrandResolver.brandKey("qwen3-max"))
+        assertEquals("meta", ModelBrandResolver.brandKey("llama-4-scout"))
+        assertEquals("mistral", ModelBrandResolver.brandKey("mistral-large"))
+        assertEquals("grok", ModelBrandResolver.brandKey("grok-4.6"))
+        assertEquals("grok", ModelBrandResolver.brandKey("xai/grok-5"))
+        assertEquals("cohere", ModelBrandResolver.brandKey("command-a"))
+        assertEquals("nvidia", ModelBrandResolver.brandKey("nemotron-ultra"))
+        assertEquals("ai21", ModelBrandResolver.brandKey("jamba-large"))
+    }
+
+    @Test
+    fun `unknown models return null`() {
+        assertNull(ModelBrandResolver.brandKey("nexara-proprietary-9000"))
+        assertNull(ModelBrandResolver.brandKey(null))
+        assertNull(ModelBrandResolver.brandKey(""))
+    }
+
+    @Test
+    fun `case insensitive`() {
+        assertEquals("deepseek", ModelBrandResolver.brandKey("DeepSeek-V4-Flash"))
+        assertEquals("qwen", ModelBrandResolver.brandKey("QWEN3-MAX"))
+    }
+}
