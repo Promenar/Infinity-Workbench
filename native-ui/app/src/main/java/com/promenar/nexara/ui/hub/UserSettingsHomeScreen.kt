@@ -371,6 +371,7 @@ internal fun UserSettingsHomeScreenContent(
             item {
                 Spacer(modifier = Modifier.size(NexaraSpacing.Large))
                 GitHubProjectFooter(onOpen = actions.onOpenGithub)
+                Spacer(modifier = Modifier.size(NexaraSpacing.XXLarge))
             }
         }
     }

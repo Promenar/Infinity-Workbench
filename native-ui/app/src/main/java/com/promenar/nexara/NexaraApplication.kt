@@ -302,13 +302,25 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             recoverSessionDeletion = workspaceMutationRecoveryCoordinator::recoverSessionOrThrow,
             resolveTarget = targetResolver::resolve,
             isDatabaseOnlySession = { sessionId ->
-                database.sessionDao().getById(sessionId)?.let { session ->
-                    session.workspaceRootUuid.isNullOrBlank() && session.workspacePath.isNullOrBlank()
-                } == true
+                val session = database.sessionDao().getById(sessionId)
+                if (session == null) {
+                    true
+                } else {
+                    val rootUuid = session.workspaceRootUuid
+                    val pathStr = session.workspacePath
+                    if (rootUuid.isNullOrBlank() || pathStr.isNullOrBlank()) {
+                        true
+                    } else {
+                        val path = java.io.File(pathStr)
+                        val root = database.fileEntryDao().getAnyStateByUuidForLifecycle(rootUuid, rootUuid)
+                        !path.exists() || !path.isDirectory || root == null
+                    }
+                }
             },
             deleteDatabaseOnly = transaction::deleteWithoutWorkspace,
             cancelAndJoinGeneration = { sessionId ->
                 generationCoordinator.cancelAndJoinSession(sessionId)
+                generationCoordinator.release(sessionId, discardTerminal = true)
             },
             recoverFileMutations = { target ->
                 workspaceFileMutationRecoveryCoordinator.recoverRootOrThrow(target.workspaceRootUuid)

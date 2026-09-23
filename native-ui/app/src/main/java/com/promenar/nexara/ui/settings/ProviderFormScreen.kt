@@ -102,6 +102,7 @@ internal data class ProviderFormUiState(
     val credentialKindMismatch: Boolean = false,
     val unavailableLocalConfiguration: Boolean = false,
     val connectionTestState: ProviderConnectionTestState = ProviderConnectionTestState.Idle,
+    val connectionTestFailureMessage: String? = null,
     val isSaving: Boolean = false,
     val saveFailed: Boolean = false,
     val localConnectionFailed: Boolean = false,
@@ -217,6 +218,7 @@ fun ProviderFormScreen(
     var localProtocol by remember { mutableStateOf<ProtocolType>(ProtocolType.Generic_OpenAI_Compat) }
     var protocolMenuExpanded by remember { mutableStateOf(false) }
     var connectionTestState by remember { mutableStateOf(ProviderConnectionTestState.Idle) }
+    var connectionTestFailureMessage by remember { mutableStateOf<String?>(null) }
     var legacyUnsupportedProtocol by remember { mutableStateOf<ProtocolType?>(null) }
     var recoveringUnknownProtocol by remember { mutableStateOf(false) }
     val connectionProbe = ProviderConnectionProbe.processScoped
@@ -333,6 +335,7 @@ fun ProviderFormScreen(
             endpointValid && !protocolUnsupported && !legacyMigrationBlocked && !credentialKindMismatch
         ) {
             connectionTestState = ProviderConnectionTestState.Testing
+            connectionTestFailureMessage = null
             scope.launch {
                 val probeResult = withContext(Dispatchers.IO) {
                     try {
@@ -373,9 +376,37 @@ fun ProviderFormScreen(
                     }
                 }
                 connectionTestState = when (probeResult) {
-                    ProviderConnectionProbeResult.Success -> ProviderConnectionTestState.Success
-                    ProviderConnectionProbeResult.Unsupported -> ProviderConnectionTestState.Unavailable
-                    is ProviderConnectionProbeResult.Failure -> ProviderConnectionTestState.Error
+                    ProviderConnectionProbeResult.Success -> {
+                        connectionTestFailureMessage = null
+                        ProviderConnectionTestState.Success
+                    }
+                    ProviderConnectionProbeResult.Unsupported -> {
+                        connectionTestFailureMessage = null
+                        ProviderConnectionTestState.Unavailable
+                    }
+                    is ProviderConnectionProbeResult.Failure -> {
+                        val reasonText = when (probeResult.reason) {
+                            com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.AUTHENTICATION_REJECTED ->
+                                context.getString(R.string.provider_form_test_failed_auth)
+                            com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.NETWORK_UNAVAILABLE ->
+                                context.getString(R.string.provider_form_test_failed_network)
+                            com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.ENDPOINT_INVALID ->
+                                context.getString(R.string.provider_form_test_failed_endpoint)
+                            com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.CREDENTIALS_INVALID ->
+                                context.getString(R.string.provider_form_test_failed_credentials)
+                            com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.CREDENTIALS_MISSING ->
+                                context.getString(R.string.provider_form_test_failed_missing)
+                            com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.RESPONSE_INVALID ->
+                                context.getString(R.string.provider_form_test_failed_response)
+                        }
+                        val prefix = context.getString(R.string.common_cd_failed)
+                        connectionTestFailureMessage = if (probeResult.statusCode != null) {
+                            "$prefix (HTTP ${probeResult.statusCode})：$reasonText"
+                        } else {
+                            "$prefix：$reasonText"
+                        }
+                        ProviderConnectionTestState.Error
+                    }
                 }
                 if (probeResult == ProviderConnectionProbeResult.Success && providerId != null) {
                     isSaving = true
@@ -485,6 +516,7 @@ fun ProviderFormScreen(
             credentialKindMismatch = credentialKindMismatch,
             unavailableLocalConfiguration = unavailableLocalConfiguration,
             connectionTestState = connectionTestState,
+            connectionTestFailureMessage = connectionTestFailureMessage,
             isSaving = isSaving,
             saveFailed = saveFailed,
             localConnectionFailed = localConnectionFailed,
@@ -501,16 +533,19 @@ fun ProviderFormScreen(
                 }
                 presetMenuExpanded = false
                 connectionTestState = ProviderConnectionTestState.Idle
+                connectionTestFailureMessage = null
             },
             onNameChange = { name = it },
             onBaseUrlChange = {
                 baseUrl = it
                 connectionTestState = ProviderConnectionTestState.Idle
+                connectionTestFailureMessage = null
             },
             onSecretChange = {
                 secretInput = it
                 credentialUpdate = credentialUpdateForSecretInput(it, hasCredential)
                 connectionTestState = ProviderConnectionTestState.Idle
+                connectionTestFailureMessage = null
             },
             onRevealSecret = {
                 providerId?.let {
@@ -525,11 +560,13 @@ fun ProviderFormScreen(
                 hasCredential = false
                 credentialUpdate = CredentialUpdate.Clear
                 connectionTestState = ProviderConnectionTestState.Idle
+                connectionTestFailureMessage = null
             },
             onProtocolSelected = {
                 localProtocol = it
                 protocolMenuExpanded = false
                 connectionTestState = ProviderConnectionTestState.Idle
+                connectionTestFailureMessage = null
             },
             onProtocolMenuExpandedChange = { protocolMenuExpanded = it },
             onTestConnection = launchConnectionTest,
@@ -615,7 +652,8 @@ internal fun ProviderFormContent(
                         }
                         ProviderConnectionTestState.Error -> item {
                             ProviderFormStatusText(
-                                stringResource(R.string.common_cd_failed),
+                                state.connectionTestFailureMessage
+                                    ?: stringResource(R.string.common_cd_failed),
                                 success = false,
                             )
                         }

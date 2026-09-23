@@ -45,8 +45,10 @@ sealed interface ProviderConnectionProbeResult {
 
     data class Failure(
         val reason: ProviderConnectionProbeFailure,
+        val statusCode: Int? = null,
+        val detail: String? = null,
     ) : ProviderConnectionProbeResult {
-        override fun toString(): String = "ProviderConnectionProbeResult.Failure(reason=$reason)"
+        override fun toString(): String = "ProviderConnectionProbeResult.Failure(reason=$reason, statusCode=$statusCode)"
     }
 }
 
@@ -147,7 +149,9 @@ class ProviderConnectionProbe(
         }
         if (!response.status.isSuccess()) {
             return ProviderConnectionProbeResult.Failure(
-                ProviderConnectionProbeFailure.AUTHENTICATION_REJECTED,
+                reason = ProviderConnectionProbeFailure.AUTHENTICATION_REJECTED,
+                statusCode = response.status.value,
+                detail = response.status.description,
             )
         }
         val hasModelsEnvelope = if (config.protocolType == ProtocolType.Generic_OpenAI_Compat) {
@@ -198,7 +202,9 @@ class ProviderConnectionProbe(
         }
         if (!response.status.isSuccess()) {
             return ProviderConnectionProbeResult.Failure(
-                ProviderConnectionProbeFailure.AUTHENTICATION_REJECTED,
+                reason = ProviderConnectionProbeFailure.AUTHENTICATION_REJECTED,
+                statusCode = response.status.value,
+                detail = response.status.description,
             )
         }
         val hasAccessToken = try {

@@ -86,6 +86,9 @@ import com.promenar.nexara.ui.renderer.NexaraTableWidget
 import com.promenar.nexara.ui.renderer.PlantUmlBlock
 import com.promenar.nexara.ui.renderer.nexaraMarkdownColors
 import com.promenar.nexara.ui.renderer.nexaraMarkdownTypography
+import com.promenar.nexara.ui.renderer.nexaraSyntaxTheme
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.foundation.layout.PaddingValues
 import com.promenar.nexara.ui.renderer.parseMarkdownTable
 import com.promenar.nexara.ui.renderer.parseGfmAlert
 import com.promenar.nexara.ui.theme.NexaraShapes
@@ -265,7 +268,7 @@ internal fun splitRichSegments(text: String): List<ContentSegment> {
         RegexOption.IGNORE_CASE
     )
     val latexPattern = Regex("""\$\$(.+?)\$\$""", RegexOption.DOT_MATCHES_ALL)
-    val inlineLatexPattern = Regex("""(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)""")
+    val inlineLatexPattern = Regex("""(?<![\\\$])\$(?!\$)(?!\s)([^\$\n]+?)(?<!\s)(?<!\\)\$(?!\$)""")
 
     data class RichSpan(val start: Int, val end: Int, val segment: ContentSegment)
 
@@ -369,13 +372,14 @@ fun MarkdownText(
     )
 
     val cache = remember { ParseCache() }
-    val segments = remember(smoothed) {
-        if (cache.text.isNotEmpty()
+    val segments = remember(smoothed, isStreaming) {
+        if (isStreaming
+            && cache.text.isNotEmpty()
             && smoothed.startsWith(cache.text)
             && smoothed.length - cache.text.length < RE_PARSE_THRESHOLD
         ) {
             val newPart = smoothed.substring(cache.text.length)
-            val hasBoundaryCross = newPart.contains("```") || newPart.contains("$$")
+            val hasBoundaryCross = newPart.contains("```") || newPart.contains("$")
             if (hasBoundaryCross) {
                 val result = splitRichSegments(smoothed)
                 cache.text = smoothed
@@ -638,7 +642,12 @@ private fun MarkdownSafe(
         return
     }
 
-    val components = remember(fontSize, fontStyle) {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val highlightsBuilder = remember(isDark) {
+        dev.snipme.highlights.Highlights.Builder().theme(nexaraSyntaxTheme(isDark))
+    }
+
+    val components = remember(fontSize, fontStyle, highlightsBuilder) {
         markdownComponents(
             heading1 = anchoredHeading({ it.typography.h1 }, MarkdownTokenTypes.ATX_CONTENT),
             heading2 = anchoredHeading({ it.typography.h2 }, MarkdownTokenTypes.ATX_CONTENT),
@@ -722,7 +731,8 @@ private fun MarkdownSafe(
                         MarkdownHighlightedCode(
                             code = code,
                             language = language,
-                            style = style
+                            style = style,
+                            highlightsBuilder = highlightsBuilder,
                         )
                     }
                 }
@@ -748,7 +758,8 @@ private fun MarkdownSafe(
                         MarkdownHighlightedCode(
                             code = code,
                             language = language,
-                            style = style
+                            style = style,
+                            highlightsBuilder = highlightsBuilder,
                         )
                     }
                 }
@@ -785,6 +796,7 @@ private fun MarkdownSafe(
             listItemTop = if (compactSpacing) 1.dp else 4.dp,
             listItemBottom = if (compactSpacing) 1.dp else 4.dp,
             listIndent = if (compactSpacing) 8.dp else 12.dp,
+            codeBlock = PaddingValues(0.dp),
         ),
         colors = nexaraMarkdownColors(textColor = textColor),
         typography = nexaraMarkdownTypography(fontSize, fontStyle = fontStyle),
@@ -902,6 +914,7 @@ private fun MarkdownSafe(
                                             code = code,
                                             language = language,
                                             style = style,
+                                            highlightsBuilder = highlightsBuilder,
                                         )
                                     }
                                 }
@@ -940,6 +953,7 @@ private fun MarkdownSafe(
                                             code = code,
                                             language = language,
                                             style = style,
+                                            highlightsBuilder = highlightsBuilder,
                                         )
                                     }
                                 }

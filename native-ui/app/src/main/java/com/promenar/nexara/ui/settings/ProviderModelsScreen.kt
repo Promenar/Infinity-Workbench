@@ -699,11 +699,14 @@ internal fun ProviderModelsModelRow(
 }
 
 private fun capabilityLabelResource(capability: String): Int? {
-    val typeIndex = ModelTypes.indexOf(capability)
+    if (capability.equals("unknown", ignoreCase = true)) {
+        return R.string.provider_models_type_unknown
+    }
+    val typeIndex = ModelTypes.indexOf(capability.lowercase())
     return if (typeIndex >= 0) {
         ModelTypeLabelResources[typeIndex]
     } else {
-        CapabilityTags.firstOrNull { it.key == capability }?.labelRes
+        CapabilityTags.firstOrNull { it.key.equals(capability, ignoreCase = true) }?.labelRes
     }
 }
 

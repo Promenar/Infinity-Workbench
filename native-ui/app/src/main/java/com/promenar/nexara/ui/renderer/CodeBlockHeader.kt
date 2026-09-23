@@ -117,6 +117,7 @@ fun CodeBlockWithHeader(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 48.dp)
                 .background(MaterialTheme.colorScheme.surfaceContainer)
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -226,11 +227,15 @@ fun CodeBlockWithHeader(
                         .padding(start = 8.dp, end = 6.dp, top = 16.dp, bottom = 16.dp)
                         .clearAndSetSemantics { },
                 ) {
+                    val codeFontSize = (fontSize - 1).coerceAtLeast(10).sp
+                    val codeLineHeight = (fontSize * 1.4).sp
                     lines.forEachIndexed { index, _ ->
                         Text(
                             text = "${index + 1}",
                             style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = codeFontSize,
+                                lineHeight = codeLineHeight,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                 textAlign = TextAlign.End
                             ),

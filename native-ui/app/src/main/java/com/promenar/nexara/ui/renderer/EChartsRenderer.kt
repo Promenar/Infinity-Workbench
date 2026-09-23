@@ -209,7 +209,9 @@ private fun buildEChartsHtml(
                     document.getElementById('chart'),
                     ${if (palette.isDark) "'dark'" else "null"}
                 );
-                var option = JSON.parse(atob("$encoded"));
+                var bytes = Uint8Array.from(atob("$encoded"), function(c) { return c.charCodeAt(0); });
+                var raw = new TextDecoder('utf-8').decode(bytes);
+                var option = JSON.parse(raw);
                 option.backgroundColor = '${palette.background}';
                 option.color = option.color || ['${palette.primary}'];
                 option.textStyle = option.textStyle || {};
@@ -220,15 +222,7 @@ private fun buildEChartsHtml(
                 option.tooltip.borderColor = option.tooltip.borderColor || '${palette.outline}';
                 option.tooltip.textStyle = option.tooltip.textStyle || {};
                 option.tooltip.textStyle.color = option.tooltip.textStyle.color || '${palette.foreground}';
-                option.toolbox = {
-                    show: true,
-                    iconStyle: { borderColor: '${palette.foreground}' },
-                    feature: {
-                        saveAsImage: { show: true, title: 'Save' },
-                        dataView: { show: true, title: 'Data', readOnly: true },
-                        restore: { show: true, title: 'Reset' }
-                    }
-                };
+                option.toolbox = { show: false };
                 option.dataZoom = [{ type: 'inside' }, {
                     type: 'slider',
                     borderColor: '${palette.outline}',

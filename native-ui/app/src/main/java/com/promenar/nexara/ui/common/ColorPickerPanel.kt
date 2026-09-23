@@ -85,33 +85,40 @@ fun ColorPickerPanel(
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             presetColors.forEach { color ->
                 val isSelected = selectedColor == color
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
-                        .background(color)
-                        .then(
-                            if (isSelected) {
-                                Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                            } else {
-                                Modifier.border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                            }
-                        )
                         .clickable { onColorSelected(color) },
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isSelected) {
-                        Icon(
-                            imageVector = Icons.Rounded.Check,
-                            contentDescription = null,
-                            tint = MaterialTheme.nexaraDomainColors.overlayContent,
-                            modifier = Modifier.size(16.dp)
-                        )
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(color)
+                            .then(
+                                if (isSelected) {
+                                    Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                                } else {
+                                    Modifier.border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.nexaraDomainColors.overlayContent,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }

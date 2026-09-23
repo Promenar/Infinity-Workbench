@@ -82,13 +82,13 @@ fun MermaidBlock(
         ) {
             IconButton(
                 onClick = { showFullScreen = true },
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     Icons.Default.ZoomIn,
                     contentDescription = "Fullscreen",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
             IconButton(
@@ -97,13 +97,13 @@ fun MermaidBlock(
                         exportWebViewToPng(context, wv, exportBackground)
                     }
                 },
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     Icons.Default.Download,
                     contentDescription = "Export PNG",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -285,7 +285,8 @@ private fun buildMermaidHtml(
     <body>
         <div class="mermaid" id="mermaid-diagram"></div>
         <script>
-            var diagramCode = atob("$encoded");
+            var bytes = Uint8Array.from(atob("$encoded"), function(c) { return c.charCodeAt(0); });
+            var diagramCode = new TextDecoder('utf-8').decode(bytes);
             document.getElementById('mermaid-diagram').textContent = diagramCode;
             mermaid.initialize({
                 startOnLoad: true,

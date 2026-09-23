@@ -643,7 +643,7 @@ private fun AssistantMetadataRow(
 
     Row(
         modifier = modifier
-            .fillMaxWidth(0.5f)
+            .fillMaxWidth()
             .padding(top = 4.dp, start = 4.dp, end = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
         verticalAlignment = Alignment.CenterVertically,
@@ -1024,9 +1024,10 @@ fun UserMessageBubble(
                                     contentDescription = stringResource(R.string.chat_cd_attached_image),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .heightIn(max = 200.dp)
-                                        .clip(MaterialTheme.shapes.small),
-                                    contentScale = ContentScale.FillWidth,
+                                        .heightIn(min = 120.dp, max = 240.dp)
+                                        .clip(MaterialTheme.shapes.small)
+                                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                                    contentScale = ContentScale.Crop,
                                 )
                             }
                         }

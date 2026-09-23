@@ -782,6 +782,12 @@
     <string name="provider_form_btn_test">测试连接</string>
     <string name="provider_form_testing">正在测试连接…</string>
     <string name="provider_form_connection_unavailable">此提供商暂无受支持的无成本连接探测；你仍可保存并手动填写模型。</string>
+    <string name="provider_form_test_failed_auth">鉴权未通过，请检查凭据</string>
+    <string name="provider_form_test_failed_network">网络无法连接或端点超时</string>
+    <string name="provider_form_test_failed_endpoint">端点地址无效</string>
+    <string name="provider_form_test_failed_credentials">凭据格式无效</string>
+    <string name="provider_form_test_failed_missing">缺少 API Key 或凭据</string>
+    <string name="provider_form_test_failed_response">服务返回非预期响应</string>
     <string name="provider_form_btn_save">保存提供商</string>
     <string name="provider_form_cd_hide">隐藏</string>
     <string name="provider_form_cd_show">显示</string>
@@ -806,6 +812,7 @@
     <string name="provider_models_type_image">图像</string>
     <string name="provider_models_type_embedding">嵌入</string>
     <string name="provider_models_type_rerank">重排</string>
+    <string name="provider_models_type_unknown">通用</string>
     <string name="provider_models_capability_vision">视觉</string>
     <string name="provider_models_capability_internet">联网</string>
     <string name="provider_models_capability_audio_input">音频输入</string>

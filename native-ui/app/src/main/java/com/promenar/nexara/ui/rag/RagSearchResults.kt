@@ -71,15 +71,18 @@ internal fun buildRagSearchSnippet(
     query: String,
     maxChars: Int = RagSearchContract.SNIPPET_MAX_CHARS,
 ): String {
-    if (content.length <= maxChars) return content
-    val matchIndex = content.indexOf(query, ignoreCase = true).coerceAtLeast(0)
+    val cleanContent = content.lines().joinToString("\n") { line ->
+        line.replaceFirst(Regex("""^#{1,6}\s+"""), "")
+    }
+    if (cleanContent.length <= maxChars) return cleanContent
+    val matchIndex = cleanContent.indexOf(query, ignoreCase = true).coerceAtLeast(0)
     val available = (maxChars - 2).coerceAtLeast(1)
-    val start = (matchIndex - available / 3).coerceIn(0, (content.length - available).coerceAtLeast(0))
-    val end = (start + available).coerceAtMost(content.length)
+    val start = (matchIndex - available / 3).coerceIn(0, (cleanContent.length - available).coerceAtLeast(0))
+    val end = (start + available).coerceAtMost(cleanContent.length)
     return buildString(maxChars) {
         if (start > 0) append('…')
-        append(content, start, end)
-        if (end < content.length) append('…')
+        append(cleanContent, start, end)
+        if (end < cleanContent.length) append('…')
     }
 }
 

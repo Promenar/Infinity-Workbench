@@ -777,6 +777,12 @@
     <string name="provider_form_btn_test">Test Connection</string>
     <string name="provider_form_testing">Testing connection…</string>
     <string name="provider_form_connection_unavailable">This provider does not offer a supported no-cost connection check. You can still save it and enter models manually.</string>
+    <string name="provider_form_test_failed_auth">Authentication failed (check credentials)</string>
+    <string name="provider_form_test_failed_network">Network unavailable or connection timeout</string>
+    <string name="provider_form_test_failed_endpoint">Invalid endpoint URL</string>
+    <string name="provider_form_test_failed_credentials">Invalid credentials format</string>
+    <string name="provider_form_test_failed_missing">Missing API key or credentials</string>
+    <string name="provider_form_test_failed_response">Unexpected response format</string>
     <string name="provider_form_btn_save">Save Provider</string>
     <string name="provider_form_cd_hide">Hide</string>
     <string name="provider_form_cd_show">Show</string>
@@ -801,6 +807,7 @@
     <string name="provider_models_type_image">Image</string>
     <string name="provider_models_type_embedding">Embed</string>
     <string name="provider_models_type_rerank">Rerank</string>
+    <string name="provider_models_type_unknown">General</string>
     <string name="provider_models_capability_vision">Vision</string>
     <string name="provider_models_capability_internet">Internet</string>
     <string name="provider_models_capability_audio_input">Audio In</string>

@@ -30,7 +30,7 @@ class DefaultSessionToolResolver(
         return allTools.filter { tool ->
             when (tool.sourceId) {
                 "builtin" -> tool.runtimeToolId.ifBlank { tool.function.name } in enabledRuntimeIds &&
-                    (!legacyEmptySelection || tool.risk == ToolRisk.SAFE_READ)
+                    (!legacyEmptySelection || tool.risk == ToolRisk.SAFE_READ || tool.risk == ToolRisk.EXTERNAL_WRITE)
                 // 自定义 DB/script Skill 没有隔离执行器，当前版本只能编辑，不能广告或执行。
                 "custom" -> false
                 "mcp" -> tool.mcpServerId != null && tool.mcpServerId in session.activeMcpServerIds

@@ -117,3 +117,12 @@ fun nexaraMarkdownTypography(
         ),
     )
 }
+
+fun nexaraSyntaxTheme(isDark: Boolean): dev.snipme.highlights.model.SyntaxTheme {
+    val base = dev.snipme.highlights.model.SyntaxThemes.atom(isDark)
+    return if (isDark) {
+        base.copy(punctuation = 0xFFCBD5E1.toInt())
+    } else {
+        base
+    }
+}

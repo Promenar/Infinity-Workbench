@@ -984,11 +984,11 @@ private fun EditorPane(
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         modifier = modifier
             .fillMaxSize()
+            .padding(NexaraSpacing.Medium)
             .verticalScroll(verticalScrollState)
             .horizontalScroll(horizontalScrollState)
             .testTagCompat(UiTags.DOC_EDITOR_INPUT)
-            .semantics { contentDescription = inputDescription }
-            .padding(NexaraSpacing.Medium),
+            .semantics { contentDescription = inputDescription },
         decorationBox = { innerTextField ->
             Box {
                 if (content.isEmpty()) {

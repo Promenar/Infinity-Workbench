@@ -60,7 +60,8 @@ private fun buildLatexHtml(
         <div id="math"></div>
         <script>
             try {
-                var latex = atob("$encoded");
+                var bytes = Uint8Array.from(atob("$encoded"), function(c) { return c.charCodeAt(0); });
+                var latex = new TextDecoder('utf-8').decode(bytes);
                 katex.render(latex, document.getElementById("math"), {
                     throwOnError: false,
                     displayMode: true
@@ -107,7 +108,8 @@ internal fun buildInlineLatexHtml(
         <span id="math"></span>
         <script>
             try {
-                var latex = atob("$encoded");
+                var bytes = Uint8Array.from(atob("$encoded"), function(c) { return c.charCodeAt(0); });
+                var latex = new TextDecoder('utf-8').decode(bytes);
                 katex.render(latex, document.getElementById("math"), {
                     throwOnError: false,
                     displayMode: false
