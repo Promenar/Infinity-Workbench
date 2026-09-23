@@ -50,3 +50,8 @@ worktree/
 # === Superpowers SDD scratch ===
 .superpowers/
 # native-ui/.agent/
+
+# Mimosa/工具 hook 状态文件（本地工作产物，不入库）
+**/.mimosa/
+.video_agent/
+out/
