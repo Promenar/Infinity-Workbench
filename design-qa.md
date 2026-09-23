@@ -1,5 +1,7 @@
 # Nexara DocEditor Material 3 视觉验收
 
+> 全页面视觉审计（2026-09-23，四层审计：代码 token 扫描 / bounds 度量 / 像素测量 / 视觉批阅，96 张截图）见 [docs/visual-audit-2026-09.md](docs/visual-audit-2026-09.md)。
+
 - 验收日期：2026-07-17
 - 验收范围：第四阶段 DocEditor Material 3 页面骨架、状态、响应式、真实 IME、长代码横向可达与截图基线
 - 设计参考：`docs/superpowers/specs/assets/nexara-md3-option-3-reference.png`
