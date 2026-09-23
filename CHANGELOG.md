@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 占用圈胶囊瘦身与提示浮窗圆角（2026-09-24）
+
+- 聊天页模型/上下文/任务三胶囊高度 48dp → 36dp，降低文字上下留白（用户裁决：展示胶囊接受低于 48dp 触控标准）。
+- 上下文用量 DropdownMenu 浮窗圆角改为 `shapes.large`（16dp），与全站圆润风格一致。
+- Markdown 特殊内容分段渲染列增加 8dp（紧凑模式 4dp）呼吸间距，标题与后续图表/告警块间隔统一。
+
 ### 管线气泡统一与验收遗留项修复（2026-09-24）
 
 - **管线气泡样式统一**：工具执行气泡移除 tertiary 边框与 70% 宽度限制，与思考气泡统一为无边框 `surfaceContainerLow` 全宽样式；步骤间垂直引导线移除，改为 6dp 呼吸间距；死代码 `PipelineConnector` 一并清理。

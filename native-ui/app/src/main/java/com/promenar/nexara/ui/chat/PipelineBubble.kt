@@ -593,7 +593,8 @@ internal fun ThinkingTrace(
                         Icons.Rounded.ExpandMore
                     },
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }
@@ -695,7 +696,7 @@ private fun InlineToolRow(
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerLow)
                     .clickable { isExpanded = !isExpanded } // 移到此处修复涟漪超出容器 Bug
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                    .padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Small),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -717,28 +718,27 @@ private fun InlineToolRow(
                     Icon(
                         Icons.Rounded.Cancel, null,
                         tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 } else {
                     Icon(
                         Icons.Rounded.CheckCircle, null,
                         tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 }
                 Text(
                     text = toolName,
-                    style = NexaraTypography.labelSmall.copy(
-                        fontSize = (fontSize - 1).coerceAtLeast(10).sp,
-                        fontWeight = FontWeight.Medium,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        fontWeight = FontWeight.Medium
                     ),
                     color = MaterialTheme.colorScheme.tertiary
                 )
                 if (hasError && !isExecuting) {
                     Text(
                         text = stringResource(R.string.chat_tool_error),
-                        style = NexaraTypography.labelSmall.copy(fontSize = (fontSize - 3).coerceAtLeast(9).sp),
+                        style = NexaraTypography.labelSmall.copy(fontSize = (fontSize - 1).coerceAtLeast(10).sp),
                         color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
                     )
                 }
@@ -747,7 +747,7 @@ private fun InlineToolRow(
                     if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                     null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }

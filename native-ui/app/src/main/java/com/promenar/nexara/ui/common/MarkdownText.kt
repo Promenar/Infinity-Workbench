@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -493,7 +494,11 @@ fun MarkdownText(
             androidx.compose.material3.LocalContentColor provides effectiveColor,
             LocalImageTransformer provides Coil3ImageTransformerImpl
         ) {
-            Column(modifier = modifier.fillMaxWidth()) {
+            Column(
+                modifier = modifier.fillMaxWidth(),
+                // 审计缺陷 P2：特殊内容块（图表/GFM/公式）与正文标题的间隔统一为呼吸间距
+                verticalArrangement = Arrangement.spacedBy(if (compactSpacing) 4.dp else 8.dp)
+            ) {
                 for ((index, segment) in mergedSegments.withIndex()) {
                     when (segment) {
                         is ContentSegment.Markdown -> {

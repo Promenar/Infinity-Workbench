@@ -875,11 +875,13 @@ private fun ChatInputTopBar(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // 用户裁决：胶囊为展示元素，高度统一 36dp（低于 48dp 触控标准为可接受的取舍）
+        val capsuleHeight = 36.dp
         // Model Indicator
         AssistChip(
             onClick = onModelClick,
             modifier = Modifier
-                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                .heightIn(min = capsuleHeight)
                 .testTag(UiTags.CHAT_MODEL_SELECTOR),
             shape = CircleShape,
             colors = AssistChipDefaults.assistChipColors(
@@ -920,7 +922,7 @@ private fun ChatInputTopBar(
             AssistChip(
                 onClick = onTaskClick,
                 modifier = Modifier
-                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                    .heightIn(min = capsuleHeight)
                     .semantics { contentDescription = accessibilityLabel }
                     .testTag(UiTags.CHAT_TASK_CAPSULE),
                 shape = CircleShape,
@@ -984,7 +986,7 @@ private fun TokenIndicator(
         AssistChip(
             onClick = { showTooltip = !showTooltip },
             modifier = Modifier
-                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                .heightIn(min = 36.dp)
                 .testTag(UiTags.CHAT_TOKEN_INDICATOR),
             shape = CircleShape,
             colors = AssistChipDefaults.assistChipColors(
@@ -1021,6 +1023,7 @@ private fun TokenIndicator(
                 onDismissRequest = { showTooltip = false },
                 offset = DpOffset(x = (-60).dp, y = (-8).dp),
                 modifier = Modifier.width(220.dp),
+                shape = MaterialTheme.shapes.large,
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 tonalElevation = NexaraElevation.Level2,
             ) {
