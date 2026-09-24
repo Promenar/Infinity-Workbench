@@ -105,8 +105,47 @@ class PostProcessorTest {
         testScope.advanceUntilIdle()
 
         val updatedSession = store.getSession("s1")!!
-        assertThat(updatedSession.title).isEqualTo("What is the wea...")
+        assertThat(updatedSession.title).isEqualTo("What is th")
     }
 
+    @Test
+    fun updateStatsWithTitleGeneratorSetsGeneratedTitle() = testScope.runTest {
+        val store = ChatStore()
+        val sessionManager = SessionManager(store, stubSessionRepo)
+        val messageManager = MessageManager(store, stubMessageRepo, stubSessionRepo, testScope)
+        val postProcessor = PostProcessor(store, sessionManager, messageManager).apply {
+            setTitleGenerator { "天气查询" }
+        }
 
+        val agent = Agent(id = "a1", name = "Test Agent")
+        val session = Session(id = "s1", agentId = "a1", title = "New Chat")
+        sessionManager.addSession(session)
+        testScope.advanceUntilIdle()
+
+        val params = PostProcessorParams(
+            sessionId = "s1",
+            assistantMsgId = "m2",
+            userMsgId = "m1",
+            userContent = "今天北京天气怎么样？",
+            assistantContent = "今天北京晴转多云。",
+            agent = agent,
+            session = store.getSession("s1")!!,
+            ragEnabled = false,
+            modelId = "gpt-4o"
+        )
+
+        postProcessor.updateStats(params)
+        testScope.advanceUntilIdle()
+
+        val updatedSession = store.getSession("s1")!!
+        assertThat(updatedSession.title).isEqualTo("天气查询")
+    }
+
+    @Test
+    fun cleanTitleSanitizesPunctuationAndLimitsLength() {
+        assertThat(PostProcessor.cleanTitle("《超级人工智能大模型深度思考与解析指南》")).isEqualTo("超级人工智能大模型深")
+        assertThat(PostProcessor.cleanTitle("“今日北京天气：多云”")).isEqualTo("今日北京天气多云")
+        assertThat(PostProcessor.cleanTitle("  ### 标题：量子力学浅析！  ")).isEqualTo("量子力学浅析")
+        assertThat(PostProcessor.cleanTitle("")).isNull()
+    }
 }

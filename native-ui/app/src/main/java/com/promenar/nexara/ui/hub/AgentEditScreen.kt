@@ -33,10 +33,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.agent.PresetAgents
+import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
 import com.promenar.nexara.ui.avatar.rememberAvatarCropLauncher
 import com.promenar.nexara.ui.common.*
+import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraSpacing
-import com.promenar.nexara.ui.theme.NexaraTypography
 
 data class AgentIconOption(
     val id: String,
@@ -69,14 +70,33 @@ fun AgentEditScreen(
     val viewModel: AgentEditViewModel = viewModel(
         factory = AgentEditViewModel.factory(context.applicationContext as android.app.Application)
     )
+    val settingsViewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModel.factory(context.applicationContext as android.app.Application)
+    )
 
     val name by viewModel.name.collectAsState()
     val description by viewModel.description.collectAsState()
     val systemPrompt by viewModel.systemPrompt.collectAsState()
     val selectedColor by viewModel.selectedColor.collectAsState()
     val selectedIcon by viewModel.selectedIcon.collectAsState()
+    val selectedModel by viewModel.selectedModel.collectAsState()
     val saveError by viewModel.saveError.collectAsState()
     val avatarPath by viewModel.avatarPath.collectAsState()
+
+    val allModels by settingsViewModel.providerModels.collectAsState()
+    val resolver = remember { ModelMetadataResolver() }
+    val resolvedModels = remember(allModels, resolver) {
+        allModels.map { it.toModelSelectionUiModel(resolver) }
+    }
+    val modelItems = remember(allModels, resolvedModels) {
+        resolvedModels.filter { resolved ->
+            allModels.firstOrNull { it.id == resolved.selectionId }?.enabled == true
+        }
+    }
+    val currentModelDisplayName = remember(resolvedModels, selectedModel) {
+        if (selectedModel.isBlank()) ""
+        else resolvedModels.firstOrNull { it.selectionId == selectedModel }?.displayName ?: selectedModel
+    }
 
     val localizedPresetName = if (PresetAgents.isPreset(agentId)) {
         stringResource(PresetAgents.nameRes(agentId))
@@ -87,6 +107,7 @@ fun AgentEditScreen(
 
     var showSystemPromptEditor by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showModelPicker by remember { mutableStateOf(false) }
 
     val defaultPrimary = MaterialTheme.colorScheme.primary
     val parsedColor = remember(selectedColor, defaultPrimary) {
@@ -133,31 +154,28 @@ fun AgentEditScreen(
         destructive = true
     )
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets.systemBars,
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.agent_edit_title), style = NexaraTypography.headlineLarge) },
-                navigationIcon = {
-                    NexaraBackButton(onClick = onNavigateBack)
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f)
-                )
-            )
-        }
-    ) { paddingValues ->
+    if (showModelPicker) {
+        ModelPicker(
+            show = true,
+            title = stringResource(R.string.common_model_picker_title),
+            filterTag = "chat",
+            currentModelId = selectedModel,
+            models = modelItems,
+            onDismiss = { showModelPicker = false },
+            onSelect = { id, _ ->
+                viewModel.setModel(id)
+                showModelPicker = false
+            }
+        )
+    }
+
+    NexaraSettingsPageLayout(
+        title = stringResource(R.string.agent_edit_title),
+        onBack = onNavigateBack,
+    ) { contentPadding ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-            contentPadding = PaddingValues(
-                start = NexaraSpacing.ScreenHorizontal,
-                end = NexaraSpacing.ScreenHorizontal,
-                top = NexaraSpacing.Small,
-                bottom = 120.dp
-            ),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)
         ) {
             saveError?.let { error ->
@@ -180,7 +198,7 @@ fun AgentEditScreen(
                                 },
                             ),
                             color = MaterialTheme.colorScheme.error,
-                            style = NexaraTypography.bodyMedium,
+                            style = MaterialTheme.typography.bodyMedium,
                         )
                         TextButton(onClick = viewModel::retryLastFailure) {
                             Text(stringResource(R.string.common_retry))
@@ -201,7 +219,7 @@ fun AgentEditScreen(
                         // Ambient Radial Glow
                         Box(
                             modifier = Modifier
-                                .size(116.dp)
+                                .size(96.dp)
                                 .clip(CircleShape)
                                 .background(
                                     Brush.radialGradient(
@@ -219,7 +237,7 @@ fun AgentEditScreen(
                             icon = if (avatarPath == null) currentIconVector else null,
                             customImageUri = avatarPath,
                             backgroundColor = parsedColor,
-                            size = 88.dp,
+                            size = 72.dp,
                             onClick = avatarCropLauncher::launch,
                         )
 
@@ -228,10 +246,10 @@ fun AgentEditScreen(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .offset(x = 2.dp, y = 2.dp)
-                                .size(32.dp)
+                                .size(26.dp)
                                 .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                .border(2.dp, MaterialTheme.colorScheme.background, CircleShape)
+                                .border(1.5.dp, MaterialTheme.colorScheme.background, CircleShape)
                                 .clickable(onClick = avatarCropLauncher::launch),
                             contentAlignment = Alignment.Center
                         ) {
@@ -239,16 +257,16 @@ fun AgentEditScreen(
                                 imageVector = Icons.Rounded.AddAPhoto,
                                 contentDescription = stringResource(R.string.agent_edit_icon_upload),
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(15.dp)
+                                modifier = Modifier.size(13.dp)
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
                         text = name.ifBlank { stringResource(R.string.agent_edit_placeholder_name) },
-                        style = NexaraTypography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         color = if (name.isNotBlank()) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -258,7 +276,7 @@ fun AgentEditScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = description,
-                            style = NexaraTypography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
@@ -323,7 +341,7 @@ fun AgentEditScreen(
                         ) {
                             Text(
                                 text = stringResource(R.string.agent_edit_label_icon),
-                                style = NexaraTypography.titleMedium,
+                                style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -337,7 +355,7 @@ fun AgentEditScreen(
                             ) {
                                 Text(
                                     text = if (isExpanded) stringResource(R.string.agent_edit_icon_toggle_collapse) else stringResource(R.string.agent_edit_icon_toggle_expand),
-                                    style = NexaraTypography.labelMedium.copy(color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                                    style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.primary)
                                 )
                                 Spacer(modifier = Modifier.width(2.dp))
                                 Icon(
@@ -413,7 +431,22 @@ fun AgentEditScreen(
                 }
             }
 
-            // ─── 4. 人格与设定：系统提示词卡片 ───
+            // ─── 4. 模型配置：助手专属默认模型 ───
+            item {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.agent_edit_section_model)
+                ) {
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.SmartToy,
+                        title = stringResource(R.string.agent_edit_current_model),
+                        subtitle = if (currentModelDisplayName.isNotBlank()) currentModelDisplayName else stringResource(R.string.settings_not_set),
+                        onClick = { showModelPicker = true },
+                        showChevron = true
+                    )
+                }
+            }
+
+            // ─── 5. 人格与设定：系统提示词卡片 ───
             item {
                 NexaraSettingsSection(
                     title = stringResource(R.string.agent_edit_section_personality)
@@ -451,7 +484,7 @@ fun AgentEditScreen(
                             ) {
                                 Text(
                                     text = stringResource(R.string.agent_edit_prompt_label),
-                                    style = NexaraTypography.titleMedium,
+                                    style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
@@ -477,7 +510,7 @@ fun AgentEditScreen(
                                         }
                                         Text(
                                             text = if (systemPrompt.isNotBlank()) stringResource(R.string.agent_edit_prompt_configured) else stringResource(R.string.agent_edit_prompt_not_set),
-                                            style = NexaraTypography.labelSmall.copy(fontSize = 10.sp),
+                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                             color = if (systemPrompt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
@@ -488,7 +521,7 @@ fun AgentEditScreen(
 
                             Text(
                                 text = systemPrompt.ifBlank { stringResource(R.string.agent_edit_prompt_hint) },
-                                style = NexaraTypography.bodyMedium.copy(fontSize = 13.sp),
+                                style = MaterialTheme.typography.bodySmall,
                                 color = if (systemPrompt.isNotBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
@@ -507,7 +540,7 @@ fun AgentEditScreen(
                 }
             }
 
-            // ─── 5. 知识库与检索配置 ───
+            // ─── 6. 知识库与检索配置 ───
             item {
                 NexaraSettingsSection(
                     title = stringResource(R.string.agent_edit_section_knowledge)
@@ -531,7 +564,7 @@ fun AgentEditScreen(
                 }
             }
 
-            // ─── 6. 危险操作：删除助手 ───
+            // ─── 7. 危险操作：删除助手 ───
             item {
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -555,7 +588,7 @@ fun AgentEditScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = stringResource(R.string.agent_edit_delete_btn),
-                            style = NexaraTypography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
                             color = MaterialTheme.colorScheme.error
                         )
                     }
@@ -577,20 +610,20 @@ private fun InCardInputField(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 2.dp),
     ) {
         Text(
             text = label,
-            style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Medium),
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
             color = MaterialTheme.colorScheme.primary,
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(2.dp))
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             singleLine = singleLine,
             maxLines = maxLines,
-            textStyle = NexaraTypography.bodyLarge.copy(
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
                 color = MaterialTheme.colorScheme.onSurface,
             ),
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -599,7 +632,7 @@ private fun InCardInputField(
                     if (value.isEmpty() && placeholder.isNotEmpty()) {
                         Text(
                             text = placeholder,
-                            style = NexaraTypography.bodyLarge,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                         )
                     }
@@ -627,7 +660,7 @@ private fun RowScope.IconSelectionItem(
             .weight(1f)
             .aspectRatio(1f)
             .graphicsLayer(scaleX = animatedScale, scaleY = animatedScale)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(
                 if (isSelected) activeColor.copy(alpha = 0.15f)
                 else MaterialTheme.colorScheme.surfaceContainer
@@ -635,7 +668,7 @@ private fun RowScope.IconSelectionItem(
             .border(
                 width = if (isSelected) 2.dp else 0.5.dp,
                 color = if (isSelected) activeColor else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(12.dp)
             )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -644,7 +677,7 @@ private fun RowScope.IconSelectionItem(
             imageVector = option.icon,
             contentDescription = option.label,
             tint = if (isSelected) activeColor else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(26.dp)
+            modifier = Modifier.size(22.dp)
         )
     }
 }

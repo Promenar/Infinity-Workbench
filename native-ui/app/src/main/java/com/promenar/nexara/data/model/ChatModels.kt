@@ -291,7 +291,7 @@ data class SessionOptions(
     val enableTimeInjection: Boolean = true,
     val webSearch: Boolean = false,  // 降级：默认关闭被动预注入，不影响工具调用
     val ragOptions: RagOptions? = null,
-    val fontSize: Int = 13,
+    val fontSize: Int = 15,
     val economyMode: Boolean = false,
     val enableGeminiSearch: Boolean = true
 )

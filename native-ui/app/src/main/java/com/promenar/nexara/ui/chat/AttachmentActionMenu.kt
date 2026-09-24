@@ -10,6 +10,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -19,8 +20,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Description
@@ -43,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.LayoutDirection
+import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.testing.UiTags
 
@@ -104,17 +108,23 @@ internal fun AttachmentActionMenu(
                 ) {
                     Surface(
                         modifier = Modifier
-                            .widthIn(min = 220.dp, max = 320.dp)
+                            .widthIn(min = 180.dp, max = 320.dp)
+                            .border(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(16.dp)
+                            )
                             .testTag(UiTags.CHAT_ATTACHMENT_MENU),
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
                         contentColor = MaterialTheme.colorScheme.onSurface,
                         shadowElevation = 6.dp,
-                        tonalElevation = 3.dp,
+                        tonalElevation = 0.dp,
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .padding(vertical = 4.dp)
                                 .verticalScroll(rememberScrollState()),
                         ) {
                             AttachmentAction(
@@ -123,6 +133,8 @@ internal fun AttachmentActionMenu(
                                     Icon(
                                         imageVector = Icons.Rounded.Image,
                                         contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp),
                                     )
                                 },
                                 enabled = enabled,
@@ -138,6 +150,8 @@ internal fun AttachmentActionMenu(
                                     Icon(
                                         imageVector = Icons.Rounded.Description,
                                         contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp),
                                     )
                                 },
                                 enabled = enabled,
@@ -197,14 +211,15 @@ private fun AttachmentAction(
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         icon()
         Text(
             text = label,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(start = 16.dp),
+            style = NexaraTypography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 12.dp),
         )
     }
 }

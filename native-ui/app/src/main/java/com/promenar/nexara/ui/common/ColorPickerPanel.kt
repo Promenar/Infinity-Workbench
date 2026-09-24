@@ -151,7 +151,7 @@ fun ColorPickerPanel(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = stringResource(R.string.common_color_custom),
-                        style = NexaraTypography.labelMedium,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(6.dp))

@@ -17,6 +17,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -124,6 +125,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -1103,8 +1105,32 @@ fun ChatTopBar(
     
     TopAppBar(
         title = {
-            Column {
-                Text(title, style = NexaraTypography.titleMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = stringResource(R.string.chat_menu_rename),
+                        onClick = onRename,
+                    )
+                    .padding(vertical = 4.dp, horizontal = 2.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = title,
+                        style = NexaraTypography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
                 if (subtitle.isNotBlank()) {
                     Text(
                         subtitle,

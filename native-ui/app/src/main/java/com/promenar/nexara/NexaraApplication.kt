@@ -404,6 +404,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         )
     }
     private val generationPostProcessor by lazy {
+        val settings = getSharedPreferences("nexara_settings", MODE_PRIVATE)
+        val provider = llmProvider
         com.promenar.nexara.ui.chat.manager.PostProcessor(
             chatStore,
             generationSessionManager,
@@ -411,7 +413,16 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             embeddingClient,
             vectorStore,
             textSplitter,
-        )
+        ).apply {
+            setTitleGenerator { params ->
+                val quickModelId = settings.getString("preset_summary_model", "")
+                com.promenar.nexara.ui.chat.manager.PostProcessor.generateTitleWithFallback(
+                    params = params,
+                    quickModelId = quickModelId,
+                    provider = provider,
+                )
+            }
+        }
     }
     val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
         val settings = getSharedPreferences("nexara_settings", MODE_PRIVATE)

@@ -9,11 +9,15 @@ import com.promenar.nexara.data.model.TokenUsage
 import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.RecursiveCharacterTextSplitter
 import com.promenar.nexara.data.rag.VectorStore
+import com.promenar.nexara.data.remote.protocol.PromptRequest
+import com.promenar.nexara.data.remote.protocol.ProtocolMessage
+import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 data class PostProcessorParams(
     val sessionId: String,
@@ -40,9 +44,9 @@ class PostProcessor(
     private val vectorStore: VectorStore? = null,
     private val textSplitter: RecursiveCharacterTextSplitter? = null
 ) {
-    private var onGenerateTitle: (suspend (sessionId: String) -> String?)? = null
+    private var onGenerateTitle: (suspend (params: PostProcessorParams) -> String?)? = null
 
-    fun setTitleGenerator(generator: (suspend (sessionId: String) -> String?)?) {
+    fun setTitleGenerator(generator: (suspend (params: PostProcessorParams) -> String?)?) {
         onGenerateTitle = generator
     }
 
@@ -67,34 +71,31 @@ class PostProcessor(
             mapOf("stats" to SessionStats(totalTokens = billingUsage.total, billing = billingUsage))
         )
 
-        val isDefaultTitle = params.session.title == params.agent.name ||
+        val isDefaultTitle = params.session.title.isBlank() ||
+                params.session.title == params.agent.name ||
                 params.session.title == "New Conversation" ||
                 params.session.title == "New Chat" ||
+                params.session.title == "新会话" ||
                 params.session.title.startsWith("New Conversation") ||
                 params.session.title.startsWith("New Chat")
 
         if (params.session.messages.size <= 2 || isDefaultTitle) {
             val titleGenerator = onGenerateTitle
-            if (titleGenerator != null) {
+            val generatedTitle = if (titleGenerator != null) {
                 try {
-                    val title = titleGenerator(params.sessionId)
-                    if (title != null) {
-                        sessionManager.updateSessionTitle(params.sessionId, title)
-                    }
+                    titleGenerator(params)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
-                    val titleLimit = 15
-                    val title = params.userContent.take(titleLimit) +
-                            if (params.userContent.length > titleLimit) "..." else ""
-                    sessionManager.updateSessionTitle(params.sessionId, title)
+                    null
                 }
-            } else {
-                val titleLimit = 15
-                val title = params.userContent.take(titleLimit) +
-                        if (params.userContent.length > titleLimit) "..." else ""
-                sessionManager.updateSessionTitle(params.sessionId, title)
+            } else null
+
+            val finalTitle = generatedTitle?.takeIf { it.isNotBlank() } ?: run {
+                val fallback = params.userContent.trim().replace(Regex("""[\n\r\t]+"""), " ")
+                fallback.take(MAX_TITLE_LENGTH).ifBlank { "会话" }
             }
+            sessionManager.updateSessionTitle(params.sessionId, finalTitle)
         }
     }
 
@@ -182,6 +183,75 @@ class PostProcessor(
 
     companion object {
         private const val TAG = "PostProcessor"
+        const val MAX_TITLE_LENGTH = 10
+
+        suspend fun generateTitleWithFallback(
+            params: PostProcessorParams,
+            quickModelId: String?,
+            provider: LlmProvider?
+        ): String {
+            val prompt = """请为以下对话生成一个简短标题，概括其核心主题。
+严格要求：
+1. 字数控制在8到10个汉字以内（绝不可超过10个字）；
+2. 纯文字，绝对不要包含标点符号、引号、书名号；
+3. 直接输出标题内容，不要有任何多余的解释。
+
+用户：${params.userContent.take(200)}
+助手：${params.assistantContent.take(200)}"""
+
+            val quickModel = quickModelId?.takeIf { it.isNotBlank() }
+            val sessionModel = params.modelId.takeIf { it.isNotBlank() }
+                ?: params.session.modelId?.takeIf { it.isNotBlank() }
+
+            // 1. 优先使用设置中预设的“快速模型”
+            if (!quickModel.isNullOrBlank() && provider != null) {
+                val title = callTitleLlm(quickModel, prompt, provider)
+                if (!title.isNullOrBlank()) return title
+            }
+
+            // 2. 故障或未设置时降级为当前会话模型
+            if (!sessionModel.isNullOrBlank() && sessionModel != quickModel && provider != null) {
+                val title = callTitleLlm(sessionModel, prompt, provider)
+                if (!title.isNullOrBlank()) return title
+            }
+
+            // 3. 当前模型也故障时降级为第一条用户消息的前几个字（限制 10 字以内）
+            val fallback = params.userContent.trim().replace(Regex("""[\n\r\t]+"""), " ")
+            return fallback.take(MAX_TITLE_LENGTH).ifBlank { "会话" }
+        }
+
+        private suspend fun callTitleLlm(
+            modelId: String,
+            prompt: String,
+            provider: LlmProvider
+        ): String? = try {
+            withTimeout(8000L) {
+                val response = provider.sendPromptSync(
+                    PromptRequest(
+                        messages = listOf(ProtocolMessage(role = "user", content = prompt)),
+                        model = modelId,
+                        stream = false,
+                    )
+                )
+                cleanTitle(response.content)
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            NexaraLogger.logError(TAG, e)
+            null
+        }
+
+        internal fun cleanTitle(raw: String?): String? {
+            if (raw.isNullOrBlank()) return null
+            val firstLine = raw.lines().firstOrNull { it.isNotBlank() } ?: return null
+            val stripped = firstLine
+                .replace(Regex("""^(?:[#*\s\-:："“'《（【]|标题|会话标题|主题|Topic|Title)+"""), "")
+                .replace(Regex("""[#*\s\-:："”'》）】]+$"""), "")
+                .replace(Regex("""[《》"“'”：:，,。！？!?·\n\r\t]"""), "")
+                .trim()
+            if (stripped.isBlank()) return null
+            return stripped.take(MAX_TITLE_LENGTH)
+        }
 
         fun estimateTokens(text: String): Int {
             if (text.isEmpty()) return 0

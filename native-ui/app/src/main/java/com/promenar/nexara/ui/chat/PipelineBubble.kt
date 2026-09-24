@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -311,16 +312,20 @@ private fun ErrorMessageSegment(
                 .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                 .combinedClickable(onClick = {}, onLongClick = { showMenu = true }),
         ) {
-            Text(
-                text = text,
-                style = NexaraTypography.bodyMedium.copy(
-                    fontSize = (fontSize - 2).coerceAtLeast(10).sp,
-                ),
-                modifier = Modifier.padding(
-                    horizontal = NexaraSpacing.Large,
-                    vertical = NexaraSpacing.Medium,
-                ),
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                    .padding(horizontal = NexaraSpacing.Large, vertical = 6.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Text(
+                    text = text,
+                    style = NexaraTypography.bodyMedium.copy(
+                        fontSize = (fontSize - 2).coerceAtLeast(10).sp,
+                    ),
+                )
+            }
         }
         MessageContextMenu(
             expanded = showMenu,
@@ -1216,10 +1221,27 @@ fun MessageContextMenu(
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
-        offset = offset
+        offset = offset,
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier
+            .widthIn(min = 160.dp)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(16.dp)
+            )
     ) {
         DropdownMenuItem(
-            text = { Text(stringResource(R.string.chat_action_copy), style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.onSurface) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.ContentCopy,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            },
+            text = { Text(stringResource(R.string.chat_action_copy), style = NexaraTypography.labelLarge) },
             onClick = {
                 onCopy()
                 onDismiss()
@@ -1228,6 +1250,14 @@ fun MessageContextMenu(
         
         if (onRegenerate != null) {
             DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                },
                 text = { 
                     Text(
                         text = if (isUser) {
@@ -1235,8 +1265,7 @@ fun MessageContextMenu(
                         } else {
                             stringResource(R.string.chat_action_regenerate)
                         },
-                        style = NexaraTypography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        style = NexaraTypography.labelLarge,
                     ) 
                 },
                 onClick = {
@@ -1249,11 +1278,18 @@ fun MessageContextMenu(
         if (onBranch != null) {
             DropdownMenuItem(
                 modifier = Modifier.testTag(UiTags.CHAT_MESSAGE_BRANCH),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.ForkRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                },
                 text = {
                     Text(
                         stringResource(R.string.chat_action_branch),
-                        style = NexaraTypography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        style = NexaraTypography.labelLarge,
                     )
                 },
                 onClick = {
@@ -1264,10 +1300,18 @@ fun MessageContextMenu(
         }
 
         DropdownMenuItem(
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.DeleteOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp),
+                )
+            },
             text = { 
                 Text(
                     text = stringResource(R.string.chat_action_delete),
-                    style = NexaraTypography.labelMedium,
+                    style = NexaraTypography.labelLarge,
                     color = MaterialTheme.colorScheme.error
                 ) 
             },
