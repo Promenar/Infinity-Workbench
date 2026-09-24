@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 首页折叠式 Agent 列表与知识库视觉统一（2026-09-24）
+
+- 首页（对话 Hub）：Agent 行重构为独立可折叠卡片（surfaceContainerLow 圆角卡 + 头像降饱和 35%），点击头部手风琴式展开该 Agent 的会话列表（标题 / 日期 / 删除）或收起；"新建会话"内联于展开区；置顶标识改为标题前小图钉；取消跳转二级会话列表页的入口（路由保留作回滚兜底）。
+- 知识库：文档/记忆 Tab 由全宽 PrimaryTabRow 改为胶囊分段控件（自然宽度、移除全宽分割线）；"新建文件夹"与"上传文档"统一为等权 tonal 胶囊按钮；文件空态改为 72dp 圆形容器图标 + 标题 + 副说明的层级结构。
+- 契约测试同步：AgentHubScreenContractTest（折叠卡片 + 展开指示 + 置顶标记）、BettboxGroupedSurfacesContractTest（首页改独立卡片、会话列表页保留分组面）。
+
 ### 滑块样式全站统一（2026-09-24）
 
 - 将 7 处直接使用 Material3 Slider（新版默认竖条 thumb + 刻度点轨道）的页面全部替换为共享 `NexaraSlider`（连续横线轨道 + 圆形 thumb），与会话设置面板一致：全局检索参数（分块/重叠）、RAG 高级检索、Agent 高级检索、Agent RAG 配置、记忆设置检索参数、外观文字缩放、技能搜索结果数。

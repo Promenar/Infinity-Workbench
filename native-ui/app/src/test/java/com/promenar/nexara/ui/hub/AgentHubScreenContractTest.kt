@@ -46,32 +46,32 @@ class AgentHubScreenContractTest {
     }
 
     @Test
-    fun `agent row uses Material3 list item without glass card or chevron`() {
+    fun `agent card renders collapsible surface with expand indicator instead of list item`() {
         val source = hubSource.readText()
-        val row = source.substringAfter("fun AgentCardItem(").substringBefore("private fun EmptyAgentState(")
+        val card = source.substringAfter("fun AgentExpandableCard(").substringBefore("private fun EmptyAgentState(")
 
-        assertThat(row).contains("ListItem")
-        assertThat(row).doesNotContain("NexaraGlassCard")
-        assertThat(row).doesNotContain("Icons.Rounded.ChevronRight")
+        assertThat(card).contains("Surface")
+        assertThat(card).contains("surfaceContainerLow")
+        assertThat(card).contains("Icons.Rounded.ExpandMore")
+        assertThat(card).doesNotContain("NexaraGlassCard")
+        assertThat(card).doesNotContain("ChevronRight")
     }
 
     @Test
-    fun `agent list is continuous instead of card spaced`() {
+    fun `agent list spaces independent collapsible cards`() {
         val source = hubSource.readText()
         val lazyColumn = source.substringAfter("LazyColumn(").substringBefore("items(state.displayAgents")
 
-        assertThat(lazyColumn).doesNotContain("verticalArrangement = Arrangement.spacedBy(8.dp)")
-        assertThat(lazyColumn).doesNotContain("top = NexaraSpacing.Small")
-        assertThat(lazyColumn).doesNotContain("bottom = NexaraSpacing.Small")
+        assertThat(lazyColumn).contains("verticalArrangement = Arrangement.spacedBy(10.dp)")
     }
 
     @Test
     fun `agent rows rely on spacing and group fill without decorative dividers`() {
         val source = hubSource.readText()
-        val row = source.substringAfter("fun AgentCardItem(").substringBefore("private fun EmptyAgentState(")
+        val card = source.substringAfter("fun AgentExpandableCard(").substringBefore("private fun EmptyAgentState(")
 
-        assertThat(row).doesNotContain("showDivider")
-        assertThat(row).doesNotContain("HorizontalDivider")
+        assertThat(card).doesNotContain("showDivider")
+        assertThat(card).doesNotContain("HorizontalDivider")
     }
 
     @Test
@@ -112,11 +112,13 @@ class AgentHubScreenContractTest {
     }
 
     @Test
-    fun `agent list uses rectangular swipe rows and exposes pinned state`() {
+    fun `agent card exposes pinned marker and expand collapse state`() {
         val source = hubSource.readText()
-        val row = source.substringAfter("fun AgentCardItem(").substringBefore("private fun EmptyAgentState(")
+        val card = source.substringAfter("fun AgentExpandableCard(").substringBefore("private fun EmptyAgentState(")
 
-        assertThat(row).contains("shape = RectangleShape")
-        assertThat(row).contains("stateDescription")
+        assertThat(card).contains("isPinned")
+        assertThat(card).contains("PushPin")
+        assertThat(card).contains("expanded")
+        assertThat(card).contains("AnimatedVisibility")
     }
 }

@@ -51,7 +51,9 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -59,10 +61,8 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -600,17 +600,15 @@ internal fun RagHomeScreenContent(
                     .widthIn(max = 720.dp)
                     .padding(horizontal = NexaraSpacing.ScreenHorizontal),
             ) {
-                PrimaryTabRow(
-                    selectedTabIndex = if (state.currentTab == PortalTab.MEMORY) 1 else 0,
-                    containerColor = MaterialTheme.colorScheme.background,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                    divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) },
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier.padding(bottom = NexaraSpacing.Medium)
                 ) {
-                    listOf(PortalTab.DOCUMENTS, PortalTab.MEMORY).forEach { tab ->
-                        Tab(
+                    listOf(PortalTab.DOCUMENTS, PortalTab.MEMORY).forEachIndexed { index, tab ->
+                        SegmentedButton(
                             selected = state.currentTab == tab,
                             onClick = { actions.onChangeTab(tab) },
-                            text = {
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = 2),
+                            label = {
                                 Text(
                                     text = stringResource(
                                         if (tab == PortalTab.DOCUMENTS) {
@@ -619,7 +617,7 @@ internal fun RagHomeScreenContent(
                                             R.string.rag_home_memory
                                         },
                                     ),
-                                    style = MaterialTheme.typography.titleSmall,
+                                    style = MaterialTheme.typography.labelLarge,
                                 )
                             },
                             modifier = when (tab) {
@@ -753,7 +751,7 @@ internal fun RagHomeScreenContent(
                                 Spacer(Modifier.size(NexaraSpacing.Small))
                                 Text(stringResource(R.string.rag_folder_upload))
                             }
-                            TextButton(
+                            FilledTonalButton(
                                 onClick = { showNewFolderDialog = true },
                                 modifier = Modifier
                                     .sizeIn(

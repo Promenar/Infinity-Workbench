@@ -90,7 +90,7 @@ fun MainTabScaffold(
                 label = "main-tab-content",
             ) { tab -> when (tab) {
                 AppTab.CHAT -> com.promenar.nexara.ui.hub.AgentHubScreen(
-                    onNavigateToSessionList = onNavigateToSessionList,
+                    onNavigateToChat = onNavigateToChat,
                     onNavigateToAgentEdit = onNavigateToAgentEdit
                 )
                 AppTab.LIBRARY -> com.promenar.nexara.ui.rag.RagHomeScreen(

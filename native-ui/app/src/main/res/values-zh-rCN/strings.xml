@@ -223,6 +223,8 @@
     <string name="hub_dialog_label_prompt">系统提示词</string>
     <string name="hub_action_unpin">取消置顶</string>
     <string name="hub_cd_agent_actions">助手操作</string>
+    <string name="hub_sessions_empty">暂无会话</string>
+    <string name="hub_session_untitled">未命名会话</string>
 
     <!-- 预置助手（本地化展示；DB 保存种子文本，叠加层解析为资源） -->
     <string name="preset_agent_default_name">Nexara 助手</string>

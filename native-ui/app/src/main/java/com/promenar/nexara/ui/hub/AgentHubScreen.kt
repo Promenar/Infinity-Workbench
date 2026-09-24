@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.hub
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,11 +17,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -34,6 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.agent.PresetAgentDisplay
 import com.promenar.nexara.data.manager.ProviderManager
+import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.ui.common.toModelSelectionUiModel
 import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
 import com.promenar.nexara.domain.model.Agent
@@ -42,6 +44,8 @@ import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 // =====================================================================================
 // Route —— 拥有 ViewModel、localized preset display 映射与 overlay 状态
@@ -50,15 +54,26 @@ import com.promenar.nexara.ui.theme.NexaraTypography
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun AgentHubScreen(
-    onNavigateToSessionList: (String) -> Unit,
+    onNavigateToChat: (String) -> Unit,
     onNavigateToAgentEdit: (String) -> Unit
 ) {
     val context = LocalContext.current
     val viewModel: AgentHubViewModel = viewModel(
         factory = AgentHubViewModel.factory(context.applicationContext as android.app.Application),
     )
+    val sessionListViewModel: SessionListViewModel = viewModel(
+        factory = SessionListViewModel.factory(context.applicationContext as android.app.Application),
+    )
+    LaunchedEffect(Unit) {
+        // 空 agentId = 全量刷新会话目录，供各 Agent 卡片折叠列表使用
+        sessionListViewModel.loadSessions("")
+    }
     val agents by viewModel.agents.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val allSessions by sessionListViewModel.sessions.collectAsState()
+    val sessionsByAgent = remember(allSessions) {
+        allSessions.groupBy { it.agentId }
+    }
     val displayAgents = agents.map { agent ->
         val (title, subtitle) = resolveAgentDisplay(agent)
         AgentDisplayItem(agent, title, subtitle)
@@ -75,6 +90,7 @@ fun AgentHubScreen(
         searchActive = searchActive,
         showAddDialog = showAddDialog,
         pendingDeleteAgentId = agentToDelete,
+        sessionsByAgent = sessionsByAgent,
     )
     val actions = AgentHubScreenActions(
         onSearch = viewModel::updateSearchQuery,
@@ -93,7 +109,13 @@ fun AgentHubScreen(
         },
         onTogglePin = viewModel::togglePin,
         onEdit = onNavigateToAgentEdit,
-        onOpenSession = onNavigateToSessionList,
+        onOpenChat = onNavigateToChat,
+        onCreateSession = { agentId ->
+            sessionListViewModel.createSession(agentId) { sessionId ->
+                onNavigateToChat(sessionId)
+            }
+        },
+        onDeleteSession = sessionListViewModel::deleteSession,
     )
 
     AgentHubScreenContent(state = state, actions = actions)
@@ -277,6 +299,7 @@ internal data class AgentHubScreenState(
     val searchActive: Boolean = false,
     val showAddDialog: Boolean = false,
     val pendingDeleteAgentId: String? = null,
+    val sessionsByAgent: Map<String, List<Session>> = emptyMap(),
 )
 
 internal data class AgentHubScreenActions(
@@ -290,7 +313,9 @@ internal data class AgentHubScreenActions(
     val onConfirmDelete: (String) -> Unit = {},
     val onTogglePin: (String) -> Unit = {},
     val onEdit: (String) -> Unit = {},
-    val onOpenSession: (String) -> Unit = {},
+    val onOpenChat: (String) -> Unit = {},
+    val onCreateSession: (String) -> Unit = {},
+    val onDeleteSession: (String) -> Unit = {},
 )
 
 private data class HubSearchScrollAnchor(
@@ -391,14 +416,15 @@ internal fun AgentHubScreenContent(
             )
 
             else -> {
+            var expandedAgentId by remember { mutableStateOf<String?>(null) }
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(UiTags.HUB_AGENT_LIST)
                     .padding(paddingValues)
-                    .padding(horizontal = NexaraSpacing.ScreenHorizontal)
-                    .bettboxListGroup(),
+                    .padding(horizontal = NexaraSpacing.ScreenHorizontal),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(state.displayAgents, key = { item -> item.agent.id }) { item ->
                     val agent = item.agent
@@ -407,21 +433,29 @@ internal fun AgentHubScreenContent(
                     } catch (_: Exception) {
                         MaterialTheme.colorScheme.primary
                     }
+                    val softenedColor = lerp(parsedColor, MaterialTheme.colorScheme.onSurfaceVariant, 0.35f)
 
                     val iconVector = agentIconVector(agent.icon)
 
-                    AgentCardItem(
+                    AgentExpandableCard(
                         agentId = agent.id,
                         icon = iconVector,
                         customImageUri = agent.avatarPath,
                         title = item.title,
                         subtitle = item.subtitle,
-                        iconContainerColor = parsedColor,
+                        iconContainerColor = softenedColor,
                         isPinned = agent.isPinned,
+                        sessions = state.sessionsByAgent[agent.id].orEmpty(),
+                        expanded = expandedAgentId == agent.id,
+                        onToggleExpand = {
+                            expandedAgentId = if (expandedAgentId == agent.id) null else agent.id
+                        },
                         onPin = { actions.onTogglePin(agent.id) },
                         onDelete = { actions.onRequestDelete(agent.id) },
                         onEdit = { actions.onEdit(agent.id) },
-                        onClick = { actions.onOpenSession(agent.id) }
+                        onOpenChat = actions.onOpenChat,
+                        onCreateSession = { actions.onCreateSession(agent.id) },
+                        onDeleteSession = actions.onDeleteSession,
                     )
                 }
             }
@@ -457,11 +491,11 @@ private fun HubSearchEmptyState(modifier: Modifier = Modifier) {
 }
 
 // =====================================================================================
-// Agent Card —— 始终可见的动作入口 + DropdownMenu
+// Agent Card —— 可折叠卡片：头部（头像+标题+菜单+展开箭头）+ 展开的会话列表
 // =====================================================================================
 
 @Composable
-fun AgentCardItem(
+fun AgentExpandableCard(
     agentId: String,
     icon: ImageVector,
     customImageUri: String? = null,
@@ -469,131 +503,211 @@ fun AgentCardItem(
     subtitle: String,
     iconContainerColor: Color,
     isPinned: Boolean = false,
+    sessions: List<Session>,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
     onPin: () -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
-    onClick: () -> Unit
+    onOpenChat: (String) -> Unit,
+    onCreateSession: () -> Unit,
+    onDeleteSession: (String) -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val pinnedStateDescription = stringResource(R.string.sessions_tag_pinned)
-    val largeFont = LocalConfiguration.current.fontScale >= 1.5f
+    val dateFormat = remember { SimpleDateFormat("M/d", Locale.getDefault()) }
 
-    SwipeableItem(
-        onPin = onPin,
-        onDelete = onDelete,
-        onEdit = onEdit,
-        isPinned = isPinned,
-        shape = RectangleShape,
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(UiTags.hubAgentCard(agentId)),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        ListItem(
+        Column {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 88.dp)
-                    .testTag(UiTags.hubAgentCard(agentId))
-                    .semantics {
-                        if (isPinned) stateDescription = pinnedStateDescription
-                    }
-                    .clickable(onClick = onClick),
-                colors = ListItemDefaults.colors(
-                    containerColor = Color.Transparent
-                ),
-                leadingContent = {
-                    Box(
-                        modifier = if (customImageUri != null) {
-                            Modifier.testTag(UiTags.hubAgentCustomAvatar(agentId))
-                        } else {
-                            Modifier
-                        },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        AgentAvatar(
-                            icon = icon,
-                            customImageUri = customImageUri,
-                            backgroundColor = iconContainerColor,
-                            size = 56.dp,
-                        )
-                    }
-                },
-                headlineContent = {
-                    Text(
-                        text = title,
-                        style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = if (largeFont) 4 else 2,
-                        overflow = TextOverflow.Ellipsis,
+                    .clickable(onClick = onToggleExpand)
+                    .padding(start = 14.dp, end = 6.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = if (customImageUri != null) {
+                        Modifier.testTag(UiTags.hubAgentCustomAvatar(agentId))
+                    } else {
+                        Modifier
+                    },
+                    contentAlignment = Alignment.Center
+                ) {
+                    AgentAvatar(
+                        icon = icon,
+                        customImageUri = customImageUri,
+                        backgroundColor = iconContainerColor,
+                        size = 44.dp,
                     )
-                },
-                supportingContent = if (subtitle.isNotBlank()) {
-                    {
-                        Text(
-                            text = subtitle,
-                            style = NexaraTypography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = if (largeFont) 4 else 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                } else null,
-                trailingContent = {
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (isPinned) {
                             Icon(
                                 imageVector = Icons.Rounded.PushPin,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .padding(end = 4.dp)
                             )
                         }
-                        Box {
-                            IconButton(
-                                onClick = { menuExpanded = true },
-                                modifier = Modifier.testTag(UiTags.hubAgentActions(agentId))
+                        Text(
+                            text = title,
+                            style = NexaraTypography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (subtitle.isNotBlank()) {
+                        Text(
+                            text = subtitle,
+                            style = NexaraTypography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Box {
+                    IconButton(
+                        onClick = { menuExpanded = true },
+                        modifier = Modifier.testTag(UiTags.hubAgentActions(agentId))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.MoreVert,
+                            contentDescription = stringResource(R.string.hub_cd_agent_actions),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    stringResource(
+                                        if (isPinned) R.string.common_cd_unpin else R.string.common_cd_pin
+                                    )
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onPin()
+                            },
+                            modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_PIN)
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.shared_btn_edit)) },
+                            onClick = {
+                                menuExpanded = false
+                                onEdit()
+                            },
+                            modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_EDIT)
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.shared_btn_delete)) },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete()
+                            },
+                            modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_DELETE)
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.Rounded.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .padding(end = 8.dp)
+                        .rotate(if (expanded) 180f else 0f)
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp)
+                ) {
+                    if (sessions.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.hub_sessions_empty),
+                            style = NexaraTypography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp)
+                        )
+                    } else {
+                        sessions.forEach { session ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { onOpenChat(session.id) }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.MoreVert,
-                                    contentDescription = stringResource(R.string.hub_cd_agent_actions),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    imageVector = Icons.Rounded.ChatBubbleOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(15.dp)
                                 )
-                            }
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            stringResource(
-                                                if (isPinned) R.string.common_cd_unpin else R.string.common_cd_pin
-                                            )
-                                        )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = session.title.ifBlank {
+                                        stringResource(R.string.hub_session_untitled)
                                     },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onPin()
-                                    },
-                                    modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_PIN)
+                                    style = NexaraTypography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
                                 )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.shared_btn_edit)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onEdit()
-                                    },
-                                    modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_EDIT)
+                                Text(
+                                    text = dateFormat.format(java.util.Date(session.updatedAt)),
+                                    style = NexaraTypography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.shared_btn_delete)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onDelete()
-                                    },
-                                    modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_DELETE)
-                                )
+                                IconButton(
+                                    onClick = { onDeleteSession(session.id) },
+                                    modifier = Modifier.size(30.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = stringResource(R.string.shared_btn_delete),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
                             }
                         }
                     }
+                    TextButton(
+                        onClick = onCreateSession,
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(stringResource(R.string.sessions_btn_new))
+                    }
                 }
-            )
+            }
+        }
     }
 }
 

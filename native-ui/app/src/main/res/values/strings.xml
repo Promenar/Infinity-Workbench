@@ -223,6 +223,8 @@
     <string name="hub_dialog_label_prompt">System Prompt</string>
     <string name="hub_action_unpin">Unpin</string>
     <string name="hub_cd_agent_actions">Agent actions</string>
+    <string name="hub_sessions_empty">No sessions yet</string>
+    <string name="hub_session_untitled">Untitled session</string>
 
     <!-- Preset agents (localized display; DB stores seed text, overlay resolves to these) -->
     <string name="preset_agent_default_name">Nexara Assistant</string>
