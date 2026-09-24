@@ -31,16 +31,16 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
+import com.promenar.nexara.ui.common.NexaraTabItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -252,23 +252,19 @@ fun RagDetailsSheetContent(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
             )
-            PrimaryScrollableTabRow(
-                selectedTabIndex = selectedTabIndex,
-                edgePadding = 0.dp,
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                divider = {},
-            ) {
-                tabs.forEachIndexed { index, tab ->
-                    Tab(
-                        selected = selectedTabIndex == index,
-                        onClick = { selectedTabIndex = index },
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag(tab.testTag()),
-                        text = { Text(stringResource(tab.labelRes)) },
-                    )
-                }
+            val detailTabs = tabs.map { tab ->
+                NexaraTabItem(
+                    title = stringResource(tab.labelRes),
+                    testTag = tab.testTag(),
+                )
             }
+            NexaraCapsuleTabRow(
+                tabs = detailTabs,
+                selectedIndex = selectedTabIndex,
+                onTabSelected = { selectedTabIndex = it },
+                modifier = Modifier.fillMaxWidth(),
+                height = 46.dp,
+            )
             Spacer(Modifier.height(8.dp))
             when (tabs[selectedTabIndex]) {
                 RagDetailsTab.Retrieved -> RetrievedReferencesList(references)

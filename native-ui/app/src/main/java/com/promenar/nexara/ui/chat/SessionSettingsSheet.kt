@@ -44,8 +44,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.MaterialTheme
+import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
+import com.promenar.nexara.ui.common.NexaraTabItem
 import com.promenar.nexara.ui.common.ModelSelectionUiModel
 import com.promenar.nexara.ui.common.toModelSelectionUiModel
 import com.promenar.nexara.ui.common.ModelSelectionListItem
@@ -54,8 +55,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -206,49 +205,22 @@ fun SessionSettingsSheet(
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f) // Increased slightly for more content
         ) {
-            ScrollableTabRow(
-                selectedTabIndex = pagerState.currentPage,
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                edgePadding = 24.dp,
-                divider = {
-                    HorizontalDivider(
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                    )
-                },
-                indicator = { tabPositions ->
-                    if (pagerState.currentPage < tabPositions.size) {
-                        val pos = tabPositions[pagerState.currentPage]
-                        Box(
-                            Modifier
-                                .tabIndicatorOffset(pos)
-                                .padding(horizontal = 32.dp)
-                                .height(3.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(MaterialTheme.colorScheme.primary)
-                        )
-                    }
-                }
-            ) {
-                tabTitles.forEachIndexed { index, title ->
-                    Tab(
-                        selected = pagerState.currentPage == index,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                        text = {
-                            Text(
-                                title,
-                                style = NexaraTypography.labelMedium.copy(
-                                    fontWeight = if (pagerState.currentPage == index) FontWeight.Bold else FontWeight.Normal
-                                ),
-                                color = if (pagerState.currentPage == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        selectedContentColor = MaterialTheme.colorScheme.primary,
-                        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            val sessionTabs = remember(tabTitles) {
+                tabTitles.map { NexaraTabItem(title = it) }
             }
+            NexaraCapsuleTabRow(
+                tabs = sessionTabs,
+                selectedIndex = pagerState.currentPage,
+                onTabSelected = { index ->
+                    scope.launch { pagerState.animateScrollToPage(index) }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 6.dp),
+                height = 46.dp,
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             HorizontalPager(
                 state = pagerState,

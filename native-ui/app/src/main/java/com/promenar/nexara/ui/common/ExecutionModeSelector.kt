@@ -1,36 +1,17 @@
 package com.promenar.nexara.ui.common
 
 import androidx.annotation.StringRes
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraTypography
 
-enum class ExecutionMode(@StringRes val labelRes: Int) {
+enum class ExecutionMode(@param:StringRes val labelRes: Int) {
     AUTO(R.string.common_mode_auto),
     SEMI(R.string.common_mode_semi),
     MANUAL(R.string.common_mode_manual)
@@ -39,53 +20,26 @@ enum class ExecutionMode(@StringRes val labelRes: Int) {
 @Composable
 fun ExecutionModeSelector(
     selected: ExecutionMode,
-    onSelect: (ExecutionMode) -> Unit
+    onSelect: (ExecutionMode) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(12.dp)
+    val modes = ExecutionMode.entries
+    val selectedIndex = modes.indexOf(selected).coerceAtLeast(0)
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-            .padding(3.dp)
-    ) {
-        Row(modifier = Modifier.fillMaxWidth().selectableGroup()) {
-            ExecutionMode.entries.forEach { mode ->
-                val isSelected = mode == selected
-                val bg by animateColorAsState(
-                    targetValue = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                    animationSpec = tween(200)
-                )
-                val textColor by animateColorAsState(
-                    targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    animationSpec = tween(200)
-                )
-
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(bg)
-                        .heightIn(min = 48.dp)
-                        .selectable(
-                            selected = isSelected,
-                            onClick = { onSelect(mode) },
-                            role = Role.RadioButton,
-                        )
-                        .padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stringResource(mode.labelRes),
-                        style = NexaraTypography.labelMedium.copy(
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        color = textColor
-                    )
-                }
-            }
-        }
+    NexaraTabSwitcher(
+        itemCount = modes.size,
+        selectedIndex = selectedIndex,
+        onTabSelected = { index -> onSelect(modes[index]) },
+        modifier = modifier,
+        height = 44.dp,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) { index, isSelected, contentColor ->
+        val mode = modes[index]
+        Text(
+            text = stringResource(mode.labelRes),
+            style = NexaraTypography.labelMedium,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+            color = contentColor,
+        )
     }
 }

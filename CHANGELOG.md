@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 全站页签统一升级 Homebar 全圆胶囊与弹簧触觉设计（2026-09-24）
+
+- **抽象通用全圆胶囊 Tab 组件**：
+  - 新增 `NexaraTabSwitcher` 与 `NexaraCapsuleTabRow` 通用组件（`ui/common/`），将底部 Homebar 的全圆胶囊形态（`CircleShape`）、`surfaceContainer` 底色、`outlineVariant` 微描边、`secondaryContainer` 同心胶囊滑动指示器与物理弹簧动画（Spring, dampingRatio=0.85）规范沉淀为全站统一底座；
+  - 深度集成 Android 原生 `SEGMENT_TICK`（API 34+）/ `CLOCK_TICK` 刻度震动，轻点切换时反馈清脆高级的机械触感。
+- **全站关键页签与分段器落地**：
+  - **会话设置面板（`SessionSettingsSheet`）**：废弃带下划线与方块高亮的 `ScrollableTabRow`，重构为全圆胶囊 4 页签切换（模型、参数、工具、设置）；
+  - **资源管理器（`ResourceExplorerSheet`）**：废弃带粗分割线与下划线的 `PrimaryTabRow`，重构为全圆胶囊双页签切换（文件、回收站，带图标与未清空徽标）；
+  - **工具执行模式（`ExecutionModeSelector`）**：废弃生硬的圆角方块分段器，升级为全胶囊平滑滑动单选器（自动、半自动、手动）；
+  - **技能管理（`SkillsScreen`）**：废弃传统 `TabRow`，重构为全胶囊 3 页签（预置技能、自定义技能、技能市场）；
+  - **RAG 检索详情（`RagDetailsSheet`）**：废弃 `PrimaryScrollableTabRow`，重构为全胶囊 3 页签（检索片段、网页引用、知识图谱）；
+  - **统一 Prompt 编辑器（`UnifiedPromptEditor`）**：废弃带下划线的 `TabRow`，重构为全胶囊双页签（系统提示词、用户提示词）。
+- **测试与契约闭环**：
+  - 保持各模块原生 `testTag` 契约，全量 2790 项 JVM 测试通过，实机多屏联动验证滑块动画与触感顺滑。
+
 ### 会话设置高级生成参数取消折叠与平铺体验优化（2026-09-24）
 
 - **消除嵌套折叠与手势冲突**：

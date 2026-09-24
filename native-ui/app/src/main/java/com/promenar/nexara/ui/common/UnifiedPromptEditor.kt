@@ -31,10 +31,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -302,40 +298,18 @@ fun UnifiedPromptEditor(
     @Composable
     fun TabBar() {
         val tabs = EditorTab.entries
-        TabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            indicator = { tabPositions ->
-                TabRowDefaults.Indicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                    height = 2.dp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            },
-            divider = {}
-        ) {
-            tabs.forEachIndexed { index, tab ->
-                val label = stringResource(tab.labelRes)
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = {
-                        Text(
-                            text = label,
-                            style = NexaraTypography.labelMedium.copy(
-                                fontWeight = if (selectedTab == index) FontWeight.SemiBold else FontWeight.Normal
-                            ),
-                            color = if (selectedTab == index) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
-                )
-            }
+        val tabItems = tabs.map { tab ->
+            NexaraTabItem(title = stringResource(tab.labelRes))
         }
+        NexaraCapsuleTabRow(
+            tabs = tabItems,
+            selectedIndex = selectedTab,
+            onTabSelected = { selectedTab = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            height = 44.dp,
+        )
     }
 
     @Composable

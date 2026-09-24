@@ -33,11 +33,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
+import com.promenar.nexara.ui.common.NexaraTabItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -224,54 +224,39 @@ internal fun ResourceExplorerSheetContent(
             .fillMaxSize()
             .testTag(UiTags.RESOURCE_EXPLORER_ROOT),
     ) {
-        PrimaryTabRow(
-            selectedTabIndex = state.selectedTab.page,
-            containerColor = androidx.compose.ui.graphics.Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary,
-            divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) },
-        ) {
-            ResourceExplorerTab.entries.forEach { tab ->
-                val isFiles = tab == ResourceExplorerTab.Files
-                Tab(
-                    selected = state.selectedTab == tab,
-                    onClick = { actions.onTabSelected(tab) },
-                    icon = {
-                        Icon(
-                            if (isFiles) Icons.Rounded.Folder else Icons.Rounded.DeleteForever,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    },
-                    text = {
-                        Text(
-                            if (isFiles) {
-                                stringResource(R.string.resource_explorer_tab_files)
-                            } else if (state.recycleBinCount > 0) {
-                                stringResource(
-                                    R.string.resource_explorer_recycle_bin_count,
-                                    state.recycleBinCount,
-                                )
-                            } else {
-                                stringResource(R.string.resource_explorer_recycle_bin)
-                            },
-                            style = NexaraTypography.labelMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    selectedContentColor = MaterialTheme.colorScheme.primary,
-                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .heightIn(min = 48.dp)
-                        .testTag(
-                            if (isFiles) UiTags.RESOURCE_EXPLORER_TAB_FILES
-                            else UiTags.RESOURCE_EXPLORER_TAB_RECYCLE_BIN,
-                        ),
-                )
-            }
-        }
+        val tabs = listOf(
+            NexaraTabItem(
+                title = stringResource(R.string.resource_explorer_tab_files),
+                icon = Icons.Rounded.Folder,
+                testTag = UiTags.RESOURCE_EXPLORER_TAB_FILES,
+            ),
+            NexaraTabItem(
+                title = if (state.recycleBinCount > 0) {
+                    stringResource(
+                        R.string.resource_explorer_recycle_bin_count,
+                        state.recycleBinCount,
+                    )
+                } else {
+                    stringResource(R.string.resource_explorer_recycle_bin)
+                },
+                icon = Icons.Rounded.DeleteForever,
+                testTag = UiTags.RESOURCE_EXPLORER_TAB_RECYCLE_BIN,
+            ),
+        )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        NexaraCapsuleTabRow(
+            tabs = tabs,
+            selectedIndex = state.selectedTab.page,
+            onTabSelected = { page ->
+                actions.onTabSelected(ResourceExplorerTab.fromPage(page))
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 6.dp),
+            height = 46.dp,
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
 
         HorizontalPager(
             state = pagerState,

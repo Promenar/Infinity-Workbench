@@ -54,11 +54,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
+import com.promenar.nexara.ui.common.NexaraTabItem
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -185,46 +184,16 @@ fun SkillsScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                divider = {
-                    HorizontalDivider(
-                        thickness = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant
-                    )
-                },
-                indicator = { tabPositions ->
-                    if (selectedTab < tabPositions.size) {
-                        val pos = tabPositions[selectedTab]
-                        Box(
-                            Modifier
-                                .tabIndicatorOffset(pos)
-                                .padding(horizontal = 48.dp)
-                                .height(3.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(MaterialTheme.colorScheme.primary)
-                        )
-                    }
-                }
-            ) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = {
-                            Text(
-                                title,
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
-                                ),
-                                color = if (selectedTab == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    )
-                }
+            val skillTabs = remember(tabs) {
+                tabs.map { NexaraTabItem(title = it) }
             }
+            NexaraCapsuleTabRow(
+                tabs = skillTabs,
+                selectedIndex = selectedTab,
+                onTabSelected = { selectedTab = it },
+                modifier = Modifier.fillMaxWidth(),
+                height = 46.dp,
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
