@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.NexaraSlider
 import com.promenar.nexara.ui.common.bettboxListGroup
 
 @Composable
@@ -478,7 +479,7 @@ private fun RetrievalParamSlider(
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
-        Slider(
+        NexaraSlider(
             modifier = sliderModifier,
             value = value,
             onValueChange = onValueChange,

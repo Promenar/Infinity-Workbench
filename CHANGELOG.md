@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 滑块样式全站统一（2026-09-24）
+
+- 将 7 处直接使用 Material3 Slider（新版默认竖条 thumb + 刻度点轨道）的页面全部替换为共享 `NexaraSlider`（连续横线轨道 + 圆形 thumb），与会话设置面板一致：全局检索参数（分块/重叠）、RAG 高级检索、Agent 高级检索、Agent RAG 配置、记忆设置检索参数、外观文字缩放、技能搜索结果数。
+- 参数完全兼容（value/onValueChange/valueRange/steps/modifier），并移除各文件冗余的 M3 Slider import。
+
 ### 生成失败态发送按钮恢复机制（2026-09-24）
 
 - 修复：生成失败后发送按钮永久停留失败态（点击无响应、无法再次发送），用户被迫退出会话重进。现在输入新内容或点击失败按钮即确认失败并恢复正常发送态。

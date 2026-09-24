@@ -36,7 +36,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -59,6 +58,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSlider
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.data.rag.RagConfiguration
@@ -195,7 +195,7 @@ internal fun GlobalRagConfigScreenContent(
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        Slider(
+                        NexaraSlider(
                             modifier = Modifier
                                 .minimumInteractiveComponentSize()
                                 .testTag("rag_global_chunk_size_slider"),
@@ -222,7 +222,7 @@ internal fun GlobalRagConfigScreenContent(
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        Slider(
+                        NexaraSlider(
                             modifier = Modifier
                                 .minimumInteractiveComponentSize()
                                 .testTag("rag_global_chunk_overlap_slider"),

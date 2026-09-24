@@ -24,7 +24,6 @@ import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,6 +45,7 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.NexaraSlider
 import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraPresetColors
@@ -153,7 +153,7 @@ fun ThemeScreenContent(
                                 .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Slider(
+                            NexaraSlider(
                                 value = preferences.textScale,
                                 onValueChange = onTextScaleChange,
                                 valueRange = 0.8f..1.4f,

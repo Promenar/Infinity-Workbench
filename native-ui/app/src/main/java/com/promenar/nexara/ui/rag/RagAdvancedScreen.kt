@@ -22,7 +22,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,6 +45,7 @@ import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.ui.common.ModelPicker
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSlider
 import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
@@ -285,7 +285,7 @@ private fun ConfigSlider(
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
-        Slider(
+        NexaraSlider(
             modifier = sliderModifier,
             value = value,
             onValueChange = onValueChange,

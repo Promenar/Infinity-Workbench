@@ -25,7 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,6 +45,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSlider
 import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.data.manager.ProviderManager
 
@@ -439,7 +439,7 @@ private fun AdaptiveSlider(
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
-        Slider(
+        NexaraSlider(
             modifier = sliderModifier,
             value = value,
             onValueChange = if (enabled) onValueChange else { {} },

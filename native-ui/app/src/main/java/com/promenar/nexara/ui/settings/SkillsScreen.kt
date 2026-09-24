@@ -53,7 +53,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -88,6 +87,7 @@ import androidx.compose.ui.text.font.FontWeight
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.BettboxListGroup
+import com.promenar.nexara.ui.common.NexaraSlider
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -772,7 +772,7 @@ private fun SearchConfigBottomSheet(
                     text = stringResource(R.string.search_count_label) + ": ${searchState.resultCount}",
                     style = MaterialTheme.typography.labelMedium
                 )
-                Slider(
+                NexaraSlider(
                     value = searchState.resultCount.toFloat(),
                     valueRange = 1f..20f,
                     steps = 18,
