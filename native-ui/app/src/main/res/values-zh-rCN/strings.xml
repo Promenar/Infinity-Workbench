@@ -1019,7 +1019,10 @@
     <string name="rag_home_search_results">搜索结果</string>
     <string name="rag_home_recent_docs">最近文档</string>
     <string name="rag_home_memory_section">记忆</string>
+    <string name="rag_home_memory_empty_title">暂无记忆</string>
     <string name="rag_home_memory_empty">来自会话的记忆摘要将显示在此处。</string>
+    <string name="rag_home_memory_search_empty_title">未找到匹配记忆</string>
+    <string name="rag_home_memory_footer_count">共 %1$d 条记忆</string>
     <string name="rag_home_memory_stats">记忆统计</string>
     <string name="rag_home_memory_total_count">总计: %1$d</string>
     <string name="rag_home_memory_est_tokens">约 %1$d tokens</string>

@@ -775,69 +775,41 @@ internal fun RagHomeScreenContent(
                             contentPadding = PaddingValues(bottom = NexaraSpacing.XLarge),
                             verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                         ) {
-                            item {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = NexaraSpacing.Small),
-                                    verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.rag_home_memory_section),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        maxLines = 1,
-                                    )
-                                    FlowRow(
-                                        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
-                                        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
-                                    ) {
-                                        Text(
-                                            text = stringResource(
-                                                R.string.rag_home_memory_total_count,
-                                                state.memoryVectors.size,
-                                            ),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                        )
-                                        Text(
-                                            text = stringResource(
-                                                R.string.rag_home_memory_est_tokens,
-                                                state.memoryVectors.sumOf { it.content.length / 3 },
-                                            ),
-                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                        )
-                                    }
-                                }
-                            }
-
                             if (state.memoryVectors.isEmpty()) {
                                 item {
-                                    Surface(
+                                    Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .padding(top = 96.dp)
                                             .testTag("memory-empty"),
-                                        shape = MaterialTheme.shapes.large,
-                                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                        contentAlignment = Alignment.Center,
                                     ) {
                                         Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(NexaraSpacing.XXLarge),
-                                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
                                             horizontalAlignment = Alignment.CenterHorizontally,
                                         ) {
-                                            Icon(
-                                                Icons.Rounded.Psychology,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(40.dp),
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(72.dp)
+                                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Icon(
+                                                    Icons.Rounded.Psychology,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(32.dp),
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                            Text(
+                                                text = stringResource(R.string.rag_home_memory_empty_title),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.onSurface,
                                             )
+                                            Spacer(modifier = Modifier.height(4.dp))
                                             Text(
                                                 text = stringResource(R.string.rag_home_memory_empty),
-                                                style = MaterialTheme.typography.bodyLarge,
+                                                style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
@@ -845,29 +817,39 @@ internal fun RagHomeScreenContent(
                                 }
                             } else if (filteredMemories.isEmpty()) {
                                 item {
-                                    Surface(
+                                    Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .padding(top = 96.dp)
                                             .testTag("memory-search-empty"),
-                                        shape = MaterialTheme.shapes.large,
-                                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                        contentAlignment = Alignment.Center,
                                     ) {
                                         Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(NexaraSpacing.XXLarge),
-                                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
                                             horizontalAlignment = Alignment.CenterHorizontally,
                                         ) {
-                                            Icon(
-                                                Icons.Rounded.Search,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(40.dp),
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(72.dp)
+                                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Icon(
+                                                    Icons.Rounded.Search,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(32.dp),
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                            Text(
+                                                text = stringResource(R.string.rag_home_memory_search_empty_title),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.onSurface,
                                             )
+                                            Spacer(modifier = Modifier.height(4.dp))
                                             Text(
                                                 text = stringResource(R.string.rag_home_memory_search_empty),
-                                                style = MaterialTheme.typography.bodyLarge,
+                                                style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
@@ -957,6 +939,20 @@ internal fun RagHomeScreenContent(
                                             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                                         ),
                                     )
+                                }
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = NexaraSpacing.Medium),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.rag_home_memory_footer_count, filteredMemories.size),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        )
+                                    }
                                 }
                             }
                         }

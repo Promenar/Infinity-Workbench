@@ -1012,7 +1012,10 @@
     <string name="rag_home_search_results">Search Results</string>
     <string name="rag_home_recent_docs">Recent Documents</string>
     <string name="rag_home_memory_section">Memory</string>
+    <string name="rag_home_memory_empty_title">No Memories Yet</string>
     <string name="rag_home_memory_empty">Memory summaries from sessions will appear here.</string>
+    <string name="rag_home_memory_search_empty_title">No Matching Memories</string>
+    <string name="rag_home_memory_footer_count">%1$d memories in total</string>
     <string name="rag_home_memory_stats">Memory Stats</string>
     <string name="rag_home_memory_total_count">Total: %1$d</string>
     <string name="rag_home_memory_est_tokens">~%1$d tokens</string>
