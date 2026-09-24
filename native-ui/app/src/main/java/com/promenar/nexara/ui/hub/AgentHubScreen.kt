@@ -78,7 +78,7 @@ fun AgentHubScreen(
         val (title, subtitle) = resolveAgentDisplay(agent)
         AgentDisplayItem(agent, title, subtitle)
     }
-    val visibleAgents = filterAgentDisplays(displayAgents, searchQuery)
+    val visibleAgents = displayAgents
 
     var showAddDialog by remember { mutableStateOf(false) }
     var agentToDelete by remember { mutableStateOf<String?>(null) }
@@ -346,66 +346,27 @@ internal fun AgentHubScreenContent(
     actions: AgentHubScreenActions,
 ) {
     val listState = rememberLazyListState()
-    var searchScrollAnchor by remember { mutableStateOf<HubSearchScrollAnchor?>(null) }
-    LaunchedEffect(state.searchActive, state.searchQuery, state.displayAgents.size) {
-        if (state.searchActive && searchScrollAnchor == null) {
-            val index = listState.firstVisibleItemIndex
-            searchScrollAnchor = HubSearchScrollAnchor(
-                agentId = state.displayAgents.getOrNull(index)?.agent?.id,
-                fallbackIndex = index,
-                offset = listState.firstVisibleItemScrollOffset,
-                originalItemCount = state.displayAgents.size,
-            )
-        } else if (!state.searchActive && state.searchQuery.isBlank()) {
-            val anchor = searchScrollAnchor ?: return@LaunchedEffect
-            if (state.displayAgents.isNotEmpty()) {
-                val stableIndex = anchor.agentId
-                    ?.let { id -> state.displayAgents.indexOfFirst { it.agent.id == id } }
-                    ?.takeIf { it >= 0 }
-                val targetIndex = stableIndex
-                    ?: anchor.fallbackIndex.coerceIn(0, state.displayAgents.lastIndex)
-                listState.scrollToItem(targetIndex, anchor.offset)
-                searchScrollAnchor = null
-            } else if (anchor.originalItemCount == 0) {
-                searchScrollAnchor = null
-            }
-        }
-    }
     Scaffold(
         modifier = Modifier.testTag(UiTags.HUB_ROOT),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.statusBars,
-        topBar = {
-            Box(
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = actions.onRequestAdd,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
-                    .testTag(UiTags.HUB_SEARCH)
-                    .semantics(mergeDescendants = true) {},
+                    .testTag(UiTags.HUB_ADD_AGENT)
+                    .padding(bottom = NexaraSpacing.Small),
             ) {
-                NexaraSearchTopBar(
-                    title = null,
-                    query = state.searchQuery,
-                    searchActive = state.searchActive,
-                    onQueryChange = actions.onSearch,
-                    onSearchActiveChange = { active ->
-                        if (!active) actions.onSearch("")
-                        actions.onSearchActiveChange(active)
-                    },
-                    actions = {
-                        IconButton(
-                            onClick = actions.onRequestAdd,
-                            modifier = Modifier.testTag(UiTags.HUB_ADD_AGENT)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Add,
-                                contentDescription = stringResource(R.string.hub_btn_add_agent),
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                    }
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = stringResource(R.string.hub_btn_add_agent),
+                    modifier = Modifier.size(24.dp),
                 )
             }
-        }
+        },
     ) { paddingValues ->
         ConfirmDialog(
             show = state.pendingDeleteAgentId != null,
@@ -431,27 +392,27 @@ internal fun AgentHubScreenContent(
         )
 
         when {
-            state.displayAgents.isEmpty() && state.searchQuery.isBlank() -> EmptyAgentState(
+            state.displayAgents.isEmpty() -> EmptyAgentState(
                 onCreateAgent = actions.onRequestAdd,
                 modifier = Modifier.padding(paddingValues),
             )
 
-            state.displayAgents.isEmpty() -> HubSearchEmptyState(
-                modifier = Modifier.padding(paddingValues),
-            )
-
             else -> {
-            var expandedAgentId by remember { mutableStateOf<String?>(null) }
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(UiTags.HUB_AGENT_LIST)
-                    .padding(paddingValues)
-                    .padding(horizontal = NexaraSpacing.ScreenHorizontal),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                items(state.displayAgents, key = { item -> item.agent.id }) { item ->
+                var expandedAgentId by remember { mutableStateOf<String?>(null) }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(UiTags.HUB_AGENT_LIST)
+                        .padding(paddingValues)
+                        .padding(horizontal = NexaraSpacing.ScreenHorizontal),
+                    contentPadding = PaddingValues(
+                        top = NexaraSpacing.Small,
+                        bottom = 88.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(state.displayAgents, key = { item -> item.agent.id }) { item ->
                     val agent = item.agent
                     val parsedColor = try {
                         Color(agent.color.toColorInt())

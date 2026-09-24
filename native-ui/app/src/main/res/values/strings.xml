@@ -987,6 +987,8 @@
     <string name="rag_home_title">Knowledge Base</string>
     <string name="rag_home_subtitle">Centralized intelligence repository and vector storage.</string>
     <string name="rag_home_search">Search documents…</string>
+    <string name="rag_home_memory_search">Search memory fragments and facts…</string>
+    <string name="rag_home_memory_search_empty">No matching memory fragments found</string>
     <string name="rag_search_fts_warning">Full-text search is temporarily unavailable. Showing clearly marked title matches.</string>
     <string name="rag_search_empty">No matching documents</string>
     <string name="rag_search_body_match">Body match</string>

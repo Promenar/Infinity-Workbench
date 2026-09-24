@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -525,36 +526,6 @@ internal fun RagHomeScreenContent(
         modifier = Modifier.testTag(UiTags.RAG_HOME_ROOT),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.statusBars,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.rag_home_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                },
-                actions = {
-                    IconButton(
-                        onClick = actions.onOpenGraph,
-                        modifier = Modifier
-                            .sizeIn(
-                                minWidth = NexaraSpacing.MinimumTouchTarget,
-                                minHeight = NexaraSpacing.MinimumTouchTarget,
-                            )
-                            .testTag(UiTags.RAG_HOME_TAB_GRAPH),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.AccountTree,
-                            contentDescription = stringResource(R.string.rag_home_graph),
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
-        },
         bottomBar = {
             if (state.currentTab == PortalTab.DOCUMENTS && state.selectedIds.isNotEmpty()) {
                 RagHomeSelectionBar(
@@ -591,7 +562,8 @@ internal fun RagHomeScreenContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .widthIn(max = 720.dp)
-                    .padding(horizontal = NexaraSpacing.ScreenHorizontal),
+                    .padding(horizontal = NexaraSpacing.ScreenHorizontal)
+                    .padding(top = NexaraSpacing.Small),
             ) {
                 RagPortalTabSwitcher(
                     selectedTab = state.currentTab,
@@ -685,21 +657,27 @@ internal fun RagHomeScreenContent(
                     }
                 }
 
+                NexaraSearchBar(
+                    value = state.searchQuery,
+                    onValueChange = { query ->
+                        applyRagSearchSelectionPolicy(state.selectedIds, query)
+                        actions.onSearch(query)
+                    },
+                    placeholder = stringResource(
+                        if (state.currentTab == PortalTab.DOCUMENTS) {
+                            R.string.rag_home_search
+                        } else {
+                            R.string.rag_home_memory_search
+                        }
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = NexaraSpacing.Small)
+                        .testTag(UiTags.RAG_HOME_SEARCH),
+                )
+
                 when (state.currentTab) {
                     PortalTab.DOCUMENTS -> {
-                        NexaraSearchBar(
-                            value = state.searchQuery,
-                            onValueChange = { query ->
-                                applyRagSearchSelectionPolicy(state.selectedIds, query)
-                                actions.onSearch(query)
-                            },
-                            placeholder = stringResource(R.string.rag_home_search),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = NexaraSpacing.Small)
-                                .testTag(UiTags.RAG_HOME_SEARCH),
-                        )
-
                         FlowRow(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -707,8 +685,10 @@ internal fun RagHomeScreenContent(
                             horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                             verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                         ) {
+                            val buttonPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
                             FilledTonalButton(
                                 onClick = actions.onOpenFilePicker,
+                                contentPadding = buttonPadding,
                                 modifier = Modifier
                                     .sizeIn(
                                         minWidth = NexaraSpacing.MinimumTouchTarget,
@@ -717,11 +697,12 @@ internal fun RagHomeScreenContent(
                                     .testTag(UiTags.RAG_HOME_UPLOAD),
                             ) {
                                 Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.size(NexaraSpacing.Small))
+                                Spacer(Modifier.size(4.dp))
                                 Text(stringResource(R.string.rag_folder_upload))
                             }
                             FilledTonalButton(
                                 onClick = { showNewFolderDialog = true },
+                                contentPadding = buttonPadding,
                                 modifier = Modifier
                                     .sizeIn(
                                         minWidth = NexaraSpacing.MinimumTouchTarget,
@@ -730,8 +711,22 @@ internal fun RagHomeScreenContent(
                                     .testTag(UiTags.RAG_HOME_NEW_FOLDER),
                             ) {
                                 Icon(Icons.Rounded.CreateNewFolder, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.size(NexaraSpacing.Small))
+                                Spacer(Modifier.size(4.dp))
                                 Text(stringResource(R.string.rag_home_new_folder_title))
+                            }
+                            FilledTonalButton(
+                                onClick = actions.onOpenGraph,
+                                contentPadding = buttonPadding,
+                                modifier = Modifier
+                                    .sizeIn(
+                                        minWidth = NexaraSpacing.MinimumTouchTarget,
+                                        minHeight = NexaraSpacing.MinimumTouchTarget,
+                                    )
+                                    .testTag(UiTags.RAG_HOME_TAB_GRAPH),
+                            ) {
+                                Icon(Icons.Rounded.AccountTree, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(4.dp))
+                                Text(stringResource(R.string.rag_details_tab_knowledge_graph))
                             }
                         }
 
@@ -751,6 +746,16 @@ internal fun RagHomeScreenContent(
                     }
 
                     PortalTab.MEMORY -> {
+                        val filteredMemories = remember(state.memoryVectors, state.searchQuery) {
+                            if (state.searchQuery.isBlank()) {
+                                state.memoryVectors
+                            } else {
+                                state.memoryVectors.filter {
+                                    it.content.contains(state.searchQuery, ignoreCase = true)
+                                }
+                            }
+                        }
+
                         LazyColumn(
                             modifier = Modifier
                                 .weight(1f)
@@ -827,8 +832,38 @@ internal fun RagHomeScreenContent(
                                         }
                                     }
                                 }
+                            } else if (filteredMemories.isEmpty()) {
+                                item {
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("memory-search-empty"),
+                                        shape = MaterialTheme.shapes.large,
+                                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    ) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(NexaraSpacing.XXLarge),
+                                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.Search,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(40.dp),
+                                            )
+                                            Text(
+                                                text = stringResource(R.string.rag_home_memory_search_empty),
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                }
                             } else {
-                                items(state.memoryVectors, key = { it.id }) { memory ->
+                                items(filteredMemories, key = { it.id }) { memory ->
                                     val isExpanded = expandedMemoryId == memory.id
                                     ListItem(
                                         modifier = Modifier

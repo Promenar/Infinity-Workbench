@@ -994,6 +994,8 @@
     <string name="rag_home_title">知识库</string>
     <string name="rag_home_subtitle">集中式智能知识库与向量存储。</string>
     <string name="rag_home_search">搜索文档…</string>
+    <string name="rag_home_memory_search">搜索记忆碎片与事实…</string>
+    <string name="rag_home_memory_search_empty">未找到匹配的记忆碎片</string>
     <string name="rag_search_fts_warning">全文搜索暂时不可用，当前仅展示已明确标记的标题匹配结果。</string>
     <string name="rag_search_empty">没有匹配的文档</string>
     <string name="rag_search_body_match">正文命中</string>

@@ -31,23 +31,22 @@ class AgentSessionsMaterialContractTest {
     }
 
     @Test
-    fun `both low frequency lists use contextual top bar search`() {
+    fun `agent sessions uses contextual top bar search while hub relies on direct list and fab`() {
         val sessions = sessionsSource.readText()
         val hub = hubSource.readText()
 
         assertThat(sessions).contains("NexaraSearchTopBar(")
-        assertThat(hub).contains("NexaraSearchTopBar(")
+        assertThat(hub).doesNotContain("NexaraSearchTopBar(")
         assertThat(sessions).doesNotContain("NexaraSearchBar(")
         assertThat(hub).doesNotContain("NexaraSearchBar(")
+        assertThat(hub).contains("FloatingActionButton(")
     }
 
     @Test
-    fun `closing contextual search clears the hidden query`() {
+    fun `closing contextual search clears the hidden query in sessions`() {
         val sessions = sessionsSource.readText()
-        val hub = hubSource.readText()
 
         assertThat(sessions).contains("if (!active) actions.onSearch(\"\")")
-        assertThat(hub).contains("if (!active) actions.onSearch(\"\")")
     }
 
     @Test
