@@ -71,8 +71,8 @@ android {
         applicationId = "com.promenar.nexara.native"
         minSdk = 31
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.1-beta"
+        versionCode = 4
+        versionName = "0.2.2-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
