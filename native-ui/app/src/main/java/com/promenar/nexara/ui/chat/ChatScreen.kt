@@ -16,6 +16,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,14 +57,19 @@ import com.promenar.nexara.ui.common.NexaraBackButton
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -1134,10 +1140,26 @@ fun ChatTopBar(
                 DropdownMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
-                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
+                    shape = RoundedCornerShape(16.dp),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier
+                        .widthIn(min = 190.dp)
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(16.dp)
+                        )
                 ) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_menu_session_settings), style = NexaraTypography.labelMedium) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Tune,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        text = { Text(stringResource(R.string.chat_menu_session_settings), style = NexaraTypography.labelLarge) },
                         modifier = Modifier.testTag(UiTags.CHAT_SESSION_SETTINGS),
                         onClick = {
                             showMenu = false
@@ -1145,14 +1167,30 @@ fun ChatTopBar(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_session_prompt_title), style = NexaraTypography.labelMedium) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Psychology,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        text = { Text(stringResource(R.string.chat_session_prompt_title), style = NexaraTypography.labelLarge) },
                         onClick = {
                             showMenu = false
                             onSessionPrompt()
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_menu_clear_history), style = NexaraTypography.labelMedium) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.CleaningServices,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        text = { Text(stringResource(R.string.chat_menu_clear_history), style = NexaraTypography.labelLarge) },
                         onClick = {
                             showMenu = false
                             onClearHistory()
@@ -1163,14 +1201,36 @@ fun ChatTopBar(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_menu_rename), style = NexaraTypography.labelMedium) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Edit,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        text = { Text(stringResource(R.string.chat_menu_rename), style = NexaraTypography.labelLarge) },
                         onClick = {
                             showMenu = false
                             onRename()
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_menu_delete_session), style = NexaraTypography.labelMedium, color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteForever,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        text = {
+                            Text(
+                                stringResource(R.string.chat_menu_delete_session),
+                                style = NexaraTypography.labelLarge,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        },
                         onClick = {
                             showMenu = false
                             onDeleteSession()

@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -355,7 +357,7 @@ internal fun AgentHubScreenContent(
                 onClick = actions.onRequestAdd,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shape = RoundedCornerShape(16.dp),
+                shape = CircleShape,
                 modifier = Modifier
                     .testTag(UiTags.HUB_ADD_AGENT)
                     .padding(bottom = NexaraSpacing.Small),
@@ -577,14 +579,32 @@ fun AgentExpandableCard(
                     }
                     DropdownMenu(
                         expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false }
+                        onDismissRequest = { menuExpanded = false },
+                        shape = RoundedCornerShape(16.dp),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        modifier = Modifier
+                            .widthIn(min = 160.dp)
+                            .border(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(16.dp)
+                            )
                     ) {
                         DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.PushPin,
+                                    contentDescription = null,
+                                    tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
                             text = {
                                 Text(
                                     stringResource(
                                         if (isPinned) R.string.common_cd_unpin else R.string.common_cd_pin
-                                    )
+                                    ),
+                                    style = NexaraTypography.labelLarge,
                                 )
                             },
                             onClick = {
@@ -594,7 +614,15 @@ fun AgentExpandableCard(
                             modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_PIN)
                         )
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.shared_btn_edit)) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Edit,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
+                            text = { Text(stringResource(R.string.shared_btn_edit), style = NexaraTypography.labelLarge) },
                             onClick = {
                                 menuExpanded = false
                                 onEdit()
@@ -602,7 +630,21 @@ fun AgentExpandableCard(
                             modifier = Modifier.testTag(UiTags.HUB_AGENT_MENU_EDIT)
                         )
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.shared_btn_delete)) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.DeleteOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
+                            text = {
+                                Text(
+                                    stringResource(R.string.shared_btn_delete),
+                                    style = NexaraTypography.labelLarge,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            },
                             onClick = {
                                 menuExpanded = false
                                 onDelete()

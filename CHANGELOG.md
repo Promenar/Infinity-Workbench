@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 首页 FAB 全圆形态与全站长按/操作下拉菜单视觉重构（2026-09-24）
+
+- **首页 FAB 纯圆形态对齐**：
+  - 将首页对话 Hub 的右下角悬浮按钮（FAB）形状由默认圆角矩形（`RoundedCornerShape(16.dp)`）升级为正圆形（`CircleShape`），彻底消灭矩形突兀感，与全站胶囊及圆形视觉语言严密统一。
+- **全站操作下拉菜单（DropdownMenu）视觉升级**：
+  - **规范对齐与容器质感**：将 Agent 卡片菜单与会话顶栏选项菜单升级为 16dp 大圆角容器、`surfaceContainer` 底色，以及 `outlineVariant.copy(alpha = 0.5f)` 深色微描边，消除原有菜单直角生硬感；
+  - **左侧对齐 Leading Icon 引入**：为两处菜单所有项引入 20dp 规范 Leading Icon，消除纯文字长短不一导致的视觉失衡（Agent 菜单：置顶 `PushPin`、编辑 `Edit`、删除 `DeleteOutline`；会话顶栏菜单：设置 `Tune`、提示词 `Psychology`、清除历史 `CleaningServices`、重命名 `Edit`、删除 `DeleteForever`）；
+  - **呼吸留白与危险警示**：为菜单施加稳定最小宽度（160dp / 190dp），让不同字数选项均具备舒适留白；危险删除操作统一赋予 `error` 警示色（图标与文字）。
+- **契约测试与实机验证闭环**：
+  - 完整保留 `HUB_ADD_AGENT`、`HUB_AGENT_MENU_*`、`CHAT_SESSION_SETTINGS` 等全量测试契约标签，JVM 2790 项测试全数通过；
+  - 在运行中的 Pixel 7 AVD 模拟器上实机交互并截屏核验，首页 FAB、卡片菜单与会话顶栏菜单均呈现高级精致的视觉体验。
+
 ### 全站页签统一升级 Homebar 全圆胶囊与弹簧触觉设计（2026-09-24）
 
 - **抽象通用全圆胶囊 Tab 组件**：
