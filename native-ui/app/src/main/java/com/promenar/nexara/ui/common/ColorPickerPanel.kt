@@ -1,11 +1,13 @@
 package com.promenar.nexara.ui.common
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,10 +15,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -30,7 +35,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
@@ -83,30 +91,35 @@ fun ColorPickerPanel(
     showCustomSlider: Boolean = true
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
+        LazyRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(horizontal = 2.dp, vertical = 2.dp)
         ) {
-            presetColors.forEach { color ->
+            items(presetColors) { color ->
                 val isSelected = selectedColor == color
+                val animatedScale by animateFloatAsState(
+                    targetValue = if (isSelected) 1.08f else 1f,
+                    label = "colorScale"
+                )
                 Box(
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(40.dp)
+                        .graphicsLayer(scaleX = animatedScale, scaleY = animatedScale)
                         .clip(CircleShape)
                         .clickable { onColorSelected(color) },
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(34.dp)
                             .clip(CircleShape)
                             .background(color)
                             .then(
                                 if (isSelected) {
-                                    Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                                    Modifier.border(2.5.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
                                 } else {
-                                    Modifier.border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                                    Modifier.border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), CircleShape)
                                 }
                             ),
                         contentAlignment = Alignment.Center
@@ -141,25 +154,68 @@ fun ColorPickerPanel(
                         style = NexaraTypography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    NexaraSlider(
-                        value = hue,
-                        onValueChange = {
-                            hue = it
-                            onColorSelected(hueToColor(it))
-                        }
-                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(36.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color.Red,
+                                            Color.Yellow,
+                                            Color.Green,
+                                            Color.Cyan,
+                                            Color.Blue,
+                                            Color.Magenta,
+                                            Color.Red
+                                        )
+                                    )
+                                )
+                        )
+
+                        Slider(
+                            value = hue,
+                            onValueChange = {
+                                hue = it
+                                onColorSelected(hueToColor(it))
+                            },
+                            valueRange = 0f..1f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = selectedColor,
+                                activeTrackColor = Color.Transparent,
+                                inactiveTrackColor = Color.Transparent
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
                         .background(selectedColor)
-                        .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
-                )
+                        .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Palette,
+                        contentDescription = null,
+                        tint = MaterialTheme.nexaraDomainColors.overlayContent,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }
