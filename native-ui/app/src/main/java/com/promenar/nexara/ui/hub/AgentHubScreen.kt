@@ -82,6 +82,7 @@ fun AgentHubScreen(
 
     var showAddDialog by remember { mutableStateOf(false) }
     var agentToDelete by remember { mutableStateOf<String?>(null) }
+    var pendingDeleteSessionId by remember { mutableStateOf<String?>(null) }
     var searchActive by rememberSaveable { mutableStateOf(false) }
 
     val state = AgentHubScreenState(
@@ -90,6 +91,7 @@ fun AgentHubScreen(
         searchActive = searchActive,
         showAddDialog = showAddDialog,
         pendingDeleteAgentId = agentToDelete,
+        pendingDeleteSessionId = pendingDeleteSessionId,
         sessionsByAgent = sessionsByAgent,
     )
     val actions = AgentHubScreenActions(
@@ -115,7 +117,16 @@ fun AgentHubScreen(
                 onNavigateToChat(sessionId)
             }
         },
-        onDeleteSession = sessionListViewModel::deleteSession,
+        onRequestDeleteSession = { sessionId ->
+            pendingDeleteSessionId = sessionId
+        },
+        onCancelDeleteSession = {
+            pendingDeleteSessionId = null
+        },
+        onDeleteSession = { sessionId ->
+            sessionListViewModel.deleteSession(sessionId)
+            pendingDeleteSessionId = null
+        },
     )
 
     AgentHubScreenContent(state = state, actions = actions)
@@ -299,6 +310,7 @@ internal data class AgentHubScreenState(
     val searchActive: Boolean = false,
     val showAddDialog: Boolean = false,
     val pendingDeleteAgentId: String? = null,
+    val pendingDeleteSessionId: String? = null,
     val sessionsByAgent: Map<String, List<Session>> = emptyMap(),
 )
 
@@ -315,6 +327,8 @@ internal data class AgentHubScreenActions(
     val onEdit: (String) -> Unit = {},
     val onOpenChat: (String) -> Unit = {},
     val onCreateSession: (String) -> Unit = {},
+    val onRequestDeleteSession: (String) -> Unit = {},
+    val onCancelDeleteSession: () -> Unit = {},
     val onDeleteSession: (String) -> Unit = {},
 )
 
@@ -404,6 +418,17 @@ internal fun AgentHubScreenContent(
             confirmLabel = stringResource(R.string.agent_edit_delete_confirm),
             destructive = true
         )
+        ConfirmDialog(
+            show = state.pendingDeleteSessionId != null,
+            onDismiss = actions.onCancelDeleteSession,
+            onConfirm = {
+                state.pendingDeleteSessionId?.let(actions.onDeleteSession)
+            },
+            title = stringResource(R.string.session_settings_delete_title),
+            description = stringResource(R.string.session_settings_delete_message),
+            confirmLabel = stringResource(R.string.session_settings_delete_btn),
+            destructive = true
+        )
 
         when {
             state.displayAgents.isEmpty() && state.searchQuery.isBlank() -> EmptyAgentState(
@@ -455,7 +480,7 @@ internal fun AgentHubScreenContent(
                         onEdit = { actions.onEdit(agent.id) },
                         onOpenChat = actions.onOpenChat,
                         onCreateSession = { actions.onCreateSession(agent.id) },
-                        onDeleteSession = actions.onDeleteSession,
+                        onRequestDeleteSession = actions.onRequestDeleteSession,
                     )
                 }
             }
@@ -511,7 +536,7 @@ fun AgentExpandableCard(
     onEdit: () -> Unit,
     onOpenChat: (String) -> Unit,
     onCreateSession: () -> Unit,
-    onDeleteSession: (String) -> Unit,
+    onRequestDeleteSession: (String) -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val pinnedStateDescription = stringResource(R.string.sessions_tag_pinned)
@@ -680,7 +705,7 @@ fun AgentExpandableCard(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 IconButton(
-                                    onClick = { onDeleteSession(session.id) },
+                                    onClick = { onRequestDeleteSession(session.id) },
                                     modifier = Modifier.size(30.dp)
                                 ) {
                                     Icon(

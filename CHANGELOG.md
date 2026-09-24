@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### 首页折叠式 Agent 列表与知识库视觉统一（2026-09-24）
 
 - 首页（对话 Hub）：Agent 行重构为独立可折叠卡片（surfaceContainerLow 圆角卡 + 头像降饱和 35%），点击头部手风琴式展开该 Agent 的会话列表（标题 / 日期 / 删除）或收起；"新建会话"内联于展开区；置顶标识改为标题前小图钉；取消跳转二级会话列表页的入口（路由保留作回滚兜底）。
+- 折叠区会话删除增加二次确认弹窗（复用 session_settings_delete 文案，红色 destructive 确认）。
 - 知识库：文档/记忆 Tab 由全宽 PrimaryTabRow 改为胶囊分段控件（自然宽度、移除全宽分割线）；"新建文件夹"与"上传文档"统一为等权 tonal 胶囊按钮；文件空态改为 72dp 圆形容器图标 + 标题 + 副说明的层级结构。
 - 契约测试同步：AgentHubScreenContractTest（折叠卡片 + 展开指示 + 置顶标记）、BettboxGroupedSurfacesContractTest（首页改独立卡片、会话列表页保留分组面）。
 
