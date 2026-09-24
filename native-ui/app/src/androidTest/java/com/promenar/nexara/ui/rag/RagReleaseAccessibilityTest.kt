@@ -487,7 +487,6 @@ class RagReleaseAccessibilityTest {
                     actions = RagHomeScreenActions(
                         onChangeTab = { state = state.copy(currentTab = it) },
                         onLoadMemory = { memoryLoads.incrementAndGet() },
-                        onOpenConfig = { configClicks.incrementAndGet() },
                         onOpenGraph = { graphClicks.incrementAndGet() },
                         onOpenFilePicker = { uploadClicks.incrementAndGet() },
                     ),
@@ -496,7 +495,6 @@ class RagReleaseAccessibilityTest {
             }
         }
 
-        rule.onNodeWithTag(UiTags.RAG_HOME_CONFIG).assertHasClickAction().performClick()
         rule.onNodeWithTag(UiTags.RAG_HOME_UPLOAD).assertHasClickAction().performClick()
         rule.onNodeWithTag(UiTags.RAG_HOME_TAB_MEMORY).assertHasClickAction().performClick()
         rule.waitForIdle()
@@ -506,7 +504,6 @@ class RagReleaseAccessibilityTest {
         rule.onNodeWithTag(UiTags.RAG_HOME_NEW_FOLDER).assertHasClickAction().performClick()
         rule.onNodeWithTag(UiTags.RAG_HOME_NEW_FOLDER_DIALOG).assertExists()
 
-        assertThat(configClicks.get()).isEqualTo(1)
         assertThat(uploadClicks.get()).isEqualTo(1)
         assertThat(memoryLoads.get()).isEqualTo(1)
         assertThat(graphClicks.get()).isEqualTo(1)
@@ -649,7 +646,6 @@ class RagReleaseAccessibilityTest {
         }
 
         rule.onNodeWithTag(UiTags.RAG_HOME_TAB_GRAPH).assertIsDisplayed()
-        rule.onNodeWithTag(UiTags.RAG_HOME_CONFIG).assertIsDisplayed()
     }
 
     @Test

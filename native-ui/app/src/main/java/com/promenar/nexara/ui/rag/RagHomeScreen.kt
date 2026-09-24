@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.rag
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -31,6 +32,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
@@ -51,9 +54,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -81,12 +81,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -525,7 +527,13 @@ internal fun RagHomeScreenContent(
         contentWindowInsets = WindowInsets.statusBars,
         topBar = {
             TopAppBar(
-                title = {},
+                title = {
+                    Text(
+                        text = stringResource(R.string.rag_home_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                },
                 actions = {
                     IconButton(
                         onClick = actions.onOpenGraph,
@@ -539,21 +547,6 @@ internal fun RagHomeScreenContent(
                         Icon(
                             imageVector = Icons.Rounded.AccountTree,
                             contentDescription = stringResource(R.string.rag_home_graph),
-                        )
-                    }
-                    IconButton(
-                        onClick = actions.onOpenConfig,
-                        modifier = Modifier
-                            .sizeIn(
-                                minWidth = NexaraSpacing.MinimumTouchTarget,
-                                minHeight = NexaraSpacing.MinimumTouchTarget,
-                            )
-                            .testTag(UiTags.RAG_HOME_CONFIG),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Settings,
-                            contentDescription = stringResource(R.string.common_cd_config),
-                            modifier = Modifier.size(24.dp),
                         )
                     }
                 },
@@ -600,37 +593,13 @@ internal fun RagHomeScreenContent(
                     .widthIn(max = 720.dp)
                     .padding(horizontal = NexaraSpacing.ScreenHorizontal),
             ) {
-                SingleChoiceSegmentedButtonRow(
-                    modifier = Modifier.padding(bottom = NexaraSpacing.Medium)
-                ) {
-                    listOf(PortalTab.DOCUMENTS, PortalTab.MEMORY).forEachIndexed { index, tab ->
-                        SegmentedButton(
-                            selected = state.currentTab == tab,
-                            onClick = { actions.onChangeTab(tab) },
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = 2),
-                            label = {
-                                Text(
-                                    text = stringResource(
-                                        if (tab == PortalTab.DOCUMENTS) {
-                                            R.string.rag_home_documents
-                                        } else {
-                                            R.string.rag_home_memory
-                                        },
-                                    ),
-                                    style = MaterialTheme.typography.labelLarge,
-                                )
-                            },
-                            modifier = when (tab) {
-                                PortalTab.DOCUMENTS -> Modifier.testTag(UiTags.RAG_HOME_TAB_DOCUMENTS)
-                                PortalTab.MEMORY -> Modifier.testTag(UiTags.RAG_HOME_TAB_MEMORY)
-                                PortalTab.GRAPH -> Modifier
-                            }
-                                .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget),
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(NexaraSpacing.Medium))
+                RagPortalTabSwitcher(
+                    selectedTab = state.currentTab,
+                    onTabSelected = actions.onChangeTab,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = NexaraSpacing.Small),
+                )
 
                 AnimatedVisibility(
                     visible = shouldShowRagIndexSection(
@@ -1279,3 +1248,76 @@ private fun RagHomeSelectionBar(
         }
     }
 }
+
+@Composable
+internal fun RagPortalTabSwitcher(
+    selectedTab: PortalTab,
+    onTabSelected: (PortalTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(3.dp)
+            .selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf(PortalTab.DOCUMENTS, PortalTab.MEMORY).forEach { tab ->
+            val selected = selectedTab == tab
+            val backgroundColor by animateColorAsState(
+                targetValue = if (selected) MaterialTheme.colorScheme.surface else Color.Transparent,
+                animationSpec = tween(durationMillis = 200),
+                label = "portalTabBg",
+            )
+            val contentColor by animateColorAsState(
+                targetValue = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                animationSpec = tween(durationMillis = 200),
+                label = "portalTabContent",
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(backgroundColor)
+                    .selectable(
+                        selected = selected,
+                        role = Role.Tab,
+                        onClick = { onTabSelected(tab) },
+                    )
+                    .then(
+                        when (tab) {
+                            PortalTab.DOCUMENTS -> Modifier.testTag(UiTags.RAG_HOME_TAB_DOCUMENTS)
+                            PortalTab.MEMORY -> Modifier.testTag(UiTags.RAG_HOME_TAB_MEMORY)
+                            PortalTab.GRAPH -> Modifier
+                        }
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = if (tab == PortalTab.DOCUMENTS) Icons.Rounded.Description else Icons.Rounded.Psychology,
+                        contentDescription = null,
+                        tint = contentColor,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = stringResource(
+                            if (tab == PortalTab.DOCUMENTS) R.string.rag_home_documents else R.string.rag_home_memory
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = contentColor,
+                    )
+                }
+            }
+        }
+    }
+}
+

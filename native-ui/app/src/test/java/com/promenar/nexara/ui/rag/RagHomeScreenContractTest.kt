@@ -181,12 +181,11 @@ class RagHomeScreenContractTest {
         assertThat(screenSource).contains("UiTags.RAG_HOME_TAB_DOCUMENTS")
         assertThat(screenSource).contains("UiTags.RAG_HOME_TAB_MEMORY")
         assertThat(screenSource).contains("UiTags.RAG_HOME_TAB_GRAPH")
-        assertThat(screenSource).contains("UiTags.RAG_HOME_CONFIG")
+        assertThat(screenSource).doesNotContain("UiTags.RAG_HOME_CONFIG")
         assertThat(screenSource).contains("UiTags.RAG_HOME_NEW_FOLDER")
         assertThat(screenSource).contains("UiTags.RAG_HOME_UPLOAD")
         assertThat(screenSource).contains("UiTags.RAG_HOME_DOCUMENTS_CONTENT")
         assertThat(screenSource).contains("UiTags.RAG_HOME_MEMORY_CONTENT")
-        assertThat(screenSource).contains("actions.onOpenConfig")
         assertThat(screenSource).contains("actions.onOpenGraph")
     }
 
