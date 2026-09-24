@@ -1,18 +1,25 @@
 package com.promenar.nexara.ui.rag
 
+import android.os.Build
+import android.view.HapticFeedbackConstants
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,15 +32,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
@@ -85,6 +95,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -1290,66 +1301,117 @@ internal fun RagPortalTabSwitcher(
     onTabSelected: (PortalTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    val view = LocalView.current
+    val tabs = remember { listOf(PortalTab.DOCUMENTS, PortalTab.MEMORY) }
+    val selectedIndex = if (selectedTab == PortalTab.MEMORY) 1 else 0
+
+    BoxWithConstraints(
         modifier = modifier
-            .height(44.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(3.dp)
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .height(48.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                shape = CircleShape,
+            )
+            .padding(4.dp),
     ) {
-        listOf(PortalTab.DOCUMENTS, PortalTab.MEMORY).forEach { tab ->
-            val selected = selectedTab == tab
-            val backgroundColor by animateColorAsState(
-                targetValue = if (selected) MaterialTheme.colorScheme.surface else Color.Transparent,
-                animationSpec = tween(durationMillis = 200),
-                label = "portalTabBg",
-            )
-            val contentColor by animateColorAsState(
-                targetValue = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                animationSpec = tween(durationMillis = 200),
-                label = "portalTabContent",
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(backgroundColor)
-                    .selectable(
-                        selected = selected,
-                        role = Role.Tab,
-                        onClick = { onTabSelected(tab) },
-                    )
-                    .then(
-                        when (tab) {
-                            PortalTab.DOCUMENTS -> Modifier.testTag(UiTags.RAG_HOME_TAB_DOCUMENTS)
-                            PortalTab.MEMORY -> Modifier.testTag(UiTags.RAG_HOME_TAB_MEMORY)
-                            PortalTab.GRAPH -> Modifier
-                        }
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Icon(
-                        imageVector = if (tab == PortalTab.DOCUMENTS) Icons.Rounded.Description else Icons.Rounded.Psychology,
-                        contentDescription = null,
-                        tint = contentColor,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Text(
-                        text = stringResource(
-                            if (tab == PortalTab.DOCUMENTS) R.string.rag_home_documents else R.string.rag_home_memory
+        val tabWidth = maxWidth / 2
+        val indicatorOffset by animateDpAsState(
+            targetValue = if (selectedIndex == 0) 0.dp else tabWidth,
+            animationSpec = spring(
+                dampingRatio = 0.85f,
+                stiffness = Spring.StiffnessMediumLow,
+            ),
+            label = "portalTabIndicatorOffset",
+        )
+
+        // 胶囊滑动高亮底座 (与 Homebar 选中态风格一致)
+        Box(
+            modifier = Modifier
+                .offset(x = indicatorOffset)
+                .width(tabWidth)
+                .fillMaxHeight()
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+        )
+
+        // 选项文本与点击行
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .selectableGroup(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            tabs.forEachIndexed { index, tab ->
+                val selected = selectedIndex == index
+                val contentColor by animateColorAsState(
+                    targetValue = if (selected) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    animationSpec = tween(durationMillis = 200),
+                    label = "portalTabContentColor_$index",
+                )
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(CircleShape)
+                        .selectable(
+                            selected = selected,
+                            role = Role.Tab,
+                            onClick = {
+                                if (selectedTab != tab) {
+                                    val hapticConstant = if (Build.VERSION.SDK_INT >= 34) {
+                                        HapticFeedbackConstants.SEGMENT_TICK
+                                    } else {
+                                        HapticFeedbackConstants.CLOCK_TICK
+                                    }
+                                    view.performHapticFeedback(hapticConstant)
+                                    onTabSelected(tab)
+                                }
+                            },
+                        )
+                        .then(
+                            when (tab) {
+                                PortalTab.DOCUMENTS -> Modifier.testTag(UiTags.RAG_HOME_TAB_DOCUMENTS)
+                                PortalTab.MEMORY -> Modifier.testTag(UiTags.RAG_HOME_TAB_MEMORY)
+                                PortalTab.GRAPH -> Modifier
+                            }
                         ),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                        color = contentColor,
-                    )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (tab == PortalTab.DOCUMENTS) {
+                                Icons.Rounded.Description
+                            } else {
+                                Icons.Rounded.Psychology
+                            },
+                            contentDescription = null,
+                            tint = contentColor,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = stringResource(
+                                if (tab == PortalTab.DOCUMENTS) {
+                                    R.string.rag_home_documents
+                                } else {
+                                    R.string.rag_home_memory
+                                }
+                            ),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = contentColor,
+                        )
+                    }
                 }
             }
         }

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 知识库 Tab 页签移植 Homebar 全胶囊与触觉手感（2026-09-24）
+
+- **全胶囊几何语言统一**：
+  - 将 `RagPortalTabSwitcher` 外框由圆角矩形升级为与底部 Homebar 一致的全圆胶囊形态（`CircleShape`，48dp 高度），辅以 `surfaceContainer` 底色与内敛微描边（`outlineVariant.copy(alpha = 0.5f)`），消灭局部视觉冲突。
+  - 选中项升级为同心全圆胶囊底座（`secondaryContainer`），与底栏选中胶囊在色彩与形态上达成 100% 同步。
+- **物理弹簧滑块与触觉手感移植**：
+  - 引入基于物理弹簧（Spring, dampingRatio=0.85）的滑动指示器底座，在选项间呈现平滑优雅的穿梭动画。
+  - 移植 Homebar 的原生触觉反馈，轻点切换时触发微细清脆的 `SEGMENT_TICK` 刻度震动，实现视觉与触感双重享受。
+- **架构契约约束**：
+  - 严格保持 Content 层的无运行时环境确定性契约，全量 2790 个测试绿灯通过。
+
 ### 一级页面视觉统一与顶栏层级收敛（2026-09-24）
 
 - **首页（对话 Hub）**：
