@@ -540,126 +540,120 @@ private fun ParamsPanel(
             }
         }
 
-        // --- Advanced Parameters ---
+        // --- Top K ---
         item {
-            NexaraCollapsibleSection(
-                title = stringResource(R.string.sheet_settings_advanced_params),
-                initiallyExpanded = false
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    // Top K
-                    Column {
-                        Text(
-                            text = stringResource(R.string.sheet_settings_top_k),
-                            style = NexaraTypography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            NexaraSliderInt(
-                                value = currentTopK,
-                                onValueChange = {
-                                    currentTopK = it
-                                    chatViewModel.updateInferenceParams(params.copy(topK = if (currentTopK == 0) null else currentTopK))
-                                },
-                                valueRange = 0..100,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = if (currentTopK == 0) stringResource(R.string.sheet_settings_unlimited) else currentTopK.toString(),
-                                style = NexaraTypography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.width(60.dp)
-                            )
-                        }
-                    }
-
-                    // Repetition Penalty
-                    Column {
-                        Text(
-                            text = stringResource(R.string.sheet_settings_repetition_penalty),
-                            style = NexaraTypography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            NexaraSlider(
-                                value = currentRepetitionPenalty,
-                                onValueChange = {
-                                    currentRepetitionPenalty = it
-                                    chatViewModel.updateInferenceParams(params.copy(repetitionPenalty = it.toDouble()))
-                                },
-                                valueRange = 0.5f..2.0f,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = String.format("%.2f", currentRepetitionPenalty),
-                                style = NexaraTypography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.width(60.dp)
-                            )
-                        }
-                    }
-
-                    // Presence Penalty
-                    Column {
-                        Text(
-                            text = stringResource(R.string.sheet_settings_presence_penalty),
-                            style = NexaraTypography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            NexaraSlider(
-                                value = currentPresencePenalty,
-                                onValueChange = {
-                                    currentPresencePenalty = it
-                                    chatViewModel.updateInferenceParams(params.copy(presencePenalty = it.toDouble()))
-                                },
-                                valueRange = -2.0f..2.0f,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = String.format("%.2f", currentPresencePenalty),
-                                style = NexaraTypography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.width(60.dp)
-                            )
-                        }
-                    }
-
-                    // Frequency Penalty
-                    Column {
-                        Text(
-                            text = stringResource(R.string.sheet_settings_frequency_penalty),
-                            style = NexaraTypography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            NexaraSlider(
-                                value = currentFrequencyPenalty,
-                                onValueChange = {
-                                    currentFrequencyPenalty = it
-                                    chatViewModel.updateInferenceParams(params.copy(frequencyPenalty = it.toDouble()))
-                                },
-                                valueRange = -2.0f..2.0f,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = String.format("%.2f", currentFrequencyPenalty),
-                                style = NexaraTypography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.width(60.dp)
-                            )
-                        }
-                    }
-                }
+            Text(
+                text = stringResource(R.string.sheet_settings_top_k),
+                style = NexaraTypography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NexaraSliderInt(
+                    value = currentTopK,
+                    onValueChange = {
+                        currentTopK = it
+                        chatViewModel.updateInferenceParams(params.copy(topK = if (currentTopK == 0) null else currentTopK))
+                    },
+                    valueRange = 0..100,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = if (currentTopK == 0) stringResource(R.string.sheet_settings_unlimited) else currentTopK.toString(),
+                    style = NexaraTypography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.width(60.dp)
+                )
             }
+        }
+
+        // --- Repetition Penalty ---
+        item {
+            Text(
+                text = stringResource(R.string.sheet_settings_repetition_penalty),
+                style = NexaraTypography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NexaraSlider(
+                    value = currentRepetitionPenalty,
+                    onValueChange = {
+                        currentRepetitionPenalty = it
+                        chatViewModel.updateInferenceParams(params.copy(repetitionPenalty = it.toDouble()))
+                    },
+                    valueRange = 0.5f..2.0f,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = String.format("%.2f", currentRepetitionPenalty),
+                    style = NexaraTypography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
+        // --- Presence Penalty ---
+        item {
+            Text(
+                text = stringResource(R.string.sheet_settings_presence_penalty),
+                style = NexaraTypography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NexaraSlider(
+                    value = currentPresencePenalty,
+                    onValueChange = {
+                        currentPresencePenalty = it
+                        chatViewModel.updateInferenceParams(params.copy(presencePenalty = it.toDouble()))
+                    },
+                    valueRange = -2.0f..2.0f,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = String.format("%.2f", currentPresencePenalty),
+                    style = NexaraTypography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
+        // --- Frequency Penalty ---
+        item {
+            Text(
+                text = stringResource(R.string.sheet_settings_frequency_penalty),
+                style = NexaraTypography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NexaraSlider(
+                    value = currentFrequencyPenalty,
+                    onValueChange = {
+                        currentFrequencyPenalty = it
+                        chatViewModel.updateInferenceParams(params.copy(frequencyPenalty = it.toDouble()))
+                    },
+                    valueRange = -2.0f..2.0f,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = String.format("%.2f", currentFrequencyPenalty),
+                    style = NexaraTypography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.width(60.dp)
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }

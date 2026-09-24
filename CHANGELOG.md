@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 会话设置高级生成参数取消折叠与平铺体验优化（2026-09-24）
+
+- **消除嵌套折叠与手势冲突**：
+  - 取消会话设置面板（`SessionSettingsSheet`）中“高级生成参数”的折叠区块（`NexaraCollapsibleSection`），消除在底部弹窗滑动列表内折叠高度骤变引发的跳动与交互卡顿；
+  - 将 Top K、重复惩罚（Repetition Penalty）、话题新鲜度（Presence Penalty）、词频惩罚（Frequency Penalty）平铺展开为一级滑块配置项。
+- **垂直排版与滑动呼吸感**：
+  - 全部 7 项生成采样参数（请求超时、Top P、最大 Token 数、Top K、重复惩罚、新鲜度、频次惩罚）在“生成参数”下整齐连续排布，统一采用 48dp 规范触控高度与 60dp 标签宽度；
+  - 列表末尾加入 32dp 呼吸留白，避免底部项贴近系统底栏导航条。
+
 ### 知识库记忆界面视觉净化与空态体验对齐（2026-09-24）
 
 - **技术泄露与冗余信息净化**：
