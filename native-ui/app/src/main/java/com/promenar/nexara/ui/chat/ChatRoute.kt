@@ -463,6 +463,7 @@ fun ChatRoute(
                 chatViewModel.sendMessage(text, images)
             },
             onStop = chatViewModel::stopGeneration,
+            onDismissGenerationError = chatViewModel::acknowledgeGenerationFailure,
             onPickImages = { imagePickerLauncher.launch("image/*") },
             onPickDocuments = {
                 documentPickerLauncher.launch(

@@ -197,6 +197,7 @@ data class ChatScreenActions(
     val onTextChange: (String) -> Unit = {},
     val onSend: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
     val onStop: () -> Unit = {},
+    val onDismissGenerationError: () -> Unit = {},
     val onPickImages: () -> Unit = {},
     val onPickDocuments: () -> Unit = {},
     val onRemoveImage: (Int) -> Unit = {},
@@ -674,7 +675,12 @@ fun ChatScreenContent(
                             } else {
                                 stringResource(R.string.chat_input_placeholder_default)
                             },
-                            onTextChange = actions.onTextChange,
+                            onTextChange = { next ->
+                                if (uiState.status == GenerationStatus.ERROR) {
+                                    actions.onDismissGenerationError()
+                                }
+                                actions.onTextChange(next)
+                            },
                             onSend = {
                                 if (
                                     inputText.isNotBlank() ||
@@ -693,6 +699,7 @@ fun ChatScreenContent(
                             status = uiState.status,
                             isGenerating = uiState.isGenerating,
                             onStop = actions.onStop,
+                            onDismissError = actions.onDismissGenerationError,
                             isModelSelected = uiState.session?.modelId?.isNotBlank() == true,
                             onModelHint = { showModelHint = true },
                             hasImages = selectedImageUris.isNotEmpty(),
@@ -1296,6 +1303,7 @@ fun ChatInputBar(
     isGenerating: Boolean = status == GenerationStatus.UPLOADING ||
         status == GenerationStatus.THINKING || status == GenerationStatus.RECEIVING,
     onStop: () -> Unit = {},
+    onDismissError: () -> Unit = {},
     isModelSelected: Boolean = true,
     onModelHint: () -> Unit = {},
     hasImages: Boolean = false,
@@ -1411,6 +1419,7 @@ fun ChatInputBar(
                     if (isModelSelected) onSend() else onModelHint()
                 },
                 onStop = onStop,
+                onDismissError = onDismissError,
                 enabled = (text.isNotBlank() || hasImages || hasDocuments) && !isImportingDocument,
                 isModelSelected = isModelSelected
             )
@@ -1427,6 +1436,7 @@ private fun GenerationStatusButton(
     status: GenerationStatus,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    onDismissError: () -> Unit,
     enabled: Boolean,
     isModelSelected: Boolean = true
 ) {
@@ -1551,8 +1561,12 @@ private fun GenerationStatusButton(
 
     IconButton(
         onClick = {
-            if (status == GenerationStatus.IDLE) onSend()
-            else if (status != GenerationStatus.COMPLETED && status != GenerationStatus.ERROR) onStop()
+            when (status) {
+                GenerationStatus.IDLE -> onSend()
+                GenerationStatus.ERROR -> onDismissError()
+                GenerationStatus.COMPLETED -> Unit
+                else -> onStop()
+            }
         },
         modifier = Modifier
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
@@ -1568,7 +1582,7 @@ private fun GenerationStatusButton(
                 }
             }
             .testTag(UiTags.CHAT_GENERATION_ACTION),
-        enabled = (status == GenerationStatus.IDLE || status == GenerationStatus.RECEIVING || status == GenerationStatus.THINKING || status == GenerationStatus.UPLOADING)
+        enabled = (status == GenerationStatus.IDLE || status == GenerationStatus.RECEIVING || status == GenerationStatus.THINKING || status == GenerationStatus.UPLOADING || status == GenerationStatus.ERROR)
     ) {
         Icon(
             imageVector = icon,

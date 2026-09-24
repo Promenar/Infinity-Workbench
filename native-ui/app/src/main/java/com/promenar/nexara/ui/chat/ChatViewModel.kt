@@ -319,6 +319,8 @@ class ChatViewModel(
         mutableNotificationPermissionRequest
     private var pendingPermissionTurn: PendingPermissionTurn? = null
     private var pendingDraftClearTaskId: String? = null
+    private var lastFailedTaskId: String? = null
+    private var acknowledgedFailureTaskId: String? = null
     private val _providerResolutionFailure = MutableStateFlow<ProviderResolution.Failure?>(null)
     val providerResolutionFailure: StateFlow<ProviderResolution.Failure?> = _providerResolutionFailure
     private val _isGenerating = MutableStateFlow(false)
@@ -467,13 +469,24 @@ class ChatViewModel(
                             pendingDraftClearTaskId = null
                             consumeAcceptedDraft(sessionId)
                         }
-                        _generationFailureSurface.value = presentation.failureSurface
-                        _generationNotice.value = presentation.error?.let(GenerationFailureNotice::from)
+                        val failureAcknowledged = presentation.taskId == acknowledgedFailureTaskId
+                        if (
+                            presentation.handledFailure ||
+                            presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.FAILED ||
+                            presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED
+                        ) {
+                            lastFailedTaskId = presentation.taskId
+                        }
+                        _generationFailureSurface.value =
+                            if (failureAcknowledged) null else presentation.failureSurface
+                        _generationNotice.value =
+                            if (failureAcknowledged) null else presentation.error?.let(GenerationFailureNotice::from)
                         _providerResolutionFailure.value = presentation.providerFailure
                         _isGenerating.value = presentation.generating
                         _postProcessTasks.value = presentation.postProcessTasks
                         _generationStatus.value = when {
-                            presentation.handledFailure -> GenerationStatus.ERROR
+                            presentation.handledFailure ->
+                                if (failureAcknowledged) GenerationStatus.IDLE else GenerationStatus.ERROR
                             presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.THINKING ->
                                 GenerationStatus.THINKING
                             presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.STREAMING ->
@@ -481,11 +494,11 @@ class ChatViewModel(
                             presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED ->
                                 GenerationStatus.COMPLETED
                             presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.FAILED ->
-                                GenerationStatus.ERROR
+                                if (failureAcknowledged) GenerationStatus.IDLE else GenerationStatus.ERROR
                             presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED ->
                                 GenerationStatus.IDLE
                             presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.PERSISTENCE_FAILED ->
-                                GenerationStatus.ERROR
+                                if (failureAcknowledged) GenerationStatus.IDLE else GenerationStatus.ERROR
                             else -> _generationStatus.value
                         }
                     }
@@ -607,7 +620,22 @@ class ChatViewModel(
     }
 
     fun updateInputText(text: String) {
+        if (_generationStatus.value == GenerationStatus.ERROR) {
+            acknowledgeGenerationFailure()
+        }
         _inputText.update { text }
+    }
+
+    /**
+     * 用户确认生成失败：解除失败态，恢复发送按钮。
+     * 同一 taskId 的失败 presentation 之后不再把状态拉回 ERROR。
+     */
+    fun acknowledgeGenerationFailure() {
+        if (_generationStatus.value != GenerationStatus.ERROR) return
+        acknowledgedFailureTaskId = lastFailedTaskId
+        _generationStatus.value = GenerationStatus.IDLE
+        _generationFailureSurface.value = null
+        _generationNotice.value = null
     }
 
     fun importFullContextDocument(uri: Uri) = importFullContextDocuments(listOf(uri))

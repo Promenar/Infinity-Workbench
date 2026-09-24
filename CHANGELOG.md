@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 生成失败态发送按钮恢复机制（2026-09-24）
+
+- 修复：生成失败后发送按钮永久停留失败态（点击无响应、无法再次发送），用户被迫退出会话重进。现在输入新内容或点击失败按钮即确认失败并恢复正常发送态。
+- 实现：`ChatViewModel.acknowledgeGenerationFailure()` 以 acknowledged taskId 机制防止失败 presentation 把状态拉回 ERROR；`ChatInputBar`/`GenerationStatusButton` 在 ERROR 态可点击并回调确认，输入联动自动解除。
+
 ### 模型品牌 Logo 体系与选择器商业级改版（2026-09-24）
 
 - 新增品牌 Logo 体系：引入 lobehub/lobe-icons（MIT）SVG 资产（22 个品牌），Coil3 注册 `SvgDecoder`，新增 `ModelBrandResolver`（模型 ID/family → 品牌键，含前缀映射规则）与 `ModelBrandIcon`/`ModelBrandTile` 共享组件，未知品牌优雅回退通用图标。
