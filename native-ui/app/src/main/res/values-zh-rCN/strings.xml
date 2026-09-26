@@ -1469,6 +1469,14 @@
     <string name="rag_folder_cd_move">移动所选文档</string>
     <string name="rag_folder_cd_reindex">重新索引所选文档</string>
     <string name="rag_folder_cd_move_to">移动到 %1$s</string>
+    <string name="rag_status_go_to_settings">去设置</string>
+    <string name="rag_status_vectorizing">文档向量化中</string>
+    <string name="rag_status_kg_extracting">知识图谱抽取中</string>
+    <string name="rag_status_tasks_running">后台索引任务运行中</string>
+    <string name="rag_status_completed">索引已完成</string>
+    <string name="rag_status_failed">索引任务失败</string>
+    <string name="rag_root_all_files">全部文件</string>
+    <string name="rag_back_to_parent">返回上一级</string>
 
     <plurals name="prompt_editor_word_count">
         <item quantity="zero">共 %1$d 词</item>

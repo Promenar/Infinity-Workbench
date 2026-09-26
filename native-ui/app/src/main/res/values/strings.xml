@@ -1468,6 +1468,14 @@
     <string name="rag_folder_cd_move">Move selected documents</string>
     <string name="rag_folder_cd_reindex">Re-index selected documents</string>
     <string name="rag_folder_cd_move_to">Move to %1$s</string>
+    <string name="rag_status_go_to_settings">Settings</string>
+    <string name="rag_status_vectorizing">Vectorizing documents</string>
+    <string name="rag_status_kg_extracting">Extracting knowledge graph</string>
+    <string name="rag_status_tasks_running">Indexing tasks running</string>
+    <string name="rag_status_completed">Indexing complete</string>
+    <string name="rag_status_failed">Indexing failed</string>
+    <string name="rag_root_all_files">All Files</string>
+    <string name="rag_back_to_parent">Back to parent</string>
 
     <plurals name="prompt_editor_word_count">
         <item quantity="zero">%1$d words</item>

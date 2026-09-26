@@ -9,7 +9,6 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.ShareRequest
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
-import com.promenar.nexara.share.core.AndroidShareIndexScheduler
 import com.promenar.nexara.share.core.AndroidSafContentSource
 import com.promenar.nexara.share.core.AndroidSafImportRequestFactory
 import com.promenar.nexara.share.core.ShareImportItem
@@ -71,7 +70,6 @@ class ResourceExplorerViewModel(
         injectedImporter ?: SharedFileImporter(
             source = AndroidSafContentSource(application.contentResolver),
             workspace = workspaceRepo,
-            indexScheduler = AndroidShareIndexScheduler(application as NexaraApplication),
         )
     }
     private val contentResolver = application.contentResolver

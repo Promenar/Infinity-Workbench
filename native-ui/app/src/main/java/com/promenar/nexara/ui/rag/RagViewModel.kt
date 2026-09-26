@@ -710,17 +710,22 @@ class RagViewModel(
         }
     }
 
-    fun createFolder(name: String) {
+    fun createFolder(name: String, parentFolderId: String? = null) {
         viewModelScope.launch {
             try {
                 val rootUuid = _workspaceRootUuid.value ?: return@launch
+                val targetParent = parentFolderId?.takeIf { it.isNotBlank() } ?: rootUuid
                 val uuid = java.util.UUID.randomUUID().toString()
-                val matPath = "/$name"
+                val parentEntry = if (targetParent != rootUuid) {
+                    workspaceRepository.getByUuid(rootUuid, targetParent)
+                } else null
+                val parentPath = parentEntry?.materializedPath?.trimEnd('/') ?: ""
+                val matPath = "$parentPath/$name"
                 workspaceRepository.createDirectoryInWorkspace(
                     workspaceRootUuid = rootUuid,
                     uuid = uuid,
                     name = name,
-                    parentUuid = rootUuid,
+                    parentUuid = targetParent,
                     materializedPath = matPath
                 )
             } catch (_: Exception) { }

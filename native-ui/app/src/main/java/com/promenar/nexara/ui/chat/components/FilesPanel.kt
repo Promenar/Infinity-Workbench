@@ -170,11 +170,15 @@ internal fun FilesPanel(
     onFolderClick: ((String, String) -> Unit)? = null,
     onFileClick: ((String) -> Unit)? = null,
     nowMillis: Long = System.currentTimeMillis(),
+    currentParentUuid: String? = null,
 ) {
     val rootsFlow = remember(rootFiles, workspaceRootUuid, workspaceRepo) {
-        if (rootFiles == null) workspaceRootUuid?.let { workspaceRepo.observeChildren(it, it) }
-            ?: flowOf(emptyList())
-        else flowOf(rootFiles)
+        if (rootFiles == null) {
+            val parent = currentParentUuid ?: workspaceRootUuid
+            workspaceRootUuid?.let { root ->
+                parent?.let { p -> workspaceRepo.observeChildren(root, p) } ?: flowOf(emptyList())
+            } ?: flowOf(emptyList())
+        } else flowOf(rootFiles)
     }
     val roots by rootsFlow.collectAsState(initial = rootFiles.orEmpty())
 
@@ -589,22 +593,26 @@ private fun FileTreeRow(
     val handleActivate: (() -> Unit)? = activation?.let { resolvedActivation ->
         {
             when {
-                isVirtualNode -> onToggleExpanded()
                 resolvedActivation == FileNodeActivation.ToggleSelection -> {
                     if (isSelected) selectedIds.remove(file.uuid) else selectedIds.add(file.uuid)
                 }
-                resolvedActivation == FileNodeActivation.ToggleExpansion -> onToggleExpanded()
                 resolvedActivation == FileNodeActivation.NavigateFolder -> onFolderClick?.invoke(file.uuid, file.name)
+                isVirtualNode -> if (onFolderClick != null) onFolderClick.invoke(file.uuid, file.name) else onToggleExpanded()
+                resolvedActivation == FileNodeActivation.ToggleExpansion -> onToggleExpanded()
                 resolvedActivation == FileNodeActivation.OpenFile -> onFileClick?.invoke(file.uuid)
             }
         }
     }
+
+    val isSessionFile = (file.workspaceRootUuid.isNotBlank() && file.workspaceRootUuid != workspaceRootUuid) ||
+        CompositeWorkspaceConstants.isVirtualSessionFolder(file.parentUuid)
 
     Box(modifier = Modifier.fillMaxWidth()) {
         FileRow(
             file = file,
             depth = node.depth,
             expanded = expanded,
+            workspaceRootUuid = workspaceRootUuid,
             indexingFileIds = indexingFileIds,
             kgExtractionStates = kgExtractionStates,
             isMultiSelectMode = isMultiSelectMode,
@@ -615,6 +623,7 @@ private fun FileTreeRow(
             },
             onOpenMenu = if (hasMenuActions) ({ showMenu = true }) else null,
             onToggleExpanded = onToggleExpanded,
+            onFolderClick = onFolderClick,
             modifier = Modifier
                 .testTag("files_panel_node_${file.uuid}")
                 .then(
@@ -635,28 +644,28 @@ private fun FileTreeRow(
 
         DropdownMenu(expanded = showMenu && hasMenuActions, onDismissRequest = { showMenu = false }) {
             if (!file.isDirectory) {
-                if (onReindex != null) {
+                if (onReindex != null && !isSessionFile) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.files_reindex)) },
                         onClick = { showMenu = false; onReindex(file.uuid) },
                         modifier = Modifier.testTag(UiTags.fileNodeReindex(file.uuid)),
                     )
                 }
-                if (onExtractKG != null) {
+                if (onExtractKG != null && !isSessionFile) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.files_extract_knowledge_graph)) },
                         onClick = { showMenu = false; onExtractKG(file.uuid) },
                         modifier = Modifier.testTag("files_panel_extract_kg_action_${file.uuid}"),
                     )
                 }
-                if (onViewKG != null) {
+                if (onViewKG != null && !isSessionFile) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.files_view_graph)) },
                         onClick = { showMenu = false; onViewKG(file.uuid) },
                         modifier = Modifier.testTag("files_panel_view_kg_action_${file.uuid}"),
                     )
                 }
-            } else if (onViewKG != null) {
+            } else if (onViewKG != null && !isVirtualRoot && !isVirtualSession) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.files_view_folder_graph)) },
                     onClick = { showMenu = false; onViewKG(file.uuid) },
@@ -743,6 +752,7 @@ private fun FileRow(
     file: FileEntry,
     depth: Int,
     expanded: Boolean,
+    workspaceRootUuid: String? = null,
     indexingFileIds: Set<String> = emptySet(),
     kgExtractionStates: Map<String, KgStatus> = emptyMap(),
     isMultiSelectMode: Boolean = false,
@@ -750,6 +760,7 @@ private fun FileRow(
     onSelectionChange: (Boolean) -> Unit,
     onOpenMenu: (() -> Unit)?,
     onToggleExpanded: (() -> Unit)? = null,
+    onFolderClick: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier,
     nowMillis: Long,
 ) {
@@ -761,6 +772,8 @@ private fun FileRow(
     }
     val isVirtualRoot = CompositeWorkspaceConstants.isVirtualSessionWorkspacesRoot(file.uuid)
     val isVirtualSession = CompositeWorkspaceConstants.isVirtualSessionFolder(file.uuid)
+    val isSessionFile = (file.workspaceRootUuid.isNotBlank() && file.workspaceRootUuid != workspaceRootUuid) ||
+        CompositeWorkspaceConstants.isVirtualSessionFolder(file.parentUuid)
 
     Column(
         modifier = Modifier
@@ -819,12 +832,14 @@ private fun FileRow(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            IndexStatusBadge(status = resolveIndexStatus(file, indexingFileIds))
-                            KgStatusIcon(status = resolveKgStatus(file, kgExtractionStates))
+                        if (!isSessionFile) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                IndexStatusBadge(status = resolveIndexStatus(file, indexingFileIds))
+                                KgStatusIcon(status = resolveKgStatus(file, kgExtractionStates))
+                            }
                         }
                     }
                 }
@@ -838,10 +853,13 @@ private fun FileRow(
                             modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
                         )
                     }
-                    val folderModifier = if (file.isDirectory && onToggleExpanded != null) {
+                    val folderModifier = if (file.isDirectory) {
                         Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable(onClick = onToggleExpanded)
+                            .clickable(onClick = {
+                                if (onFolderClick != null) onFolderClick(file.uuid, file.name)
+                                else onToggleExpanded?.invoke()
+                            })
                             .padding(4.dp)
                     } else {
                         Modifier.padding(4.dp)

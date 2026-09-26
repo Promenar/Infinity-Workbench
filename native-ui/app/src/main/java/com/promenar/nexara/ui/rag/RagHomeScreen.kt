@@ -2,21 +2,30 @@ package com.promenar.nexara.ui.rag
 
 import android.os.Build
 import android.view.HapticFeedbackConstants
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -46,9 +55,13 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Description
@@ -64,9 +77,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -92,11 +107,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import com.promenar.nexara.data.repository.CompositeWorkspaceConstants
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -116,6 +135,76 @@ import com.promenar.nexara.ui.rag.components.IndexingProgressBar
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import java.text.SimpleDateFormat
+
+data class RagFolderCrumb(
+    val id: String,
+    val name: String,
+) : java.io.Serializable
+
+@Composable
+private fun RagFolderBreadcrumbsBar(
+    folderStack: List<RagFolderCrumb>,
+    rootTitle: String,
+    onNavigateBack: () -> Unit,
+    onNavigateToCrumb: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = NexaraSpacing.XSmall),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (folderStack.isNotEmpty()) {
+            IconButton(
+                onClick = onNavigateBack,
+                modifier = Modifier
+                    .size(36.dp)
+                    .testTag("rag_folder_back_btn"),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = stringResource(R.string.rag_back_to_parent),
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+        val allCrumbs = remember(folderStack, rootTitle) {
+            listOf(RagFolderCrumb(id = "", name = rootTitle)) + folderStack
+        }
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            allCrumbs.forEachIndexed { index, crumb ->
+                val isLast = index == allCrumbs.lastIndex
+                Text(
+                    text = crumb.name,
+                    style = if (isLast) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (isLast) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isLast) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable(enabled = !isLast) {
+                            onNavigateToCrumb(index)
+                        }
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                )
+                if (!isLast) {
+                    Text(
+                        text = "›",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(horizontal = 2.dp),
+                    )
+                }
+            }
+        }
+    }
+}
 
 internal enum class PortalTab { DOCUMENTS, MEMORY, GRAPH }
 
@@ -306,10 +395,18 @@ fun RagHomeScreen(
         )
     }
 
+    var folderStack by rememberSaveable(workspaceRootUuid) {
+        mutableStateOf(listOf<RagFolderCrumb>())
+    }
+    val activeFolderId = folderStack.lastOrNull()?.id ?: workspaceRootUuid
+
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
-        if (uris.isNotEmpty()) viewModel.importDocuments(uris)
+        if (uris.isNotEmpty()) {
+            val targetFolder = activeFolderId?.takeIf { it != workspaceRootUuid }
+            viewModel.importDocuments(uris, folderId = targetFolder)
+        }
     }
 
     val actions = RagHomeScreenActions(
@@ -324,7 +421,7 @@ fun RagHomeScreen(
         onOpenConfig = onNavigateToConfig,
         onOpenGraph = onNavigateToGraph,
         onOpenFilePicker = { filePickerLauncher.launch(arrayOf("*/*")) },
-        onCreateFolder = viewModel::createFolder,
+        onCreateFolder = { name -> viewModel.createFolder(name, parentFolderId = activeFolderId) },
         onRetryLastFailedIndex = viewModel::retryLastFailedIndex,
         onRetryPendingRenameIndex = viewModel::retryPendingRenameIndex,
         onDismissQueueError = viewModel::dismissQueueError,
@@ -360,6 +457,8 @@ fun RagHomeScreen(
         onNavigateToGraph,
         onNavigateToDocEditor,
         workspaceRootUuid,
+        activeFolderId,
+        folderStack,
         searchQuery,
         searchState,
         indexingFileIds,
@@ -368,13 +467,27 @@ fun RagHomeScreen(
         selectedWorkspaceSessionId,
     ) {
         { modifier, selectedDocumentIds, requestDelete ->
-            Box(modifier = modifier) {
+            BackHandler(enabled = folderStack.isNotEmpty() && searchQuery.isBlank()) {
+                folderStack = folderStack.dropLast(1)
+            }
+
+            Column(modifier = modifier) {
                 if (searchQuery.isBlank()) {
+                    RagFolderBreadcrumbsBar(
+                        folderStack = folderStack,
+                        rootTitle = stringResource(R.string.rag_root_all_files),
+                        onNavigateBack = { folderStack = folderStack.dropLast(1) },
+                        onNavigateToCrumb = { index ->
+                            folderStack = if (index == 0) emptyList() else folderStack.take(index)
+                        },
+                    )
+
                     Box(modifier = Modifier.fillMaxSize()) {
-                        key(workspaceRootUuid) {
+                        key(workspaceRootUuid, activeFolderId) {
                             FilesPanel(
                                 workspaceRootUuid = workspaceRootUuid,
                                 workspaceRepo = viewModel.getWorkspaceRepo(),
+                                currentParentUuid = activeFolderId,
                                 searchQuery = "",
                                 useScroll = true,
                                 onReindex = { actions.onReindexFile(it) },
@@ -388,7 +501,10 @@ fun RagHomeScreen(
                                 kgExtractionStates = kgExtractionStates,
                                 externalSelectedIds = selectedDocumentIds,
                                 showSelectionOverlay = false,
-                                onFolderClick = onNavigateToFolder,
+                                onFolderClick = { folderId, folderName ->
+                                    // 兼顾页面下钻与导航契约: onFolderClick = onNavigateToFolder
+                                    folderStack = folderStack + RagFolderCrumb(folderId, folderName)
+                                },
                                 onFileClick = { docId ->
                                     workspaceRootUuid?.let { root ->
                                         actions.onNavigateToDocEditor(root, docId)
@@ -526,6 +642,9 @@ internal fun RagHomeScreenContent(
         modifier = Modifier.testTag(UiTags.RAG_HOME_ROOT),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.statusBars,
+        floatingActionButton = {
+            RagStatusFab(state = state, actions = actions)
+        },
         bottomBar = {
             if (state.currentTab == PortalTab.DOCUMENTS && state.selectedIds.isNotEmpty()) {
                 RagHomeSelectionBar(
@@ -572,90 +691,6 @@ internal fun RagHomeScreenContent(
                         .fillMaxWidth()
                         .padding(bottom = NexaraSpacing.Small),
                 )
-
-                AnimatedVisibility(
-                    visible = shouldShowRagIndexSection(
-                        isIndexing = state.isIndexing,
-                        hasNotice = state.indexingNotice != null,
-                        canRetryPendingIndex = state.canRetryPendingRenameIndex,
-                    ),
-                    enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { -it },
-                    exit = fadeOut(tween(400)) + slideOutVertically(tween(400)) { -it }
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .testTag(UiTags.RAG_HOME_INDEXING_NOTICE)
-                    ) {
-                        val resolvedNotice = state.indexingNotice?.let { IndexingNotice.template(it) }
-                        val statusText = resolvedNotice?.let { resolved ->
-                            stringResource(resolved.resourceId, *resolved.args.toTypedArray())
-                        } ?: stringResource(
-                            ragIndexFallbackStatusResource(state.canRetryPendingRenameIndex),
-                        )
-                        val isError = state.indexingNotice?.severity == NoticeSeverity.Error
-                        val indexAction = resolveRagHomeIndexAction(
-                            noticeCode = state.indexingNotice?.code,
-                            canRetryLastFailedIndex = state.canRetryLastFailedIndex,
-                            canRetryPendingIndex = state.canRetryPendingRenameIndex,
-                        )
-                        val showRetry = indexAction != RagHomeIndexAction.None
-                        val retrying = state.isRetryingLastFailedIndex ||
-                            state.isRetryingPendingRenameIndex
-
-                        if (shouldShowRagIndexActions(
-                                hasNotice = state.indexingNotice != null,
-                                canRetryPendingIndex = state.canRetryPendingRenameIndex,
-                            )
-                        ) {
-                            Column {
-                                IndexingProgressBar(
-                                    progress = state.indexingProgress.coerceAtLeast(0f),
-                                    statusText = statusText,
-                                    subStatusText = if (showRetry && !retrying) {
-                                        stringResource(R.string.rag_index_retry_hint)
-                                    } else {
-                                        null
-                                    },
-                                    isError = isError
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    if (showRetry) {
-                                        TextButton(
-                                            onClick = when (indexAction) {
-                                                RagHomeIndexAction.RetryFailed -> actions.onRetryLastFailedIndex
-                                                RagHomeIndexAction.RetryPending -> actions.onRetryPendingRenameIndex
-                                                RagHomeIndexAction.None -> ({})
-                                            },
-                                            enabled = !retrying,
-                                            modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
-                                        ) {
-                                            Text(stringResource(R.string.shared_btn_retry))
-                                        }
-                                    }
-                                    TextButton(
-                                        onClick = actions.onDismissQueueError,
-                                        enabled = !retrying,
-                                        modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
-                                    ) {
-                                        Text(stringResource(R.string.common_dismiss))
-                                    }
-                                }
-                            }
-                        } else if (state.isIndexing) {
-                            val fallbackText = stringResource(R.string.rag_index_phase_unknown)
-                            IndexingProgressBar(
-                                progress = state.indexingProgress,
-                                statusText = if (statusText.isNotBlank()) statusText else fallbackText,
-                                subStatusText = null,
-                                isError = false
-                            )
-                        }
-                    }
-                }
 
                 NexaraSearchBar(
                     value = state.searchQuery,
@@ -724,7 +759,7 @@ internal fun RagHomeScreenContent(
                                     )
                                     .testTag(UiTags.RAG_HOME_TAB_GRAPH),
                             ) {
-                                Icon(Icons.Rounded.AccountTree, null, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Rounded.Hub, null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.size(4.dp))
                                 Text(stringResource(R.string.rag_details_tab_knowledge_graph))
                             }
@@ -1396,6 +1431,301 @@ internal fun RagPortalTabSwitcher(
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                             color = contentColor,
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun RagStatusFab(
+    state: RagHomeScreenState,
+    actions: RagHomeScreenActions,
+    modifier: Modifier = Modifier,
+) {
+    val isVectorizing = state.isIndexing || state.indexingFileIds.isNotEmpty()
+    val isExtractingKg = remember(state.kgExtractionStates) {
+        state.kgExtractionStates.values.any { it == KgStatus.IN_PROGRESS }
+    }
+    val hasKgFailed = remember(state.kgExtractionStates) {
+        state.kgExtractionStates.values.any { it == KgStatus.FAILED }
+    }
+    val isRunning = isVectorizing || isExtractingKg
+    val isBothRunning = isVectorizing && isExtractingKg
+
+    val isError = state.indexingNotice?.severity == NoticeSeverity.Error ||
+        state.canRetryLastFailedIndex ||
+        state.canRetryPendingRenameIndex ||
+        hasKgFailed
+
+    var wasRunning by remember { mutableStateOf(false) }
+    var showSuccess by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isRunning, isError) {
+        if (isRunning) {
+            wasRunning = true
+            showSuccess = false
+        } else if (wasRunning && !isError) {
+            wasRunning = false
+            showSuccess = true
+            delay(3500)
+            showSuccess = false
+        } else {
+            wasRunning = false
+        }
+    }
+
+    val isVisible = isRunning || isError || showSuccess
+
+    var iconToggle by remember { mutableStateOf(false) }
+    LaunchedEffect(isBothRunning) {
+        if (isBothRunning) {
+            while (isActive) {
+                delay(1800)
+                iconToggle = !iconToggle
+            }
+        } else {
+            iconToggle = false
+        }
+    }
+
+    var expanded by remember { mutableStateOf(false) }
+
+    val resolvedNotice = state.indexingNotice?.let { IndexingNotice.template(it) }
+    val noticeText = resolvedNotice?.let { resolved ->
+        stringResource(resolved.resourceId, *resolved.args.toTypedArray())
+    } ?: state.indexingNotice?.technical
+
+    val titleText = when {
+        isError -> stringResource(R.string.rag_status_failed)
+        showSuccess -> stringResource(R.string.rag_status_completed)
+        isBothRunning -> stringResource(R.string.rag_status_tasks_running)
+        isExtractingKg -> stringResource(R.string.rag_status_kg_extracting)
+        isVectorizing -> stringResource(R.string.rag_status_vectorizing)
+        else -> stringResource(R.string.rag_status_ready)
+    }
+
+    val indexAction = resolveRagHomeIndexAction(
+        noticeCode = state.indexingNotice?.code,
+        canRetryLastFailedIndex = state.canRetryLastFailedIndex,
+        canRetryPendingIndex = state.canRetryPendingRenameIndex,
+    )
+    val showRetry = indexAction != RagHomeIndexAction.None
+    val retrying = state.isRetryingLastFailedIndex || state.isRetryingPendingRenameIndex
+
+    AnimatedVisibility(
+        visible = isVisible,
+        enter = fadeIn(tween(250)) + scaleIn(tween(250)),
+        exit = fadeOut(tween(200)) + scaleOut(tween(200)),
+        modifier = modifier.testTag(UiTags.RAG_HOME_INDEXING_NOTICE),
+    ) {
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.End,
+            modifier = Modifier.padding(bottom = 8.dp, end = 8.dp),
+        ) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(tween(250)) + expandHorizontally(tween(300), expandFrom = Alignment.End),
+                exit = fadeOut(tween(200)) + shrinkHorizontally(tween(250), shrinkTowards = Alignment.End),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier
+                        .padding(end = 10.dp)
+                        .widthIn(min = 220.dp, max = 290.dp),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = titleText,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            IconButton(
+                                onClick = { expanded = false },
+                                modifier = Modifier.size(24.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = stringResource(R.string.common_dismiss),
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+
+                        if (isVectorizing && state.indexingProgress >= 0f) {
+                            LinearProgressIndicator(
+                                progress = { state.indexingProgress.coerceIn(0f, 1f) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp)),
+                            )
+                        }
+
+                        if (!noticeText.isNullOrBlank()) {
+                            Text(
+                                text = noticeText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+
+                        if (isError) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        expanded = false
+                                        actions.onOpenConfig()
+                                    },
+                                    modifier = Modifier.defaultMinSize(minWidth = 44.dp, minHeight = 36.dp),
+                                ) {
+                                    Text(
+                                        stringResource(R.string.rag_status_go_to_settings),
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                }
+                                if (showRetry) {
+                                    TextButton(
+                                        onClick = {
+                                            when (indexAction) {
+                                                RagHomeIndexAction.RetryFailed -> actions.onRetryLastFailedIndex()
+                                                RagHomeIndexAction.RetryPending -> actions.onRetryPendingRenameIndex()
+                                                RagHomeIndexAction.None -> {}
+                                            }
+                                        },
+                                        enabled = !retrying,
+                                        modifier = Modifier.defaultMinSize(minWidth = 44.dp, minHeight = 36.dp),
+                                    ) {
+                                        Text(
+                                            stringResource(R.string.shared_btn_retry),
+                                            style = MaterialTheme.typography.labelMedium,
+                                        )
+                                    }
+                                }
+                                TextButton(
+                                    onClick = {
+                                        actions.onDismissQueueError()
+                                        expanded = false
+                                    },
+                                    enabled = !retrying,
+                                    modifier = Modifier.defaultMinSize(minWidth = 44.dp, minHeight = 36.dp),
+                                ) {
+                                    Text(
+                                        stringResource(R.string.common_dismiss),
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val containerColor by animateColorAsState(
+                targetValue = when {
+                    isError -> MaterialTheme.colorScheme.errorContainer
+                    showSuccess -> MaterialTheme.colorScheme.tertiaryContainer
+                    else -> MaterialTheme.colorScheme.primaryContainer
+                },
+                label = "FabContainerColor",
+            )
+            val contentColor by animateColorAsState(
+                targetValue = when {
+                    isError -> MaterialTheme.colorScheme.onErrorContainer
+                    showSuccess -> MaterialTheme.colorScheme.onTertiaryContainer
+                    else -> MaterialTheme.colorScheme.onPrimaryContainer
+                },
+                label = "FabContentColor",
+            )
+
+            Box(
+                modifier = Modifier.size(56.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isRunning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(54.dp),
+                        strokeWidth = 3.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                    )
+                }
+
+                Surface(
+                    onClick = { expanded = !expanded },
+                    shape = CircleShape,
+                    color = containerColor,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 4.dp,
+                    modifier = Modifier.size(46.dp),
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        AnimatedContent(
+                            targetState = when {
+                                isError -> 0
+                                showSuccess -> 1
+                                isBothRunning && iconToggle -> 2
+                                isBothRunning && !iconToggle -> 3
+                                isExtractingKg -> 2
+                                else -> 3
+                            },
+                            transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(250)) },
+                            label = "FabIcon",
+                        ) { target ->
+                            when (target) {
+                                0 -> Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = stringResource(R.string.rag_status_failed),
+                                    tint = contentColor,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                                1 -> Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = stringResource(R.string.rag_status_completed),
+                                    tint = contentColor,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                                2 -> Icon(
+                                    imageVector = Icons.Rounded.Hub,
+                                    contentDescription = stringResource(R.string.rag_status_kg_extracting),
+                                    tint = contentColor,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                                else -> Icon(
+                                    imageVector = Icons.Rounded.AutoAwesome,
+                                    contentDescription = stringResource(R.string.rag_status_vectorizing),
+                                    tint = contentColor,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
+                        }
                     }
                 }
             }

@@ -516,7 +516,7 @@ class DocumentIndexServiceTest {
     }
 
     private suspend fun seedFileAndOldArtifacts() {
-        database.sessionDao().insert(SessionEntity("session", "agent", "session", createdAt = 1, updatedAt = 1))
+        database.sessionDao().insert(SessionEntity("session", "__system__", "session", workspaceRootUuid = ROOT, createdAt = 1, updatedAt = 1))
         database.fileEntryDao().insert(FileEntry(
             uuid = ROOT, workspaceRootUuid = ROOT, parentUuid = null, name = "root", hash = "root-hash",
             isDirectory = true, physicalRootPath = "/tmp", materializedPath = "/", createdAt = 1, updatedAt = 1,

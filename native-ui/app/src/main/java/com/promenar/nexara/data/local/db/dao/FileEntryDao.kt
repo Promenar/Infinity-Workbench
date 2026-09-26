@@ -76,7 +76,8 @@ interface FileEntryDao {
 
     @Query("""
         SELECT * FROM workspace_files
-        WHERE is_directory = 0
+        WHERE (workspace_root_uuid NOT IN (SELECT workspace_root_uuid FROM sessions WHERE agent_id != '__system__'))
+          AND is_directory = 0
           AND in_recycle_bin = 0
           AND (vectorized_at IS NULL OR updated_at > vectorized_at)
           AND mime_type IN (:mimeTypes)
