@@ -138,9 +138,22 @@ class EmbeddingClient(
         }
 
         val responseText = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            val serverError = runCatching {
+                val errObj = json.parseToJsonElement(responseText).jsonObject
+                errObj["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
+                    ?: errObj["message"]?.jsonPrimitive?.content
+            }.getOrNull()
+            throw IllegalStateException(serverError ?: "Embedding 请求失败 (${response.status.value}): ${responseText.take(120)}")
+        }
         val jsonResponse = json.parseToJsonElement(responseText).jsonObject
 
-        val data = jsonResponse["data"]?.jsonArray ?: throw IllegalStateException("Missing data array in embedding response")
+        val data = jsonResponse["data"]?.jsonArray ?: throw IllegalStateException(
+            runCatching {
+                jsonResponse["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
+                    ?: jsonResponse["message"]?.jsonPrimitive?.content
+            }.getOrNull() ?: "Missing data array in embedding response"
+        )
         val embeddings = data.map { item ->
             val embeddingArray = item.jsonObject["embedding"]?.jsonArray
                 ?: throw IllegalStateException("Missing embedding array")

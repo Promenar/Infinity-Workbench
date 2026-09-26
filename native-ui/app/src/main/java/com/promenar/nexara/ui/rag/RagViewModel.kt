@@ -318,10 +318,11 @@ class RagViewModel(
                 // 使用 currentTask 的进度；若队列空但有残留错误，保持上次进度
                 _indexingProgress.value = (currentTask?.progress ?: 0.0).toFloat() / 100f
 
-                // 更新正在索引中的文件 UUID 集合
+                // 更新正在索引中的文件 UUID 集合（排除已失败、中断或完成的非活跃任务）
                 _indexingDocIds.value = queue.filter {
                     it.type in setOf("document", com.promenar.nexara.data.rag.VectorizationQueue.TYPE_DOCUMENT_REFERENCE) &&
-                        it.docId != null
+                        it.docId != null &&
+                        it.status !in setOf("failed", "partial", "completed", "interrupted")
                 }
                     .mapNotNull { it.docId }.toSet()
 
@@ -487,7 +488,21 @@ class RagViewModel(
         if (_isRetryingLastFailedIndex.value || _isRetryingPendingRenameIndex.value) return
         discardFailedIndexTarget()
         _indexingNotice.value = null
+        observedQueue?.clearAttention()
         recomputeIndexingVisibility()
+    }
+
+    /** 手动取消正在进行中的向量化/索引任务 */
+    fun cancelIndexing() {
+        viewModelScope.launch {
+            discardFailedIndexTarget()
+            observedQueue?.clear()
+            _indexingDocIds.value = emptySet()
+            _isIndexing.value = false
+            _indexingNotice.value = null
+            clearRetryTarget()
+            recomputeIndexingVisibility()
+        }
     }
 
     private fun shouldKeepNotice(notice: UiStatusNotice?): Boolean = when (notice?.code) {

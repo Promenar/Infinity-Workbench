@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 向量化“无限进行中”根治、任务主动取消与主页顶部呼吸感对齐（2026-09-27）
+
+- **彻底根治向量化“无限进行中”状态（RagViewModel）**：
+  - **精准状态过滤**：排查并修复 `RagViewModel.observeQueue()` 在计算 `_indexingDocIds` 时未排除 `failed`、`partial`、`completed`、`interrupted` 状态的致命缺陷。彻底解决了“任务因网络或服务端模型异常失败后残留在 `retainedAttention`，导致文件永久显示为‘索引中’、状态指示器永久旋转误报‘文档向量化中’”的问题；
+  - **报错细节精准透传（EmbeddingClient）**：重构服务端异常解析逻辑，在 HTTP 状态非 2xx 或响应缺少 `data` 数组时优先提取后端具体的 `error.message` / `message`，避免掩盖为通用的 `Missing data array`，让用户明确知晓模型配置或服务端具体报错；
+  - **状态持久清理联动（clearAttention）**：用户在状态微件中点击“关闭”通知时，联动调用 `observedQueue?.clearAttention()` 彻底清除残留的关注任务。
+- **向量化任务主动取消与停止（RagStatusFab & RagViewModel）**：
+  - **进行中状态新增取消操作**：在向量化或图谱抽取进行中时，点击 FAB 展开卡片新增显式的“取消”按钮，支持随时中断任务；
+  - **取消链路闭环（cancelIndexing）**：点击取消后安全联动 `discardFailedIndexTarget()`、`observedQueue?.clear()` 与 `_indexingDocIds` 置空，平滑终止后台 Job 并立即恢复界面至静止状态。
+- **一级页面顶部呼吸感视觉对齐（AgentHubScreen & RagHomeScreen）**：
+  - **消除顶部局促压迫感**：针对真机测试中“对话”页与“知识库”页顶部距离状态栏过近的问题，将两页顶部边距从 `NexaraSpacing.Small` (8dp) 统一调优为 `NexaraSpacing.Large` (16dp)，完美对齐“设置”页的优雅呼吸空间。
+- **全量测试与正式签名 APK 构建**：
+  - 全量 JVM 单元测试 100% 通过（2,800+ 项测试 0 失败）；
+  - 在模拟器完成实机截屏与交互验收，验证取消、关闭与三页顶部呼吸感一致性；
+  - 成功构建正式签名的 Release 发行包（v0.2.2-beta / versionCode 4，大小 20MB），支持真机无缝升级测试。
+
 ### 知识库集中式状态指示微件（FAB）、同层下钻式目录浏览与工作区沙箱深度隔离（2026-09-26）
 
 - **集中式 FAB 状态指示器与错误横幅彻底收敛（RagStatusFab）**：

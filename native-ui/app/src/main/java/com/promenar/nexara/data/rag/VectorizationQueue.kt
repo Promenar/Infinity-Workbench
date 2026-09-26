@@ -770,6 +770,13 @@ class VectorizationQueue(
         notifyStateChange()
     }
 
+    fun clearAttention() {
+        synchronized(queueLock) {
+            retainedAttention.clear()
+        }
+        notifyStateChange()
+    }
+
     fun shutdown() {
         clear()
         scope.cancel()

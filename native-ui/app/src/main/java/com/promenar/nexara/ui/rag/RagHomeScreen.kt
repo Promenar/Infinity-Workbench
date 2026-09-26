@@ -289,6 +289,7 @@ internal data class RagHomeScreenActions(
     val onExtractKG: (String) -> Unit = {},
     val onCopyFile: (String) -> Unit = {},
     val onDeleteMemory: (String) -> Unit = {},
+    val onCancelIndexing: () -> Unit = {},
 )
 
 private data class PendingDocumentDelete(
@@ -446,6 +447,7 @@ fun RagHomeScreen(
         onExtractKG = viewModel::extractKG,
         onCopyFile = viewModel::copyFile,
         onDeleteMemory = viewModel::deleteMemoryVector,
+        onCancelIndexing = viewModel::cancelIndexing,
     )
 
     val documentsContent: @Composable (
@@ -683,7 +685,7 @@ internal fun RagHomeScreenContent(
                     .fillMaxSize()
                     .widthIn(max = 720.dp)
                     .padding(horizontal = NexaraSpacing.ScreenHorizontal)
-                    .padding(top = NexaraSpacing.Small),
+                    .padding(top = NexaraSpacing.Large),
             ) {
                 RagPortalTabSwitcher(
                     selectedTab = state.currentTab,
@@ -1445,20 +1447,19 @@ internal fun RagStatusFab(
     actions: RagHomeScreenActions,
     modifier: Modifier = Modifier,
 ) {
-    val isVectorizing = state.isIndexing || state.indexingFileIds.isNotEmpty()
     val isExtractingKg = remember(state.kgExtractionStates) {
         state.kgExtractionStates.values.any { it == KgStatus.IN_PROGRESS }
     }
     val hasKgFailed = remember(state.kgExtractionStates) {
         state.kgExtractionStates.values.any { it == KgStatus.FAILED }
     }
-    val isRunning = isVectorizing || isExtractingKg
-    val isBothRunning = isVectorizing && isExtractingKg
-
     val isError = state.indexingNotice?.severity == NoticeSeverity.Error ||
         state.canRetryLastFailedIndex ||
         state.canRetryPendingRenameIndex ||
         hasKgFailed
+    val isVectorizing = (!isError && state.isIndexing) || state.indexingFileIds.isNotEmpty()
+    val isRunning = isVectorizing || isExtractingKg
+    val isBothRunning = isVectorizing && isExtractingKg
 
     var wasRunning by remember { mutableStateOf(false) }
     var showSuccess by remember { mutableStateOf(false) }
@@ -1638,6 +1639,26 @@ internal fun RagStatusFab(
                                     Text(
                                         stringResource(R.string.common_dismiss),
                                         style = MaterialTheme.typography.labelMedium,
+                                    )
+                                }
+                            }
+                        } else if (isRunning) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        actions.onCancelIndexing()
+                                        expanded = false
+                                    },
+                                    modifier = Modifier.defaultMinSize(minWidth = 44.dp, minHeight = 36.dp),
+                                ) {
+                                    Text(
+                                        stringResource(R.string.common_cancel),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.error,
                                     )
                                 }
                             }

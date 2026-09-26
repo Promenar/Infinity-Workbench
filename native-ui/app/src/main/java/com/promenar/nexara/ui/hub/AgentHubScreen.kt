@@ -396,7 +396,9 @@ internal fun AgentHubScreenContent(
         when {
             state.displayAgents.isEmpty() -> EmptyAgentState(
                 onCreateAgent = actions.onRequestAdd,
-                modifier = Modifier.padding(paddingValues),
+                modifier = Modifier
+                    .padding(paddingValues)
+                    .padding(top = NexaraSpacing.Large),
             )
 
             else -> {
@@ -409,7 +411,7 @@ internal fun AgentHubScreenContent(
                         .padding(paddingValues)
                         .padding(horizontal = NexaraSpacing.ScreenHorizontal),
                     contentPadding = PaddingValues(
-                        top = NexaraSpacing.Small,
+                        top = NexaraSpacing.Large,
                         bottom = 88.dp,
                     ),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
