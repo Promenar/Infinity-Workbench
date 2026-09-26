@@ -171,6 +171,7 @@ internal fun FilesPanel(
     onFileClick: ((String) -> Unit)? = null,
     nowMillis: Long = System.currentTimeMillis(),
     currentParentUuid: String? = null,
+    allowTreeExpansion: Boolean = true,
 ) {
     val rootsFlow = remember(rootFiles, workspaceRootUuid, workspaceRepo) {
         if (rootFiles == null) {
@@ -239,20 +240,25 @@ internal fun FilesPanel(
         childrenByParent = projectedChildren,
         expansionOverrides = expansionOverrides,
         forceExpandedIds = forceExpandedIds,
+        allowTreeExpansion = allowTreeExpansion,
     )
     val composedNodeRefCounts = remember(workspaceRootUuid, workspaceRepo) {
         mutableStateMapOf<String, Int>()
     }
-    val expandedDirectoryIds = visibleNodes.asSequence()
-        .filter { node ->
-            node.file.isDirectory && isFileNodeExpanded(
-                uuid = node.file.uuid,
-                depth = node.depth,
-                expansionOverrides = expansionOverrides,
-                forceExpandedIds = forceExpandedIds,
-            )
-        }
-        .mapTo(linkedSetOf()) { it.file.uuid }
+    val expandedDirectoryIds = if (!allowTreeExpansion) {
+        emptySet()
+    } else {
+        visibleNodes.asSequence()
+            .filter { node ->
+                node.file.isDirectory && isFileNodeExpanded(
+                    uuid = node.file.uuid,
+                    depth = node.depth,
+                    expansionOverrides = expansionOverrides,
+                    forceExpandedIds = forceExpandedIds,
+                )
+            }
+            .mapTo(linkedSetOf()) { it.file.uuid }
+    }
     val requiredDirectorySubscriptionIds = resolveRequiredDirectorySubscriptionIds(
         visibleNodes = visibleNodes,
         visibleNodeIds = composedNodeRefCounts.keys.toSet(),
@@ -347,6 +353,7 @@ internal fun FilesPanel(
             onFileClick = onFileClick,
             folders = folders,
             nowMillis = nowMillis,
+            allowTreeExpansion = allowTreeExpansion,
         )
     }
 
@@ -558,6 +565,7 @@ private fun FileTreeRow(
     onFileClick: ((String) -> Unit)? = null,
     folders: List<FileEntry> = emptyList(),
     nowMillis: Long,
+    allowTreeExpansion: Boolean = true,
 ) {
     val file = node.file
     var showMenu by rememberSaveable(file.uuid, "menu") { mutableStateOf(false) }
@@ -624,6 +632,7 @@ private fun FileTreeRow(
             onOpenMenu = if (hasMenuActions) ({ showMenu = true }) else null,
             onToggleExpanded = onToggleExpanded,
             onFolderClick = onFolderClick,
+            allowTreeExpansion = allowTreeExpansion,
             modifier = Modifier
                 .testTag("files_panel_node_${file.uuid}")
                 .then(
@@ -761,6 +770,7 @@ private fun FileRow(
     onOpenMenu: (() -> Unit)?,
     onToggleExpanded: (() -> Unit)? = null,
     onFolderClick: ((String, String) -> Unit)? = null,
+    allowTreeExpansion: Boolean = true,
     modifier: Modifier = Modifier,
     nowMillis: Long,
 ) {
@@ -865,9 +875,9 @@ private fun FileRow(
                         Modifier.padding(4.dp)
                     }
                     val iconVector = when {
-                        isVirtualRoot -> if (expanded) Icons.Rounded.FolderOpen else Icons.Rounded.Folder
+                        isVirtualRoot -> if (expanded && allowTreeExpansion) Icons.Rounded.FolderOpen else Icons.Rounded.Folder
                         isVirtualSession -> Icons.Rounded.ChatBubble
-                        file.isDirectory -> if (expanded) Icons.Rounded.FolderOpen else Icons.Rounded.Folder
+                        file.isDirectory -> if (expanded && allowTreeExpansion) Icons.Rounded.FolderOpen else Icons.Rounded.Folder
                         else -> fileIcon(file)
                     }
                     val iconTint = when {

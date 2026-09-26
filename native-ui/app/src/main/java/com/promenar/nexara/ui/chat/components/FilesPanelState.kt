@@ -27,7 +27,12 @@ internal fun projectVisibleFileNodes(
     childrenByParent: Map<String, List<FileEntry>>,
     expansionOverrides: Map<String, Boolean> = emptyMap(),
     forceExpandedIds: Set<String> = emptySet(),
+    allowTreeExpansion: Boolean = true,
 ): List<VisibleFileNode> = buildList {
+    if (!allowTreeExpansion) {
+        roots.forEach { add(VisibleFileNode(file = it, depth = 0)) }
+        return@buildList
+    }
     val visited = mutableSetOf<String>()
 
     fun append(entries: List<FileEntry>, depth: Int) {

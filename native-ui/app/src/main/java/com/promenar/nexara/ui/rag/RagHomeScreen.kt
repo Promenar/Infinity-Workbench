@@ -501,6 +501,7 @@ fun RagHomeScreen(
                                 kgExtractionStates = kgExtractionStates,
                                 externalSelectedIds = selectedDocumentIds,
                                 showSelectionOverlay = false,
+                                allowTreeExpansion = false,
                                 onFolderClick = { folderId, folderName ->
                                     // 兼顾页面下钻与导航契约: onFolderClick = onNavigateToFolder
                                     folderStack = folderStack + RagFolderCrumb(folderId, folderName)

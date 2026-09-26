@@ -179,6 +179,22 @@ class FilesPanelStateTest {
     }
 
     @Test
+    fun `禁止树展开时仅投影根列表且深度全为0`() {
+        val folder = entry("folder", "root", "/folder", isDirectory = true)
+        val child = entry("child", "folder", "/folder/child.md", isDirectory = false)
+
+        val flatNodes = projectVisibleFileNodes(
+            roots = listOf(folder),
+            childrenByParent = mapOf("folder" to listOf(child)),
+            allowTreeExpansion = false,
+        )
+
+        assertThat(flatNodes).containsExactly(
+            VisibleFileNode(file = folder, depth = 0),
+        )
+    }
+
+    @Test
     fun `文件树缩进层级在深层目录封顶`() {
         assertThat(boundedFileTreeIndentLevel(-1)).isEqualTo(0)
         assertThat(boundedFileTreeIndentLevel(2)).isEqualTo(2)
