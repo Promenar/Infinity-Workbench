@@ -42,6 +42,9 @@ interface FileEntryDao {
     @Query("SELECT * FROM workspace_files WHERE workspace_root_uuid = :workspaceRootUuid AND uuid = :uuid AND in_recycle_bin = 0")
     suspend fun getActiveByUuid(workspaceRootUuid: String, uuid: String): FileEntry?
 
+    @Query("SELECT * FROM workspace_files WHERE uuid = :uuid AND in_recycle_bin = 0 LIMIT 1")
+    suspend fun findActiveByUuid(uuid: String): FileEntry?
+
     @Query("""
         SELECT * FROM workspace_files
         WHERE uuid = workspace_root_uuid

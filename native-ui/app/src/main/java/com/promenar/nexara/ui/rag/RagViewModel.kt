@@ -76,9 +76,33 @@ class RagViewModel(
     injectedEnsureRagWorkspaceRoot: (suspend () -> FileEntry)? = null,
     injectedListRagWorkspaceRoots: (suspend () -> List<RagWorkspaceSource>)? = null,
     injectedEnsureRagWorkspaceRootForSession: (suspend (String) -> FileEntry)? = null,
+    injectedCompositeWorkspaceRepository: IWorkspaceRepository? = null,
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
+
+    private val compositeWorkspaceRepository: IWorkspaceRepository = injectedCompositeWorkspaceRepository
+        ?: run {
+            val sessionDao = runCatching { app.database.sessionDao() }.getOrNull()
+            val fileEntryDao = runCatching { app.database.fileEntryDao() }.getOrNull()
+            if (sessionDao != null && fileEntryDao != null) {
+                com.promenar.nexara.data.repository.CompositeGlobalWorkspaceRepository(
+                    baseRepo = workspaceRepository,
+                    sessionDao = sessionDao,
+                    fileEntryDao = fileEntryDao,
+                    onTransferToKnowledgeBaseCommitted = { transferredEntry ->
+                        runCatching {
+                            val rootUuid = _workspaceRootUuid.value
+                            if (rootUuid != null) {
+                                enqueueCurrentDocumentReference(rootUuid, transferredEntry)
+                            }
+                        }
+                    }
+                )
+            } else {
+                workspaceRepository
+            }
+        }
 
     private val sharedFileImporter = injectedImporter ?: SharedFileImporter(
         source = AndroidSafContentSource(app.contentResolver),
@@ -627,8 +651,32 @@ class RagViewModel(
         // P0: 用户修改配置后立即重建 MemoryManager，使新参数即时生效
         app.rebuildMemoryManager()
     }
-    /** 暴露工作区仓库供 UI 层 FilesPanel 使用 */
-    fun getWorkspaceRepo(): IWorkspaceRepository = workspaceRepository
+    /** 暴露工作区仓库供 UI 层 FilesPanel 使用（支持挂载会话工作区的全局资源聚合仓库） */
+    fun getWorkspaceRepo(): IWorkspaceRepository = compositeWorkspaceRepository
+
+    /**
+     * 将会话工作区内的文件转存沉淀至全局知识库中，并自动触发入队切块与向量化。
+     */
+    fun transferFileToKnowledgeBase(fileUuid: String, targetFolderUuid: String? = null) {
+        viewModelScope.launch {
+            try {
+                val rootUuid = _workspaceRootUuid.value ?: return@launch
+                val compositeRepo = compositeWorkspaceRepository as? com.promenar.nexara.data.repository.CompositeGlobalWorkspaceRepository
+                if (compositeRepo != null) {
+                    val transferred = compositeRepo.transferFileToKnowledgeBase(
+                        sourceFileUuid = fileUuid,
+                        targetKnowledgeBaseRootUuid = rootUuid,
+                        targetFolderUuid = targetFolderUuid,
+                    )
+                    runCatching {
+                        enqueueCurrentDocumentReference(rootUuid, transferred)
+                    }
+                }
+            } catch (e: Exception) {
+                NexaraLogger.logError("[RagViewModel] transferFileToKnowledgeBase failed", e)
+            }
+        }
+    }
 
     fun loadCollections() {
         viewModelScope.launch {
@@ -1125,18 +1173,23 @@ class RagViewModel(
         }
     }
 
-    /** 复制文件 */
+    /** 复制文件（若来源为会话工作区，则转存至全局知识库） */
     fun copyFile(uuid: String) {
         viewModelScope.launch {
             try {
                 val rootUuid = _workspaceRootUuid.value ?: return@launch
-                val entry = workspaceRepository.getByUuid(rootUuid, uuid) ?: return@launch
+                val repo = getWorkspaceRepo()
+                val entry = repo.getByUuid(rootUuid, uuid) ?: return@launch
+                if (entry.workspaceRootUuid != rootUuid) {
+                    transferFileToKnowledgeBase(uuid)
+                    return@launch
+                }
                 val content = fileOperationRepository.readFileRange(rootUuid, uuid).content
                 val newUuid = java.util.UUID.randomUUID().toString()
                 val newName = "${entry.name.substringBeforeLast('.')} - 副本.${entry.name.substringAfterLast('.', "")}"
                 val parentUuid = entry.parentUuid ?: rootUuid
-                val parentPath = workspaceRepository.getByUuid(rootUuid, parentUuid)?.materializedPath ?: return@launch
-                workspaceRepository.createFileInWorkspace(
+                val parentPath = repo.getByUuid(rootUuid, parentUuid)?.materializedPath ?: return@launch
+                repo.createFileInWorkspace(
                     workspaceRootUuid = rootUuid,
                     uuid = newUuid,
                     name = newName,

@@ -370,42 +370,31 @@ fun RagHomeScreen(
         { modifier, selectedDocumentIds, requestDelete ->
             Box(modifier = modifier) {
                 if (searchQuery.isBlank()) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        RagWorkspaceSourceSelector(
-                            sources = availableWorkspaceRoots,
-                            selectedSessionId = selectedWorkspaceSessionId,
-                            onSelect = viewModel::selectWorkspaceSource,
-                        )
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                        ) {
-                            key(workspaceRootUuid) {
-                                FilesPanel(
-                                    workspaceRootUuid = workspaceRootUuid,
-                                    workspaceRepo = viewModel.getWorkspaceRepo(),
-                                    searchQuery = "",
-                                    useScroll = true,
-                                    onReindex = { actions.onReindexFile(it) },
-                                    onDelete = requestDelete,
-                                    onRename = { uuid, name -> actions.onRenameFolder(uuid, name) },
-                                    onMove = { uuid, targetId -> actions.onMoveFile(uuid, targetId) {} },
-                                    onExtractKG = actions.onExtractKG,
-                                    onViewKG = { onNavigateToGraph() },
-                                    onCopy = actions.onCopyFile,
-                                    indexingFileIds = indexingFileIds,
-                                    kgExtractionStates = kgExtractionStates,
-                                    externalSelectedIds = selectedDocumentIds,
-                                    showSelectionOverlay = false,
-                                    onFolderClick = onNavigateToFolder,
-                                    onFileClick = { docId ->
-                                        workspaceRootUuid?.let { root ->
-                                            actions.onNavigateToDocEditor(root, docId)
-                                        }
-                                    },
-                                )
-                            }
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        key(workspaceRootUuid) {
+                            FilesPanel(
+                                workspaceRootUuid = workspaceRootUuid,
+                                workspaceRepo = viewModel.getWorkspaceRepo(),
+                                searchQuery = "",
+                                useScroll = true,
+                                onReindex = { actions.onReindexFile(it) },
+                                onDelete = requestDelete,
+                                onRename = { uuid, name -> actions.onRenameFolder(uuid, name) },
+                                onMove = { uuid, targetId -> actions.onMoveFile(uuid, targetId) {} },
+                                onExtractKG = actions.onExtractKG,
+                                onViewKG = { onNavigateToGraph() },
+                                onCopy = actions.onCopyFile,
+                                indexingFileIds = indexingFileIds,
+                                kgExtractionStates = kgExtractionStates,
+                                externalSelectedIds = selectedDocumentIds,
+                                showSelectionOverlay = false,
+                                onFolderClick = onNavigateToFolder,
+                                onFileClick = { docId ->
+                                    workspaceRootUuid?.let { root ->
+                                        actions.onNavigateToDocEditor(root, docId)
+                                    }
+                                },
+                            )
                         }
                     }
                 } else {

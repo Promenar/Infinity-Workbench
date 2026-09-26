@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -91,6 +93,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.data.local.db.entity.FileEntry
+import com.promenar.nexara.data.repository.CompositeWorkspaceConstants
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.common.FileIndexStatus
 import com.promenar.nexara.ui.common.IndexStatusBadge
@@ -558,19 +561,24 @@ private fun FileTreeRow(
     var showMoveSheet by rememberSaveable(file.uuid, "move") { mutableStateOf(false) }
     val isSelected = file.uuid in selectedIds
     val optionsLabel = stringResource(R.string.chat_cd_options)
+    val isVirtualRoot = CompositeWorkspaceConstants.isVirtualSessionWorkspacesRoot(file.uuid)
+    val isVirtualSession = CompositeWorkspaceConstants.isVirtualSessionFolder(file.uuid)
+    val isVirtualNode = isVirtualRoot || isVirtualSession
     val supportsMultiSelect = supportsFileMultiSelect(
         hasReindex = onReindex != null,
         hasDelete = onDelete != null,
     )
-    val hasMenuActions = supportsMultiSelect || hasFileNodeMenuActions(
-        isDirectory = file.isDirectory,
-        hasReindex = onReindex != null,
-        hasDelete = onDelete != null,
-        hasRename = onRename != null,
-        hasMove = onMove != null,
-        hasExtractKG = onExtractKG != null,
-        hasViewKG = onViewKG != null,
-        hasCopy = onCopy != null,
+    val hasMenuActions = !isVirtualRoot && (
+        (!isVirtualSession && supportsMultiSelect) || hasFileNodeMenuActions(
+            isDirectory = file.isDirectory,
+            hasReindex = if (isVirtualSession) false else onReindex != null,
+            hasDelete = if (isVirtualSession) false else onDelete != null,
+            hasRename = onRename != null,
+            hasMove = if (isVirtualSession) false else onMove != null,
+            hasExtractKG = if (isVirtualSession) false else onExtractKG != null,
+            hasViewKG = if (isVirtualSession) false else onViewKG != null,
+            hasCopy = if (isVirtualSession) false else onCopy != null,
+        )
     )
     val activation = resolveFileNodeActivation(
         isMultiSelectMode = isMultiSelectMode,
@@ -580,13 +588,14 @@ private fun FileTreeRow(
     )
     val handleActivate: (() -> Unit)? = activation?.let { resolvedActivation ->
         {
-            when (resolvedActivation) {
-                FileNodeActivation.ToggleSelection -> {
+            when {
+                isVirtualNode -> onToggleExpanded()
+                resolvedActivation == FileNodeActivation.ToggleSelection -> {
                     if (isSelected) selectedIds.remove(file.uuid) else selectedIds.add(file.uuid)
                 }
-                FileNodeActivation.ToggleExpansion -> onToggleExpanded()
-                FileNodeActivation.NavigateFolder -> onFolderClick?.invoke(file.uuid, file.name)
-                FileNodeActivation.OpenFile -> onFileClick?.invoke(file.uuid)
+                resolvedActivation == FileNodeActivation.ToggleExpansion -> onToggleExpanded()
+                resolvedActivation == FileNodeActivation.NavigateFolder -> onFolderClick?.invoke(file.uuid, file.name)
+                resolvedActivation == FileNodeActivation.OpenFile -> onFileClick?.invoke(file.uuid)
             }
         }
     }
@@ -605,6 +614,7 @@ private fun FileTreeRow(
                 if (!checked) selectedIds.remove(file.uuid)
             },
             onOpenMenu = if (hasMenuActions) ({ showMenu = true }) else null,
+            onToggleExpanded = onToggleExpanded,
             modifier = Modifier
                 .testTag("files_panel_node_${file.uuid}")
                 .then(
@@ -653,14 +663,14 @@ private fun FileTreeRow(
                     modifier = Modifier.testTag("files_panel_view_kg_action_${file.uuid}"),
                 )
             }
-            if (onRename != null) {
+            if (onRename != null && !isVirtualRoot) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.files_rename)) },
                     onClick = { showMenu = false; showRenameDialog = true },
                     modifier = Modifier.testTag("files_panel_rename_action_${file.uuid}"),
                 )
             }
-            if (onMove != null && !file.isDirectory) {
+            if (onMove != null && !file.isDirectory && !isVirtualNode) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.files_move_to)) },
                     onClick = { showMenu = false; showMoveSheet = true },
@@ -668,13 +678,21 @@ private fun FileTreeRow(
                 )
             }
             if (onCopy != null && !file.isDirectory) {
+                val isSessionFile = file.workspaceRootUuid.isNotBlank() && file.workspaceRootUuid != workspaceRootUuid
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.shared_btn_copy)) },
+                    text = {
+                        Text(
+                            stringResource(
+                                if (isSessionFile) R.string.files_transfer_to_knowledge_base
+                                else R.string.shared_btn_copy
+                            )
+                        )
+                    },
                     onClick = { showMenu = false; onCopy(file.uuid) },
                     modifier = Modifier.testTag("files_panel_copy_action_${file.uuid}"),
                 )
             }
-            if (!isMultiSelectMode && supportsMultiSelect) {
+            if (!isMultiSelectMode && supportsMultiSelect && !isVirtualNode) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.files_multi_select)) },
                     onClick = {
@@ -684,7 +702,7 @@ private fun FileTreeRow(
                     modifier = Modifier.testTag(UiTags.fileNodeMultiSelect(file.uuid)),
                 )
             }
-            if (onDelete != null) {
+            if (onDelete != null && !isVirtualNode) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.shared_btn_move_to_recycle_bin), color = MaterialTheme.colorScheme.error) },
                     onClick = { showMenu = false; onDelete(file.uuid) },
@@ -731,6 +749,7 @@ private fun FileRow(
     isSelected: Boolean = false,
     onSelectionChange: (Boolean) -> Unit,
     onOpenMenu: (() -> Unit)?,
+    onToggleExpanded: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     nowMillis: Long,
 ) {
@@ -740,6 +759,9 @@ private fun FileRow(
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
     }
+    val isVirtualRoot = CompositeWorkspaceConstants.isVirtualSessionWorkspacesRoot(file.uuid)
+    val isVirtualSession = CompositeWorkspaceConstants.isVirtualSessionFolder(file.uuid)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -749,12 +771,43 @@ private fun FileRow(
             modifier = modifier.fillMaxWidth(),
             colors = ListItemDefaults.colors(containerColor = containerColor),
             headlineContent = {
-                Text(
-                    text = file.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = file.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (isVirtualRoot) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.files_tag_system),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    } else if (isVirtualSession) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.files_tag_session),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                }
             },
             supportingContent = if (file.isDirectory) {
                 null
@@ -785,15 +838,33 @@ private fun FileRow(
                             modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
                         )
                     }
+                    val folderModifier = if (file.isDirectory && onToggleExpanded != null) {
+                        Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onToggleExpanded)
+                            .padding(4.dp)
+                    } else {
+                        Modifier.padding(4.dp)
+                    }
+                    val iconVector = when {
+                        isVirtualRoot -> if (expanded) Icons.Rounded.FolderOpen else Icons.Rounded.Folder
+                        isVirtualSession -> Icons.Rounded.ChatBubble
+                        file.isDirectory -> if (expanded) Icons.Rounded.FolderOpen else Icons.Rounded.Folder
+                        else -> fileIcon(file)
+                    }
+                    val iconTint = when {
+                        isVirtualRoot -> MaterialTheme.colorScheme.primary
+                        isVirtualSession -> MaterialTheme.colorScheme.tertiary
+                        file.isDirectory -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                     Icon(
-                        imageVector = if (file.isDirectory && expanded) Icons.Rounded.FolderOpen else fileIcon(file),
+                        imageVector = iconVector,
                         contentDescription = null,
-                        tint = if (file.isDirectory) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.size(24.dp),
+                        tint = iconTint,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .then(folderModifier),
                     )
                 }
             },

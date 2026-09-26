@@ -192,6 +192,10 @@
     <string name="files_view_folder_graph">查看目录图谱</string>
     <string name="files_rename">重命名</string>
     <string name="files_move_to">移动到…</string>
+    <string name="files_transfer_to_knowledge_base">转存到知识库</string>
+    <string name="files_tag_system">系统</string>
+    <string name="files_tag_session">会话</string>
+    <string name="files_session_workspaces_title">会话工作区</string>
     <string name="files_multi_select">多选模式</string>
     <string name="files_new_name">新名称</string>
     <string name="files_confirm">确定</string>

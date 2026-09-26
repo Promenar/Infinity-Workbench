@@ -192,6 +192,10 @@
     <string name="files_view_folder_graph">View Folder Graph</string>
     <string name="files_rename">Rename</string>
     <string name="files_move_to">Move to…</string>
+    <string name="files_transfer_to_knowledge_base">Save to Knowledge Base</string>
+    <string name="files_tag_system">System</string>
+    <string name="files_tag_session">Session</string>
+    <string name="files_session_workspaces_title">Session Workspaces</string>
     <string name="files_multi_select">Select Multiple</string>
     <string name="files_new_name">New name</string>
     <string name="files_confirm">Confirm</string>
