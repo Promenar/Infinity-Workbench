@@ -16,9 +16,10 @@ All notable changes to this project will be documented in this file.
 - **知识库界面（RagHomeScreen & RagViewModel）布局收敛**：
   - **消除生硬下拉框**：移除知识库文档标签页顶部生硬突兀的会话切换下拉框（`RagWorkspaceSourceSelector`），让统一资源管理器文件树直接展开充满，实现纯净一体的浏览与管理体验；
   - **转存与复制统一路由**：`RagViewModel.copyFile` 针对跨工作区会话文件自动桥接至 `transferFileToKnowledgeBase`，无缝联动向量化索引。
-- **全量测试与回归验证**：
-  - 新增 `CompositeGlobalWorkspaceRepositoryTest`（覆盖虚拟根聚合、会话子目录生成、写保护拦截、会话文件转存及向量化触发回调等 6 个核心测试用例）；
-  - 全量 JVM 单元测试与契约测试通过。
+- **全量测试与实机端到端验收**：
+  - 新增 `CompositeGlobalWorkspaceRepositoryTest`（覆盖虚拟根聚合、会话子目录生成、写保护拦截、会话文件转存、物理路径自动拼接及向量化触发回调等 7 个核心测试用例）；
+  - 加固 VFS 事务恢复机制（`WorkspaceRepository` & `WorkspaceFileMutationJournal`），并在 `WorkspaceFileMutationRecoveryCoordinatorTest` 增加对写入早期中断无 manifest 的安全清理回归测试；
+  - 在 Android 模拟器实机上完成端到端全链路闭环验收：会话工作区虚拟挂载展示、就地折叠与展开、会话目录写保护、会话内文件导入与层级嵌套显示、长按菜单契约（“转存到知识库”）、真实流式转存入库及自动进入向量化索引队列。
 
 
 

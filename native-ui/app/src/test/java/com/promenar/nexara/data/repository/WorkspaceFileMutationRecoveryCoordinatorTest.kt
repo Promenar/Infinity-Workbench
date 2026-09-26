@@ -662,6 +662,19 @@ class WorkspaceFileMutationRecoveryCoordinatorTest {
     }
 
     @Test
+    fun `PREPARED创建journal写入失败且无manifest时安全清理并完成恢复`() = runTest {
+        insertJournal(WorkspaceMutationType.CREATE_STREAMING, WorkspaceMutationStage.PREPARED, "created.txt", "created.txt")
+        val owner = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")
+        fileOps.ensureDirectory(root, listOf(CREATE_OWNERSHIP_DIRECTORY))
+        fileOps.createDirectory(root, owner)
+
+        coordinator().recoverOrThrow()
+
+        assertThat(database.workspaceMutationDao().getUnfinished()).isEmpty()
+        assertThat(fileOps.exists(root, owner)).isFalse()
+    }
+
+    @Test
     fun `无journal旧v1 owner即使目标匹配也不清理`() = runTest {
         createCurrentProofFixture(directory = false)
         val owner = listOf(CREATE_OWNERSHIP_DIRECTORY, "op-1")

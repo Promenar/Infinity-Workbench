@@ -7,6 +7,7 @@ import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.RenameResult
+import java.io.File
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -188,5 +189,83 @@ class CompositeGlobalWorkspaceRepositoryTest {
         val success = sessionRenameResult as RenameResult.Success
         assertThat(success.name).isEqualTo("东京旅行规划")
         coVerify { sessionDao.updateTitle("session-1", "东京旅行规划", any()) }
+    }
+
+    @Test
+    fun `转存会话文件到知识库能正确解析物理目录与相对路径并触发回调`() = runTest {
+        val tempDir = java.nio.file.Files.createTempDirectory("session_ws").toFile()
+        try {
+            val sessionFile = File(tempDir, "doc.txt")
+            sessionFile.writeText("测试会话文件内容")
+
+            val sourceUuid = "file-source-1"
+            val sourceEntry = FileEntry(
+                uuid = sourceUuid,
+                workspaceRootUuid = "session-1-root",
+                parentUuid = "session-1-root",
+                name = "doc.txt",
+                hash = "hash-source-1",
+                physicalRootPath = tempDir.absolutePath, // 指向根目录，与生产环境一致
+                materializedPath = "/doc.txt",
+                sizeBytes = sessionFile.length(),
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis(),
+            )
+            coEvery { fileEntryDao.findActiveByUuid(sourceUuid) } returns sourceEntry
+
+            val targetCreatedEntry = FileEntry(
+                uuid = "rag-new-file-uuid",
+                workspaceRootUuid = ragRootUuid,
+                parentUuid = ragRootUuid,
+                name = "doc.txt",
+                hash = "new-hash",
+                physicalRootPath = "/data/rag",
+                materializedPath = "/doc.txt",
+                sizeBytes = sessionFile.length(),
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis(),
+            )
+
+            coEvery {
+                baseRepo.createFileInWorkspaceStreaming(
+                    workspaceRootUuid = ragRootUuid,
+                    uuid = any(),
+                    name = "doc.txt",
+                    mimeType = any(),
+                    parentUuid = ragRootUuid,
+                    materializedPath = "/doc.txt",
+                    maxBytes = any(),
+                    writer = any(),
+                )
+            } answers {
+                @Suppress("UNCHECKED_CAST")
+                val writer = args[7] as (java.io.OutputStream) -> Unit
+                val baos = java.io.ByteArrayOutputStream()
+                writer.invoke(baos)
+                assertThat(baos.toString(Charsets.UTF_8.name())).isEqualTo("测试会话文件内容")
+                targetCreatedEntry
+            }
+
+            var callbackTriggered = false
+            val repoWithCallback = CompositeGlobalWorkspaceRepository(
+                baseRepo = baseRepo,
+                sessionDao = sessionDao,
+                fileEntryDao = fileEntryDao,
+                onTransferToKnowledgeBaseCommitted = { transferred ->
+                    callbackTriggered = true
+                    assertThat(transferred.uuid).isEqualTo("rag-new-file-uuid")
+                }
+            )
+
+            val result = repoWithCallback.transferFileToKnowledgeBase(
+                sourceFileUuid = sourceUuid,
+                targetKnowledgeBaseRootUuid = ragRootUuid,
+            )
+
+            assertThat(result.uuid).isEqualTo("rag-new-file-uuid")
+            assertThat(callbackTriggered).isTrue()
+        } finally {
+            tempDir.deleteRecursively()
+        }
     }
 }

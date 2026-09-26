@@ -1258,15 +1258,24 @@ class WorkspaceRepository(
         if (staged == null) return
         val ownership = createOwnershipRelative(staged)
         if (fileOps.exists(root, ownership)) {
-            val manifest = decodeCreateOwnershipManifest(fileOps.readLimited(root, ownership + CREATE_MANIFEST, 8192))
-                ?: throw SecurityException("创建回滚缺少有效manifest")
-            requireCurrentCreationProof(manifest)
-            val token = manifest.proofToken ?: throw SecurityException("旧创建回滚缺少持续证明")
-            listOf(CREATE_STAGED_NODE, CREATE_ROLLBACK_NODE).forEach { name ->
-                val node = ownership + name
-                if (fileOps.exists(root, node)) fileOps.deleteCreatedNode(root, node, ownership, token, manifest.identity)
+            val manifestPath = ownership + CREATE_MANIFEST
+            if (fileOps.exists(root, manifestPath)) {
+                val manifest = decodeCreateOwnershipManifest(fileOps.readLimited(root, manifestPath, 8192))
+                    ?: throw SecurityException("创建回滚缺少有效manifest")
+                requireCurrentCreationProof(manifest)
+                val token = manifest.proofToken ?: throw SecurityException("旧创建回滚缺少持续证明")
+                listOf(CREATE_STAGED_NODE, CREATE_ROLLBACK_NODE).forEach { name ->
+                    val node = ownership + name
+                    if (fileOps.exists(root, node)) fileOps.deleteCreatedNode(root, node, ownership, token, manifest.identity)
+                }
+                cleanupCompletedCreateOwnership(fileOps, root, ownership, rolledBack = true)
+            } else {
+                listOf(CREATE_STAGED_NODE, CREATE_ROLLBACK_NODE).forEach { name ->
+                    val node = ownership + name
+                    if (fileOps.exists(root, node)) runCatching { fileOps.deleteNonRecursive(root, node) }
+                }
+                fileOps.deleteNonRecursive(root, ownership)
             }
-            cleanupCompletedCreateOwnership(fileOps, root, ownership, rolledBack = true)
         }
     }
 

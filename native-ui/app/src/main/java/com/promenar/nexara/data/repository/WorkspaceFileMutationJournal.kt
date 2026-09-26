@@ -248,10 +248,20 @@ class WorkspaceFileMutationRecoveryCoordinator(
                 targetExists -> conflict("创建类 journal 的物理目标缺少 operation 归属证明")
                 else -> {
                     if (stagedExists && rollbackExists) conflict("创建回滚存在多个隔离节点")
-                    if (stagedExists) removeOwned(stagedNode)
-                    if (rollbackExists) removeOwned(rollbackNode)
+                    if (stagedExists) {
+                        if (manifest != null) removeOwned(stagedNode) else fileOps.deleteNonRecursive(root, stagedNode)
+                    }
+                    if (rollbackExists) {
+                        if (manifest != null) removeOwned(rollbackNode) else fileOps.deleteNonRecursive(root, rollbackNode)
+                    }
                     if (hasOwnership || fileOps.exists(root, creationCleanupReceiptPath(ownership))) {
-                        cleanupCompletedCreateOwnership(fileOps, root, ownership, rolledBack = true)
+                        if (manifest != null || fileOps.exists(root, creationCleanupReceiptPath(ownership))) {
+                            cleanupCompletedCreateOwnership(fileOps, root, ownership, rolledBack = true)
+                        } else if (hasOwnership) {
+                            val present = fileOps.listChildren(root, ownership)
+                            present.forEach { name -> fileOps.deleteNonRecursive(root, ownership + name) }
+                            fileOps.deleteNonRecursive(root, ownership)
+                        }
                     }
                     deleteForState(entity)
                 }

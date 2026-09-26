@@ -328,7 +328,15 @@ class CompositeGlobalWorkspaceRepository(
             return@withContext sourceEntry
         }
 
-        val sourceFile = File(sourceEntry.physicalRootPath)
+        val rawFile = File(sourceEntry.physicalRootPath)
+        val sourceFile = when {
+            rawFile.isFile -> rawFile
+            rawFile.isDirectory -> File(rawFile, sourceEntry.materializedPath.trimStart('/'))
+            else -> {
+                val candidate = File(rawFile, sourceEntry.materializedPath.trimStart('/'))
+                if (candidate.exists()) candidate else rawFile
+            }
+        }
         val parentUuid = targetFolderUuid ?: targetKnowledgeBaseRootUuid
         val newUuid = UUID.randomUUID().toString()
         val matPath = if (parentUuid == targetKnowledgeBaseRootUuid) {
@@ -347,7 +355,7 @@ class CompositeGlobalWorkspaceRepository(
             materializedPath = matPath,
             maxBytes = sourceEntry.sizeBytes.coerceAtLeast(1024L * 1024L * 50L),
         ) { outStream ->
-            if (sourceFile.exists()) {
+            if (sourceFile.exists() && sourceFile.isFile) {
                 sourceFile.inputStream().use { input ->
                     input.copyTo(outStream)
                 }
