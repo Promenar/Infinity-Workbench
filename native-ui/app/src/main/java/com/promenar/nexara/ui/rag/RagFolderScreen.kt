@@ -25,14 +25,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Deselect
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
+import com.promenar.nexara.ui.theme.NexaraTypography
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
@@ -301,9 +305,22 @@ internal fun RagFolderScreenContent(
                             ) {
                                 Icon(Icons.Rounded.MoreVert, stringResource(if (allSelected) R.string.rag_folder_deselect else R.string.rag_folder_select_all))
                             }
-                            DropdownMenu(expanded = showTopMenu, onDismissRequest = { showTopMenu = false }) {
+                            NexaraDropdownMenu(expanded = showTopMenu, onDismissRequest = { showTopMenu = false }) {
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(if (allSelected) R.string.rag_folder_deselect else R.string.rag_folder_select_all)) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (allSelected) Icons.Rounded.Deselect else Icons.Rounded.SelectAll,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    },
+                                    text = {
+                                        Text(
+                                            text = stringResource(if (allSelected) R.string.rag_folder_deselect else R.string.rag_folder_select_all),
+                                            style = NexaraTypography.labelLarge,
+                                        )
+                                    },
                                     modifier = Modifier.testTag(UiTags.RAG_FOLDER_SELECT_ALL_MENU_ITEM),
                                     onClick = {
                                         toggleAll()

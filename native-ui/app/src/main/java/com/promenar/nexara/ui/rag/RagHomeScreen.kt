@@ -71,6 +71,7 @@ import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -128,12 +129,14 @@ import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import com.promenar.nexara.ui.chat.components.FileBatchOperationResult
 import com.promenar.nexara.ui.chat.components.FilesPanel
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.rag.components.IndexingProgressBar
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
+import com.promenar.nexara.ui.theme.NexaraTypography
 import java.text.SimpleDateFormat
 
 data class RagFolderCrumb(
@@ -580,15 +583,24 @@ internal fun RagWorkspaceSourceSelector(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            DropdownMenu(
+            NexaraDropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
             ) {
                 sources.forEach { source ->
                     DropdownMenuItem(
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Storage,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
                         text = {
                             Text(
                                 text = source.title,
+                                style = NexaraTypography.labelLarge,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )

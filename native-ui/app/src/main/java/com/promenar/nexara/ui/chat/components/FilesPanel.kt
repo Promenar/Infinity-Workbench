@@ -31,15 +31,21 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Movie
@@ -99,6 +105,7 @@ import com.promenar.nexara.ui.common.FileIndexStatus
 import com.promenar.nexara.ui.common.IndexStatusBadge
 import com.promenar.nexara.ui.common.KgStatus
 import com.promenar.nexara.ui.common.KgStatusIcon
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTypography
 import java.text.SimpleDateFormat
@@ -615,120 +622,201 @@ private fun FileTreeRow(
     val isSessionFile = (file.workspaceRootUuid.isNotBlank() && file.workspaceRootUuid != workspaceRootUuid) ||
         CompositeWorkspaceConstants.isVirtualSessionFolder(file.parentUuid)
 
-    Box(modifier = Modifier.fillMaxWidth()) {
-        FileRow(
-            file = file,
-            depth = node.depth,
-            expanded = expanded,
-            workspaceRootUuid = workspaceRootUuid,
-            indexingFileIds = indexingFileIds,
-            kgExtractionStates = kgExtractionStates,
-            isMultiSelectMode = isMultiSelectMode,
-            isSelected = isSelected,
-            onSelectionChange = { checked ->
-                if (checked && file.uuid !in selectedIds) selectedIds.add(file.uuid)
-                if (!checked) selectedIds.remove(file.uuid)
-            },
-            onOpenMenu = if (hasMenuActions) ({ showMenu = true }) else null,
-            onToggleExpanded = onToggleExpanded,
-            onFolderClick = onFolderClick,
-            allowTreeExpansion = allowTreeExpansion,
-            modifier = Modifier
-                .testTag("files_panel_node_${file.uuid}")
-                .then(
-                    if (handleActivate != null) {
-                        Modifier.combinedClickable(
-                            role = Role.Button,
-                            onClickLabel = file.name,
-                            onLongClickLabel = optionsLabel.takeIf { hasMenuActions },
-                            onLongClick = if (hasMenuActions) ({ showMenu = true }) else null,
-                            onClick = handleActivate,
+    FileRow(
+        file = file,
+        depth = node.depth,
+        expanded = expanded,
+        workspaceRootUuid = workspaceRootUuid,
+        indexingFileIds = indexingFileIds,
+        kgExtractionStates = kgExtractionStates,
+        isMultiSelectMode = isMultiSelectMode,
+        isSelected = isSelected,
+        onSelectionChange = { checked ->
+            if (checked && file.uuid !in selectedIds) selectedIds.add(file.uuid)
+            if (!checked) selectedIds.remove(file.uuid)
+        },
+        onOpenMenu = if (hasMenuActions) ({ showMenu = true }) else null,
+        onToggleExpanded = onToggleExpanded,
+        onFolderClick = onFolderClick,
+        allowTreeExpansion = allowTreeExpansion,
+        modifier = Modifier
+            .testTag("files_panel_node_${file.uuid}")
+            .then(
+                if (handleActivate != null) {
+                    Modifier.combinedClickable(
+                        role = Role.Button,
+                        onClickLabel = file.name,
+                        onLongClickLabel = optionsLabel.takeIf { hasMenuActions },
+                        onLongClick = if (hasMenuActions) ({ showMenu = true }) else null,
+                        onClick = handleActivate,
+                    )
+                } else {
+                    Modifier
+                },
+            ),
+        nowMillis = nowMillis,
+        menuContent = {
+            NexaraDropdownMenu(
+                expanded = showMenu && hasMenuActions,
+                onDismissRequest = { showMenu = false },
+            ) {
+                if (!file.isDirectory) {
+                    if (onReindex != null && !isSessionFile) {
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
+                            text = { Text(stringResource(R.string.files_reindex), style = NexaraTypography.labelLarge) },
+                            onClick = { showMenu = false; onReindex(file.uuid) },
+                            modifier = Modifier.testTag(UiTags.fileNodeReindex(file.uuid)),
                         )
-                    } else {
-                        Modifier
-                    },
-                ),
-            nowMillis = nowMillis,
-        )
-
-        DropdownMenu(expanded = showMenu && hasMenuActions, onDismissRequest = { showMenu = false }) {
-            if (!file.isDirectory) {
-                if (onReindex != null && !isSessionFile) {
+                    }
+                    if (onExtractKG != null && !isSessionFile) {
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Hub,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
+                            text = { Text(stringResource(R.string.files_extract_knowledge_graph), style = NexaraTypography.labelLarge) },
+                            onClick = { showMenu = false; onExtractKG(file.uuid) },
+                            modifier = Modifier.testTag("files_panel_extract_kg_action_${file.uuid}"),
+                        )
+                    }
+                    if (onViewKG != null && !isSessionFile) {
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.AccountTree,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
+                            text = { Text(stringResource(R.string.files_view_graph), style = NexaraTypography.labelLarge) },
+                            onClick = { showMenu = false; onViewKG(file.uuid) },
+                            modifier = Modifier.testTag("files_panel_view_kg_action_${file.uuid}"),
+                        )
+                    }
+                } else if (onViewKG != null && !isVirtualRoot && !isVirtualSession) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.files_reindex)) },
-                        onClick = { showMenu = false; onReindex(file.uuid) },
-                        modifier = Modifier.testTag(UiTags.fileNodeReindex(file.uuid)),
-                    )
-                }
-                if (onExtractKG != null && !isSessionFile) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.files_extract_knowledge_graph)) },
-                        onClick = { showMenu = false; onExtractKG(file.uuid) },
-                        modifier = Modifier.testTag("files_panel_extract_kg_action_${file.uuid}"),
-                    )
-                }
-                if (onViewKG != null && !isSessionFile) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.files_view_graph)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.AccountTree,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        text = { Text(stringResource(R.string.files_view_folder_graph), style = NexaraTypography.labelLarge) },
                         onClick = { showMenu = false; onViewKG(file.uuid) },
                         modifier = Modifier.testTag("files_panel_view_kg_action_${file.uuid}"),
                     )
                 }
-            } else if (onViewKG != null && !isVirtualRoot && !isVirtualSession) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.files_view_folder_graph)) },
-                    onClick = { showMenu = false; onViewKG(file.uuid) },
-                    modifier = Modifier.testTag("files_panel_view_kg_action_${file.uuid}"),
-                )
-            }
-            if (onRename != null && !isVirtualRoot) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.files_rename)) },
-                    onClick = { showMenu = false; showRenameDialog = true },
-                    modifier = Modifier.testTag("files_panel_rename_action_${file.uuid}"),
-                )
-            }
-            if (onMove != null && !file.isDirectory && !isVirtualNode) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.files_move_to)) },
-                    onClick = { showMenu = false; showMoveSheet = true },
-                    modifier = Modifier.testTag("files_panel_move_action_${file.uuid}"),
-                )
-            }
-            if (onCopy != null && !file.isDirectory) {
-                val isSessionFile = file.workspaceRootUuid.isNotBlank() && file.workspaceRootUuid != workspaceRootUuid
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            stringResource(
-                                if (isSessionFile) R.string.files_transfer_to_knowledge_base
-                                else R.string.shared_btn_copy
+                if (onRename != null && !isVirtualRoot) {
+                    DropdownMenuItem(
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Edit,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
                             )
-                        )
-                    },
-                    onClick = { showMenu = false; onCopy(file.uuid) },
-                    modifier = Modifier.testTag("files_panel_copy_action_${file.uuid}"),
-                )
+                        },
+                        text = { Text(stringResource(R.string.files_rename), style = NexaraTypography.labelLarge) },
+                        onClick = { showMenu = false; showRenameDialog = true },
+                        modifier = Modifier.testTag("files_panel_rename_action_${file.uuid}"),
+                    )
+                }
+                if (onMove != null && !file.isDirectory && !isVirtualNode) {
+                    DropdownMenuItem(
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.DriveFileMove,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        text = { Text(stringResource(R.string.files_move_to), style = NexaraTypography.labelLarge) },
+                        onClick = { showMenu = false; showMoveSheet = true },
+                        modifier = Modifier.testTag("files_panel_move_action_${file.uuid}"),
+                    )
+                }
+                if (onCopy != null && !file.isDirectory) {
+                    val isSessionCopy = file.workspaceRootUuid.isNotBlank() && file.workspaceRootUuid != workspaceRootUuid
+                    DropdownMenuItem(
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (isSessionCopy) Icons.Rounded.CloudUpload else Icons.Rounded.ContentCopy,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (isSessionCopy) R.string.files_transfer_to_knowledge_base
+                                    else R.string.shared_btn_copy
+                                ),
+                                style = NexaraTypography.labelLarge,
+                            )
+                        },
+                        onClick = { showMenu = false; onCopy(file.uuid) },
+                        modifier = Modifier.testTag("files_panel_copy_action_${file.uuid}"),
+                    )
+                }
+                if (!isMultiSelectMode && supportsMultiSelect && !isVirtualNode) {
+                    DropdownMenuItem(
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Checklist,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        text = { Text(stringResource(R.string.files_multi_select), style = NexaraTypography.labelLarge) },
+                        onClick = {
+                            showMenu = false
+                            if (file.uuid !in selectedIds) selectedIds.add(file.uuid)
+                        },
+                        modifier = Modifier.testTag(UiTags.fileNodeMultiSelect(file.uuid)),
+                    )
+                }
+                if (onDelete != null && !isVirtualNode) {
+                    DropdownMenuItem(
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        text = {
+                            Text(
+                                stringResource(R.string.shared_btn_move_to_recycle_bin),
+                                style = NexaraTypography.labelLarge,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = { showMenu = false; onDelete(file.uuid) },
+                        modifier = Modifier.testTag("files_panel_delete_action_${file.uuid}"),
+                    )
+                }
             }
-            if (!isMultiSelectMode && supportsMultiSelect && !isVirtualNode) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.files_multi_select)) },
-                    onClick = {
-                        showMenu = false
-                        if (file.uuid !in selectedIds) selectedIds.add(file.uuid)
-                    },
-                    modifier = Modifier.testTag(UiTags.fileNodeMultiSelect(file.uuid)),
-                )
-            }
-            if (onDelete != null && !isVirtualNode) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.shared_btn_move_to_recycle_bin), color = MaterialTheme.colorScheme.error) },
-                    onClick = { showMenu = false; onDelete(file.uuid) },
-                    modifier = Modifier.testTag("files_panel_delete_action_${file.uuid}"),
-                )
-            }
-        }
-    }
+        },
+    )
 
     if (showRenameDialog) {
         RenameDialog(
@@ -773,6 +861,7 @@ private fun FileRow(
     allowTreeExpansion: Boolean = true,
     modifier: Modifier = Modifier,
     nowMillis: Long,
+    menuContent: (@Composable () -> Unit)? = null,
 ) {
     val optionsLabel = stringResource(R.string.chat_cd_options)
     val containerColor = if (isSelected) {
@@ -898,16 +987,19 @@ private fun FileRow(
             },
             trailingContent = onOpenMenu?.let { openMenu ->
                 {
-                    IconButton(
-                        onClick = openMenu,
-                        modifier = Modifier
-                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                            .testTag(UiTags.fileNodeOptions(file.uuid)),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.MoreVert,
-                            contentDescription = optionsLabel,
-                        )
+                    Box {
+                        IconButton(
+                            onClick = openMenu,
+                            modifier = Modifier
+                                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                .testTag(UiTags.fileNodeOptions(file.uuid)),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.MoreVert,
+                                contentDescription = optionsLabel,
+                            )
+                        }
+                        menuContent?.invoke()
                     }
                 }
             },

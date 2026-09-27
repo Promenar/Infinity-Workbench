@@ -29,8 +29,11 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Sync
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
+import com.promenar.nexara.ui.theme.NexaraTypography
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -588,13 +591,25 @@ internal fun ProviderModelsTopActions(
                     contentDescription = stringResource(R.string.chat_cd_options),
                 )
             }
-            DropdownMenu(
+            NexaraDropdownMenu(
                 expanded = overflowExpanded,
                 onDismissRequest = { overflowExpanded = false },
             ) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.provider_models_disable_all)) },
-                    leadingIcon = { Icon(Icons.Rounded.Block, contentDescription = null) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Rounded.Block,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = stringResource(R.string.provider_models_disable_all),
+                            style = NexaraTypography.labelLarge,
+                        )
+                    },
                     onClick = {
                         overflowExpanded = false
                         onDisableAll()
@@ -602,17 +617,19 @@ internal fun ProviderModelsTopActions(
                     modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ACTION_DISABLE_ALL),
                 )
                 DropdownMenuItem(
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Rounded.DeleteOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    },
                     text = {
                         Text(
                             text = stringResource(R.string.provider_models_delete_all),
+                            style = NexaraTypography.labelLarge,
                             color = MaterialTheme.colorScheme.error,
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Rounded.Delete,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
                         )
                     },
                     onClick = {

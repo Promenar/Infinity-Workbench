@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Psychology
@@ -57,9 +58,10 @@ import com.promenar.nexara.data.model.ProviderListItem
 import com.promenar.nexara.data.model.UnsupportedProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.navigation.NavDestinations
-import com.promenar.nexara.ui.common.NexaraConfirmDialog
-import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.BettboxListGroup
+import com.promenar.nexara.ui.common.NexaraConfirmDialog
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 
@@ -287,11 +289,19 @@ private fun UnsupportedProviderCard(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                DropdownMenu(
+                NexaraDropdownMenu(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false },
                 ) {
                     DropdownMenuItem(
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
                         text = {
                             Text(
                                 text = deleteDescription,
@@ -307,13 +317,6 @@ private fun UnsupportedProviderCard(
                             .testTag("${UiTags.settingsProviderActions(provider.id)}:delete")
                             .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
                             .semantics { role = Role.Button },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Rounded.Delete,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                        },
                     )
                 }
             }
@@ -500,11 +503,19 @@ private fun ProviderCard(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                DropdownMenu(
+                NexaraDropdownMenu(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false },
                 ) {
                     DropdownMenuItem(
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Edit,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
                         text = {
                             Text(
                                 text = editDescription,
@@ -519,15 +530,17 @@ private fun ProviderCard(
                             .testTag("${UiTags.settingsProviderActions(provider.id)}:edit")
                             .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
                             .semantics { role = Role.Button },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Rounded.Edit,
-                                contentDescription = null,
-                            )
-                        },
                     )
                     if (onDelete != null) {
                         DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.DeleteOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
                             text = {
                                 Text(
                                     text = deleteDescription,
@@ -543,13 +556,6 @@ private fun ProviderCard(
                                 .testTag("${UiTags.settingsProviderActions(provider.id)}:delete")
                                 .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
                                 .semantics { role = Role.Button },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Rounded.Delete,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                )
-                            },
                         )
                     }
                 }

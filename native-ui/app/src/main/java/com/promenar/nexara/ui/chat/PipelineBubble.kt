@@ -46,6 +46,7 @@ import com.promenar.nexara.data.local.db.recovery.LegacyAttachmentCodec
 import com.promenar.nexara.data.local.db.recovery.LegacyAttachmentItem
 import com.promenar.nexara.data.local.db.recovery.LegacyAttachmentOpenResult
 import com.promenar.nexara.ui.common.MarkdownText
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.renderer.ImageLightbox
 import com.promenar.nexara.ui.theme.NexaraCustomShapes
@@ -1218,19 +1219,10 @@ fun MessageContextMenu(
     isUser: Boolean = false,
     offset: DpOffset = DpOffset.Zero
 ) {
-    DropdownMenu(
+    NexaraDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
         offset = offset,
-        shape = RoundedCornerShape(16.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier
-            .widthIn(min = 160.dp)
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(16.dp)
-            )
     ) {
         DropdownMenuItem(
             leadingIcon = {

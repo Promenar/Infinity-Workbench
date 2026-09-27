@@ -143,6 +143,7 @@ import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.PostProcessTask
 import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
 import com.promenar.nexara.ui.chat.components.TaskStatusDot
+import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.NexaraSnackbarHost
 import com.promenar.nexara.ui.theme.NexaraElevation
@@ -1163,18 +1164,10 @@ fun ChatTopBar(
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
-                DropdownMenu(
+                NexaraDropdownMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
-                    shape = RoundedCornerShape(16.dp),
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    modifier = Modifier
-                        .widthIn(min = 190.dp)
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(16.dp)
-                        )
+                    minWidth = 190.dp,
                 ) {
                     DropdownMenuItem(
                         leadingIcon = {

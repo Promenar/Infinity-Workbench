@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 悬浮菜单位置精准锚定与全站新版视觉样式统一规范收敛（2026-09-27）
+
+- **知识库文件列表悬浮菜单位置精准锚定（FilesPanel）**：
+  - **根除屏幕左侧漂移（x=0）缺陷**：排查并修复 `FilesPanel` 中 `FileRow` 与 `DropdownMenu` 平级包裹于整宽 `Box` 导致菜单以屏幕左上角为锚点向左侧弹出的定位错误；
+  - **局域锚定绑定**：重构 `FileRow` 架构，将 `menuContent` 下沉到 `trailingContent` 的局域 `Box` 内，紧密依附于 48dp×48dp 的右侧操作按钮，确保无论通过点击右侧 `⋮` 按钮还是长按文件行触发，悬浮菜单均精准锚定在点击目标位置弹出。
+- **全站统一悬浮菜单组件规范落地（NexaraDropdownMenu）**：
+  - **全新视觉设计契约**：封装统一的 `NexaraDropdownMenu` 组件，固化 16dp 大圆角（`RoundedCornerShape(16.dp)`）、`surfaceContainer` 容器底色、1dp `outlineVariant`（0.5 alpha）半透明精致描边与 160dp 默认最小宽度；
+  - **全站页面全面收敛**：全面淘汰各页面零散残留的老旧原生 `DropdownMenu` 样式，统一收敛至 `NexaraDropdownMenu`：
+    - `FilesPanel`：升级 8 项文件操作菜单（重新索引、提取知识图谱、查看图谱、重命名、移动到、复制/转存、多选、移入回收站），搭配 20dp 规范 Leading Icon 与错误色；
+    - `RagHomeScreen`：备份恢复源下拉选择器升级；
+    - `RagFolderScreen`：多选模式全选/取消全选下拉菜单升级；
+    - `ProviderListScreen`：提供商卡片与列表行操作菜单统一升级；
+    - `ProviderModelsScreen`：模型管理批量禁用/删除操作菜单统一升级；
+    - `AgentHubScreen` / `PipelineBubble` / `ChatScreen`：收敛所有行内菜单样板代码。
+- **全量契约测试与实机端到端验证**：
+  - 新增 `NexaraDropdownMenuContractTest` 契约测试，验证组件视觉属性、局域锚定及全站各页面收敛；全量 2,800+ 单元测试 100% 通过；
+  - Android 模拟器真机实测截图验证：智能体菜单、知识库文件菜单（精准对齐右侧三点按钮）、模型提供商菜单均呈现精致圆角、微描边与规范图标；
+  - 完成正式签名 Release APK（20MB）构建，通过 apksigner v2 签名验证。
+
 ### 向量化“无限进行中”根治、任务主动取消与主页顶部呼吸感对齐（2026-09-27）
 
 - **彻底根治向量化“无限进行中”状态（RagViewModel）**：

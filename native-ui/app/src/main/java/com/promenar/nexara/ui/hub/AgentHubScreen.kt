@@ -579,18 +579,9 @@ fun AgentExpandableCard(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    DropdownMenu(
+                    NexaraDropdownMenu(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false },
-                        shape = RoundedCornerShape(16.dp),
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        modifier = Modifier
-                            .widthIn(min = 160.dp)
-                            .border(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(16.dp)
-                            )
                     ) {
                         DropdownMenuItem(
                             leadingIcon = {
