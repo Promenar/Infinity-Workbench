@@ -615,11 +615,12 @@ class ProviderManager private constructor(
     }
 
     private fun readSecret(id: SecretId): String =
-        secretStore.get(id)?.toString(Charsets.UTF_8).orEmpty()
+        secretStore.get(id)?.toString(Charsets.UTF_8)?.trim().orEmpty()
 
     private fun writeSecret(id: SecretId, value: String) {
-        if (value.isBlank()) secretStore.remove(id)
-        else secretStore.put(id, value.toByteArray(Charsets.UTF_8))
+        val trimmed = value.trim()
+        if (trimmed.isBlank()) secretStore.remove(id)
+        else secretStore.put(id, trimmed.toByteArray(Charsets.UTF_8))
         _configurationChanges.tryEmit(Unit)
     }
 

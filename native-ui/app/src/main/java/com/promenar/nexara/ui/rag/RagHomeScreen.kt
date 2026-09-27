@@ -1731,33 +1731,40 @@ internal fun RagStatusFab(
                                 else -> 3
                             },
                             transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(250)) },
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize(),
                             label = "FabIcon",
                         ) { target ->
-                            when (target) {
-                                0 -> Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = stringResource(R.string.rag_status_failed),
-                                    tint = contentColor,
-                                    modifier = Modifier.size(22.dp),
-                                )
-                                1 -> Icon(
-                                    imageVector = Icons.Rounded.Check,
-                                    contentDescription = stringResource(R.string.rag_status_completed),
-                                    tint = contentColor,
-                                    modifier = Modifier.size(22.dp),
-                                )
-                                2 -> Icon(
-                                    imageVector = Icons.Rounded.Hub,
-                                    contentDescription = stringResource(R.string.rag_status_kg_extracting),
-                                    tint = contentColor,
-                                    modifier = Modifier.size(22.dp),
-                                )
-                                else -> Icon(
-                                    imageVector = Icons.Rounded.AutoAwesome,
-                                    contentDescription = stringResource(R.string.rag_status_vectorizing),
-                                    tint = contentColor,
-                                    modifier = Modifier.size(22.dp),
-                                )
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                when (target) {
+                                    0 -> Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = stringResource(R.string.rag_status_failed),
+                                        tint = contentColor,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                    1 -> Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = stringResource(R.string.rag_status_completed),
+                                        tint = contentColor,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                    2 -> Icon(
+                                        imageVector = Icons.Rounded.Hub,
+                                        contentDescription = stringResource(R.string.rag_status_kg_extracting),
+                                        tint = contentColor,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                    else -> Icon(
+                                        imageVector = Icons.Rounded.AutoAwesome,
+                                        contentDescription = stringResource(R.string.rag_status_vectorizing),
+                                        tint = contentColor,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
                             }
                         }
                     }

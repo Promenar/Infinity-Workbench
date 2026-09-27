@@ -1404,7 +1404,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             .build()
 
     private fun readSecret(id: SecretId): String =
-        secretStore.get(id)?.toString(Charsets.UTF_8).orEmpty()
+        secretStore.get(id)?.toString(Charsets.UTF_8)?.trim().orEmpty()
 
     @Suppress("DEPRECATION")
     override fun onTrimMemory(level: Int) {

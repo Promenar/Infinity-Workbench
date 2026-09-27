@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 知识库 FAB 状态微件视觉绝对居中、设置路由纠偏与凭证防御加固（2026-09-27）
+
+- **FAB 状态指示器图标像素级绝对居中（RagHomeScreen）**：
+  - **消除图标偏左上偏移缺陷**：排查并修复 `RagStatusFab` 中 `AnimatedContent` 默认对齐方式为 `TopStart` 且内部未撑满容器，导致错误（红叉）、成功（绿勾）及任务类型图标在 46dp FAB 容器内向左上方偏斜的问题；
+  - **像素级绝对对称居中**：为 `AnimatedContent` 显式配置 `contentAlignment = Alignment.Center` 与 `Modifier.fillMaxSize()`，并将内部各图标分支显式包裹在居中 Box 中；将图标尺寸从 22dp 微调升级为 Material 3 FAB 标准规格 `24.dp`。实机截屏像素度量证实上下左右四向边距均为 44px（零像素偏差，绝对居中）；
+- **错误气泡“去设置”精确路由修正（MainTabScaffold）**：
+  - **纠正跳转目标**：将 FAB 展开气泡中“去设置”按钮的原路由从分块/记忆设置（`rag_global_config`）修正为默认模型设置（`DEFAULT_MODELS`），用户点击后直接进入嵌入模型（`BGE M3`）与重排模型的选择界面，符合排查与修复模型配置的直觉链路；
+- **凭证与模型参数防御性 Sanitization 加固**：
+  - **杜绝空白符/换行污染**：在 `EmbeddingClient`、`ProviderManager` 与 `NexaraApplication` 中对 Base URL、API Key 与 Model 名称全面增加防御性 `.trim()` 与 `.trimEnd('/')` 处理，杜绝剪贴板复制粘贴时带入不可见空白符或换行符导致的凭证校验失败；
+- **模拟器模型索引异常服务端根因明确与排查透传**：
+  - 通过 logcat 诊断证实向量化端点返回 HTTP 401 `{"error":{"code":"","message":"Invalid token (request id: ...)","type":"new_api_error"}}`，明确界面配置看似正确但后台报错的原因是远端网关鉴权拒绝，指导用户更新有效 API Key。
+
 ### 悬浮菜单位置精准锚定与全站新版视觉样式统一规范收敛（2026-09-27）
 
 - **知识库文件列表悬浮菜单位置精准锚定（FilesPanel）**：

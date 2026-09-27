@@ -119,7 +119,8 @@ class EmbeddingClient(
     private suspend fun embedBatch(texts: List<String>): EmbeddingResult {
         if (!isConfigured) throw IllegalStateException(diagnosticMessage())
 
-        val cleanBase = baseUrl.trimEnd('/')
+        val cleanBase = baseUrl.trim().trimEnd('/')
+        val cleanApiKey = apiKey.trim()
         val endpoint = if (cleanBase.endsWith("/v1")) {
             "$cleanBase/embeddings"
         } else {
@@ -127,13 +128,13 @@ class EmbeddingClient(
         }
 
         val requestBody = buildJsonObject {
-            put("model", model)
+            put("model", model.trim())
             put("input", buildJsonArray { texts.forEach { add(it) } })
         }
 
         val response: HttpResponse = httpClient.post(endpoint) {
             contentType(ContentType.Application.Json)
-            header("Authorization", "Bearer $apiKey")
+            header("Authorization", "Bearer $cleanApiKey")
             setBody(json.encodeToString(JsonObject.serializer(), requestBody))
         }
 

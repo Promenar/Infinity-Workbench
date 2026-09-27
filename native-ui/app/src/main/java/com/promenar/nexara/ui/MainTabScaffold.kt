@@ -97,7 +97,9 @@ fun MainTabScaffold(
                     onNavigateToFolder = { folderId, _ ->
                         onNavigateToSecondary(com.promenar.nexara.navigation.NavDestinations.ragFolder(folderId))
                     },
-                    onNavigateToConfig = { onNavigateToSecondary("rag_global_config") },
+                    onNavigateToConfig = {
+                        onNavigateToSecondary(com.promenar.nexara.navigation.NavDestinations.DEFAULT_MODELS)
+                    },
                     onNavigateToGraph = { onNavigateToSecondary("knowledge_graph") },
                     onNavigateToDocEditor = { rootUuid, docId ->
                         onNavigateToSecondary(com.promenar.nexara.navigation.NavDestinations.docEditor(rootUuid, docId))
