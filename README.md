@@ -13,6 +13,8 @@
 
 模型管理支持独立公共目录更新：GitHub Actions 聚合来源并签名发布，App 验签缓存并保留用户编辑。使用与维护方法见[模型目录说明](docs/model-catalog.md)。
 
+Android 开发调试与设备验收使用本机启动的专用 AVD；执行位置和设备选择边界见 [PDEC 契约](.pdec/README.md)。
+
 ## 主要能力
 
 - **多服务商 BYOK 对话**：支持 OpenAI、Anthropic、Google Vertex AI、DeepSeek、GLM、Kimi 及 OpenAI-compatible 接口，包含 SSE 流式响应、多模态输入、Markdown/LaTeX/Mermaid/ECharts 渲染和会话内模型切换。

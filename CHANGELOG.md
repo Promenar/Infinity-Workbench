@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### PDEC 本机 Android 调试边界（2026-09-29）
+
+- Android 安装、ADB/Logcat 联调、设备测试与模拟器验收统一使用本机启动的专用 Nexara AVD；设备操作须核对并固定序列号，目标不明时停止。远程主机、远程设备及托管模拟器不作为交互调试执行位置；公开仓库推送触发的 GitHub Android CI 托管模拟器矩阵继续用于自动化测试。
+
 ### 知识库 FAB 状态微件视觉绝对居中、设置路由纠偏与凭证防御加固（2026-09-27）
 
 - **FAB 状态指示器图标像素级绝对居中（RagHomeScreen）**：
