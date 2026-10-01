@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
@@ -21,6 +22,7 @@ import androidx.compose.ui.unit.Density
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTheme
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
@@ -34,6 +36,28 @@ class UnifiedPromptEditorE2ETest {
 
     private val resources
         get() = InstrumentationRegistry.getInstrumentation().targetContext.resources
+
+    @Test
+    fun wrappedMultilineEditingReachesIdleAndSavesExactText() {
+        val before = "需要自动换行的提示词内容".repeat(40) + "\n第二行"
+        val edited = before + "\n新增内容😀"
+        var saved: String? = null
+        rule.setContent {
+            NexaraTheme {
+                UnifiedPromptEditor(
+                    show = true,
+                    onDismiss = {},
+                    onSave = { saved = it; Result.success(Unit) },
+                    initialText = before,
+                )
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithTag(UiTags.PROMPT_EDITOR_INPUT).performTextReplacement(edited)
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription(resources.getString(R.string.prompt_editor_cd_save)).performClick()
+        rule.runOnIdle { assertThat(saved).isEqualTo(edited) }
+    }
 
     @Test
     fun saveClosesEditorAndActionsMeetAccessibleContract() {

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026-10-01] API31 Prompt 编辑器布局反馈修复
+
+- 将文本布局结果读取延迟到行号绘制阶段，消除 API31 上持续布局活动；保留行号、自动换行和滚动映射，不延长测试超时或关闭同步。
+- 设备门禁纳入 Prompt 编辑器七项交互合同，补充长文本换行编辑、emoji 与精确保存回归；minimum/full 均执行。
+
 ## [2026-10-01] Android FD 测试执行环境同步
 
 - 将五个依赖 Android 原生 FD 桥接的创建、竞态与回滚测试迁入真实设备套件，API31 minimum 与 API35/36 full 均执行；其余六个 JVM 场景保留。

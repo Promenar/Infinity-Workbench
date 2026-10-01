@@ -316,7 +316,7 @@ fun UnifiedPromptEditor(
     fun EditorPane(modifier: Modifier = Modifier) {
         val scrollState = rememberScrollState()
         val textMeasurer = rememberTextMeasurer()
-        var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+        var layoutResultProvider by remember { mutableStateOf<(() -> TextLayoutResult?)?>(null) }
         val lineNumberColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
 
         val textLines = text.split("\n")
@@ -338,7 +338,8 @@ fun UnifiedPromptEditor(
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest)
                     .padding(end = 6.dp, top = 8.dp)
             ) {
-                val layout = layoutResult
+                // 在绘制阶段读取布局，避免在布局回调内订阅结果并回写状态形成反馈循环。
+                val layout = layoutResultProvider?.invoke()
                 if (layout != null) {
                     for (i in textLines.indices) {
                         val startOffset = lineOffsets.getOrNull(i) ?: continue
@@ -411,7 +412,7 @@ fun UnifiedPromptEditor(
                         .testTag(UiTags.PROMPT_EDITOR_INPUT)
                         .semantics { contentDescription = resolvedPlaceholder }
                         .padding(top = 8.dp, start = 8.dp, end = 8.dp),
-                    onTextLayout = { getResult -> layoutResult = getResult() },
+                    onTextLayout = { getResult -> layoutResultProvider = getResult },
                     textStyle = NexaraTypography.bodySmall.copy(
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 14.sp,

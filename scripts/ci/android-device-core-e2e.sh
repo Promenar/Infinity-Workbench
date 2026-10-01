@@ -410,6 +410,8 @@ run_test mainactivity-new-session "${MAIN_ACTIVITY_RUNNER}" \
 adb shell pm clear "${TARGET_PACKAGE}" >/dev/null
 run_test onboarding-full "${APP_RUNNER}" \
     -e class com.promenar.nexara.onboarding.OnboardingAndroidEndToEndTest
+run_test prompt-editor-contracts "${APP_RUNNER}" \
+    -e class com.promenar.nexara.ui.common.UnifiedPromptEditorE2ETest
 run_layout_and_accessibility_contracts
 
 if [[ "${DEVICE_E2E_SCOPE}" == "minimum" ]]; then
