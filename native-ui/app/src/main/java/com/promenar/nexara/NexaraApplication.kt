@@ -636,7 +636,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         } else {
             emptyList()
         }
-        DefaultProviderRequestRouter(ProviderManager.getInstance(), middlewares)
+        DefaultProviderRequestRouter(
+            ProviderManager.getInstance(),
+            middlewares,
+            allowLoopbackHttp = com.promenar.nexara.BuildConfig.DEBUG,
+        )
     }
 
     var hapticEnabled: Boolean = true

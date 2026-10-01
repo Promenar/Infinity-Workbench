@@ -27,9 +27,9 @@
 | DB-01 | 单库 v17→v18、v5→v18 | 公开v17实际覆盖升级通过 | W10：公开v0.1同签名APK→候选v18；WAL-only与关联/文件/偏好/安装时间哨兵回读 |
 | DB-02 | v17+v2/v5 双库来源保留、恢复入口、可恢复切换 | 公开三段实际升级与恢复通过 | W08：公开v17+v2、内部v17+v5设备夹具；正式包v0.1→v0.2→候选，显式确认、两侧UI、合法附件读取、活动文件哈希、归档与源文件保全 |
 | CHAT-01 | 会话/消息/分支/完整文档/上下文预算 | 确定性合同与设备主流程通过 | W09：会话/分支/全文预算、主Activity聊天与新会话；物理设备完整体验另验 |
-| PROV-01 | Generic OpenAI 兼容网关的五个指定模型 | 三模型文本+工具通过；两模型存在服务失败 | W09：DeepSeek/SenseNova/Luna两轮工具通过；Gemini文本通过但工具流错误；MiniMax空响应失败，保留原始结构诊断 |
+| PROV-01 | Generic OpenAI 兼容网关的五个指定模型 | 四模型完整应用链路 Agent 通过；MiniMax 网关缺陷 | 2026-10-02 API31/35 模拟器：DeepSeek-v4-flash、Gemini-3.8-flash、SenseNova-6.8-flash-lite、gpt-6-luna（网关已下线 gpt-5.6-luna，以同系列替代）经 ChatViewModel→协调器→工具→工作区完成多步文件任务与技能激活；Gemini 原失败根因为兼容请求注入 `googleSearchRetrieval`，已修复；MiniMax-M3 经直连网关复现 `finish_reason=tool_calls` 但无 `tool_calls`，应用失败关闭 |
 | PROV-02 | OpenAI/Responses/Anthropic/Vertex 等原生协议 | 确定性协议合同通过；原生服务未验 | W09：golden/mock不外推原生OpenAI/Responses/Anthropic/Vertex实际服务 |
-| TOOL-01 | Agent/Skill/MCP 审批、幂等、取消、禁用 | 确定性业务合同回归通过 | W09：审批、幂等、取消/禁用与晚到结果；真实工具两轮回传仅覆盖已明确通过的三个网关模型 |
+| TOOL-01 | Agent/Skill/MCP 审批、幂等、取消、禁用 | 确定性合同与真实模型设备链路通过 | 确定性：审批、幂等、取消/禁用与晚到结果；2026-10-02 真实网关设备：半自动写入审批后执行、工具预算耗尽后总结成功、四模型多轮工作区工具与 activate_skill |
 | RAG-01 | 文档/记忆/会话/全局作用域、Rerank、FTS、引用 | 确定性业务与设备入口通过；质量指标待验 | W09：作用域/版本/FTS/引用合同与文件导航11项、来源切换2项；未做真实Embedding/Rerank或标注召回率评测 |
 | KG-01 | 全局/文档图谱、列表替代和错误保留 | 确定性业务与无障碍入口回归通过 | W09：文档选择、缓存隔离、错误保留与列表替代；真实模型图谱质量未外推 |
 | BACKUP-01 | 加密手动/WebDAV 备份恢复 | 确定性与设备往返/中断通过 | W09：加密/坏包/空间/文件偏好一致性，真实SAF/relay两次预期进程死亡；恢复工作区能进入备份读取链 |

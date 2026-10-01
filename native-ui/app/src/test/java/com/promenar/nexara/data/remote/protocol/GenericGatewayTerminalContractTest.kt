@@ -60,6 +60,36 @@ class GenericGatewayTerminalContractTest {
         assertThat(runCatching { protocol(incomplete).sendPromptSync(request()) }.exceptionOrNull()).isNotNull()
     }
 
+    @Test
+    fun `Gemini 模型经兼容端点只发送 function 工具且无工具时不发送 tools`() = runBlocking {
+        val bodies = mutableListOf<String>()
+        val captured = GenericOpenAICompatProtocol(
+            baseUrl = "http://127.0.0.1:1337/v1/chat/completions",
+            apiKey = "",
+            model = "newapi/gemini-3.8-flash",
+            httpClient = HttpClient(MockEngine { request ->
+                bodies += (request.body as io.ktor.http.content.OutgoingContent.ByteArrayContent).bytes().decodeToString()
+                respond(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"42\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType, "text/event-stream"),
+                )
+            }),
+        )
+        val tool = ProtocolTool(function = ProtocolToolFunction("calculator", "calc", "{\"type\":\"object\"}"))
+
+        captured.sendPrompt(
+            PromptRequest(listOf(ProtocolMessage("user", "x")), "newapi/gemini-3.8-flash", tools = listOf(tool), enableGeminiSearch = true),
+        ).toList()
+        captured.sendPrompt(
+            PromptRequest(listOf(ProtocolMessage("user", "x")), "newapi/gemini-3.8-flash", enableGeminiSearch = true),
+        ).toList()
+
+        assertThat(bodies[0]).doesNotContain("googleSearchRetrieval")
+        assertThat(bodies[0]).contains("\"name\":\"calculator\"")
+        assertThat(bodies[1]).doesNotContain("\"tools\"")
+    }
+
     private fun request() = PromptRequest(listOf(ProtocolMessage("user", "synthetic")), "fixture-model")
     private fun protocol(body: String) = GenericOpenAICompatProtocol(
         baseUrl = "http://127.0.0.1:1337/v1/chat/completions",

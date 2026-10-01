@@ -14,6 +14,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 真实网关 Agent 端到端与 Gemini 工具请求修复（2026-10-02）
+
+- **Gemini 兼容请求修复**：OpenAI 兼容协议不再向 `tools` 注入 Vertex 原生的 `{"googleSearchRetrieval":{}}`；该条目会被兼容网关以 400 拒绝，导致 Gemini 模型在默认会话（Gemini 搜索开关默认开启）下无法对话或调用工具。Gemini 原生搜索仍由 Vertex 协议发送。
+- **调试构建回环网关**：Provider 路由在可调试构建中允许 `127.0.0.1`/`localhost` 上的明文 HTTP，用于本机网关联调；正式版仍只接受 HTTPS，非回环明文始终拒绝。
+- **设备端到端测试**：新增 `AgentGatewayEndToEndDeviceTest`/`AgentGatewayControlDeviceTest`，经 ChatViewModel、生成协调器、工具执行与工作区的完整链路验证多步文件任务、技能激活、半自动审批与工具预算收尾；仅在 `nexaraLocalGateway=true` 时运行。
+
 ### Agent Skills 技能包（2026-10-02）
 
 - 新增 SKILL.md 格式技能包（ADR-022）：设置“技能”页的“技能包”标签支持导入 `.zip` / `SKILL.md`、应用内新建与编辑、启用开关与删除；同名导入需确认替换。

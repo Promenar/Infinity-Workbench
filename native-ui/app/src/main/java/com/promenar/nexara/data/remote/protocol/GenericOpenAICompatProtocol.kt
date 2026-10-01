@@ -328,12 +328,11 @@ class GenericOpenAICompatProtocol(
                 put("stream_options", buildJsonObject { put("include_usage", true) })
             }
 
-            val isGemini = (request.model.ifEmpty { this@GenericOpenAICompatProtocol.model }).contains("gemini", ignoreCase = true)
-            val shouldAddGeminiSearch = isGemini && request.enableGeminiSearch != false
-
-            if ((request.tools != null && request.tools.isNotEmpty()) || shouldAddGeminiSearch) {
-                val toolsArray = buildJsonArray {
-                    request.tools?.forEach { tool ->
+            // OpenAI 兼容端点只接受 function 工具；Gemini 原生 googleSearchRetrieval 仅由 VertexAIProtocol 发送，
+            // 注入到兼容请求会被网关以 400 拒绝。
+            if (request.tools != null && request.tools.isNotEmpty()) {
+                put("tools", buildJsonArray {
+                    request.tools.forEach { tool ->
                         add(buildJsonObject {
                             put("type", tool.type)
                             put("function", buildJsonObject {
@@ -343,16 +342,8 @@ class GenericOpenAICompatProtocol(
                             })
                         })
                     }
-                    if (shouldAddGeminiSearch) {
-                        add(buildJsonObject {
-                            put("googleSearchRetrieval", buildJsonObject {})
-                        })
-                    }
-                }
-                put("tools", toolsArray)
-                if (request.tools != null && request.tools.isNotEmpty()) {
-                    put("tool_choice", "auto")
-                }
+                })
+                put("tool_choice", "auto")
             }
         }
 

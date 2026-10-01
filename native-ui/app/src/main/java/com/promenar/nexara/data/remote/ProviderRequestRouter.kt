@@ -67,14 +67,21 @@ class DefaultProviderRequestRouter(
     private val clientFactory: (UnifiedProviderConfig) -> UnifiedLlmClient = { config ->
         UnifiedLlmClient(providerConfigResolver = { config })
     },
+    /** 仅可调试构建开启：允许回环地址上的明文 HTTP，用于本机网关联调；正式版始终只接受 HTTPS。 */
+    private val allowLoopbackHttp: Boolean = false,
 ) : ProviderRequestRouter {
 
-    constructor(providerManager: ProviderManager, middlewares: List<LlmMiddleware> = emptyList()) : this(
+    constructor(
+        providerManager: ProviderManager,
+        middlewares: List<LlmMiddleware> = emptyList(),
+        allowLoopbackHttp: Boolean = false,
+    ) : this(
         modelResolver = { id -> providerManager.providerModels.value.firstOrNull { it.id == id } },
         providerResolver = { id -> providerManager.providers.value.firstOrNull { it.id == id } },
         configResolver = providerManager::getProviderConfig,
         unsupportedPersistedProtocolResolver = providerManager::isPersistedProtocolUnsupported,
         clientFactory = { config -> UnifiedLlmClient({ config }, middlewares) },
+        allowLoopbackHttp = allowLoopbackHttp,
     )
 
     override fun resolve(modelId: String): ProviderResolution {
@@ -187,7 +194,13 @@ class DefaultProviderRequestRouter(
 
     private fun isSecureCloudEndpoint(value: String): Boolean = runCatching {
         val uri = URI(value)
-        uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
+        if (uri.host.isNullOrBlank()) return@runCatching false
+        uri.scheme.equals("https", ignoreCase = true) ||
+            allowLoopbackHttp && uri.scheme.equals("http", ignoreCase = true) && uri.host in LOOPBACK_HOSTS
     }.getOrDefault(false)
+
+    private companion object {
+        val LOOPBACK_HOSTS = setOf("127.0.0.1", "localhost", "::1", "[::1]")
+    }
 
 }

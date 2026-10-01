@@ -102,6 +102,24 @@ class ProviderRequestRouterTest {
     }
 
     @Test
+    fun `回环明文仅在显式开启调试例外时放行且非回环明文始终拒绝`() {
+        seed("loop", "model", "key", baseUrl = "http://127.0.0.1:1337/v1")
+        seed("lan", "model", "key", baseUrl = "http://192.168.1.10:1337/v1")
+        val debugRouter = DefaultProviderRequestRouter(
+            modelResolver = models::get,
+            providerResolver = providers::get,
+            configResolver = configs::get,
+            clientFactory = { config -> UnifiedLlmClient(providerConfigResolver = { config }) },
+            allowLoopbackHttp = true,
+        )
+
+        assertFailure("loop::model", ProviderResolutionError.BASE_URL_INVALID)
+        assertThat(debugRouter.resolve("loop::model")).isInstanceOf(ProviderResolution.Success::class.java)
+        assertThat((debugRouter.resolve("lan::model") as ProviderResolution.Failure).reason)
+            .isEqualTo(ProviderResolutionError.BASE_URL_INVALID)
+    }
+
+    @Test
     fun `云端非 HTTPS endpoint 在网络前失败`() {
         seed("p", "model", "key", baseUrl = "http://insecure.invalid")
 
