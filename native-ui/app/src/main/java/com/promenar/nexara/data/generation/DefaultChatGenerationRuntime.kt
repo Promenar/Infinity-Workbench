@@ -128,6 +128,7 @@ internal class DefaultChatGenerationRuntime(
     private val sessionManager: SessionManager,
     private val contentStrategy: ChatGenerationContentStrategy,
     private val ui: GenerationUiPort,
+    private val skillCatalog: () -> List<com.promenar.nexara.data.skills.AgentSkillMetadata> = { emptyList() },
 ) : ChatGenerationRuntime {
     private var preparedRoute: ChatProviderRoute? = null
     private var preparedContext: ContextBuilderResult? = null
@@ -183,8 +184,12 @@ internal class DefaultChatGenerationRuntime(
             routeGate.prepareWithRoute(model) { route ->
                 // Vertex 的多轮函数调用要求 thought signature 原样回传；夹具闭环前保持能力关闭。
                 routeTools = if (route.supportsToolCalls) contentStrategy.buildTools(session) else emptyList()
+                val toolNames = routeTools.mapTo(linkedSetOf()) { it.function.name }
                 contextBuilder.buildContext(
-                    params.copy(availableToolNames = routeTools.mapTo(linkedSetOf()) { it.function.name }),
+                    params.copy(
+                        availableToolNames = toolNames,
+                        availableSkills = if (ACTIVATE_SKILL_TOOL in toolNames) skillCatalog() else emptyList(),
+                    ),
                 )
             }
         } catch (cancelled: CancellationException) {
@@ -830,6 +835,7 @@ internal class DefaultChatGenerationRuntime(
 
     private companion object {
         const val LOOP_LIMIT_KEY = "loop_limit"
+        const val ACTIVATE_SKILL_TOOL = "activate_skill"
         const val MIN_OVERFLOW_BATCH = 4
         const val FINAL_ANSWER_INSTRUCTION = "\n\n## Tool Budget Exhausted\n" +
             "The tool budget for this request is used up. Do NOT call any tool. " +

@@ -863,7 +863,7 @@
     <string name="skills_loop_limit_desc">每次请求的最大工具调用轮次（1–100）。达到后助手停止调用工具并总结进度。</string>
     <string name="skills_warning_unlimited">无限循环模式已启用，可能导致过高的 API 费用。</string>
     <string name="skills_tab_preset">预设</string>
-    <string name="skills_tab_user">用户</string>
+    <string name="skills_tab_user">技能包</string>
     <string name="skills_tab_mcp">MCP</string>
     <string name="skills_add_custom">添加自定义技能</string>
     <string name="skills_add_mcp">添加 MCP 服务器</string>
@@ -920,7 +920,6 @@
     <string name="skills_configure">配置</string>
     <string name="skills_edit_skill">编辑技能配置</string>
     <string name="skills_edit_custom">编辑自定义技能</string>
-    <string name="skills_user_empty">暂无自定义技能\n点击下方按钮创建你的第一个工具</string>
     <string name="skills_mcp_empty">暂无 MCP 服务器\n通过 Model Context Protocol 扩展 Agent 能力</string>
     <string name="search_engine_select">选择搜索引擎</string>
     <string name="search_engine_tavily">Tavily AI (深度搜索)</string>
@@ -1521,4 +1520,23 @@
     <string name="skill_move_file_desc">移动或重命名工作区文件与目录</string>
     <string name="skill_delete_file">删除文件</string>
     <string name="skill_delete_file_desc">将工作区文件与目录移入回收站</string>
+    <string name="agent_skills_intro">技能包是可复用的任务指令（SKILL.md）。启用后，助手只在任务与技能描述相符时加载其指令与参考文件；技能包不会执行代码。</string>
+    <string name="agent_skills_empty">尚未安装技能包。可导入 .zip 或 SKILL.md，或新建一个。</string>
+    <string name="agent_skills_import">导入</string>
+    <string name="agent_skills_create">新建技能</string>
+    <string name="agent_skills_edit">编辑技能</string>
+    <string name="agent_skills_name_hint">名称</string>
+    <string name="agent_skills_name_rule">仅小写字母、数字与单个连字符，最多 64 个字符</string>
+    <string name="agent_skills_description_hint">描述：做什么、何时使用</string>
+    <string name="agent_skills_body_hint">指令（Markdown）</string>
+    <string name="agent_skills_conflict_title">替换已有技能？</string>
+    <string name="agent_skills_conflict_message">已安装名为 %1$s 的技能，替换后将覆盖其现有文件。</string>
+    <string name="agent_skills_replace">替换</string>
+    <string name="agent_skills_import_failed">技能安装失败：%1$s</string>
+    <string name="agent_skills_delete_title">删除技能 %1$s？</string>
+    <string name="agent_skills_legacy_header">旧版自定义工具定义（不会执行）</string>
+    <string name="agent_skills_allowed_tools">声明的工具：%1$s（仅展示，不做限制）</string>
+    <plurals name="agent_skills_files_count">
+        <item quantity="other">%d 个附带文件</item>
+    </plurals>
 </resources>

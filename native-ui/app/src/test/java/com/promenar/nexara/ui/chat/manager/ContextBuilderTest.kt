@@ -252,6 +252,21 @@ class ContextBuilderTest {
     }
 
     @Test
+    fun skillCatalogAppearsAfterToolGuidance() = testScope.runTest {
+        val prompt = ContextBuilder().buildContext(
+            ContextBuilderParams(
+                "s1", "hi", assistantMsgId = "m1",
+                session = Session(id = "s1", agentId = "a1"),
+                availableToolNames = setOf("activate_skill", "read_skill_file"),
+                availableSkills = listOf(com.promenar.nexara.data.skills.AgentSkillMetadata("weekly-report", "Write weekly reports")),
+            ),
+        ).finalSystemPrompt
+
+        assertThat(prompt).contains("- weekly-report: Write weekly reports")
+        assertThat(prompt.indexOf("## Skills")).isGreaterThan(prompt.indexOf("## Tool Use"))
+    }
+
+    @Test
     fun retrievedMaterialIsFencedAsDataNotInstructions() = testScope.runTest {
         val webSearchProvider = object : WebSearchProvider {
             override suspend fun search(query: String) =

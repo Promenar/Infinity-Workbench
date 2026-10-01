@@ -858,7 +858,7 @@
     <string name="skills_loop_limit_desc">Maximum tool-calling rounds per request (1–100). When reached, the assistant stops calling tools and summarizes its progress.</string>
     <string name="skills_warning_unlimited">Infinite loop mode enabled. May cause excessive API costs.</string>
     <string name="skills_tab_preset">Preset</string>
-    <string name="skills_tab_user">User</string>
+    <string name="skills_tab_user">Skill Packs</string>
     <string name="skills_tab_mcp">MCP</string>
     <string name="skills_add_custom">Add Custom Skill</string>
     <string name="skills_add_mcp">Add MCP Server</string>
@@ -914,7 +914,6 @@
     <string name="skill_drop_plan_desc">Cancel or drop current execution plan</string>
     <string name="skills_configure">Configure</string>
     <string name="skills_edit_skill">Edit Skill Config</string>
-    <string name="skills_user_empty">No custom skills yet.\nTap the button below to create your first tool.</string>
     <string name="skills_mcp_empty">No MCP servers yet.\nExtend agent capabilities via Model Context Protocol.</string>
     <string name="skills_edit_custom">Edit Custom Skill</string>
     <string name="search_engine_select">Select Search Engine</string>
@@ -1521,4 +1520,24 @@
     <string name="skill_move_file_desc">Move or rename workspace files and folders</string>
     <string name="skill_delete_file">Delete File</string>
     <string name="skill_delete_file_desc">Move workspace files and folders to the recycle bin</string>
+    <string name="agent_skills_intro">Skill packs are reusable task instructions (SKILL.md). When enabled, the assistant loads a skill\'s instructions and reference files only when a task matches it. Skill packs never run code.</string>
+    <string name="agent_skills_empty">No skill packs yet. Import a .zip or SKILL.md, or create one.</string>
+    <string name="agent_skills_import">Import</string>
+    <string name="agent_skills_create">New skill</string>
+    <string name="agent_skills_edit">Edit skill</string>
+    <string name="agent_skills_name_hint">Name</string>
+    <string name="agent_skills_name_rule">Lowercase letters, digits and single hyphens, up to 64 characters</string>
+    <string name="agent_skills_description_hint">Description: what it does and when to use it</string>
+    <string name="agent_skills_body_hint">Instructions (Markdown)</string>
+    <string name="agent_skills_conflict_title">Replace existing skill?</string>
+    <string name="agent_skills_conflict_message">A skill named %1$s is already installed. Replacing it overwrites its current files.</string>
+    <string name="agent_skills_replace">Replace</string>
+    <string name="agent_skills_import_failed">Could not install the skill: %1$s</string>
+    <string name="agent_skills_delete_title">Delete skill %1$s?</string>
+    <string name="agent_skills_legacy_header">Legacy custom tool definitions (never executed)</string>
+    <string name="agent_skills_allowed_tools">Declared tools: %1$s (shown only, not enforced)</string>
+    <plurals name="agent_skills_files_count">
+        <item quantity="one">%d bundled file</item>
+        <item quantity="other">%d bundled files</item>
+    </plurals>
 </resources>

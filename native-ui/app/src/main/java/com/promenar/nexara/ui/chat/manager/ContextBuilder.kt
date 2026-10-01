@@ -34,6 +34,8 @@ data class ContextBuilderParams(
     val agentRetrievalConfig: AgentRetrievalConfig? = null,
     /** 本轮实际广告给模型的工具名；null 表示调用方未提供，按会话开关输出通用工具说明。 */
     val availableToolNames: Set<String>? = null,
+    /** 已启用且可通过 activate_skill 加载的技能（ADR-022）。 */
+    val availableSkills: List<com.promenar.nexara.data.skills.AgentSkillMetadata> = emptyList(),
 )
 
 interface WebSearchProvider {
@@ -314,6 +316,12 @@ class ContextBuilder(
         if (toolGuidance.isNotEmpty()) {
             sb.appendLine()
             sb.append(toolGuidance)
+        }
+
+        // 3.1 技能目录：只给出名称与描述，正文由 activate_skill 按需加载。
+        SystemPromptSections.skillCatalog(params.availableSkills).takeIf(String::isNotEmpty)?.let {
+            sb.appendLine()
+            sb.append(it)
         }
 
         // 4. 任务计划

@@ -451,6 +451,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             skillRegistry = skillRegistry,
             toolResolver = sessionToolResolver,
             presentationStore = generationPresentationStore,
+            skillCatalog = { agentSkillStore.enabledSkills() },
         )
         com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
             applicationScope = generationScope,
@@ -589,9 +590,22 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         McpSkillRegistry(skillRepository as SkillRepository, httpClient, generationScope)
     }
 
+    /** Agent Skills 指令包存储（ADR-022）。 */
+    val agentSkillStore: com.promenar.nexara.data.skills.AgentSkillStore by lazy {
+        com.promenar.nexara.data.skills.AgentSkillStore(
+            File(filesDir, "agent_skills"),
+            getSharedPreferences("nexara_settings", MODE_PRIVATE),
+        )
+    }
+
     val skillRegistry: SkillRegistry by lazy {
         ModularSkillRegistry(
-            listOf(presetSkillRegistry, userSkillRegistry, mcpSkillRegistry)
+            listOf(
+                presetSkillRegistry,
+                com.promenar.nexara.ui.chat.manager.skills.AgentSkillToolRegistry(agentSkillStore),
+                userSkillRegistry,
+                mcpSkillRegistry,
+            )
         )
     }
 

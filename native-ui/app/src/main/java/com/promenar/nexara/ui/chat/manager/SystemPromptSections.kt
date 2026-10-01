@@ -46,4 +46,27 @@ object SystemPromptSections {
             appendLine("- If the conversation is resumed, check the active plan and continue from the first unfinished step.")
         }
     }
+
+    private const val MAX_LISTED_SKILLS = 50
+    private const val MAX_SKILL_CATALOG_CHARS = 4000
+
+    fun skillCatalog(skills: List<com.promenar.nexara.data.skills.AgentSkillMetadata>): String {
+        if (skills.isEmpty()) return ""
+        return buildString {
+            appendLine("## Skills")
+            appendLine("The user installed the skills below. When a request matches a skill's description, call `activate_skill` with its name before starting and follow the returned instructions. Bundled files can be read with `read_skill_file`.")
+            var used = 0
+            var omitted = 0
+            skills.sortedBy { it.name }.forEachIndexed { index, skill ->
+                val line = "- ${skill.name}: ${skill.description.replace('\n', ' ')}"
+                if (index >= MAX_LISTED_SKILLS || used + line.length > MAX_SKILL_CATALOG_CHARS) {
+                    omitted++
+                } else {
+                    appendLine(line)
+                    used += line.length
+                }
+            }
+            if (omitted > 0) appendLine("- … $omitted more skills are installed; ask the user if none of the above fits.")
+        }
+    }
 }

@@ -38,6 +38,7 @@ internal class DefaultChatGenerationRunnerFactory(
     private val skillRegistry: SkillRegistry?,
     private val toolResolver: SessionToolResolver,
     private val presentationStore: GenerationPresentationStore,
+    private val skillCatalog: () -> List<com.promenar.nexara.data.skills.AgentSkillMetadata> = { emptyList() },
 ) : GenerationRunnerFactory {
     override fun create(request: GenerationRequest, taskId: String): GenerationRunner {
         val contentStrategy = DefaultChatGenerationContentStrategy(settings, skillRegistry, toolResolver)
@@ -60,6 +61,7 @@ internal class DefaultChatGenerationRunnerFactory(
             sessionManager = sessionManager,
             contentStrategy = contentStrategy,
             ui = presentationStore.port(request.sessionId, taskId),
+            skillCatalog = skillCatalog,
         )
         return ChatGenerationRunner(runtime)
     }

@@ -836,6 +836,47 @@ fun chatErrorLargeFontReleasePreview() {
 
 @PreviewTest
 @Preview(
+    name = "Agent skill packs Chinese",
+    widthDp = 412,
+    heightDp = 640,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun agentSkillPacksReleasePreview() {
+    ReleasePreviewSurface {
+        Box(modifier = Modifier.padding(16.dp)) {
+            com.promenar.nexara.ui.settings.AgentSkillsSection(
+                skills = listOf(
+                    com.promenar.nexara.data.skills.InstalledAgentSkill(
+                        com.promenar.nexara.data.skills.AgentSkillMetadata(
+                            "release-notes",
+                            "根据提交记录与变更文件撰写结构化发行说明，适用于版本发布前整理。",
+                        ),
+                        files = listOf("templates/notes.md", "reference/style.md"),
+                        enabled = true,
+                    ),
+                    com.promenar.nexara.data.skills.InstalledAgentSkill(
+                        com.promenar.nexara.data.skills.AgentSkillMetadata(
+                            "weekly-report",
+                            "把工作区中的会议记录整理成周报。",
+                        ),
+                        files = emptyList(),
+                        enabled = false,
+                    ),
+                ),
+                onToggle = { _, _ -> },
+                onOpen = {},
+                onDelete = {},
+                onImport = {},
+                onCreate = {},
+            )
+        }
+    }
+}
+
+@PreviewTest
+@Preview(
     name = "Chat approval write preview Chinese",
     widthDp = 412,
     heightDp = 520,

@@ -85,6 +85,7 @@ graph TD
 - **ADR-019 (2026-07-13)**: **工作区文件、派生索引与删除恢复采用事务候选切换** — 重索引失败保留旧结果；永久删除统一清理派生数据；稳定 tombstone 与持久队列覆盖进程死亡恢复。✅ 已实施，详见 [ADR-019](./ADR/ADR-019-transactional-workspace-indexing.md)。
 - **ADR-020 (2026-07-18)**: **分层模型元数据注册中心** — 采用逐字段来源优先级、精确 ID、离线目录、三态能力与用户覆盖迁移；推理能力和 Chat endpoint 兼容性保持独立。✅ 已实施，当前候选真实 Provider 复验仍为 PENDING，详见 [ADR-020](./ADR/ADR-020-layered-model-metadata-registry.md)。
 - **ADR-021 (2026-07-20)**: **会话完整文档上下文与消息分支** — TXT/Markdown 以持久快照完整进入 Prompt，路由后执行预算硬门禁；导出可回传，重试不丢旧回复，稳定消息可创建独立分支。✅ 已实施，详见 [ADR-021](./ADR/ADR-021-chat-full-context-documents-and-branching.md)。
+- **ADR-022 (2026-10-02)**: **Agent Skills 指令包** — SKILL.md 目录格式存于应用私有目录，ZIP/Markdown 导入带路径与容量门禁；System Prompt 只列名称与描述，`activate_skill`/`read_skill_file` 按需加载正文与附带文件；不执行脚本、`allowed-tools` 首版仅展示。✅ 已实施（首版），详见 [ADR-022](./ADR/ADR-022-agent-skills.md)。
 
 ### 新增关键组件 (2026-05-18 移植 & 调试桥落地)
 - **UnifiedLlmClient**: 统一 LLM 调用入口，整合中间件链 + ToolCallLifecycleHandler，自动路由 Protocol。

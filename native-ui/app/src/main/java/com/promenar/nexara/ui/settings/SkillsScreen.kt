@@ -82,11 +82,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSlider
+
+/** 技能编辑器的输入；name 为 null 表示新建。 */
+private data class AgentSkillEditorState(
+    val name: String?,
+    val description: String,
+    val body: String,
+    val allowedTools: List<String>,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,6 +104,15 @@ fun SkillsScreen(
 ) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
+    val agentSkillsViewModel: AgentSkillsViewModel =
+        viewModel(factory = AgentSkillsViewModel.factory(context.applicationContext as android.app.Application))
+    val agentSkills by agentSkillsViewModel.skills.collectAsState()
+    val agentSkillEvent by agentSkillsViewModel.event.collectAsState()
+    var agentSkillEditor by remember { mutableStateOf<AgentSkillEditorState?>(null) }
+    val agentSkillScope = androidx.compose.runtime.rememberCoroutineScope()
+    val importSkillLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let { agentSkillsViewModel.import(it) } }
 
     val skillIcons = remember {
         mapOf(
@@ -114,7 +132,11 @@ fun SkillsScreen(
             "initialize_plan" to Icons.Rounded.AccountTree,
             "update_plan" to Icons.Rounded.Edit,
             "get_plan" to Icons.Rounded.Visibility,
-            "drop_plan" to Icons.Rounded.Cancel
+            "drop_plan" to Icons.Rounded.Cancel,
+            "create_file" to Icons.Rounded.Add,
+            "create_directory" to Icons.Rounded.Folder,
+            "move_file" to Icons.Rounded.Sync,
+            "delete_file" to Icons.Rounded.Delete,
         )
     }
     val presetSkills by viewModel.skills.collectAsState()
@@ -213,53 +235,58 @@ fun SkillsScreen(
                     }
                 }
                 1 -> {
-                    Text(
-                        stringResource(R.string.sheet_tool_custom_unsandboxed),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 12.dp),
-                    )
-                    userSkills.forEach { skill ->
-                        UserSkillItem(
-                            id = skill.id,
-                            name = skill.name,
-                            description = skill.description,
-                            enabled = skill.enabled,
-                            icon = Icons.Rounded.Code,
-                            onToggle = { viewModel.toggleSkill(skill.id) },
-                            onEdit = {
-                                selectedSkillForEdit = skill.id
-                                showCreateSkill = true
-                            },
-                            onDelete = { viewModel.deleteCustomSkill(skill.id) }
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    }
-
-                    if (userSkills.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                stringResource(R.string.skills_user_empty),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            selectedSkillForEdit = null
-                            showCreateSkill = true
+                    AgentSkillsSection(
+                        skills = agentSkills,
+                        onToggle = { name, enabled -> agentSkillsViewModel.setEnabled(name, enabled) },
+                        onOpen = { name ->
+                            agentSkillScope.launch {
+                                val document = agentSkillsViewModel.loadDocument(name) ?: return@launch
+                                agentSkillEditor = AgentSkillEditorState(
+                                    name = name,
+                                    description = document.metadata.description,
+                                    body = document.body,
+                                    allowedTools = document.metadata.allowedTools,
+                                )
+                            }
                         },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.skills_add_custom))
+                        onDelete = agentSkillsViewModel::delete,
+                        onImport = {
+                            importSkillLauncher.launch(
+                                arrayOf("application/zip", "text/markdown", "text/plain", "application/octet-stream"),
+                            )
+                        },
+                        onCreate = { agentSkillEditor = AgentSkillEditorState(null, "", "", emptyList()) },
+                    )
+
+                    if (userSkills.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text(
+                            stringResource(R.string.agent_skills_legacy_header),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            stringResource(R.string.sheet_tool_custom_unsandboxed),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                        userSkills.forEach { skill ->
+                            UserSkillItem(
+                                id = skill.id,
+                                name = skill.name,
+                                description = skill.description,
+                                enabled = skill.enabled,
+                                icon = Icons.Rounded.Code,
+                                onToggle = { viewModel.toggleSkill(skill.id) },
+                                onEdit = {
+                                    selectedSkillForEdit = skill.id
+                                    showCreateSkill = true
+                                },
+                                onDelete = { viewModel.deleteCustomSkill(skill.id) }
+                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        }
                     }
                 }
                 2 -> {
@@ -428,6 +455,52 @@ fun SkillsScreen(
                 }
             }
         }
+    }
+
+    agentSkillEditor?.let { editor ->
+        AgentSkillEditorSheet(
+            initialName = editor.name,
+            initialDescription = editor.description,
+            initialBody = editor.body,
+            allowedTools = editor.allowedTools,
+            onDismiss = { agentSkillEditor = null },
+            onSave = { name, description, body ->
+                agentSkillsViewModel.save(editor.name, name, description, body)
+                agentSkillEditor = null
+            },
+        )
+    }
+
+    when (val event = agentSkillEvent) {
+        is AgentSkillEvent.Conflict -> androidx.compose.material3.AlertDialog(
+            onDismissRequest = agentSkillsViewModel::consumeEvent,
+            title = { Text(stringResource(R.string.agent_skills_conflict_title)) },
+            text = { Text(stringResource(R.string.agent_skills_conflict_message, event.name)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    agentSkillsViewModel.consumeEvent()
+                    event.retry()
+                }) { Text(stringResource(R.string.agent_skills_replace)) }
+            },
+            dismissButton = {
+                TextButton(onClick = agentSkillsViewModel::consumeEvent) {
+                    Text(stringResource(R.string.common_btn_cancel))
+                }
+            },
+        )
+        is AgentSkillEvent.Failed -> androidx.compose.material3.AlertDialog(
+            onDismissRequest = agentSkillsViewModel::consumeEvent,
+            text = { Text(stringResource(R.string.agent_skills_import_failed, event.message)) },
+            confirmButton = {
+                TextButton(onClick = agentSkillsViewModel::consumeEvent) {
+                    Text(stringResource(R.string.shared_btn_close))
+                }
+            },
+        )
+        is AgentSkillEvent.Installed -> androidx.compose.runtime.LaunchedEffect(event) {
+            agentSkillsViewModel.consumeEvent()
+        }
+        null -> Unit
     }
 
     if (showSearchConfig != null) {
