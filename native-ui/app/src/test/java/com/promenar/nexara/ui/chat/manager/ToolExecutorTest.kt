@@ -447,6 +447,7 @@ class ToolExecutorTest {
         val settings = mockk<SharedPreferences>()
         var enabledSkills = setOf("read_file")
         every { settings.getStringSet("enabled_skills", null) } answers { enabledSkills }
+        every { settings.getStringSet("known_builtin_skills", null) } returns setOf("read_file")
         val prepared = skill.toPreparedTool()
         val ledger = RecordingLedger()
         val executor = ToolExecutor(

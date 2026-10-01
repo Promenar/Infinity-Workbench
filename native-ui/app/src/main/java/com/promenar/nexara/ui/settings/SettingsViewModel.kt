@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.settings
 
 import android.app.Application
+import com.promenar.nexara.data.generation.BuiltinToolPreferences
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
@@ -631,8 +632,15 @@ class SettingsViewModel(
             SkillInfo("initialize_plan", app.getString(R.string.skill_initialize_plan), app.getString(R.string.skill_initialize_plan_desc), enabledSet?.contains("initialize_plan") ?: true),
             SkillInfo("update_plan", app.getString(R.string.skill_update_plan), app.getString(R.string.skill_update_plan_desc), enabledSet?.contains("update_plan") ?: true),
             SkillInfo("get_plan", app.getString(R.string.skill_get_plan), app.getString(R.string.skill_get_plan_desc), enabledSet?.contains("get_plan") ?: true),
-            SkillInfo("drop_plan", app.getString(R.string.skill_drop_plan), app.getString(R.string.skill_drop_plan_desc), enabledSet?.contains("drop_plan") ?: true)
-        )
+            SkillInfo("drop_plan", app.getString(R.string.skill_drop_plan), app.getString(R.string.skill_drop_plan_desc), enabledSet?.contains("drop_plan") ?: true),
+        ) + listOf(
+            Triple("create_file", R.string.skill_create_file, R.string.skill_create_file_desc),
+            Triple("create_directory", R.string.skill_create_directory, R.string.skill_create_directory_desc),
+            Triple("move_file", R.string.skill_move_file, R.string.skill_move_file_desc),
+            Triple("delete_file", R.string.skill_delete_file, R.string.skill_delete_file_desc),
+        ).map { (id, nameRes, descRes) ->
+            SkillInfo(id, app.getString(nameRes), app.getString(descRes), BuiltinToolPreferences.isEnabled(prefs, id))
+        }
     }
 
     private fun loadKnowledgeStats() {
@@ -744,7 +752,10 @@ class SettingsViewModel(
 
     private fun saveEnabledSkills(skills: List<SkillInfo>) {
         val enabled = skills.filter { it.enabled }.map { it.id }.toSet()
-        prefs.edit().putStringSet("enabled_skills", enabled).apply()
+        prefs.edit()
+            .putStringSet(BuiltinToolPreferences.ENABLED_KEY, enabled)
+            .putStringSet(BuiltinToolPreferences.KNOWN_KEY, skills.map { it.id }.toSet())
+            .apply()
     }
 
     // MCP Methods

@@ -415,6 +415,8 @@ internal class AndroidTransactionalBackupPreferenceStore(
                 "all_models",
                 "enabled_models",
                 "enabled_skills",
+                "known_builtin_skills",
+                "agent_skills_enabled",
                 "suppressed_provider_models",
             )
             typed("search", PreferenceValueType.BOOLEAN, "web_search_enabled")

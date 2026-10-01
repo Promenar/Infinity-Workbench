@@ -235,6 +235,7 @@ class ChatGenerationContentStrategyTest {
         var enabled = setOf("safe_alias")
         val settings = mockk<SharedPreferences>()
         every { settings.getStringSet(any(), any()) } answers { enabled }
+        every { settings.getStringSet(BuiltinToolPreferences.KNOWN_KEY, any()) } returns setOf("safe_alias")
         val registry = mockk<SkillRegistry>()
         val safeTool = ProtocolTool(
             function = ProtocolToolFunction(

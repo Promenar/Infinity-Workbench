@@ -14,7 +14,9 @@ import org.junit.Test
 
 class DefaultSessionToolResolverTest {
 
-    private val settings = mockk<SharedPreferences>(relaxed = true)
+    private val settings = mockk<SharedPreferences>(relaxed = true).also {
+        every { it.getStringSet(BuiltinToolPreferences.KNOWN_KEY, null) } returns null
+    }
     private val skillRegistry = mockk<SkillRegistry>(relaxed = true)
 
     private val safeReadTool = ProtocolTool(
@@ -101,6 +103,41 @@ class DefaultSessionToolResolverTest {
         val session = Session(id = "s1", agentId = "agent", activeSkillIds = emptyList())
 
         val resolved = resolver.resolve(session)
+        assertThat(resolved.map { it.runtimeToolId }).containsExactly("calculator")
+    }
+
+
+    @Test
+    fun `builtin tools unknown to a legacy enabled set default to enabled`() {
+        val createFile = ProtocolTool(
+            function = ProtocolToolFunction(name = "create_file", description = "Create", parameters = "{}"),
+            sourceId = "builtin",
+            runtimeToolId = "create_file",
+            risk = ToolRisk.FILE_WRITE,
+        )
+        every { skillRegistry.getAllTools(null) } returns listOf(safeReadTool, fileWriteTool, createFile)
+        every { settings.getStringSet("enabled_skills", null) } returns setOf("calculator")
+
+        val resolved = DefaultSessionToolResolver(settings, skillRegistry).resolve(Session(id = "s", agentId = "a"))
+
+        // file_write 在旧版设置中出现过且被关闭；create_file 是新工具，默认启用。
+        assertThat(resolved.map { it.runtimeToolId }).containsExactly("calculator", "create_file")
+    }
+
+    @Test
+    fun `tools listed as known but not enabled stay disabled`() {
+        val createFile = ProtocolTool(
+            function = ProtocolToolFunction(name = "create_file", description = "Create", parameters = "{}"),
+            sourceId = "builtin",
+            runtimeToolId = "create_file",
+            risk = ToolRisk.FILE_WRITE,
+        )
+        every { skillRegistry.getAllTools(null) } returns listOf(safeReadTool, createFile)
+        every { settings.getStringSet("enabled_skills", null) } returns setOf("calculator")
+        every { settings.getStringSet(BuiltinToolPreferences.KNOWN_KEY, null) } returns setOf("calculator", "create_file")
+
+        val resolved = DefaultSessionToolResolver(settings, skillRegistry).resolve(Session(id = "s", agentId = "a"))
+
         assertThat(resolved.map { it.runtimeToolId }).containsExactly("calculator")
     }
 

@@ -17,35 +17,16 @@ class DefaultSessionToolResolver(
     override fun resolve(session: Session): List<ProtocolTool> {
         if (!session.options.toolsEnabled) return emptyList()
         val allTools = skillRegistry?.getAllTools(null).orEmpty()
-        val configuredSkills = settings.getStringSet(ENABLED_SKILLS_KEY, null)?.toSet()
-        val enabledRuntimeIds = if (configuredSkills == null) {
-            allTools.filter { it.sourceId == "builtin" }
-                .mapTo(mutableSetOf()) { it.runtimeToolId.ifBlank { it.function.name } }
-        } else {
-            configuredSkills.mapTo(mutableSetOf()) { GLOBAL_SKILL_ALIASES[it] ?: it }
-        }
         return allTools.filter { tool ->
             when (tool.sourceId) {
                 // 内置工具只受全局启用状态约束；写入、删除、脚本等风险由会话执行模式统一审批。
                 // 会话 activeSkillIds 只选择自定义 Skill，其是否为空不得影响内置工具集合。
-                "builtin" -> tool.runtimeToolId.ifBlank { tool.function.name } in enabledRuntimeIds
+                "builtin" -> BuiltinToolPreferences.isEnabled(settings, tool.runtimeToolId.ifBlank { tool.function.name })
                 // 自定义 DB/script Skill 没有隔离执行器，当前版本只能编辑，不能广告或执行。
                 "custom" -> false
                 "mcp" -> tool.mcpServerId != null && tool.mcpServerId in session.activeMcpServerIds
                 else -> false
             }
         }
-    }
-
-    private companion object {
-        const val ENABLED_SKILLS_KEY = "enabled_skills"
-        val GLOBAL_SKILL_ALIASES = mapOf(
-            "file_read" to "read_file",
-            "file_write" to "write_file",
-            "file_list" to "list_files",
-            "file_search" to "search_files",
-            "file_diff" to "diff_file",
-            "file_patch" to "patch_file",
-        )
     }
 }

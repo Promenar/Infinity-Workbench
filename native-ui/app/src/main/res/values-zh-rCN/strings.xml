@@ -1513,4 +1513,12 @@
     <string name="chat_approval_preview_delete">移入回收站</string>
     <string name="chat_approval_preview_create_directory">新建目录</string>
     <string name="chat_approval_preview_script">执行脚本</string>
+    <string name="skill_create_file">新建文件</string>
+    <string name="skill_create_file_desc">在工作区新建文本文件，可附带初始内容</string>
+    <string name="skill_create_directory">新建目录</string>
+    <string name="skill_create_directory_desc">在工作区新建目录</string>
+    <string name="skill_move_file">移动 / 重命名</string>
+    <string name="skill_move_file_desc">移动或重命名工作区文件与目录</string>
+    <string name="skill_delete_file">删除文件</string>
+    <string name="skill_delete_file_desc">将工作区文件与目录移入回收站</string>
 </resources>

@@ -1513,4 +1513,12 @@
     <string name="chat_approval_preview_delete">Move to recycle bin</string>
     <string name="chat_approval_preview_create_directory">Create folder</string>
     <string name="chat_approval_preview_script">Run script</string>
+    <string name="skill_create_file">Create File</string>
+    <string name="skill_create_file_desc">Create a new text file in the workspace, optionally with content</string>
+    <string name="skill_create_directory">Create Folder</string>
+    <string name="skill_create_directory_desc">Create a new folder in the workspace</string>
+    <string name="skill_move_file">Move / Rename</string>
+    <string name="skill_move_file_desc">Move or rename workspace files and folders</string>
+    <string name="skill_delete_file">Delete File</string>
+    <string name="skill_delete_file_desc">Move workspace files and folders to the recycle bin</string>
 </resources>
