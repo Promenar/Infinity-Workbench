@@ -370,6 +370,8 @@ adb logcat -c
 
 run_test workspace-filesystem-contracts "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.repository.AndroidSecureWorkspaceFileOpsTest
+run_test workspace-creation-races "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.repository.AndroidSecureWorkspaceCreationRaceTest
 run_test recovery-snapshot-contracts "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.local.db.recovery.AndroidRecoverySnapshotStoreTest
 run_test dual-database-recovery "${APP_RUNNER}" \

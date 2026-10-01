@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026-10-01] Android FD 测试执行环境同步
+
+- 将五个依赖 Android 原生 FD 桥接的创建、竞态与回滚测试迁入真实设备套件，API31 minimum 与 API35/36 full 均执行；其余六个 JVM 场景保留。
+- 根符号链接替换精确核验 Android `O_NOFOLLOW` 返回 `ELOOP`，并保留外部零写入及数据保全断言；能力不支持直接失败，清理不遮盖首因。
+
 ## [Unreleased]
 
 ### 截图回归与质量门禁恢复（2026-10-01）
