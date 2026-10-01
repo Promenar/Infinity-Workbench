@@ -8,13 +8,14 @@ import com.promenar.nexara.domain.generation.GenerationPreparationOutcome
 import com.promenar.nexara.domain.generation.GenerationRequest
 import com.promenar.nexara.domain.generation.GenerationRunner
 import com.promenar.nexara.domain.generation.GenerationSnapshot
+import com.promenar.nexara.domain.generation.GenerationToolBudget
 import com.promenar.nexara.domain.generation.GenerationToolCall
 import com.promenar.nexara.domain.generation.GenerationToolDecision
 import com.promenar.nexara.domain.generation.GenerationTerminalStatus
 import com.promenar.nexara.domain.generation.CompletionReason
 import com.promenar.nexara.domain.generation.GenerationFailure
 import com.promenar.nexara.domain.generation.GenerationFailureCode
-import com.promenar.nexara.domain.generation.MAX_TOOL_CALLS_PER_GENERATION
+import com.promenar.nexara.data.remote.protocol.normalizeToolArguments
 import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -38,6 +39,16 @@ interface ChatGenerationRuntime {
         toolCalls: List<GenerationToolCall>,
     ): GenerationToolDecision
     suspend fun prepareContinuation(request: GenerationRequest): String? = null
+    /** 本次生成的工具轮次与调用预算。 */
+    fun toolBudget(request: GenerationRequest): GenerationToolBudget = GenerationToolBudget()
+    /** 预算耗尽时不执行本轮调用，为每个调用写入可回传给模型的失败结果。 */
+    suspend fun rejectToolCalls(
+        request: GenerationRequest,
+        toolCalls: List<GenerationToolCall>,
+        reason: String,
+    ) = Unit
+    /** 后续轮次只允许模型基于已有结果收尾；下一次 buildContext 起生效。 */
+    fun enterFinalAnswerMode(request: GenerationRequest) = Unit
     suspend fun postProcess(request: GenerationRequest, snapshot: GenerationSnapshot)
     suspend fun markTerminal(
         request: GenerationRequest,
@@ -180,6 +191,9 @@ class ChatGenerationRunner(
             }
             var attempt = 0
             var confirmedToolCallCount = 0
+            var toolRoundCount = 0
+            var finalAnswerMode = false
+            val budget = runtime.toolBudget(request)
             while (true) {
                 phase(GenerationPhase.CONNECTING)
                 val stream = runtime.stream(request, attempt)
@@ -187,7 +201,6 @@ class ChatGenerationRunner(
                 var streamingPhaseEmitted = false
                 val roundTools = linkedMapOf<String, GenerationToolCall>()
                 var completed: GenerationChunk.Completed? = null
-                val knownToolNames = runtime.knownToolNames(request)
                 stream.transformWhile { chunk ->
                     emit(chunk)
                     chunk !is GenerationChunk.Completed
@@ -245,17 +258,38 @@ class ChatGenerationRunner(
                     ))
                 val finalized = runtime.finalizeStream(request, snapshot)
                 if (finalized != snapshot) snapshot = persist(request, finalized, emit)
-                val effectiveTools = snapshot.toolCalls
-                validateCompletedRound(terminal, effectiveTools, knownToolNames)
+                validateCompletedRound(terminal, snapshot.toolCalls)
                 if (terminal.reason == CompletionReason.END_TURN) break
-                confirmedToolCallCount += effectiveTools.size
-                if (confirmedToolCallCount > MAX_TOOL_CALLS_PER_GENERATION) {
-                    throw contractFailure(
-                        "Generation exceeded $MAX_TOOL_CALLS_PER_GENERATION confirmed tool calls",
-                    )
+                val normalizedTools = snapshot.toolCalls.map { it.copy(arguments = normalizeToolArguments(it.arguments)) }
+                if (normalizedTools != snapshot.toolCalls) {
+                    snapshot = persist(request, snapshot.copy(toolCalls = normalizedTools), emit)
                 }
-                phase(GenerationPhase.WAITING_APPROVAL)
-                when (runtime.handleTools(request, effectiveTools)) {
+                val effectiveTools = snapshot.toolCalls
+                toolRoundCount++
+                confirmedToolCallCount += effectiveTools.size
+                val exhausted = toolRoundCount > budget.maxRounds || confirmedToolCallCount > budget.maxCalls
+                if (finalAnswerMode || exhausted) {
+                    // 未知工具名由执行器回写可纠错结果；预算耗尽则拒绝本轮调用并只允许模型收尾。
+                    runtime.rejectToolCalls(request, effectiveTools, budgetExhaustedFeedback(budget))
+                    NexaraLogger.diagnostic(
+                        "generation.tool_budget_exhausted",
+                        mapOf(
+                            "sessionId" to request.sessionId,
+                            "rounds" to toolRoundCount.toString(),
+                            "calls" to confirmedToolCallCount.toString(),
+                        ),
+                    )
+                    if (finalAnswerMode) break
+                    finalAnswerMode = true
+                    runtime.enterFinalAnswerMode(request)
+                }
+                val decision = if (finalAnswerMode) {
+                    GenerationToolDecision.CONTINUE
+                } else {
+                    phase(GenerationPhase.WAITING_APPROVAL)
+                    runtime.handleTools(request, effectiveTools)
+                }
+                when (decision) {
                     GenerationToolDecision.CONTINUE -> {
                         attempt++
                         if (!flushRoundBoundaryWithRetry()) return
@@ -302,7 +336,8 @@ class ChatGenerationRunner(
                 }
             }
             snapshot.failure?.let { throw GenerationFailedException(it) }
-            check(snapshot.content.isNotBlank()) { "生成完成但未产生有效内容" }
+            // 经过工具轮次后模型可能以空正文结束，过程与结果已保存在此前消息与工具记录中。
+            check(snapshot.content.isNotBlank() || toolRoundCount > 0) { "生成完成但未产生有效内容" }
             phase(GenerationPhase.POST_PROCESSING)
             runtime.postProcess(request, snapshot)
             withContext(NonCancellable) {
@@ -370,10 +405,13 @@ class ChatGenerationRunner(
         return normalized
     }
 
+    private fun budgetExhaustedFeedback(budget: GenerationToolBudget): String =
+        "工具调用未执行：本次任务已达到工具预算上限（${budget.maxRounds} 轮 / ${budget.maxCalls} 次）。" +
+            "不要再调用工具，请基于已获得的结果总结已完成内容、当前状态与剩余待办，并告知用户可继续发送消息接续。"
+
     private fun validateCompletedRound(
         terminal: GenerationChunk.Completed,
         toolCalls: List<GenerationToolCall>,
-        knownToolNames: Set<String>,
     ) {
         val terminalIds = terminal.completedToolCallIds
         if (terminalIds.any(String::isBlank) || terminalIds.distinct().size != terminalIds.size) {
@@ -389,15 +427,16 @@ class ChatGenerationRunner(
                 if (toolCalls.isEmpty() || terminalIds != toolCalls.map { it.id }) {
                     throw contractFailure("Completed tool IDs do not exactly match streamed calls")
                 }
+                // 未知工具名属于模型可纠错错误，交由执行器回写结果；结构不完整仍失败关闭。
                 if (toolCalls.any { call ->
                         call.id.isBlank() ||
                             call.name.isBlank() ||
-                            call.name !in knownToolNames ||
-                            !runCatching { Json.parseToJsonElement(call.arguments) is JsonObject }
-                                .getOrDefault(false)
+                            !(call.arguments.isBlank() ||
+                                runCatching { Json.parseToJsonElement(call.arguments) is JsonObject }
+                                    .getOrDefault(false))
                     }
                 ) {
-                    throw contractFailure("Tool call is unknown, incomplete, or has non-object arguments")
+                    throw contractFailure("Tool call is incomplete or has non-object arguments")
                 }
             }
         }

@@ -855,8 +855,7 @@
     <string name="skills_title">Tool Management</string>
     <string name="skills_desc">Configure capabilities and external tool connections for your AI agents.</string>
     <string name="skills_loop_limit">Execution Loop Limit</string>
-    <string name="skills_loop_limit_desc">Maximum tool-calling iterations per request</string>
-    <string name="skills_unlimited">Infinity</string>
+    <string name="skills_loop_limit_desc">Maximum tool-calling rounds per request (1–100). When reached, the assistant stops calling tools and summarizes its progress.</string>
     <string name="skills_warning_unlimited">Infinite loop mode enabled. May cause excessive API costs.</string>
     <string name="skills_tab_preset">Preset</string>
     <string name="skills_tab_user">User</string>
@@ -1507,4 +1506,11 @@
     <string name="provider_models_capability_tools">Tool calling</string>
     <string name="provider_models_input_tokens">Max input: %1$s tokens</string>
     <string name="model_catalog_apply_failed">Catalog cached. Applying model metadata failed; tap to retry.</string>
+    <string name="chat_approval_preview_overwrite">Overwrite</string>
+    <string name="chat_approval_preview_create_file">Create file</string>
+    <string name="chat_approval_preview_edit">Edit</string>
+    <string name="chat_approval_preview_move">Move / rename</string>
+    <string name="chat_approval_preview_delete">Move to recycle bin</string>
+    <string name="chat_approval_preview_create_directory">Create folder</string>
+    <string name="chat_approval_preview_script">Run script</string>
 </resources>

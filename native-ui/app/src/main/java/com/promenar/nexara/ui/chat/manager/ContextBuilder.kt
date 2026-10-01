@@ -31,7 +31,9 @@ data class ContextBuilderParams(
     val onRagProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)? = null,
     val agentSystemPrompt: String? = null,
     val sessionCustomPrompt: String? = null,
-    val agentRetrievalConfig: AgentRetrievalConfig? = null
+    val agentRetrievalConfig: AgentRetrievalConfig? = null,
+    /** 本轮实际广告给模型的工具名；null 表示调用方未提供，按会话开关输出通用工具说明。 */
+    val availableToolNames: Set<String>? = null,
 )
 
 interface WebSearchProvider {
@@ -290,107 +292,87 @@ class ContextBuilder(
         activePlan: TaskState? = null
     ): String {
         val sb = StringBuilder()
-
         val session = params.session
 
-        // 1. System Time
-        val enableTimeInjection = session.options.enableTimeInjection
-        if (enableTimeInjection) {
-            val now = java.text.SimpleDateFormat(
-                "yyyy-MM-dd HH:mm:ss EEEE",
-                java.util.Locale.getDefault()
-            ).format(java.util.Date())
-            sb.appendLine("[System Time: $now]")
+        // 1. 身份：Agent 提示词优先，未配置时使用基础身份。
+        val agentPrompt = params.agentSystemPrompt?.takeIf(String::isNotBlank)
+        sb.appendLine(agentPrompt?.trim() ?: SystemPromptSections.DEFAULT_IDENTITY)
+
+        // 2. 会话级指令
+        val customPrompt = params.sessionCustomPrompt ?: session.customPrompt
+        if (!customPrompt.isNullOrBlank()) {
             sb.appendLine()
+            sb.appendLine("## Session Instructions")
+            sb.appendLine(customPrompt.trim())
         }
 
-        // 2. Tools Instructions
-        if (session.options.toolsEnabled) {
-            sb.appendLine("## Tool Usage Guidelines")
-            sb.appendLine()
-            sb.appendLine("You have access to function calling tools. Use them when you need real-time data, computation, file operations, or task planning.")
-            sb.appendLine()
-            sb.appendLine("### Calling Tools")
-            sb.appendLine("- Use the native function calling mechanism provided by this API. Your tool calls will be automatically intercepted and executed.")
-            sb.appendLine("- Each tool's parameters are defined by a JSON Schema. You MUST match the schema exactly — all required fields must be present with correct types.")
-            sb.appendLine("- Tool call arguments MUST be valid JSON objects. Do NOT nest or escape the JSON unnecessarily.")
-            sb.appendLine()
-            sb.appendLine("### Handling Errors")
-            sb.appendLine("- If a tool call returns an error, analyze the error message carefully. The most common causes are: missing required arguments, incorrect argument types, or malformed JSON.")
-            sb.appendLine("- When you receive an error, DO NOT give up. Instead: (1) identify the specific issue from the error message, (2) correct the arguments, (3) retry the tool with the corrected arguments.")
-            sb.appendLine("- You may retry a tool call up to 3 times with progressively corrected arguments before falling back to a text-only response.")
-            sb.appendLine()
-            sb.appendLine("### Important Constraints")
-            sb.appendLine("- When describing or listing available tools for the user, use plain text descriptions only. Do NOT emit any JSON or XML tool call formats in teaching/demonstration scenarios.")
-            sb.appendLine("- Only emit actual tool calls when you genuinely need to use the tool to fulfill the user's request.")
-            sb.appendLine()
+        // 3. 工具与工作区运行时契约
+        val toolGuidance = when (val names = params.availableToolNames) {
+            null -> if (session.options.toolsEnabled) SystemPromptSections.toolGuidance(emptySet(), generic = true) else ""
+            else -> if (names.isEmpty()) "" else SystemPromptSections.toolGuidance(names, generic = false)
         }
-        
-        // 3. Task Plan Context
+        if (toolGuidance.isNotEmpty()) {
+            sb.appendLine()
+            sb.append(toolGuidance)
+        }
+
+        // 4. 任务计划
         if (activePlan != null && activePlan.status !in listOf("idle", "dropped")) {
-            val economyMode = params.session.options.economyMode
-            if (economyMode) {
+            sb.appendLine()
+            if (params.session.options.economyMode) {
                 appendEconomyTaskContext(sb, activePlan)
             } else {
                 appendFullTaskContext(sb, activePlan)
             }
         }
 
-        // 4. Agent System Prompt
-        params.agentSystemPrompt?.let { prompt ->
-            if (prompt.isNotBlank()) {
-                sb.appendLine(prompt)
+        // 5. 外部检索数据：只作为资料，不作为指令。
+        val references = buildString {
+            if (ragContext.isNotBlank()) {
+                appendLine("### Retrieved Context")
+                appendLine(ragContext.trim())
+            } else if (ragReferences.isNotEmpty()) {
+                appendLine("### Retrieved Context")
+                ragReferences.forEach { ref -> appendLine("- [${ref.source}] ${ref.content.take(400)}") }
+            }
+            if (kgContext.isNotEmpty()) {
+                if (isNotEmpty()) appendLine()
+                appendLine("### Knowledge Graph Relations")
+                appendLine(kgContext.trim())
+            }
+            if (searchContext.isNotEmpty()) {
+                if (isNotEmpty()) appendLine()
+                appendLine("### Web Search Results")
+                appendLine(searchContext.trim())
             }
         }
-
-        // 5. Session Custom Prompt
-        val customPrompt = params.sessionCustomPrompt ?: session.customPrompt
-        if (!customPrompt.isNullOrBlank()) {
+        if (references.isNotEmpty()) {
             sb.appendLine()
-            sb.appendLine("## Session Instructions")
-            sb.appendLine(customPrompt)
-            sb.appendLine()
+            sb.appendLine("## Reference Material")
+            sb.appendLine(SystemPromptSections.DATA_BOUNDARY)
+            sb.appendLine("<reference_material>")
+            sb.append(references)
+            sb.appendLine("</reference_material>")
         }
 
-        // 6. RAG Context (Memory & Docs)
-        if (ragContext.isNotBlank()) {
+        // 6. 历史摘要
+        session.summary?.takeIf(String::isNotBlank)?.let { summary ->
             sb.appendLine()
-            sb.appendLine("## Retrieved Context")
-            sb.appendLine(ragContext)
-        } else if (ragReferences.isNotEmpty()) {
-            sb.appendLine()
-            sb.appendLine("## Retrieved Context")
-            ragReferences.forEach { ref ->
-                sb.appendLine("- [${ref.source}] ${ref.content.take(400)}")
-            }
+            sb.appendLine("## History Summary")
+            sb.appendLine("Earlier turns of this conversation were condensed into the summary below.")
+            sb.appendLine("<history_summary>")
+            sb.appendLine(summary.trim())
+            sb.appendLine("</history_summary>")
         }
 
-        // 7. Knowledge Graph Context
-        if (kgContext.isNotEmpty()) {
+        // 7. 易变环境信息放在末尾，减少对前缀缓存的破坏。
+        if (session.options.enableTimeInjection) {
+            val now = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm EEEE", java.util.Locale.US).format(java.util.Date())
             sb.appendLine()
-            sb.appendLine("## Knowledge Graph Relations")
-            sb.append(kgContext)
+            sb.appendLine("[System Time: $now (${java.util.TimeZone.getDefault().id})]")
         }
 
-        // 8. Web Search Results
-        if (searchContext.isNotEmpty()) {
-            sb.appendLine()
-            sb.appendLine("## Web Search Results")
-            sb.append(searchContext)
-        }
-
-        // 9. History Summary
-        session.summary?.let { summary ->
-            if (summary.isNotBlank()) {
-                sb.appendLine()
-                sb.appendLine("## History Summary")
-                sb.appendLine("<history_summary>")
-                sb.appendLine(summary)
-                sb.appendLine("</history_summary>")
-            }
-        }
-
-        return sb.toString()
+        return sb.toString().trimEnd() + "\n"
     }
 
     /** 完整任务树上下文（economyMode=false） */

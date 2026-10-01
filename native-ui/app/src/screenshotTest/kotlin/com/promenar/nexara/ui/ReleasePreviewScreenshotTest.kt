@@ -63,6 +63,9 @@ import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import com.promenar.nexara.domain.repository.RenameIndexTarget
 import com.promenar.nexara.onboarding.OnboardingState
 import com.promenar.nexara.onboarding.OnboardingStep
+import com.promenar.nexara.ui.chat.ApprovalCard
+import com.promenar.nexara.ui.chat.ApprovalDisplayCall
+import com.promenar.nexara.ui.chat.ApprovalPreview
 import com.promenar.nexara.ui.chat.ChatScreenActions
 import com.promenar.nexara.ui.chat.ChatScreenContent
 import com.promenar.nexara.ui.chat.ChatScreenState
@@ -828,6 +831,44 @@ fun chatErrorLargeFontReleasePreview() {
             ),
             actions = ChatScreenActions(),
         )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Chat approval write preview Chinese",
+    widthDp = 412,
+    heightDp = 520,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatApprovalWritePreviewReleasePreview() {
+    ReleasePreviewSurface {
+        Box(modifier = Modifier.padding(16.dp)) {
+            ApprovalCard(
+                toolName = "patch_file",
+                description = "执行模式：半自动",
+                calls = listOf(
+                    ApprovalDisplayCall(
+                        name = "patch_file",
+                        argumentsSummary = "{\"path\":\"/notes/plan.md\"}",
+                        riskLabel = "编辑",
+                        preview = ApprovalPreview.Preview(
+                            ApprovalPreview.Action.EDIT,
+                            "/notes/plan.md",
+                            "~ L3–4\n  + - [x] 完成工具预算收尾\n  + - [ ] 发布候选验证\n- L9–9",
+                        ),
+                    ),
+                    ApprovalDisplayCall(
+                        name = "delete_file",
+                        argumentsSummary = "{\"path\":\"/drafts/old.md\"}",
+                        riskLabel = "删除",
+                        preview = ApprovalPreview.Preview(ApprovalPreview.Action.DELETE, "/drafts/old.md", null),
+                    ),
+                ),
+            )
+        }
     }
 }
 

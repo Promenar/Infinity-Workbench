@@ -17,7 +17,6 @@ class ProtocolSyncTerminalContractTest {
     fun `OpenAI 与 Generic 同步响应只接受和工具调用一致的 finish reason`() = runBlocking {
         val valid = """{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":"","tool_calls":[{"id":"call","type":"function","function":{"name":"search","arguments":"{}"}}]}}]}"""
         val invalid = listOf(
-            """{"choices":[{"finish_reason":"stop","message":{"content":"ok","tool_calls":[{"id":"call","function":{"name":"search","arguments":"{}"}}]}}]}""",
             """{"choices":[{"finish_reason":"tool_calls","message":{"content":""}}]}""",
             """{"choices":[{"finish_reason":"future","message":{"content":"ok"}}]}""",
             """{"choices":[{"finish_reason":"tool_calls","message":{"content":"","tool_calls":[{"id":"","function":{"name":"search","arguments":"{}"}}]}}]}""",
@@ -32,6 +31,10 @@ class ProtocolSyncTerminalContractTest {
         ).forEach { factory ->
             val response = factory(valid).sendPromptSync(request())
             assertThat(response.toolCalls).containsExactly(ProtocolToolCall("call", "search", "{}"))
+            // 兼容层以 stop 结束但携带完整工具调用时按工具调用处理。
+            val stopWithTools = """{"choices":[{"finish_reason":"stop","message":{"content":"ok","tool_calls":[{"id":"call","function":{"name":"search","arguments":"{}"}}]}}]}"""
+            assertThat(factory(stopWithTools).sendPromptSync(request()).toolCalls)
+                .containsExactly(ProtocolToolCall("call", "search", "{}"))
             invalid.forEach { body ->
                 assertThat(runCatching { factory(body).sendPromptSync(request()) }.exceptionOrNull())
                     .isNotNull()
@@ -47,7 +50,6 @@ class ProtocolSyncTerminalContractTest {
             .containsExactly(ProtocolToolCall("toolu", "search", "{\"q\":\"x\"}"))
 
         val invalid = listOf(
-            """{"stop_reason":"end_turn","content":[{"type":"tool_use","id":"toolu","name":"search","input":{}}]}""",
             """{"stop_reason":"tool_use","content":[{"type":"text","text":"no tool"}]}""",
             """{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"","name":"search","input":{}}]}""",
             """{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"toolu","name":"","input":{}}]}""",

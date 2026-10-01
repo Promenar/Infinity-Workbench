@@ -39,7 +39,10 @@ import com.promenar.nexara.domain.generation.GenerationPreparationOutcome
 import com.promenar.nexara.domain.generation.GenerationRequest
 import com.promenar.nexara.domain.generation.GenerationSnapshot
 import com.promenar.nexara.domain.generation.GenerationTerminalStatus
+import com.promenar.nexara.domain.generation.DEFAULT_TOOL_ROUNDS_PER_GENERATION
+import com.promenar.nexara.domain.generation.GenerationToolBudget
 import com.promenar.nexara.domain.generation.GenerationToolCall
+import com.promenar.nexara.domain.generation.MAX_CONFIGURABLE_TOOL_ROUNDS
 import com.promenar.nexara.domain.generation.GenerationToolDecision
 import com.promenar.nexara.domain.repository.IAgentRepository
 import com.promenar.nexara.domain.usecase.AgentConfigResolver
@@ -131,6 +134,7 @@ internal class DefaultChatGenerationRuntime(
     private var preparedPrompt: PromptRequest? = null
     private var preparedTools: List<ProtocolTool> = emptyList()
     private var toolRounds = 0
+    private var finalAnswerMode = false
     private var currentAssistantMessageId: String? = null
     private var rollbackBaselineMessageIds: Set<String> = emptySet()
 
@@ -169,12 +173,20 @@ internal class DefaultChatGenerationRuntime(
                 )
                 ui.updateRagPhases { updateRagProgress(it, stage, percentage, detail) }
             },
-            agentSystemPrompt = agentConfig.systemPrompt,
+            agentSystemPrompt = agentConfig.systemPrompt.takeIf(String::isNotBlank)
+                ?: com.promenar.nexara.data.agent.PresetAgentPrompts.forAgentId(session.agentId),
             sessionCustomPrompt = session.customPrompt,
             agentRetrievalConfig = agentConfig.retrievalConfig,
         )
+        var routeTools: List<ProtocolTool> = emptyList()
         val preparation = try {
-            routeGate.prepare(model) { contextBuilder.buildContext(params) }
+            routeGate.prepareWithRoute(model) { route ->
+                // Vertex 的多轮函数调用要求 thought signature 原样回传；夹具闭环前保持能力关闭。
+                routeTools = if (route.supportsToolCalls) contentStrategy.buildTools(session) else emptyList()
+                contextBuilder.buildContext(
+                    params.copy(availableToolNames = routeTools.mapTo(linkedSetOf()) { it.function.name }),
+                )
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -205,8 +217,7 @@ internal class DefaultChatGenerationRuntime(
             messageManager.updateMessageContent(request.sessionId, assistantMessageId(request), "", it)
             messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
         }
-        // Vertex 的多轮函数调用要求 thought signature 原样回传；夹具闭环前保持能力关闭。
-        val tools = if (route.supportsToolCalls) contentStrategy.buildTools(session) else emptyList()
+        val tools = routeTools
         val inference = session.inferenceParams ?: InferenceParams(
             temperature = agentConfig.temperature,
             topP = agentConfig.topP,
@@ -215,10 +226,15 @@ internal class DefaultChatGenerationRuntime(
         preparedRoute = route
         preparedContext = context
         preparedTools = tools
+        val systemPrompt = if (finalAnswerMode) {
+            context.finalSystemPrompt + FINAL_ANSWER_INSTRUCTION
+        } else {
+            context.finalSystemPrompt
+        }
         val prompt = PromptRequest(
             messages = contentStrategy.buildProtocolMessages(
                 session,
-                context.finalSystemPrompt,
+                systemPrompt,
                 request.userMessageId,
                 setOfNotNull(request.assistantMessageIdToReplace),
             ),
@@ -236,6 +252,20 @@ internal class DefaultChatGenerationRuntime(
             stream = true,
             streamTimeout = (inference.streamTimeout ?: 120).toLong() * 1000,
         )
+        val compaction = PreparedPromptBudgetGate.compactToolResults(session, prompt, settings, route.modelId)
+        val budgetedPrompt = if (compaction != null && compaction.elidedCount > 0) {
+            NexaraLogger.diagnostic(
+                "generation.tool_results_compacted",
+                mapOf(
+                    "sessionId" to request.sessionId,
+                    "elided" to compaction.elidedCount.toString(),
+                    "estimatedTokens" to compaction.estimatedTokens.toString(),
+                ),
+            )
+            prompt.copy(messages = compaction.messages)
+        } else {
+            prompt
+        }
         val hasFullContextDocuments = request.userMessageId
             ?.let { id -> session.messages.firstOrNull { it.id == id } }
             ?.userDocuments
@@ -243,7 +273,7 @@ internal class DefaultChatGenerationRuntime(
             .not()
         val budgetDecision = PreparedPromptBudgetGate.evaluate(
             session,
-            prompt,
+            budgetedPrompt,
             settings,
             hasFullContextDocuments,
             route.modelId,
@@ -261,7 +291,7 @@ internal class DefaultChatGenerationRuntime(
             handleDocumentBudgetFailure(request, failure)
             return GenerationPreparationOutcome.Handled(failure)
         }
-        preparedPrompt = prompt
+        preparedPrompt = budgetedPrompt
         return GenerationPreparationOutcome.Ready
     }
 
@@ -382,10 +412,7 @@ internal class DefaultChatGenerationRuntime(
         val allowedIds = validInvocations
             .filterNot { it.first.id in pendingIds }
             .mapTo(linkedSetOf()) { it.first.id }
-        if (pendingIds.isEmpty()) {
-            val loopLimit = settings.getInt("loop_limit", 50)
-            check(toolRounds++ < loopLimit) { "工具循环达到上限 $loopLimit" }
-        }
+        if (pendingIds.isEmpty()) toolRounds++
         toolExecutor.executeTools(
             request.sessionId,
             assistantMessageId(request),
@@ -434,6 +461,29 @@ internal class DefaultChatGenerationRuntime(
             return GenerationToolDecision.WAIT_FOR_APPROVAL
         }
         return GenerationToolDecision.CONTINUE
+    }
+
+    override fun toolBudget(request: GenerationRequest): GenerationToolBudget = GenerationToolBudget(
+        maxRounds = settings.getInt(LOOP_LIMIT_KEY, DEFAULT_TOOL_ROUNDS_PER_GENERATION)
+            .coerceIn(1, MAX_CONFIGURABLE_TOOL_ROUNDS),
+    )
+
+    override suspend fun rejectToolCalls(
+        request: GenerationRequest,
+        toolCalls: List<GenerationToolCall>,
+        reason: String,
+    ) {
+        messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
+        toolExecutor.rejectTools(
+            request.sessionId,
+            assistantMessageId(request),
+            toolCalls.map { ToolCall(it.id, it.name, it.arguments) },
+            reason,
+        )
+    }
+
+    override fun enterFinalAnswerMode(request: GenerationRequest) {
+        finalAnswerMode = true
     }
 
     override suspend fun prepareContinuation(request: GenerationRequest): String {
@@ -500,13 +550,17 @@ internal class DefaultChatGenerationRuntime(
             val activeIds = contentStrategy.safeActiveWindow(session.messages, windowSize).map { it.id }.toSet()
             val overflow = session.messages.filter { it.id !in activeIds && !it.isArchived }
             if (overflow.isEmpty()) return
+            val threshold = session.inferenceParams?.autoSummaryThreshold ?: 0.8
+            val maxTokens = findModelSpec(session.modelId.orEmpty())?.contextLength ?: 128000
+            val nearContextLimit = snapshot.totalTokens > maxTokens * threshold
+            // 溢出消息离开活动窗口后不再发送给模型，必须进入摘要；按批处理以摊薄摘要调用。
+            if (!nearContextLimit && overflow.size < overflowBatchSize(windowSize)) return
             if (rag?.enableMemory == true) archiveMessages(request, session.modelId.orEmpty(), overflow)
+            val summarized = summarize(request, session, overflow)
+            if (!summarized) return
             overflow.forEach { message ->
                 messageManager.updateMessage(request.sessionId, message.id, message.copy(isArchived = true))
             }
-            val threshold = session.inferenceParams?.autoSummaryThreshold ?: 0.8
-            val maxTokens = findModelSpec(session.modelId.orEmpty())?.contextLength ?: 128000
-            if (snapshot.totalTokens > maxTokens * threshold) summarize(request, session, overflow)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -645,27 +699,35 @@ internal class DefaultChatGenerationRuntime(
         request: GenerationRequest,
         session: com.promenar.nexara.data.model.Session,
         messages: List<com.promenar.nexara.data.model.Message>,
-    ) {
+    ): Boolean {
         val taskId = ui.addPostProcessTask(PostProcessType.AUTO_SUMMARY, "Summarizing conversation")
-        try {
-            val summary = summaryManager.summarize(
+        return try {
+            val summary = summaryManager.summarizeOrNull(
                 session.summary,
                 messages,
                 settings.getString("preset_summary_model", ""),
                 session.modelId.orEmpty(),
             ) { ui.updatePostProcessTask(taskId, detail = it) }
+            if (summary.isNullOrBlank()) {
+                ui.updatePostProcessTask(taskId, PostProcessStatus.ERROR, detail = null)
+                return false
+            }
             if (summary != session.summary) sessionManager.updateSession(request.sessionId, mapOf("summary" to summary))
             ui.updatePostProcessTask(taskId, PostProcessStatus.DONE, 1f)
             applicationScope.launch {
                 kotlinx.coroutines.delay(3000)
                 ui.removePostProcessTask(taskId)
             }
+            true
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             ui.updatePostProcessTask(taskId, PostProcessStatus.ERROR, detail = null)
+            false
         }
     }
+
+    private fun overflowBatchSize(windowSize: Int): Int = maxOf(MIN_OVERFLOW_BATCH, windowSize / 2)
 
     private fun toGenerationChunk(chunk: StreamChunk): GenerationChunk? = when (chunk) {
         is StreamChunk.TextDelta -> GenerationChunk.Text(chunk.content, chunk.reasoning)
@@ -765,4 +827,14 @@ internal class DefaultChatGenerationRuntime(
             },
         )
     }
+
+    private companion object {
+        const val LOOP_LIMIT_KEY = "loop_limit"
+        const val MIN_OVERFLOW_BATCH = 4
+        const val FINAL_ANSWER_INSTRUCTION = "\n\n## Tool Budget Exhausted\n" +
+            "The tool budget for this request is used up. Do NOT call any tool. " +
+            "Using only the results already obtained, summarize what was completed, the current state, " +
+            "and the remaining steps, and tell the user they can send a message to continue.\n"
+    }
+
 }

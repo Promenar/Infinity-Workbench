@@ -131,7 +131,7 @@ class LocalGatewayIntegrationTest(private val model: String) {
                         val category = when {
                             chunk.technical?.startsWith("Malformed OpenAI-compatible") == true -> "malformed_event"
                             chunk.technical == "TOOL_CALLS terminal contained incomplete calls" -> "incomplete_tools"
-                            chunk.technical == "END_TURN contained tool calls" -> "terminal_conflict"
+                            chunk.technical == "END_TURN contained incomplete tool calls" -> "terminal_conflict"
                             chunk.technical?.contains("missing finish_reason") == true -> "missing_finish"
                             chunk.technical?.contains("before [DONE]") == true -> "missing_done"
                             else -> "other"

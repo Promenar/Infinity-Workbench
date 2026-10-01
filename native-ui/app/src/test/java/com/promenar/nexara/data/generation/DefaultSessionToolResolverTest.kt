@@ -48,7 +48,7 @@ class DefaultSessionToolResolverTest {
     }
 
     @Test
-    fun `resolve exposes safe read and external write tools for session with legacy empty selection`() {
+    fun `empty session selection still exposes every globally enabled builtin tool`() {
         every { settings.getStringSet("enabled_skills", null) } returns setOf(
             "calculator",
             "image_generation",
@@ -58,11 +58,39 @@ class DefaultSessionToolResolverTest {
         val resolver = DefaultSessionToolResolver(settings, skillRegistry)
         val session = Session(id = "s1", agentId = "agent", activeSkillIds = emptyList())
 
-        val resolved = resolver.resolve(session)
-        val resolvedIds = resolved.map { it.runtimeToolId }
+        val resolvedIds = resolver.resolve(session).map { it.runtimeToolId }
 
-        assertThat(resolvedIds).containsExactly("calculator", "image_generation")
-        assertThat(resolvedIds).doesNotContain("write_file")
+        assertThat(resolvedIds).containsExactly("calculator", "image_generation", "write_file")
+    }
+
+    @Test
+    fun `custom skill selection never changes builtin tool exposure`() {
+        every { settings.getStringSet("enabled_skills", null) } returns setOf("calculator")
+        val customTool = ProtocolTool(
+            function = ProtocolToolFunction(name = "my_tool", description = "Custom", parameters = "{}"),
+            sourceId = "custom",
+            runtimeToolId = "user_1",
+            risk = ToolRisk.UNKNOWN,
+        )
+        every { skillRegistry.getAllTools(null) } returns listOf(safeReadTool, fileWriteTool, customTool)
+
+        val resolver = DefaultSessionToolResolver(settings, skillRegistry)
+        val empty = resolver.resolve(Session(id = "s1", agentId = "agent"))
+        val selected = resolver.resolve(
+            Session(id = "s2", agentId = "agent", activeSkillIds = listOf("user_1")),
+        )
+
+        assertThat(empty.map { it.runtimeToolId }).containsExactly("calculator")
+        assertThat(selected.map { it.runtimeToolId }).containsExactly("calculator")
+    }
+
+    @Test
+    fun `tools disabled for session exposes nothing`() {
+        val resolver = DefaultSessionToolResolver(settings, skillRegistry)
+        val session = Session(id = "s1", agentId = "agent")
+        val disabled = session.copy(options = session.options.copy(toolsEnabled = false))
+
+        assertThat(resolver.resolve(disabled)).isEmpty()
     }
 
     @Test
@@ -76,20 +104,4 @@ class DefaultSessionToolResolverTest {
         assertThat(resolved.map { it.runtimeToolId }).containsExactly("calculator")
     }
 
-    @Test
-    fun `resolve allows file write tool when session explicitly selects it`() {
-        every { settings.getStringSet("enabled_skills", null) } returns setOf(
-            "calculator",
-            "image_generation",
-            "file_write",
-        )
-
-        val resolver = DefaultSessionToolResolver(settings, skillRegistry)
-        val session = Session(id = "s1", agentId = "agent", activeSkillIds = listOf("file_write"))
-
-        val resolved = resolver.resolve(session)
-        val resolvedIds = resolved.map { it.runtimeToolId }
-
-        assertThat(resolvedIds).containsExactly("calculator", "image_generation", "write_file")
-    }
 }

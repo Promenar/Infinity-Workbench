@@ -76,11 +76,13 @@ class FileSkillsScopeTest {
     fun `list and search skills never use another root`() = runTest {
         val workspace = mockk<IWorkspaceRepository>()
         every { workspace.observeChildren("root-a", "root-a") } returns flowOf(emptyList())
+        every { workspace.searchByName("root-a", "x") } returns flowOf(emptyList())
 
         FileListSkill(workspace).execute(skillArgs(), context)
         FileSearchSkill(workspace).execute(skillArgs("query" to "x"), context)
 
-        verify(exactly = 2) { workspace.observeChildren("root-a", "root-a") }
+        verify(exactly = 1) { workspace.observeChildren("root-a", "root-a") }
+        verify(exactly = 1) { workspace.searchByName("root-a", "x") }
     }
 
     @Test

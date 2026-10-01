@@ -91,6 +91,10 @@ import com.promenar.nexara.ui.chat.manager.skills.FileDiffSkill
 import com.promenar.nexara.ui.chat.manager.skills.FilePatchSkill
 import com.promenar.nexara.ui.chat.manager.skills.FileListSkill
 import com.promenar.nexara.ui.chat.manager.skills.FileSearchSkill
+import com.promenar.nexara.ui.chat.manager.skills.CreateFileSkill
+import com.promenar.nexara.ui.chat.manager.skills.CreateDirectorySkill
+import com.promenar.nexara.ui.chat.manager.skills.MoveFileSkill
+import com.promenar.nexara.ui.chat.manager.skills.DeleteFileSkill
 import com.promenar.nexara.ui.chat.manager.skills.ExecJsSkill
 import com.promenar.nexara.ui.chat.manager.skills.InitializePlanSkill
 import com.promenar.nexara.ui.chat.manager.skills.UpdatePlanSkill
@@ -559,12 +563,16 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             register(WebSearchSearXNGSkill(this@NexaraApplication, httpClient))
             register(WebFetchSkill(httpClient))
             register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance()))
-            register(FileReadSkill(fileOperationRepository))
-            register(FileWriteSkill(fileOperationRepository))
-            register(FileDiffSkill(fileOperationRepository))
-            register(FilePatchSkill(fileOperationRepository))
+            register(FileReadSkill(fileOperationRepository, workspaceRepository))
+            register(FileWriteSkill(fileOperationRepository, workspaceRepository))
+            register(FileDiffSkill(fileOperationRepository, workspaceRepository))
+            register(FilePatchSkill(fileOperationRepository, workspaceRepository))
             register(FileListSkill(workspaceRepository))
-            register(FileSearchSkill(workspaceRepository))
+            register(FileSearchSkill(workspaceRepository, fileOperationRepository))
+            register(CreateFileSkill(workspaceRepository, fileOperationRepository))
+            register(CreateDirectorySkill(workspaceRepository))
+            register(MoveFileSkill(workspaceRepository, pendingDocumentIndexCoordinator))
+            register(DeleteFileSkill(workspaceRepository))
             register(ExecJsSkill(this@NexaraApplication))
             register(InitializePlanSkill(taskRepository))
             register(UpdatePlanSkill(taskRepository))

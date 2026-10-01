@@ -232,7 +232,7 @@ object ToolInvocationIdentityFactory {
         if (schema is ToolSchemaValidation.Invalid) {
             return ToolInvocationIdentityResolution.Invalid(
                 ToolInvocationIdentityErrorCode.SCHEMA_MISMATCH,
-                "工具参数不符合已准备的 schema",
+                "工具参数不符合 schema：${schema.error.message}（${schema.error.code.name} @ ${schema.error.path}）",
             )
         }
         return ToolInvocationIdentityResolution.Valid(

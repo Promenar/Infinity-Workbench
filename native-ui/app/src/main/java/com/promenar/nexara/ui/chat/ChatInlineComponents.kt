@@ -977,7 +977,24 @@ data class ApprovalDisplayCall(
     val name: String,
     val argumentsSummary: String,
     val riskLabel: String,
+    val preview: ApprovalPreview.Preview? = null,
 )
+
+@Composable
+private fun approvalPreviewTitle(preview: ApprovalPreview.Preview): String {
+    val action = stringResource(
+        when (preview.action) {
+            ApprovalPreview.Action.OVERWRITE -> R.string.chat_approval_preview_overwrite
+            ApprovalPreview.Action.CREATE_FILE -> R.string.chat_approval_preview_create_file
+            ApprovalPreview.Action.EDIT -> R.string.chat_approval_preview_edit
+            ApprovalPreview.Action.MOVE -> R.string.chat_approval_preview_move
+            ApprovalPreview.Action.DELETE -> R.string.chat_approval_preview_delete
+            ApprovalPreview.Action.CREATE_DIRECTORY -> R.string.chat_approval_preview_create_directory
+            ApprovalPreview.Action.SCRIPT -> R.string.chat_approval_preview_script
+        },
+    )
+    return if (preview.target.isBlank()) action else "$action  ${preview.target}"
+}
 
 @Composable
 fun ApprovalCard(
@@ -1094,13 +1111,40 @@ fun ApprovalCard(
                                         color = accentColor,
                                     )
                                 }
-                                Text(
-                                    text = call.argumentsSummary,
-                                    style = NexaraTypography.bodySmall.copy(
-                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                val preview = call.preview
+                                if (preview == null) {
+                                    Text(
+                                        text = call.argumentsSummary,
+                                        style = NexaraTypography.bodySmall.copy(
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    Text(
+                                        text = approvalPreviewTitle(preview),
+                                        style = NexaraTypography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    preview.detail?.let { detail ->
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) {
+                                            Text(
+                                                text = detail,
+                                                style = NexaraTypography.bodySmall.copy(
+                                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                ),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 14,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                modifier = Modifier.padding(8.dp),
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

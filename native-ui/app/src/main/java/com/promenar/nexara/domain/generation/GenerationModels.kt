@@ -19,8 +19,25 @@ enum class GenerationRuntimePolicy { BACKGROUND_ALLOWED, FOREGROUND_ONLY }
 /** Provider 明确声明的成功终止原因；不得由 EOF 或局部内容推断。 */
 enum class CompletionReason { END_TURN, TOOL_CALLS }
 
-/** 单次生成允许确认并执行的工具调用总数，与工具循环轮次上限相互独立。 */
-const val MAX_TOOL_CALLS_PER_GENERATION = 10
+/** 单次生成允许确认的工具调用总数硬上限，与工具循环轮次上限相互独立。 */
+const val MAX_TOOL_CALLS_PER_GENERATION = 200
+
+/** 未配置时单次生成允许的工具循环轮次。 */
+const val DEFAULT_TOOL_ROUNDS_PER_GENERATION = 50
+
+/** 用户可配置的工具循环轮次上限。 */
+const val MAX_CONFIGURABLE_TOOL_ROUNDS = 100
+
+/** 单次生成的工具预算；任一维度耗尽后拒绝剩余调用并进入一次无新工具执行的总结轮。 */
+data class GenerationToolBudget(
+    val maxRounds: Int = DEFAULT_TOOL_ROUNDS_PER_GENERATION,
+    val maxCalls: Int = MAX_TOOL_CALLS_PER_GENERATION,
+) {
+    init {
+        require(maxRounds > 0) { "maxRounds 必须大于 0" }
+        require(maxCalls > 0) { "maxCalls 必须大于 0" }
+    }
+}
 
 data class GenerationRequest(
     val sessionId: String,

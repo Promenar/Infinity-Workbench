@@ -44,9 +44,16 @@ internal class ChatProviderRouteGate(
         }
     }
 
-    suspend fun <T> prepare(modelId: String, buildContext: suspend () -> T): ChatRoutePreparation<T> {
+    suspend fun <T> prepare(modelId: String, buildContext: suspend () -> T): ChatRoutePreparation<T> =
+        prepareWithRoute(modelId) { buildContext() }
+
+    /** 路由成功后才构建上下文，并让上下文按路由能力（如是否支持工具调用）组装。 */
+    suspend fun <T> prepareWithRoute(
+        modelId: String,
+        buildContext: suspend (ChatProviderRoute) -> T,
+    ): ChatRoutePreparation<T> {
         val route = withContext(resolutionDispatcher) { resolve(modelId) }
         route.failure?.let { return ChatRoutePreparation.Failure(it) }
-        return ChatRoutePreparation.Success(route, buildContext())
+        return ChatRoutePreparation.Success(route, buildContext(route))
     }
 }

@@ -68,14 +68,24 @@ class DefaultChatGenerationContentStrategy(
         if (systemPrompt.isNotBlank()) add(ProtocolMessage(role = "system", content = systemPrompt))
         val windowSize = session.inferenceParams?.activeContextWindow ?: 10
         val eligibleMessages = session.messages.filterNot { it.id in excludedMessageIds }
-        val activeMessages = safeActiveWindow(eligibleMessages, windowSize)
-        val pinnedMessage = pinnedUserMessageId?.let { id ->
-            eligibleMessages.firstOrNull { it.id == id && it.role == MessageRole.USER }
-        }
-        val protocolMessages = if (pinnedMessage != null && activeMessages.none { it.id == pinnedMessage.id }) {
-            listOf(pinnedMessage) + activeMessages
+        val pinnedIndex = pinnedUserMessageId?.let { id ->
+            eligibleMessages.indexOfFirst { it.id == id && it.role == MessageRole.USER }
+        } ?: -1
+        val isCurrentTurn = pinnedIndex >= 0 &&
+            eligibleMessages.drop(pinnedIndex + 1).none { it.role == MessageRole.USER }
+        val protocolMessages = if (isCurrentTurn) {
+            // 当前轮（固定用户消息及其后的助手/工具消息）完整保留，窗口只截断此前历史，
+            // 避免长工具循环把用户请求与早期工具结果挤出上下文；超长时由 ToolResultCompactor 处理。
+            historyWindow(eligibleMessages.subList(0, pinnedIndex), windowSize) +
+                eligibleMessages.subList(pinnedIndex, eligibleMessages.size)
         } else {
-            activeMessages
+            val activeMessages = historyWindow(eligibleMessages, windowSize)
+            val pinnedMessage = eligibleMessages.getOrNull(pinnedIndex)
+            if (pinnedMessage != null && activeMessages.none { it.id == pinnedMessage.id }) {
+                listOf(pinnedMessage) + activeMessages
+            } else {
+                activeMessages
+            }
         }
         protocolMessages.forEach { message ->
             add(
@@ -124,6 +134,19 @@ class DefaultChatGenerationContentStrategy(
         return resolved.also { tools ->
             knownToolRisks = tools.associate { it.function.name to it.risk }
         }
+    }
+
+    /**
+     * 发送给模型的历史窗口：最近 [windowSize] 条，外加紧邻其前、尚未进入摘要（未归档）的消息，
+     * 最多再多保留 [windowSize] 条，避免批量摘要完成前这些消息既不在上下文也不在摘要中。
+     */
+    private fun historyWindow(messages: List<Message>, windowSize: Int): List<Message> {
+        val base = safeActiveWindow(messages, windowSize)
+        var start = messages.size - base.size
+        val floor = (start - windowSize).coerceAtLeast(0)
+        while (start > floor && !messages[start - 1].isArchived) start--
+        while (start > 0 && messages[start].role == MessageRole.TOOL) start--
+        return messages.drop(start)
     }
 
     override fun safeActiveWindow(messages: List<Message>, windowSize: Int): List<Message> {

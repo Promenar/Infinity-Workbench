@@ -13,6 +13,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
@@ -91,11 +92,7 @@ class ExecJsSkill(
                 )
             }
 
-            val clean = output
-                .trim('"')
-                .replace("\\\"", "\"")
-                .replace("\\n", "\n")
-            val parsed = json.decodeFromString<JsResult>(clean)
+            val parsed = json.decodeFromString<JsResult>(decodeEvaluateJavascriptResult(output))
             if (parsed.ok) {
                 ToolResult(
                     "exec_js_${System.currentTimeMillis()}",
@@ -115,6 +112,15 @@ class ExecJsSkill(
                 "Execution failed: ${e.message}", "error"
             )
         }
+    }
+
+    /**
+     * WebView.evaluateJavascript 以 JSON 编码返回值；包装函数返回的是 JSON 字符串，
+     * 需先按 JSON 字符串完整解码（含 `\\`、`\uXXXX` 等转义），再解析其中的结果对象。
+     */
+    internal fun decodeEvaluateJavascriptResult(output: String): String {
+        val element = json.parseToJsonElement(output)
+        return if (element is JsonPrimitive && element.isString) element.content else element.toString()
     }
 
     @Serializable

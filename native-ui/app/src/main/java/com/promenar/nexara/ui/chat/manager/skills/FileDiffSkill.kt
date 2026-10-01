@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat.manager.skills
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.data.repository.WorkspaceTextPolicyException
 import com.promenar.nexara.domain.repository.IFileOperationRepository
+import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import com.promenar.nexara.domain.tool.ToolRisk
@@ -13,18 +14,20 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 class FileDiffSkill(
-    private val fileOpRepo: IFileOperationRepository
+    private val fileOpRepo: IFileOperationRepository,
+    private val workspaceRepo: IWorkspaceRepository? = null,
 ) : SkillDefinition {
     override val id = "diff_file"
     override val name = "diff_file"
     override val description = "生成文件的差异报告（JSON格式）。可用于查看文件变更情况。"
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SAFE_READ
-    override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"basisHash":{"type":"string","description":"对比基准hash(可选，默认与上次已知版本对比)"}},"required":["uuid"]}"""
+    override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"path":{"type":"string","description":"文件路径"},"basisHash":{"type":"string","description":"对比基准hash(可选，默认与上次已知版本对比)"}}}"""
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
-        val uuid = args.stringArgument("uuid")
-            ?: return ToolResult("err", "缺少 uuid", "error")
+        val (resolvedUuid, resolveError) = resolveWorkspaceFileUuid(workspaceRepo, context.workspaceRootUuid, args, id)
+        if (resolveError != null) return resolveError
+        val uuid = resolvedUuid!!
         val basisHash = args.stringArgument("basisHash")
 
         val result = try {

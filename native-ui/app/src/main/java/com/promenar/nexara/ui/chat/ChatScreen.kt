@@ -557,6 +557,9 @@ fun ChatScreenContent(
                                         name = call.toolName,
                                         argumentsSummary = call.argumentsSummary,
                                         riskLabel = approvalRiskLabel(call.risk),
+                                        preview = remember(call, request.assistantMessageId, uiState.messages) {
+                                            ApprovalPreview.forCall(call, uiState.messages, request.assistantMessageId)
+                                        },
                                     )
                                 },
                                 enabled = !uiState.isApprovalSubmitting,

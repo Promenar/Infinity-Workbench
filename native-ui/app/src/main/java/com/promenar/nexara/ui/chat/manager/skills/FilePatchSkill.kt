@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat.manager.skills
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.repository.IFileOperationRepository
+import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.PatchError
 import com.promenar.nexara.domain.repository.PatchOperation
 import com.promenar.nexara.domain.repository.PatchResult
@@ -26,18 +27,20 @@ import com.promenar.nexara.ui.chat.manager.registry.arrayArgument
 import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class FilePatchSkill(
-    private val fileOpRepo: IFileOperationRepository
+    private val fileOpRepo: IFileOperationRepository,
+    private val workspaceRepo: IWorkspaceRepository? = null,
 ) : SkillDefinition {
     override val id = "patch_file"
     override val name = "patch_file"
-    override val description = "应用 JSON diff 指令到文件。支持 replace_lines、insert_after、delete_lines 操作，带乐观锁冲突检测。"
+    override val description = "按行号编辑文件，行号以 read_file 输出前缀为准（1-based）。支持 replace_lines、insert_after（afterLine=0 表示插到开头）、delete_lines；建议为替换/删除提供 expectedContent 校验原文。用 uuid 或 path 指定文件，带乐观锁冲突检测。"
     override val mcpServerId: String? = null
     override val risk = ToolRisk.PATCH
-    override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"expectedHash":{"type":"string","description":"乐观锁基础版本hash"},"operations":{"type":"array","items":{"type":"object","properties":{"action":{"type":"string","enum":["replace_lines","insert_after","delete_lines"]},"startLine":{"type":"integer"},"endLine":{"type":"integer"},"afterLine":{"type":"integer"},"newContent":{"type":"string"},"expectedContent":{"type":"string","description":"替换或删除范围的精确原文上下文"}},"required":["action"]}}},"required":["uuid","expectedHash","operations"]}"""
+    override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"文件UUID"},"path":{"type":"string","description":"文件路径"},"expectedHash":{"type":"string","description":"乐观锁基础版本hash"},"operations":{"type":"array","items":{"type":"object","properties":{"action":{"type":"string","enum":["replace_lines","insert_after","delete_lines"]},"startLine":{"type":"integer"},"endLine":{"type":"integer"},"afterLine":{"type":"integer"},"newContent":{"type":"string"},"expectedContent":{"type":"string","description":"替换或删除范围的精确原文上下文"}},"required":["action"]}}},"required":["expectedHash","operations"]}"""
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
-        val uuid = args.stringArgument("uuid")
-            ?: return ToolResult("err", "缺少 uuid", "error")
+        val (resolvedUuid, resolveError) = resolveWorkspaceFileUuid(workspaceRepo, context.workspaceRootUuid, args, id)
+        if (resolveError != null) return resolveError
+        val uuid = resolvedUuid!!
         val expectedHash = args.stringArgument("expectedHash")
             ?: return ToolResult("err", "缺少 expectedHash", "error")
 
@@ -62,7 +65,8 @@ class FilePatchSkill(
                     "补丁应用成功，但索引尚未入队且缺少 targetEpoch，无法生成安全的补偿重试指令。" +
                         "新 Hash: ${result.newHash}，已应用 ${result.appliedOperations} 个操作。"
                 } else {
-                    "补丁应用成功，但索引尚未入队。请按返回契约依次调用 read_file 与 write_file 原样写回补偿。" +
+                    "补丁应用成功，但索引尚未入队。文件内容已保存，无需重复打补丁；" +
+                        "如需立即可检索，可按返回契约依次调用 read_file 与 write_file 原样写回补偿。" +
                         "新 Hash: ${result.newHash}，已应用 ${result.appliedOperations} 个操作。"
                 },
                 status = if (result.indexQueued) "success" else "error",
@@ -152,11 +156,11 @@ class FilePatchSkill(
         val suggestion = when (error.code) {
             "LINE_OUT_OF_RANGE" ->
                 "行号超出文件范围（当前共 ${error.totalLines ?: "?"} 行）。" +
-                    "请先调用 read_file(uuid=\"$error.fileUuid\", mode=\"page\") 获取当前行数后重试。"
+                    "请先调用 read_file(uuid=\"${error.fileUuid}\", mode=\"page\") 获取当前行数后重试。"
 
             "HASH_MISMATCH" ->
                 "乐观锁冲突：文件已被修改。当前 Hash 与你提供的基准不一致。" +
-                    "请先调用 diff_file(uuid=\"$error.fileUuid\") 获取最新差异，再重新规划操作。"
+                    "请先调用 diff_file(uuid=\"${error.fileUuid}\") 获取最新差异，再重新规划操作。"
 
             "INVALID_JSON" ->
                 "JSON 格式错误。请检查 operations 数组中每个对象的 action/startLine/endLine/newContent 字段是否正确。"

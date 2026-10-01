@@ -24,15 +24,25 @@ class SummaryManager(private val llmProvider: LlmProvider) {
         summaryModelId: String?,
         currentModelId: String,
         onProgress: ((String) -> Unit)? = null
-    ): String = withContext(Dispatchers.IO) {
-        if (overflowMessages.isEmpty()) return@withContext oldSummary ?: ""
+    ): String = summarizeOrNull(oldSummary, overflowMessages, summaryModelId, currentModelId, onProgress)
+        ?: oldSummary.orEmpty()
+
+    /** 摘要失败时返回 null，调用方据此保留原消息而不是把未摘要内容标记为已归档。 */
+    suspend fun summarizeOrNull(
+        oldSummary: String?,
+        overflowMessages: List<Message>,
+        summaryModelId: String?,
+        currentModelId: String,
+        onProgress: ((String) -> Unit)? = null
+    ): String? = withContext(Dispatchers.IO) {
+        if (overflowMessages.isEmpty()) return@withContext oldSummary.orEmpty()
 
         onProgress?.invoke("Preparing summary request")
 
         val modelToUse = if (!summaryModelId.isNullOrBlank()) summaryModelId else currentModelId
         
         val historyText = overflowMessages.joinToString("\n") { msg ->
-            "${msg.role.name}: ${msg.content}"
+            "${msg.role.name}: ${msg.content.take(MAX_MESSAGE_CHARS)}"
         }
 
         val prompt = if (oldSummary.isNullOrBlank()) {
@@ -52,12 +62,17 @@ class SummaryManager(private val llmProvider: LlmProvider) {
         try {
             val response = llmProvider.sendPromptSync(request)
             onProgress?.invoke("Summary generated")
-            response.content
+            response.content.takeIf(String::isNotBlank)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
             NexaraLogger.logError("SummaryManager.summarize", e)
-            oldSummary ?: ""
+            null
         }
+    }
+
+    private companion object {
+        /** 单条消息（尤其是工具结果）进入摘要请求的字符上限。 */
+        const val MAX_MESSAGE_CHARS = 2000
     }
 }

@@ -9,16 +9,16 @@ import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.findRemoteModelSpec
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 
+/** 当前请求的模型上下文与输出预留；上下文未知时为 null。 */
+data class PromptWindow(val modelContextTokens: Int?, val outputReserveTokens: Int)
+
 object PreparedPromptBudgetGate {
-    fun evaluate(
+    fun resolveWindow(
         session: Session,
         prompt: PromptRequest,
         settings: SharedPreferences,
-        hasFullContextDocuments: Boolean,
         stableModelId: String? = null,
-    ): ContextBudgetDecision? {
-        if (!hasFullContextDocuments) return null
-
+    ): PromptWindow {
         val remoteModelId = prompt.model.takeIf(String::isNotBlank) ?: session.modelId.orEmpty()
         val persistedModelId = stableModelId?.takeIf(String::isNotBlank)
             ?: session.modelId?.takeIf(String::isNotBlank)
@@ -31,6 +31,42 @@ object PreparedPromptBudgetGate {
             ?: session.inferenceParams?.maxTokens?.takeIf { it > 0 }
             ?: modelSpec?.maxOutputTokens?.takeIf { it > 0 }
             ?: 4096
+        return PromptWindow(modelContext, outputReserve)
+    }
+
+    /** 工具循环超出上下文时省略早期工具结果；上下文未知时保持原样。 */
+    fun compactToolResults(
+        session: Session,
+        prompt: PromptRequest,
+        settings: SharedPreferences,
+        stableModelId: String? = null,
+    ): ToolResultCompactor.Result? {
+        val window = resolveWindow(session, prompt, settings, stableModelId)
+        val context = window.modelContextTokens ?: return null
+        val budget = ((context - window.outputReserveTokens) * COMPACTION_TARGET_RATIO).toInt()
+        if (budget <= 0) return null
+        val toolTokens = prompt.tools.orEmpty().sumOf { tool ->
+            ApproximateTokenEstimator.estimate(
+                tool.function.name + tool.function.description + tool.function.parameters,
+            )
+        }
+        return ToolResultCompactor.compact(prompt.messages, budget, extraTokens = toolTokens)
+    }
+
+    private const val COMPACTION_TARGET_RATIO = 0.85
+
+    fun evaluate(
+        session: Session,
+        prompt: PromptRequest,
+        settings: SharedPreferences,
+        hasFullContextDocuments: Boolean,
+        stableModelId: String? = null,
+    ): ContextBudgetDecision? {
+        if (!hasFullContextDocuments) return null
+
+        val window = resolveWindow(session, prompt, settings, stableModelId)
+        val modelContext = window.modelContextTokens
+        val outputReserve = window.outputReserveTokens
         val messageTokens = prompt.messages.sumOf { message ->
             ConservativeContextTokenEstimator.estimate(
                 buildString {

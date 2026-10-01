@@ -80,6 +80,60 @@ class ChatGenerationContentStrategyTest {
     }
 
     @Test
+    fun `当前轮长工具循环完整保留且窗口只截断此前历史`() {
+        val messages = buildList {
+            repeat(4) { index ->
+                add(Message("old-u-$index", MessageRole.USER, "old-question-$index", isArchived = true))
+                add(Message("old-a-$index", MessageRole.ASSISTANT, "old-answer-$index", isArchived = true))
+            }
+            add(Message("current", MessageRole.USER, "do the task"))
+            repeat(6) { round ->
+                add(
+                    Message(
+                        "a-$round", MessageRole.ASSISTANT, "",
+                        toolCalls = listOf(ToolCall("c-$round", "read_file", "{}")),
+                    ),
+                )
+                add(Message("t-$round", MessageRole.TOOL, "result-$round", toolCallId = "c-$round"))
+            }
+        }
+        val session = Session(
+            id = "s1",
+            agentId = "agent",
+            inferenceParams = InferenceParams(activeContextWindow = 2),
+            messages = messages,
+        )
+
+        val prompt = strategy().buildProtocolMessages(session, "system", "current")
+
+        assertThat(prompt.map { it.content }).containsAtLeast("do the task", "result-0", "result-5").inOrder()
+        assertThat(prompt.map { it.content }).containsAtLeast("old-question-3", "old-answer-3")
+        assertThat(prompt.map { it.content }).doesNotContain("old-question-2")
+    }
+
+    @Test
+    fun `尚未摘要归档的溢出消息在批量摘要前仍保留在上下文中`() {
+        val messages = buildList {
+            repeat(3) { add(Message("archived-$it", MessageRole.USER, "archived-$it", isArchived = true)) }
+            repeat(3) { add(Message("pending-$it", MessageRole.USER, "pending-$it")) }
+            add(Message("latest-q", MessageRole.USER, "latest-q"))
+            add(Message("latest-a", MessageRole.ASSISTANT, "latest-a"))
+        }
+        val session = Session(
+            id = "s1",
+            agentId = "agent",
+            inferenceParams = InferenceParams(activeContextWindow = 2),
+            messages = messages,
+        )
+
+        val contents = strategy().buildProtocolMessages(session, "system").map { it.content }
+
+        assertThat(contents).containsAtLeast("pending-1", "pending-2", "latest-q", "latest-a").inOrder()
+        assertThat(contents).doesNotContain("pending-0")
+        assertThat(contents).doesNotContain("archived-2")
+    }
+
+    @Test
     fun `重试时旧助手回复不进入新Prompt且不占活动窗口`() {
         val session = Session(
             id = "s1",
@@ -204,7 +258,7 @@ class ChatGenerationContentStrategyTest {
     }
 
     @Test
-    fun `会话工具真值只保留全局内置与会话选中的MCP且旧空选择不等于全开`() {
+    fun `会话工具真值为全局内置加会话选中的MCP且空选择不放开自定义或MCP`() {
         val settings = mockk<SharedPreferences>()
         every { settings.getStringSet("enabled_skills", any()) } returns setOf("calculator", "write_file", "custom-one")
         val registry = mockk<SkillRegistry>()
@@ -224,7 +278,7 @@ class ChatGenerationContentStrategyTest {
 
         val oldSession = Session(id = "old", agentId = "agent")
         assertThat(strategy.buildTools(oldSession).map { it.runtimeToolId })
-            .containsExactly("calculator")
+            .containsExactly("calculator", "write_file")
 
         val selected = oldSession.copy(
             activeSkillIds = listOf("custom-one"),

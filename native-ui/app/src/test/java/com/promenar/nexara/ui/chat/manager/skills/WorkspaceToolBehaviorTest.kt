@@ -1,0 +1,228 @@
+package com.promenar.nexara.ui.chat.manager.skills
+
+import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.local.db.entity.FileEntry
+import com.promenar.nexara.data.rag.FileIndexEvent
+import com.promenar.nexara.data.rag.FileIndexEventSink
+import com.promenar.nexara.domain.repository.IFileOperationRepository
+import com.promenar.nexara.domain.repository.IWorkspaceRepository
+import com.promenar.nexara.domain.repository.ReadResult
+import com.promenar.nexara.domain.repository.RenameIndexTarget
+import com.promenar.nexara.domain.repository.RenameResult
+import com.promenar.nexara.domain.repository.WriteResult
+import com.promenar.nexara.infra.util.Sha256Utils
+import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
+
+class WorkspaceToolBehaviorTest {
+    private val context = object : SkillExecutionContext {
+        override val sessionId = "session"
+        override val agentId = "agent"
+        override val workspacePath = "/workspace"
+        override val workspaceRootUuid = "root"
+    }
+
+    private fun entry(uuid: String, path: String, directory: Boolean = false, parent: String? = "root") = FileEntry(
+        uuid = uuid,
+        workspaceRootUuid = "root",
+        parentUuid = parent,
+        name = path.substringAfterLast('/').ifEmpty { "/" },
+        hash = "hash-$uuid",
+        isDirectory = directory,
+        physicalRootPath = "/physical",
+        materializedPath = path,
+        createdAt = 1L,
+        updatedAt = 1L,
+    )
+
+    private val root = entry("root", "/", directory = true, parent = null)
+
+    @Test
+    fun `search by name finds top level files and hides system entries`() = runTest {
+        val workspace = mockk<IWorkspaceRepository>()
+        every { workspace.searchByName("root", "note") } returns flowOf(
+            listOf(
+                entry("top", "/note.md"),
+                entry("nested", "/docs/note-2.md"),
+                entry("recycled", "/.recycle_bin/note.md"),
+            ),
+        )
+
+        val result = FileSearchSkill(workspace).execute(skillArgs("query" to "note"), context)
+
+        assertThat(result.content).contains("/note.md")
+        assertThat(result.content).contains("/docs/note-2.md")
+        assertThat(result.content).doesNotContain(".recycle_bin")
+    }
+
+    @Test
+    fun `content search reports path and line numbers`() = runTest {
+        val workspace = mockk<IWorkspaceRepository>()
+        val operations = mockk<IFileOperationRepository>()
+        every { workspace.observeChildren("root", "root") } returns flowOf(
+            listOf(entry("docs", "/docs", directory = true), entry("a", "/a.md")),
+        )
+        every { workspace.observeChildren("root", "docs") } returns flowOf(listOf(entry("b", "/docs/b.md", parent = "docs")))
+        coEvery { operations.readFileRange("root", "a", any(), any()) } returns
+            ReadResult("a", "a.md", 2, 1, 2, "alpha\nTODO fix", "h", 0)
+        coEvery { operations.readFileRange("root", "b", any(), any()) } returns
+            ReadResult("b", "b.md", 1, 1, 1, "todo later", "h", 0)
+
+        val result = FileSearchSkill(workspace, operations).execute(
+            skillArgs("query" to "todo", "mode" to "content"),
+            context,
+        )
+
+        assertThat(result.content).contains("/a.md:2: TODO fix")
+        assertThat(result.content).contains("/docs/b.md:1: todo later")
+    }
+
+    @Test
+    fun `unsupported search mode returns error instead of empty success`() = runTest {
+        val result = FileSearchSkill(mockk()).execute(skillArgs("query" to "x", "mode" to "fts"), context)
+
+        assertThat(result.status).isEqualTo("error")
+    }
+
+    @Test
+    fun `read file numbers lines and resolves path`() = runTest {
+        val workspace = mockk<IWorkspaceRepository>()
+        val operations = mockk<IFileOperationRepository>()
+        coEvery { workspace.getByMaterializedPath("root", "/docs/a.md") } returns entry("a", "/docs/a.md")
+        coEvery { operations.readFileRange("root", "a", 9, 10) } returns
+            ReadResult("a", "a.md", 12, 9, 10, "nine\nten", "hash-a", 0)
+
+        val result = FileReadSkill(operations, workspace).execute(
+            skillArgs("path" to "docs/a.md", "mode" to "range", "startLine" to 9, "endLine" to 10),
+            context,
+        )
+
+        assertThat(result.content).contains(" 9| nine\n10| ten")
+        assertThat(result.content).contains("[uuid=a]")
+    }
+
+    @Test
+    fun `read file rejects inverted range before touching repository`() = runTest {
+        val operations = mockk<IFileOperationRepository>()
+
+        val result = FileReadSkill(operations).execute(
+            skillArgs("uuid" to "a", "mode" to "range", "startLine" to 5, "endLine" to 2),
+            context,
+        )
+
+        assertThat(result.status).isEqualTo("error")
+        coVerify(exactly = 0) { operations.readFileRange(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `create file under parent path writes initial content through versioned write`() = runTest {
+        val workspace = mockk<IWorkspaceRepository>()
+        val operations = mockk<IFileOperationRepository>()
+        val docs = entry("docs", "/docs", directory = true)
+        coEvery { workspace.getByMaterializedPath("root", "/docs") } returns docs
+        coEvery {
+            workspace.createFileInWorkspace("root", any(), "plan.md", "", "docs", "/docs/plan.md")
+        } answers { entry(secondArg(), "/docs/plan.md", parent = "docs").copy(hash = Sha256Utils.hash("")) }
+        coEvery {
+            operations.writeFileAtomic("root", any(), "# Plan", "session", Sha256Utils.hash(""))
+        } returns WriteResult.Success("new-hash")
+
+        val result = CreateFileSkill(workspace, operations).execute(
+            skillArgs("name" to "plan.md", "parentPath" to "/docs", "content" to "# Plan"),
+            context,
+        )
+
+        assertThat(result.status).isEqualTo("success")
+        assertThat(result.content).contains("/docs/plan.md")
+        assertThat(result.content).contains("new-hash")
+    }
+
+    @Test
+    fun `create file rejects invalid names and existing paths`() = runTest {
+        val workspace = mockk<IWorkspaceRepository>()
+        coEvery { workspace.getByUuid("root", "root") } returns root
+        coEvery { workspace.createFileInWorkspace(any(), any(), "dup.md", any(), any(), any()) } throws
+            IllegalStateException("工作区文件已存在: /dup.md")
+        val skill = CreateFileSkill(workspace, mockk())
+
+        val invalid = skill.execute(skillArgs("name" to "../x"), context)
+        val duplicate = skill.execute(skillArgs("name" to "dup.md"), context)
+
+        assertThat(invalid.status).isEqualTo("error")
+        assertThat(duplicate.status).isEqualTo("error")
+        assertThat(duplicate.content).contains("已存在")
+    }
+
+    @Test
+    fun `move file moves then renames and publishes rename index targets`() = runTest {
+        val workspace = mockk<IWorkspaceRepository>()
+        val sink = mockk<FileIndexEventSink>(relaxed = true)
+        val file = entry("a", "/a.md")
+        val archive = entry("arch", "/archive", directory = true)
+        coEvery { workspace.getByMaterializedPath("root", "/a.md") } returns file
+        coEvery { workspace.getByMaterializedPath("root", "/archive") } returns archive
+        coEvery { workspace.updateParent("root", "a", "arch") } returns Unit
+        coEvery { workspace.rename("root", "a", "b.md", "a.md") } returns RenameResult.Success(
+            "b.md", "h2", 7L, true, listOf(RenameIndexTarget("a", "h2", 7L)),
+        )
+        coEvery { workspace.getByUuid("root", "a") } returns entry("a", "/archive/b.md", parent = "arch")
+
+        val result = MoveFileSkill(workspace, sink).execute(
+            skillArgs("path" to "/a.md", "newParentPath" to "/archive", "newName" to "b.md"),
+            context,
+        )
+
+        assertThat(result.status).isEqualTo("success")
+        assertThat(result.content).contains("/archive/b.md")
+        coVerify { sink.publish(FileIndexEvent.Changed("root", "a", "h2", 7L)) }
+    }
+
+    @Test
+    fun `move directory into its own subtree is rejected`() = runTest {
+        val workspace = mockk<IWorkspaceRepository>()
+        coEvery { workspace.getByMaterializedPath("root", "/docs") } returns entry("docs", "/docs", directory = true)
+        coEvery { workspace.getByMaterializedPath("root", "/docs/sub") } returns
+            entry("sub", "/docs/sub", directory = true, parent = "docs")
+
+        val result = MoveFileSkill(workspace, mockk()).execute(
+            skillArgs("path" to "/docs", "newParentPath" to "/docs/sub"),
+            context,
+        )
+
+        assertThat(result.status).isEqualTo("error")
+        coVerify(exactly = 0) { workspace.updateParent(any(), any(), any()) }
+    }
+
+    @Test
+    fun `delete file recycles and never deletes the root`() = runTest {
+        val workspace = mockk<IWorkspaceRepository>()
+        coEvery { workspace.getByMaterializedPath("root", "/a.md") } returns entry("a", "/a.md")
+        coEvery { workspace.getByMaterializedPath("root", "/") } returns root
+        coEvery { workspace.moveToRecycleBin("root", "a") } returns Unit
+        val skill = DeleteFileSkill(workspace)
+
+        val deleted = skill.execute(skillArgs("path" to "/a.md"), context)
+        val rootAttempt = skill.execute(skillArgs("path" to "/"), context)
+
+        assertThat(deleted.status).isEqualTo("success")
+        assertThat(rootAttempt.status).isEqualTo("error")
+        coVerify(exactly = 1) { workspace.moveToRecycleBin(any(), any()) }
+    }
+
+    @Test
+    fun `security rejection from repository is reported without physical paths`() = runTest {
+        val workspace = mockk<IWorkspaceRepository>()
+        coEvery { workspace.getByMaterializedPath("root", "/.nexara_versions") } throws SecurityException("/physical/x")
+
+        val result = DeleteFileSkill(workspace).execute(skillArgs("path" to "/.nexara_versions"), context)
+
+        assertThat(result.status).isEqualTo("error")
+        assertThat(result.content).doesNotContain("/physical")
+    }
+}

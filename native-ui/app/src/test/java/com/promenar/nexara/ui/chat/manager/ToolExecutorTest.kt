@@ -498,7 +498,11 @@ class ToolExecutorTest {
         assertThat(executions).isEqualTo(0)
         val messages = store.getSession("s1")!!.messages.filter { it.role == MessageRole.TOOL }
         assertThat(messages.map { it.toolCallId }).containsExactlyElementsIn(calls.map { it.id })
-        assertThat(messages.map { it.content }.distinct()).containsExactly("工具调用校验失败，已安全终止。")
+        val byCall = messages.associate { it.toolCallId to it.content }
+        assertThat(byCall.values.all { it.startsWith("工具调用校验失败：") }).isTrue()
+        assertThat(byCall["unknown"]).contains("可用工具：safe_tool")
+        assertThat(byCall["schema"]).contains("ADDITIONAL_PROPERTY_NOT_ALLOWED")
+        assertThat(byCall["schema"]).contains("\$.secret")
         assertThat(messages.joinToString { it.content }).doesNotContain("do-not-echo")
         calls.forEach { call ->
             assertThat(ledger.state(ToolExecutionKey("s1", "m1", call.id))).isEqualTo(ToolLedgerState.FAILED)

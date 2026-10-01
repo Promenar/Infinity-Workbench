@@ -10,6 +10,7 @@ import com.promenar.nexara.domain.generation.GenerationRequest
 import com.promenar.nexara.domain.generation.GenerationRuntimePolicy
 import com.promenar.nexara.domain.generation.GenerationSnapshot
 import com.promenar.nexara.domain.generation.GenerationTerminalStatus
+import com.promenar.nexara.domain.generation.GenerationToolBudget
 import com.promenar.nexara.domain.generation.GenerationToolCall
 import com.promenar.nexara.domain.generation.GenerationToolDecision
 import kotlinx.coroutines.CancellationException
@@ -120,7 +121,7 @@ class ChatGenerationRunnerTerminalContractTest {
     }
 
     @Test
-    fun `END_TURN 不能携带工具且未知工具不能执行`() = runTest {
+    fun `END_TURN 不能携带工具`() = runTest {
         val endTurnWithTool = RuntimeFixture(
             listOf(
                 flowOf(
@@ -130,26 +131,53 @@ class ChatGenerationRunnerTerminalContractTest {
             ),
             knownTools = setOf("search"),
         )
+
+        assertThat(runCatching { ChatGenerationRunner(endTurnWithTool).run(request()) {} }.exceptionOrNull())
+            .isInstanceOf(GenerationFailedException::class.java)
+        assertThat(endTurnWithTool.handled).isEmpty()
+    }
+
+    @Test
+    fun `未知工具名交给运行时回写可纠错结果而不是终止生成`() = runTest {
         val unknown = RuntimeFixture(
             listOf(
                 flowOf(
                     GenerationChunk.ToolCall("call", "unknown", "{}"),
                     GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call")),
                 ),
+                flowOf(
+                    GenerationChunk.Text("已改用直接回答"),
+                    GenerationChunk.Completed(CompletionReason.END_TURN),
+                ),
+            ),
+            knownTools = setOf("search"),
+        ).apply { decisions += GenerationToolDecision.CONTINUE }
+
+        ChatGenerationRunner(unknown).run(request()) {}
+
+        assertThat(unknown.handled.single().single().name).isEqualTo("unknown")
+        assertThat(unknown.terminals).containsExactly(GenerationTerminalStatus.SUCCESS)
+    }
+
+    @Test
+    fun `空参数串规范化为空对象后再交给运行时`() = runTest {
+        val runtime = RuntimeFixture(
+            listOf(
+                flowOf(
+                    GenerationChunk.ToolCall("call", "search", ""),
+                    GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call")),
+                ),
             ),
             knownTools = setOf("search"),
         )
 
-        assertThat(runCatching { ChatGenerationRunner(endTurnWithTool).run(request()) {} }.exceptionOrNull())
-            .isInstanceOf(GenerationFailedException::class.java)
-        assertThat(runCatching { ChatGenerationRunner(unknown).run(request()) {} }.exceptionOrNull())
-            .isInstanceOf(GenerationFailedException::class.java)
-        assertThat(endTurnWithTool.handled).isEmpty()
-        assertThat(unknown.handled).isEmpty()
+        ChatGenerationRunner(runtime).run(request()) {}
+
+        assertThat(runtime.handled.single().single().arguments).isEqualTo("{}")
     }
 
     @Test
-    fun `生成全过程超过十个工具调用时第二轮不执行`() = runTest {
+    fun `工具调用预算耗尽时拒绝本轮调用并进入总结轮`() = runTest {
         fun round(prefix: String, count: Int): Flow<GenerationChunk> {
             val calls = (1..count).map { GenerationChunk.ToolCall("$prefix-$it", "search", "{}") }
             return flowOf(
@@ -160,17 +188,46 @@ class ChatGenerationRunnerTerminalContractTest {
             )
         }
         val runtime = RuntimeFixture(
-            listOf(round("a", 6), round("b", 5)),
+            listOf(
+                round("a", 6),
+                round("b", 5),
+                flowOf(GenerationChunk.Text("总结"), GenerationChunk.Completed(CompletionReason.END_TURN)),
+            ),
             knownTools = setOf("search"),
         ).apply {
+            budget = GenerationToolBudget(maxRounds = 50, maxCalls = 10)
             decisions += GenerationToolDecision.CONTINUE
         }
 
-        val failure = runCatching { ChatGenerationRunner(runtime).run(request()) {} }.exceptionOrNull()
+        ChatGenerationRunner(runtime).run(request()) {}
 
-        assertThat(failure).isInstanceOf(GenerationFailedException::class.java)
         assertThat(runtime.handled).hasSize(1)
         assertThat(runtime.handled.single()).hasSize(6)
+        assertThat(runtime.rejected.single().map { it.id }).containsExactly("b-1", "b-2", "b-3", "b-4", "b-5")
+        assertThat(runtime.finalAnswerEntered).isTrue()
+        assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.SUCCESS)
+    }
+
+    @Test
+    fun `轮次预算耗尽后总结轮仍请求工具则拒绝并结束`() = runTest {
+        fun round(id: String): Flow<GenerationChunk> = flowOf(
+            GenerationChunk.ToolCall(id, "search", "{}"),
+            GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf(id)),
+        )
+        val runtime = RuntimeFixture(
+            listOf(round("a"), round("b"), round("c")),
+            knownTools = setOf("search"),
+        ).apply {
+            budget = GenerationToolBudget(maxRounds = 1, maxCalls = 10)
+            decisions += GenerationToolDecision.CONTINUE
+        }
+
+        ChatGenerationRunner(runtime).run(request()) {}
+
+        assertThat(runtime.handled.map { calls -> calls.map { it.id } }).containsExactly(listOf("a"))
+        assertThat(runtime.rejected.map { calls -> calls.map { it.id } })
+            .containsExactly(listOf("b"), listOf("c")).inOrder()
+        assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.SUCCESS)
     }
 
     private fun request() = GenerationRequest(
@@ -186,6 +243,9 @@ class ChatGenerationRunnerTerminalContractTest {
         val terminals = mutableListOf<GenerationTerminalStatus>()
         val terminalSnapshots = mutableListOf<GenerationSnapshot>()
         val decisions = ArrayDeque<GenerationToolDecision>()
+        val rejected = mutableListOf<List<GenerationToolCall>>()
+        var budget = GenerationToolBudget()
+        var finalAnswerEntered = false
         var suspendCleanPersist = false
         var cleanPersistCompleted = false
 
@@ -206,6 +266,17 @@ class ChatGenerationRunnerTerminalContractTest {
         ): GenerationToolDecision {
             handled += toolCalls
             return decisions.removeFirstOrNull() ?: GenerationToolDecision.COMPLETE
+        }
+        override fun toolBudget(request: GenerationRequest) = budget
+        override suspend fun rejectToolCalls(
+            request: GenerationRequest,
+            toolCalls: List<GenerationToolCall>,
+            reason: String,
+        ) {
+            rejected += toolCalls
+        }
+        override fun enterFinalAnswerMode(request: GenerationRequest) {
+            finalAnswerEntered = true
         }
         override suspend fun postProcess(request: GenerationRequest, snapshot: GenerationSnapshot) = Unit
         override suspend fun markTerminal(

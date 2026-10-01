@@ -364,22 +364,24 @@ internal fun validatedCompletion(
     reason: CompletionReason,
     calls: List<ProtocolToolCall>,
 ): StreamChunk {
-    if (reason == CompletionReason.END_TURN) {
-        return if (calls.isEmpty()) StreamChunk.Completed(reason)
-        else streamContractError("END_TURN contained tool calls")
-    }
+    if (reason == CompletionReason.END_TURN && calls.isEmpty()) return StreamChunk.Completed(reason)
     val ids = calls.map { it.id }
     val valid = calls.isNotEmpty() &&
         ids.all(String::isNotBlank) &&
         ids.distinct().size == ids.size &&
-        calls.all { call ->
-            call.name.isNotBlank() && runCatching {
-                Json.parseToJsonElement(call.arguments) is JsonObject
-            }.getOrDefault(false)
-        }
-    return if (valid) StreamChunk.Completed(reason, ids)
+        calls.all { call -> call.name.isNotBlank() && isToolArgumentsObject(call.arguments) }
+    // 部分兼容网关（如 Gemini OpenAI 兼容层）以 stop 结束仍携带完整工具调用；完整时按 TOOL_CALLS 处理。
+    return if (valid) StreamChunk.Completed(CompletionReason.TOOL_CALLS, ids)
+    else if (reason == CompletionReason.END_TURN) streamContractError("END_TURN contained incomplete tool calls")
     else streamContractError("TOOL_CALLS terminal contained incomplete calls")
 }
+
+/** 无参数工具允许空参数串，语义等同 `{}`；其余必须是 JSON object。 */
+internal fun isToolArgumentsObject(arguments: String): Boolean =
+    arguments.isBlank() || runCatching { Json.parseToJsonElement(arguments) is JsonObject }.getOrDefault(false)
+
+/** 空参数串规范化为 `{}`，保证后续回传与执行使用合法 JSON object。 */
+fun normalizeToolArguments(arguments: String): String = arguments.ifBlank { "{}" }
 
 /** 同步响应也必须服从与流式终态一致的工具调用合同。 */
 internal fun requireValidSyncCompletion(

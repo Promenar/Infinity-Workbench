@@ -252,7 +252,7 @@ class DefaultChatGenerationRuntimeTest {
         val fixture = postProcessFixture(
             ragOptions = RagOptions(enableMemory = true, enableDocs = false),
             inferenceParams = InferenceParams(activeContextWindow = 1),
-            messageCount = 3,
+            messageCount = 6,
         )
         val cancellation = CancellationException("archive-cancel")
         coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
@@ -279,7 +279,7 @@ class DefaultChatGenerationRuntimeTest {
         )
         val cancellation = CancellationException("summary-cancel")
         coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
-        coEvery { fixture.summaryManager.summarize(any(), any(), any(), any(), any()) } throws cancellation
+        coEvery { fixture.summaryManager.summarizeOrNull(any(), any(), any(), any(), any()) } throws cancellation
 
         val result = runCatching {
             fixture.runtime.postProcess(
@@ -295,11 +295,63 @@ class DefaultChatGenerationRuntimeTest {
     }
 
     @Test
+    fun `窗口溢出未达批量时不摘要也不归档`() = runTest {
+        val fixture = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = false, enableDocs = false),
+            inferenceParams = InferenceParams(activeContextWindow = 1),
+            messageCount = 3,
+        )
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+
+        fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+
+        coVerify(exactly = 0) { fixture.summaryManager.summarizeOrNull(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { fixture.messageManager.updateMessage(any(), any(), any()) }
+    }
+
+    @Test
+    fun `窗口溢出达到批量时先摘要再归档`() = runTest {
+        val fixture = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = false, enableDocs = false),
+            inferenceParams = InferenceParams(activeContextWindow = 1),
+            messageCount = 6,
+        )
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        val overflow = slot<List<Message>>()
+        coEvery {
+            fixture.summaryManager.summarizeOrNull(any(), capture(overflow), any(), any(), any())
+        } returns "summary"
+
+        fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+
+        assertThat(overflow.captured.map { it.id })
+            .containsExactly("message-0", "message-1", "message-2", "message-3", "message-4")
+        coVerify(exactly = 5) {
+            fixture.messageManager.updateMessage("session", any(), match { it.isArchived })
+        }
+    }
+
+    @Test
+    fun `摘要失败时溢出消息保持未归档以便下次重试`() = runTest {
+        val fixture = postProcessFixture(
+            ragOptions = RagOptions(enableMemory = false, enableDocs = false),
+            inferenceParams = InferenceParams(activeContextWindow = 1),
+            messageCount = 6,
+        )
+        coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
+        coEvery { fixture.summaryManager.summarizeOrNull(any(), any(), any(), any(), any()) } returns null
+
+        fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
+
+        coVerify(exactly = 0) { fixture.messageManager.updateMessage(any(), any(), any()) }
+    }
+
+    @Test
     fun `postProcess普通归档失败不得把异常原文写入任务detail`() = runTest {
         val fixture = postProcessFixture(
             ragOptions = RagOptions(enableMemory = true, enableDocs = false),
             inferenceParams = InferenceParams(activeContextWindow = 1),
-            messageCount = 3,
+            messageCount = 6,
         )
         coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
         coEvery {

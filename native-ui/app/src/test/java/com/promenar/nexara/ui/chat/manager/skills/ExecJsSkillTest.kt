@@ -60,4 +60,30 @@ class ExecJsSkillTest {
     fun `parametersSchema requires code`() {
         assertThat(skill.parametersSchema).contains("\"required\":[\"code\"]")
     }
+
+    @Test
+    fun `decodes WebView JSON string results with escapes and unicode`() = runTest {
+        // WebView 对字符串返回值再做一层 JSON 编码，内部包含反斜杠与 Unicode 转义。
+        val inner = """{"ok":true,"value":"C:\\tmp \u4e2d \"q\""}"""
+        val encoded = kotlinx.serialization.json.JsonPrimitive(inner).toString()
+        val evaluating = ExecJsSkill(mockContext, evaluator = { encoded })
+
+        val result = evaluating.execute(skillArgs("code" to "result = 1"), testExecContext)
+
+        assertThat(result.status).isEqualTo("success")
+        assertThat(result.content).contains("中")
+    }
+
+    @Test
+    fun `surfaces script errors from decoded result`() = runTest {
+        val encoded = kotlinx.serialization.json.JsonPrimitive("""{"ok":false,"error":"ReferenceError: x"}""").toString()
+        val evaluating = ExecJsSkill(mockContext, evaluator = { encoded })
+
+        val result = evaluating.execute(skillArgs("code" to "x"), testExecContext)
+
+        assertThat(result.status).isEqualTo("error")
+        assertThat(result.content).contains("ReferenceError")
+    }
+
+
 }

@@ -3,7 +3,6 @@ package com.promenar.nexara.ui.chat.manager.skills
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
-import com.promenar.nexara.data.local.db.dao.SkillDao
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.remote.protocol.ProtocolType
@@ -14,7 +13,6 @@ import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
-import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
@@ -42,12 +40,11 @@ class BuiltInSkillCancellationTest {
     }
 
     @Test
-    fun `CreateTool FileSearch ExecJs ImageGeneration 都传播取消`() = runTest {
+    fun `FileSearch ExecJs ImageGeneration 都传播取消`() = runTest {
         val cancellation = CancellationException("built-in cancelled")
-        val skillDao = mockk<SkillDao>()
-        coEvery { skillDao.insertCustomSkill(any()) } throws cancellation
         val workspaceRepository = mockk<IWorkspaceRepository>()
         every { workspaceRepository.observeChildren(any(), any()) } returns flow { throw cancellation }
+        every { workspaceRepository.searchByName(any(), any()) } returns flow { throw cancellation }
         val providerManager = mockk<ProviderManager>()
         every { providerManager.getMainProviderConfig() } returns ProviderConfig(
             protocolType = ProtocolType.Generic_OpenAI_Compat,
@@ -57,12 +54,6 @@ class BuiltInSkillCancellationTest {
         every { providerManager.imageModelId } returns MutableStateFlow("image-model")
 
         val cases = listOf(
-            CreateToolSkill(skillDao) to skillArgs(
-                "name" to "tool",
-                "description" to "test",
-                "parametersSchema" to "{}",
-                "code" to "return true",
-            ),
             FileSearchSkill(workspaceRepository) to skillArgs("query" to "needle"),
             ExecJsSkill(appContext) { throw cancellation } to skillArgs("code" to "result = 1"),
             ImageGenerationSkill(appContext, providerManager) { _, _, _ -> throw cancellation } to

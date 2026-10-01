@@ -27,9 +27,21 @@ class GenericGatewayTerminalContractTest {
     }
 
     @Test
-    fun `网关completed不掩盖工具结束冲突或未知结束状态`() = runBlocking {
+    fun `网关以completed或stop结束但携带完整工具调用时按TOOL_CALLS处理`() = runBlocking {
+        listOf("completed", "stop").forEach { finish ->
+            val event = """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call","function":{"name":"read","arguments":"{}"}}]},"finish_reason":"$finish"}]}"""
+            val result = protocol("data: $event\n\ndata: [DONE]\n\n").sendPrompt(request()).toList()
+            val completed = result.filterIsInstance<StreamChunk.Completed>().single()
+            assertThat(completed.reason).isEqualTo(CompletionReason.TOOL_CALLS)
+            assertThat(completed.completedToolCallIds).containsExactly("call")
+            assertThat(result.filterIsInstance<StreamChunk.Error>()).isEmpty()
+        }
+    }
+
+    @Test
+    fun `网关completed不掩盖不完整工具或未知结束状态`() = runBlocking {
         val events = listOf(
-            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call","function":{"name":"read","arguments":"{}"}}]},"finish_reason":"completed"}]}""",
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call","function":{"name":"read","arguments":"{\"a\":"}}]},"finish_reason":"completed"}]}""",
             """{"choices":[{"delta":{"content":"42"},"finish_reason":"future"}]}""",
             """{"error":{"type":"upstream_error","message":"synthetic failure"}}""",
         )
@@ -41,11 +53,11 @@ class GenericGatewayTerminalContractTest {
     }
 
     @Test
-    fun `兼容同步接口接受completed文本且仍拒绝工具冲突`() = runBlocking {
+    fun `兼容同步接口接受completed文本且仍拒绝不完整工具`() = runBlocking {
         val body = """{"choices":[{"message":{"content":"42"},"finish_reason":"completed"}]}"""
         assertThat(protocol(body).sendPromptSync(request()).content).isEqualTo("42")
-        val conflict = """{"choices":[{"message":{"content":"","tool_calls":[{"id":"call","function":{"name":"read","arguments":"{}"}}]},"finish_reason":"completed"}]}"""
-        assertThat(runCatching { protocol(conflict).sendPromptSync(request()) }.exceptionOrNull()).isNotNull()
+        val incomplete = """{"choices":[{"message":{"content":"","tool_calls":[{"id":"","function":{"name":"read","arguments":"{}"}}]},"finish_reason":"completed"}]}"""
+        assertThat(runCatching { protocol(incomplete).sendPromptSync(request()) }.exceptionOrNull()).isNotNull()
     }
 
     private fun request() = PromptRequest(listOf(ProtocolMessage("user", "synthetic")), "fixture-model")

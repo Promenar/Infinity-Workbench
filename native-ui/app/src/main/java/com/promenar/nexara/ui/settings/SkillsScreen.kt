@@ -166,7 +166,7 @@ fun SkillsScreen(
                             Icon(Icons.Rounded.Remove, contentDescription = stringResource(R.string.common_cd_decrease))
                         }
                         Text(
-                            text = if (loopLimit >= 100) stringResource(R.string.skills_unlimited) else "$loopLimit",
+                            text = "$loopLimit",
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -213,6 +213,12 @@ fun SkillsScreen(
                     }
                 }
                 1 -> {
+                    Text(
+                        stringResource(R.string.sheet_tool_custom_unsandboxed),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp),
+                    )
                     userSkills.forEach { skill ->
                         UserSkillItem(
                             id = skill.id,

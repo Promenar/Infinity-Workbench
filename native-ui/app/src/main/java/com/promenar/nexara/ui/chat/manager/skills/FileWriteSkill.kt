@@ -4,6 +4,7 @@ import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.data.repository.WorkspaceTextPolicyException
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.repository.IFileOperationRepository
+import com.promenar.nexara.domain.repository.IWorkspaceRepository
 import com.promenar.nexara.domain.repository.WriteResult
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
@@ -17,18 +18,20 @@ import kotlinx.serialization.json.JsonObject
 import com.promenar.nexara.ui.chat.manager.registry.stringArgument
 
 class FileWriteSkill(
-    private val fileOpRepo: IFileOperationRepository
+    private val fileOpRepo: IFileOperationRepository,
+    private val workspaceRepo: IWorkspaceRepository? = null,
 ) : SkillDefinition {
     override val id = "write_file"
     override val name = "write_file"
-    override val description = "将内容写入工作区文件（全量覆盖）。自动进行乐观锁冲突检测。"
+    override val description = "全量覆盖一个已存在的工作区文件（新建文件请用 create_file）。用 uuid 或 path 指定文件；expectedHash 取自 read_file 或 list_files 返回的 hash，用于乐观锁冲突检测。"
     override val mcpServerId: String? = null
     override val risk = ToolRisk.FILE_WRITE
-    override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"目标文件UUID"},"content":{"type":"string","description":"要写入的完整内容"},"expectedHash":{"type":"string","description":"文件的当前hash(乐观锁)"}},"required":["uuid","content","expectedHash"]}"""
+    override val parametersSchema = """{"type":"object","properties":{"uuid":{"type":"string","description":"目标文件UUID"},"path":{"type":"string","description":"目标文件路径，如 /docs/a.md"},"content":{"type":"string","description":"要写入的完整内容"},"expectedHash":{"type":"string","description":"文件的当前hash(乐观锁)"}},"required":["content","expectedHash"]}"""
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
-        val uuid = args.stringArgument("uuid")
-            ?: return ToolResult("err", "缺少 uuid", "error")
+        val (resolvedUuid, resolveError) = resolveWorkspaceFileUuid(workspaceRepo, context.workspaceRootUuid, args, id)
+        if (resolveError != null) return resolveError
+        val uuid = resolvedUuid!!
         val content = args.stringArgument("content")
             ?: return ToolResult("err", "缺少 content", "error")
         val expectedHash = args.stringArgument("expectedHash")
@@ -47,7 +50,8 @@ class FileWriteSkill(
                 } else if (result.targetEpoch == null) {
                     "写入成功，但索引尚未入队且缺少 targetEpoch，无法生成安全的补偿重试指令。"
                 } else {
-                    "写入成功，但索引尚未入队。请按返回契约依次调用 read_file 与 write_file 原样写回补偿。"
+                    "写入成功，但索引尚未入队。文件内容已保存（新 Hash: ${result.newHash}），无需重写内容；" +
+                        "如需立即可检索，可按返回契约依次调用 read_file 与 write_file 原样写回补偿。"
                 },
                 status = if (result.indexQueued) "success" else "error",
                 data = indexResultData(

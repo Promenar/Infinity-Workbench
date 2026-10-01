@@ -72,6 +72,37 @@ class ToolExecutor internal constructor(
         }
     }
 
+    /**
+     * 预算耗尽等运行时原因下不执行本轮调用，为每个调用写入可回传的失败结果，
+     * 保证协议上的 tool_call / tool_result 成对且模型能据此收尾。
+     */
+    suspend fun rejectTools(
+        sessionId: String,
+        assistantMessageId: String,
+        toolCalls: List<ToolCall>,
+        reason: String,
+    ) {
+        val activeLedger = ledger ?: return
+        val targetMsg = store.getSession(sessionId)?.messages?.find { it.id == assistantMessageId } ?: return
+        for (tc in toolCalls.distinctBy { it.id }) {
+            val key = ToolExecutionKey(sessionId, assistantMessageId, tc.id)
+            val preflight = ToolPreflight.Invalid(
+                identity = rejectedIdentity(tc),
+                persistedIdentity = activeLedger.invocationIdentity(key),
+                feedback = reason,
+            )
+            finishInvalidCall(activeLedger, key, targetMsg, preflight)
+        }
+    }
+
+    private fun rejectedIdentity(call: ToolCall) = ToolInvocationIdentity(
+        runtimeToolId = "rejected_tool",
+        toolName = "rejected_tool",
+        argumentsDigest = sha256("nexara:rejected-tool-arguments:v1\u0000${call.name}\u0000${call.arguments}"),
+        definitionDigest = sha256("nexara:rejected-tool-definition:v1"),
+        requiresApproval = false,
+    )
+
     private suspend fun executeToolsAdmitted(
         sessionId: String,
         assistantMessageId: String,
@@ -342,7 +373,7 @@ class ToolExecutor internal constructor(
         val terminal = activeLedger.finishWithResult(
             key = key,
             toolName = "invalid_tool",
-            content = INVALID_TOOL_CALL_CONTENT,
+            content = preflight.feedback,
             thoughtSignature = targetMessage.thoughtSignature,
             outcome = ToolExecutionOutcome.Failed("工具调用预检失败"),
         )
@@ -389,7 +420,14 @@ class ToolExecutor internal constructor(
 
         val matchingDefinitions = preparedTools.orEmpty().filter { it.function.name == call.name }
         if (matchingDefinitions.size != 1) {
-            return invalidPreflight(call, ToolInvocationIdentityErrorCode.INVALID_DEFINITION)
+            val available = preparedTools.orEmpty().map { it.function.name }.sorted()
+            return invalidPreflight(
+                call,
+                ToolInvocationIdentityErrorCode.INVALID_DEFINITION,
+                detail = "当前不可用的工具 `${call.name.take(MAX_TOOL_NAME_ECHO_CHARS)}`。" +
+                    if (available.isEmpty()) "本轮没有可用工具，请直接回答。"
+                    else "可用工具：${available.joinToString(", ")}。",
+            )
         }
         return when (val resolved = ToolInvocationIdentityFactory.fromPreparedToolCall(
             call = call,
@@ -400,7 +438,7 @@ class ToolExecutor internal constructor(
                 resolved.identity,
                 resolved.arguments,
             )
-            is ToolInvocationIdentityResolution.Invalid -> invalidPreflight(call, resolved.code)
+            is ToolInvocationIdentityResolution.Invalid -> invalidPreflight(call, resolved.code, detail = resolved.message)
         }
     }
 
@@ -408,6 +446,7 @@ class ToolExecutor internal constructor(
         call: ToolCall,
         code: ToolInvocationIdentityErrorCode,
         persistedIdentity: ToolInvocationIdentity? = null,
+        detail: String? = null,
     ): ToolPreflight.Invalid = ToolPreflight.Invalid(
         identity = ToolInvocationIdentity(
             runtimeToolId = "invalid_tool",
@@ -419,7 +458,18 @@ class ToolExecutor internal constructor(
             requiresApproval = false,
         ),
         persistedIdentity = persistedIdentity,
+        feedback = invalidCallFeedback(code, detail),
     )
+
+    /** 回传给模型的预检失败说明：给出可纠错的具体原因，不回显参数原文。 */
+    private fun invalidCallFeedback(code: ToolInvocationIdentityErrorCode, detail: String?): String {
+        val reason = detail?.take(MAX_INVALID_DETAIL_CHARS) ?: when (code) {
+            ToolInvocationIdentityErrorCode.MALFORMED_ARGUMENTS -> "参数不是合法 JSON。"
+            ToolInvocationIdentityErrorCode.ROOT_ARGUMENTS_NOT_OBJECT -> "参数根节点必须是 JSON object。"
+            else -> "工具定义或参数校验未通过。"
+        }
+        return "$INVALID_TOOL_CALL_PREFIX$reason 请对照工具定义修正后重试，或改用其它可用工具。"
+    }
 
     private sealed interface ToolPreflight {
         data class Valid(
@@ -430,6 +480,7 @@ class ToolExecutor internal constructor(
         data class Invalid(
             val identity: ToolInvocationIdentity,
             val persistedIdentity: ToolInvocationIdentity?,
+            val feedback: String,
         ) : ToolPreflight
     }
 
@@ -530,7 +581,9 @@ class ToolExecutor internal constructor(
     }
 
     private companion object {
-        const val INVALID_TOOL_CALL_CONTENT = "工具调用校验失败，已安全终止。"
+        const val INVALID_TOOL_CALL_PREFIX = "工具调用校验失败："
+        const val MAX_INVALID_DETAIL_CHARS = 400
+        const val MAX_TOOL_NAME_ECHO_CHARS = 64
         const val MAX_SAFE_RESULT_DATA_CHARS = 256 * 1024
         const val MAX_IMAGE_BYTES = 5 * 1024 * 1024
         const val MAX_IMAGE_BASE64_CHARS = ((MAX_IMAGE_BYTES + 2) / 3) * 4 + 1024
