@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 截图回归与质量门禁恢复（2026-10-01）
+
+- 将知识库主页截图夹具对齐同层平铺模式，补充 FAB 错误与运行状态预览；更新经视觉复核的截图基线，差异阈值保持不变。
+- 模型与上下文展示胶囊设备断言按已批准的 36dp 规格执行；输入、附件和生成主操作的 48dp 门禁保留。
+- 助手首页设备测试对齐折叠会话列表与精确会话导航回调，并纳入核心设备 E2E；恢复置顶卡片的本地化无障碍状态描述，保留设备断言。
+- Android CI 使用 Gradle `--continue` 收集截图、JVM、Lint 与构建结果，任一失败仍使质量任务失败，设备门禁保持依赖。
+- 提供商连接测试通过 Compose `LocalResources` 读取错误文字，修复配置感知资源读取的七项 Lint Error；资源 ID、错误分类与凭据处理保持不变。
+
+
+### v0.2.2-beta 版本与发行门禁（2026-10-01）
+
+- 当前源码候选为 versionCode `4` / `0.2.2-beta`；README、发行说明、验证账本和 Release workflow 统一使用该身份。`v0.2.1-beta` 文档保留历史候选证据。
+- Release workflow 与 APK 冷安装脚本对齐标签、产物文件名、版本验真参数、默认版本与文档路径，保留受控 SHA、标签验签、保护环境、设备与混淆门禁、冷安装、覆盖升级及资产回读。
+- 手动候选验证仅允许构建和测试；公开 tag/Release 必须有独立授权与精确 GO 账本。当前验证记录区分待执行项目与实际通过证据，历史 PASS 不作为当前制品结论。
+
 ### PDEC 本机 Android 调试边界（2026-09-29）
 
 - Android 安装、ADB/Logcat 联调、设备测试与模拟器验收统一使用本机启动的专用 Nexara AVD；设备操作须核对并固定序列号，目标不明时停止。远程主机、远程设备及托管模拟器不作为交互调试执行位置；公开仓库推送触发的 GitHub Android CI 托管模拟器矩阵继续用于自动化测试。
@@ -157,7 +172,7 @@ All notable changes to this project will be documented in this file.
   - **工具执行模式（`ExecutionModeSelector`）**：废弃生硬的圆角方块分段器，升级为全胶囊平滑滑动单选器（自动、半自动、手动）；
   - **技能管理（`SkillsScreen`）**：废弃传统 `TabRow`，重构为全胶囊 3 页签（预置技能、自定义技能、技能市场）；
   - **RAG 检索详情（`RagDetailsSheet`）**：废弃 `PrimaryScrollableTabRow`，重构为全胶囊 3 页签（检索片段、网页引用、知识图谱）；
-  - **统一 Prompt 编辑器（`UnifiedPromptEditor`）**：废弃带下划线的 `TabRow`，重构为全胶囊双页签（系统提示词、用户提示词）。
+  - **统一 Prompt 编辑器（`UnifiedPromptEditor`）**：废弃带下划线的 `TabRow`，重构为全胶囊双页签（编辑、预览）。
 - **测试与契约闭环**：
   - 保持各模块原生 `testTag` 契约，全量 2790 项 JVM 测试通过，实机多屏联动验证滑块动画与触感顺滑。
 

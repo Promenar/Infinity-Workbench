@@ -55,7 +55,7 @@ class AccessibilitySmokeTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun chatInputControlsUseComplete48DpMaterialTargets() {
+    fun chatInputCapsulesUseApproved36DpAndPrimaryControlsUse48DpTargets() {
         composeRule.setContent {
             NexaraTheme {
                 ChatScreenContent(
@@ -65,12 +65,13 @@ class AccessibilitySmokeTest {
             }
         }
 
+        // 展示胶囊采用已批准的 36dp 规格；输入、附件与生成主操作继续遵守 48dp 门禁。
         composeRule.onNodeWithTag(UiTags.CHAT_MODEL_SELECTOR)
             .assertHasClickAction()
-            .assertHeightIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(36.dp)
         composeRule.onNodeWithTag(UiTags.CHAT_TOKEN_INDICATOR)
             .assertHasClickAction()
-            .assertHeightIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(36.dp)
         composeRule.onNodeWithTag(UiTags.CHAT_INPUT)
             .assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithTag(UiTags.CHAT_ADD_ATTACHMENT)

@@ -384,6 +384,8 @@ run_test legacy-attachment-access "${APP_RUNNER}" \
     -e class com.promenar.nexara.ui.chat.LegacyAttachmentDeviceTest
 run_test rag-workspace-source-selector "${APP_RUNNER}" \
     -e class com.promenar.nexara.ui.rag.RagWorkspaceSourceSelectorDeviceTest
+run_test agent-hub-content "${APP_RUNNER}" \
+    -e class com.promenar.nexara.ui.hub.AgentHubScreenContentTest
 
 if [[ "${DEVICE_E2E_SCOPE}" == "full" ]]; then
     if (( API_LEVEL >= 33 )); then

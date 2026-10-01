@@ -7,6 +7,7 @@ on:
       - main
       - B-native-refactor
       - codex/v0.2.1-beta
+      - codex/v0.2.2-beta
       - codex/md3-redesign
   workflow_dispatch:
 
@@ -60,7 +61,7 @@ jobs:
         working-directory: native-ui
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace \
+          ./gradlew --no-daemon --stacktrace --continue \
             clean \
             :app:validateDebugScreenshotTest \
             :app:testDebugUnitTest \

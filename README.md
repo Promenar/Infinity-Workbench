@@ -4,12 +4,12 @@
 ![Platform](https://img.shields.io/badge/platform-Android-green.svg)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg)
 ![Compose](https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4.svg)
-![Version](https://img.shields.io/badge/version-0.2.1--beta-6366F1.svg)
+![Version](https://img.shields.io/badge/version-0.2.2--beta-6366F1.svg)
 ![Stage](https://img.shields.io/badge/stage-release%20candidate-6366F1.svg)
 
 > Android 端 BYOK 开源 AI 客户端，以 Kotlin 与 Jetpack Compose 原生构建，集成多服务商对话、RAG、知识图谱、Agent 工具、会话工作区和加密备份。
 
-`v0.2.1-beta` 已完成文件事务身份、中文与 HTML 导入、搜索语义及取消、模型目录测试、公开旧版迁移、显式双库恢复和编辑器选区保持的审计修复。验证按源码、设备与签名制品分别记账，真实网关服务失败、物理设备验收及未测产品指标保持可见。逐项状态见[发行需求验收总账](docs/audit/20260922-requirements-acceptance.md)和[发行验证记录](docs/release/v0.2.1-beta-validation.md)。公开 tag 与 Release 需要单独授权。
+当前源码候选为 `v0.2.2-beta`（versionCode `4`）。知识库使用集中式任务状态微件、平铺目录下钻和会话工作区隔离，页面采用统一操作菜单。当前候选的源码检查、截图、设备和签名制品证据分别见[发行验证记录](docs/release/v0.2.2-beta-validation.md)；历史审计结论见[发行需求验收总账](docs/audit/20260922-requirements-acceptance.md)，不能替代当前候选验收。公开 tag 与 Release 需要单独授权。
 
 模型管理支持独立公共目录更新：GitHub Actions 聚合来源并签名发布，App 验签缓存并保留用户编辑。使用与维护方法见[模型目录说明](docs/model-catalog.md)。
 
@@ -49,7 +49,7 @@ Android 开发调试与设备验收使用本机启动的专用 AVD；执行位�
 
 ## GGUF 本地推理
 
-GGUF/llama.cpp 不属于 `v0.2.1-beta` 稳定发行范围，本轮不继续推进端到端实现。Release 构建会关闭本地推理并拒绝打包 GGUF、llama 或 ggml 制品；相关代码只能视为实验性研发资产，不能据此承诺可用能力。
+GGUF/llama.cpp 不属于 `v0.2.2-beta` 稳定发行范围。Release 构建会关闭本地推理并拒绝打包 GGUF、llama 或 ggml 制品；相关代码只能视为实验性研发资产，不能据此承诺可用能力。
 
 ## 运行要求
 
@@ -61,13 +61,13 @@ GGUF/llama.cpp 不属于 `v0.2.1-beta` 稳定发行范围，本轮不继续推�
 | 网络 | 云端模型、Embedding、Rerank、联网搜索和 WebDAV 需要网络 |
 | 权限 | 网络；通知权限用于后台生成，可拒绝但会退化为仅前台生成 |
 
-`v0.2.1-beta` 保持既有包名与发行签名。公开 `v0.1-beta` 的数据库为 v17，公开 `v0.2-beta` 为 v2；当前库提供前进迁移到 v18。安装曾经过 `v0.1-beta→v0.2-beta` 时，两份数据库分别保全，启动页提供显式“保留两份并恢复”入口。恢复保留两侧业务和来源，冲突 ID 重映射关联，工作区建立新物理身份，合法旧附件可点击读取；未完成工具和索引任务等待用户重试。公开单库及三段双库升级已用合成数据验证，不能代替真实用户资料验收。真实安装应保留完整备份，不卸载、不清数据；来源不同、被重签名或包名不同的 APK 不能正常覆盖继承。
+`v0.2.2-beta` 使用既有包名；交付 APK 必须核对登记的发行证书。公开 `v0.1-beta` 的数据库为 v17，公开 `v0.2-beta` 为 v2；当前库提供前进迁移到 v18。安装曾经过 `v0.1-beta→v0.2-beta` 时，两份数据库分别保全，启动页提供显式“保留两份并恢复”入口。恢复保留两侧业务和来源，冲突 ID 重映射关联，工作区建立新物理身份，合法旧附件可点击读取；未完成工具和索引任务等待用户重试。`v0.2.1-beta` 的公开单库及三段双库升级合成数据证据属于[历史验证](docs/release/v0.2.1-beta-validation.md)，不能代替当前候选 APK 或真实用户资料验收。真实安装应保留完整备份，不卸载、不清数据；来源不同、被重签名或包名不同的 APK 不能正常覆盖继承。
 
 ## 安装
 
-公开制品只从 [Promenar/Nexara Releases](https://github.com/Promenar/Nexara/releases) 发布。当前 `v0.2.1-beta` 若由维护者直接交付，应同时提供 APK 的绝对路径、SHA-256、版本身份和同签名验真结果；未获授权前不会创建 tag 或 GitHub Release。安装时：
+公开制品只从 [Promenar/Nexara Releases](https://github.com/Promenar/Nexara/releases) 发布。截至 2026-10-01，公开 `v0.2-beta` 为 prerelease（2026-07-29 发布），Latest 仍为 `v0.1-beta`；`v0.2.2-beta` 尚未公开发布。当前 `v0.2.2-beta` 若由维护者直接交付，应同时提供 APK 的绝对路径、SHA-256、版本身份和同签名验真结果；未获授权前不会创建 tag 或 GitHub Release。安装时：
 
-1. 取得 `Nexara-0.2.1-beta-release.apk` 与同名 `.sha256` 文件。
+1. 取得维护者交付并验真的 APK 与对应 `.sha256` 文件；发行 workflow 的标准名称为 `nexara-v0.2.2-beta.apk`。
 2. 校验 APK 的 SHA-256 与发布文件一致。
 3. 在 Android 系统中允许当前文件管理器或浏览器“安装未知应用”。
 4. 新安装直接侧载；从同签名旧版升级时直接覆盖安装，不卸载、不清数据。
@@ -107,7 +107,7 @@ adb logcat -s NEXARA_METRO | node scripts/nexara-metro-tui.js --stdin --no-color
 | 导航 | Compose Navigation |
 | 构建/发行 | Gradle、R8、GitHub Actions、GitHub Release |
 
-架构快速参考见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，当前发行说明见 [docs/release/v0.2.1-beta.md](docs/release/v0.2.1-beta.md)，发行验证状态见 [docs/release/v0.2.1-beta-validation.md](docs/release/v0.2.1-beta-validation.md)。
+架构快速参考见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，当前发行说明见 [docs/release/v0.2.2-beta.md](docs/release/v0.2.2-beta.md)，发行验证状态见 [docs/release/v0.2.2-beta-validation.md](docs/release/v0.2.2-beta-validation.md)。
 
 ## License
 

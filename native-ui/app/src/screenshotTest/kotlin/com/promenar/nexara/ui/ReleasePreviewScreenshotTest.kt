@@ -2089,6 +2089,34 @@ fun ragHomeMemoryChineseLargeFontReleasePreview() {
     }
 }
 
+@PreviewTest
+@Preview(name = "RAG status error Chinese", widthDp = 180, heightDp = 180, locale = "zh-rCN")
+@Composable
+fun ragStatusErrorChineseReleasePreview() {
+    ReleasePreviewSurface {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            com.promenar.nexara.ui.rag.RagStatusFab(
+                state = previewMemoryState(emptyList()).copy(canRetryLastFailedIndex = true),
+                actions = RagHomeScreenActions(),
+            )
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "RAG status indexing English", widthDp = 180, heightDp = 180, locale = "en")
+@Composable
+fun ragStatusIndexingEnglishReleasePreview() {
+    ReleasePreviewSurface {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            com.promenar.nexara.ui.rag.RagStatusFab(
+                state = previewMemoryState(emptyList()).copy(isIndexing = true, indexingProgress = 0.4f),
+                actions = RagHomeScreenActions(),
+            )
+        }
+    }
+}
+
 private fun previewMemoryState(memoryVectors: List<MemoryVectorRecord>) = RagHomeScreenState(
     currentTab = PortalTab.MEMORY,
     searchQuery = "",
@@ -2563,8 +2591,7 @@ private fun PreviewRagDocuments(
             workspaceRootUuid = PREVIEW_RAG_ROOT_ID,
             workspaceRepo = PREVIEW_RAG_REPOSITORY,
             rootFiles = PREVIEW_RAG_ROOT_FILES,
-            initiallyExpandedIds = setOf(PREVIEW_RAG_DEEP_FOLDER.uuid),
-            initialChildrenByParent = PREVIEW_RAG_CHILDREN,
+            allowTreeExpansion = false,
             onReindex = {},
             onDelete = requestDelete,
             onRename = { _, _ -> },

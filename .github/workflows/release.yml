@@ -1,16 +1,16 @@
-name: Validate or publish v0.2.1-beta APK
+name: 验证或发布 v0.2.2-beta APK
 
 on:
   workflow_dispatch:
   push:
     tags:
-      - v0.2.1-beta
+      - v0.2.2-beta
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-v0.2.1-beta
+  group: release-v0.2.2-beta
   cancel-in-progress: false
 
 jobs:
@@ -29,8 +29,8 @@ jobs:
         if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
         run: |
           python3 scripts/ci/validate-release-readiness.py \
-            docs/release/v0.2.1-beta-validation.md \
-            docs/release/v0.2.1-beta.md
+            docs/release/v0.2.2-beta-validation.md \
+            docs/release/v0.2.2-beta.md
 
       - name: 校验固定标签、发行文档、签名与来源
         env:
@@ -41,8 +41,8 @@ jobs:
         run: |
           set -euo pipefail
           for required_document in \
-            docs/release/v0.2.1-beta.md \
-            docs/release/v0.2.1-beta-validation.md; do
+            docs/release/v0.2.2-beta.md \
+            docs/release/v0.2.2-beta-validation.md; do
             test -s "${required_document}" || {
               echo "::error::缺少已审阅且非空的 ${required_document}，拒绝发布。"
               exit 1
@@ -66,7 +66,7 @@ jobs:
 
           test "${GITHUB_EVENT_NAME}" = "push"
           test "${GITHUB_REF_TYPE}" = "tag"
-          test "${GITHUB_REF_NAME}" = "v0.2.1-beta"
+          test "${GITHUB_REF_NAME}" = "v0.2.2-beta"
 
           tag_ref="refs/tags/${GITHUB_REF_NAME}"
           tag_object_type="$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")"
@@ -112,7 +112,7 @@ jobs:
           fi
           for reviewed_branch in \
             origin/B-native-refactor \
-            origin/codex/v0.2.1-beta; do
+            origin/codex/v0.2.2-beta; do
             if git show-ref --verify --quiet "refs/remotes/${reviewed_branch}" && \
               [[ "$(git rev-parse "${reviewed_branch}")" == "${tag_target_sha}" ]]; then
               reviewed_source=true
@@ -401,14 +401,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp native-ui/app/build/outputs/apk/release/app-release.apk dist/nexara-v0.2.1-beta.apk
+          cp native-ui/app/build/outputs/apk/release/app-release.apk dist/nexara-v0.2.2-beta.apk
           python3 scripts/verify-release-apk.py \
-            dist/nexara-v0.2.1-beta.apk \
+            dist/nexara-v0.2.2-beta.apk \
             --expected-package com.promenar.nexara.native \
-            --expected-version-code 3 \
-            --expected-version-name 0.2.1-beta \
+            --expected-version-code 4 \
+            --expected-version-name 0.2.2-beta \
             --expected-cert-sha256 "${NEXARA_SIGNING_CERT_SHA256}" \
-            --checksum-output dist/nexara-v0.2.1-beta.apk.sha256
+            --checksum-output dist/nexara-v0.2.2-beta.apk.sha256
           r8_output_dir="native-ui/app/build/outputs/mapping/release"
           mapping_path="native-ui/app/build/outputs/mapping/release/mapping.txt"
           test -s native-ui/app/build/outputs/mapping/release/mapping.txt || {
@@ -476,7 +476,7 @@ jobs:
       - name: 下载后先核对发行 APK 哈希
         working-directory: dist
         shell: bash
-        run: sha256sum -c nexara-v0.2.1-beta.apk.sha256
+        run: sha256sum -c nexara-v0.2.2-beta.apk.sha256
 
       - name: 启用 KVM
         shell: bash
@@ -505,7 +505,7 @@ jobs:
             -camera-back none
           disable-animations: true
           emulator-boot-timeout: 600
-          script: scripts/ci/android-release-apk-smoke.sh dist/nexara-v0.2.1-beta.apk
+          script: scripts/ci/android-release-apk-smoke.sh dist/nexara-v0.2.2-beta.apk
 
       - name: 上传冷安装证据
         if: always()
@@ -553,7 +553,7 @@ jobs:
             https://github.com/Promenar/Nexara/releases/download/v0.1-beta/app-release.apk
           echo '0dfe33b280af97b94c27203b9e66691ff8e41af237777a93d21d2b27907b9291  dist/nexara-v0.1.apk' \
             | sha256sum -c -
-          (cd dist && sha256sum -c nexara-v0.2.1-beta.apk.sha256)
+          (cd dist && sha256sum -c nexara-v0.2.2-beta.apk.sha256)
 
       - name: 启用 KVM
         shell: bash
@@ -579,12 +579,12 @@ jobs:
             -camera-back none
           disable-animations: true
           emulator-boot-timeout: 600
-          script: scripts/ci/android-release-upgrade-smoke.sh dist/nexara-v0.1.apk dist/nexara-v0.2.1-beta.apk
+          script: scripts/ci/android-release-upgrade-smoke.sh dist/nexara-v0.1.apk dist/nexara-v0.2.2-beta.apk
 
   publish:
     name: 发布 GitHub prerelease
     needs: [signed-apk-smoke, signed-apk-upgrade-smoke]
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/tags/v0.2.1-beta' }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/tags/v0.2.2-beta' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -606,15 +606,15 @@ jobs:
       - name: 发布前再次核对发行 APK 哈希
         working-directory: dist
         shell: bash
-        run: sha256sum -c nexara-v0.2.1-beta.apk.sha256
+        run: sha256sum -c nexara-v0.2.2-beta.apk.sha256
 
       - name: 发布前统一校验发布状态（验证账本 + 发布说明）
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/validate-release-readiness.py \
-            docs/release/v0.2.1-beta-validation.md \
-            docs/release/v0.2.1-beta.md
+            docs/release/v0.2.2-beta-validation.md \
+            docs/release/v0.2.2-beta.md
 
       - name: 幂等创建或恢复 GitHub prerelease draft
         env:
@@ -622,10 +622,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="v0.2.1-beta"
+          tag="v0.2.2-beta"
           release_assets=(
-            dist/nexara-v0.2.1-beta.apk
-            dist/nexara-v0.2.1-beta.apk.sha256
+            dist/nexara-v0.2.2-beta.apk
+            dist/nexara-v0.2.2-beta.apk.sha256
           )
 
           if ! gh release view "${tag}" >/dev/null 2>&1; then
@@ -634,8 +634,8 @@ jobs:
               --draft \
               --prerelease \
               --latest=false \
-              --title "Nexara v0.2.1-beta" \
-              --notes-file docs/release/v0.2.1-beta.md
+              --title "Nexara v0.2.2-beta" \
+              --notes-file docs/release/v0.2.2-beta.md
           fi
 
           read -r is_draft is_prerelease < <(
@@ -645,7 +645,7 @@ jobs:
           )
           if [[ "${is_prerelease}" != "true" ]] || \
             [[ "${is_draft}" != "true" && "${is_draft}" != "false" ]]; then
-            echo "::error::既有 v0.2.1-beta Release 既不是 prerelease draft，也不是已发布的 prerelease。"
+            echo "::error::既有 v0.2.2-beta Release 既不是 prerelease draft，也不是已发布的 prerelease。"
             exit 1
           fi
 
@@ -688,8 +688,8 @@ jobs:
             --draft=false \
             --prerelease \
             --latest=false \
-            --title "Nexara v0.2.1-beta" \
-            --notes-file docs/release/v0.2.1-beta.md
+            --title "Nexara v0.2.2-beta" \
+            --notes-file docs/release/v0.2.2-beta.md
 
           read -r final_is_draft final_is_prerelease < <(
             gh release view "${tag}" \

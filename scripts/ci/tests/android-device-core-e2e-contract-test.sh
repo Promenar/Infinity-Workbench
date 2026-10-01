@@ -101,6 +101,7 @@ assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.local.db.recovery.A
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseWorkspaceRecoveryTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.chat.LegacyAttachmentDeviceTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.rag.RagWorkspaceSourceSelectorDeviceTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.hub.AgentHubScreenContentTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.onboarding.WelcomeScreenLayoutTest'
 assert_contains "${DEVICE_SCRIPT}" 'run_test document-parser-fixtures "${APP_RUNNER}"'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.data.rag.DocumentParserDeviceE2eTest'

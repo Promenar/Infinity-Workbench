@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v0.2.1-beta workflow 发行可靠性纯文本契约测试。"""
+"""v0.2.2-beta workflow 发行可靠性纯文本契约测试。"""
 
 from __future__ import annotations
 
@@ -78,29 +78,68 @@ def continued_shell_commands(script: str, executable: str) -> list[list[str]]:
 
 
 class ReleaseWorkflowReliabilityTest(unittest.TestCase):
+    def test_android_ci_collects_all_quality_failures_without_ignoring_exit_status(self) -> None:
+        commands = continued_shell_commands(ANDROID_CI, "./gradlew")
+        quality = next(command for command in commands if ":app:validateDebugScreenshotTest" in command)
+        self.assertIn("--continue", quality)
+        for task in (":app:testDebugUnitTest", ":app:lintDebug", ":app:assembleDebug"):
+            self.assertIn(task, quality)
+        self.assertNotIn("continue-on-error: true", ANDROID_CI)
+
+    def test_release_identity_matches_android_source(self) -> None:
+        version_name = re.search(r'versionName\s*=\s*"([^"\n]+)"', APP_BUILD).group(1)
+        version_code = re.search(r'versionCode\s*=\s*(\d+)', APP_BUILD).group(1)
+        tag = f"v{version_name}"
+        self.assertIn(f"      - {tag}\n", RELEASE)
+        self.assertIn(f'--expected-version-code {version_code} ', RELEASE)
+        self.assertIn(f'--expected-version-name {version_name} ', RELEASE)
+        self.assertIn(f'dist/nexara-{tag}.apk', workflow_job("build-release"))
+        self.assertIn(f'refs/tags/{tag}', workflow_job("publish"))
+        self.assertIn(f'--notes-file docs/release/{tag}.md', workflow_job("publish"))
+        for suffix in (".md", "-validation.md"):
+            self.assertTrue((ROOT / "docs/release" / f"{tag}{suffix}").is_file())
+        self.assertNotIn("0.2.1-beta", RELEASE)
+
+    def test_signed_apk_smoke_defaults_match_source_and_allow_explicit_override(self) -> None:
+        version_name = re.search(r'versionName\s*=\s*"([^"\n]+)"', APP_BUILD).group(1)
+        version_code = re.search(r'versionCode\s*=\s*(\d+)', APP_BUILD).group(1)
+        assignments = "\n".join(
+            re.findall(r"^EXPECTED_VERSION_(?:CODE|NAME)=.*$", SMOKE, flags=re.MULTILINE)
+        )
+        self.assertEqual(len(assignments.splitlines()), 2)
+        shell = assignments + '\nprintf "%s\\n%s\\n" "$EXPECTED_VERSION_CODE" "$EXPECTED_VERSION_NAME"'
+        for environment, expected in (
+            ({}, [version_code, version_name]),
+            ({"NEXARA_EXPECTED_VERSION_CODE": "99", "NEXARA_EXPECTED_VERSION_NAME": "test-only"}, ["99", "test-only"]),
+        ):
+            with self.subTest(environment=environment):
+                result = subprocess.run(["/bin/bash", "-c", shell], env=environment, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), expected)
+
     def test_android_ci_covers_current_default_and_release_branches(self) -> None:
         self.assertIn("pull_request:", ANDROID_CI)
         self.assertIn("      - B-native-refactor", ANDROID_CI)
-        self.assertIn("      - codex/v0.2.1-beta", ANDROID_CI)
+        self.assertIn("      - codex/v0.2.2-beta", ANDROID_CI)
         self.assertIn("      - codex/md3-redesign", ANDROID_CI)
 
     def test_release_inputs_and_tag_provenance_fail_closed(self) -> None:
-        self.assertIn("docs/release/v0.2.1-beta.md", RELEASE)
-        self.assertIn("docs/release/v0.2.1-beta-validation.md", RELEASE)
+        self.assertIn("docs/release/v0.2.2-beta.md", RELEASE)
+        self.assertIn("docs/release/v0.2.2-beta-validation.md", RELEASE)
         self.assertIn('git cat-file -t "refs/tags/${GITHUB_REF_NAME}"', RELEASE)
         self.assertIn('"tag"', RELEASE)
         self.assertIn("verification.verified", RELEASE)
         self.assertIn("NEXARA_ALLOW_UNSIGNED_ANNOTATED_TAG", RELEASE)
         self.assertIn("NEXARA_RELEASE_COMMIT_SHA", RELEASE)
         self.assertIn("origin/B-native-refactor", RELEASE)
-        self.assertIn("origin/codex/v0.2.1-beta", RELEASE)
+        self.assertIn("origin/codex/v0.2.2-beta", RELEASE)
         self.assertIn('git rev-parse "${reviewed_branch}"', RELEASE)
         self.assertNotIn("merge-base --is-ancestor", RELEASE)
 
     def test_workflow_dispatch_manual_candidate_entry_exists(self) -> None:
         self.assertRegex(
             RELEASE,
-            r"(?m)^on:\n  workflow_dispatch:\n  push:\n    tags:\n      - v0\.2\.1-beta$",
+            r"(?m)^on:\n  workflow_dispatch:\n  push:\n    tags:\n      - v0\.2\.2-beta$",
         )
 
     def test_workflow_dispatch_candidate_must_be_only_B_native_refactor_branch(self) -> None:
@@ -142,7 +181,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         publish_job = workflow_job("publish")
         self.assertEqual(
             job_level_value(publish_job, "if"),
-            "${{ github.event_name == 'push' && github.ref == 'refs/tags/v0.2.1-beta' }}",
+            "${{ github.event_name == 'push' && github.ref == 'refs/tags/v0.2.2-beta' }}",
         )
 
     def test_candidate_mode_keeps_all_pre_publish_jobs_enabled(self) -> None:
@@ -242,8 +281,8 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("0dfe33b280af97b94c27203b9e66691ff8e41af237777a93d21d2b27907b9291", upgrade_job)
         self.assertIn("android-release-upgrade-smoke.sh", upgrade_job)
         self.assertIn("dist/nexara-v0.1.apk", upgrade_job)
-        self.assertIn("dist/nexara-v0.2.1-beta.apk", upgrade_job)
-        self.assertIn("(cd dist && sha256sum -c nexara-v0.2.1-beta.apk.sha256)", upgrade_job)
+        self.assertIn("dist/nexara-v0.2.2-beta.apk", upgrade_job)
+        self.assertIn("(cd dist && sha256sum -c nexara-v0.2.2-beta.apk.sha256)", upgrade_job)
         self.assertIn("64124d620f1875ac448941c5c8161bfc7f4bdabdc592f0b0d53e59530623b232", UPGRADE_SMOKE)
         self.assertIn("UPGRADE_WORKSPACE_SENTINEL", UPGRADE_SMOKE)
         self.assertNotIn("sentinel-hash", UPGRADE_SMOKE)
@@ -430,7 +469,7 @@ is_expected_resumed_activity "$2"
         self.assertLess(upload_idx, verification_idx)
         self.assertLess(verification_idx, publish_idx)
         self.assertIn("--draft=false", publish_job[publish_idx:])
-        self.assertIn("--notes-file docs/release/v0.2.1-beta.md", publish_job[publish_idx:])
+        self.assertIn("--notes-file docs/release/v0.2.2-beta.md", publish_job[publish_idx:])
         self.assertIn("--latest=false", publish_job[publish_idx:])
 
     def test_validate_release_input_job_calls_validator_early(self) -> None:
@@ -454,20 +493,20 @@ is_expected_resumed_activity "$2"
         publish_job = RELEASE.split("\n  publish:", 1)[1]
         self.assertRegex(
             publish_job,
-            r"python3 scripts/ci/validate-release-readiness\.py \\\n\s+docs/release/v0\.2\.1-beta-validation\.md \\\n\s+docs/release/v0\.2\.1-beta\.md",
+            r"python3 scripts/ci/validate-release-readiness\.py \\\n\s+docs/release/v0\.2\.2-beta-validation\.md \\\n\s+docs/release/v0\.2\.2-beta\.md",
         )
 
         validation_job = RELEASE.split("  validate-release-inputs:", 1)[1].split("  device-e2e:", 1)[0]
         self.assertRegex(
             validation_job,
-            r"python3 scripts/ci/validate-release-readiness\.py \\\n\s+docs/release/v0\.2\.1-beta-validation\.md \\\n\s+docs/release/v0\.2\.1-beta\.md",
+            r"python3 scripts/ci/validate-release-readiness\.py \\\n\s+docs/release/v0\.2\.2-beta-validation\.md \\\n\s+docs/release/v0\.2\.2-beta\.md",
         )
 
     def run_release_validator(self, ledger: str, notes: str) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_root = Path(tmp_dir)
-            ledger_path = tmp_root / "v0.2.1-beta-validation.md"
-            notes_path = tmp_root / "v0.2.1-beta.md"
+            ledger_path = tmp_root / "v0.2.2-beta-validation.md"
+            notes_path = tmp_root / "v0.2.2-beta.md"
             ledger_path.write_text(ledger, encoding="utf-8")
             notes_path.write_text(notes, encoding="utf-8")
             return subprocess.run(
@@ -547,6 +586,21 @@ is_expected_resumed_activity "$2"
                     "> 发布状态：GO\n",
                 )
                 self.assertNotEqual(result.returncode, 0)
+
+    def test_go_cannot_override_missing_authorization_or_current_evidence(self) -> None:
+        valid_ledger = "> 状态：GO\n" + "\n".join(REQUIRED_LEDGER_MARKERS) + "\n- 最终结论：GO\n"
+        invalid_markers = {
+            "> GitHub 发布动作：AUTHORIZED": "> GitHub 发布动作：NOT-AUTHORIZED",
+            "> 物理真机人工验收：BETA-RISK-ACCEPTED": "> 物理真机人工验收：PENDING",
+            "> 当前本地 APK 冷安装：PASS": "> 当前本地 APK 冷安装：HISTORICAL-PASS",
+            "> 同源历史候选冷安装：PASS": "> 同源历史候选冷安装：NOT-RUN",
+            "> 旧版覆盖升级数据继承：PASS": "> 旧版覆盖升级数据继承：HISTORICAL-PASS / CURRENT-NOT-RUN",
+        }
+        for accepted, invalid in invalid_markers.items():
+            with self.subTest(marker=invalid):
+                result = self.run_release_validator(valid_ledger.replace(accepted, invalid), "> 发布状态：GO\n")
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("值非法", result.stderr)
 
     def test_actions_are_sha_pinned_and_permissions_are_minimal(self) -> None:
         for workflow in (ANDROID_CI, RELEASE):

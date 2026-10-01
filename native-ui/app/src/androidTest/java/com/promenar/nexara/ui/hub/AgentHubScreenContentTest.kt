@@ -1,28 +1,25 @@
 package com.promenar.nexara.ui.hub
 
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.model.Agent
+import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.ui.theme.NexaraTheme
 import com.promenar.nexara.ui.testing.UiTags
 import com.google.common.truth.Truth.assertThat
@@ -38,75 +35,43 @@ class AgentHubScreenContentTest {
         get() = InstrumentationRegistry.getInstrumentation().targetContext.resources
 
     @Test
-    fun topBarSearchClearAndBackRestoreHubState() {
-        var query by mutableStateOf("")
-        var searchActive by mutableStateOf(false)
+    fun hubFloatingAddDispatchesWithoutOpeningSession() {
+        val add = AtomicBoolean(false)
+        val open = AtomicBoolean(false)
         rule.setContent {
             NexaraTheme {
                 AgentHubScreenContent(
-                    state = AgentHubScreenState(
-                        searchQuery = query,
-                        searchActive = searchActive,
-                    ),
+                    state = AgentHubScreenState(),
                     actions = AgentHubScreenActions(
-                        onSearch = { query = it },
-                        onSearchActiveChange = { searchActive = it },
+                        onRequestAdd = { add.set(true) },
+                        onOpenChat = { open.set(true) },
                     ),
                 )
             }
         }
-
-        val search = resources.getString(R.string.common_search_placeholder)
-        rule.onNodeWithContentDescription(search).performClick()
-        rule.onNodeWithContentDescription(search).performTextInput("missing")
-        rule.onNodeWithContentDescription(resources.getString(R.string.common_cd_clear)).performClick()
-        assertThat(query).isEmpty()
-        rule.onNodeWithContentDescription(search).performTextInput("missing-again")
-        rule.onNodeWithContentDescription(resources.getString(R.string.common_cd_back)).performClick()
-
-        assertThat(searchActive).isFalse()
-        assertThat(query).isEmpty()
+        rule.onNodeWithTag(UiTags.HUB_ADD_AGENT).assertHasClickAction().performClick()
+        assertThat(add.get()).isTrue()
+        assertThat(open.get()).isFalse()
     }
 
     @Test
-    fun searchNoResultsBackRestoresHubScrollPosition() {
-        var query by mutableStateOf("")
-        var searchActive by mutableStateOf(false)
+    fun expandingAndCollapsingAgentPreservesScrolledRow() {
         val agents = (0 until 24).map { index ->
             AgentDisplayItem(
-                agent = previewAgent(
-                    id = "agent-$index",
-                    name = "Agent $index",
-                    description = "Description $index",
-                ),
+                agent = previewAgent("agent-$index", "Agent $index", "Description $index"),
                 title = "Agent $index",
                 subtitle = "Description $index",
             )
         }
         rule.setContent {
             NexaraTheme {
-                AgentHubScreenContent(
-                    state = AgentHubScreenState(
-                        displayAgents = if (query.isBlank()) agents else listOf(agents.first()),
-                        searchQuery = query,
-                        searchActive = searchActive,
-                    ),
-                    actions = AgentHubScreenActions(
-                        onSearch = { query = it },
-                        onSearchActiveChange = { searchActive = it },
-                    ),
-                )
+                AgentHubScreenContent(AgentHubScreenState(displayAgents = agents), AgentHubScreenActions())
             }
         }
-
         rule.onNode(hasScrollAction()).performScrollToNode(hasText("Agent 18"))
-        rule.onNodeWithText("Agent 18").assertIsDisplayed()
-        val search = resources.getString(R.string.common_search_placeholder)
-        rule.onNodeWithContentDescription(search).performClick()
-        rule.onNodeWithContentDescription(search).performTextInput("missing")
-        rule.onNodeWithContentDescription(resources.getString(R.string.common_cd_back)).performClick()
-        rule.waitForIdle()
-
+        rule.onNode(hasText("Agent 18") and hasClickAction()).performClick()
+        rule.onNodeWithText(resources.getString(R.string.hub_sessions_empty)).assertIsDisplayed()
+        rule.onNode(hasText("Agent 18") and hasClickAction()).performClick()
         rule.onNodeWithText("Agent 18").assertIsDisplayed()
     }
 
@@ -190,8 +155,9 @@ class AgentHubScreenContentTest {
     }
 
     @Test
-    fun rowClickNavigatesToSession() {
+    fun rowClickExpandsSessionsAndCreateDispatchesAgent() {
         val openSession = AtomicBoolean(false)
+        val createSession = AtomicBoolean(false)
         rule.setContent {
             NexaraTheme {
                 AgentHubScreenContent(
@@ -209,17 +175,47 @@ class AgentHubScreenContentTest {
                         ),
                     ),
                     actions = AgentHubScreenActions(
-                        onOpenSession = { openSession.set(true) },
+                        onOpenChat = { openSession.set(true) },
+                        onCreateSession = { agentId -> createSession.set(agentId == "agent-coder") },
                     ),
                 )
             }
         }
 
-        rule.onNodeWithTag(UiTags.hubAgentCard("agent-coder"))
+        rule.onNode(hasText("Coding Expert") and hasClickAction())
             .assertHasClickAction()
             .performClick()
 
-        assertThat(openSession.get()).isTrue()
+        rule.onNodeWithText(resources.getString(R.string.hub_sessions_empty)).assertIsDisplayed()
+        assertThat(openSession.get()).isFalse()
+        rule.onNodeWithText(resources.getString(R.string.sessions_btn_new)).performClick()
+        assertThat(createSession.get()).isTrue()
+    }
+
+    @Test
+    fun expandedSessionClickDispatchesExactSessionId() {
+        val opened = java.util.concurrent.atomic.AtomicReference<String>()
+        rule.setContent {
+            NexaraTheme {
+                AgentHubScreenContent(
+                    state = AgentHubScreenState(
+                        displayAgents = listOf(AgentDisplayItem(
+                            agent = previewAgent("agent-coder", "Coding Expert", "Development"),
+                            title = "Coding Expert",
+                            subtitle = "Development",
+                        )),
+                        sessionsByAgent = mapOf("agent-coder" to listOf(
+                            Session(id = "session-exact", agentId = "agent-coder", title = "Existing conversation"),
+                        )),
+                    ),
+                    actions = AgentHubScreenActions(onOpenChat = { opened.set(it) }),
+                )
+            }
+        }
+        rule.onNode(hasText("Coding Expert") and hasClickAction()).performClick()
+        assertThat(opened.get()).isNull()
+        rule.onNodeWithText("Existing conversation").performClick()
+        assertThat(opened.get()).isEqualTo("session-exact")
     }
 
     @Test
@@ -242,7 +238,7 @@ class AgentHubScreenContentTest {
                         ),
                     ),
                     actions = AgentHubScreenActions(
-                        onOpenSession = { openSession.set(true) },
+                        onOpenChat = { openSession.set(true) },
                     ),
                 )
             }
@@ -311,7 +307,7 @@ class AgentHubScreenContentTest {
                     ),
                     actions = AgentHubScreenActions(
                         onRequestDelete = { deleteRequested.set(true) },
-                        onOpenSession = { openSession.set(true) },
+                        onOpenChat = { openSession.set(true) },
                     ),
                 )
             }

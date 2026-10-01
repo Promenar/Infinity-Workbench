@@ -194,6 +194,7 @@ fun ProviderFormScreen(
     onSave: suspend (ProtocolType, String, CredentialUpdate, String, String?) -> String = { _, _, _, _, _ -> "" },
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val resources = androidx.compose.ui.platform.LocalResources.current
     val app = context.applicationContext as NexaraApplication
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(app))
     val availableProviderPresets = remember(app.localInferenceRuntimeGate.isAvailable) {
@@ -387,19 +388,19 @@ fun ProviderFormScreen(
                     is ProviderConnectionProbeResult.Failure -> {
                         val reasonText = when (probeResult.reason) {
                             com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.AUTHENTICATION_REJECTED ->
-                                context.getString(R.string.provider_form_test_failed_auth)
+                                resources.getString(R.string.provider_form_test_failed_auth)
                             com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.NETWORK_UNAVAILABLE ->
-                                context.getString(R.string.provider_form_test_failed_network)
+                                resources.getString(R.string.provider_form_test_failed_network)
                             com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.ENDPOINT_INVALID ->
-                                context.getString(R.string.provider_form_test_failed_endpoint)
+                                resources.getString(R.string.provider_form_test_failed_endpoint)
                             com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.CREDENTIALS_INVALID ->
-                                context.getString(R.string.provider_form_test_failed_credentials)
+                                resources.getString(R.string.provider_form_test_failed_credentials)
                             com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.CREDENTIALS_MISSING ->
-                                context.getString(R.string.provider_form_test_failed_missing)
+                                resources.getString(R.string.provider_form_test_failed_missing)
                             com.promenar.nexara.data.remote.provider.ProviderConnectionProbeFailure.RESPONSE_INVALID ->
-                                context.getString(R.string.provider_form_test_failed_response)
+                                resources.getString(R.string.provider_form_test_failed_response)
                         }
-                        val prefix = context.getString(R.string.common_cd_failed)
+                        val prefix = resources.getString(R.string.common_cd_failed)
                         connectionTestFailureMessage = if (probeResult.statusCode != null) {
                             "$prefix (HTTP ${probeResult.statusCode})：$reasonText"
                         } else {

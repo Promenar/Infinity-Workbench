@@ -510,7 +510,10 @@ fun AgentExpandableCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag(UiTags.hubAgentCard(agentId)),
+            .testTag(UiTags.hubAgentCard(agentId))
+            .semantics {
+                if (isPinned) stateDescription = pinnedStateDescription
+            },
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {

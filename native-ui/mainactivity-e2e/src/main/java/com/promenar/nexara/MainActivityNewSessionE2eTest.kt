@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
-import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ActivityScenario
@@ -47,7 +49,7 @@ class MainActivityNewSessionE2eTest {
             Agent(
                 id = agentId,
                 name = "New Session E2E Agent",
-                description = "Exercises the real session-list create route",
+                description = "验证助手展开列表中的真实新建会话路径",
             ),
         )
         app.getSharedPreferences("nexara_onboarding", Context.MODE_PRIVATE)
@@ -67,17 +69,17 @@ class MainActivityNewSessionE2eTest {
     }
 
     @Test
-    fun 新建会话从列表进入聊天且状态可恢复(): Unit = runBlocking {
-        compose.onNodeWithTag(UiTags.hubAgentCard(agentId)).assertIsDisplayed().performClick()
+    fun 新建会话从展开列表进入聊天且状态可恢复(): Unit = runBlocking {
+        compose.onNode(hasText("New Session E2E Agent") and hasClickAction()).assertIsDisplayed().performClick()
 
-        val createLabel = app.getString(R.string.sessions_cd_new)
+        val createLabel = app.getString(R.string.sessions_btn_new)
         compose.waitUntil(15_000) {
             runCatching {
-                compose.onAllNodesWithContentDescription(createLabel)
+                compose.onAllNodesWithText(createLabel)
                     .fetchSemanticsNodes().isNotEmpty()
             }.getOrDefault(false)
         }
-        compose.onNodeWithContentDescription(createLabel).assertIsDisplayed().performClick()
+        compose.onNodeWithText(createLabel).assertIsDisplayed().performClick()
 
         compose.waitUntil(15_000) {
             app.createdChatViewModel?.uiState?.value?.session
