@@ -62,7 +62,7 @@ class LocalGatewayDeviceTest(private val model: String) {
             "newapi/deepseek-v4-flash",
             "newapi/gemini-3.8-flash",
             "newapi/sensenova-6.8-flash-lite",
-            "openai-chatgpt/gpt-5.6-luna",
+            "openai-chatgpt/gpt-6-luna",
             "newapi/MiniMax-M3",
         ).map { arrayOf(it) }
     }
