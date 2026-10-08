@@ -57,6 +57,11 @@ jobs:
           --input native-ui/app/src/main/assets/model-catalog/models-dev.normalized.json
           --manifest native-ui/app/src/main/assets/model-catalog/manifest.json
 
+      - name: 文本换行静态门禁
+        run: |
+          python3 scripts/ci/tests/check-text-wrapping-test.py
+          python3 scripts/ci/check-text-wrapping.py
+
       - name: 执行当前可用质量门禁
         working-directory: native-ui
         run: |

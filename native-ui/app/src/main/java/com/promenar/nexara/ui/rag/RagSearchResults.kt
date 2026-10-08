@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.rag
 
 import androidx.compose.foundation.clickable
+import com.promenar.nexara.ui.theme.forReading
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -176,7 +177,7 @@ private fun RagSearchResultList(
                     {
                         Text(
                             text = snippet,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyMedium.forReading(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }

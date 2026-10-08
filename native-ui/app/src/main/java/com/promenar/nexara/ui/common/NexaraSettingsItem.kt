@@ -28,6 +28,8 @@ fun NexaraSettingsItem(
     trailingContent: (@Composable () -> Unit)? = null,
     onClickLabel: String? = null,
     titleTextStyle: TextStyle? = null,
+    /** 副标题是模型 ID、URL 等标识符时为 true：只在分隔符处折行。 */
+    subtitleIsIdentifier: Boolean = false,
 ) {
     ListItem(
         headlineContent = {
@@ -43,11 +45,19 @@ fun NexaraSettingsItem(
         ),
         supportingContent = subtitle?.let {
             {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (subtitleIsIdentifier) {
+                    NexaraIdentifierText(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         },
         leadingContent = icon?.let {

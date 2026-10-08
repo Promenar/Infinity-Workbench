@@ -73,7 +73,7 @@ fun ModelSelectionListItem(
         contextSummary?.let { add(it) }
         addAll(capabilitySummary)
         add(model.providerName)
-    }.joinToString(" · ")
+    }.joinToString(" · ") // wrap-check: allow 单行省略显示，不会折行
 
     Row(
         modifier = modifier

@@ -171,6 +171,8 @@ run_layout_and_accessibility_contracts() {
         -e class com.promenar.nexara.ui.AdaptiveNavigationTest || status=$?
     run_test welcome-layout "${APP_RUNNER}" \
         -e class com.promenar.nexara.onboarding.WelcomeScreenLayoutTest || status=$?
+    run_test text-wrapping "${APP_RUNNER}" \
+        -e class com.promenar.nexara.ui.TextWrappingDeviceTest || status=$?
 
     restore_device_display_state
     return "${status}"

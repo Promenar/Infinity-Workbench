@@ -45,8 +45,9 @@ class ProviderModelsScreenContractTest {
             "private fun capabilityLabelResource(",
         )
 
-        assertThat(row).contains("localizedCapabilities.joinToString(\" · \")")
-        assertThat(row).contains("text = capabilitySummary")
+        // 能力摘要是连续的分段文本行（段内不断行、分隔符不落在行首），不是标签墙。
+        assertThat(row).contains("NexaraMetaLine(")
+        assertThat(row).contains("segments = localizedCapabilities")
         assertThat(row).contains("model.remoteModelId.ifBlank")
         assertThat(row).contains("UiTags.providerModelsModelCard(model.id)")
         assertThat(row).contains("UiTags.providerModelsRemoteId(model.id)")

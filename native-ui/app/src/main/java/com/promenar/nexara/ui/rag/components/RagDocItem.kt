@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.rag.components
 
 import androidx.compose.foundation.clickable
+import com.promenar.nexara.ui.common.NexaraIdentifierText
+import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -56,7 +58,7 @@ fun RagDocItem(
                 Modifier
             },
         )
-    val metadata = listOfNotNull(fileSize, date).joinToString(" • ")
+    val metadata = listOfNotNull(fileSize, date)
 
     if (LocalDensity.current.fontScale >= 1.5f) {
         RagDocItemLargeFont(
@@ -94,21 +96,20 @@ fun RagDocItem(
             }
         },
         headlineContent = {
-            Text(
+            NexaraIdentifierText(
                 text = title,
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        supportingContent = metadata.takeIf(String::isNotEmpty)?.let { resolvedMetadata ->
+        supportingContent = metadata.takeIf { it.isNotEmpty() }?.let { segments ->
             {
-                Text(
-                    text = resolvedMetadata,
+                NexaraMetaLine(
+                    segments = segments,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         },
@@ -123,7 +124,7 @@ private fun RagDocItemLargeFont(
     isSelected: Boolean,
     showCheckbox: Boolean,
     onCheckedChange: ((Boolean) -> Unit)?,
-    metadata: String,
+    metadata: List<String>,
     modifier: Modifier,
 ) {
     Surface(
@@ -154,7 +155,7 @@ private fun RagDocItemLargeFont(
                     modifier = Modifier.size(24.dp),
                 )
             }
-            Text(
+            NexaraIdentifierText(
                 text = title,
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 2,
@@ -162,12 +163,11 @@ private fun RagDocItemLargeFont(
                 modifier = Modifier.fillMaxWidth(),
             )
             if (metadata.isNotEmpty()) {
-                Text(
-                    text = metadata,
+                NexaraMetaLine(
+                    segments = metadata,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

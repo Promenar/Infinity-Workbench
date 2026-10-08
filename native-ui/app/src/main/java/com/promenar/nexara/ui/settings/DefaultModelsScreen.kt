@@ -153,6 +153,7 @@ internal fun DefaultModelsScreenContent(
                             icon = null,
                             title = stringResource(role.labelRes),
                             subtitle = subtitle,
+                            subtitleIsIdentifier = selectedModelName.isNotEmpty(),
                             onClick = { actions.onShowModelPicker(role) },
                             modifier = Modifier
                                 .testTag("default_model_role:${role.type}"),

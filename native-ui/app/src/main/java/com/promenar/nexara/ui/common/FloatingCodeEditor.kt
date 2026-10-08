@@ -41,6 +41,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.forInput
 
 @Composable
 fun FloatingCodeEditor(
@@ -141,7 +142,7 @@ fun FloatingCodeEditor(
                             .verticalScroll(rememberScrollState()),
                         textStyle = NexaraTypography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.onSurface
-                        ),
+                        ).forInput(),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
                     )
                 }

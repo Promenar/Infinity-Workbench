@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.data.local.inference.SlotState
@@ -68,6 +69,7 @@ import com.promenar.nexara.ui.common.SecretField
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.theme.NexaraSpacing
+import com.promenar.nexara.ui.theme.forInput
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -695,6 +697,7 @@ private fun ProviderProtocolSelector(state: ProviderFormUiState, actions: Provid
         onExpandedChange = actions.onProtocolMenuExpandedChange,
     ) {
         OutlinedTextField(
+            textStyle = LocalTextStyle.current.forInput(),
             value = state.localProtocol.displayName,
             onValueChange = {},
             readOnly = true,
@@ -752,6 +755,7 @@ private fun ProviderPresetSelector(state: ProviderFormUiState, actions: Provider
         onExpandedChange = actions.onPresetMenuExpandedChange,
     ) {
         OutlinedTextField(
+            textStyle = LocalTextStyle.current.forInput(),
             value = state.selectedPreset.name,
             onValueChange = {},
             readOnly = true,
@@ -816,6 +820,7 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
     ) {
         SettingsSectionHeader(stringResource(R.string.provider_form_config_section))
         OutlinedTextField(
+            textStyle = LocalTextStyle.current.forInput(),
             value = state.name,
             onValueChange = actions.onNameChange,
             modifier = Modifier.fillMaxWidth(),
@@ -824,6 +829,7 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
             singleLine = true,
         )
         OutlinedTextField(
+            textStyle = LocalTextStyle.current.forInput(),
             value = state.baseUrl,
             onValueChange = actions.onBaseUrlChange,
             modifier = Modifier.fillMaxWidth(),

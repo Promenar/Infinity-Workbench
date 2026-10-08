@@ -12,6 +12,8 @@ import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.MarkdownColors
 import com.mikepenz.markdown.model.MarkdownTypography
+import com.promenar.nexara.ui.theme.NexaraInputLineBreak
+import com.promenar.nexara.ui.theme.NexaraReadingLineBreak
 import com.promenar.nexara.ui.theme.NexaraTypography
 
 @Composable
@@ -38,6 +40,7 @@ fun nexaraMarkdownTypography(
     val h5 = base
     val h6 = (baseFontSize * 0.9).sp
 
+    // 标题沿用界面换行；正文、列表、引用为阅读换行；代码块保持逐字符贪心换行，不做短语重排。
     return markdownTypography(
         h1 = NexaraTypography.headlineLarge.copy(
             fontSize = h1,
@@ -77,43 +80,51 @@ fun nexaraMarkdownTypography(
             lineHeight = (baseFontSize * 1.6).sp,
             letterSpacing = 0.01.em,
             fontStyle = fontStyle,
+            lineBreak = NexaraReadingLineBreak,
         ),
         code = NexaraTypography.bodySmall.copy(
             fontSize = (baseFontSize - 1).sp,
             fontFamily = FontFamily.Monospace,
             lineHeight = (baseFontSize * 1.4).sp,
             fontStyle = fontStyle,
+            lineBreak = NexaraInputLineBreak,
         ),
         inlineCode = NexaraTypography.bodySmall.copy(
             fontSize = base,
             fontFamily = FontFamily.Monospace,
             lineHeight = (baseFontSize * 1.3).sp,
             fontStyle = fontStyle,
+            lineBreak = NexaraReadingLineBreak,
         ),
         paragraph = NexaraTypography.bodyMedium.copy(
             fontSize = base,
             lineHeight = (baseFontSize * 1.6).sp,
             fontStyle = fontStyle,
+            lineBreak = NexaraReadingLineBreak,
         ),
         ordered = NexaraTypography.bodyMedium.copy(
             fontSize = base,
             lineHeight = (baseFontSize * 1.6).sp,
             fontStyle = fontStyle,
+            lineBreak = NexaraReadingLineBreak,
         ),
         bullet = NexaraTypography.bodyMedium.copy(
             fontSize = base,
             lineHeight = (baseFontSize * 1.6).sp,
             fontStyle = fontStyle,
+            lineBreak = NexaraReadingLineBreak,
         ),
         list = NexaraTypography.bodyMedium.copy(
             fontSize = base,
             lineHeight = (baseFontSize * 1.6).sp,
             fontStyle = fontStyle,
+            lineBreak = NexaraReadingLineBreak,
         ),
         quote = NexaraTypography.bodyMedium.copy(
             fontSize = base,
             lineHeight = (baseFontSize * 1.5).sp,
             fontStyle = fontStyle,
+            lineBreak = NexaraReadingLineBreak,
         ),
     )
 }

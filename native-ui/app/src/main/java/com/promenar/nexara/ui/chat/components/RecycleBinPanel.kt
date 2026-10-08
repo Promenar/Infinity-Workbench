@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.components
 
 import androidx.compose.foundation.layout.Arrangement
+import com.promenar.nexara.ui.common.NexaraIdentifierText
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -487,7 +488,7 @@ private fun FileIcon() {
 @Composable
 private fun FileDetails(file: FileEntry, nowMillis: Long, modifier: Modifier) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
+        NexaraIdentifierText(
             text = file.name,
             style = NexaraTypography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,

@@ -14,6 +14,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 全站文本换行体系（2026-10-09）
+
+- **主题换行策略**：补齐 Material 3 全部 15 个文字角色并显式声明换行策略。界面文本使用平衡行长 + 严格 CJK 避头尾 + 短语断词，消除末行孤字、行首标点与短语拆断；聊天、Markdown、检索与文件预览等长文本使用段落换行；38 处输入框统一使用输入换行，编辑时不整段回流。
+- **元数据分段组件**：新增 `NexaraMetaLine`，段内不断行、按段折行、分隔符只在同行两段之间、按基线对齐、超行时显示省略号；迁移提供商卡片、模型能力、文件与检索元数据、备份、知识图谱统计、模型目录与分享导入等拼串，拆分对应格式字符串资源。修复 `model_catalog_version` 中英文资源写反。
+- **标识符折行**：新增 `NexaraIdentifierText`，文件名、URL、路径与模型 ID 只在分隔符后折行，版本号内部不断开，无障碍与测试语义仍为原文。
+- **门禁**：`scripts/ci/check-text-wrapping.py` 接入 Android CI，禁止主题外直接新建 `TextStyle`、界面拼接 `·`/`•` 元数据、输入框缺少输入换行样式与未登记的“·”格式串；`TextWrappingDeviceTest` 纳入设备最低矩阵，验证贪心换行对照组可复现孤字而界面策略为零，并检查中文窄屏放大字号下的关键界面。
+- 底部导航选中标签在放大字号下改为省略号截断，不再从字母中间裁切。
+
+
 ### 真实网关 Agent 端到端与 Gemini 工具请求修复（2026-10-02）
 
 - **Gemini 兼容请求修复**：OpenAI 兼容协议不再向 `tools` 注入 Vertex 原生的 `{"googleSearchRetrieval":{}}`；该条目会被兼容网关以 400 拒绝，导致 Gemini 模型在默认会话（Gemini 搜索开关默认开启）下无法对话或调用工具。Gemini 原生搜索仍由 Vertex 协议发送。

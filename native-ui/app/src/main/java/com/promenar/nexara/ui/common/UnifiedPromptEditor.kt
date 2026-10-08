@@ -66,6 +66,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.forInput
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -418,7 +419,7 @@ fun UnifiedPromptEditor(
                         fontSize = 14.sp,
                         fontFamily = FontFamily.Monospace,
                         lineHeight = 20.sp
-                    ),
+                    ).forInput(),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     decorator = { innerTextField ->
                         if (text.isEmpty()) {

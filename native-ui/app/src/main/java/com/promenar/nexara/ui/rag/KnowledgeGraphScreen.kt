@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.rag
 
 import android.app.Application
+import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -115,8 +116,11 @@ fun KnowledgeGraphScreen(
                 .bettboxListGroup()
                 .padding(16.dp),
         ) {
-            Text(
-                text = stringResource(R.string.kg_stats_summary, nodes.size, edges.size),
+            NexaraMetaLine(
+                segments = listOf(
+                    stringResource(R.string.kg_stats_nodes, nodes.size),
+                    stringResource(R.string.kg_stats_edges, edges.size),
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 12.dp),

@@ -38,6 +38,7 @@ import com.promenar.nexara.ui.avatar.rememberAvatarCropLauncher
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.theme.NexaraSpacing
+import com.promenar.nexara.ui.theme.forInput
 
 data class AgentIconOption(
     val id: String,
@@ -625,7 +626,7 @@ private fun InCardInputField(
             maxLines = maxLines,
             textStyle = MaterialTheme.typography.bodyMedium.copy(
                 color = MaterialTheme.colorScheme.onSurface,
-            ),
+            ).forInput(),
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             decorationBox = { innerTextField ->
                 Box(modifier = Modifier.fillMaxWidth()) {

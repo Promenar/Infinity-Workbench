@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat
 
 
 import androidx.compose.animation.*
+import com.promenar.nexara.ui.theme.forReading
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -464,7 +465,7 @@ fun RagProgressCard(
     val openDetailsLabel = stringResource(R.string.chat_rag_open_details)
     val doneLabel = stringResource(R.string.chat_rag_done)
     val openDetails = { showDetailsSheet = true }
-    val accessibilityState = if (retrievalReady) "$currentText · $doneLabel" else currentText
+    val accessibilityState = if (retrievalReady) "$currentText · $doneLabel" else currentText // wrap-check: allow 无障碍状态描述，不参与排版
 
     Surface(
         modifier = modifier
@@ -962,7 +963,7 @@ fun SummaryCard(
                     ) {
                         Text(
                             text = result,
-                            style = NexaraTypography.bodyMedium.copy(fontSize = 15.sp),
+                            style = NexaraTypography.bodyMedium.copy(fontSize = 15.sp).forReading(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(10.dp)
                         )

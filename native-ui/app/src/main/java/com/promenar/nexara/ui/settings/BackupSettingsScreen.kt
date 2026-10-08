@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.settings
 
 import androidx.compose.animation.AnimatedVisibility
+import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -80,9 +81,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.collectAsState
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.ui.common.SecretField
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.forInput
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -291,8 +294,8 @@ internal fun BackupSettingsScreen(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
-                            Text(
-                                text = coreContentLabels.joinToString(" · "),
+                            NexaraMetaLine(
+                                segments = coreContentLabels,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -432,10 +435,13 @@ internal fun BackupSettingsScreen(
                                         Text(remote.fileName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
                                     },
                                     supportingContent = {
-                                        Text(
-                                            text = stringResource(R.string.backup_remote_metadata, remote.sizeBytes, remote.lastModifiedEpochMillis),
+                                        NexaraMetaLine(
+                                            segments = listOf(
+                                                stringResource(R.string.backup_remote_size, remote.sizeBytes),
+                                                remote.lastModifiedEpochMillis.toString(),
+                                            ),
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     },
                                     leadingContent = {
@@ -524,6 +530,7 @@ internal fun BackupSettingsScreen(
                 )
 
                 OutlinedTextField(
+                    textStyle = LocalTextStyle.current.forInput(),
                     value = tempWebdavUrl,
                     onValueChange = { tempWebdavUrl = it },
                     label = { Text(stringResource(R.string.backup_webdav_url_label)) },
@@ -532,6 +539,7 @@ internal fun BackupSettingsScreen(
                 )
 
                 OutlinedTextField(
+                    textStyle = LocalTextStyle.current.forInput(),
                     value = tempWebdavUser,
                     onValueChange = { tempWebdavUser = it },
                     label = { Text(stringResource(R.string.backup_webdav_user_label)) },

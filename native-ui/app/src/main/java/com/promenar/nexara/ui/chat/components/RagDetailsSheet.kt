@@ -2,6 +2,9 @@
 package com.promenar.nexara.ui.chat.components
 
 import androidx.compose.foundation.clickable
+import com.promenar.nexara.ui.common.NexaraIdentifierText
+import com.promenar.nexara.ui.common.NexaraMetaLine
+import com.promenar.nexara.ui.theme.forReading
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -339,16 +342,16 @@ private fun RetrievedReferenceRow(reference: RagReference, index: Int) {
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(
+                NexaraIdentifierText(
                     text = reference.source.substringAfterLast('/').ifBlank {
                         stringResource(R.string.rag_details_unknown_source)
                     },
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                scoreSummary(reference).takeIf(String::isNotBlank)?.let { summary ->
-                    Text(
-                        text = summary,
+                scoreSegments(reference).takeIf { it.isNotEmpty() }?.let { segments ->
+                    NexaraMetaLine(
+                        segments = segments,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -379,23 +382,20 @@ private fun RetrievedReferenceRow(reference: RagReference, index: Int) {
         }
         Text(
             text = reference.content,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.forReading(),
             color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }
 
 @Composable
-private fun scoreSummary(reference: RagReference): String {
-    val scores = buildList {
-        if (reference.score > 0f) {
-            add("${stringResource(R.string.rag_details_score_vector)} ${(reference.score * 100).roundToInt()}%")
-        }
-        reference.rerankScore?.let { score ->
-            add("${stringResource(R.string.rag_details_score_rerank)} ${(score * 100).roundToInt()}%")
-        }
+private fun scoreSegments(reference: RagReference): List<String> = buildList {
+    if (reference.score > 0f) {
+        add("${stringResource(R.string.rag_details_score_vector)} ${(reference.score * 100).roundToInt()}%")
     }
-    return scores.joinToString(" · ")
+    reference.rerankScore?.let { score ->
+        add("${stringResource(R.string.rag_details_score_rerank)} ${(score * 100).roundToInt()}%")
+    }
 }
 
 @Composable
@@ -492,7 +492,7 @@ private fun WebCitationRow(citation: Citation, index: Int, onOpen: (String) -> U
             citation.snippet?.takeIf(String::isNotBlank)?.let { snippet ->
                 Text(
                     text = snippet,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.forReading(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -570,7 +570,7 @@ private fun KnowledgeGraphList(kgPaths: List<KgPath>) {
                         )
                         Text(
                             text = reasoning,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.forReading(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
                         )

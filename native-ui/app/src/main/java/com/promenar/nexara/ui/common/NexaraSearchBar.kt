@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTheme
+import com.promenar.nexara.ui.theme.forInput
 
 @Composable
 fun NexaraSearchBar(
@@ -86,7 +87,7 @@ fun NexaraSearchBar(
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
                         color = MaterialTheme.colorScheme.onSurface,
-                    ),
+                    ).forInput(),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     keyboardActions = KeyboardActions(
                         onSearch = { onSearch?.invoke() }

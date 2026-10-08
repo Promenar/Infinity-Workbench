@@ -836,6 +836,45 @@ fun chatErrorLargeFontReleasePreview() {
 
 @PreviewTest
 @Preview(
+    name = "Provider list Chinese narrow",
+    widthDp = 360,
+    heightDp = 420,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun providerListChineseNarrowReleasePreview() {
+    ReleasePreviewSurface {
+        ProviderListScreenContent(
+            state = com.promenar.nexara.ui.settings.ProviderListScreenState(
+                providers = listOf(
+                    com.promenar.nexara.data.model.ProviderListItem(
+                        id = "openai",
+                        name = "OpenAI",
+                        typeName = com.promenar.nexara.data.remote.protocol.ProtocolType.Generic_OpenAI_Compat.displayName,
+                        baseUrl = "https://api.promenar.com/v1",
+                        protocolType = com.promenar.nexara.data.remote.protocol.ProtocolType.Generic_OpenAI_Compat,
+                        hasApiKey = true,
+                        enabled = true,
+                    ),
+                    com.promenar.nexara.data.model.ProviderListItem(
+                        id = "anthropic",
+                        name = "Anthropic 官方接口（企业账号）",
+                        typeName = com.promenar.nexara.data.remote.protocol.ProtocolType.Anthropic_Messages.displayName,
+                        baseUrl = "https://api.anthropic-enterprise-gateway.example.com/v1/messages",
+                        protocolType = com.promenar.nexara.data.remote.protocol.ProtocolType.Anthropic_Messages,
+                        hasApiKey = false,
+                        enabled = false,
+                    ),
+                ),
+            ),
+            actions = ProviderListScreenActions(),
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
     name = "Agent skill packs Chinese",
     widthDp = 412,
     heightDp = 640,

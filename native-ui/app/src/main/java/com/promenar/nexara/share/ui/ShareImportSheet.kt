@@ -1,6 +1,7 @@
 package com.promenar.nexara.share.ui
 
 import androidx.compose.foundation.clickable
+import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -219,12 +220,12 @@ fun SharePendingBanner(
 private fun ShareImportItemRow(item: ShareImportItem) {
     Column(Modifier.testTag(UiTags.SHARE_IMPORT_ITEM).fillMaxWidth()) {
         Text(item.displayName)
-        Text(
-            listOfNotNull(
+        NexaraMetaLine(
+            segments = listOfNotNull(
                 compactMimeType(item.mimeType),
                 item.sizeBytes?.let(::formatShareBytes),
                 statusLabel(item),
-            ).joinToString(" · "),
+            ),
             modifier = Modifier.testTag(UiTags.SHARE_IMPORT_STATUS),
         )
         item.reason?.let { Text(rejectReasonLabel(it)) }

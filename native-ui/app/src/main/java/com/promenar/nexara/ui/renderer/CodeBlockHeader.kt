@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.theme.forInput
 import kotlinx.coroutines.delay
 
 private val CodeBlockActionTouchTarget = 48.dp
@@ -210,7 +211,7 @@ fun CodeBlockWithHeader(
                 textStyle = MaterialTheme.typography.bodySmall.copy(
                     fontFamily = FontFamily.Monospace,
                     fontSize = fontSize.sp
-                ),
+                ).forInput(),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
                     unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),

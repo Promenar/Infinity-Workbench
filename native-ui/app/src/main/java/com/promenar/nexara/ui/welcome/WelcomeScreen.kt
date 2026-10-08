@@ -43,9 +43,11 @@ import com.promenar.nexara.onboarding.OnboardingState
 import com.promenar.nexara.onboarding.OnboardingStep
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.forInput
 
 @Composable
 fun WelcomeScreen(
@@ -274,6 +276,7 @@ private fun OnboardingProgressScreen(
                     OnboardingStep.MODEL -> Unit
                     OnboardingStep.AGENT -> {
                         OutlinedTextField(
+                            textStyle = LocalTextStyle.current.forInput(),
                             value = agentName,
                             onValueChange = { agentName = it },
                             modifier = Modifier.fillMaxWidth(),

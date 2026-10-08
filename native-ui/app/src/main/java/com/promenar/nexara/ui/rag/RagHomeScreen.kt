@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.rag
 
 import android.os.Build
+import com.promenar.nexara.ui.theme.forReading
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -124,6 +125,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.repository.MemoryVectorRecord
@@ -137,6 +139,7 @@ import com.promenar.nexara.ui.rag.components.IndexingProgressBar
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.forInput
 import java.text.SimpleDateFormat
 
 data class RagFolderCrumb(
@@ -905,7 +908,7 @@ internal fun RagHomeScreenContent(
                                         headlineContent = {
                                             Text(
                                                 text = memory.content,
-                                                style = MaterialTheme.typography.bodyLarge,
+                                                style = MaterialTheme.typography.bodyLarge.forReading(),
                                                 maxLines = if (isExpanded) Int.MAX_VALUE else 2,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
@@ -1017,6 +1020,7 @@ internal fun RagHomeScreenContent(
             },
             text = {
                 OutlinedTextField(
+                    textStyle = LocalTextStyle.current.forInput(),
                     value = folderName,
                     onValueChange = { folderName = it },
                     label = { Text(stringResource(R.string.rag_home_folder_name)) },

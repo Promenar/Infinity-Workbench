@@ -46,9 +46,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
 import com.promenar.nexara.data.skills.InstalledAgentSkill
 import com.promenar.nexara.data.skills.SkillMarkdownParser
+import com.promenar.nexara.ui.theme.forInput
 
 /** 技能包列表与操作入口；无状态，便于截图与预览。 */
 @Composable
@@ -207,6 +209,7 @@ fun AgentSkillEditorSheet(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             OutlinedTextField(
+                textStyle = LocalTextStyle.current.forInput(),
                 value = name,
                 onValueChange = { name = it.trim().lowercase() },
                 label = { Text(stringResource(R.string.agent_skills_name_hint)) },
@@ -216,6 +219,7 @@ fun AgentSkillEditorSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
+                textStyle = LocalTextStyle.current.forInput(),
                 value = description,
                 onValueChange = { description = it.take(SkillMarkdownParser.MAX_DESCRIPTION_LENGTH) },
                 label = { Text(stringResource(R.string.agent_skills_description_hint)) },
@@ -225,7 +229,7 @@ fun AgentSkillEditorSheet(
                 value = body,
                 onValueChange = { body = it },
                 label = { Text(stringResource(R.string.agent_skills_body_hint)) },
-                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace).forInput(),
                 modifier = Modifier.fillMaxWidth().height(240.dp),
             )
             if (allowedTools.isNotEmpty()) {

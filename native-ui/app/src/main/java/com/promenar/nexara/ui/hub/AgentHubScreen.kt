@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
 import com.promenar.nexara.data.agent.PresetAgentDisplay
 import com.promenar.nexara.data.manager.ProviderManager
@@ -46,6 +47,7 @@ import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.forInput
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -201,12 +203,14 @@ private fun AddAgentDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
+                    textStyle = LocalTextStyle.current.forInput(),
                     value = name,
                     onValueChange = { name = it },
                     label = { Text(stringResource(R.string.hub_dialog_label_name)) },
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
+                    textStyle = LocalTextStyle.current.forInput(),
                     value = description,
                     onValueChange = { description = it },
                     label = { Text(stringResource(R.string.hub_dialog_label_desc)) },

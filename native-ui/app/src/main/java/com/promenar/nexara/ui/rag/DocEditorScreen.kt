@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.rag
 
 import android.content.ClipData
+import com.promenar.nexara.ui.common.NexaraIdentifierText
+import com.promenar.nexara.ui.common.NexaraMetaLine
 import android.content.ClipboardManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ScrollState
@@ -106,6 +108,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
+import com.promenar.nexara.ui.theme.forInput
 import java.util.Locale
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -799,7 +802,6 @@ private fun DocumentIdentity(
                 DocumentMetadata(
                     editor = editor,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -838,7 +840,7 @@ private fun DocumentTitleField(
         keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() }),
         textStyle = MaterialTheme.typography.titleLarge.copy(
             color = MaterialTheme.colorScheme.onSurface,
-        ),
+        ).forInput(),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         modifier = modifier
             .defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget)
@@ -866,20 +868,14 @@ private fun DocumentTitleField(
 private fun DocumentMetadata(
     editor: DocEditorUiState,
     maxLines: Int = 2,
-    overflow: TextOverflow = TextOverflow.Clip,
     modifier: Modifier = Modifier,
 ) {
-    Text(
-        text = stringResource(
-            R.string.doc_editor_metadata,
-            formatFileSize(editor.sizeBytes),
-            stringResource(R.string.doc_editor_document_type),
-        ),
+    NexaraMetaLine(
+        segments = listOf(formatFileSize(editor.sizeBytes), stringResource(R.string.doc_editor_document_type)),
         modifier = modifier.testTagCompat(UiTags.DOC_EDITOR_METADATA),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = maxLines,
-        overflow = overflow,
     )
 }
 
@@ -980,7 +976,7 @@ private fun EditorPane(
         textStyle = MaterialTheme.typography.bodyMedium.copy(
             fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurface,
-        ),
+        ).forInput(),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         modifier = modifier
             .fillMaxSize()
@@ -1231,19 +1227,15 @@ private fun DocumentIdentityReadOnly(editor: DocEditorUiState) {
             .fillMaxWidth()
             .testTagCompat(UiTags.DOC_EDITOR_IDENTITY),
     ) {
-        Text(
+        NexaraIdentifierText(
             text = editor.title,
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(
-            text = stringResource(
-                R.string.doc_editor_metadata,
-                formatFileSize(editor.sizeBytes),
-                stringResource(R.string.doc_editor_document_type),
-            ),
+        NexaraMetaLine(
+            segments = listOf(formatFileSize(editor.sizeBytes), stringResource(R.string.doc_editor_document_type)),
             modifier = Modifier.testTagCompat(UiTags.DOC_EDITOR_METADATA),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

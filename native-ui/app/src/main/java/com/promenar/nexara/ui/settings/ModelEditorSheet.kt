@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import com.promenar.nexara.ui.common.NexaraIdentifierText
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -53,6 +54,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.model.withRecordedUserEdits
@@ -60,6 +62,7 @@ import com.promenar.nexara.domain.generation.GenerationFailureCode
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.forInput
 
 private val EditorModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
 private val EditorModelTypeLabelResources = listOf(
@@ -221,6 +224,7 @@ internal fun ModelEditorSheet(
             }
             item("remote-model-id") {
                 OutlinedTextField(
+                    textStyle = LocalTextStyle.current.forInput(),
                     value = editRemoteModelId,
                     onValueChange = { editRemoteModelId = it },
                     label = { Text(stringResource(R.string.provider_models_field_model_id)) },
@@ -234,6 +238,7 @@ internal fun ModelEditorSheet(
             }
             item("name") {
                 OutlinedTextField(
+                    textStyle = LocalTextStyle.current.forInput(),
                     value = editName,
                     onValueChange = { editName = it },
                     label = { Text(stringResource(R.string.provider_models_field_display_name)) },
@@ -292,6 +297,7 @@ internal fun ModelEditorSheet(
             }
             item("context") {
                 OutlinedTextField(
+                    textStyle = LocalTextStyle.current.forInput(),
                     value = editContext,
                     onValueChange = { value ->
                         if (value.all(Char::isDigit)) editContext = value
@@ -445,7 +451,7 @@ private fun ModelEditorIdentity(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SettingsSectionHeader(stringResource(R.string.provider_models_editor_identity))
-        Text(
+        NexaraIdentifierText(
             text = remoteModelId,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

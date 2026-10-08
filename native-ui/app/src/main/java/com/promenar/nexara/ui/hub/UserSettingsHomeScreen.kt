@@ -77,6 +77,7 @@ import com.promenar.nexara.ui.settings.SettingsAsyncErrorCode
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.avatar.rememberAvatarCropLauncher
+import com.promenar.nexara.ui.theme.forInput
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -520,7 +521,7 @@ private fun NameEditDialog(
                 value = name,
                 onValueChange = { name = it },
                 modifier = Modifier.fillMaxWidth(),
-                textStyle = MaterialTheme.typography.bodyLarge,
+                textStyle = MaterialTheme.typography.bodyLarge.forInput(),
                 singleLine = true
             )
         },

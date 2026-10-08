@@ -84,10 +84,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSlider
+import com.promenar.nexara.ui.theme.forInput
 
 /** 技能编辑器的输入；name 为 null 表示新建。 */
 private data class AgentSkillEditorState(
@@ -351,6 +353,7 @@ fun SkillsScreen(
                 Text(stringResource(R.string.skills_add_mcp), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
 
                 OutlinedTextField(
+                    textStyle = LocalTextStyle.current.forInput(),
                     value = mcpName,
                     onValueChange = { mcpName = it },
                     label = { Text(stringResource(R.string.skills_mcp_name_placeholder)) },
@@ -358,6 +361,7 @@ fun SkillsScreen(
                 )
 
                 OutlinedTextField(
+                    textStyle = LocalTextStyle.current.forInput(),
                     value = mcpUrl,
                     onValueChange = { mcpUrl = it },
                     label = { Text(stringResource(R.string.skills_mcp_url_placeholder)) },
@@ -413,6 +417,7 @@ fun SkillsScreen(
                 Text(stringResource(R.string.skills_metadata), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
 
                 OutlinedTextField(
+                    textStyle = LocalTextStyle.current.forInput(),
                     value = skillName,
                     onValueChange = { skillName = it },
                     label = { Text(stringResource(R.string.skills_tool_name_hint)) },
@@ -420,6 +425,7 @@ fun SkillsScreen(
                 )
 
                 OutlinedTextField(
+                    textStyle = LocalTextStyle.current.forInput(),
                     value = skillDesc,
                     onValueChange = { skillDesc = it },
                     label = { Text(stringResource(R.string.skills_description_hint)) },
@@ -432,7 +438,7 @@ fun SkillsScreen(
                     value = skillCode,
                     onValueChange = { skillCode = it },
                     label = { Text(stringResource(R.string.skills_code_example)) },
-                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
+                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp).forInput(),
                     modifier = Modifier.fillMaxWidth().height(200.dp)
                 )
 
@@ -851,7 +857,7 @@ private fun SearchConfigBottomSheet(
                     value = searchState.searXngUrl,
                     onValueChange = { searchViewModel.updateSearXngUrl(it) },
                     modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(fontFamily = FontFamily.Monospace)
+                    textStyle = TextStyle(fontFamily = FontFamily.Monospace).forInput()
                 )
             }
         }

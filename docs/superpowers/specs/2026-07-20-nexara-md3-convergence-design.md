@@ -75,6 +75,13 @@ Material 3 是语义和层级系统，不是“使用了 Switch 就自动成为 
 
 普通正文、标题和辅助信息继续映射 Material typography。拥挤问题通过删除重复标题、减少容器、调整内容优先级、限制辅助文本行数和拆分详情解决。2.0x 字体允许页面变长，但不得裁切、重叠、隐藏主动作或把 48dp 目标缩小。
 
+### 4.2.1 文本换行
+
+- 所有 typography 角色显式声明换行策略：界面文本为平衡行长、严格 CJK 避头尾与短语断词（`NexaraUiLineBreak`），不得出现末行孤字、行首标点或短语被拆断；聊天、Markdown 与检索正文等阅读文本用 `forReading()`；输入框用 `forInput()`。
+- 多段元数据使用 `NexaraMetaLine`，段内不断行、段间分隔符不落在行首或行尾；不得用 `·`/`•` 拼接成单个字符串。
+- 文件名、URL、路径与模型 ID 使用 `NexaraIdentifierText`，只在分隔符处折行；单行省略显示除外。
+- `scripts/ci/check-text-wrapping.py` 静态门禁与 `TextWrappingDeviceTest` 设备门禁共同防止回退。
+
 ### 4.3 卡片使用边界
 
 卡片只允许用于真正独立、可整体操作的对象或需要框定的工具。设置行、Provider 行、模型摘要行、会话行和导航行全部使用连续列表或透明 `ListItem`，不得逐项描边成卡。

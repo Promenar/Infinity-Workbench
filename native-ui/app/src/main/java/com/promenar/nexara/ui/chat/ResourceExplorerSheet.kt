@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import com.promenar.nexara.ui.common.NexaraIdentifierText
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -517,7 +518,7 @@ private fun ImportStatusRow(
                     modifier = Modifier.size(20.dp),
                 )
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
+                    NexaraIdentifierText(
                         text = item.displayName,
                         style = NexaraTypography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,

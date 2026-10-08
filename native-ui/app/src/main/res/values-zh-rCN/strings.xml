@@ -701,7 +701,6 @@
     <string name="backup_reset_webdav_security">重置 WebDAV 安全配置</string>
     <string name="backup_remote_refresh">刷新远程备份</string>
     <string name="backup_remote_empty">暂无远程备份，请配置 WebDAV 后刷新。</string>
-    <string name="backup_remote_metadata">%1$d 字节 · %2$d</string>
     <string name="backup_password_export_title">加密导出的备份</string>
     <string name="backup_password_upload_title">上传前加密备份</string>
     <string name="backup_password_restore_title">恢复本地备份</string>
@@ -1062,7 +1061,6 @@
     <string name="doc_editor_title_placeholder">文档标题…</string>
     <string name="doc_editor_title_input_description">文档标题</string>
     <string name="doc_editor_content_input_description">文档正文</string>
-    <string name="doc_editor_metadata">%1$s · %2$s</string>
     <string name="doc_editor_preview">预览</string>
     <string name="doc_editor_preview_truncated">文档较大，预览已截断，编辑和保存不受影响。</string>
     <string name="doc_editor_performance_protected_title">性能保护模式</string>
@@ -1131,12 +1129,10 @@
     <string name="kg_relation_description">%1$s %2$s %3$s</string>
     <string name="kg_canvas_gestures">单指拖动，双指平移和缩放。</string>
     <string name="kg_canvas_summary">%1$d 个节点，%2$d 条关系，%3$s范围。%4$s</string>
-    <string name="kg_stats_summary">%1$d 节点 · %2$d 边</string>
     <string name="kg_filter_all">全部</string>
     <string name="kg_filter_documents">文档</string>
     <string name="kg_filter_folders">文件夹</string>
     <string name="kg_filter_concepts">概念</string>
-    <string name="kg_node_details">%1$s 节点 · %2$d 连接</string>
     <string name="kg_node_description">此节点代表知识图谱中的一个关键实体。点击以展开上下文或修改其属性。</string>
     <string name="kg_expand_context">展开上下文</string>
 
@@ -1497,8 +1493,6 @@
     <string name="sessions_operation_failed">无法更新会话，请重试</string>
     <string name="chat_legacy_attachments_title">已恢复的历史附件</string>
     <string name="chat_legacy_attachment_unreadable">此历史附件当前无法读取</string>
-    <string name="model_catalog_version">模型目录 · %1$s · %2$d 条</string>
-    <string name="model_catalog_bundled">模型目录 · 内置快照</string>
     <string name="model_catalog_failed">更新失败，已保留现有目录</string>
     <string name="model_catalog_updating">更新中…</string>
     <string name="model_catalog_update">更新目录</string>
@@ -1539,4 +1533,10 @@
     <plurals name="agent_skills_files_count">
         <item quantity="other">%d 个附带文件</item>
     </plurals>
+    <string name="backup_remote_size">%1$d 字节</string>
+    <string name="kg_stats_nodes">%1$d 节点</string>
+    <string name="kg_stats_edges">%1$d 边</string>
+    <string name="model_catalog_label">模型目录</string>
+    <string name="model_catalog_records">%1$d 条</string>
+    <string name="model_catalog_bundled_snapshot">内置快照</string>
 </resources>

@@ -6,6 +6,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.promenar.nexara.ui.theme.forInput
 
 @Composable
 fun SettingsInput(
@@ -23,7 +24,7 @@ fun SettingsInput(
         placeholder = { Text(placeholder) },
         singleLine = singleLine,
         maxLines = maxLines,
-        textStyle = MaterialTheme.typography.bodyMedium,
+        textStyle = MaterialTheme.typography.bodyMedium.forInput(),
         modifier = Modifier.fillMaxWidth()
     )
 }

@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import com.promenar.nexara.ui.common.NexaraIdentifierText
+import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -296,11 +298,11 @@ fun LocalModelsScreen(
 
             item {
                 Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
-                    Text(
-                        text = "llama.cpp · ${if (viewModel.gpuAvailable) "Vulkan GPU" else "CPU"}",
+                    NexaraMetaLine(
+                        segments = listOf("llama.cpp", if (viewModel.gpuAvailable) "Vulkan GPU" else "CPU"),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                     EngineSlotStatus(
                         label = stringResource(R.string.local_models_slot_main),
@@ -514,7 +516,7 @@ private fun ModelPickerDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
+                            NexaraIdentifierText(
                                 text = model.fileName,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -558,7 +560,7 @@ private fun ModelCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
+                NexaraIdentifierText(
                     text = model.fileName,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface

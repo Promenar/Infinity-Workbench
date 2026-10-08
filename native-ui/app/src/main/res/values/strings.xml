@@ -696,7 +696,6 @@
     <string name="backup_reset_webdav_security">Reset WebDAV Security Configuration</string>
     <string name="backup_remote_refresh">Refresh remote backups</string>
     <string name="backup_remote_empty">No remote backups found. Refresh after configuring WebDAV.</string>
-    <string name="backup_remote_metadata">%1$d bytes · %2$d</string>
     <string name="backup_password_export_title">Encrypt exported backup</string>
     <string name="backup_password_upload_title">Encrypt backup before upload</string>
     <string name="backup_password_restore_title">Restore local backup</string>
@@ -1055,7 +1054,6 @@
     <string name="doc_editor_title_placeholder">Document title…</string>
     <string name="doc_editor_title_input_description">Document title</string>
     <string name="doc_editor_content_input_description">Document content</string>
-    <string name="doc_editor_metadata">%1$s · %2$s</string>
     <string name="doc_editor_preview">Preview</string>
     <string name="doc_editor_preview_truncated">Large document: preview truncated; editing and saving are unaffected.</string>
     <string name="doc_editor_performance_protected_title">Performance protection</string>
@@ -1124,12 +1122,10 @@
     <string name="kg_relation_description">%1$s %2$s %3$s</string>
     <string name="kg_canvas_gestures">Drag with one finger; pan and zoom with two fingers.</string>
     <string name="kg_canvas_summary">%1$d nodes, %2$d relationships, %3$s scope. %4$s</string>
-    <string name="kg_stats_summary">%1$d nodes · %2$d edges</string>
     <string name="kg_filter_all">All</string>
     <string name="kg_filter_documents">Documents</string>
     <string name="kg_filter_folders">Folders</string>
     <string name="kg_filter_concepts">Concepts</string>
-    <string name="kg_node_details">%1$s Node · %2$d connections</string>
     <string name="kg_node_description">This node represents a key entity in the knowledge graph. Tap to expand context or modify its properties.</string>
     <string name="kg_expand_context">Expand Context</string>
 
@@ -1497,8 +1493,6 @@
     <string name="sessions_operation_failed">Could not update the conversation. Try again.</string>
     <string name="chat_legacy_attachments_title">Recovered attachments</string>
     <string name="chat_legacy_attachment_unreadable">This recovered attachment cannot be read</string>
-    <string name="model_catalog_version">Model catalog · %1$s · %2$d records</string>
-    <string name="model_catalog_bundled">Model catalog · Bundled snapshot</string>
     <string name="model_catalog_failed">Update failed. Existing catalog retained.</string>
     <string name="model_catalog_updating">Updating…</string>
     <string name="model_catalog_update">Update catalog</string>
@@ -1540,4 +1534,10 @@
         <item quantity="one">%d bundled file</item>
         <item quantity="other">%d bundled files</item>
     </plurals>
+    <string name="backup_remote_size">%1$d bytes</string>
+    <string name="kg_stats_nodes">%1$d nodes</string>
+    <string name="kg_stats_edges">%1$d edges</string>
+    <string name="model_catalog_label">Model catalog</string>
+    <string name="model_catalog_records">%1$d records</string>
+    <string name="model_catalog_bundled_snapshot">Bundled snapshot</string>
 </resources>

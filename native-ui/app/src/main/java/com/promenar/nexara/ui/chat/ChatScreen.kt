@@ -135,6 +135,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageDocumentAttachment
@@ -151,6 +152,7 @@ import com.promenar.nexara.ui.theme.NexaraShapes
 import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.forInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -1278,6 +1280,7 @@ fun RenameDialog(
         title = { Text(stringResource(R.string.chat_dialog_rename_title)) },
         text = {
             OutlinedTextField(
+                textStyle = LocalTextStyle.current.forInput(),
                 value = text,
                 onValueChange = { text = it },
                 modifier = Modifier.fillMaxWidth(),
@@ -1472,7 +1475,7 @@ fun ChatInputBar(
                         }
                     }
                     .testTag(UiTags.CHAT_INPUT),
-                textStyle = NexaraTypography.bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground),
+                textStyle = NexaraTypography.bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground).forInput(),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 enabled = !isGenerating,
                 decorationBox = { innerTextField ->

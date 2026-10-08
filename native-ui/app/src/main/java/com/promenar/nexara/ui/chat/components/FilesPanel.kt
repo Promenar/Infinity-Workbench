@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.chat.components
 
 import androidx.compose.animation.AnimatedVisibility
+import com.promenar.nexara.ui.common.NexaraIdentifierText
+import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -97,6 +99,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.repository.CompositeWorkspaceConstants
@@ -108,6 +111,7 @@ import com.promenar.nexara.ui.common.KgStatusIcon
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraTypography
+import com.promenar.nexara.ui.theme.forInput
 import java.text.SimpleDateFormat
 import java.util.Date
 import kotlinx.coroutines.flow.collectLatest
@@ -887,7 +891,7 @@ private fun FileRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(
+                    NexaraIdentifierText(
                         text = file.name,
                         style = MaterialTheme.typography.bodyLarge,
                         maxLines = 2,
@@ -926,8 +930,8 @@ private fun FileRow(
             } else {
                 {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = formatFileMetadata(file, nowMillis),
+                        NexaraMetaLine(
+                            segments = fileMetadataSegments(file, nowMillis),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1024,6 +1028,7 @@ private fun RenameDialog(
         title = { Text(stringResource(R.string.files_rename), style = NexaraTypography.headlineSmall) },
         text = {
             OutlinedTextField(
+                textStyle = LocalTextStyle.current.forInput(),
                 value = name,
                 onValueChange = { name = it },
                 label = { Text(stringResource(R.string.files_new_name)) },
@@ -1251,11 +1256,8 @@ private fun resolveKgStatus(file: FileEntry, kgExtractionStates: Map<String, KgS
 }
 
 @Composable
-private fun formatFileMetadata(file: FileEntry, nowMillis: Long): String {
-    val size = formatFileSize(file.sizeBytes)
-    val time = formatRelativeTime(file.updatedAt, nowMillis)
-    return "$size · $time"
-}
+private fun fileMetadataSegments(file: FileEntry, nowMillis: Long): List<String> =
+    listOf(formatFileSize(file.sizeBytes), formatRelativeTime(file.updatedAt, nowMillis))
 
 private fun formatFileSize(bytes: Long): String {
     if (bytes <= 0) return "0 B"

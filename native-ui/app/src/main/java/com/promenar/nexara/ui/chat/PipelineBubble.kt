@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat
 
 import androidx.compose.animation.*
+import com.promenar.nexara.ui.theme.forReading
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -1023,7 +1024,7 @@ fun UserMessageBubble(
                             style = NexaraTypography.bodyMedium.copy(
                                 fontSize = fontSize.sp,
                                 lineHeight = (fontSize * 1.5).sp
-                            ),
+                            ).forReading(),
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier.padding(NexaraSpacing.Large)
                         )

@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.settings
 
 import androidx.compose.foundation.clickable
+import com.promenar.nexara.ui.common.NexaraIdentifierText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,6 +60,7 @@ import com.promenar.nexara.data.model.UnsupportedProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.ui.common.BettboxListGroup
+import com.promenar.nexara.ui.common.NexaraMetaLine
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
@@ -470,14 +472,12 @@ private fun ProviderCard(
         },
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    text = "$localizedTypeName · $providerStateDescription",
+                NexaraMetaLine(
+                    segments = listOf(localizedTypeName, enabledStatus, credentialStatus),
                     style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 19.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
-                Text(
+                NexaraIdentifierText(
                     text = provider.baseUrl.removePrefix("https://").removePrefix("http://"),
                     style = MaterialTheme.typography.bodySmall.copy(lineHeight = 17.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

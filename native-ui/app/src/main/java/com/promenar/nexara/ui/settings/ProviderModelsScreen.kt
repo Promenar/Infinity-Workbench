@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.settings
 
 import com.promenar.nexara.data.model.ModelInfo
+import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -78,6 +79,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.ModelBrandTile
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
@@ -87,6 +89,7 @@ import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.forInput
 
 private val ModelTypes = listOf("chat", "reasoning", "image", "embedding", "rerank")
 private val ModelTypeLabelResources = listOf(
@@ -263,10 +266,19 @@ internal fun ProviderModelsScreenContent(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (catalog.cached) {
-                            stringResource(R.string.model_catalog_version, catalog.generatedAt.orEmpty().take(10), catalog.recordCount)
-                        } else stringResource(R.string.model_catalog_bundled),
+                    NexaraMetaLine(
+                        segments = if (catalog.cached) {
+                            listOf(
+                                stringResource(R.string.model_catalog_label),
+                                catalog.generatedAt.orEmpty().take(10),
+                                stringResource(R.string.model_catalog_records, catalog.recordCount),
+                            )
+                        } else {
+                            listOf(
+                                stringResource(R.string.model_catalog_label),
+                                stringResource(R.string.model_catalog_bundled_snapshot),
+                            )
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -350,7 +362,7 @@ internal fun ProviderModelsScreenContent(
                 ProviderModelsListState.SearchEmpty -> item("search-empty") {
                     ProviderModelsListMessage(
                         message = stringResource(R.string.provider_models_search) +
-                            " · " + stringResource(R.string.common_model_picker_empty),
+                            " · " + stringResource(R.string.common_model_picker_empty), // wrap-check: allow 完整提示句
                         tag = UiTags.PROVIDER_MODELS_STATE_SEARCH_EMPTY,
                     )
                 }
@@ -467,6 +479,7 @@ internal fun AddCustomModelForm(
     ) {
         item("model-id") {
             OutlinedTextField(
+                textStyle = LocalTextStyle.current.forInput(),
                 value = modelId,
                 onValueChange = {
                     modelId = it
@@ -482,6 +495,7 @@ internal fun AddCustomModelForm(
         }
         item("model-name") {
             OutlinedTextField(
+                textStyle = LocalTextStyle.current.forInput(),
                 value = modelName,
                 onValueChange = {
                     modelName = it
@@ -665,7 +679,6 @@ internal fun ProviderModelsModelRow(
         val labelResource = capabilityLabelResource(capability)
         localizedCapabilities += if (labelResource != null) stringResource(labelResource) else capability
     }
-    val capabilitySummary = localizedCapabilities.joinToString(" · ")
 
     Column(
         modifier = modifier
@@ -713,12 +726,11 @@ internal fun ProviderModelsModelRow(
                     .testTag(UiTags.providerModelsToggleAction(model.id)),
             )
         }
-        Text(
-            text = capabilitySummary,
+        NexaraMetaLine(
+            segments = localizedCapabilities,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }
