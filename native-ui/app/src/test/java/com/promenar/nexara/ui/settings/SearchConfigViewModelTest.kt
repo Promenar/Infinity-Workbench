@@ -135,6 +135,105 @@ class SearchConfigViewModelTest {
         assertThat(viewModel.uiState.value.secretOperation).isEqualTo(SearchSecretOperation.Saved)
     }
 
+    @Test
+    fun `Keenable 选择与结果数量在重新创建后恢复且不改变默认引擎`() = runTest(dispatcher) {
+        val initial = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
+        assertThat(initial.uiState.value.searchEngine).isEqualTo("duckduckgo")
+
+        initial.updateSearchEngine("keenable")
+        initial.updateResultCount(8)
+        val restored = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
+
+        assertThat(restored.uiState.value.searchEngine).isEqualTo("keenable")
+        assertThat(restored.uiState.value.resultCount).isEqualTo(8)
+        assertThat(restored.uiState.value.hasKeenableApiKey).isFalse()
+    }
+
+    @Test
+    fun `Keenable 密钥只写安全存储且可临时读取清除而不影响 Tavily`() = runTest(dispatcher) {
+        val prefs = app.getSharedPreferences("nexara_search", 0)
+        secrets.put(SecretCatalog.tavilyApiKey, "fake-tavily".encodeToByteArray())
+        val viewModel = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
+        val input = "fake-keenable".toCharArray()
+
+        assertThat(viewModel.saveKeenableApiKey(input)).isTrue()
+        assertThat(input).isEqualTo(CharArray(input.size))
+        assertThat(viewModel.uiState.value.hasKeenableApiKey).isFalse()
+        advanceUntilIdle()
+
+        assertThat(secrets.text(SecretCatalog.keenableApiKey)).isEqualTo("fake-keenable")
+        assertThat(prefs.all.toString()).doesNotContain("fake-keenable")
+        assertThat(prefs.contains("keenable_api_key")).isFalse()
+        assertThat(viewModel.uiState.value.toString()).doesNotContain("fake-keenable")
+        assertThat(viewModel.uiState.value.hasKeenableApiKey).isTrue()
+        val revealed = viewModel.revealKeenableApiKey()
+        assertThat(revealed?.concatToString()).isEqualTo("fake-keenable")
+        revealed?.fill('\u0000')
+
+        val restored = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
+        assertThat(restored.uiState.value.hasKeenableApiKey).isTrue()
+        assertThat(restored.clearKeenableApiKey()).isTrue()
+        advanceUntilIdle()
+        assertThat(restored.uiState.value.hasKeenableApiKey).isFalse()
+        assertThat(secrets.contains(SecretCatalog.keenableApiKey)).isFalse()
+        assertThat(secrets.text(SecretCatalog.tavilyApiKey)).isEqualTo("fake-tavily")
+    }
+
+    @Test
+    fun `Keenable 保存与清除失败保持原状态并只重试对应提供商`() = runTest(dispatcher) {
+        val viewModel = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
+        secrets.failPut = true
+        viewModel.saveKeenableApiKey("fake-retry-key".toCharArray())
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.hasKeenableApiKey).isFalse()
+        assertThat(viewModel.uiState.value.keenableSecretOperation).isEqualTo(
+            SearchSecretOperation.Error(SearchSecretErrorCode.SAVE_FAILED),
+        )
+        assertThat(viewModel.uiState.value.secretOperation).isEqualTo(SearchSecretOperation.Idle)
+
+        secrets.failPut = false
+        val retryInput = "fake-retry-key".toCharArray()
+        assertThat(viewModel.retryKeenableSecretFailure(retryInput)).isTrue()
+        assertThat(retryInput).isEqualTo(CharArray(retryInput.size))
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.hasKeenableApiKey).isTrue()
+
+        secrets.failRemove = true
+        viewModel.clearKeenableApiKey()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.hasKeenableApiKey).isTrue()
+        assertThat(viewModel.uiState.value.keenableSecretOperation).isEqualTo(
+            SearchSecretOperation.Error(SearchSecretErrorCode.CLEAR_FAILED),
+        )
+        secrets.failRemove = false
+        assertThat(viewModel.retryKeenableSecretFailure()).isTrue()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.hasKeenableApiKey).isFalse()
+        assertThat(secrets.contains(SecretCatalog.tavilyApiKey)).isFalse()
+    }
+
+    @Test
+    fun `Keenable 初始化失败可重试且不丢失引擎选择`() = runTest(dispatcher) {
+        app.getSharedPreferences("nexara_search", 0).edit().putString("search_engine", "keenable").commit()
+        secrets.failContains = true
+        val viewModel = SearchConfigViewModel(app, secrets, dispatcher)
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.searchEngine).isEqualTo("keenable")
+        assertThat(viewModel.uiState.value.keenableSecretOperation).isEqualTo(
+            SearchSecretOperation.Error(SearchSecretErrorCode.LOAD_FAILED),
+        )
+
+        secrets.failContains = false
+        viewModel.retryKeenableSecretFailure()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.keenableSecretOperation).isEqualTo(SearchSecretOperation.Idle)
+    }
+
     private class MemorySecretStore : SecretStore {
         private val values = mutableMapOf<SecretId, ByteArray>()
         var failPut = false

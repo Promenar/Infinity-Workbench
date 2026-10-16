@@ -933,6 +933,9 @@
     <string name="skills_edit_custom">编辑自定义技能</string>
     <string name="skills_mcp_empty">暂无 MCP 服务器\n通过 Model Context Protocol 扩展 Agent 能力</string>
     <string name="search_engine_select">选择搜索引擎</string>
+    <string name="search_engine_keenable">Keenable</string>
+    <string name="search_api_key_optional">API Key（可选）</string>
+    <string name="search_keenable_keyless_hint">无需密钥即可使用公共共享额度；填写密钥后使用账户额度。</string>
     <string name="search_engine_tavily">Tavily AI (深度搜索)</string>
     <string name="search_engine_searxng">SearXNG (隐私元搜索)</string>
     <string name="search_engine_duckduckgo">DuckDuckGo (本地解析)</string>

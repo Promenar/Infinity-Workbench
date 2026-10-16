@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.SecretField
 
-internal data class TavilySecretActions(
+internal data class SearchSecretActions(
     val onSave: (CharArray) -> Unit = {},
     val onReveal: suspend () -> CharArray? = { null },
     val onClear: () -> Unit = {},
@@ -35,7 +35,7 @@ internal fun TavilySecretEditor(
     state: SearchConfigState,
 ) {
     TavilySecretEditor(
-        actions = TavilySecretActions(
+        actions = SearchSecretActions(
             onSave = { viewModel.saveTavilyApiKey(it) },
             onReveal = viewModel::revealTavilyApiKey,
             onClear = { viewModel.clearTavilyApiKey() },
@@ -52,39 +52,69 @@ internal fun TavilySecretEditor(
 
 @Composable
 internal fun TavilySecretEditor(
-    actions: TavilySecretActions,
+    actions: SearchSecretActions,
+    state: SearchConfigState,
+) = SearchSecretEditor(actions, state.hasTavilyApiKey, state.secretOperation, "search_tavily")
+
+@Composable
+internal fun KeenableSecretEditor(
+    viewModel: SearchConfigViewModel,
     state: SearchConfigState,
 ) {
-    var edit by remember { mutableStateOf("") }
-    LaunchedEffect(state.secretOperation) {
-        if (state.secretOperation is SearchSecretOperation.Saved) edit = ""
+    KeenableSecretEditor(
+        actions = SearchSecretActions(
+            onSave = { viewModel.saveKeenableApiKey(it) },
+            onReveal = viewModel::revealKeenableApiKey,
+            onClear = { viewModel.clearKeenableApiKey() },
+            onRetry = { _, secret -> viewModel.retryKeenableSecretFailure(secret) },
+        ),
+        state = state,
+    )
+}
+
+@Composable
+internal fun KeenableSecretEditor(
+    actions: SearchSecretActions,
+    state: SearchConfigState,
+) = SearchSecretEditor(actions, state.hasKeenableApiKey, state.keenableSecretOperation, "search_keenable")
+
+@Composable
+private fun SearchSecretEditor(
+    actions: SearchSecretActions,
+    hasSecret: Boolean,
+    operation: SearchSecretOperation,
+    tagPrefix: String,
+) {
+    var edit by remember(tagPrefix) { mutableStateOf("") }
+    LaunchedEffect(operation) {
+        if (operation is SearchSecretOperation.Saved) edit = ""
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SecretField(
             value = edit,
             onValueChange = { edit = it },
-            hasStoredSecret = state.hasTavilyApiKey,
+            hasStoredSecret = hasSecret,
             onRevealRequest = actions.onReveal,
             onClear = {
                 edit = ""
                 actions.onClear()
             },
-            modifier = Modifier.testTag("search_tavily_secret_field"),
+            modifier = Modifier.testTag("${tagPrefix}_secret_field"),
         )
         Button(
             onClick = {
                 actions.onSave(edit.toCharArray())
             },
-            enabled = edit.isNotBlank() && state.secretOperation !is SearchSecretOperation.Saving &&
-                state.secretOperation !is SearchSecretOperation.Initializing,
+            enabled = edit.isNotBlank() && operation !is SearchSecretOperation.Saving &&
+                operation !is SearchSecretOperation.Initializing,
             modifier = Modifier
                 .fillMaxWidth()
                 .defaultMinSize(minHeight = 48.dp)
-                .testTag("search_tavily_secret_save"),
+                .testTag("${tagPrefix}_secret_save"),
         ) {
             Text(stringResource(R.string.shared_btn_save))
         }
-        when (val operation = state.secretOperation) {
+        when (operation) {
             SearchSecretOperation.Initializing -> Text(
                 stringResource(R.string.search_secret_loading),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -122,7 +152,7 @@ internal fun TavilySecretEditor(
                     modifier = Modifier
                         .fillMaxWidth()
                         .defaultMinSize(minHeight = 48.dp)
-                        .testTag("search_tavily_secret_retry"),
+                        .testTag("${tagPrefix}_secret_retry"),
                 ) {
                     Text(stringResource(R.string.common_retry))
                 }

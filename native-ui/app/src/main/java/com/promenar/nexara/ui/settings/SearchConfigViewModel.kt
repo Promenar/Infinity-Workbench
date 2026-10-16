@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.security.AndroidKeystoreSecretStore
 import com.promenar.nexara.data.security.SecretCatalog
+import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +22,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 enum class SearchSecretErrorCode { LOAD_FAILED, SAVE_FAILED, CLEAR_FAILED }
 
@@ -30,6 +32,11 @@ sealed interface SearchSecretOperation {
     data object Saving : SearchSecretOperation
     data object Saved : SearchSecretOperation
     data class Error(val code: SearchSecretErrorCode) : SearchSecretOperation
+}
+
+private enum class SearchSecretProvider(val secretId: SecretId) {
+    TAVILY(SecretCatalog.tavilyApiKey),
+    KEENABLE(SecretCatalog.keenableApiKey),
 }
 
 class SearchConfigViewModel(
@@ -63,29 +70,50 @@ class SearchConfigViewModel(
 
     private val _uiState = MutableStateFlow(SearchConfigState())
     val uiState: StateFlow<SearchConfigState> = _uiState.asStateFlow()
-    private var secretJob: Job? = null
+    private val secretJobs = mutableMapOf<SearchSecretProvider, Job>()
 
     init {
-        loadTavilySecretState()
+        loadSecretState(SearchSecretProvider.TAVILY)
+        loadSecretState(SearchSecretProvider.KEENABLE)
     }
 
-    private fun loadTavilySecretState(): Boolean {
-        if (secretJob?.isActive == true) return false
-        _uiState.update { it.copy(secretOperation = SearchSecretOperation.Initializing) }
-        secretJob = viewModelScope.launch {
+    private fun updateSecretState(
+        provider: SearchSecretProvider,
+        operation: SearchSecretOperation,
+        present: Boolean? = null,
+    ) {
+        _uiState.update { state ->
+            when (provider) {
+                SearchSecretProvider.TAVILY -> state.copy(
+                    secretOperation = operation,
+                    hasTavilyApiKey = present ?: state.hasTavilyApiKey,
+                )
+                SearchSecretProvider.KEENABLE -> state.copy(
+                    keenableSecretOperation = operation,
+                    hasKeenableApiKey = present ?: state.hasKeenableApiKey,
+                )
+            }
+        }
+    }
+
+    private fun loadSecretState(provider: SearchSecretProvider): Boolean {
+        if (secretJobs[provider]?.isActive == true) return false
+        updateSecretState(provider, SearchSecretOperation.Initializing)
+        secretJobs[provider] = viewModelScope.launch {
             try {
-                withContext(ioDispatcher) {
-                    migrateLegacyTavilyKey()
-                    loadSettings()
+                val present = withContext(ioDispatcher) {
+                    if (provider == SearchSecretProvider.TAVILY) {
+                        // 引擎选择先于凭据读取，凭据故障不应阻止普通设置恢复。
+                        loadSettings()
+                        migrateLegacyTavilyKey()
+                    }
+                    secretStore.contains(provider.secretId)
                 }
-                _uiState.update { it.copy(secretOperation = SearchSecretOperation.Idle) }
+                updateSecretState(provider, SearchSecretOperation.Idle, present)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
-                _uiState.update {
-                    it.copy(
-                        hasTavilyApiKey = false,
-                        secretOperation = SearchSecretOperation.Error(SearchSecretErrorCode.LOAD_FAILED),
-                    )
-                }
+                updateSecretState(provider, SearchSecretOperation.Error(SearchSecretErrorCode.LOAD_FAILED), false)
             }
         }
         return true
@@ -109,7 +137,6 @@ class SearchConfigViewModel(
                 webSearchEnabled = prefs.getBoolean("web_search_enabled", true),
                 searchEngine = prefs.getString("search_engine", "duckduckgo") ?: "duckduckgo",
                 searXngUrl = prefs.getString("searxng_url", "https://searx.be") ?: "https://searx.be",
-                hasTavilyApiKey = secretStore.contains(SecretCatalog.tavilyApiKey),
                 searchDepth = prefs.getString("search_depth", "advanced") ?: "advanced",
                 resultCount = prefs.getInt("result_count", 5),
                 includeDomains = try { Json.decodeFromString(includeJson) } catch (_: Exception) { emptyList() },
@@ -133,24 +160,30 @@ class SearchConfigViewModel(
         prefs.edit().putString("searxng_url", url).apply()
     }
 
-    /** 输入数组由本方法接管并立即清零；持久化成功前不改变 hasTavilyApiKey。 */
-    fun saveTavilyApiKey(key: CharArray): Boolean {
+    fun saveTavilyApiKey(key: CharArray): Boolean = saveApiKey(SearchSecretProvider.TAVILY, key)
+
+    fun saveKeenableApiKey(key: CharArray): Boolean = saveApiKey(SearchSecretProvider.KEENABLE, key)
+
+    /** 输入数组由本方法接管并立即清零；持久化成功前不改变密钥存在状态。 */
+    private fun saveApiKey(provider: SearchSecretProvider, key: CharArray): Boolean {
         val owned = key.copyOf()
         key.fill('\u0000')
-        if (owned.isEmpty() || secretJob?.isActive == true) {
+        if (owned.isEmpty() || owned.all(Char::isWhitespace) || secretJobs[provider]?.isActive == true) {
             owned.fill('\u0000')
             return false
         }
-        _uiState.update { it.copy(secretOperation = SearchSecretOperation.Saving) }
-        secretJob = viewModelScope.launch {
+        updateSecretState(provider, SearchSecretOperation.Saving)
+        secretJobs[provider] = viewModelScope.launch {
             try {
                 withContext(ioDispatcher) {
                     val bytes = owned.concatToString().toByteArray(Charsets.UTF_8)
-                    try { secretStore.put(SecretCatalog.tavilyApiKey, bytes) } finally { bytes.fill(0) }
+                    try { secretStore.put(provider.secretId, bytes) } finally { bytes.fill(0) }
                 }
-                _uiState.update { it.copy(hasTavilyApiKey = true, secretOperation = SearchSecretOperation.Saved) }
+                updateSecretState(provider, SearchSecretOperation.Saved, true)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
-                _uiState.update { it.copy(secretOperation = SearchSecretOperation.Error(SearchSecretErrorCode.SAVE_FAILED)) }
+                updateSecretState(provider, SearchSecretOperation.Error(SearchSecretErrorCode.SAVE_FAILED))
             } finally {
                 owned.fill('\u0000')
             }
@@ -158,15 +191,21 @@ class SearchConfigViewModel(
         return true
     }
 
-    fun clearTavilyApiKey(): Boolean {
-        if (secretJob?.isActive == true) return false
-        _uiState.update { it.copy(secretOperation = SearchSecretOperation.Saving) }
-        secretJob = viewModelScope.launch {
+    fun clearTavilyApiKey(): Boolean = clearApiKey(SearchSecretProvider.TAVILY)
+
+    fun clearKeenableApiKey(): Boolean = clearApiKey(SearchSecretProvider.KEENABLE)
+
+    private fun clearApiKey(provider: SearchSecretProvider): Boolean {
+        if (secretJobs[provider]?.isActive == true) return false
+        updateSecretState(provider, SearchSecretOperation.Saving)
+        secretJobs[provider] = viewModelScope.launch {
             try {
-                withContext(ioDispatcher) { secretStore.remove(SecretCatalog.tavilyApiKey) }
-                _uiState.update { it.copy(hasTavilyApiKey = false, secretOperation = SearchSecretOperation.Saved) }
+                withContext(ioDispatcher) { secretStore.remove(provider.secretId) }
+                updateSecretState(provider, SearchSecretOperation.Saved, false)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
-                _uiState.update { it.copy(secretOperation = SearchSecretOperation.Error(SearchSecretErrorCode.CLEAR_FAILED)) }
+                updateSecretState(provider, SearchSecretOperation.Error(SearchSecretErrorCode.CLEAR_FAILED))
             }
         }
         return true
@@ -176,19 +215,29 @@ class SearchConfigViewModel(
      * 只重放当前结构化错误对应的操作。保存失败的明文仍由可见编辑器短暂持有，
      * ViewModel 不缓存该值，并立即接管/清零传入数组。
      */
-    fun retryTavilySecretFailure(key: CharArray? = null): Boolean {
-        val code = (_uiState.value.secretOperation as? SearchSecretOperation.Error)?.code
+    fun retryTavilySecretFailure(key: CharArray? = null): Boolean =
+        retrySecretFailure(SearchSecretProvider.TAVILY, key)
+
+    fun retryKeenableSecretFailure(key: CharArray? = null): Boolean =
+        retrySecretFailure(SearchSecretProvider.KEENABLE, key)
+
+    private fun retrySecretFailure(provider: SearchSecretProvider, key: CharArray?): Boolean {
+        val operation = when (provider) {
+            SearchSecretProvider.TAVILY -> _uiState.value.secretOperation
+            SearchSecretProvider.KEENABLE -> _uiState.value.keenableSecretOperation
+        }
+        val code = (operation as? SearchSecretOperation.Error)?.code
         return when (code) {
             SearchSecretErrorCode.LOAD_FAILED -> {
                 key?.fill('\u0000')
-                loadTavilySecretState()
+                loadSecretState(provider)
             }
             SearchSecretErrorCode.SAVE_FAILED -> {
-                if (key == null) false else saveTavilyApiKey(key)
+                if (key == null) false else saveApiKey(provider, key)
             }
             SearchSecretErrorCode.CLEAR_FAILED -> {
                 key?.fill('\u0000')
-                clearTavilyApiKey()
+                clearApiKey(provider)
             }
             null -> {
                 key?.fill('\u0000')
@@ -197,9 +246,13 @@ class SearchConfigViewModel(
         }
     }
 
+    suspend fun revealTavilyApiKey(): CharArray? = revealApiKey(SearchSecretProvider.TAVILY)
+
+    suspend fun revealKeenableApiKey(): CharArray? = revealApiKey(SearchSecretProvider.KEENABLE)
+
     /** 返回值由当前可见组件取得所有权，组件隐藏或销毁时必须清零。 */
-    suspend fun revealTavilyApiKey(): CharArray? = withContext(ioDispatcher) {
-        val bytes = secretStore.get(SecretCatalog.tavilyApiKey) ?: return@withContext null
+    private suspend fun revealApiKey(provider: SearchSecretProvider): CharArray? = withContext(ioDispatcher) {
+        val bytes = secretStore.get(provider.secretId) ?: return@withContext null
         try {
             bytes.toString(Charsets.UTF_8).toCharArray()
         } finally {
@@ -248,6 +301,8 @@ data class SearchConfigState(
     val searXngUrl: String = "https://searx.be",
     val hasTavilyApiKey: Boolean = false,
     val secretOperation: SearchSecretOperation = SearchSecretOperation.Initializing,
+    val hasKeenableApiKey: Boolean = false,
+    val keenableSecretOperation: SearchSecretOperation = SearchSecretOperation.Initializing,
     val searchDepth: String = "advanced",
     val resultCount: Int = 5,
     val includeDomains: List<String> = emptyList(),

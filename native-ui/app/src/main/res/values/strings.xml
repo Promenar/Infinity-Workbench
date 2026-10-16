@@ -929,6 +929,9 @@
     <string name="skills_edit_custom">Edit Custom Skill</string>
     <string name="search_engine_select">Select Search Engine</string>
     <string name="search_engine_duckduckgo">DuckDuckGo (Local)</string>
+    <string name="search_engine_keenable">Keenable</string>
+    <string name="search_api_key_optional">API Key (optional)</string>
+    <string name="search_keenable_keyless_hint">Works without an API key using the shared public quota. Add a key to use your account quota.</string>
     <string name="search_engine_tavily">Tavily AI (Deep Search)</string>
     <string name="search_engine_searxng">SearXNG (Privacy Meta-Search)</string>
     <string name="search_count_label">Result Count</string>

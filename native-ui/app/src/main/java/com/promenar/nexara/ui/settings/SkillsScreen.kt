@@ -61,6 +61,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -856,7 +857,7 @@ private fun McpServerItem(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SearchConfigBottomSheet(
+internal fun SearchConfigBottomSheet(
     skillId: String,
     onDismiss: () -> Unit
 ) {
@@ -867,6 +868,7 @@ private fun SearchConfigBottomSheet(
     val searchState by searchViewModel.uiState.collectAsState()
 
     ModalBottomSheet(
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         dragHandle = {
@@ -887,6 +889,7 @@ private fun SearchConfigBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 48.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -908,6 +911,9 @@ private fun SearchConfigBottomSheet(
                     EngineOption("duckduckgo", stringResource(R.string.search_engine_duckduckgo), searchState.searchEngine == "duckduckgo") {
                         searchViewModel.updateSearchEngine("duckduckgo")
                     }
+                    EngineOption("keenable", stringResource(R.string.search_engine_keenable), searchState.searchEngine == "keenable") {
+                        searchViewModel.updateSearchEngine("keenable")
+                    }
                     EngineOption("tavily", stringResource(R.string.search_engine_tavily), searchState.searchEngine == "tavily") {
                         searchViewModel.updateSearchEngine("tavily")
                     }
@@ -928,6 +934,16 @@ private fun SearchConfigBottomSheet(
                     steps = 18,
                     onValueChange = { searchViewModel.updateResultCount(it.toInt()) }
                 )
+            }
+
+            if (skillId == "web_search" && searchState.searchEngine == "keenable") {
+                Text(
+                    stringResource(R.string.search_keenable_keyless_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(stringResource(R.string.search_api_key_optional), style = MaterialTheme.typography.labelMedium)
+                KeenableSecretEditor(searchViewModel, searchState)
             }
 
             if (skillId == "search_tavily" || (skillId == "web_search" && searchState.searchEngine == "tavily")) {

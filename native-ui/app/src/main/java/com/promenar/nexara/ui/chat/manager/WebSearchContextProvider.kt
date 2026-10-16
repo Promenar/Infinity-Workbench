@@ -2,11 +2,16 @@ package com.promenar.nexara.ui.chat.manager
 
 import android.content.Context
 import com.promenar.nexara.data.remote.search.DuckDuckGoProvider
+import com.promenar.nexara.data.remote.search.KeenableProvider
 import com.promenar.nexara.data.remote.search.SearXNGProvider
 import com.promenar.nexara.data.remote.search.TavilyProvider
 import com.promenar.nexara.data.security.SecretCatalog
+import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
 class WebSearchContextProvider(
@@ -17,9 +22,9 @@ class WebSearchContextProvider(
 
     private val prefs get() = context.getSharedPreferences("nexara_search", Context.MODE_PRIVATE)
 
-    override suspend fun search(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>> {
+    override suspend fun search(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>> = withContext(Dispatchers.IO) {
         val provider = getActiveProvider()
-        return provider.search(query)
+        provider.search(query)
     }
 
     private fun getActiveProvider(): WebSearchProvider {
@@ -34,12 +39,28 @@ class WebSearchContextProvider(
                 SearXNGProvider(httpClient, url, maxResults, includeDomains, excludeDomains)
             }
             "tavily" -> {
-                val key = secretStore.get(SecretCatalog.tavilyApiKey)?.toString(Charsets.UTF_8).orEmpty()
+                val key = readSecret(SecretCatalog.tavilyApiKey)
                 val depth = prefs.getString("search_depth", "advanced") ?: "advanced"
                 TavilyProvider(httpClient, key, depth, maxResults, includeDomains, excludeDomains)
             }
+            "keenable" -> KeenableProvider(
+                httpClient, readSecret(SecretCatalog.keenableApiKey), maxResults, includeDomains, excludeDomains,
+            )
             else -> DuckDuckGoProvider(httpClient, maxResults, includeDomains, excludeDomains)
         }
+    }
+
+    private fun readSecret(id: SecretId): String = try {
+        val bytes = secretStore.get(id)
+        if (bytes == null) "" else try {
+            bytes.toString(Charsets.UTF_8)
+        } finally {
+            bytes.fill(0)
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        throw IllegalStateException("无法安全读取搜索凭据。")
     }
 
     private fun parseDomainList(key: String): List<String> {

@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assertIsSelectable
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsToggleable
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsAtLeast
@@ -45,7 +46,9 @@ import com.promenar.nexara.ui.settings.SearchConfigState
 import com.promenar.nexara.ui.settings.SearchSecretOperation
 import com.promenar.nexara.ui.settings.SearchSecretErrorCode
 import com.promenar.nexara.ui.settings.TavilySecretEditor
-import com.promenar.nexara.ui.settings.TavilySecretActions
+import com.promenar.nexara.ui.settings.SearchSecretActions
+import com.promenar.nexara.ui.settings.KeenableSecretEditor
+import com.promenar.nexara.ui.settings.SearchConfigBottomSheet
 import com.promenar.nexara.ui.settings.EngineOption
 import com.promenar.nexara.ui.settings.DepthChip
 import com.promenar.nexara.ui.theme.NexaraColorSource
@@ -163,7 +166,7 @@ class RagSettingsAccessibilityTest {
             NexaraTheme(dynamicColor = false) {
                 TavilySecretEditor(
                     state = state,
-                    actions = TavilySecretActions(
+                    actions = SearchSecretActions(
                         onSave = { secret ->
                             savedSecret.set(secret.concatToString())
                             state = state.copy(
@@ -227,7 +230,7 @@ class RagSettingsAccessibilityTest {
             NexaraTheme(dynamicColor = false) {
                 TavilySecretEditor(
                     state = state,
-                    actions = TavilySecretActions(
+                    actions = SearchSecretActions(
                         onSave = {
                             state = state.copy(
                                 secretOperation = SearchSecretOperation.Error(
@@ -260,6 +263,7 @@ class RagSettingsAccessibilityTest {
             NexaraTheme(dynamicColor = false) {
                 androidx.compose.foundation.layout.Column {
                     EngineOption("tavily", "Tavily", true) {}
+                    EngineOption("keenable", "Keenable", true) {}
                     DepthChip("advanced", "Advanced", true) {}
                 }
             }
@@ -273,6 +277,88 @@ class RagSettingsAccessibilityTest {
             .assertIsSelectable()
             .assertIsSelected()
             .assertHeightIsAtLeast(48.dp)
+        rule.onNodeWithTag("search_engine_keenable")
+            .assertIsSelectable()
+            .assertIsSelected()
+            .assertHeightIsAtLeast(48.dp)
+    }
+
+    @Test
+    fun keenableSearchSheetSavesSelectionAndScrollsToOptionalKeyAt2x() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val prefs = context.getSharedPreferences("nexara_search", 0)
+        val previous = prefs.getString("search_engine", null)
+        prefs.edit().putString("search_engine", "duckduckgo").commit()
+        try {
+            rule.setContent {
+                DeviceConfigurationOverride(
+                    DeviceConfigurationOverride.WindowSize(DpSize(360.dp, 800.dp)) then
+                        DeviceConfigurationOverride.FontScale(2f),
+                ) {
+                    NexaraTheme(dynamicColor = false) {
+                        SearchConfigBottomSheet(skillId = "web_search", onDismiss = {})
+                    }
+                }
+            }
+            rule.onNodeWithTag("search_engine_keenable").performScrollTo().performClick()
+            rule.onNodeWithTag("search_engine_keenable").assertIsSelected()
+            rule.waitUntil { prefs.getString("search_engine", null) == "keenable" }
+            rule.onNodeWithText(context.getString(R.string.search_keenable_keyless_hint))
+                .performScrollTo().assertIsDisplayed()
+            rule.onNodeWithTag("search_keenable_secret_save")
+                .performScrollTo().assertIsDisplayed().assertIsNotEnabled()
+        } finally {
+            prefs.edit().apply {
+                if (previous == null) remove("search_engine") else putString("search_engine", previous)
+            }.commit()
+        }
+    }
+
+    @Test
+    fun keenableSecretEditorSavesRevealsAndClearsItsOwnState() {
+        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
+        var state by mutableStateOf(
+            SearchConfigState(
+                searchEngine = "keenable",
+                hasTavilyApiKey = true,
+                keenableSecretOperation = SearchSecretOperation.Idle,
+            ),
+        )
+        val saved = AtomicReference<String>()
+        rule.setContent {
+            NexaraTheme(dynamicColor = false) {
+                KeenableSecretEditor(
+                    state = state,
+                    actions = SearchSecretActions(
+                        onSave = { key ->
+                            saved.set(key.concatToString())
+                            key.fill('\u0000')
+                            state = state.copy(
+                                hasKeenableApiKey = true,
+                                keenableSecretOperation = SearchSecretOperation.Saved,
+                            )
+                        },
+                        onReveal = { "fake-keenable-key".toCharArray() },
+                        onClear = { state = state.copy(hasKeenableApiKey = false) },
+                    ),
+                )
+            }
+        }
+        rule.onNodeWithTag("search_keenable_secret_field").performTextInput("fake-keenable-key")
+        rule.onNodeWithTag("search_keenable_secret_save").assertIsEnabled().performClick()
+        rule.runOnIdle {
+            assertThat(saved.get()).isEqualTo("fake-keenable-key")
+            assertThat(state.hasKeenableApiKey).isTrue()
+            assertThat(state.toString()).doesNotContain("fake-keenable-key")
+        }
+        rule.onNodeWithContentDescription(resources.getString(R.string.secret_field_show)).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag("search_keenable_secret_field").assertTextContains("fake-keenable-key")
+        rule.onNodeWithContentDescription(resources.getString(R.string.secret_field_clear)).performClick()
+        rule.runOnIdle {
+            assertThat(state.hasKeenableApiKey).isFalse()
+            assertThat(state.hasTavilyApiKey).isTrue()
+        }
     }
 
     @Test
@@ -427,6 +513,8 @@ class RagSettingsAccessibilityTest {
         rule.onNodeWithTag("agent_retrieval_hybrid_toggle").performClick()
         rule.runOnIdle { assertThat(state.retrievalConfig.enableHybridSearch).isFalse() }
         rule.onNodeWithTag("agent_retrieval_reset_action")
+            .performScrollTo()
+            .assertIsDisplayed()
             .assertHasClickAction()
             .assertHeightIsAtLeast(48.dp)
             .performClick()

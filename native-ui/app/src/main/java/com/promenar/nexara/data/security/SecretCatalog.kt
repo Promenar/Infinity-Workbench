@@ -10,6 +10,7 @@ object SecretCatalog {
         SecretId("vertex_service_account:${providerHash(providerId)}")
 
     val tavilyApiKey = SecretId("tavily_api_key")
+    val keenableApiKey = SecretId("keenable_api_key")
     val embeddingApiKey = SecretId("embedding_api_key")
     val webDavPassword = SecretId("webdav_password")
     val webDavAuthRecord = SecretId("webdav_auth_record_v1")
@@ -17,6 +18,7 @@ object SecretCatalog {
 
     fun backupEligible(providerIds: Collection<String>): Set<SecretId> = buildSet {
         add(tavilyApiKey)
+        add(keenableApiKey)
         add(embeddingApiKey)
         add(webDavAuthRecord)
         add(automaticBackupPassword)
