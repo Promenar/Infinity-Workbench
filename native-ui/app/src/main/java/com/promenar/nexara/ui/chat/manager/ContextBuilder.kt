@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.chat.manager
 
 import com.promenar.nexara.data.agent.AgentRetrievalConfig
 import com.promenar.nexara.data.model.RagReference
+import com.promenar.nexara.data.model.RagRetrievalTrace
 import com.promenar.nexara.data.model.RagUsage
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.TaskState
@@ -19,6 +20,8 @@ data class ContextBuilderResult(
     val ragUsage: RagUsage?,
     val finalSystemPrompt: String,
     val kgPaths: List<com.promenar.nexara.data.model.KgPath> = emptyList(),
+    /** 知识库检索过程记录；未执行检索时为 null。 */
+    val ragTrace: RagRetrievalTrace? = null,
     /** 本次构建所用的检索结果；同一次生成的后续工具轮次以 [ContextBuilderParams.cachedRetrieval] 复用。 */
     val retrieval: ContextRetrieval = ContextRetrieval(
         searchContext = searchContext,
@@ -28,6 +31,7 @@ data class ContextBuilderResult(
         ragUsage = ragUsage,
         kgContext = "",
         kgPaths = kgPaths,
+        ragTrace = ragTrace,
     ),
 )
 
@@ -40,6 +44,7 @@ data class ContextRetrieval(
     val ragUsage: RagUsage?,
     val kgContext: String,
     val kgPaths: List<com.promenar.nexara.data.model.KgPath>,
+    val ragTrace: RagRetrievalTrace? = null,
 )
 
 data class ContextBuilderParams(
@@ -65,13 +70,21 @@ interface WebSearchProvider {
     suspend fun search(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>>
 }
 
+/** 知识库检索结果；[trace] 为 null 表示提供方未记录检索过程。 */
+data class RagRetrievalResult(
+    val context: String,
+    val references: List<RagReference>,
+    val usage: RagUsage?,
+    val trace: RagRetrievalTrace? = null,
+)
+
 interface RagProvider {
     suspend fun retrieveContext(
         query: String,
         sessionId: String,
         options: com.promenar.nexara.data.model.RagOptions,
         onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)? = null
-    ): Triple<String, List<RagReference>, RagUsage?>
+    ): RagRetrievalResult
 }
 
 data class KgContextResult(
@@ -123,6 +136,7 @@ class ContextBuilder(
             ragUsage = retrieval.ragUsage,
             finalSystemPrompt = systemPrompt,
             kgPaths = retrieval.kgPaths,
+            ragTrace = retrieval.ragTrace,
             retrieval = retrieval,
         )
     }
@@ -141,10 +155,10 @@ class ContextBuilder(
 
         // KG 启用判定与 RAG 共享 effective 配置：agent enableKnowledgeGraph=false 可覆盖 session true
         val kgEnabled = effectiveRagOptions.enableKnowledgeGraph == true
-        val (kgContext, kgPaths) = if (kgProvider != null && ragResult.second.isNotEmpty() && kgEnabled) {
+        val (kgContext, kgPaths) = if (kgProvider != null && ragResult.references.isNotEmpty() && kgEnabled) {
             try {
                 params.onRagProgress?.invoke("KG retrieval", 95, null)
-                val kgResult = kgProvider.extractContext(params.content, params.sessionId, ragResult.second)
+                val kgResult = kgProvider.extractContext(params.content, params.sessionId, ragResult.references)
                 params.onRagProgress?.invoke("Context ready", 100, null)
                 (kgResult?.context ?: "") to snapshotKgPaths(kgResult?.paths)
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
@@ -158,11 +172,12 @@ class ContextBuilder(
         return ContextRetrieval(
             searchContext = searchContext,
             searchCitations = searchCitations,
-            ragContext = ragResult.first,
-            ragReferences = ragResult.second,
-            ragUsage = ragResult.third,
+            ragContext = ragResult.context,
+            ragReferences = ragResult.references,
+            ragUsage = ragResult.usage,
             kgContext = kgContext,
             kgPaths = kgPaths,
+            ragTrace = ragResult.trace,
         )
     }
 
@@ -274,27 +289,27 @@ class ContextBuilder(
     private suspend fun performRagRetrieval(
         params: ContextBuilderParams,
         effectiveRagOptions: com.promenar.nexara.data.model.RagOptions
-    ): Triple<String, List<RagReference>, RagUsage?> {
+    ): RagRetrievalResult {
+        val skipped = RagRetrievalResult("", emptyList(), null)
         if (ragProvider == null) {
             NexaraLogger.log("[ContextBuilder] ragProvider is null, skipping retrieval")
-            return Triple("", emptyList(), null)
+            return skipped
         }
 
         NexaraLogger.log("[ContextBuilder] effective ragOptions: docs=${effectiveRagOptions.enableDocs}/memory=${effectiveRagOptions.enableMemory}, isGlobal=${effectiveRagOptions.isGlobal}, rerank=${effectiveRagOptions.enableRerank}, kg=${effectiveRagOptions.enableKnowledgeGraph}")
 
         val isRagEnabled = effectiveRagOptions.enableMemory || effectiveRagOptions.enableDocs
-        if (!isRagEnabled) return Triple("", emptyList(), null)
+        if (!isRagEnabled) return skipped
 
         return try {
-            val (context, references, usage) = ragProvider.retrieveContext(
+            ragProvider.retrieveContext(
                 params.content, params.sessionId, effectiveRagOptions, params.onRagProgress
             )
-            Triple(context, references, usage)
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             throw e
         } catch (e: Exception) {
             NexaraLogger.logError("ContextBuilder.RAGRetrieval", e)
-            Triple("", emptyList(), null)
+            skipped.copy(trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_FAILED))
         }
     }
 

@@ -158,6 +158,29 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun retrievalWithoutHitsStillPersistsTraceSoTheReplyShowsNoMatch() {
+        val trace = com.promenar.nexara.data.model.RagRetrievalTrace(
+            outcome = com.promenar.nexara.data.model.RagRetrievalTrace.OUTCOME_EMPTY,
+            searchTimeMs = 42,
+        )
+        val result = ContextBuilderResult(
+            searchContext = "",
+            finalSystemPrompt = "system",
+            ragContext = "",
+            citations = emptyList(),
+            ragReferences = emptyList(),
+            ragUsage = null,
+            ragTrace = trace,
+        )
+
+        assertThat(result.hasPersistableRagContext()).isTrue()
+        val metadata = result.toMessageRagUpdateOptions()?.ragMetadata
+        assertThat(metadata?.trace).isEqualTo(trace)
+        assertThat(metadata?.chunkCount).isEqualTo(0)
+        assertThat(metadata?.retrievalTimeMs).isEqualTo(42)
+    }
+
+    @Test
     fun emptyKgPathsDoNotCreateMessageUpdateOrFakeRagMetadata() {
         val result = ContextBuilderResult(
             searchContext = "",

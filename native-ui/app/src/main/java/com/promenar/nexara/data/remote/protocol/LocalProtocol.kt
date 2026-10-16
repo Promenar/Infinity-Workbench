@@ -20,7 +20,7 @@ class LocalProtocol(
         val formattedPrompt = buildString {
             append(promptTemplate.format(
                 messages = request.messages,
-                tools = request.tools
+                tools = request.tools.takeIf { request.toolChoice != ProtocolToolChoice.NONE }
             ))
             
             // Append image markers from all messages if any
@@ -44,7 +44,7 @@ class LocalProtocol(
         val formattedPrompt = buildString {
             append(promptTemplate.format(
                 messages = request.messages,
-                tools = request.tools
+                tools = request.tools.takeIf { request.toolChoice != ProtocolToolChoice.NONE }
             ))
             
             // Append image markers

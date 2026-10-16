@@ -13,6 +13,16 @@ import io.ktor.http.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
+/** 重排实际采用的方式；[FAILED] 表示已尝试但均失败，结果保持召回顺序。 */
+enum class RerankMethod { API, LLM, SKIPPED, FAILED }
+
+data class RerankOutcome(
+    val results: List<SearchResult>,
+    val method: RerankMethod,
+    /** 实际参与打分的模型；未重排时为 null。 */
+    val model: String? = null,
+)
+
 class RerankClient(
     private val baseUrl: String,
     private val apiKey: String,
@@ -33,14 +43,19 @@ class RerankClient(
         query: String,
         documents: List<SearchResult>,
         topK: Int
-    ): List<SearchResult> {
-        if (documents.isEmpty()) return documents
-        if (documents.size <= 1) return documents
+    ): List<SearchResult> = rerankWithOutcome(query, documents, topK).results
 
-        val apiResult = rerankViaApi(query, documents, topK)
-        if (apiResult != null) return apiResult
+    /** 先走重排 API，失败再用大模型打分；都失败时保持召回顺序并截取前 [topK] 条。 */
+    suspend fun rerankWithOutcome(
+        query: String,
+        documents: List<SearchResult>,
+        topK: Int
+    ): RerankOutcome {
+        if (documents.size <= 1) return RerankOutcome(documents, RerankMethod.SKIPPED)
 
-        return rerankViaLlm(query, documents, topK)
+        rerankViaApi(query, documents, topK)?.let { return RerankOutcome(it, RerankMethod.API, modelId.ifBlank { null }) }
+        rerankViaLlm(query, documents, topK)?.let { return RerankOutcome(it, RerankMethod.LLM, llmModelId) }
+        return RerankOutcome(documents.take(topK), RerankMethod.FAILED)
     }
 
     private suspend fun rerankViaApi(
@@ -64,6 +79,8 @@ class RerankClient(
                 if (allResults.isEmpty()) null
                 else allResults.sortedByDescending { it.similarity }.take(topK)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -121,8 +138,8 @@ class RerankClient(
         query: String,
         documents: List<SearchResult>,
         topK: Int
-    ): List<SearchResult> {
-        val protocol = llmProtocol ?: return documents.take(topK)
+    ): List<SearchResult>? {
+        val protocol = llmProtocol ?: return null
 
         return try {
             val prompt = buildRerankPrompt(query, documents)
@@ -135,8 +152,10 @@ class RerankClient(
 
             val response = protocol.sendPromptSync(request)
             parseRerankScores(response.content, documents, topK)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            documents.take(topK)
+            null
         }
     }
 
@@ -155,14 +174,14 @@ class RerankClient(
         response: String,
         candidates: List<SearchResult>,
         topK: Int
-    ): List<SearchResult> {
+    ): List<SearchResult>? {
         val jsonRegex = Regex("""\[\s*\{.*?\}\s*\]""", RegexOption.DOT_MATCHES_ALL)
-        val match = jsonRegex.find(response) ?: return candidates.take(topK)
+        val match = jsonRegex.find(response) ?: return null
 
         val scores = try {
             json.decodeFromString<List<RerankScore>>(match.value)
         } catch (e: Exception) {
-            return candidates.take(topK)
+            return null
         }
 
         return candidates.mapIndexed { i, c ->

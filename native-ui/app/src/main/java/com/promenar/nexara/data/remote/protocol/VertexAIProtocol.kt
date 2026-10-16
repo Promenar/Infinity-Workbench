@@ -482,6 +482,11 @@ class VertexAIProtocol(
                     }
                 }
                 put("tools", toolsList)
+                if (request.toolChoice == ProtocolToolChoice.NONE && !request.tools.isNullOrEmpty()) {
+                    put("toolConfig", buildJsonObject {
+                        put("functionCallingConfig", buildJsonObject { put("mode", "NONE") })
+                    })
+                }
             }
         }
 

@@ -66,6 +66,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.model.Citation
 import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.RagReference
+import com.promenar.nexara.data.model.RagRetrievalTrace
 import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
@@ -162,6 +163,7 @@ fun RagDetailsSheet(
     citations: List<Citation>? = null,
     onDismissRequest: () -> Unit,
     openLink: ((String) -> Unit)? = null,
+    trace: RagRetrievalTrace? = null,
 ) {
     val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
@@ -178,6 +180,7 @@ fun RagDetailsSheet(
             kgPaths = kgPaths.orEmpty(),
             modifier = Modifier.fillMaxHeight(0.82f),
             openLink = openLink,
+            trace = trace,
         )
     }
 }
@@ -188,7 +191,8 @@ fun RagDetailsSheetContent(
     citations: List<Citation>,
     kgPaths: List<KgPath>,
     modifier: Modifier = Modifier,
-    initialTab: RagDetailsTab = initialRagDetailsTab(references, citations, kgPaths),
+    trace: RagRetrievalTrace? = null,
+    initialTab: RagDetailsTab = initialRagDetailsTab(references, citations, kgPaths, trace),
     openLink: ((String) -> Unit)? = null,
 ) {
     var selectedTabIndex by rememberSaveable(initialTab) { mutableIntStateOf(initialTab.ordinal) }
@@ -270,7 +274,7 @@ fun RagDetailsSheetContent(
             )
             Spacer(Modifier.height(8.dp))
             when (tabs[selectedTabIndex]) {
-                RagDetailsTab.Retrieved -> RetrievedReferencesList(references)
+                RagDetailsTab.Retrieved -> RetrievedReferencesList(references, trace)
                 RagDetailsTab.WebSearch -> WebCitationsList(citations, ::requestOpen)
                 RagDetailsTab.KnowledgeGraph -> KnowledgeGraphList(kgPaths)
             }
@@ -282,8 +286,9 @@ private fun initialRagDetailsTab(
     references: List<RagReference>,
     citations: List<Citation>,
     kgPaths: List<KgPath>,
+    trace: RagRetrievalTrace?,
 ): RagDetailsTab = when {
-    references.isNotEmpty() -> RagDetailsTab.Retrieved
+    references.isNotEmpty() || trace != null -> RagDetailsTab.Retrieved
     citations.isNotEmpty() -> RagDetailsTab.WebSearch
     kgPaths.isNotEmpty() -> RagDetailsTab.KnowledgeGraph
     else -> RagDetailsTab.Retrieved
@@ -296,11 +301,11 @@ private fun RagDetailsTab.testTag(): String = when (this) {
 }
 
 @Composable
-private fun RetrievedReferencesList(references: List<RagReference>) {
+private fun RetrievedReferencesList(references: List<RagReference>, trace: RagRetrievalTrace?) {
     val keyedReferences = remember(references) {
         stableKeyedItems(references, ::ragReferenceStableKey)
     }
-    if (keyedReferences.isEmpty()) {
+    if (keyedReferences.isEmpty() && trace == null) {
         EmptyDetailsState()
         return
     }
@@ -310,12 +315,15 @@ private fun RetrievedReferencesList(references: List<RagReference>) {
             .testTag(UiTags.RAG_DETAILS_LIST),
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
+        trace?.let { retrievalTrace ->
+            item(key = "rag_trace_summary") { RetrievalTraceSummary(retrievalTrace) }
+        }
         itemsIndexed(
             items = keyedReferences,
             key = { _, keyedReference -> keyedReference.key },
         ) { index, keyedReference ->
             val reference = keyedReference.value
-            RetrievedReferenceRow(reference, index)
+            RetrievedReferenceRow(reference, index, trace?.scoring)
             if (index != keyedReferences.lastIndex) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
@@ -324,7 +332,37 @@ private fun RetrievedReferencesList(references: List<RagReference>) {
 }
 
 @Composable
-private fun RetrievedReferenceRow(reference: RagReference, index: Int) {
+private fun RetrievalTraceSummary(trace: RagRetrievalTrace) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 8.dp)
+            .testTag(UiTags.RAG_DETAILS_TRACE),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.rag_trace_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            ragTraceLines(trace).forEach { line ->
+                NexaraMetaLine(
+                    segments = line.map { stringResource(it.resId, *it.args.toTypedArray()) },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RetrievedReferenceRow(reference: RagReference, index: Int, scoring: String?) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -349,30 +387,27 @@ private fun RetrievedReferenceRow(reference: RagReference, index: Int) {
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                scoreSegments(reference).takeIf { it.isNotEmpty() }?.let { segments ->
-                    NexaraMetaLine(
-                        segments = segments,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (reference.rankChange != null && reference.rankChange != 0) {
-                    val movedUp = reference.rankChange > 0
+                val parts = ragReferenceParts(reference, scoring)
+                val change = reference.rankChange
+                if (parts.isNotEmpty()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Icon(
-                            imageVector = if (movedUp) Icons.AutoMirrored.Rounded.TrendingUp else Icons.AutoMirrored.Rounded.TrendingDown,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Text(
-                            text = stringResource(
-                                if (movedUp) R.string.rag_details_rank_up else R.string.rag_details_rank_down,
-                                abs(reference.rankChange),
-                            ),
+                        if (change != null && change != 0) {
+                            Icon(
+                                imageVector = if (change > 0) {
+                                    Icons.AutoMirrored.Rounded.TrendingUp
+                                } else {
+                                    Icons.AutoMirrored.Rounded.TrendingDown
+                                },
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        NexaraMetaLine(
+                            segments = parts.map { stringResource(it.resId, *it.args.toTypedArray()) },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -385,16 +420,6 @@ private fun RetrievedReferenceRow(reference: RagReference, index: Int) {
             style = MaterialTheme.typography.bodyMedium.forReading(),
             color = MaterialTheme.colorScheme.onSurface,
         )
-    }
-}
-
-@Composable
-private fun scoreSegments(reference: RagReference): List<String> = buildList {
-    if (reference.score > 0f) {
-        add("${stringResource(R.string.rag_details_score_vector)} ${(reference.score * 100).roundToInt()}%")
-    }
-    reference.rerankScore?.let { score ->
-        add("${stringResource(R.string.rag_details_score_rerank)} ${(score * 100).roundToInt()}%")
     }
 }
 

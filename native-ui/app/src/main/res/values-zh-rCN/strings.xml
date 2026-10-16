@@ -441,6 +441,7 @@
     <string name="chat_cd_selected_image">已选择的图片</string>
     <string name="chat_cd_remove_image">移除图片</string>
     <string name="chat_image_only_prompt">请描述这张图片</string>
+    <string name="chat_image_read_failed">有图片无法读取，请移除后重试。</string>
     <string name="chat_cd_add_attachment">添加附件</string>
     <string name="chat_menu_attach_image">图片</string>
     <string name="chat_menu_attach_document">文本文档（完整上下文）</string>
@@ -646,6 +647,15 @@
     <string name="chat_task_pending_accessibility">%1$d 项任务待确认</string>
     <string name="chat_task_continue">继续处理</string>
     <string name="chat_task_mark_completed">标记已完成</string>
+    <string name="chat_task_expand_steps">展开全部步骤</string>
+    <string name="chat_task_collapse_steps">只看当前步骤</string>
+    <string name="chat_task_all_completed">全部步骤已完成</string>
+    <string name="chat_task_clear_completed">清除计划</string>
+    <string name="chat_task_step_todo">未开始</string>
+    <string name="chat_task_step_doing">进行中</string>
+    <string name="chat_task_step_done">已完成</string>
+    <string name="chat_task_step_dropped">已放弃</string>
+    <string name="chat_task_marked_completed">剩余步骤已标记为完成</string>
     <string name="chat_task_continue_prompt">继续处理当前计划中的未完成任务。</string>
     <string name="workspace_sprint_pipeline">Sprint 流水线</string>
     <string name="workspace_x_of_y_completed">%1$d / %2$d 已完成</string>
@@ -1359,6 +1369,40 @@
     <string name="rag_details_unknown_source">未知来源</string>
     <string name="rag_details_link_error">无法打开此链接。</string>
     <string name="rag_details_retry">重试</string>
+    <string name="chat_rag_summary_hit">知识库命中 %1$d 条</string>
+    <string name="chat_rag_summary_empty">知识库未命中</string>
+    <string name="chat_rag_summary_unavailable">未检索知识库：嵌入模型不可用</string>
+    <string name="chat_rag_summary_no_scope">未检索知识库：未选择文档</string>
+    <string name="chat_rag_summary_failed">知识库检索失败</string>
+    <string name="chat_rag_summary_web">联网 %1$d 条</string>
+    <string name="rag_trace_title">检索过程</string>
+    <string name="chat_rag_summary_reranked">已重排</string>
+    <string name="chat_rag_summary_rerank_failed">重排失败</string>
+    <string name="rag_trace_selected">采用 %1$d 条</string>
+    <string name="rag_trace_sources">记忆 %1$d 条，文档 %2$d 条</string>
+    <string name="rag_trace_rerank_time">%1$d 毫秒</string>
+    <string name="rag_trace_recall">召回 %1$d 条</string>
+    <string name="rag_trace_scoring_vector">按向量相似度排序</string>
+    <string name="rag_trace_scoring_hybrid">按混合检索融合分排序（向量＋关键词）</string>
+    <string name="rag_trace_rerank_api">已用 %1$s 重排</string>
+    <string name="rag_trace_rerank_llm">已用大模型打分重排（%1$s）</string>
+    <string name="rag_trace_rerank_skipped">候选不足两条，未重排</string>
+    <string name="rag_trace_rerank_failed">重排失败，保持召回顺序</string>
+    <string name="rag_trace_rerank_off">未启用重排</string>
+    <string name="rag_trace_empty_hint">没有候选达到相似度阈值。</string>
+    <string name="rag_trace_unavailable_hint">嵌入模型未配置或没有响应，本次没有检索知识库。</string>
+    <string name="rag_trace_no_scope_hint">本会话未开启记忆，也没有选择可检索的文档。</string>
+    <string name="rag_trace_failed_hint">知识库检索出错，本次回复未使用知识库。</string>
+    <string name="rag_trace_time">检索用时 %1$d 毫秒</string>
+    <string name="rag_details_kind_memory">记忆</string>
+    <string name="rag_details_kind_document">文档</string>
+    <string name="rag_details_kind_summary">摘要</string>
+    <string name="rag_details_score_similarity">相似度 %1$d%%</string>
+    <string name="rag_details_score_fused">融合分 %1$d%%</string>
+    <string name="rag_details_score_rerank_value">重排分 %1$d%%</string>
+    <string name="rag_details_rank_from_up">重排前第 %1$d，上升 %2$d 位</string>
+    <string name="rag_details_rank_from_down">重排前第 %1$d，下降 %2$d 位</string>
+    <string name="rag_details_rank_unchanged">重排后名次未变</string>
     <string name="chat_rag_open_details">打开检索详情</string>
 
     <string name="recycle_bin_auto_cleanup">回收站中的项目将在 30 天后自动清理</string>
@@ -1440,6 +1484,7 @@
     <string name="generation_failure_server">提供商暂时不可用，请稍后重试。</string>
     <string name="generation_failure_busy">其他会话正在生成，请在完成后重试。</string>
     <string name="generation_failure_persistence">回复保存失败，请重试。</string>
+    <string name="generation_failure_tool_budget">本轮工具调用次数已用完，模型没有给出总结。发送消息即可继续。</string>
     <string name="generation_failure_unknown">生成失败，请重试。</string>
 
     <!-- 发行可达的结构化状态文案 -->

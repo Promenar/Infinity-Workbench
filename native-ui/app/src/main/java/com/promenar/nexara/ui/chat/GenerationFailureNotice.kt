@@ -26,6 +26,7 @@ object GenerationFailureNotice {
     private const val CODE_SERVER = "generation.failure.server"
     private const val CODE_BUSY = "generation.failure.busy"
     private const val CODE_PERSISTENCE = "generation.failure.persistence"
+    private const val CODE_TOOL_BUDGET = "generation.failure.tool_budget"
     private const val CODE_UNKNOWN = "generation.failure.unknown"
 
     fun from(failure: GenerationFailure): UiStatusNotice {
@@ -42,6 +43,7 @@ object GenerationFailureNotice {
             GenerationFailureCode.SERVER -> CODE_SERVER
             GenerationFailureCode.BUSY -> CODE_BUSY
             GenerationFailureCode.PERSISTENCE -> CODE_PERSISTENCE
+            GenerationFailureCode.TOOL_BUDGET_EXHAUSTED -> CODE_TOOL_BUDGET
             GenerationFailureCode.UNKNOWN -> CODE_UNKNOWN
         }
         return UiStatusNotice(
@@ -89,6 +91,7 @@ object GenerationFailureNotice {
         CODE_SERVER -> ResolvedStatus(R.string.generation_failure_server)
         CODE_BUSY -> ResolvedStatus(R.string.generation_failure_busy)
         CODE_PERSISTENCE -> ResolvedStatus(R.string.generation_failure_persistence)
+        CODE_TOOL_BUDGET -> ResolvedStatus(R.string.generation_failure_tool_budget)
         CODE_UNKNOWN -> ResolvedStatus(R.string.generation_failure_unknown)
         else -> ResolvedStatus(R.string.generation_failure_unknown)
     }

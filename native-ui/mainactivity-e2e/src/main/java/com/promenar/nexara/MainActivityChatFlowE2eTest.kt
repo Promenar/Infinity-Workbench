@@ -93,7 +93,7 @@ class MainActivityChatFlowE2eTest {
     }
 
     @Test
-    fun mainActivity模型切换持久化并进入生成路由且审批同一ViewModel回传() {
+    fun mainActivity模型切换持久化并进入生成路由且遗留审批经同一ViewModel关闭() {
         compose.onNodeWithTag(UiTags.CHAT_MODEL_SELECTOR).assertIsDisplayed().performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodes(UiTags.chatModelOption(secondModelId)).fetchSemanticsNodes().isNotEmpty()
@@ -125,26 +125,24 @@ class MainActivityChatFlowE2eTest {
         assertThat(app.recordingCoordinator.selectedModelsAtStart.single())
             .isEqualTo(secondModelId)
 
-        runBlocking { seedSession(approval = continuationApproval()) }
-        compose.onNodeWithTag(UiTags.CHAT_APPROVAL_CARD).assertIsDisplayed()
-        compose.onNodeWithTag(UiTags.CHAT_APPROVAL_APPROVE).performClick()
-        compose.waitUntil(10_000) { app.recordingCoordinator.requests.size == 2 }
-        compose.waitUntil(10_000) {
-            compose.onAllNodes(UiTags.CHAT_APPROVAL_CARD).fetchSemanticsNodes().isEmpty()
+        // 没有精确调用身份的遗留审批（如已废弃的续跑确认）：批准与拒绝都经同一 ViewModel 关闭请求、
+        // 持久化清空并暂停循环，不再发起生成。精确工具审批的执行与续生成由 ViewModel 单测与真实网关用例覆盖。
+        listOf(UiTags.CHAT_APPROVAL_APPROVE, UiTags.CHAT_APPROVAL_DECLINE).forEach { action ->
+            runBlocking { seedSession(approval = legacyApproval()) }
+            compose.onNodeWithTag(UiTags.CHAT_APPROVAL_CARD).assertIsDisplayed()
+            val startsBefore = app.recordingCoordinator.requests.size
+            compose.onNodeWithTag(action).performClick()
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(UiTags.CHAT_APPROVAL_CARD).fetchSemanticsNodes().isEmpty()
+            }
+            compose.waitUntil(10_000) {
+                runBlocking { app.sessionRepository.getById(sessionId) }?.approvalRequest == null
+            }
+            assertThat(app.recordingCoordinator.requests).hasSize(startsBefore)
+            assertThat(app.chatStore.getSession(sessionId)?.approvalRequest).isNull()
+            assertThat(runBlocking { app.sessionRepository.getById(sessionId) }?.loopStatus)
+                .isEqualTo(LoopStatus.PAUSED)
         }
-        assertThat(runBlocking { app.sessionRepository.getById(sessionId) }?.approvalRequest).isNull()
-
-        runBlocking { seedSession(approval = continuationApproval()) }
-        compose.onNodeWithTag(UiTags.CHAT_APPROVAL_CARD).assertIsDisplayed()
-        val startsBeforeReject = app.recordingCoordinator.requests.size
-        compose.onNodeWithTag(UiTags.CHAT_APPROVAL_DECLINE).performClick()
-        compose.waitUntil(10_000) {
-            app.chatStore.getSession(sessionId)?.approvalRequest == null
-        }
-        assertThat(app.recordingCoordinator.requests).hasSize(startsBeforeReject)
-        val rejected = runBlocking { app.sessionRepository.getById(sessionId) }
-        assertThat(rejected?.approvalRequest).isNull()
-        assertThat(rejected?.loopStatus).isEqualTo(LoopStatus.COMPLETED)
         assertThat(app.viewModelCreateCount).isEqualTo(1)
     }
 
@@ -210,9 +208,9 @@ class MainActivityChatFlowE2eTest {
         app.chatStore.update { ChatState(sessions = listOf(session)) }
     }
 
-    private fun continuationApproval() = ApprovalRequest(
+    private fun legacyApproval() = ApprovalRequest(
         type = "continuation",
-        reason = "MainActivity E2E approval callback",
+        reason = "MainActivity E2E legacy approval",
     )
 
     private fun expectedRuntimePolicyForDevice(): GenerationRuntimePolicy =

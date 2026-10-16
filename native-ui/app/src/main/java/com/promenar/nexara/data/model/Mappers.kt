@@ -77,8 +77,6 @@ fun SessionEntity.toDomain(): Session = Session(
     workspacePath = workspacePath,
     workspaceRootUuid = workspaceRootUuid,
     activeTaskTreeId = activeTaskTreeId,
-    continuationBudget = 0,
-    autoLoopLimit = 5,
     createdAt = createdAt,
     updatedAt = updatedAt
 )

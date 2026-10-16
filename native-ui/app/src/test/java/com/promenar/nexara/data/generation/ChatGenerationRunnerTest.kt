@@ -14,6 +14,8 @@ import com.promenar.nexara.domain.generation.GenerationRuntimePolicy
 import com.promenar.nexara.domain.generation.GenerationSnapshot
 import com.promenar.nexara.domain.generation.GenerationToolDecision
 import com.promenar.nexara.domain.generation.GenerationToolCall
+import com.promenar.nexara.domain.generation.GenerationToolBudget
+import com.promenar.nexara.domain.generation.GenerationToolUsage
 import com.promenar.nexara.domain.generation.GenerationTerminalStatus
 import com.promenar.nexara.domain.generation.CompletionReason
 import kotlinx.coroutines.CancellationException
@@ -379,6 +381,53 @@ class ChatGenerationRunnerTest {
         assertThat(events.phases().last()).isEqualTo(GenerationPhase.CANCELLED)
     }
 
+    @Test
+    fun `审批前已消耗的工具轮次计入预算，恢复后首个超额轮即转入收尾`() = runTest {
+        val runtime = FakeRuntime(listOf(
+            flowOf(
+                GenerationChunk.ToolCall("call-1", "search", "{}"),
+                GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call-1")),
+            ),
+            flowOf(
+                GenerationChunk.Text("summary"),
+                GenerationChunk.Completed(CompletionReason.END_TURN),
+            ),
+        )).apply {
+            budget = GenerationToolBudget(maxRounds = 2)
+            consumed = GenerationToolUsage(rounds = 2, calls = 2)
+        }
+
+        ChatGenerationRunner(runtime).run(request()) {}
+
+        assertThat(runtime.rejectedCalls).containsExactly("call-1")
+        assertThat(runtime.handledToolRounds).isEqualTo(0)
+        assertThat(runtime.finalAnswerModeEntered).isTrue()
+        assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.SUCCESS)
+    }
+
+    @Test
+    fun `收尾轮仍只返回工具调用时以工具预算失败结束而非空回答成功`() = runTest {
+        val toolRound = { id: String ->
+            flowOf(
+                GenerationChunk.ToolCall(id, "search", "{}"),
+                GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf(id)),
+            )
+        }
+        val runtime = FakeRuntime(listOf(toolRound("call-1"), toolRound("call-2"))).apply {
+            budget = GenerationToolBudget(maxRounds = 1)
+            consumed = GenerationToolUsage(rounds = 1, calls = 1)
+        }
+        val events = mutableListOf<GenerationEvent>()
+
+        val failure = runCatching { ChatGenerationRunner(runtime).run(request(), events::add) }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(GenerationFailedException::class.java)
+        assertThat((failure as GenerationFailedException).failure.code)
+            .isEqualTo(GenerationFailureCode.TOOL_BUDGET_EXHAUSTED)
+        assertThat(runtime.rejectedCalls).containsExactly("call-1", "call-2").inOrder()
+        assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.ERROR)
+    }
+
     private fun request() = GenerationRequest(
         sessionId = "session",
         assistantMessageId = "assistant",
@@ -406,6 +455,24 @@ class ChatGenerationRunnerTest {
         var terminalFailure: Throwable? = null
         var flushFailuresRemaining = 0
         var nextAssistantId: String? = "assistant-next"
+        var budget = GenerationToolBudget()
+        var consumed = GenerationToolUsage()
+        val rejectedCalls = mutableListOf<String>()
+        var handledToolRounds = 0
+        var finalAnswerModeEntered = false
+
+        override fun toolBudget(request: GenerationRequest): GenerationToolBudget = budget
+        override suspend fun consumedToolUsage(request: GenerationRequest): GenerationToolUsage = consumed
+        override suspend fun rejectToolCalls(
+            request: GenerationRequest,
+            toolCalls: List<GenerationToolCall>,
+            reason: String,
+        ) {
+            rejectedCalls += toolCalls.map { it.id }
+        }
+        override fun enterFinalAnswerMode(request: GenerationRequest) {
+            finalAnswerModeEntered = true
+        }
 
         override suspend fun prepare(request: GenerationRequest) = Unit
         override suspend fun buildContext(request: GenerationRequest) = preparationOutcome
@@ -421,7 +488,10 @@ class ChatGenerationRunnerTest {
         override suspend fun handleTools(
             request: GenerationRequest,
             toolCalls: List<GenerationToolCall>,
-        ): GenerationToolDecision = toolDecisions.removeFirstOrNull() ?: GenerationToolDecision.COMPLETE
+        ): GenerationToolDecision {
+            handledToolRounds++
+            return toolDecisions.removeFirstOrNull() ?: GenerationToolDecision.COMPLETE
+        }
         override suspend fun prepareContinuation(request: GenerationRequest): String? =
             nextAssistantId.also { nextAssistantId = null }
         override suspend fun postProcess(request: GenerationRequest, snapshot: GenerationSnapshot) = Unit

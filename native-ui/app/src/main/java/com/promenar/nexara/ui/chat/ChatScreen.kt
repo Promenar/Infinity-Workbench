@@ -159,7 +159,7 @@ import kotlinx.coroutines.launch
 
 internal fun Message.hasRagArtifacts(): Boolean =
     !ragReferences.isNullOrEmpty() || !kgPaths.isNullOrEmpty() ||
-        !citations.isNullOrEmpty() || ragReferencesLoading
+        !citations.isNullOrEmpty() || ragReferencesLoading || ragMetadata?.trace != null
 
 internal fun selectRagActiveMessage(messages: List<Message>): Message? =
     messages.find { it.hasRagArtifacts() } ?: messages.lastOrNull()
@@ -217,6 +217,7 @@ data class ChatScreenActions(
     val onSnackbarAction: () -> Unit = {},
     val onContinueTask: () -> Unit = {},
     val onCompleteTask: () -> Unit = {},
+    val onClearCompletedTask: () -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -313,8 +314,7 @@ fun ChatScreenContent(
         }
     }
 
-    suspend fun scrollToStreamingTail() {
-        val activeIndex = pipelineGroups.lastIndex
+    suspend fun scrollItemAboveComposer(activeIndex: Int) {
         if (activeIndex < 0) return
 
         val liveComposerInsets = chatComposerInsets(
@@ -347,6 +347,8 @@ fun ChatScreenContent(
         correctActiveOverlap()
     }
 
+    suspend fun scrollToStreamingTail() = scrollItemAboveComposer(pipelineGroups.lastIndex)
+
     // 新用户消息 → 恢复追踪 + 滚到底部
     val latestUserMsgId = uiState.messages.lastOrNull { it.role == MessageRole.USER }?.id ?: ""
     LaunchedEffect(latestUserMsgId) {
@@ -355,6 +357,18 @@ fun ChatScreenContent(
             delay(32)
             scrollToStreamingTail()
         }
+    }
+
+    // 新的审批请求排在消息之后，自动跟随只对齐最后一条消息时它会落在输入栏与键盘下方；
+    // 出现时把审批卡滚到输入栏上方，确保批准与拒绝按钮可见可点。
+    val approvalIdentity = uiState.approvalRequest?.let { it.identityHash ?: it.hashCode().toString() }
+    val approvalItemIndex = pipelineGroups.size +
+        (if (state.taskPanel != null) 1 else 0) +
+        (if (compressionState.isCompressing || compressionState.result != null) 1 else 0)
+    LaunchedEffect(approvalIdentity) {
+        if (approvalIdentity == null) return@LaunchedEffect
+        withFrameNanos { }
+        scrollItemAboveComposer(approvalItemIndex)
     }
 
     val latestAssistantMsg = uiState.messages.lastOrNull { it.role == MessageRole.ASSISTANT }
@@ -491,7 +505,8 @@ fun ChatScreenContent(
                                     references = ragActiveMsg.ragReferences,
                                     kgPaths = ragActiveMsg.kgPaths,
                                     citations = ragActiveMsg.citations,
-                                    isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true
+                                    isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true,
+                                    trace = ragActiveMsg.ragMetadata?.trace,
                                 )
                             }
                         }
@@ -528,6 +543,7 @@ fun ChatScreenContent(
                             isGenerating = uiState.isGenerating,
                             onContinue = actions.onContinueTask,
                             onComplete = actions.onCompleteTask,
+                            onClearCompleted = actions.onClearCompletedTask,
                         )
                     }
                 }
@@ -943,7 +959,7 @@ private fun ChatInputTopBar(
         // Token Indicator
         TokenIndicator(state = tokenState, onManualSummary = onManualSummary)
 
-        taskPanel?.let { panel ->
+        taskPanel?.takeUnless { it.isCompleted }?.let { panel ->
             val isGenerating = panel.capsuleMode == TaskCapsuleMode.GENERATING
             val accessibilityLabel = if (isGenerating) {
                 stringResource(R.string.chat_task_generating)

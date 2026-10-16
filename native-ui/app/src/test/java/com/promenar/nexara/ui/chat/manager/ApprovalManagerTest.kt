@@ -473,15 +473,23 @@ class ApprovalManagerTest {
     }
 
     @Test
-    fun resumeGenerationContinuationReject() = testScope.runTest {
-        seedSessionWithAssistant()
+    fun legacyApprovalWithoutExactIdentityIsClosedWithoutResuming() = testScope.runTest {
+        seedSessionWithAssistant(
+            toolCalls = listOf(ToolCall("legacy-call", "write_file", "{}")),
+            pendingApprovalToolIds = listOf("legacy-call"),
+        )
+        ledger.register(ToolExecutionKey("s1", "m1", "legacy-call"), "write_file", true)
+        var resumed = 0
+        approvalManager.setCallbacks(onGenerateMessage = { _, _, _ -> resumed++ }, onExecuteTools = { _, _, _ -> })
         approvalManager.setApprovalRequest("s1", ApprovalRequest(type = "continuation"))
 
-        approvalManager.resumeGeneration("s1", approved = false)
+        approvalManager.resumeGeneration("s1", approved = true)
 
         val session = store.getSession("s1")!!
-        assertThat(session.loopStatus).isEqualTo(LoopStatus.COMPLETED)
         assertThat(session.approvalRequest).isNull()
+        assertThat(session.loopStatus).isEqualTo(LoopStatus.PAUSED)
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", "legacy-call"))).isEqualTo(ToolLedgerState.CANCELLED)
+        assertThat(resumed).isEqualTo(0)
     }
 
     @Test
@@ -521,17 +529,6 @@ class ApprovalManagerTest {
         val lastMsg = session.messages.find { it.id == "m1" }!!
         val decisionStep = lastMsg.executionSteps?.lastOrNull()
         assertThat(decisionStep!!.content).contains("Human Instruction: Do it differently")
-    }
-
-    @Test
-    fun resumeGenerationContinuationApprovedIncreasesBudget() = testScope.runTest {
-        val session = seedSessionWithAssistant()
-        approvalManager.setApprovalRequest("s1", ApprovalRequest(type = "continuation"))
-
-        approvalManager.resumeGeneration("s1", approved = true)
-
-        val updatedSession = store.getSession("s1")!!
-        assertThat(updatedSession.continuationBudget).isEqualTo(session.autoLoopLimit)
     }
 
     @Test
@@ -604,7 +601,7 @@ class ApprovalManagerTest {
     }
 
     @Test
-    fun cancelAndTimeoutHaveExplicitTerminalEntrypoints() = testScope.runTest {
+    fun cancelHasExplicitTerminalEntrypoint() = testScope.runTest {
         suspend fun seedPending(sessionId: String, messageId: String, toolCallId: String): ToolExecutionKey {
             seedSessionWithAssistant(
                 sessionId = sessionId,
@@ -617,16 +614,12 @@ class ApprovalManagerTest {
             return key
         }
         val cancelled = seedPending("cancel-session", "m1", "cancelled")
-        val timedOut = seedPending("timeout-session", "m1", "timed-out")
 
         approvalManager.cancelPendingApproval("cancel-session")
-        approvalManager.timeoutPendingApproval("timeout-session")
         advanceUntilIdle()
 
         assertThat(ledger.state(cancelled)).isEqualTo(ToolLedgerState.CANCELLED)
-        assertThat(ledger.state(timedOut)).isEqualTo(ToolLedgerState.TIMED_OUT)
         assertThat(store.getSession("cancel-session")!!.messages.last().content).contains("已取消")
-        assertThat(store.getSession("timeout-session")!!.messages.last().content).contains("已超时")
     }
 
     @Test

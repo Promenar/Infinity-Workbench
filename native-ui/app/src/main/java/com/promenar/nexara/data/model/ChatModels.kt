@@ -99,12 +99,67 @@ data class RagReference(
     val id: String = "",
     val content: String = "",
     val source: String = "",
+    /** 召回分：向量相似度，或启用混合检索时的融合分（0–1）。 */
     val score: Float = 0f,
+    /** 重排模型给出的相关性分（0–1）；未重排时为 null。 */
     val rerankScore: Float? = null,
+    /** 重排带来的名次变化，正数表示上升；未重排时为 null。 */
     val rankChange: Int? = null,
     val documentId: String? = null,
-    val chunkIndex: Int = 0
+    val chunkIndex: Int = 0,
+    /** 在去重后的召回候选中的名次（从 1 开始）。 */
+    val recallRank: Int? = null,
+    /** 来源类型，取值见 [RagReferenceKind]。 */
+    val kind: String? = null,
 )
+
+object RagReferenceKind {
+    const val MEMORY = "memory"
+    const val DOCUMENT = "document"
+    const val SUMMARY = "summary"
+}
+
+/**
+ * 一次知识库检索的过程记录，随回复持久化，用于展示是否命中、如何排序以及重排的影响。
+ * 字符串取值见 [RagRetrievalTrace.Companion] 中的常量。
+ */
+@Serializable
+data class RagRetrievalTrace(
+    val outcome: String = OUTCOME_HIT,
+    /** 去重后的召回候选数。 */
+    val recallCount: Int = 0,
+    /** 最终注入上下文的条数。 */
+    val selectedCount: Int = 0,
+    val scoring: String = SCORING_VECTOR,
+    val rerank: String = RERANK_OFF,
+    val rerankModel: String? = null,
+    val searchTimeMs: Long = 0,
+    val rerankTimeMs: Long = 0,
+    val memoryCount: Int = 0,
+    val documentCount: Int = 0,
+) {
+    companion object {
+        const val OUTCOME_HIT = "hit"
+        /** 已检索但没有候选达到阈值。 */
+        const val OUTCOME_EMPTY = "empty"
+        /** 嵌入模型不可用，未能检索。 */
+        const val OUTCOME_UNAVAILABLE = "unavailable"
+        /** 未选择可检索的文档且未启用记忆。 */
+        const val OUTCOME_NO_SCOPE = "no_scope"
+        const val OUTCOME_FAILED = "failed"
+
+        const val SCORING_VECTOR = "vector"
+        const val SCORING_HYBRID = "hybrid"
+
+        const val RERANK_OFF = "off"
+        const val RERANK_API = "api"
+        const val RERANK_LLM = "llm"
+        /** 候选不足两条，无需重排。 */
+        const val RERANK_SKIPPED = "skipped"
+        /** 已启用但重排失败，保持召回顺序。 */
+        const val RERANK_FAILED = "failed"
+    }
+}
 
 @Serializable
 data class KgNode(
@@ -142,7 +197,8 @@ data class RagProgress(
 data class RagMetadata(
     val chunkCount: Int = 0,
     val totalTokens: Int = 0,
-    val retrievalTimeMs: Long = 0
+    val retrievalTimeMs: Long = 0,
+    val trace: RagRetrievalTrace? = null,
 )
 
 @Serializable
@@ -406,6 +462,7 @@ data class Session(
     val messages: List<Message> = emptyList(),
     val ragOptions: RagOptions? = null,
     val inferenceParams: InferenceParams? = null,
+    /** 旧版会话列的兼容字段，当前不再写入；活跃计划以 TaskRepository 为准。 */
     val activeTask: TaskState? = null,
     val stats: SessionStats? = null,
     val options: SessionOptions = SessionOptions(),
@@ -413,8 +470,6 @@ data class Session(
     val activeSkillIds: List<String> = emptyList(),
     val workspacePath: String? = null,
     val workspaceRootUuid: String? = null,
-    val continuationBudget: Int = 0,
-    val autoLoopLimit: Int = 5,
     val activeTaskTreeId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()

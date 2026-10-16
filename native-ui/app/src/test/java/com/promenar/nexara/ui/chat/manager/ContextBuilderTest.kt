@@ -319,6 +319,31 @@ class ContextBuilderTest {
     }
 
     @Test
+    fun ragTraceIsPassedThroughAndFailureIsRecorded() = testScope.runTest {
+        val trace = com.promenar.nexara.data.model.RagRetrievalTrace(outcome = "empty", recallCount = 0)
+        var fail = false
+        val ragProvider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+            ): RagRetrievalResult {
+                if (fail) throw IllegalStateException("vector store down")
+                return RagRetrievalResult("", emptyList(), null, trace)
+            }
+        }
+        val builder = ContextBuilder(ragProvider = ragProvider)
+        val session = Session(id = "s1", agentId = "a1", ragOptions = RagOptions(enableMemory = true))
+        val params = ContextBuilderParams(sessionId = "s1", content = "q", assistantMsgId = "m1", session = session)
+
+        assertThat(builder.buildContext(params).ragTrace).isEqualTo(trace)
+        fail = true
+        assertThat(builder.buildContext(params).ragTrace?.outcome)
+            .isEqualTo(com.promenar.nexara.data.model.RagRetrievalTrace.OUTCOME_FAILED)
+    }
+
+    @Test
     fun buildContextWithRag() = testScope.runTest {
         val ragProvider = object : RagProvider {
             override suspend fun retrieveContext(
@@ -326,8 +351,8 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
-                return Triple(
+            ): RagRetrievalResult {
+                return RagRetrievalResult(
                     "RAG context",
                     listOf(RagReference(id = "r1", content = "ref content", source = "doc1")),
                     RagUsage(ragSystem = 100, isEstimated = false)
@@ -360,9 +385,9 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
+            ): RagRetrievalResult {
                 capturedOptions = options
-                return Triple("RAG context", emptyList(), null)
+                return RagRetrievalResult("RAG context", emptyList(), null)
             }
         }
 
@@ -411,8 +436,8 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
-                return Triple(
+            ): RagRetrievalResult {
+                return RagRetrievalResult(
                     longContext,
                     listOf(RagReference(id = "r1", content = "short ref", source = "doc1")),
                     RagUsage(ragSystem = 120, isEstimated = true)
@@ -443,9 +468,9 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
+            ): RagRetrievalResult {
                 ragCalled = true
-                return Triple("", emptyList(), null)
+                return RagRetrievalResult("", emptyList(), null)
             }
         }
 
@@ -481,8 +506,8 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
-                return Triple(
+            ): RagRetrievalResult {
+                return RagRetrievalResult(
                     "RAG context",
                     listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
                     null
@@ -529,8 +554,8 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
-                return Triple(
+            ): RagRetrievalResult {
+                return RagRetrievalResult(
                     "RAG context",
                     listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
                     null
@@ -575,8 +600,8 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
-                return Triple(
+            ): RagRetrievalResult {
+                return RagRetrievalResult(
                     "RAG context",
                     listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
                     null
@@ -628,8 +653,8 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
-                return Triple(
+            ): RagRetrievalResult {
+                return RagRetrievalResult(
                     "RAG context",
                     listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
                     null
@@ -672,8 +697,8 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
-                return Triple(
+            ): RagRetrievalResult {
+                return RagRetrievalResult(
                     "RAG context",
                     listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
                     null
@@ -714,8 +739,8 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
-                return Triple(
+            ): RagRetrievalResult {
+                return RagRetrievalResult(
                     "RAG context",
                     listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
                     null
@@ -815,9 +840,9 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
+            ): RagRetrievalResult {
                 ragCalled = true
-                return Triple("RAG", listOf(RagReference("r1", "reference", "doc")), null)
+                return RagRetrievalResult("RAG", listOf(RagReference("r1", "reference", "doc")), null)
             }
         }
         val kgProvider = object : KgProvider {
@@ -876,9 +901,9 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
+            ): RagRetrievalResult {
                 ragCalled = true
-                return Triple("RAG", listOf(RagReference("r1", "reference", "doc")), null)
+                return RagRetrievalResult("RAG", listOf(RagReference("r1", "reference", "doc")), null)
             }
         }
         val kgProvider = object : KgProvider {
@@ -934,8 +959,8 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
-                return Triple(
+            ): RagRetrievalResult {
+                return RagRetrievalResult(
                     "RAG context",
                     listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
                     null
@@ -979,8 +1004,8 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
-                return Triple(
+            ): RagRetrievalResult {
+                return RagRetrievalResult(
                     "RAG context",
                     listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
                     null
@@ -1035,8 +1060,8 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
-                return Triple(
+            ): RagRetrievalResult {
+                return RagRetrievalResult(
                     "RAG context",
                     listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
                     null
@@ -1077,9 +1102,9 @@ class ContextBuilderTest {
                 sessionId: String,
                 options: RagOptions,
                 onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-            ): Triple<String, List<RagReference>, RagUsage?> {
+            ): RagRetrievalResult {
                 capturedRagOptions = options
-                return Triple(
+                return RagRetrievalResult(
                     "RAG context",
                     listOf(RagReference(id = "r1", content = "ref", source = "doc1")),
                     null

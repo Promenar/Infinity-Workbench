@@ -435,6 +435,7 @@
     <string name="chat_cd_selected_image">Selected image</string>
     <string name="chat_cd_remove_image">Remove image</string>
     <string name="chat_image_only_prompt">Describe this image</string>
+    <string name="chat_image_read_failed">An image could not be read. Remove it and try again.</string>
     <string name="chat_cd_add_attachment">Add attachment</string>
     <string name="chat_menu_attach_image">Image</string>
     <string name="chat_menu_attach_document">Text document (full context)</string>
@@ -641,6 +642,15 @@
     <string name="chat_task_pending_accessibility">%1$d task item(s) pending confirmation</string>
     <string name="chat_task_continue">Continue</string>
     <string name="chat_task_mark_completed">Mark completed</string>
+    <string name="chat_task_expand_steps">Show all steps</string>
+    <string name="chat_task_collapse_steps">Show current step</string>
+    <string name="chat_task_all_completed">All steps are done</string>
+    <string name="chat_task_clear_completed">Clear plan</string>
+    <string name="chat_task_step_todo">Not started</string>
+    <string name="chat_task_step_doing">In progress</string>
+    <string name="chat_task_step_done">Done</string>
+    <string name="chat_task_step_dropped">Dropped</string>
+    <string name="chat_task_marked_completed">Remaining steps marked done</string>
     <string name="chat_task_continue_prompt">Continue the unfinished task from the current plan.</string>
     <string name="workspace_sprint_pipeline">Sprint Pipeline</string>
     <string name="workspace_x_of_y_completed">%1$d of %2$d completed</string>
@@ -1358,6 +1368,40 @@
     <string name="rag_details_unknown_source">Unknown source</string>
     <string name="rag_details_link_error">Couldn’t open this link.</string>
     <string name="rag_details_retry">Retry</string>
+    <string name="chat_rag_summary_hit">Knowledge base: %1$d matches</string>
+    <string name="chat_rag_summary_empty">Knowledge base: no matches</string>
+    <string name="chat_rag_summary_unavailable">Knowledge base not searched: embedding model unavailable</string>
+    <string name="chat_rag_summary_no_scope">Knowledge base not searched: no documents selected</string>
+    <string name="chat_rag_summary_failed">Knowledge base search failed</string>
+    <string name="chat_rag_summary_web">%1$d web results</string>
+    <string name="rag_trace_title">How results were picked</string>
+    <string name="chat_rag_summary_reranked">Reranked</string>
+    <string name="chat_rag_summary_rerank_failed">Rerank failed</string>
+    <string name="rag_trace_selected">Used %1$d</string>
+    <string name="rag_trace_sources">Memory %1$d, documents %2$d</string>
+    <string name="rag_trace_rerank_time">%1$d ms</string>
+    <string name="rag_trace_recall">Recalled %1$d</string>
+    <string name="rag_trace_scoring_vector">Ranked by vector similarity</string>
+    <string name="rag_trace_scoring_hybrid">Ranked by hybrid score (vector + keyword)</string>
+    <string name="rag_trace_rerank_api">Reranked by %1$s</string>
+    <string name="rag_trace_rerank_llm">Reranked by LLM scoring (%1$s)</string>
+    <string name="rag_trace_rerank_skipped">Rerank skipped: fewer than two candidates</string>
+    <string name="rag_trace_rerank_failed">Rerank failed; kept recall order</string>
+    <string name="rag_trace_rerank_off">Rerank off</string>
+    <string name="rag_trace_empty_hint">No candidate reached the similarity threshold.</string>
+    <string name="rag_trace_unavailable_hint">The embedding model is not configured or did not respond, so the knowledge base was not searched.</string>
+    <string name="rag_trace_no_scope_hint">Memory is off and no documents are selected for this chat.</string>
+    <string name="rag_trace_failed_hint">The knowledge base search hit an error. The reply was generated without it.</string>
+    <string name="rag_trace_time">Search took %1$d ms</string>
+    <string name="rag_details_kind_memory">Memory</string>
+    <string name="rag_details_kind_document">Document</string>
+    <string name="rag_details_kind_summary">Summary</string>
+    <string name="rag_details_score_similarity">Similarity %1$d%%</string>
+    <string name="rag_details_score_fused">Hybrid score %1$d%%</string>
+    <string name="rag_details_score_rerank_value">Rerank %1$d%%</string>
+    <string name="rag_details_rank_from_up">Was #%1$d, up %2$d</string>
+    <string name="rag_details_rank_from_down">Was #%1$d, down %2$d</string>
+    <string name="rag_details_rank_unchanged">Rank unchanged after rerank</string>
     <string name="chat_rag_open_details">Open retrieval details</string>
 
     <string name="recycle_bin_auto_cleanup">Items in the recycle bin are automatically deleted after 30 days</string>
@@ -1439,6 +1483,7 @@
     <string name="generation_failure_server">The provider is temporarily unavailable. Please retry.</string>
     <string name="generation_failure_busy">Another conversation is generating. Retry after it finishes.</string>
     <string name="generation_failure_persistence">The response could not be saved. Please retry.</string>
+    <string name="generation_failure_tool_budget">The tool budget for this turn is used up and the model gave no summary. Send a message to continue.</string>
     <string name="generation_failure_unknown">Generation failed. Please retry.</string>
 
     <!-- Structured release-reachable status messages -->

@@ -1,6 +1,8 @@
 package com.promenar.nexara.data.rag
 
 import com.promenar.nexara.data.model.RagReference
+import com.promenar.nexara.data.model.RagReferenceKind
+import com.promenar.nexara.data.model.RagRetrievalTrace
 import com.promenar.nexara.utils.NexaraLogger
 
 class MemoryManager(
@@ -27,7 +29,9 @@ class MemoryManager(
     data class RetrieveResult(
         val context: String,
         val references: List<RagReference>,
-        val metadata: RetrieveMetadata
+        val metadata: RetrieveMetadata,
+        /** 检索过程记录；null 表示未执行检索。 */
+        val trace: RagRetrievalTrace? = null,
     )
 
     data class RetrieveMetadata(
@@ -74,12 +78,12 @@ class MemoryManager(
 
         if (!canSearchMemory && !canSearchDocs) {
             NexaraLogger.log("[$TAG] No search enabled, returning empty")
-            return emptyResult(0)
+            return emptyResult(0, RagRetrievalTrace.OUTCOME_NO_SCOPE)
         }
 
         if (!embeddingClient.isConfigured && !embeddingClient.hasLocalFallback) {
             NexaraLogger.log("[$TAG] embedding unavailable, skip retrieval: ${embeddingClient.diagnosticMessage().lineSequence().firstOrNull().orEmpty()}")
-            return emptyResult(System.currentTimeMillis() - startTime)
+            return emptyResult(System.currentTimeMillis() - startTime, RagRetrievalTrace.OUTCOME_UNAVAILABLE)
         }
 
         onProgress?.invoke("Embedding query", 10, "Sending query to embedding model")
@@ -110,7 +114,7 @@ class MemoryManager(
             }
         }
         if (queryEmbeddings.isEmpty()) {
-            return emptyResult(System.currentTimeMillis() - startTime)
+            return emptyResult(System.currentTimeMillis() - startTime, RagRetrievalTrace.OUTCOME_UNAVAILABLE)
         }
         onProgress?.invoke("Embedding done", 25, "${queryEmbeddings.first().second.size}d vector in ${firstEmbedMs}ms")
 
@@ -186,6 +190,7 @@ class MemoryManager(
 
         // Hybrid search (RRF Fusion)
         onProgress?.invoke("Hybrid fusion", 70, "Merging vector + keyword results")
+        var hybridApplied = false
         val finalResults = if (effectiveConfig.enableHybridSearch) {
             try {
                 val keywordResults = queryVariants.flatMap { searchQuery ->
@@ -207,6 +212,7 @@ class MemoryManager(
                 }
                 val fused = rrfFusion(results, keywordResults, effectiveConfig)
                 NexaraLogger.log("[$TAG] hybrid fusion: ${results.size} vector + ${keywordResults.size} keyword → ${fused.size} fused")
+                hybridApplied = true
                 fused
             } catch (e: Exception) {
                 NexaraLogger.logError("[$TAG] hybrid fusion failed, using raw results", e)
@@ -219,7 +225,7 @@ class MemoryManager(
         onProgress?.invoke("Ranking results", 90, "${finalResults.size} candidates found")
         if (finalResults.isEmpty()) {
             NexaraLogger.log("[$TAG] No results after fusion, returning empty")
-            return emptyResult(System.currentTimeMillis() - startTime)
+            return emptyResult(System.currentTimeMillis() - startTime, RagRetrievalTrace.OUTCOME_EMPTY)
         }
 
         val uniqueResults = finalResults
@@ -227,22 +233,26 @@ class MemoryManager(
             .distinctBy { it.id }
 
         var actualRerankTimeMs = 0L
-        val rerankedResults = if (canRerank && uniqueResults.isNotEmpty()) {
+        val rerankOutcome = if (canRerank && uniqueResults.isNotEmpty()) {
             NexaraLogger.log("[$TAG] rerank start: ${uniqueResults.size} candidates")
             onProgress?.invoke("Reranking", 92, "Re-scoring ${uniqueResults.size} candidates")
             val rerankStart = System.currentTimeMillis()
             try {
-                rerankClient.rerank(query, uniqueResults, effectiveConfig.rerankTopK)
+                rerankClient.rerankWithOutcome(query, uniqueResults, effectiveConfig.rerankTopK)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 NexaraLogger.logError("[$TAG] rerank failed", e)
-                uniqueResults
+                RerankOutcome(uniqueResults, RerankMethod.FAILED)
             }.also {
                 actualRerankTimeMs = System.currentTimeMillis() - rerankStart
-                onProgress?.invoke("Rerank complete", 95, "${it.size} results in ${actualRerankTimeMs}ms")
+                onProgress?.invoke("Rerank complete", 95, "${it.results.size} results in ${actualRerankTimeMs}ms")
             }
         } else {
-            uniqueResults
+            null
         }
+        val rerankedResults = rerankOutcome?.results ?: uniqueResults
+        val reranked = rerankOutcome?.method == RerankMethod.API || rerankOutcome?.method == RerankMethod.LLM
 
         // P1: 若重排已启用，rerankFinalK 作为最终结果总数的上限（语义上优于 memoryLimit+docLimit 简单加和）
         val finalCap = if (canRerank) effectiveConfig.rerankFinalK
@@ -271,8 +281,11 @@ class MemoryManager(
             retrievedChunks
         }
 
-        val references = combinedResults.map { r ->
-            val isMemory = parseTypeFromMetadata(r.metadata) == "memory"
+        val recallRanks = uniqueResults.withIndex().associate { (index, result) -> result.id to index + 1 }
+        val references = combinedResults.mapIndexed { finalIndex, r ->
+            val type = parseTypeFromMetadata(r.metadata)
+            val isMemory = type == "memory"
+            val recallRank = recallRanks[r.id]
             val sourceLabel = when {
                 isMemory -> "对话记忆"
                 r.docId != null -> {
@@ -284,10 +297,21 @@ class MemoryManager(
                 id = r.id,
                 content = r.content,
                 source = sourceLabel,
-                score = r.similarity,
-                documentId = r.docId
+                score = if (reranked) r.originalSimilarity ?: r.similarity else r.similarity,
+                rerankScore = if (reranked) r.similarity else null,
+                rankChange = if (reranked) recallRank?.let { it - (finalIndex + 1) } else null,
+                documentId = r.docId,
+                recallRank = recallRank,
+                kind = when (type) {
+                    "memory" -> RagReferenceKind.MEMORY
+                    "doc" -> RagReferenceKind.DOCUMENT
+                    "summary" -> RagReferenceKind.SUMMARY
+                    else -> null
+                },
             )
         }
+        val memoryCount = combinedResults.count { parseTypeFromMetadata(it.metadata) == "memory" }
+        val documentCount = combinedResults.count { parseTypeFromMetadata(it.metadata) == "doc" }
 
         return RetrieveResult(
             context = "relevant_context_block (参考上下文):\n$contextBlock",
@@ -298,10 +322,28 @@ class MemoryManager(
                 recallCount = uniqueResults.size,
                 finalCount = combinedResults.size,
                 sourceDistribution = SourceDistribution(
-                    memory = combinedResults.count { parseTypeFromMetadata(it.metadata) == "memory" },
-                    documents = combinedResults.count { parseTypeFromMetadata(it.metadata) == "doc" }
+                    memory = memoryCount,
+                    documents = documentCount,
                 )
-            )
+            ),
+            trace = RagRetrievalTrace(
+                outcome = if (combinedResults.isEmpty()) RagRetrievalTrace.OUTCOME_EMPTY else RagRetrievalTrace.OUTCOME_HIT,
+                recallCount = uniqueResults.size,
+                selectedCount = combinedResults.size,
+                scoring = if (hybridApplied) RagRetrievalTrace.SCORING_HYBRID else RagRetrievalTrace.SCORING_VECTOR,
+                rerank = when (rerankOutcome?.method) {
+                    null -> RagRetrievalTrace.RERANK_OFF
+                    RerankMethod.API -> RagRetrievalTrace.RERANK_API
+                    RerankMethod.LLM -> RagRetrievalTrace.RERANK_LLM
+                    RerankMethod.SKIPPED -> RagRetrievalTrace.RERANK_SKIPPED
+                    RerankMethod.FAILED -> RagRetrievalTrace.RERANK_FAILED
+                },
+                rerankModel = rerankOutcome?.model,
+                searchTimeMs = endTime - startTime,
+                rerankTimeMs = actualRerankTimeMs,
+                memoryCount = memoryCount,
+                documentCount = documentCount,
+            ),
         )
     }
 
@@ -432,9 +474,10 @@ class MemoryManager(
         return if (type == "document") "doc" else type
     }
 
-    private fun emptyResult(searchTimeMs: Long) = RetrieveResult(
+    private fun emptyResult(searchTimeMs: Long, outcome: String) = RetrieveResult(
         context = "",
         references = emptyList(),
-        metadata = RetrieveMetadata(searchTimeMs = searchTimeMs)
+        metadata = RetrieveMetadata(searchTimeMs = searchTimeMs),
+        trace = RagRetrievalTrace(outcome = outcome, searchTimeMs = searchTimeMs),
     )
 }

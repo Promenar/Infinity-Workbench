@@ -25,6 +25,7 @@ import com.promenar.nexara.data.remote.StreamConfig
 import com.promenar.nexara.data.remote.middleware.StreamTextParams
 import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
+import com.promenar.nexara.data.remote.protocol.ProtocolToolChoice
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.ToolApprovalCreation
@@ -44,6 +45,7 @@ import com.promenar.nexara.domain.generation.GenerationTerminalStatus
 import com.promenar.nexara.domain.generation.DEFAULT_TOOL_ROUNDS_PER_GENERATION
 import com.promenar.nexara.domain.generation.GenerationToolBudget
 import com.promenar.nexara.domain.generation.GenerationToolCall
+import com.promenar.nexara.domain.generation.GenerationToolUsage
 import com.promenar.nexara.domain.generation.MAX_CONFIGURABLE_TOOL_ROUNDS
 import com.promenar.nexara.domain.generation.GenerationToolDecision
 import com.promenar.nexara.domain.repository.IAgentRepository
@@ -258,6 +260,8 @@ internal class DefaultChatGenerationRuntime(
             topK = inference.topK,
             repetitionPenalty = inference.repetitionPenalty,
             tools = tools.ifEmpty { null },
+            // 收尾轮仍声明工具（历史中的调用需要它们才能被部分协议解析），但禁止再发起调用。
+            toolChoice = if (finalAnswerMode) ProtocolToolChoice.NONE else ProtocolToolChoice.AUTO,
             webSearch = session.options.webSearch,
             enableGeminiSearch = session.options.enableGeminiSearch,
             stream = true,
@@ -327,6 +331,7 @@ internal class DefaultChatGenerationRuntime(
                     streamTimeout = prompt.streamTimeout,
                     enableGeminiSearch = prompt.enableGeminiSearch,
                     tools = preparedTools.associateBy { it.function.name },
+                    toolChoice = prompt.toolChoice,
                     enableWebSearch = prompt.webSearch == true,
                 ),
                 StreamConfig(enableWebSearch = prompt.webSearch == true),
@@ -480,6 +485,11 @@ internal class DefaultChatGenerationRuntime(
         maxRounds = settings.getInt(LOOP_LIMIT_KEY, DEFAULT_TOOL_ROUNDS_PER_GENERATION)
             .coerceIn(1, MAX_CONFIGURABLE_TOOL_ROUNDS),
     )
+
+    override suspend fun consumedToolUsage(request: GenerationRequest): GenerationToolUsage {
+        val messages = store.getSession(request.sessionId)?.messages ?: return GenerationToolUsage()
+        return consumedToolUsageInTurn(messages, request)
+    }
 
     override suspend fun rejectToolCalls(
         request: GenerationRequest,
@@ -863,4 +873,30 @@ internal class DefaultChatGenerationRuntime(
             "and the remaining steps, and tell the user they can send a message to continue.\n"
     }
 
+}
+
+/**
+ * 统计 [request] 所属对话轮在本次生成之前已发起的工具轮次与调用数。
+ * 只计本轮用户消息之后、下一条用户消息之前的助手消息；本次生成的目标消息与待替换的旧回复不计入。
+ */
+internal fun consumedToolUsageInTurn(
+    messages: List<com.promenar.nexara.data.model.Message>,
+    request: GenerationRequest,
+): GenerationToolUsage {
+    val userMessageId = request.userMessageId ?: return GenerationToolUsage()
+    val start = messages.indexOfFirst { it.id == userMessageId && it.role == MessageRole.USER }
+    if (start < 0) return GenerationToolUsage()
+    val excluded = request.messageIdsToReplace + request.assistantMessageId
+    var rounds = 0
+    var calls = 0
+    for (message in messages.drop(start + 1)) {
+        if (message.role == MessageRole.USER) break
+        if (message.role != MessageRole.ASSISTANT || message.id in excluded) continue
+        val count = message.toolCalls?.size ?: 0
+        if (count > 0) {
+            rounds++
+            calls += count
+        }
+    }
+    return GenerationToolUsage(rounds, calls)
 }

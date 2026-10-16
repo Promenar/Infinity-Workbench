@@ -24,6 +24,7 @@ class GenerationFailureNoticeTest {
             GenerationFailureCode.SERVER to R.string.generation_failure_server,
             GenerationFailureCode.BUSY to R.string.generation_failure_busy,
             GenerationFailureCode.PERSISTENCE to R.string.generation_failure_persistence,
+            GenerationFailureCode.TOOL_BUDGET_EXHAUSTED to R.string.generation_failure_tool_budget,
             GenerationFailureCode.UNKNOWN to R.string.generation_failure_unknown,
         )
 
@@ -183,6 +184,7 @@ class GenerationFailureNoticeTest {
             "generation_failure_server",
             "generation_failure_busy",
             "generation_failure_persistence",
+            "generation_failure_tool_budget",
             "generation_failure_unknown",
         )
     }

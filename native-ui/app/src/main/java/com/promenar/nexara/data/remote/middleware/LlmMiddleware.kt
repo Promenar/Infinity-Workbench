@@ -21,6 +21,8 @@ data class StreamTextParams(
     val streamTimeout: Long? = null,
     val enableGeminiSearch: Boolean? = null,
     val tools: Map<String, ProtocolTool>? = null,
+    val toolChoice: com.promenar.nexara.data.remote.protocol.ProtocolToolChoice =
+        com.promenar.nexara.data.remote.protocol.ProtocolToolChoice.AUTO,
     val maxToolCalls: Int = 10,
     val abortSignal: Job? = null,
     val enableWebSearch: Boolean = false,

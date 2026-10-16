@@ -343,7 +343,7 @@ class GenericOpenAICompatProtocol(
                         })
                     }
                 })
-                put("tool_choice", "auto")
+                put("tool_choice", if (request.toolChoice == ProtocolToolChoice.NONE) "none" else "auto")
             }
         }
 

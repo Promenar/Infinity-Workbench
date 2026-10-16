@@ -18,6 +18,8 @@ enum class GenerationFailureCode {
     SERVER,
     BUSY,
     PERSISTENCE,
+    /** 工具预算已用尽且模型在收尾轮仍未给出正文。 */
+    TOOL_BUDGET_EXHAUSTED,
     UNKNOWN,
 }
 

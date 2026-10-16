@@ -40,6 +40,7 @@ import kotlinx.serialization.json.boolean
 import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
 import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.coroutines.CancellationException
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 
@@ -359,6 +360,50 @@ class ToolExecutorTest {
         val toolMessages = session.messages.filter { it.role == MessageRole.TOOL }
         assertThat(toolMessages).hasSize(1)
         assertThat(toolMessages[0].content).contains("DISABLED")
+    }
+
+    @Test
+    fun toolStepLinksToCurrentPlanFocus() = testScope.runTest {
+        seedSessionWithAssistant()
+        val skill = testSkill(name = "plain_tool", schema = """{"type":"object","properties":{}}""") {
+            ToolResult("plain", "ok")
+        }
+        val registry = singleSkillRegistry(skill)
+        val plan = com.promenar.nexara.data.model.TaskState(id = "root", title = "目标", currentFocusStepId = "step-2")
+        val taskRepository = mockk<com.promenar.nexara.domain.repository.ITaskRepository>(relaxed = true) {
+            coEvery { getPlan("s1") } returns plan
+        }
+        val executor = ToolExecutor(
+            store,
+            messageManager,
+            registry,
+            testToolResolver(registry),
+            taskRepository = taskRepository,
+            ledger = RecordingLedger(),
+        )
+
+        executor.executeTools(
+            "s1",
+            "m1",
+            listOf(ToolCall("linked", "plain_tool", "{}")),
+            setOf("linked"),
+            listOf(skill.toPreparedTool()),
+        )
+        advanceUntilIdle()
+
+        // 消息步骤经 MessageManager 节流通道写回 store，按真实时间等待落地。
+        val step = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            kotlinx.coroutines.withTimeout(5_000) {
+                var found: com.promenar.nexara.data.model.ExecutionStep? = null
+                while (found == null) {
+                    found = store.getSession("s1")!!.messages.first { it.id == "m1" }.executionSteps.orEmpty()
+                        .firstOrNull { it.toolCallId == "linked" }
+                    if (found == null) kotlinx.coroutines.delay(20)
+                }
+                found
+            }
+        }
+        assertThat(step.taskStepId).isEqualTo("step-2")
     }
 
     @Test

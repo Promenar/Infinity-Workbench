@@ -46,7 +46,6 @@ import com.promenar.nexara.background.generation.shouldExplainNotificationPermis
 import com.promenar.nexara.background.generation.shouldShowNotificationPermissionDialog
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.domain.repository.ITaskRepository
-import com.promenar.nexara.domain.repository.PlanPatchOp
 import com.promenar.nexara.ui.common.EditorMode
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSnackbarData
@@ -211,6 +210,7 @@ fun ChatRoute(
     val isImportingDocument by chatViewModel.isImportingDocument.collectAsStateWithLifecycle()
     val draftConsumptionEpoch by chatViewModel.draftConsumptionEpoch.collectAsStateWithLifecycle()
     val deletionUndo by chatViewModel.deletionUndo.collectAsStateWithLifecycle()
+    val taskCompletionUndo by chatViewModel.taskCompletionUndo.collectAsStateWithLifecycle()
     val providerModels by ProviderManager.getInstance().providerModels.collectAsStateWithLifecycle()
     val modelDisplayNames = remember(providerModels, uiState.session?.modelId, uiState.messages) {
         resolveModelDisplayNames(
@@ -420,6 +420,19 @@ fun ChatRoute(
         )
         if (result == SnackbarResult.Dismissed) chatViewModel.dismissDeletionUndo(undo.token)
     }
+    val taskCompletedLabel = stringResource(R.string.chat_task_marked_completed)
+    LaunchedEffect(taskCompletionUndo) {
+        val undo = taskCompletionUndo ?: return@LaunchedEffect
+        snackbarAction = chatViewModel::undoTaskCompletion
+        snackbarData = NexaraSnackbarData(taskCompletedLabel, SnackbarType.INFO, undoLabel)
+        snackbarHostState.currentSnackbarData?.dismiss()
+        val result = snackbarHostState.showSnackbar(
+            message = taskCompletedLabel,
+            actionLabel = undoLabel,
+            duration = SnackbarDuration.Long,
+        )
+        if (result == SnackbarResult.Dismissed) chatViewModel.dismissTaskCompletionUndo(undo.token)
+    }
 
     ChatScreenContent(
         state = ChatScreenState(
@@ -506,25 +519,8 @@ fun ChatRoute(
                     chatViewModel.sendMessage(continueTaskPrompt)
                 }
             },
-            onCompleteTask = {
-                if (!uiState.isGenerating) {
-                    val unfinishedIds = unfinishedTaskLeafIds(activeTaskTree)
-                    if (unfinishedIds.isNotEmpty()) {
-                        scope.launch {
-                            resolvedDependencies.taskRepository.updatePlan(
-                                sessionId = sessionId,
-                                operations = unfinishedIds.map { stepId ->
-                                    PlanPatchOp(
-                                        action = "set_status",
-                                        stepId = stepId,
-                                        payload = mapOf("status" to "done"),
-                                    )
-                                },
-                            )
-                        }
-                    }
-                }
-            },
+            onCompleteTask = chatViewModel::completeActivePlan,
+            onClearCompletedTask = chatViewModel::clearCompletedPlan,
         ),
         snackbarHostState = snackbarHostState,
         snackbarData = snackbarData,

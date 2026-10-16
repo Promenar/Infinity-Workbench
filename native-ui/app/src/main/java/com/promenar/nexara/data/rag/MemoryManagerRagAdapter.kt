@@ -4,6 +4,7 @@ import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagUsage
 import com.promenar.nexara.ui.chat.manager.RagProvider
+import com.promenar.nexara.ui.chat.manager.RagRetrievalResult
 
 class MemoryManagerRagAdapter(
     private val memoryManager: MemoryManager
@@ -14,7 +15,7 @@ class MemoryManagerRagAdapter(
         sessionId: String,
         options: RagOptions,
         onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
-    ): Triple<String, List<RagReference>, RagUsage?> {
+    ): RagRetrievalResult {
         val retrieveOptions = MemoryManager.RetrieveOptions(
             enableMemory = options.enableMemory,
             enableDocs = options.enableDocs,
@@ -40,7 +41,7 @@ class MemoryManagerRagAdapter(
             null
         }
 
-        return Triple(result.context, result.references, usage)
+        return RagRetrievalResult(result.context, result.references, usage, result.trace)
     }
 
     private fun buildConfigOverride(options: RagOptions): RagConfiguration {

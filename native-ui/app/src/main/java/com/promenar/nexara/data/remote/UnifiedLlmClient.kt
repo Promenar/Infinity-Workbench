@@ -87,6 +87,7 @@ class UnifiedLlmClient(
             topK = finalParams.topK,
             repetitionPenalty = finalParams.repetitionPenalty,
             tools = allTools.ifEmpty { null },
+            toolChoice = finalParams.toolChoice,
             stream = true,
             webSearch = finalParams.enableWebSearch || config.enableWebSearch,
             enableGeminiSearch = finalParams.enableGeminiSearch,

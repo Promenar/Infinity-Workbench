@@ -52,9 +52,14 @@ import com.promenar.nexara.data.model.RagMetadata
 import com.promenar.nexara.data.model.RagPhase
 import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.model.RagReference
+import com.promenar.nexara.data.model.RagRetrievalTrace
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import com.promenar.nexara.ui.chat.components.RagDetailsSheet
+import com.promenar.nexara.ui.common.NexaraMetaLine
+import com.promenar.nexara.ui.chat.components.RagOutcomeTone
+import com.promenar.nexara.ui.chat.components.ragCardSummary
+import com.promenar.nexara.ui.chat.components.ragOutcomeTone
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraElevation
@@ -423,7 +428,8 @@ fun RagProgressCard(
     kgPaths: List<KgPath>? = null,
     citations: List<Citation>? = null,
     isComplete: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    trace: RagRetrievalTrace? = null,
 ) {
     var showDetailsSheet by remember { mutableStateOf(false) }
 
@@ -443,8 +449,17 @@ fun RagProgressCard(
         ?: displayPhases.lastOrNull { it.id == "ready" && it.status == PhaseStatus.DONE }
     val retrievalReady = isComplete || visiblePhase?.id == "ready"
 
-    // 自动匹配当前精细状态描述
+    // 自动匹配当前精细状态描述；有检索记录时以命中摘要为准
+    val traceSegments = trace?.takeIf { isComplete }?.let { retrievalTrace ->
+        buildList {
+            ragCardSummary(retrievalTrace, references.orEmpty().size).forEach { part ->
+                add(stringResource(part.resId, *part.args.toTypedArray()))
+            }
+            citations.orEmpty().size.takeIf { it > 0 }?.let { add(stringResource(R.string.chat_rag_summary_web, it)) }
+        }
+    }
     val currentText = when {
+        traceSegments != null -> traceSegments.joinToString("，") // wrap-check: allow 无障碍状态描述，排版由 NexaraMetaLine 承担
         isComplete -> {
             if (hasCitations && (hasReferences || hasKgPaths)) stringResource(R.string.chat_rag_ready_references)
             else if (hasCitations) stringResource(R.string.chat_rag_ready_web)
@@ -503,10 +518,19 @@ fun RagProgressCard(
             horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
         ) {
             if (retrievalReady) {
+                val tone = trace?.let(::ragOutcomeTone) ?: RagOutcomeTone.HIT
                 Icon(
-                    imageVector = Icons.Rounded.CheckCircle,
+                    imageVector = when (tone) {
+                        RagOutcomeTone.HIT -> Icons.Rounded.CheckCircle
+                        RagOutcomeTone.NEUTRAL -> Icons.Rounded.Info
+                        RagOutcomeTone.ATTENTION -> Icons.Rounded.Warning
+                    },
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = when (tone) {
+                        RagOutcomeTone.HIT -> MaterialTheme.colorScheme.primary
+                        RagOutcomeTone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
+                        RagOutcomeTone.ATTENTION -> MaterialTheme.colorScheme.error
+                    },
                     modifier = Modifier.size(18.dp),
                 )
             } else {
@@ -520,16 +544,27 @@ fun RagProgressCard(
                     strokeWidth = 2.dp,
                 )
             }
-            Text(
-                text = currentText,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
-                    .weight(1f)
-                    .clearAndSetSemantics {},
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (traceSegments != null) {
+                NexaraMetaLine(
+                    segments = traceSegments,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clearAndSetSemantics {},
+                )
+            } else {
+                Text(
+                    text = currentText,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clearAndSetSemantics {},
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
                 text = if (retrievalReady) {
                     stringResource(R.string.chat_rag_done)
@@ -548,6 +583,7 @@ fun RagProgressCard(
             references = references,
             kgPaths = kgPaths,
             citations = citations,
+            trace = trace,
             onDismissRequest = { showDetailsSheet = false }
         )
     }

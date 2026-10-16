@@ -313,16 +313,4 @@ class SessionManagerTest {
         assertThat(sessionManager.getSession("s1")!!.activeSkillIds).containsExactly("sk2")
     }
 
-    @Test
-    fun dismissActiveTask() = testScope.runTest {
-        val task = TaskState(id = "t1", title = "Task", status = "in-progress")
-        val session = Session(id = "s1", agentId = "a1", activeTask = task)
-        sessionManager.addSession(session)
-        advanceUntilIdle()
-
-        sessionManager.dismissActiveTask("s1")
-        advanceUntilIdle()
-
-        assertThat(sessionManager.getSession("s1")!!.activeTask).isNull()
-    }
 }

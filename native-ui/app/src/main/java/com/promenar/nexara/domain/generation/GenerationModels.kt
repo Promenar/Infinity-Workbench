@@ -54,6 +54,9 @@ data class GenerationRequest(
     val requestId: String = assistantMessageId,
 )
 
+/** 已消耗的工具轮次与调用数。 */
+data class GenerationToolUsage(val rounds: Int = 0, val calls: Int = 0)
+
 data class GenerationToolCall(
     val id: String,
     val name: String,

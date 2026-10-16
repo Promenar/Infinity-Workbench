@@ -78,6 +78,7 @@ import com.promenar.nexara.ui.chat.ResourceExplorerSheetState
 import com.promenar.nexara.ui.chat.ResourceExplorerTab
 import com.promenar.nexara.ui.chat.components.FilesPanel
 import com.promenar.nexara.ui.chat.components.RagDetailsSheetContent
+import com.promenar.nexara.ui.chat.components.TaskFloatingPanel
 import com.promenar.nexara.ui.chat.components.RecycleBinPanel
 import com.promenar.nexara.ui.chat.components.RecycleBinPermanentDeleteDialog
 import com.promenar.nexara.ui.chat.components.RecycleOperation
@@ -213,16 +214,35 @@ private val PREVIEW_RAG_DETAILS_REFERENCES = listOf(
         id = "reference-release-gate",
         source = "/knowledge/release/complete-accessibility-and-visual-regression-checklist.md",
         content = "The release candidate must keep every action reachable at phone width, landscape, and large font scale while preserving the complete source context.",
-        score = 0.94f,
+        score = 0.72f,
         rerankScore = 0.89f,
         rankChange = 2,
+        recallRank = 3,
+        kind = com.promenar.nexara.data.model.RagReferenceKind.DOCUMENT,
     ),
     RagReference(
         id = "reference-material",
         source = "/knowledge/design/material-three-component-guidance.md",
         content = "Use stable Material 3 components, tonal surfaces, readable typography, and explicit recovery actions for failures.",
         score = 0.87f,
+        rerankScore = 0.81f,
+        rankChange = -1,
+        recallRank = 1,
+        kind = com.promenar.nexara.data.model.RagReferenceKind.MEMORY,
     ),
+)
+
+private val PREVIEW_RAG_TRACE = com.promenar.nexara.data.model.RagRetrievalTrace(
+    outcome = com.promenar.nexara.data.model.RagRetrievalTrace.OUTCOME_HIT,
+    recallCount = 12,
+    selectedCount = 2,
+    scoring = com.promenar.nexara.data.model.RagRetrievalTrace.SCORING_VECTOR,
+    rerank = com.promenar.nexara.data.model.RagRetrievalTrace.RERANK_API,
+    rerankModel = "bge-reranker-v2-m3",
+    searchTimeMs = 850,
+    rerankTimeMs = 320,
+    memoryCount = 1,
+    documentCount = 1,
 )
 
 private val PREVIEW_RAG_DETAILS_CITATIONS = listOf(
@@ -695,6 +715,52 @@ private fun previewTaskTree(): List<TaskStep> = listOf(
         ),
     ),
 )
+
+@PreviewTest
+@Preview(
+    name = "Chat task checklist expanded Chinese",
+    widthDp = PHONE_WIDTH_DP,
+    heightDp = 560,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun chatTaskChecklistExpandedReleasePreview() {
+    val tree = previewTaskTree().map { root ->
+        root.copy(
+            children = root.children + listOf(
+                TaskStep(id = "release-notes", title = "整理发布说明", status = "todo", sortOrder = 2),
+                TaskStep(id = "release-legacy", title = "迁移旧版导出格式", status = "dropped", sortOrder = 3),
+            ),
+        )
+    }
+    ReleasePreviewSurface {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            TaskFloatingPanel(
+                state = requireNotNull(taskPanelUiState(tree, isGenerating = false, goal = "完成 0.2 Beta 发布")),
+                isGenerating = false,
+                onContinue = {},
+                onComplete = {},
+                initiallyExpanded = true,
+            )
+            TaskFloatingPanel(
+                state = requireNotNull(
+                    taskPanelUiState(
+                        tree.map { root -> root.copy(children = root.children.map { it.copy(status = "done") }) },
+                        isGenerating = false,
+                        goal = "完成 0.2 Beta 发布",
+                    ),
+                ),
+                isGenerating = false,
+                onContinue = {},
+                onComplete = {},
+            )
+        }
+    }
+}
 
 @PreviewTest
 @Preview(
@@ -2036,7 +2102,50 @@ fun ragDetailsRetrievedPhoneReleasePreview() {
             references = PREVIEW_RAG_DETAILS_REFERENCES,
             citations = emptyList(),
             kgPaths = emptyList(),
+            trace = PREVIEW_RAG_TRACE,
         )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "RAG card outcomes Chinese",
+    widthDp = 360,
+    heightDp = 320,
+    locale = "zh-rCN",
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+fun ragCardOutcomesReleasePreview() {
+    ReleasePreviewSurface {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            com.promenar.nexara.ui.chat.RagProgressCard(
+                phases = emptyList(),
+                references = PREVIEW_RAG_DETAILS_REFERENCES,
+                isComplete = true,
+                trace = PREVIEW_RAG_TRACE,
+            )
+            com.promenar.nexara.ui.chat.RagProgressCard(
+                phases = emptyList(),
+                references = emptyList(),
+                isComplete = true,
+                trace = PREVIEW_RAG_TRACE.copy(
+                    outcome = com.promenar.nexara.data.model.RagRetrievalTrace.OUTCOME_EMPTY,
+                    selectedCount = 0,
+                ),
+            )
+            com.promenar.nexara.ui.chat.RagProgressCard(
+                phases = emptyList(),
+                references = emptyList(),
+                isComplete = true,
+                trace = com.promenar.nexara.data.model.RagRetrievalTrace(
+                    outcome = com.promenar.nexara.data.model.RagRetrievalTrace.OUTCOME_UNAVAILABLE,
+                ),
+            )
+        }
     }
 }
 

@@ -106,104 +106,18 @@ class ApprovalManager(
     ) {
         val session = store.getSession(sessionId) ?: return
         val approvalRequest = session.approvalRequest ?: return
-
-        val isContinuation = approvalRequest.type == "continuation"
-
-        if (!isContinuation) {
-            val exact = expectedRequest ?: return
-            if (approvalRequest != exact || !ToolApprovalRequestFactory.isValid(exact)) return
-            resumeExactToolApproval(sessionId, session, exact, approved, intervention)
-            return
-        }
-
-        val targetMsg = if (isContinuation) {
-            session.messages.lastOrNull { it.role == com.promenar.nexara.data.model.MessageRole.ASSISTANT }
-        } else {
-            session.messages.lastOrNull {
-                it.role == com.promenar.nexara.data.model.MessageRole.ASSISTANT &&
-                        !it.pendingApprovalToolIds.isNullOrEmpty()
-            } ?: session.messages.lastOrNull()
-        }
-
-        if (targetMsg != null && targetMsg.role == com.promenar.nexara.data.model.MessageRole.ASSISTANT) {
-            val decisionStep = ExecutionStep(
-                id = "dec_${System.currentTimeMillis()}",
-                type = "intervention_result",
-                content = when {
-                    intervention != null -> "Human Instruction: $intervention"
-                    approved -> if (isContinuation) "User Approved Continuation (+${session.autoLoopLimit} Loops)" else "User Approved"
-                    else -> if (isContinuation) "User Ended Task" else "User Rejected"
-                },
-                timestamp = System.currentTimeMillis()
-            )
-
-            store.updateMessageInSession(sessionId, targetMsg.id) { m ->
-                m.copy(
-                    executionSteps = (m.executionSteps ?: emptyList())
-                        .filter { it.type != "intervention_required" } + decisionStep
-                )
-            }
-        }
-
-        if (intervention != null) {
-            setPendingIntervention(sessionId, intervention)
-        }
-
-        if (!approved && intervention == null && !isContinuation) {
-            if (targetMsg != null) {
-                terminalPendingTools(sessionId, targetMsg.id, ToolLedgerState.REJECTED)
-                mirrorClosedApproval(sessionId, targetMsg.id, LoopStatus.PAUSED)
-            }
-            return
-        }
-
-        if (isContinuation && !approved && intervention == null) {
-            setLoopStatus(sessionId, LoopStatus.COMPLETED)
+        if (approvalRequest.type != ToolApprovalRequestFactory.TOOL_APPROVAL_TYPE || approvalRequest.calls.isEmpty()) {
+            // 旧版本遗留、没有精确调用身份的审批（含已废弃的续跑确认）不再有执行语义：
+            // 待审批调用写入取消结果并关闭请求，循环暂停，由用户重新发起。
+            terminateCurrentApproval(sessionId, ToolLedgerState.CANCELLED)
+            // 遗留请求可能不在审批台账中，显式持久化清空，避免重启后卡片复现。
             setApprovalRequest(sessionId, null)
+            setLoopStatus(sessionId, LoopStatus.PAUSED)
             return
         }
-
-        if (approved && intervention == null && targetMsg != null) {
-            val toolsToExecute = targetMsg.toolCalls?.let { allCalls ->
-                val pendingIds = targetMsg.pendingApprovalToolIds ?: emptyList()
-                if (pendingIds.isNotEmpty()) {
-                    allCalls.filter { pendingIds.contains(it.id) }
-                } else {
-                    allCalls
-                }
-            } ?: emptyList()
-
-            val keys = toolsToExecute.mapTo(mutableSetOf()) {
-                ToolExecutionKey(sessionId, targetMsg.id, it.id)
-            }
-            ledger.approve(keys)
-
-            if (toolsToExecute.isNotEmpty()) {
-                onExecuteTools?.invoke(
-                    sessionId,
-                    targetMsg.id,
-                    toolsToExecute.mapTo(mutableSetOf()) { it.id },
-                )
-            }
-            val transition = ledger.completeToolApproval(sessionId, targetMsg.id)
-            mirrorApprovalTransition(transition)
-            if (transition.loopStatus == LoopStatus.WAITING_FOR_APPROVAL) return
-        }
-
-        if (isContinuation) {
-            setApprovalRequest(sessionId, null)
-            setLoopStatus(sessionId, LoopStatus.RUNNING)
-        }
-
-        if (isContinuation && approved) {
-            val currentBudget = session.continuationBudget
-            val stepSize = session.autoLoopLimit
-            store.updateSession(sessionId) { s ->
-                s.copy(continuationBudget = currentBudget + stepSize)
-            }
-        }
-
-        onGenerateMessage?.invoke(sessionId, intervention ?: "", true)
+        val exact = expectedRequest ?: return
+        if (approvalRequest != exact || !ToolApprovalRequestFactory.isValid(exact)) return
+        resumeExactToolApproval(sessionId, session, exact, approved, intervention)
     }
 
     private suspend fun resumeExactToolApproval(
@@ -299,12 +213,6 @@ class ApprovalManager(
     suspend fun cancelPendingApproval(sessionId: String) {
         approvalLock(sessionId).withLock {
             terminateCurrentApproval(sessionId, ToolLedgerState.CANCELLED)
-        }
-    }
-
-    suspend fun timeoutPendingApproval(sessionId: String) {
-        approvalLock(sessionId).withLock {
-            terminateCurrentApproval(sessionId, ToolLedgerState.TIMED_OUT)
         }
     }
 

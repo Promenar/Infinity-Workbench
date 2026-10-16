@@ -6,6 +6,22 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextDecoration
+import com.promenar.nexara.ui.chat.TaskPanelStep
+import com.promenar.nexara.ui.chat.TaskPanelStepStatus
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,7 +59,13 @@ fun TaskFloatingPanel(
     onContinue: () -> Unit,
     onComplete: () -> Unit,
     modifier: Modifier = Modifier,
+    onClearCompleted: () -> Unit = {},
+    initiallyExpanded: Boolean = false,
 ) {
+    var expanded by rememberSaveable(state.planId) { mutableStateOf(initiallyExpanded) }
+    val toggleLabel = stringResource(
+        if (expanded) R.string.chat_task_collapse_steps else R.string.chat_task_expand_steps,
+    )
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -61,6 +83,8 @@ fun TaskFloatingPanel(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                    .clickable(onClickLabel = toggleLabel, role = Role.Button) { expanded = !expanded }
                     .testTag(UiTags.CHAT_TASK_PANEL_HEADER),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
@@ -78,29 +102,59 @@ fun TaskFloatingPanel(
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Icon(
+                    imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-            ) {
-                TaskStatusDot(
-                    pulsing = state.shouldPulse,
-                    color = if (state.shouldPulse) {
-                        MaterialTheme.colorScheme.primary
+            if (expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(UiTags.CHAT_TASK_STEP_LIST),
+                    verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+                ) {
+                    state.steps.forEach { step -> TaskStepRow(step, pulsing = state.shouldPulse) }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                ) {
+                    if (state.isCompleted) {
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
                     } else {
-                        MaterialTheme.colorScheme.tertiary
-                    },
-                )
-                Text(
-                    text = state.currentStepTitle,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                        TaskStatusDot(
+                            pulsing = state.shouldPulse,
+                            color = if (state.shouldPulse) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.tertiary
+                            },
+                        )
+                    }
+                    Text(
+                        text = if (state.isCompleted) {
+                            stringResource(R.string.chat_task_all_completed)
+                        } else {
+                            state.currentStepTitle
+                        },
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
 
             FlowRow(
@@ -108,33 +162,104 @@ fun TaskFloatingPanel(
                 horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small, Alignment.End),
                 verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
             ) {
-                TextButton(
-                    onClick = onComplete,
-                    enabled = !isGenerating,
-                    modifier = Modifier
-                        .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                        .testTag(UiTags.CHAT_TASK_COMPLETE),
-                ) {
-                    Text(
-                        text = stringResource(R.string.chat_task_mark_completed),
-                        color = if (isGenerating) {
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
-                TextButton(
-                    onClick = onContinue,
-                    enabled = !isGenerating,
-                    modifier = Modifier
-                        .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                        .testTag(UiTags.CHAT_TASK_CONTINUE),
-                ) {
-                    Text(stringResource(R.string.chat_task_continue))
+                if (state.isCompleted) {
+                    TextButton(
+                        onClick = onClearCompleted,
+                        enabled = !isGenerating,
+                        modifier = Modifier
+                            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                            .testTag(UiTags.CHAT_TASK_CLEAR),
+                    ) {
+                        Text(stringResource(R.string.chat_task_clear_completed))
+                    }
+                } else {
+                    TextButton(
+                        onClick = onComplete,
+                        enabled = !isGenerating,
+                        modifier = Modifier
+                            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                            .testTag(UiTags.CHAT_TASK_COMPLETE),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.chat_task_mark_completed),
+                            color = if (isGenerating) {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                    TextButton(
+                        onClick = onContinue,
+                        enabled = !isGenerating,
+                        modifier = Modifier
+                            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                            .testTag(UiTags.CHAT_TASK_CONTINUE),
+                    ) {
+                        Text(stringResource(R.string.chat_task_continue))
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TaskStepRow(step: TaskPanelStep, pulsing: Boolean) {
+    val statusLabel = stringResource(
+        when (step.status) {
+            TaskPanelStepStatus.TODO -> R.string.chat_task_step_todo
+            TaskPanelStepStatus.DOING -> R.string.chat_task_step_doing
+            TaskPanelStepStatus.DONE -> R.string.chat_task_step_done
+            TaskPanelStepStatus.DROPPED -> R.string.chat_task_step_dropped
+        },
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = NexaraSpacing.Medium * step.depth)
+            .semantics(mergeDescendants = true) {
+                if (!step.isGroup) stateDescription = statusLabel
+            },
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+    ) {
+        Box(modifier = Modifier.padding(top = 3.dp).size(16.dp), contentAlignment = Alignment.Center) {
+            when {
+                step.isGroup -> Unit
+                step.status == TaskPanelStepStatus.DONE -> Icon(
+                    imageVector = Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp),
+                )
+                step.status == TaskPanelStepStatus.DROPPED -> Icon(
+                    imageVector = Icons.Rounded.Block,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+                step.status == TaskPanelStepStatus.DOING -> TaskStatusDot(
+                    pulsing = pulsing,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                else -> TaskStatusDot(pulsing = false, color = MaterialTheme.colorScheme.outline)
+            }
+        }
+        Text(
+            text = step.title,
+            modifier = Modifier.weight(1f),
+            style = if (step.isGroup) MaterialTheme.typography.labelLarge else MaterialTheme.typography.bodyMedium,
+            color = when (step.status) {
+                TaskPanelStepStatus.DONE, TaskPanelStepStatus.DROPPED -> MaterialTheme.colorScheme.onSurfaceVariant
+                else -> MaterialTheme.colorScheme.onSurface
+            },
+            textDecoration = if (step.status == TaskPanelStepStatus.DROPPED && !step.isGroup) {
+                TextDecoration.LineThrough
+            } else {
+                null
+            },
+        )
     }
 }
 

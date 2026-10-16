@@ -209,7 +209,7 @@ class ChatGenerationRunnerTerminalContractTest {
     }
 
     @Test
-    fun `轮次预算耗尽后总结轮仍请求工具则拒绝并结束`() = runTest {
+    fun `轮次预算耗尽后总结轮仍请求工具则拒绝并以预算失败结束`() = runTest {
         fun round(id: String): Flow<GenerationChunk> = flowOf(
             GenerationChunk.ToolCall(id, "search", "{}"),
             GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf(id)),
@@ -222,12 +222,15 @@ class ChatGenerationRunnerTerminalContractTest {
             decisions += GenerationToolDecision.CONTINUE
         }
 
-        ChatGenerationRunner(runtime).run(request()) {}
+        val failure = runCatching { ChatGenerationRunner(runtime).run(request()) {} }.exceptionOrNull()
 
         assertThat(runtime.handled.map { calls -> calls.map { it.id } }).containsExactly(listOf("a"))
         assertThat(runtime.rejected.map { calls -> calls.map { it.id } })
             .containsExactly(listOf("b"), listOf("c")).inOrder()
-        assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.SUCCESS)
+        // 收尾轮仍只返回工具调用、没有正文：不能记为成功，以明确的预算失败呈现给用户。
+        assertThat((failure as com.promenar.nexara.domain.generation.GenerationFailedException).failure.code)
+            .isEqualTo(com.promenar.nexara.domain.generation.GenerationFailureCode.TOOL_BUDGET_EXHAUSTED)
+        assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.ERROR)
     }
 
     private fun request() = GenerationRequest(

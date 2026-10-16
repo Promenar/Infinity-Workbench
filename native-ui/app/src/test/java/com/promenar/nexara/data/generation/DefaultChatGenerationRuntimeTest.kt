@@ -24,6 +24,7 @@ import com.promenar.nexara.data.remote.protocol.PromptRequest
 import com.promenar.nexara.data.remote.protocol.PromptResponse
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
+import com.promenar.nexara.data.remote.protocol.ProtocolToolChoice
 import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.provider.LlmProvider
@@ -1011,8 +1012,71 @@ class DefaultChatGenerationRuntimeTest {
 
     @Test
     fun `CONTINUE强刷assistant后多轮Prompt保留全部工具配对`() = runTest {
+        val (prompts, searches, executorPreparedSnapshots) = runThreeRoundToolScenario()
+        val advertisedNames = listOf("search", "read_file")
+
+        assertThat(prompts).hasSize(3)
+        val third = prompts[2].messages
+        assertThat(third.filter { it.role == "assistant" }.flatMap { it.toolCalls.orEmpty() }.map { it.id })
+            .containsExactly("call-1", "call-2").inOrder()
+        assertThat(third.filter { it.role == "tool" }.map { it.toolCallId })
+            .containsExactly("call-1", "call-2").inOrder()
+        assertThat(executorPreparedSnapshots).isNotEmpty()
+        assertThat(executorPreparedSnapshots.all { tools -> tools.map { it.function.name } == advertisedNames }).isTrue()
+        assertThat(prompts.map { it.toolChoice }).containsExactly(
+            ProtocolToolChoice.AUTO, ProtocolToolChoice.AUTO, ProtocolToolChoice.AUTO,
+        ).inOrder()
+        // 检索只依赖用户问题：三轮请求只联网一次，且每轮系统提示都带同一份检索结果。
+        assertThat(searches).isEqualTo(1)
+        assertThat(prompts.all { prompt ->
+            prompt.messages.first { it.role == "system" }.content.contains("SEARCH-CONTEXT-MARKER")
+        }).isTrue()
+    }
+
+    @Test
+    fun `工具预算耗尽后的收尾请求禁止调用工具但仍声明工具`() = runTest {
+        val (prompts, _, _) = runThreeRoundToolScenario(loopLimit = 1)
+
+        assertThat(prompts).hasSize(3)
+        assertThat(prompts[0].toolChoice).isEqualTo(ProtocolToolChoice.AUTO)
+        assertThat(prompts[2].toolChoice).isEqualTo(ProtocolToolChoice.NONE)
+        assertThat(prompts[2].tools.orEmpty().map { it.function.name }).containsExactly("search", "read_file")
+        assertThat(prompts[2].messages.first { it.role == "system" }.content)
+            .contains("## Tool Budget Exhausted")
+    }
+
+    @Test
+    fun `本轮已消耗工具用量只统计本轮用户消息之后的非目标助手消息`() {
+        val call = { id: String -> com.promenar.nexara.data.model.ToolCall(id, "search", "{}") }
+        val messages = listOf(
+            Message("u0", MessageRole.USER, "old"),
+            Message("a-old", MessageRole.ASSISTANT, "", toolCalls = listOf(call("x"))),
+            Message("u1", MessageRole.USER, "question"),
+            Message("a1", MessageRole.ASSISTANT, "", toolCalls = listOf(call("c1"), call("c2"))),
+            Message("t1", MessageRole.TOOL, "r", toolCallId = "c1"),
+            Message("a2", MessageRole.ASSISTANT, "", toolCalls = listOf(call("c3"))),
+            Message("a-replaced", MessageRole.ASSISTANT, "", toolCalls = listOf(call("c4"))),
+            Message("a-target", MessageRole.ASSISTANT, ""),
+            Message("u2", MessageRole.USER, "next"),
+            Message("a-next", MessageRole.ASSISTANT, "", toolCalls = listOf(call("c5"))),
+        )
+        val request = GenerationRequest(
+            "s1", "a-target", "u1", "question", emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED,
+            messageIdsToReplace = setOf("a-replaced"),
+        )
+
+        assertThat(consumedToolUsageInTurn(messages, request))
+            .isEqualTo(com.promenar.nexara.domain.generation.GenerationToolUsage(rounds = 2, calls = 3))
+        assertThat(consumedToolUsageInTurn(messages, request.copy(userMessageId = null)))
+            .isEqualTo(com.promenar.nexara.domain.generation.GenerationToolUsage())
+    }
+
+    private suspend fun kotlinx.coroutines.test.TestScope.runThreeRoundToolScenario(
+        loopLimit: Int? = null,
+    ): Triple<List<PromptRequest>, Int, List<List<ProtocolTool>>> {
         val settings = mockk<SharedPreferences>()
         every { settings.getInt(any(), any()) } answers { secondArg() }
+        loopLimit?.let { every { settings.getInt("loop_limit", any()) } returns it }
         every { settings.getStringSet(any(), any()) } returns setOf("search", "read_file")
         every { settings.getString(any(), any()) } returns ""
         every { settings.getFloat(any(), any()) } answers { secondArg() }
@@ -1096,6 +1160,7 @@ class DefaultChatGenerationRuntimeTest {
         }
         val toolExecutor = mockk<ToolExecutor>()
         val executorPreparedSnapshots = mutableListOf<List<ProtocolTool>>()
+        coEvery { toolExecutor.rejectTools(any(), any(), any(), any()) } returns Unit
         coEvery { toolExecutor.executeTools(any(), any(), any(), any(), any()) } coAnswers {
             val sessionId = firstArg<String>()
             val calls = thirdArg<List<com.promenar.nexara.data.model.ToolCall>>()
@@ -1154,19 +1219,6 @@ class DefaultChatGenerationRuntimeTest {
         )
 
         ChatGenerationRunner(runtime).run(request) {}
-
-        assertThat(prompts).hasSize(3)
-        val third = prompts[2].messages
-        assertThat(third.filter { it.role == "assistant" }.flatMap { it.toolCalls.orEmpty() }.map { it.id })
-            .containsExactly("call-1", "call-2").inOrder()
-        assertThat(third.filter { it.role == "tool" }.map { it.toolCallId })
-            .containsExactly("call-1", "call-2").inOrder()
-        assertThat(executorPreparedSnapshots).isNotEmpty()
-        assertThat(executorPreparedSnapshots.all { it == advertisedTools }).isTrue()
-        // 检索只依赖用户问题：三轮请求只联网一次，且每轮系统提示都带同一份检索结果。
-        assertThat(searches).isEqualTo(1)
-        assertThat(prompts.all { prompt ->
-            prompt.messages.first { it.role == "system" }.content.contains("SEARCH-CONTEXT-MARKER")
-        }).isTrue()
+        return Triple(prompts, searches, executorPreparedSnapshots)
     }
 }

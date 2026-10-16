@@ -100,10 +100,6 @@ class SessionManager(
             .sortedWith(compareBy { if (it.isPinned) -1 else 1 })
     }
 
-    suspend fun dismissActiveTask(sessionId: String) {
-        updateSession(sessionId, mapOf("activeTask" to null))
-    }
-
     fun setKGExtractionStatus(sessionId: String, isExtracting: Boolean) {
         store.update { state ->
             state.copy(

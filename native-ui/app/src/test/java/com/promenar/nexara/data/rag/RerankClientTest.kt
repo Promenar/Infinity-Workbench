@@ -104,4 +104,34 @@ class RerankClientTest {
         assertThat(result).hasSize(2)
         assertThat(result[0].id).isEqualTo("doc-0")
     }
+
+    @Test
+    fun `outcome reports LLM method and model when scoring succeeds`() = runTest {
+        val protocol = mockk<LlmProtocol>()
+        coEvery { protocol.sendPromptSync(any()) } returns PromptResponse(
+            content = """[{"index":0,"score":2.0},{"index":1,"score":9.0}]"""
+        )
+
+        val outcome = clientWithMockLlm(protocol)
+            .rerankWithOutcome("query", listOf(makeDoc(0, "a", 0.9f), makeDoc(1, "b", 0.4f)), topK = 2)
+
+        assertThat(outcome.method).isEqualTo(RerankMethod.LLM)
+        assertThat(outcome.model).isEqualTo("test-model")
+        assertThat(outcome.results.map { it.id }).containsExactly("doc-1", "doc-0").inOrder()
+        assertThat(outcome.results.first().originalSimilarity).isEqualTo(0.4f)
+    }
+
+    @Test
+    fun `outcome reports FAILED when scoring cannot be parsed and SKIPPED for one candidate`() = runTest {
+        val protocol = mockk<LlmProtocol>()
+        coEvery { protocol.sendPromptSync(any()) } returns PromptResponse(content = "no json")
+        val client = clientWithMockLlm(protocol)
+
+        val failed = client.rerankWithOutcome("query", listOf(makeDoc(0, "a"), makeDoc(1, "b")), topK = 2)
+        val skipped = client.rerankWithOutcome("query", listOf(makeDoc(0, "a")), topK = 2)
+
+        assertThat(failed.method).isEqualTo(RerankMethod.FAILED)
+        assertThat(failed.results.map { it.id }).containsExactly("doc-0", "doc-1").inOrder()
+        assertThat(skipped.method).isEqualTo(RerankMethod.SKIPPED)
+    }
 }

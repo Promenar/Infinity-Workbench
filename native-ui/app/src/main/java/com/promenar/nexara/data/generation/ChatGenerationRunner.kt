@@ -9,6 +9,7 @@ import com.promenar.nexara.domain.generation.GenerationRequest
 import com.promenar.nexara.domain.generation.GenerationRunner
 import com.promenar.nexara.domain.generation.GenerationSnapshot
 import com.promenar.nexara.domain.generation.GenerationToolBudget
+import com.promenar.nexara.domain.generation.GenerationToolUsage
 import com.promenar.nexara.domain.generation.GenerationToolCall
 import com.promenar.nexara.domain.generation.GenerationToolDecision
 import com.promenar.nexara.domain.generation.GenerationTerminalStatus
@@ -41,6 +42,9 @@ interface ChatGenerationRuntime {
     suspend fun prepareContinuation(request: GenerationRequest): String? = null
     /** 本次生成的工具轮次与调用预算。 */
     fun toolBudget(request: GenerationRequest): GenerationToolBudget = GenerationToolBudget()
+
+    /** 本轮对话在此次生成之前已消耗的工具轮次与调用数（例如审批前的轮次），用于跨审批续算预算。 */
+    suspend fun consumedToolUsage(request: GenerationRequest): GenerationToolUsage = GenerationToolUsage()
     /** 预算耗尽时不执行本轮调用，为每个调用写入可回传给模型的失败结果。 */
     suspend fun rejectToolCalls(
         request: GenerationRequest,
@@ -190,10 +194,12 @@ class ChatGenerationRunner(
                 return
             }
             var attempt = 0
-            var confirmedToolCallCount = 0
-            var toolRoundCount = 0
-            var finalAnswerMode = false
             val budget = runtime.toolBudget(request)
+            val consumed = runtime.consumedToolUsage(request)
+            var confirmedToolCallCount = consumed.calls
+            var toolRoundCount = consumed.rounds
+            var finalAnswerMode = false
+            var finalAnswerIgnoredBudget = false
             while (true) {
                 phase(GenerationPhase.CONNECTING)
                 val stream = runtime.stream(request, attempt)
@@ -279,7 +285,10 @@ class ChatGenerationRunner(
                             "calls" to confirmedToolCallCount.toString(),
                         ),
                     )
-                    if (finalAnswerMode) break
+                    if (finalAnswerMode) {
+                        finalAnswerIgnoredBudget = true
+                        break
+                    }
                     finalAnswerMode = true
                     runtime.enterFinalAnswerMode(request)
                 }
@@ -341,6 +350,15 @@ class ChatGenerationRunner(
                 }
             }
             snapshot.failure?.let { throw GenerationFailedException(it) }
+            if (finalAnswerIgnoredBudget && snapshot.content.isBlank()) {
+                // 收尾轮已禁止调用工具，模型仍只返回工具调用：不能以空回答记为成功。
+                throw GenerationFailedException(
+                    GenerationFailure(
+                        code = GenerationFailureCode.TOOL_BUDGET_EXHAUSTED,
+                        technical = "final answer round returned tool calls without content",
+                    ),
+                )
+            }
             // 经过工具轮次后模型可能以空正文结束，过程与结果已保存在此前消息与工具记录中。
             check(snapshot.content.isNotBlank() || toolRoundCount > 0) { "生成完成但未产生有效内容" }
             phase(GenerationPhase.POST_PROCESSING)

@@ -39,12 +39,34 @@ class TaskPanelStateTest {
     }
 
     @Test
-    fun `completed tree removes task card and capsule`() {
+    fun `completed tree keeps a completed card without pulsing`() {
         val completed = tree.map { root ->
             root.copy(children = root.children.map { it.copy(status = "done") })
         }
 
-        assertThat(taskPanelUiState(completed, isGenerating = false)).isNull()
+        val state = taskPanelUiState(completed, isGenerating = true)!!
+        assertThat(state.isCompleted).isTrue()
+        assertThat(state.pendingCount).isEqualTo(0)
+        assertThat(state.doneCount).isEqualTo(2)
+        assertThat(state.shouldPulse).isFalse()
+    }
+
+    @Test
+    fun `checklist lists group and leaves in plan order with depth and status`() {
+        val state = taskPanelUiState(tree, isGenerating = false)!!
+
+        assertThat(state.steps.map { Triple(it.id, it.depth, it.status) }).containsExactly(
+            Triple("root", 0, TaskPanelStepStatus.TODO),
+            Triple("done", 1, TaskPanelStepStatus.DONE),
+            Triple("current", 1, TaskPanelStepStatus.DOING),
+        ).inOrder()
+        assertThat(state.steps.first().isGroup).isTrue()
+        assertThat(state.steps.drop(1).none { it.isGroup }).isTrue()
+    }
+
+    @Test
+    fun `empty tree has no panel`() {
+        assertThat(taskPanelUiState(emptyList(), isGenerating = false)).isNull()
     }
 
     @Test
@@ -63,10 +85,10 @@ class TaskPanelStateTest {
 
     @Test
     fun `manual completion targets every unfinished leaf only`() {
-        val ids = unfinishedTaskLeafIds(
+        val ids = unfinishedLeaves(
             tree + TaskStep(id = "dropped", title = "已放弃", status = "dropped"),
         )
 
-        assertThat(ids).containsExactly("current")
+        assertThat(ids.map { it.id }).containsExactly("current")
     }
 }

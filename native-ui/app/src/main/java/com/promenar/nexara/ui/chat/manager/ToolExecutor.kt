@@ -232,7 +232,14 @@ class ToolExecutor internal constructor(
         }
 
         val stepId = "step_${System.currentTimeMillis()}_${call.id}"
-        val currentFocusId = currentSession.activeTask?.currentFocusStepId
+        // 工具步骤关联到当前计划焦点；读取失败不影响工具执行。
+        val currentFocusId = try {
+            taskRepository?.getPlan(sessionId)?.currentFocusStepId
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
 
         hooks.beforeAppendStep()
         appendStep(sessionId, targetMsgId, ExecutionStep(

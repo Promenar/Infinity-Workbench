@@ -86,6 +86,10 @@ data class ProtocolUsage(
     val total: Int = 0
 )
 
+/** 是否允许模型在本次回复中调用已声明的工具；NONE 时仍声明工具以保持历史中的调用可被解析。 */
+@Serializable
+enum class ProtocolToolChoice { AUTO, NONE }
+
 @Serializable
 data class PromptRequest(
     val messages: List<ProtocolMessage>,
@@ -98,6 +102,7 @@ data class PromptRequest(
     val topK: Int? = null,
     val repetitionPenalty: Double? = null,
     val tools: List<ProtocolTool>? = null,
+    val toolChoice: ProtocolToolChoice = ProtocolToolChoice.AUTO,
     val stream: Boolean = true,
     val reasoning: Boolean? = null,
     val webSearch: Boolean? = null,

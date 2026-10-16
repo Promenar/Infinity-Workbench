@@ -61,6 +61,8 @@ data class ApprovalCallCandidate(
 )
 
 object ToolApprovalRequestFactory {
+    const val TOOL_APPROVAL_TYPE = "tool_approval"
+
     private const val MAX_ARGUMENT_SUMMARY = 180
 
     fun create(
@@ -97,13 +99,13 @@ object ToolApprovalRequestFactory {
             assistantMessageId = assistantMessageId,
             calls = calls,
             reason = reason,
-            type = "tool_approval",
+            type = TOOL_APPROVAL_TYPE,
         )
         return request.copy(identityHash = identityHash(request))
     }
 
     fun isValid(request: ApprovalRequest): Boolean =
-        request.type == "tool_approval" &&
+        request.type == TOOL_APPROVAL_TYPE &&
             !request.assistantMessageId.isNullOrBlank() &&
             request.calls.isNotEmpty() &&
             request.calls.map { it.toolCallId }.distinct().size == request.calls.size &&

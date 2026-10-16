@@ -13,8 +13,10 @@ import com.promenar.nexara.data.remote.protocol.ProtocolMessage
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.ProtocolToolCall
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
+import com.promenar.nexara.domain.model.ExecutionMode
 import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.domain.usecase.DEFAULT_ACTIVE_CONTEXT_WINDOW
+import com.promenar.nexara.domain.tool.ToolArgumentApprovalRules
 import com.promenar.nexara.domain.tool.ToolExecutionPolicy
 import com.promenar.nexara.domain.tool.ToolRisk
 import java.security.MessageDigest
@@ -294,7 +296,9 @@ class DefaultChatGenerationContentStrategy(
     override fun pendingApprovalIds(toolCalls: List<ToolCall>, executionMode: String): List<String> {
         val mode = ExecutionModeCodec.parseOrSemi(executionMode)
         return toolCalls.filter { call ->
-            ToolExecutionPolicy.requiresApproval(mode, riskForTool(call.name))
+            ToolExecutionPolicy.requiresApproval(mode, riskForTool(call.name)) ||
+                (mode == ExecutionMode.SEMI &&
+                    ToolArgumentApprovalRules.requiresApprovalInSemi(call.name, call.arguments))
         }.map { it.id }
     }
 

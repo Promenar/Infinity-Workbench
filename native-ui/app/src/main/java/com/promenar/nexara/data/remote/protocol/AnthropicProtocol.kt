@@ -361,6 +361,9 @@ class AnthropicProtocol(
                         })
                     }
                 }))
+                if (request.toolChoice == ProtocolToolChoice.NONE) {
+                    put("tool_choice", buildJsonObject { put("type", "none") })
+                }
             }
         }
 

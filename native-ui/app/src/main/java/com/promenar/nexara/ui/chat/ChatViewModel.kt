@@ -1,11 +1,7 @@
 package com.promenar.nexara.ui.chat
 
 import android.app.Application
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Base64
-import java.io.ByteArrayOutputStream
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -162,6 +158,13 @@ enum class BackgroundWarningKind { FGS_UNAVAILABLE, NOTIFICATIONS_UNAVAILABLE }
 /** 删除后的撤销提示：[count] 为被删除的消息条数。 */
 data class DeletionUndo(val token: String, val count: Int)
 
+/** 用户在待办面板上“标记完成”后可撤销的记录；[previousStatuses] 为各步骤原状态。 */
+data class TaskCompletionUndo(
+    val token: String,
+    val sessionId: String,
+    val previousStatuses: Map<String, String>,
+)
+
 data class BackgroundGenerationWarning(
     val taskId: String,
     val kind: BackgroundWarningKind,
@@ -186,7 +189,7 @@ internal data class PendingPermissionTurn(
 
 internal fun ContextBuilderResult.hasPersistableRagContext(): Boolean =
     ragContext.isNotBlank() || ragReferences.isNotEmpty() || citations.isNotEmpty() ||
-        kgPaths.isNotEmpty() || ragUsage != null
+        kgPaths.isNotEmpty() || ragUsage != null || ragTrace != null
 
 private fun DocumentReadRejectReason.userMessage(resolve: (Int) -> String): String = when (this) {
     DocumentReadRejectReason.UnsupportedDocument -> resolve(R.string.chat_document_error_unsupported)
@@ -198,8 +201,9 @@ private fun DocumentReadRejectReason.userMessage(resolve: (Int) -> String): Stri
 }
 
 internal fun ContextBuilderResult.toMessageRagUpdateOptions(): UpdateMessageOptions? {
-    if (ragReferences.isEmpty() && citations.isEmpty() && kgPaths.isEmpty()) return null
-    val hasReferenceMetadata = ragReferences.isNotEmpty() || citations.isNotEmpty()
+    if (ragReferences.isEmpty() && citations.isEmpty() && kgPaths.isEmpty() && ragTrace == null) return null
+    // 检索未命中也要留下记录，回复上才能显示“已检索但未命中”而不是什么都不显示。
+    val hasReferenceMetadata = ragReferences.isNotEmpty() || citations.isNotEmpty() || ragTrace != null
     return UpdateMessageOptions(
         ragReferences = ragReferences.ifEmpty { null },
         citations = citations.ifEmpty { null },
@@ -208,7 +212,8 @@ internal fun ContextBuilderResult.toMessageRagUpdateOptions(): UpdateMessageOpti
             RagMetadata(
                 chunkCount = ragReferences.size,
                 totalTokens = ragUsage?.ragSystem ?: 0,
-                retrievalTimeMs = 0,
+                retrievalTimeMs = ragTrace?.searchTimeMs ?: 0,
+                trace = ragTrace,
             )
         } else null,
     )
@@ -285,6 +290,7 @@ class ChatViewModel(
         toolLedger,
         (application as NexaraApplication).sessionExecutionGate,
     )
+    private val taskPlanActions = TaskPlanActions((application as NexaraApplication).taskRepository)
     private val summaryManager = SummaryManager(llmProvider)
     private val approvalManager = ApprovalManager(
         store,
@@ -720,7 +726,7 @@ class ChatViewModel(
                         imageUris.map { uri -> uriToDataUrl(uri) }
                     }
                     if (converted.any { it == null }) {
-                        _error.update { "Image read failed. Please remove the failed attachment and try again." }
+                        _error.update { stringResourceResolver(R.string.chat_image_read_failed) }
                         _generationStatus.update { GenerationStatus.ERROR }
                         _isGenerating.update { false }
                         return@withLock
@@ -920,26 +926,8 @@ class ChatViewModel(
         return true
     }
 
-    private fun uriToDataUrl(uri: Uri): String? {
-        // 审计缺陷 B：原图全量 base64 编码会让发送准备阻塞数秒，先降采样到视觉模型输入上限
-        return try {
-            val resolver = application.contentResolver
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return null
-            var sample = 1
-            while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= IMAGE_MAX_DIMENSION_PX) sample *= 2
-            val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sample }
-            val bitmap = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOptions) }
-                ?: return null
-            val output = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, IMAGE_COMPRESSION_QUALITY, output)
-            bitmap.recycle()
-            val bytes = output.toByteArray()
-            "data:image/jpeg;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
-        } catch (_: Exception) {
-            null
-        }
-    }
+    private fun uriToDataUrl(uri: Uri): String? =
+        ChatImageEncoder.encodeToDataUrl { application.contentResolver.openInputStream(uri) }
 
     private suspend fun enqueuePreparedUserTurn(
         sessionId: String,
@@ -1770,6 +1758,59 @@ class ChatViewModel(
         }
     }
 
+    private val _taskCompletionUndo = MutableStateFlow<TaskCompletionUndo?>(null)
+    val taskCompletionUndo: StateFlow<TaskCompletionUndo?> = _taskCompletionUndo
+
+    /** 把当前计划未完成的步骤全部标记为完成，并提供撤销；生成中不可用。 */
+    fun completeActivePlan() {
+        val sessionId = _currentSessionId.value ?: return
+        if (_isGenerating.value) return
+        viewModelScope.launch {
+            val previous = try {
+                taskPlanActions.completeRemaining(sessionId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                NexaraLogger.logError("ChatViewModel.completeActivePlan", error)
+                null
+            } ?: return@launch
+            _taskCompletionUndo.value = TaskCompletionUndo(IdGenerator.message("undo"), sessionId, previous)
+        }
+    }
+
+    fun undoTaskCompletion() {
+        val undo = _taskCompletionUndo.value ?: return
+        _taskCompletionUndo.value = null
+        viewModelScope.launch {
+            try {
+                taskPlanActions.restore(undo.sessionId, undo.previousStatuses)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                NexaraLogger.logError("ChatViewModel.undoTaskCompletion", error)
+            }
+        }
+    }
+
+    fun dismissTaskCompletionUndo(token: String) {
+        if (_taskCompletionUndo.value?.token == token) _taskCompletionUndo.value = null
+    }
+
+    /** 清除已全部完成的计划，面板随之收起。 */
+    fun clearCompletedPlan() {
+        val sessionId = _currentSessionId.value ?: return
+        _taskCompletionUndo.value = null
+        viewModelScope.launch {
+            try {
+                taskPlanActions.clearCompleted(sessionId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                NexaraLogger.logError("ChatViewModel.clearCompletedPlan", error)
+            }
+        }
+    }
+
     fun saveCurrentDraft() {
         val sessionId = _currentSessionId.value ?: return
         val text = _inputText.value
@@ -1955,8 +1996,6 @@ class ChatViewModel(
         private val FOREGROUND_STOPPING_PHASES = TERMINAL_GENERATION_PHASES +
             com.promenar.nexara.domain.generation.GenerationPhase.WAITING_APPROVAL
         private const val FONT_SIZE_PERSISTENCE_DEBOUNCE_MS = 180L
-        private const val IMAGE_MAX_DIMENSION_PX = 1568
-        private const val IMAGE_COMPRESSION_QUALITY = 85
         private const val DRAFT_PENDING_START = "__pending_generation_start__"
 
         fun factory(
@@ -2047,8 +2086,16 @@ class ChatViewModel(
             if (session.options.toolsEnabled) {
                 metadataText += "[You have access to function calling tools. Use them when needed to provide accurate and up-to-date responses.]\n\n"
             }
-            if (session.activeTask != null && session.activeTask.status == "in-progress") {
-                metadataText += "## Active Task\n- **Current Task**: \"Title\"\n- **Immediate Goal**: Goal\n\n"
+            val activePlan = try {
+                (application as NexaraApplication).taskRepository.getPlan(session.id)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            if (activePlan != null && activePlan.status !in setOf("idle", "dropped")) {
+                metadataText += "## Active Task\n- **Current Task**: \"${activePlan.title}\"\n" +
+                    activePlan.steps.joinToString("\n") { "- ${it.title}" } + "\n\n"
             }
 
             val fullSystemPrompt = buildString {

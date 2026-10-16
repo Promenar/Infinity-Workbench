@@ -386,6 +386,8 @@ run_test dual-database-workspace-recovery "${APP_RUNNER}" \
     -e class com.promenar.nexara.data.local.db.recovery.AndroidDualDatabaseWorkspaceRecoveryTest
 run_test legacy-attachment-access "${APP_RUNNER}" \
     -e class com.promenar.nexara.ui.chat.LegacyAttachmentDeviceTest
+run_test chat-image-encoder "${APP_RUNNER}" \
+    -e class com.promenar.nexara.ui.chat.ChatImageEncoderDeviceTest
 run_test rag-workspace-source-selector "${APP_RUNNER}" \
     -e class com.promenar.nexara.ui.rag.RagWorkspaceSourceSelectorDeviceTest
 run_test agent-hub-content "${APP_RUNNER}" \
