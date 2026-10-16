@@ -15,6 +15,10 @@ import com.promenar.nexara.data.remote.UnifiedProviderConfig
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.IMessageRepository
 import com.promenar.nexara.data.repository.ISessionRepository
+import com.promenar.nexara.data.repository.ApprovalCallCandidate
+import com.promenar.nexara.data.repository.ToolApprovalRequestFactory
+import com.promenar.nexara.data.repository.ToolInvocationIdentityFactory
+import com.promenar.nexara.data.repository.ToolInvocationIdentityResolution
 import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.backup.BackupContent
@@ -208,6 +212,9 @@ class ChatViewModelTest {
     private var failScopedDelete = false
     private var failSessionUpdate: Throwable? = null
     private var afterInsert: suspend (Message, String) -> Unit = { _, _ -> }
+    private val sshLeases = linkedSetOf<String>()
+    private val pausedSshOwners = linkedSetOf<String>()
+    private var beforeSshClose: suspend () -> Unit = {}
 
     private val stubSessionRepo = object : ISessionRepository {
         override suspend fun create(session: Session) {
@@ -236,6 +243,12 @@ class ChatViewModelTest {
                 }
                 if (updates.containsKey("options")) {
                     session = session.copy(options = updates["options"] as SessionOptions)
+                }
+                if (updates.containsKey("approvalRequest")) {
+                    session = session.copy(approvalRequest = updates["approvalRequest"] as ApprovalRequest?)
+                }
+                if (updates.containsKey("loopStatus")) {
+                    session = session.copy(loopStatus = updates["loopStatus"] as LoopStatus)
                 }
                 savedSessions[index] = session
             }
@@ -454,6 +467,9 @@ class ChatViewModelTest {
         failScopedDelete = false
         failSessionUpdate = null
         afterInsert = { _, _ -> }
+        sshLeases.clear()
+        pausedSshOwners.clear()
+        beforeSshClose = {}
         protocolRequestCount = 0
         lastPromptRequest = null
         holdStreamOpen = false
@@ -577,6 +593,10 @@ class ChatViewModelTest {
                 }
             },
             sessionWorkspaceRootOverride = { "test-workspace-root" to "/test/workspace" },
+            sshOwnerCloser = { owner -> beforeSshClose(); sshLeases.remove(owner); Unit },
+            sshOwnerPauser = { owner -> if (owner in sshLeases) pausedSshOwners.add(owner); Unit },
+            sshOwnerResumer = { owner -> pausedSshOwners.remove(owner); Unit },
+            sshCleanupDispatcher = testDispatcher,
         )
         this.documentReader = documentReader
     }
@@ -961,6 +981,179 @@ class ChatViewModelTest {
 
         assertThat(viewModel.uiState.value.isGenerating).isFalse()
         
+    }
+
+    @Test
+    fun `等待审批的显式停止立即释放当前owner而不影响其它owner`() = runTest {
+        seedSession("ssh-stop", approvalRequest = ApprovalRequest(toolName = "ssh_session_send", args = "{}"))
+        advanceUntilIdle()
+        sshLeases += listOf("agent:ssh-stop", "agent:other", "ui")
+
+        viewModel.stopGeneration()
+        advanceUntilIdle()
+
+        assertThat(sshLeases).containsExactly("agent:other", "ui")
+    }
+
+    @Test
+    fun `没有活动runner的显式停止也释放当前SSH租约`() = runTest {
+        seedSession("ssh-stopped-runner")
+        advanceUntilIdle()
+        sshLeases += "agent:ssh-stopped-runner"
+
+        viewModel.stopGeneration()
+        advanceUntilIdle()
+
+        assertThat(sshLeases).isEmpty()
+    }
+
+    @Test
+    fun `新回合丢弃待审批任务时释放上一回合SSH租约`() = runTest {
+        seedSession("ssh-new-turn", approvalRequest = ApprovalRequest(toolName = "ssh_session_send", args = "{}"))
+        advanceUntilIdle()
+        sshLeases += "agent:ssh-new-turn"
+
+        viewModel.sendMessage("new question")
+        advanceUntilIdle()
+
+        assertThat(sshLeases).isEmpty()
+    }
+
+    @Test
+    fun `清空历史终止待审批任务并释放SSH租约`() = runTest {
+        seedSession("ssh-clear", approvalRequest = ApprovalRequest(toolName = "ssh_session_send", args = "{}"))
+        advanceUntilIdle()
+        sshLeases += "agent:ssh-clear"
+
+        viewModel.clearHistory()
+        advanceUntilIdle()
+
+        assertThat(sshLeases).isEmpty()
+    }
+
+    @Test
+    fun `新回合在显式停止的SSH清理完成前不得启动Provider`() = runTest {
+        seedSession("ssh-stop-order")
+        advanceUntilIdle()
+        sshLeases += "agent:ssh-stop-order"
+        val cleaning = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        beforeSshClose = { cleaning.complete(Unit); release.await() }
+
+        viewModel.stopGeneration()
+        cleaning.await()
+        viewModel.sendMessage("next question")
+        runCurrent()
+        assertThat(protocolRequestCount).isEqualTo(0)
+
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertThat(sshLeases).isEmpty()
+        assertThat(protocolRequestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `遗留审批被终止后立即清除SSH租约`() = runTest {
+        val request = ApprovalRequest(toolName = "ssh_session_send", args = "{}")
+        seedSession("ssh-obsolete-approval", approvalRequest = request)
+        advanceUntilIdle()
+        sshLeases += "agent:ssh-obsolete-approval"
+
+        viewModel.approveRequest(request)
+        advanceUntilIdle()
+
+        assertThat(sshLeases).isEmpty()
+        val session = (ApplicationProvider.getApplicationContext() as TestNexaraApplication).chatStore.getSession("ssh-obsolete-approval")!!
+        assertThat(session.approvalRequest).isNull()
+        assertThat(session.loopStatus).isEqualTo(LoopStatus.PAUSED)
+    }
+
+    @Test
+    fun `部分审批首次批准创建PTY后待审批资源必须登记租约`() = runTest {
+        val batch = sshOpenApprovalBatch()
+        seedSession("ssh-partial-open", approvalRequest = batch)
+        advanceUntilIdle()
+        viewModel.settleApprovalSshOwner("ssh-partial-open", expectedTaskId = null)
+        assertThat(pausedSshOwners).isEmpty()
+
+        // 首次等待时没有连接；批准 open 创建 PTY，剩余 exec 审批仍等待用户决定。
+        sshLeases += listOf("agent:ssh-partial-open", "agent:other", "ui")
+        val remaining = ToolApprovalRequestFactory.createFromIdentities(
+            batch.assistantMessageId!!, batch.calls.drop(1),
+        )
+        val store = ApplicationProvider.getApplicationContext<TestNexaraApplication>().chatStore
+        store.updateSession("ssh-partial-open") { it.copy(approvalRequest = remaining) }
+
+        viewModel.settleApprovalSshOwner("ssh-partial-open", expectedTaskId = null)
+        advanceUntilIdle()
+
+        assertThat(pausedSshOwners).containsExactly("agent:ssh-partial-open")
+        assertThat(sshLeases).containsExactly("agent:ssh-partial-open", "agent:other", "ui")
+        assertThat(store.getSession("ssh-partial-open")!!.approvalRequest!!.calls.map { it.toolName })
+            .containsExactly("ssh_exec")
+    }
+
+    @Test
+    fun `部分审批旧任务收尾不得暂停新任务资源`() = runTest {
+        val batch = sshOpenApprovalBatch()
+        seedSession("ssh-partial-new-task", approvalRequest = batch)
+        advanceUntilIdle()
+        holdStreamOpen = true
+        viewModel.sendMessage("next question")
+        advanceUntilIdle()
+        assertThat(protocolRequestCount).isEqualTo(1)
+        val store = ApplicationProvider.getApplicationContext<TestNexaraApplication>().chatStore
+        store.updateSession("ssh-partial-new-task") {
+            it.copy(approvalRequest = batch, loopStatus = LoopStatus.WAITING_FOR_APPROVAL)
+        }
+        sshLeases += "agent:ssh-partial-new-task"
+
+        viewModel.settleApprovalSshOwner("ssh-partial-new-task", expectedTaskId = "previous-task")
+        advanceUntilIdle()
+
+        assertThat(pausedSshOwners).isEmpty()
+        assertThat(sshLeases).containsExactly("agent:ssh-partial-new-task")
+    }
+
+    @Test
+    fun `部分审批实际执行前清除当前owner旧等待租约`() = runTest {
+        seedSession("ssh-partial-execute", approvalRequest = sshOpenApprovalBatch())
+        advanceUntilIdle()
+        val owner = "agent:ssh-partial-execute"
+        sshLeases += listOf(owner, "agent:other", "ui")
+        pausedSshOwners += listOf(owner, "agent:other", "ui")
+        var waitingLeaseDuringExecution = true
+
+        viewModel.executeWithApprovedSshOwner("ssh-partial-execute") {
+            waitingLeaseDuringExecution = owner in pausedSshOwners
+        }
+        advanceUntilIdle()
+
+        assertThat(waitingLeaseDuringExecution).isFalse()
+        assertThat(pausedSshOwners).containsExactly("agent:other", "ui")
+        assertThat(sshLeases).containsExactly(owner, "agent:other", "ui")
+    }
+
+    private fun sshOpenApprovalBatch(): ApprovalRequest {
+        val calls = listOf(
+            ToolCall("partial-open", "ssh_session_open", """{"host":"local"}"""),
+            ToolCall("partial-exec", "ssh_exec", """{"host":"local","command":"echo ready"}"""),
+        )
+        val candidates = calls.map { call ->
+            val tool = ProtocolTool(
+                function = ProtocolToolFunction(call.name, "SSH 租约测试", "{}"),
+                risk = com.promenar.nexara.domain.tool.ToolRisk.PROCESS,
+                runtimeToolId = "test:${call.name}",
+                sourceId = "test",
+            )
+            val identity = (ToolInvocationIdentityFactory.fromPreparedToolCall(call, tool, true)
+                as ToolInvocationIdentityResolution.Valid).identity
+            ApprovalCallCandidate(
+                call, com.promenar.nexara.domain.tool.ToolRisk.PROCESS, identity,
+                com.promenar.nexara.domain.tool.ToolExecutionTargets.extract(tool, call.arguments),
+            )
+        }
+        return ToolApprovalRequestFactory.create("partial-assistant", candidates)
     }
 
     @Test

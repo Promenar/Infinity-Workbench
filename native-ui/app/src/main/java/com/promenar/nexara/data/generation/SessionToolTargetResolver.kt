@@ -15,10 +15,15 @@ suspend fun resolveSessionToolTarget(
     tool: ProtocolTool,
     arguments: String,
     repository: IWorkspaceRepository?,
+    sshSessionHost: ((String, String) -> String?)? = null,
 ): String? {
     val args = (ToolArgumentsValidator().validate(arguments) as? ToolArgumentsValidation.Valid)?.arguments ?: return null
     val paths = mutableMapOf<String, String>()
     try {
+        if (tool.function.name == "ssh_session_send") {
+            val id = (args["session_id"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
+            sshSessionHost?.invoke("agent:${session.id}", id)?.let { paths["ssh_session:$id"] = it }
+        }
         val rootUuid = session.workspaceRootUuid
         if (rootUuid != null && repository != null) {
             listOf("uuid", "parentUuid", "newParentUuid").forEach { key ->

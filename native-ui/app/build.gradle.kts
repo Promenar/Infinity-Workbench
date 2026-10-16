@@ -216,6 +216,8 @@ android {
     // jniLibs 默认目录即 src/main/jniLibs，无需显式配置
 
     packaging {
+        // 远端终端只使用 Java 仿真与渲染，不打包 Termux 的本地进程 JNI 桥。
+        jniLibs.excludes += "**/libtermux.so"
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
@@ -327,6 +329,19 @@ dependencies {
     implementation("org.apache.poi:poi-ooxml:5.2.5")
 
     // ─── 测试 ───
+    // SSH 仅使用库内密码学实现，不替换 Android 系统的 BC Provider。
+    implementation("com.github.mwiede:jsch:2.28.8")
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.86")
+    constraints {
+        // PDFBox 已使用该家族；SSH 与 PDF 密码学统一版本，避免重复类和跨版本 API 混用。
+        implementation("org.bouncycastle:bcpkix-jdk15to18:1.86")
+        implementation("org.bouncycastle:bcutil-jdk15to18:1.86")
+    }
+    implementation("com.termux.termux-app:terminal-emulator:0.118.0")
+    implementation("com.termux.termux-app:terminal-view:0.118.0")
+    testImplementation("org.apache.sshd:sshd-core:2.16.0")
+    testImplementation("org.apache.sshd:sshd-sftp:2.16.0")
+
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
     testImplementation("org.junit.vintage:junit-vintage-engine:5.10.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.1")
@@ -355,6 +370,8 @@ dependencies {
 tasks.withType<Test> {
     useJUnitPlatform()
     workingDir = rootProject.projectDir
+    // MINA 的 NIO SPI 由 JDK 加载；保持同一加载器，避免污染 Robolectric 原生 SQLite 初始化。
+    systemProperty("org.robolectric.packagesToNotAcquire", "org.apache.sshd.")
 }
 
 

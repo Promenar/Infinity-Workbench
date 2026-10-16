@@ -11,7 +11,7 @@ import com.promenar.nexara.data.local.db.MIGRATION_3_4
 import com.promenar.nexara.data.local.db.MIGRATION_4_5
 import com.promenar.nexara.data.local.db.MIGRATION_5_18
 import com.promenar.nexara.data.local.db.MIGRATION_17_18
-import com.promenar.nexara.data.local.db.NexaraDatabase
+import com.promenar.nexara.data.local.db.NexaraV18RecoveryDatabase
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -377,7 +377,7 @@ internal class AndroidDualDatabaseRecoveryExecutor(
         val isolatedContext = object : ContextWrapper(appContext) {
             override fun getDatabasePath(name: String): java.io.File = path.toFile()
         }
-        val database = Room.databaseBuilder(isolatedContext, NexaraDatabase::class.java, path.fileName.toString())
+        val database = Room.databaseBuilder(isolatedContext, NexaraV18RecoveryDatabase::class.java, path.fileName.toString())
             .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18)
             .build()
         try {

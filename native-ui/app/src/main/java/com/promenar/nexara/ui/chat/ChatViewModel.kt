@@ -139,6 +139,22 @@ internal fun stableFallbackToolCallId(
     return "${prefix}_" + digest.take(16).joinToString("") { "%02x".format(it) }
 }
 
+internal suspend fun resolveChatApprovalExecutionTarget(
+    session: Session,
+    assistantMessageId: String,
+    identity: com.promenar.nexara.data.model.ApprovalCallIdentity,
+    toolLookup: (String) -> com.promenar.nexara.data.remote.protocol.ProtocolTool?,
+    workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository?,
+    sshSessionHost: (String, String) -> String?,
+): String? {
+    val call = session.messages.firstOrNull { it.id == assistantMessageId }?.toolCalls.orEmpty()
+        .firstOrNull { it.id == identity.toolCallId && it.name == identity.toolName } ?: return null
+    val tool = toolLookup(identity.runtimeToolId) ?: return null
+    return com.promenar.nexara.data.generation.resolveSessionToolTarget(
+        session, tool, call.arguments, workspaceRepository, sshSessionHost,
+    )
+}
+
 data class ChatUiState(
     val session: Session? = null,
     val agentName: String = "",
@@ -252,6 +268,16 @@ class ChatViewModel(
         com.promenar.nexara.background.generation.NotificationPermissionGateway? = null,
     stringResourceResolverOverride: ((Int) -> String)? = null,
     sessionWorkspaceRootOverride: (suspend (String) -> Pair<String, String>)? = null,
+    private val sshOwnerCloser: suspend (String) -> Unit = { owner ->
+        (application as NexaraApplication).sshRuntime.closeOwner(owner)
+    },
+    private val sshOwnerPauser: suspend (String) -> Unit = { owner ->
+        (application as NexaraApplication).sshRuntime.pauseOwner(owner)
+    },
+    private val sshOwnerResumer: suspend (String) -> Unit = { owner ->
+        (application as NexaraApplication).sshRuntime.resumeOwner(owner)
+    },
+    private val sshCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val store = (application as NexaraApplication).chatStore
@@ -302,12 +328,11 @@ class ChatViewModel(
         (application as NexaraApplication).sessionExecutionGate,
         (application as NexaraApplication).sessionToolGrantStore,
         resolveExecutionTarget = { session, assistantMessageId, identity ->
-            val call = session.messages.firstOrNull { it.id == assistantMessageId }?.toolCalls.orEmpty()
-                .firstOrNull { it.id == identity.toolCallId && it.name == identity.toolName }
-            val skill = skillRegistry?.getSkillByRuntimeToolId(identity.runtimeToolId)
-            if (call == null || skill == null) null else com.promenar.nexara.data.generation.resolveSessionToolTarget(
-                session, skill.toProtocolTool(), call.arguments,
-                (application as NexaraApplication).workspaceRepository,
+            resolveChatApprovalExecutionTarget(
+                session, assistantMessageId, identity,
+                toolLookup = { runtimeId -> skillRegistry?.getSkillByRuntimeToolId(runtimeId)?.toProtocolTool() },
+                workspaceRepository = (application as NexaraApplication).workspaceRepository,
+                sshSessionHost = (application as NexaraApplication).sshRuntime::sessionHost,
             )
         },
     )
@@ -418,6 +443,7 @@ class ChatViewModel(
     }
 
     private var generationJob: Job? = null
+    private var approvalJob: Job? = null
     private var fontSizePersistenceJob: Job? = null
     private val sendPreparationMutex = Mutex()
     private val approvalSubmissionMutex = Mutex()
@@ -662,13 +688,15 @@ class ChatViewModel(
             onExecuteTools = { sessionId, targetMessageId, allowedToolCallIds ->
                 val session = store.getSession(sessionId) ?: return@setCallbacks
                 val msg = session.messages.find { it.id == targetMessageId } ?: return@setCallbacks
-                if (msg.toolCalls != null) {
-                    toolExecutor.executeTools(
-                        sessionId,
-                        targetMessageId,
-                        msg.toolCalls,
-                        allowedToolCallIds,
-                    )
+                if (msg.toolCalls != null && msg.toolCalls.any { it.id in allowedToolCallIds }) {
+                    executeWithApprovedSshOwner(sessionId) {
+                        toolExecutor.executeTools(
+                            sessionId,
+                            targetMessageId,
+                            msg.toolCalls,
+                            allowedToolCallIds,
+                        )
+                    }
                 }
             }
         )
@@ -736,12 +764,13 @@ class ChatViewModel(
         val documents = _draftDocuments.value
         if (text.isBlank() && imageUris.isEmpty() && documents.isEmpty()) return
 
-        val session = store.getSession(sessionId) ?: return
+        if (store.getSession(sessionId) == null) return
 
         cancelPendingPreparation()
         generationJob = viewModelScope.launch {
             sendPreparationMutex.withLock {
                 closePendingApprovalBeforeNewTurn(sessionId)
+                val session = store.getSession(sessionId) ?: return@withLock
                 _generationStatus.update { GenerationStatus.UPLOADING }
                 _isGenerating.update { true }
                 _error.update { null }
@@ -1066,17 +1095,73 @@ class ChatViewModel(
      * 未决调用写入“已取消”结果，协议历史中每个工具调用都有对应结果。
      */
     private suspend fun closePendingApprovalBeforeNewTurn(sessionId: String) {
-        if (store.getSession(sessionId)?.approvalRequest == null) return
+        val session = store.getSession(sessionId) ?: return
+        if (session.approvalRequest == null && session.loopStatus != com.promenar.nexara.data.model.LoopStatus.PAUSED) return
+        terminateSessionWork(sessionId)
+    }
+
+    /** 终止当前任务时同步审批终态，并在不可取消的 IO 清理中关闭该会话的 SSH owner。 */
+    private suspend fun terminateSessionWork(sessionId: String) {
         try {
-            approvalManager.cancelPendingApproval(sessionId)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            // 台账无法写入取消结果时仍须放行新回合；缺失的结果由协议历史修复补齐。
-            NexaraLogger.logError("[ChatViewModel] close pending approval failed", error)
+            if (store.getSession(sessionId)?.approvalRequest != null) {
+                try {
+                    approvalManager.cancelPendingApproval(sessionId)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    // 台账无法写入取消结果时仍关闭请求，缺失结果由协议历史修复补齐。
+                    NexaraLogger.logError("[ChatViewModel] close pending approval failed", error)
+                }
+            }
             approvalManager.setApprovalRequest(sessionId, null)
             approvalManager.setLoopStatus(sessionId, com.promenar.nexara.data.model.LoopStatus.PAUSED)
+        } finally {
+            if (!closeSessionSshOwner(sessionId)) throw CancellationException("SSH_CLEANUP_FAILED")
         }
+    }
+
+    private suspend fun closeSessionSshOwner(sessionId: String): Boolean =
+        withContext(NonCancellable + sshCleanupDispatcher) {
+            try {
+                sshOwnerCloser("agent:$sessionId")
+                true
+            } catch (_: Exception) {
+                _error.value = "SSH_CLEANUP_FAILED"
+                false
+            }
+        }
+
+    /** 审批返回后为待决定的资源登记租约；已终止的审批释放资源。 */
+    internal suspend fun settleApprovalSshOwner(sessionId: String, expectedTaskId: String?) {
+        val currentTaskId = generationCoordinator.observe(sessionId).value?.taskId
+        if (currentTaskId != null && currentTaskId != expectedTaskId) return
+        val session = store.getSession(sessionId) ?: return
+        if (session.approvalRequest != null && session.loopStatus == com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_APPROVAL) {
+            withContext(NonCancellable + sshCleanupDispatcher) {
+                try {
+                    sshOwnerPauser("agent:$sessionId")
+                } catch (_: Exception) {
+                    _error.value = "SSH_CLEANUP_FAILED"
+                    closeSessionSshOwner(sessionId)
+                }
+            }
+        } else if (session.approvalRequest == null && session.loopStatus == com.promenar.nexara.data.model.LoopStatus.PAUSED) {
+            closeSessionSshOwner(sessionId)
+        }
+    }
+
+    /** 仅供精确审批通过后的工具执行回调调用，执行前解除该 owner 的等待租约。 */
+    internal suspend fun executeWithApprovedSshOwner(sessionId: String, execute: suspend () -> Unit) {
+        withContext(sshCleanupDispatcher) {
+            try {
+                sshOwnerResumer("agent:$sessionId")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                throw com.promenar.nexara.data.ssh.SshFailure("SSH_RESUME_FAILED")
+            }
+        }
+        execute()
     }
 
     /**
@@ -1428,15 +1513,8 @@ class ChatViewModel(
         val sessionId = _currentSessionId.value
         if (sessionId != null) {
             viewModelScope.launch {
-                val waitingForApproval = store.getSession(sessionId)?.loopStatus ==
-                    com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_APPROVAL
-                if (waitingForApproval) {
-                    approvalManager.cancelPendingApproval(sessionId)
-                } else {
-                    approvalManager.setLoopStatus(
-                        sessionId,
-                        com.promenar.nexara.data.model.LoopStatus.PAUSED,
-                    )
+                sendPreparationMutex.withLock {
+                    terminateSessionWork(sessionId)
                 }
             }
         }
@@ -1445,6 +1523,8 @@ class ChatViewModel(
     private fun cancelPendingPreparation() {
         generationJob?.cancel()
         generationJob = null
+        approvalJob?.cancel()
+        approvalJob = null
         if (pendingPermissionTurn != null) {
             pendingPermissionTurn = null
             mutableNotificationPermissionRequest.value = null
@@ -1488,12 +1568,19 @@ class ChatViewModel(
         val sessionId = _currentSessionId.value ?: return
         if (!approvalSubmissionMutex.tryLock()) return
         _isApprovalSubmitting.value = true
-        viewModelScope.launch {
+        val expectedTaskId = generationCoordinator.observe(sessionId).value?.taskId
+        approvalJob = viewModelScope.launch {
             try {
                 approvalManager.approveAll(sessionId, expectedRequest)
             } finally {
-                _isApprovalSubmitting.value = false
-                approvalSubmissionMutex.unlock()
+                try {
+                    sendPreparationMutex.withLock {
+                        settleApprovalSshOwner(sessionId, expectedTaskId)
+                    }
+                } finally {
+                    _isApprovalSubmitting.value = false
+                    approvalSubmissionMutex.unlock()
+                }
             }
         }
     }
@@ -1512,7 +1599,8 @@ class ChatViewModel(
     ) {
         if (!approvalSubmissionMutex.tryLock()) return
         _isApprovalSubmitting.value = true
-        viewModelScope.launch {
+        val expectedTaskId = generationCoordinator.observe(sessionId).value?.taskId
+        approvalJob = viewModelScope.launch {
             try {
                 approvalManager.resumeGeneration(
                     sessionId,
@@ -1522,8 +1610,14 @@ class ChatViewModel(
                     rememberTarget = rememberTarget,
                 )
             } finally {
-                _isApprovalSubmitting.value = false
-                approvalSubmissionMutex.unlock()
+                try {
+                    sendPreparationMutex.withLock {
+                        settleApprovalSshOwner(sessionId, expectedTaskId)
+                    }
+                } finally {
+                    _isApprovalSubmitting.value = false
+                    approvalSubmissionMutex.unlock()
+                }
             }
         }
     }
@@ -1885,7 +1979,9 @@ class ChatViewModel(
             val approvalTarget = store.getSession(sessionId)?.approvalRequest?.assistantMessageId
             val expanded = targetIds.flatMapTo(linkedSetOf()) { messageRemovalIds(session.messages, it) }
             if (approvalTarget != null && approvalTarget in expanded) {
-                closePendingApprovalBeforeNewTurn(sessionId)
+                sendPreparationMutex.withLock {
+                    closePendingApprovalBeforeNewTurn(sessionId)
+                }
             }
             val current = store.getSession(sessionId)?.messages.orEmpty()
             val removalIds = targetIds.flatMapTo(linkedSetOf()) { messageRemovalIds(current, it) }
@@ -1925,37 +2021,43 @@ class ChatViewModel(
 
         cancelCurrentSessionGeneration()
         generationJob = viewModelScope.launch {
-            try {
-                closePendingApprovalBeforeNewTurn(sessionId)
-                val session = store.getSession(sessionId) ?: return@launch
-                val currentIndex = session.messages.indexOfFirst { it.id == userMessage.id }
-                if (currentIndex < 0) return@launch
-                val replacedIds = session.messages.drop(currentIndex + 1).mapTo(linkedSetOf()) { it.id }
-                applyBackgroundPolicyGate(
-                    sessionId,
-                    session,
-                    userMessage.content,
-                    userMessage.userImages.orEmpty(),
-                    userMessage.userDocuments.orEmpty(),
-                    assistantMessageIdsToReplace = replacedIds,
-                    reuseUserMessageId = userMessage.id,
-                )
-            } catch (cancelled: CancellationException) {
-                _replacingMessageIds.value = emptySet()
-                throw cancelled
-            } catch (_: Exception) {
-                _replacingMessageIds.value = emptySet()
-                _error.update { "无法安全删除旧回复，已取消重试。" }
-                _generationStatus.update { GenerationStatus.ERROR }
-                _isGenerating.update { false }
+            sendPreparationMutex.withLock {
+                try {
+                    closePendingApprovalBeforeNewTurn(sessionId)
+                    val session = store.getSession(sessionId) ?: return@withLock
+                    val currentIndex = session.messages.indexOfFirst { it.id == userMessage.id }
+                    if (currentIndex < 0) return@withLock
+                    val replacedIds = session.messages.drop(currentIndex + 1).mapTo(linkedSetOf()) { it.id }
+                    applyBackgroundPolicyGate(
+                        sessionId,
+                        session,
+                        userMessage.content,
+                        userMessage.userImages.orEmpty(),
+                        userMessage.userDocuments.orEmpty(),
+                        assistantMessageIdsToReplace = replacedIds,
+                        reuseUserMessageId = userMessage.id,
+                    )
+                } catch (cancelled: CancellationException) {
+                    _replacingMessageIds.value = emptySet()
+                    throw cancelled
+                } catch (_: Exception) {
+                    _replacingMessageIds.value = emptySet()
+                    _error.update { "无法安全删除旧回复，已取消重试。" }
+                    _generationStatus.update { GenerationStatus.ERROR }
+                    _isGenerating.update { false }
+                }
             }
         }
     }
 
     fun clearHistory() {
         val sessionId = _currentSessionId.value ?: return
+        cancelCurrentSessionGeneration()
         viewModelScope.launch {
-            messageManager.clearMessages(sessionId)
+            sendPreparationMutex.withLock {
+                terminateSessionWork(sessionId)
+                messageManager.clearMessages(sessionId)
+            }
         }
     }
 

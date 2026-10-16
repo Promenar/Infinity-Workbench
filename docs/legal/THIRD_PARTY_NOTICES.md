@@ -84,3 +84,12 @@ Nexara 没有直接引入 Bettbox 的 Flutter/Dart 构建产物，而是将以�
 - SenseNova 官方 API 文档：仅整理模型 ID、公开模态与推理事实并保留来源，不复制文档长段原文；仓库未声明统一再发布许可。[官方文档](https://github.com/OpenSenseNova/SenseNova6.8/blob/main/API_CN.md)。
 
 发布产物附带 `third-party-notices.txt`，保留 models.dev 与 LiteLLM 的完整 MIT 许可及上述出处。抓取时点和摘要以该次签名目录的 sources 为准；人工补充在规范源接管后自动停用。
+
+## 原生 SSH 与终端
+
+- [mwiede/jsch 2.28.8](https://github.com/mwiede/jsch/tree/jsch-2.28.8)：SSH、SFTP、PTY 与本地转发。主库为三条款 BSD；内嵌 JZlib 为 BSD、jBCrypt 为 ISC。完整许可与版权归档在 [ssh/jsch-LICENSE.txt](ssh/jsch-LICENSE.txt)、[JZlib](ssh/jsch-LICENSE.JZlib.txt)、[jBCrypt](ssh/jsch-LICENSE.jBCrypt.txt)。
+- [Bouncy Castle bcprov-jdk15to18 1.86](https://www.bouncycastle.org/download/bouncy-castle-java/)：SSH 仅使用 lightweight 密码学路径补足 Android API 31 的 Ed25519/X25519，不注册或替换系统 Provider；既有 PDFBox 的 bcpkix-jdk15to18、bcutil-jdk15to18 同步统一到 1.86，避免重复类及跨版本 API 混用。许可采用 Bouncy Castle/MIT 条款，完整声明见 [ssh/bouncycastle-LICENSE.txt](ssh/bouncycastle-LICENSE.txt)。
+- [Termux terminal-emulator / terminal-view 0.118.0](https://github.com/termux/termux-app/tree/v0.118.0)：使用终端仿真器和渲染器连接远端 SSH PTY，不构造本地 TerminalSession，不启动本地进程。上游为 GPLv3-only，包含 Apache-2.0 来源例外，见 [ssh/termux-LICENSE.md](ssh/termux-LICENSE.md) 与[上游源码](https://github.com/termux/termux-app/tree/v0.118.0/terminal-emulator)。项目 GPL-3.0 许可允许该组合。
+- [Apache MINA SSHD 2.16.0](https://github.com/apache/mina-sshd/tree/sshd-2.16.0)：Apache-2.0，仅用于 JVM 测试中的内嵌 SSH/SFTP 服务端，不进入应用运行时。
+
+SSH 与终端依赖保持版本固定；引入的终端原生进程桥接库不属于远端 PTY 的执行路径。许可原文按上游保留，中文说明不替代许可条款。

@@ -18,6 +18,7 @@ import com.promenar.nexara.data.local.db.MIGRATION_2_3
 import com.promenar.nexara.data.local.db.MIGRATION_3_4
 import com.promenar.nexara.data.local.db.MIGRATION_4_5
 import com.promenar.nexara.data.local.db.MIGRATION_5_18
+import com.promenar.nexara.data.local.db.MIGRATION_18_19
 import com.promenar.nexara.data.local.db.MIGRATION_17_18
 import com.promenar.nexara.data.local.db.LegacyDatabasePromoter
 import com.promenar.nexara.data.backup.BackupRuntime
@@ -146,6 +147,14 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     open val secretStore: SecretStore by lazy { AndroidKeystoreSecretStore(this) }
+    val sshHostStore: com.promenar.nexara.data.ssh.SshHostStore by lazy {
+        com.promenar.nexara.data.ssh.RoomSshHostStore(database.sshHostDao(), secretStore)
+    }
+    val sshRuntime: com.promenar.nexara.data.ssh.SshRuntime by lazy {
+        com.promenar.nexara.data.ssh.SshRuntime(sshHostStore, onPersistentActivity = { active ->
+            com.promenar.nexara.background.ssh.SshConnectionService.update(this, active)
+        })
+    }
     val themePreferenceStore: ThemePreferenceStore by lazy { ThemePreferenceStore(this) }
 
     /** 生产默认依赖保持不变；instrumentation 可通过 Application 子类注入可验证端口。 */
@@ -197,7 +206,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val database: NexaraDatabase by lazy {
         LegacyDatabasePromoter.promote(this)
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19)
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
                     if (com.promenar.nexara.BuildConfig.DEBUG) {
@@ -271,7 +280,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction(skill.name, skill.description, skill.parametersSchema),
             risk = skill.risk, runtimeToolId = skill.runtimeToolId, sourceId = skill.sourceId, mcpServerId = skill.mcpServerId,
         )
-        return com.promenar.nexara.data.generation.resolveSessionToolTarget(session, tool, args.toString(), workspaceRepository) == target &&
+        return com.promenar.nexara.data.generation.resolveSessionToolTarget(session, tool, args.toString(), workspaceRepository, sshRuntime::sessionHost) == target &&
             sessionToolGrantStore.contains(session.id, skill.name, target)
     }
 
@@ -348,6 +357,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             cancelAndJoinGeneration = { sessionId ->
                 generationCoordinator.cancelAndJoinSession(sessionId)
                 generationCoordinator.release(sessionId, discardTerminal = true)
+                sshRuntime.closeOwner("agent:$sessionId")
             },
             recoverFileMutations = { target ->
                 workspaceFileMutationRecoveryCoordinator.recoverRootOrThrow(target.workspaceRootUuid)
@@ -485,6 +495,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             workspaceRepository = workspaceRepository,
             outputStore = toolOutputStore,
             interactionStore = generationInteractions,
+            sshRuntime = sshRuntime,
         )
         com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
             applicationScope = generationScope,
@@ -592,6 +603,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val presetSkillRegistry: DefaultSkillRegistry by lazy {
         DefaultSkillRegistry().apply {
             register(CalculatorSkill())
+            com.promenar.nexara.ui.chat.manager.skills.sshTools(sshRuntime).forEach(::register)
             register(WebSearchSkill(this@NexaraApplication, httpClient, secretStore))
             register(WebSearchTavilySkill(this@NexaraApplication, httpClient, secretStore))
             register(WebSearchSearXNGSkill(this@NexaraApplication, httpClient))

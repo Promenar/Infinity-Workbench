@@ -160,6 +160,31 @@ val MIGRATION_5_18 = object : Migration(5, 18) {
     }
 }
 
+/** SSH 主机配置独立持久化，认证材料只由 SecretStore 保存。 */
+val MIGRATION_18_19 = object : Migration(18, 19) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS ssh_hosts (
+                id TEXT NOT NULL,
+                alias TEXT NOT NULL,
+                hostname TEXT NOT NULL,
+                port INTEGER NOT NULL DEFAULT 22,
+                username TEXT NOT NULL,
+                auth_type TEXT NOT NULL DEFAULT 'KEY',
+                jump_alias TEXT,
+                trusted_key_type TEXT,
+                trusted_fingerprint TEXT,
+                keep_terminal INTEGER NOT NULL DEFAULT 0,
+                local_forward_port INTEGER,
+                forward_host TEXT NOT NULL DEFAULT '127.0.0.1',
+                forward_port INTEGER,
+                PRIMARY KEY(id)
+            )""".trimIndent(),
+        )
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_ssh_hosts_alias ON ssh_hosts(alias)")
+    }
+}
+
 /**
  * 公开 v0.1 实际发布库为 v17。该迁移保留其业务数据，并补齐当前工具链、工作区与消息树契约。
  */

@@ -77,6 +77,8 @@ object NavDestinations {
     const val RAG_DEBUG = "rag_debug"
     const val TOKEN_USAGE = "token_usage"
     const val SKILLS_CONFIG = "skills_config"
+    const val SSH_CONFIG = "ssh_config"
+    const val SSH_TERMINAL = "ssh_terminal/{alias}"
     const val THEME_CONFIG = "theme_config"
     const val BACKUP_SETTINGS = "backup_settings"
     const val LOCAL_MODELS = "local_models"
@@ -580,8 +582,20 @@ fun NexaraNavGraph(
 
         composable(NavDestinations.SKILLS_CONFIG) {
             SkillsScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onOpenSsh = { navController.navigate(NavDestinations.SSH_CONFIG) },
             )
+        }
+
+        composable(NavDestinations.SSH_CONFIG) {
+            com.promenar.nexara.ui.settings.SshSettingsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenTerminal = { alias -> navController.navigate("ssh_terminal/${android.net.Uri.encode(alias)}") },
+            )
+        }
+        composable(NavDestinations.SSH_TERMINAL) { entry ->
+            val alias = entry.arguments?.getString("alias").orEmpty()
+            com.promenar.nexara.ui.ssh.SshTerminalScreen(alias, onBack = { navController.popBackStack() })
         }
 
         composable(NavDestinations.THEME_CONFIG) {

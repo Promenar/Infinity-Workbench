@@ -610,6 +610,90 @@ class ApprovalManagerTest {
     }
 
     @Test
+    fun `SSH会话发送初次审批与批准复验使用同一owner别名和输入`() = testScope.runTest {
+        val leases = mutableMapOf(("agent:s1" to "pty-1") to "local")
+        val tool = sshSendTool()
+        val call = ToolCall("ssh-send", "ssh_session_send", """{"session_id":"pty-1","input":"echo ok"}""")
+        val initialTarget = com.promenar.nexara.data.generation.resolveSessionToolTarget(
+            Session(id = "s1", agentId = "a1"), tool, call.arguments, null,
+        ) { owner, id -> leases[owner to id] }
+        assertThat(initialTarget).isEqualTo("""["process","local","echo ok"]""")
+        val grants = SessionToolGrantStore(grantFiles.newFolder("ssh-grants"))
+        approvalManager = sshApprovalManager(tool, leases, grants)
+        val request = seedExactApproval(listOf(call), initialTarget)
+        val executed = mutableListOf<String>()
+        approvalManager.setCallbacks(null) { sessionId, messageId, ids ->
+            executed += ids
+            ids.forEach { ledger.states[ToolExecutionKey(sessionId, messageId, it)] = ToolLedgerState.SUCCEEDED }
+        }
+
+        approvalManager.resumeGeneration("s1", request, rememberTarget = true)
+
+        assertThat(executed).containsExactly("ssh-send")
+        assertThat(ledger.states[ToolExecutionKey("s1", "m1", "ssh-send")]).isEqualTo(ToolLedgerState.SUCCEEDED)
+        assertThat(grants.contains("s1", "ssh_session_send", initialTarget!!)).isTrue()
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
+    }
+
+    @Test
+    fun `SSH会话审批后已不存在时取消且不记住授权`() = testScope.runTest {
+        rejectUnavailableSshSession(otherOwner = false)
+    }
+
+    @Test
+    fun `其它owner的同名SSH会话不能通过当前会话审批复验`() = testScope.runTest {
+        rejectUnavailableSshSession(otherOwner = true)
+    }
+
+    private suspend fun rejectUnavailableSshSession(otherOwner: Boolean) {
+        val leases = mutableMapOf(("agent:s1" to "pty-1") to "local")
+        val tool = sshSendTool()
+        val call = ToolCall("ssh-send", "ssh_session_send", """{"session_id":"pty-1","input":"echo ok"}""")
+        val initialTarget = com.promenar.nexara.data.generation.resolveSessionToolTarget(
+            Session(id = "s1", agentId = "a1"), tool, call.arguments, null,
+        ) { owner, id -> leases[owner to id] }
+        val grants = SessionToolGrantStore(grantFiles.newFolder("ssh-rejected-grants"))
+        approvalManager = sshApprovalManager(tool, leases, grants)
+        val request = seedExactApproval(listOf(call), initialTarget)
+        leases.clear()
+        if (otherOwner) leases["agent:other" to "pty-1"] = "local"
+        var executed = false
+        approvalManager.setCallbacks(null) { _, _, _ -> executed = true }
+
+        approvalManager.resumeGeneration("s1", request, rememberTarget = true)
+
+        assertThat(executed).isFalse()
+        assertThat(grants.list("s1")).isEmpty()
+        assertThat(ledger.states[ToolExecutionKey("s1", "m1", "ssh-send")]).isEqualTo(ToolLedgerState.CANCELLED)
+        assertThat(store.getSession("s1")!!.loopStatus).isEqualTo(LoopStatus.PAUSED)
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
+    }
+
+    private fun sshSendTool() = com.promenar.nexara.data.remote.protocol.ProtocolTool(
+        function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction("ssh_session_send", "SSH 测试工具", "{}"),
+        risk = com.promenar.nexara.domain.tool.ToolRisk.PROCESS,
+        runtimeToolId = "test:ssh_session_send",
+        sourceId = "test",
+    )
+
+    private fun sshApprovalManager(
+        tool: com.promenar.nexara.data.remote.protocol.ProtocolTool,
+        leases: Map<Pair<String, String>, String>,
+        grants: SessionToolGrantStore,
+    ) = ApprovalManager(
+        store, ledger, messageManager, stubSessionRepo,
+        toolGrantStore = grants,
+        resolveExecutionTarget = { session, messageId, identity ->
+            com.promenar.nexara.ui.chat.resolveChatApprovalExecutionTarget(
+                session, messageId, identity,
+                toolLookup = { runtimeId -> tool.takeIf { it.runtimeToolId == runtimeId } },
+                workspaceRepository = null,
+                sshSessionHost = { owner, id -> leases[owner to id] },
+            )
+        },
+    )
+
+    @Test
     fun setApprovalRequest() = testScope.runTest {
         seedSessionWithAssistant()
         val request = ApprovalRequest(toolName = "read_file", args = "{}", reason = "Needs approval")

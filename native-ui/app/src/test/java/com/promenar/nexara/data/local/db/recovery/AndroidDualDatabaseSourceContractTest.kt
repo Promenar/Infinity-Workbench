@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.local.db.recovery
 
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V19_IDENTITY_HASH
 import org.junit.Test
 
 class AndroidDualDatabaseSourceContractTest {
@@ -10,9 +11,15 @@ class AndroidDualDatabaseSourceContractTest {
     }
 
     @Test
+    fun `已通过完整身份验证的v19不进入旧双库合并`() {
+        assertThat(requiresDualDatabaseRecovery(source(19, NEXARA_SCHEMA_V19_IDENTITY_HASH))).isFalse()
+    }
+
+    @Test
     fun `public v2 and internal v5 still require explicit merge`() {
         assertThat(requiresDualDatabaseRecovery(source(2, PUBLIC_V2_IDENTITY))).isTrue()
         assertThat(requiresDualDatabaseRecovery(source(5, INTERNAL_V5_IDENTITY))).isTrue()
+        assertThat(requiresDualDatabaseRecovery(source(20, "unknown"))).isTrue()
     }
 
     private fun source(version: Int, identity: String): RecoveryDatabaseSource {

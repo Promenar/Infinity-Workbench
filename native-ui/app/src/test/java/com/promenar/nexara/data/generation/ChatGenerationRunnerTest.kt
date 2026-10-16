@@ -26,6 +26,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.junit.Test
 
 class ChatGenerationRunnerTest {
@@ -75,6 +77,7 @@ class ChatGenerationRunnerTest {
             .containsExactly("A" to "", "AB" to "", "AB" to "R").inOrder()
         assertThat(runtime.flushCount).isEqualTo(1)
         assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.SUCCESS)
+        assertThat(runtime.resourceReleases).containsExactly(false)
     }
 
     @Test
@@ -123,6 +126,8 @@ class ChatGenerationRunnerTest {
             .inOrder()
         assertThat(runtime.flushCount).isEqualTo(1)
         assertThat(runtime.terminals).isEmpty()
+        assertThat(runtime.resourceReleases).containsExactly(true)
+        assertThat(runtime.flushCountsAtRelease).containsExactly(1)
     }
 
     @Test
@@ -227,6 +232,140 @@ class ChatGenerationRunnerTest {
         assertThat(runtime.flushCount).isEqualTo(2)
         assertThat(events.phases().last()).isEqualTo(GenerationPhase.PERSISTENCE_FAILED)
         assertThat(events.phases()).doesNotContain(GenerationPhase.COMPLETED)
+        assertThat(runtime.resourceReleases).containsExactly(false)
+    }
+
+    @Test
+    fun `续轮上下文已处理失败时释放工具资源且不留下审批租约`() = runTest {
+        val runtime = FakeRuntime(listOf(flowOf(
+            GenerationChunk.ToolCall("call", "search", "{}"),
+            GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call")),
+        ))).apply {
+            toolDecisions += GenerationToolDecision.CONTINUE
+            preparationOutcomes += GenerationPreparationOutcome.Ready
+            preparationOutcomes += GenerationPreparationOutcome.Handled(GenerationFailure.unknown("continuation"))
+        }
+        val events = mutableListOf<GenerationEvent>()
+
+        ChatGenerationRunner(runtime).run(request(), events::add)
+
+        assertThat(runtime.streamAttempts).isEqualTo(1)
+        assertThat(runtime.terminals).isEmpty()
+        assertThat(events.phases().last()).isEqualTo(GenerationPhase.FAILED)
+        assertThat(runtime.resourceReleases).containsExactly(false)
+        assertThat(runtime.flushCount).isEqualTo(2)
+    }
+
+    @Test
+    fun `审批等待持久化失败时释放工具资源而不暂停保留`() = runTest {
+        val runtime = FakeRuntime(listOf(flowOf(
+            GenerationChunk.ToolCall("call", "write", "{}"),
+            GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call")),
+        ))).apply {
+            toolDecisions += GenerationToolDecision.WAIT_FOR_APPROVAL
+            flushFailuresRemaining = 1
+        }
+        val events = mutableListOf<GenerationEvent>()
+
+        ChatGenerationRunner(runtime).run(request(), events::add)
+
+        assertThat(events.phases()).contains(GenerationPhase.WAITING_APPROVAL)
+        assertThat(events.phases().last()).isEqualTo(GenerationPhase.PERSISTENCE_FAILED)
+        assertThat(runtime.resourceReleases).containsExactly(false)
+        assertThat(runtime.flushCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `审批持久化失败后释放错误附加到原持久化失败`() = runTest {
+        val releaseFailure = IllegalStateException("resource-release")
+        val runtime = FakeRuntime(listOf(flowOf(
+            GenerationChunk.ToolCall("call", "write", "{}"),
+            GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call")),
+        ))).apply {
+            toolDecisions += GenerationToolDecision.WAIT_FOR_APPROVAL
+            flushFailuresRemaining = 1
+            resourceReleaseFailure = releaseFailure
+        }
+        val events = mutableListOf<GenerationEvent>()
+
+        val failure = runCatching { ChatGenerationRunner(runtime).run(request(), events::add) }.exceptionOrNull()
+
+        assertThat(failure).isNull()
+        val persistence = events.filterIsInstance<GenerationEvent.PersistenceFailed>().single()
+        assertThat(persistence.persistenceCause.suppressed.toList()).contains(releaseFailure)
+        assertThat(events.phases().last()).isEqualTo(GenerationPhase.PERSISTENCE_FAILED)
+        assertThat(runtime.resourceReleases).containsExactly(false)
+    }
+
+    @Test
+    fun `审批强刷期间用户取消后释放资源而不留下等待租约`() = runTest {
+        val runtime = FakeRuntime(listOf(flowOf(
+            GenerationChunk.ToolCall("call", "write", "{}"),
+            GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call")),
+        ))).apply {
+            toolDecisions += GenerationToolDecision.WAIT_FOR_APPROVAL
+            suspendFlush = true
+        }
+        val events = mutableListOf<GenerationEvent>()
+        val job = launch { ChatGenerationRunner(runtime).run(request(), events::add) }
+        yield()
+        assertThat(runtime.flushCount).isEqualTo(1)
+        assertThat(runtime.flushCompleted).isFalse()
+
+        job.cancel()
+        job.join()
+
+        assertThat(runtime.flushCompleted).isTrue()
+        assertThat(runtime.resourceReleases).containsExactly(false)
+        assertThat(events.phases().last()).isEqualTo(GenerationPhase.CANCELLED)
+    }
+
+    @Test
+    fun `释放失败不得跳过最终flush或覆盖用户取消`() = runTest {
+        val original = CancellationException("user-cancelled")
+        val releaseFailure = IllegalStateException("resource-release")
+        val runtime = FakeRuntime(listOf(flow { throw original })).apply {
+            terminalFailure = CancellationException("terminal-cleanup")
+            resourceReleaseFailure = releaseFailure
+        }
+
+        val failure = runCatching { ChatGenerationRunner(runtime).run(request()) {} }.exceptionOrNull()
+
+        assertThat(failure).isSameInstanceAs(original)
+        assertThat(original.suppressed.toList()).contains(releaseFailure)
+        assertThat(runtime.resourceReleases).containsExactly(false)
+        assertThat(runtime.flushCount).isEqualTo(1)
+        assertThat(runtime.flushCompleted).isTrue()
+    }
+
+    @Test
+    fun `释放失败只作为原生成失败的suppressed`() = runTest {
+        val original = IllegalStateException("provider-failure")
+        val releaseFailure = IllegalStateException("resource-release")
+        val runtime = FakeRuntime(listOf(flow { throw original })).apply {
+            resourceReleaseFailure = releaseFailure
+        }
+
+        val failure = runCatching { ChatGenerationRunner(runtime).run(request()) {} }.exceptionOrNull()
+
+        assertThat(failure).isSameInstanceAs(original)
+        assertThat(original.suppressed.toList()).contains(releaseFailure)
+        assertThat(runtime.flushCount).isEqualTo(1)
+        assertThat(runtime.resourceReleases).containsExactly(false)
+    }
+
+    @Test
+    fun `成功生成后的释放错误在完成flush后向上传播`() = runTest {
+        val releaseFailure = IllegalStateException("resource-release")
+        val runtime = FakeRuntime(listOf(flowOf(
+            GenerationChunk.Text("answer"), GenerationChunk.Completed(CompletionReason.END_TURN),
+        ))).apply { resourceReleaseFailure = releaseFailure }
+
+        val failure = runCatching { ChatGenerationRunner(runtime).run(request()) {} }.exceptionOrNull()
+
+        assertThat(generateSequence(failure) { it.cause }.last()).isSameInstanceAs(releaseFailure)
+        assertThat(runtime.flushCompleted).isTrue()
+        assertThat(runtime.resourceReleases).containsExactly(false)
     }
 
     @Test
@@ -338,6 +477,7 @@ class ChatGenerationRunnerTest {
         assertThat(runtime.streamAttempts).isEqualTo(0)
         assertThat(runtime.flushCount).isEqualTo(1)
         assertThat(runtime.terminals).isEmpty()
+        assertThat(runtime.resourceReleases).containsExactly(false)
     }
 
     @Test
@@ -363,12 +503,14 @@ class ChatGenerationRunnerTest {
         assertThat(runtime.flushCount).isEqualTo(1)
         assertThat(runtime.persisted.last().content).isEqualTo("partial")
         assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.CANCELLED)
+        assertThat(runtime.resourceReleases).containsExactly(false)
     }
 
     @Test
     fun `外部取消时挂起中的终态flush在NonCancellable内完成`() = runTest {
         val runtime = FakeRuntime(listOf(flow { awaitCancellation() })).apply {
             suspendFlush = true
+            suspendResourceRelease = true
         }
         val events = mutableListOf<GenerationEvent>()
         val job = launch { ChatGenerationRunner(runtime).run(request(), events::add) }
@@ -379,6 +521,8 @@ class ChatGenerationRunnerTest {
 
         assertThat(runtime.flushCompleted).isTrue()
         assertThat(events.phases().last()).isEqualTo(GenerationPhase.CANCELLED)
+        assertThat(runtime.resourceReleaseCompleted).isTrue()
+        assertThat(runtime.resourceReleases).containsExactly(false)
     }
 
     @Test
@@ -559,6 +703,12 @@ class ChatGenerationRunnerTest {
         var suspendFlush = false
         var flushCompleted = false
         var preparationOutcome: GenerationPreparationOutcome = GenerationPreparationOutcome.Ready
+        val preparationOutcomes = ArrayDeque<GenerationPreparationOutcome>()
+        val resourceReleases = mutableListOf<Boolean>()
+        val flushCountsAtRelease = mutableListOf<Int>()
+        var resourceReleaseFailure: Throwable? = null
+        var suspendResourceRelease = false
+        var resourceReleaseCompleted = false
         val terminals = mutableListOf<GenerationTerminalStatus>()
         var terminalFailure: Throwable? = null
         var flushFailuresRemaining = 0
@@ -589,7 +739,8 @@ class ChatGenerationRunnerTest {
         }
 
         override suspend fun prepare(request: GenerationRequest) = Unit
-        override suspend fun buildContext(request: GenerationRequest) = preparationOutcome
+        override suspend fun buildContext(request: GenerationRequest) =
+            preparationOutcomes.removeFirstOrNull() ?: preparationOutcome
         override suspend fun stream(request: GenerationRequest, attempt: Int): Flow<GenerationChunk> {
             streamAttempts++
             return streams[attempt]
@@ -628,6 +779,16 @@ class ChatGenerationRunnerTest {
             }
             if (suspendFlush) yield()
             flushCompleted = true
+        }
+        override suspend fun releaseToolResources(request: GenerationRequest, awaitingApproval: Boolean) {
+            resourceReleases += awaitingApproval
+            flushCountsAtRelease += flushCount
+            if (suspendResourceRelease) {
+                yield()
+                currentCoroutineContext().ensureActive()
+            }
+            resourceReleaseFailure?.let { throw it }
+            resourceReleaseCompleted = true
         }
         override fun cancelProvider() { providerCancelCount++ }
     }

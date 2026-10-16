@@ -1,5 +1,6 @@
 package com.promenar.nexara.data.local.db
 
+import android.database.sqlite.SQLiteDatabase
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
@@ -18,6 +19,7 @@ import com.promenar.nexara.data.local.db.dao.MessageDao
 import com.promenar.nexara.data.local.db.dao.SessionDao
 import com.promenar.nexara.data.local.db.dao.SessionDeletionDao
 import com.promenar.nexara.data.local.db.dao.SkillDao
+import com.promenar.nexara.data.local.db.dao.SshHostDao
 import com.promenar.nexara.data.local.db.dao.TagDao
 import com.promenar.nexara.data.local.db.dao.TaskNodeDao
 import com.promenar.nexara.data.local.db.dao.ToolExecutionLedgerDao
@@ -41,6 +43,7 @@ import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.local.db.entity.McpToolSnapshotEntity
 import com.promenar.nexara.data.local.db.entity.MessageEntity
 import com.promenar.nexara.data.local.db.entity.SessionEntity
+import com.promenar.nexara.data.local.db.entity.SshHostEntity
 import com.promenar.nexara.data.local.db.entity.TagEntity
 import com.promenar.nexara.data.local.db.entity.TaskNodeEntity
 import com.promenar.nexara.data.local.db.entity.ToolExecutionLedgerEntity
@@ -76,8 +79,9 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
         ToolExecutionLedgerEntity::class,
         FileVersionEntity::class,
         WorkspaceMutationEntity::class,
+        SshHostEntity::class,
     ],
-    version = 18,
+    version = 19,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -104,4 +108,54 @@ abstract class NexaraDatabase : RoomDatabase() {
     abstract fun toolExecutionLedgerDao(): ToolExecutionLedgerDao
     abstract fun fileVersionDao(): FileVersionDao
     abstract fun workspaceMutationDao(): WorkspaceMutationDao
+    abstract fun sshHostDao(): SshHostDao
 }
+
+internal const val NEXARA_SCHEMA_V19_IDENTITY_HASH = "7ec310065cda4e529f966a4d08266757"
+
+internal fun SQLiteDatabase.hasV19SshHostContract(): Boolean {
+    val expectedColumns = mapOf(
+        "id" to SshColumnContract("TEXT", true, primaryKeyPosition = 1),
+        "alias" to SshColumnContract("TEXT", true),
+        "hostname" to SshColumnContract("TEXT", true),
+        "port" to SshColumnContract("INTEGER", true, defaultValue = "22"),
+        "username" to SshColumnContract("TEXT", true),
+        "auth_type" to SshColumnContract("TEXT", true, defaultValue = "'KEY'"),
+        "jump_alias" to SshColumnContract("TEXT", false),
+        "trusted_key_type" to SshColumnContract("TEXT", false),
+        "trusted_fingerprint" to SshColumnContract("TEXT", false),
+        "keep_terminal" to SshColumnContract("INTEGER", true, defaultValue = "0"),
+        "local_forward_port" to SshColumnContract("INTEGER", false),
+        "forward_host" to SshColumnContract("TEXT", true, defaultValue = "'127.0.0.1'"),
+        "forward_port" to SshColumnContract("INTEGER", false),
+    )
+    val columns = rawQuery("PRAGMA table_info(ssh_hosts)", null).use { cursor ->
+        buildMap {
+            while (cursor.moveToNext()) {
+                put(cursor.getString(1), SshColumnContract(
+                    type = cursor.getString(2), notNull = cursor.getInt(3) == 1,
+                    primaryKeyPosition = cursor.getInt(5), defaultValue = cursor.getString(4),
+                ))
+            }
+        }
+    }
+    if (columns != expectedColumns) return false
+    return rawQuery("PRAGMA index_list(ssh_hosts)", null).use { cursor ->
+        var uniqueAlias = false
+        while (cursor.moveToNext()) {
+            if (cursor.getString(1) == "index_ssh_hosts_alias" && cursor.getInt(2) == 1 &&
+                cursor.getInt(cursor.getColumnIndexOrThrow("partial")) == 0
+            ) uniqueAlias = true
+        }
+        uniqueAlias
+    } && rawQuery("PRAGMA index_info(index_ssh_hosts_alias)", null).use { cursor ->
+        cursor.moveToFirst() && cursor.getString(2) == "alias" && !cursor.moveToNext()
+    }
+}
+
+private data class SshColumnContract(
+    val type: String,
+    val notNull: Boolean,
+    val primaryKeyPosition: Int = 0,
+    val defaultValue: String? = null,
+)

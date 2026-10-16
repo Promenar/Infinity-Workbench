@@ -21,6 +21,8 @@ import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.transformWhile
 import kotlinx.serialization.json.Json
@@ -66,6 +68,8 @@ interface ChatGenerationRuntime {
         cause: Throwable? = null,
     ) = Unit
     suspend fun flush(request: GenerationRequest)
+    /** 审批等待只保留有界租约，其余退出路径释放本轮工具资源。 */
+    suspend fun releaseToolResources(request: GenerationRequest, awaitingApproval: Boolean) = Unit
     fun cancelProvider()
 }
 
@@ -77,6 +81,7 @@ class ChatGenerationRunner(
         var flushed = false
         var primaryFailure: Throwable? = null
         var resultsCommitted = false
+        var awaitingApproval = false
         suspend fun safeEmit(event: GenerationEvent, primary: Throwable? = null) {
             try {
                 emit(event)
@@ -126,6 +131,7 @@ class ChatGenerationRunner(
             originalFailure: Throwable? = null,
         ) {
             if (persistenceFailure is CancellationException) throw persistenceFailure
+            if (primaryFailure == null) primaryFailure = persistenceFailure
             if (originalFailure != null && originalFailure !== persistenceFailure) {
                 persistenceFailure.addSuppressed(originalFailure)
             }
@@ -165,6 +171,7 @@ class ChatGenerationRunner(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (retryFailure: Throwable) {
+                if (primaryFailure == null) primaryFailure = retryFailure
                 retryFailure.addSuppressed(firstFailure)
                 flushed = true
                 val persistenceFailure = com.promenar.nexara.domain.generation.GenerationFailure.persistence(
@@ -409,12 +416,14 @@ class ChatGenerationRunner(
                         withContext(NonCancellable) {
                             try {
                                 flushOnce()
+                                awaitingApproval = true
                             } catch (cancelled: CancellationException) {
                                 throw cancelled
                             } catch (persistenceFailure: Throwable) {
                                 publishPersistenceFailure(persistenceFailure)
                             }
                         }
+                        if (awaitingApproval) currentCoroutineContext().ensureActive()
                         return
                     }
                     GenerationToolDecision.COMPLETE -> break
@@ -441,6 +450,7 @@ class ChatGenerationRunner(
                 }
             }
         } catch (cancelled: CancellationException) {
+            awaitingApproval = false
             primaryFailure = cancelled
             try {
                 runtime.cancelProvider()
@@ -463,6 +473,7 @@ class ChatGenerationRunner(
             }
             throw cancelled
         } catch (failure: Throwable) {
+            awaitingApproval = false
             primaryFailure = failure
             val generationFailure = failure.failureOrUnknown()
             NexaraLogger.diagnostic(
@@ -478,7 +489,29 @@ class ChatGenerationRunner(
             }
             throw failure
         } finally {
-            withContext(NonCancellable) { flushOnce(primaryFailure) }
+            withContext(NonCancellable) {
+                val releaseFailure = try {
+                    runtime.releaseToolResources(request, awaitingApproval)
+                    null
+                } catch (failure: Throwable) {
+                    failure
+                }
+                try {
+                    flushOnce(primaryFailure)
+                } catch (flushFailure: Throwable) {
+                    val primary = primaryFailure
+                    if (primary == null) {
+                        releaseFailure?.takeUnless { it === flushFailure }?.let(flushFailure::addSuppressed)
+                        throw flushFailure
+                    }
+                    if (flushFailure !== primary) primary.addSuppressed(flushFailure)
+                }
+                if (releaseFailure != null) {
+                    val primary = primaryFailure
+                    if (primary == null) throw releaseFailure
+                    if (releaseFailure !== primary) primary.addSuppressed(releaseFailure)
+                }
+            }
         }
     }
 

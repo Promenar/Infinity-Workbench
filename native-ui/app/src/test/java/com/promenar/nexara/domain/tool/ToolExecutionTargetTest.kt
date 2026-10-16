@@ -9,6 +9,20 @@ import org.junit.Test
 
 class ToolExecutionTargetTest {
     @Test
+    fun `SSH路径授权保留远端路径语义且PTY发送绑定解析的主机和原始输入`() {
+        assertThat(extract("sftp_write", """{"host":"termux","path":"./A/../data","content":"value"}"""))
+            .isEqualTo("""["remote_path","termux","./A/../data"]""")
+        val send = tool("ssh_session_send", risk = ToolRisk.PROCESS)
+        assertThat(ToolExecutionTargets.extract(send, """{"session_id":"pty-1","input":"ls\n"}""", mapOf("ssh_session:pty-1" to "termux")))
+            .isEqualTo("""["process","termux","ls\n"]""")
+        assertThat(ToolExecutionTargets.extract(send, """{"session_id":"unknown","input":"ls"}""")).isNull()
+        assertThat(ToolExecutionTargets.extract(tool("ssh_session_open", risk = ToolRisk.PROCESS), """{"host":"termux"}"""))
+            .isEqualTo("""["process","termux","[PTY]"]""")
+        assertThat(ToolExecutionTargets.display("""["remote_path","termux","/home/u/a"]"""))
+            .isEqualTo("termux · /home/u/a")
+    }
+
+    @Test
     fun `文件工具使用规范路径且不会合并大小写不同目标`() {
         listOf("read_file", "write_file", "patch_file", "diff_file", "delete_file").forEach { name ->
             assertThat(extract(name, """{"path":" docs\\\\a.md// "}"""))

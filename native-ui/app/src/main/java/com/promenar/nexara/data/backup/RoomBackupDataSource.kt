@@ -665,8 +665,10 @@ class RoomBackupDataSource(
         val identityHash = sqlite.query(
             "SELECT identity_hash FROM room_master_table WHERE id = 42"
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-        if (identityHash != ROOM_SCHEMA_V18_IDENTITY_HASH) {
-            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v18")
+        if (identityHash != ROOM_SCHEMA_V18_IDENTITY_HASH &&
+            identityHash != com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V19_IDENTITY_HASH
+        ) {
+            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v18/v19")
         }
         INSERT_ORDER.forEach { table ->
             val columns = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
