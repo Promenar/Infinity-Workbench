@@ -10,6 +10,17 @@ import org.junit.jupiter.api.Test
 class IndexingNoticeTest {
 
     @Test
+    fun `部分KG进度以类型化参数显示且无需回显诊断文本`() {
+        val notice = IndexingNotice.fromTask(VectorizationTask(
+            id = "kg-partial", type = "document_reference", status = "partial", kgStrategy = "full",
+            lastChunkIndex = 2, totalChunks = 5, error = "kg.budget.calls", subStatus = "内部诊断",
+        ))
+
+        assertThat(notice.formatArgs).containsExactly("2", "5").inOrder()
+        assertThat(IndexingNotice.template(notice)!!.resourceId).isEqualTo(R.string.kg_extraction_partial)
+    }
+
+    @Test
     fun `fromTask maps vectorizing status to typed args`() {
         val notice = IndexingNotice.fromTask(
             VectorizationTask(

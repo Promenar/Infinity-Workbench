@@ -517,8 +517,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         com.promenar.nexara.data.repository.SkillRepository(database.skillDao())
     }
 
+    val kgUsageStore: com.promenar.nexara.data.rag.KgUsageStore by lazy {
+        com.promenar.nexara.data.rag.PreferencesKgUsageStore(getSharedPreferences("kg_usage", MODE_PRIVATE))
+    }
+
     val tokenStatsRepository: ITokenStatsRepository by lazy {
-        TokenStatsRepository(database.messageDao())
+        TokenStatsRepository(database.messageDao(), kgUsageStore)
     }
 
     val workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository by lazy {
@@ -1212,6 +1216,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     private fun createKgRequestClient() = com.promenar.nexara.data.rag.KgRequestClient(
         router = providerRequestRouter,
+        usageStore = kgUsageStore,
+        defaultMaxOutputTokens = ragConfigPersistence.loadFullConfig().kgRequestMaxOutputTokens.coerceIn(128, 16384),
         protocolFactory = { resolved ->
             val config = resolved.config
             com.promenar.nexara.data.remote.protocol.ProtocolFactory.create(
@@ -1246,7 +1252,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     private var _kgProvider: KgProvider? = null
     val kgProvider: KgProvider
         get() = synchronized(kgExtractorLock) {
-            _kgProvider ?: MicroGraphKgAdapter { microGraphExtractor }.also { _kgProvider = it }
+            _kgProvider ?: com.promenar.nexara.data.rag.PersistentGraphKgProvider(
+                graphStore, MicroGraphKgAdapter { microGraphExtractor },
+            ) { ragConfigPersistence.loadFullConfig() }.also { _kgProvider = it }
         }
 
     val webSearchContextProvider: WebSearchProvider by lazy {
@@ -1267,6 +1275,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                     chunkSize = config.docChunkSize.coerceAtLeast(400),
                     chunkOverlap = config.chunkOverlap.coerceAtMost(200),
                     timeoutMs = config.kgExtractionTimeoutSeconds.coerceIn(5, 300) * 1000L,
+                    budget = com.promenar.nexara.data.rag.KgExtractionBudget.from(config),
                 ).also { _graphExtractor = it }
             }
         }

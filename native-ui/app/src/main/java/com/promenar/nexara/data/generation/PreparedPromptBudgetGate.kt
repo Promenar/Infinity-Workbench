@@ -62,10 +62,10 @@ object PreparedPromptBudgetGate {
         hasFullContextDocuments: Boolean,
         stableModelId: String? = null,
     ): ContextBudgetDecision? {
-        if (!hasFullContextDocuments) return null
-
         val window = resolveWindow(session, prompt, settings, stableModelId)
         val modelContext = window.modelContextTokens
+        // 未知模型仍须为完整文档失败关闭；其它请求没有可信窗口时不虚构容量。
+        if (modelContext == null && !hasFullContextDocuments) return null
         val outputReserve = window.outputReserveTokens
         val messageTokens = prompt.messages.sumOf { message ->
             ConservativeContextTokenEstimator.estimate(
@@ -80,14 +80,9 @@ object PreparedPromptBudgetGate {
                         append(call.name)
                         append(call.arguments)
                     }
-                    message.imageUrls.orEmpty().forEach { image ->
-                        append(image.mimeType)
-                        append(image.base64)
-                        append(image.url)
-                    }
                 },
-            )
-        }
+            ).toLong() + message.imageUrls.orEmpty().size * IMAGE_TOKEN_RESERVE.toLong()
+        }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val toolTokens = prompt.tools.orEmpty().sumOf { tool ->
             ConservativeContextTokenEstimator.estimate(
                 tool.function.name + tool.function.description + tool.function.parameters,
@@ -104,5 +99,8 @@ object PreparedPromptBudgetGate {
             ),
         )
     }
+
+    // 图像使用每张固定预留估算；传输编码与 URL 都不是模型文本 token，实际视觉用量由提供商决定。
+    private const val IMAGE_TOKEN_RESERVE = 4096
 
 }

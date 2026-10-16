@@ -1015,4 +1015,3 @@ private suspend fun prepareExternalFolderOpen(
 private const val EXTERNAL_TEXT_PREVIEW_BYTES = 256 * 1024
 private const val EXTERNAL_OPEN_BYTES = 8L * 1024 * 1024
 private const val EXTERNAL_PREVIEW_RETENTION_MS = 24L * 60 * 60 * 1000
-

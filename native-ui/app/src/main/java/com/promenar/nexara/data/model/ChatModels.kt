@@ -190,6 +190,12 @@ data class KgPath(
     val edges: List<KgEdge> = emptyList(),
     val reasoning: String? = null,
     val sourceDocumentIds: List<String> = emptyList(),
+    val origins: List<String> = listOf("jit"),
+    val score: Double = 0.0,
+    val evidenceCount: Int = 1,
+    val distance: Int = 1,
+    val truncated: Boolean = false,
+    val omittedPathCount: Int = 0,
 )
 
 @Serializable

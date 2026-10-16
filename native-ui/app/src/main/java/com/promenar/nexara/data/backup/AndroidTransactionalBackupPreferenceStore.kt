@@ -426,12 +426,15 @@ internal class AndroidTransactionalBackupPreferenceStore(
             typed("rag", PreferenceValueType.INT,
                 "doc_chunk_size", "chunk_overlap", "memory_chunk_size", "memory_limit", "doc_limit",
                 "rerank_top_k", "rerank_final_k", "rerank_max_per_call", "query_rewrite_count",
-                "kg_extraction_timeout", "jit_max_chunks", "embed_dimension", "max_embed_tokens_per_call")
+                "kg_extraction_timeout", "jit_max_chunks", "embed_dimension", "max_embed_tokens_per_call",
+                "kg_retrieval_hops", "kg_max_seeds", "kg_max_nodes", "kg_max_edges", "kg_context_max_tokens",
+                "kg_jit_min_seeds", "kg_max_calls", "kg_max_output_tokens", "kg_request_max_output_tokens",
+                "kg_max_duration_seconds", "kg_large_document_confirm_calls")
             typed("rag", PreferenceValueType.FLOAT,
                 "memory_threshold", "doc_threshold", "hybrid_alpha", "hybrid_bm25_boost")
             typed("rag", PreferenceValueType.BOOLEAN,
                 "enable_rerank", "enable_query_rewrite", "enable_hybrid_search", "enable_memory", "enable_docs",
-                "enable_kg", "kg_free_mode", "kg_domain_auto", "enable_incremental_hash", "enable_local_preprocess",
+                "enable_kg", "kg_free_mode", "kg_domain_auto", "enable_incremental_hash", "enable_local_preprocess", "kg_jit_fallback",
                 "show_retrieval_progress", "show_retrieval_details", "track_retrieval_metrics")
             typed("ui", PreferenceValueType.BOOLEAN, "has_shown_welcome", "haptic_enabled")
             typed("ui", PreferenceValueType.INT, "loop_limit")

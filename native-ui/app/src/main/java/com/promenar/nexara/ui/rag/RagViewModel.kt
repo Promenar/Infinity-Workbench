@@ -15,6 +15,8 @@ import com.promenar.nexara.data.rag.KeywordSearcher
 import com.promenar.nexara.data.rag.KeywordSearchMode
 import com.promenar.nexara.data.rag.FileIndexEvent
 import com.promenar.nexara.data.rag.PendingDocumentIndexCoordinator
+import com.promenar.nexara.data.rag.KgExtractionBudget
+import com.promenar.nexara.data.rag.KgExtractionEstimate
 import com.promenar.nexara.utils.NexaraLogger
 import com.promenar.nexara.domain.model.Document
 import com.promenar.nexara.domain.model.Folder
@@ -37,6 +39,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.promenar.nexara.domain.usecase.RagConfigPersistence
 
 import com.promenar.nexara.ui.common.KgStatus
@@ -61,6 +65,18 @@ data class QueueState(
     val progress: Float = 0f
 )
 
+data class DocumentKgConfirmation(
+    val workspaceRootUuid: String,
+    val fileUuid: String,
+    val title: String,
+    val contentHash: String,
+    val targetEpoch: Long,
+    val estimate: KgExtractionEstimate,
+    val configuration: RagConfiguration,
+) {
+    val budget: KgExtractionBudget get() = KgExtractionBudget.from(configuration)
+}
+
 class RagViewModel(
     application: Application,
     private val workspaceRepository: IWorkspaceRepository,
@@ -77,6 +93,7 @@ class RagViewModel(
     injectedListRagWorkspaceRoots: (suspend () -> List<RagWorkspaceSource>)? = null,
     injectedEnsureRagWorkspaceRootForSession: (suspend (String) -> FileEntry)? = null,
     injectedCompositeWorkspaceRepository: IWorkspaceRepository? = null,
+    private val injectedKgEstimator: (suspend (FileEntry) -> KgExtractionEstimate)? = null,
 ) : ViewModel() {
 
     private val app = application as NexaraApplication
@@ -192,6 +209,9 @@ class RagViewModel(
 
     private val _kgExtractionStates = MutableStateFlow<Map<String, KgStatus>>(emptyMap())
     val kgExtractionStates: StateFlow<Map<String, KgStatus>> = _kgExtractionStates.asStateFlow()
+    private val _kgExtractionConfirmation = MutableStateFlow<DocumentKgConfirmation?>(null)
+    val kgExtractionConfirmation: StateFlow<DocumentKgConfirmation?> = _kgExtractionConfirmation.asStateFlow()
+    private var kgPreparationJob: Job? = null
 
     private var queueResourceObservation: AutoCloseable? = null
     private var queueStateObservation: AutoCloseable? = null
@@ -354,16 +374,22 @@ class RagViewModel(
                     }
                 }
 
-                val kgStates = _kgExtractionStates.value.toMutableMap()
-                queue.filter { it.kgStrategy != null && it.workspaceRootUuid == _workspaceRootUuid.value }
-                    .forEach { kgTask ->
-                        val id = kgTask.docId ?: return@forEach
-                        kgStates[id] = when (kgTask.status) {
-                            "completed", "partial" -> KgStatus.COMPLETED
+                val currentRoot = _workspaceRootUuid.value
+                val terminalStatuses = setOf("completed", "partial", "failed", "interrupted")
+                val targetOrder = compareBy<com.promenar.nexara.data.rag.VectorizationTask> { it.targetEpoch }
+                    .thenBy { it.status !in terminalStatuses }.thenBy { it.updatedAt }.thenBy { it.createdAt }
+                // 同一文档只采用最新任务；无 KG 的新版本必须清除上一版本的状态。
+                val kgStates = queue.filter { currentRoot != null && it.workspaceRootUuid == currentRoot && it.docId != null }
+                    .groupBy { it.docId!! }.mapNotNull { (id, tasks) ->
+                        val kgTask = tasks.maxWithOrNull(targetOrder) ?: return@mapNotNull null
+                        if (kgTask.kgStrategy == null) return@mapNotNull null
+                        id to when (kgTask.status) {
+                            "completed" -> KgStatus.COMPLETED
+                            "partial" -> KgStatus.PARTIAL
                             "failed", "interrupted" -> KgStatus.FAILED
                             else -> KgStatus.IN_PROGRESS
                         }
-                    }
+                    }.toMap()
                 _kgExtractionStates.value = kgStates
                 recomputeIndexingVisibility()
             }
@@ -413,6 +439,15 @@ class RagViewModel(
     fun retryLastFailedIndex() {
         if (_isRetryingLastFailedIndex.value) return
         val target = lastFailedIndexTarget ?: return
+        if (target is FailedIndexTarget.DocumentReference &&
+            app.vectorizationQueue.state.value.queue.any {
+                it.workspaceRootUuid == target.workspaceRootUuid && it.docId == target.docId &&
+                    it.error == com.promenar.nexara.data.rag.VectorizationQueue.KG_CONFIRMATION_REQUIRED
+            }
+        ) {
+            extractKG(target.docId)
+            return
+        }
         _isRetryingLastFailedIndex.value = true
         viewModelScope.launch {
             try {
@@ -504,6 +539,8 @@ class RagViewModel(
     private fun shouldKeepNotice(notice: UiStatusNotice?): Boolean = when (notice?.code) {
         IndexingNotice.CODE_FAILED,
         IndexingNotice.CODE_PARTIAL,
+        IndexingNotice.CODE_KG_PARTIAL,
+        IndexingNotice.CODE_KG_CONFIRMATION,
         IndexingNotice.CODE_WARNING,
         IndexingNotice.CODE_IMPORT_FAILED,
         IndexingNotice.CODE_MOVE_FAILED,
@@ -569,7 +606,7 @@ class RagViewModel(
     private fun loadConfig() {
         val rag = ragConfigPersistence.loadRagConfig()
         val retrieval = ragConfigPersistence.loadRetrievalConfig()
-        _config.value = RagConfiguration(
+        _config.value = com.promenar.nexara.data.rag.KgAdvancedSettings.load(RagConfiguration(
             enableMemory = retrieval.enableMemory,
             enableDocs = retrieval.enableDocs,
             enableKnowledgeGraph = retrieval.enableKnowledgeGraph,
@@ -607,10 +644,11 @@ class RagViewModel(
             },
             currentPreset = rag.currentPreset,
             rerankMaxPerCall = prefs.getInt("rerank_max_per_call", 100)
-        )
+        ), prefs)
     }
 
     private fun saveConfig(config: RagConfiguration) {
+        com.promenar.nexara.data.rag.KgAdvancedSettings.save(config, prefs)
         ragConfigPersistence.saveRagConfig(
             com.promenar.nexara.data.agent.AgentRagConfig(
                 docChunkSize = config.docChunkSize,
@@ -1163,12 +1201,49 @@ class RagViewModel(
 
     /** 手动抽取持久入队，由索引服务解析文件并原子切换图谱与完成标记。 */
     fun extractKG(uuid: String) {
-        viewModelScope.launch {
+        prepareKnowledgeGraphExtraction(uuid, null)
+    }
+
+    fun dismissKnowledgeGraphConfirmation() {
+        _kgExtractionConfirmation.value = null
+    }
+
+    fun confirmKnowledgeGraphExtraction() {
+        val confirmation = _kgExtractionConfirmation.value ?: return
+        _kgExtractionConfirmation.value = null
+        if (_workspaceRootUuid.value == confirmation.workspaceRootUuid) {
+            prepareKnowledgeGraphExtraction(confirmation.fileUuid, confirmation)
+        }
+    }
+
+    private fun prepareKnowledgeGraphExtraction(uuid: String, confirmation: DocumentKgConfirmation?) {
+        kgPreparationJob?.cancel()
+        _kgExtractionConfirmation.value = null
+        kgPreparationJob = viewModelScope.launch {
             try {
                 val rootUuid = _workspaceRootUuid.value ?: return@launch
                 val entry = workspaceRepository.getByUuid(rootUuid, uuid)
                     ?: error("知识图谱抽取文件不存在")
                 require(com.promenar.nexara.data.rag.DocumentReferenceExtractor.supports(entry)) { "文件类型或大小不支持知识图谱抽取" }
+                require(!entry.inRecycleBin && !entry.isDirectory) { "知识图谱来源文件已失效" }
+                val configuration = _config.value
+                val confirmed = confirmation != null && confirmation.workspaceRootUuid == rootUuid &&
+                    confirmation.contentHash == entry.hash && confirmation.targetEpoch == entry.updatedAt &&
+                    confirmation.configuration == configuration
+                val estimate = if (confirmed) confirmation!!.estimate else injectedKgEstimator?.invoke(entry)
+                    ?: withContext(Dispatchers.IO) {
+                        val text = com.promenar.nexara.data.rag.DocumentReferenceExtractor(
+                            configuration.docChunkSize.coerceAtLeast(400), configuration.chunkOverlap.coerceIn(0, 200),
+                        ).extract(entry).graphText
+                        app.graphExtractor.estimate(text)
+                    }
+                if (_workspaceRootUuid.value != rootUuid) return@launch
+                if (estimate.requiresConfirmation && !confirmed) {
+                    _kgExtractionConfirmation.value = DocumentKgConfirmation(
+                        rootUuid, uuid, entry.name, entry.hash, entry.updatedAt, estimate, configuration,
+                    )
+                    return@launch
+                }
                 _kgExtractionStates.value = _kgExtractionStates.value + (uuid to KgStatus.IN_PROGRESS)
                 app.vectorizationQueue.enqueueDocumentReference(
                     workspaceRootUuid = rootUuid,
@@ -1177,7 +1252,7 @@ class RagViewModel(
                     sourceMimeType = requireNotNull(entry.mimeType),
                     targetContentHash = entry.hash,
                     targetEpoch = entry.updatedAt,
-                    kgStrategy = "full",
+                    kgStrategy = if (confirmed) KgExtractionBudget.CONFIRMED_STRATEGY else "full",
                     skipVectorization = true,
                 )
             } catch (cancelled: CancellationException) {

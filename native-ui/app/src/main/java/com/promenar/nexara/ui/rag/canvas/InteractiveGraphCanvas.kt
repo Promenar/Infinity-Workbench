@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -42,11 +44,13 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.IntSize
 import com.promenar.nexara.ui.rag.GraphEdge
 import com.promenar.nexara.ui.testing.UiTags
 import androidx.compose.material3.MaterialTheme
@@ -60,14 +64,30 @@ fun InteractiveGraphCanvas(
     edges: List<GraphEdge>,
     summary: String = "",
     gestureSummary: String = "",
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    resetKey: Int = 0,
 ) {
     var scale by remember { mutableFloatStateOf(1.0f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    var hasUserTransform by remember { mutableStateOf(false) }
+
+    fun fitView() {
+        val fitted = fitGraphToViewport(simulator.nodesState.map { Offset(it.x, it.y) }, canvasSize.width.toFloat(), canvasSize.height.toFloat())
+        scale = fitted.scale
+        offset = fitted.offset
+    }
+    LaunchedEffect(simulator, simulator.datasetVersion, canvasSize, resetKey) {
+        hasUserTransform = false
+        fitView()
+    }
+    LaunchedEffect(simulator.isSimulating) {
+        if (!simulator.isSimulating && !hasUserTransform) fitView()
+    }
 
     val animationScope = rememberCoroutineScope()
     val motionScale = animationScope.coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
-    val decorativePulseEnabled = shouldAnimateDecorativePulse(motionScale)
+    val decorativePulseEnabled = shouldAnimateDecorativePulse(motionScale, simulator.isVisible, simulator.isSimulating)
     val particlePhase = if (decorativePulseEnabled) {
         val infiniteTransition = rememberInfiniteTransition(label = "particlePulse")
         val phase by infiniteTransition.animateFloat(
@@ -130,6 +150,7 @@ fun InteractiveGraphCanvas(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .onSizeChanged { canvasSize = it }
             .background(MaterialTheme.colorScheme.background)
             .semantics(mergeDescendants = true) {
                 contentDescription = listOf(summary, gestureSummary)
@@ -140,7 +161,7 @@ fun InteractiveGraphCanvas(
             // 🧠 部署极致无冲突手势控制器：单指高敏感拖曳节点/平移，多指无缝 focal-point 缩放
             .pointerInput(simulator) {
                 awaitEachGesture {
-                    var activeDraggedNode: SimNode? = null
+                    var activeDraggedNodeId: String? = null
                     var isPanning = false
 
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -154,7 +175,7 @@ fun InteractiveGraphCanvas(
                     }
 
                     if (clickedNode != null) {
-                        activeDraggedNode = clickedNode
+                        activeDraggedNodeId = clickedNode.id
                         simulator.startDragging(clickedNode.id)
                     } else {
                         isPanning = true
@@ -169,22 +190,25 @@ fun InteractiveGraphCanvas(
                                 val change = event.changes.first()
                                 if (change.pressed) {
                                     val dragAmount = change.position - change.previousPosition
-                                    val currentDrag = activeDraggedNode
+                                    val currentDrag = activeDraggedNodeId?.let { simulator.nodesById[it] }
                                     if (currentDrag != null) {
+                                        hasUserTransform = true
                                         change.consume()
                                         val newX = currentDrag.x + dragAmount.x / scale
                                         val newY = currentDrag.y + dragAmount.y / scale
                                         simulator.updateDragPosition(currentDrag.id, Offset(newX, newY))
                                     } else if (isPanning) {
+                                        hasUserTransform = true
                                         change.consume()
                                         offset += dragAmount
                                     }
                                 }
                             } else if (event.changes.size >= 2) {
                                 // 双指缩放平移，瞬间释放任何被拖拽节点的锁定
-                                activeDraggedNode?.let { simulator.stopDragging(it.id) }
-                                activeDraggedNode = null
+                                activeDraggedNodeId?.let { simulator.stopDragging(it) }
+                                activeDraggedNodeId = null
                                 isPanning = false
+                                hasUserTransform = true
 
                                 val centroid = event.calculateCentroid(useCurrent = true)
                                 val pan = event.calculatePan()
@@ -192,7 +216,7 @@ fun InteractiveGraphCanvas(
 
                                 if (zoom != 1f) {
                                     val oldScale = scale
-                                    scale = (scale * zoom).coerceIn(0.25f, 4.0f)
+                                    scale = (scale * zoom).coerceIn(0.001f, 4.0f)
                                     // 矩阵缩放聚焦质心计算
                                     offset = centroid - (centroid - offset) * (scale / oldScale)
                                 }
@@ -202,8 +226,8 @@ fun InteractiveGraphCanvas(
                         }
                     } while (event.changes.any { it.pressed })
 
-                    activeDraggedNode?.let { simulator.stopDragging(it.id) }
-                    activeDraggedNode = null
+                    activeDraggedNodeId?.let { simulator.stopDragging(it) }
+                    activeDraggedNodeId = null
                 }
             }
     ) {
@@ -212,7 +236,7 @@ fun InteractiveGraphCanvas(
             val canvasHeight = size.height
 
             // 1. 绘制科幻宇宙空间微光网格背景
-            val gridSpacing = 85f * scale
+            val gridSpacing = (85f * scale).coerceAtLeast(24f)
             val startX = offset.x % gridSpacing
             val startY = offset.y % gridSpacing
 
@@ -239,6 +263,7 @@ fun InteractiveGraphCanvas(
                 scale(scale, scale, pivot = Offset.Zero)
             }) {
                 val currentNodes = simulator.nodesState
+                val currentNodesById = simulator.nodesById
 
                 // 计算当前屏幕视口反向映射到虚拟物理坐标系下的可见边界（带 120 像素安全渲染缓冲区以防过渡生硬）
                 val padding = 120f
@@ -246,19 +271,16 @@ fun InteractiveGraphCanvas(
                 val viewRight = (canvasWidth - offset.x) / scale + padding
                 val viewTop = -offset.y / scale - padding
                 val viewBottom = (canvasHeight - offset.y) / scale + padding
+                val viewport = Rect(viewLeft, viewTop, viewRight, viewBottom)
 
                 // --- A. 绘制关系连线与脉冲粒子流动 ---
                 edges.forEach { edge ->
-                    val sourceNode = currentNodes.find { it.id == edge.sourceId }
-                    val targetNode = currentNodes.find { it.id == edge.targetId }
+                    val sourceNode = currentNodesById[edge.sourceId]
+                    val targetNode = currentNodesById[edge.targetId]
                     if (sourceNode != null && targetNode != null) {
-                        // 视口裁剪：如果关系线两端节点都在可见范围外，直接跳过绘制，零 GPU 损耗！
-                        val startInView = sourceNode.x in viewLeft..viewRight && sourceNode.y in viewTop..viewBottom
-                        val endInView = targetNode.x in viewLeft..viewRight && targetNode.y in viewTop..viewBottom
-                        if (!startInView && !endInView) return@forEach
-
                         val start = Offset(sourceNode.x, sourceNode.y)
                         val end = Offset(targetNode.x, targetNode.y)
+                        if (!segmentIntersectsRect(start, end, viewport)) return@forEach
 
                         // 柔和微透明关系底线
                         drawLine(
@@ -380,5 +402,8 @@ fun InteractiveGraphCanvas(
     }
 }
 
-internal fun shouldAnimateDecorativePulse(motionScaleFactor: Float): Boolean =
-    motionScaleFactor > 0f
+internal fun shouldAnimateDecorativePulse(
+    motionScaleFactor: Float,
+    isVisible: Boolean = true,
+    isSimulating: Boolean = true,
+): Boolean = motionScaleFactor > 0f && isVisible && isSimulating

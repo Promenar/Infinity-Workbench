@@ -34,6 +34,40 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     @Test
+    fun `KG高级设置按原始类型备份恢复且不迁移本机用量`() = runBlocking<Unit> {
+        val prefs = context.getSharedPreferences("rag_settings", 0)
+        val numbers = mapOf(
+            "kg_retrieval_hops" to 2, "kg_max_seeds" to 8, "kg_max_nodes" to 48,
+            "kg_max_edges" to 16, "kg_context_max_tokens" to 1024, "kg_jit_min_seeds" to 3,
+            "kg_max_calls" to 12, "kg_max_output_tokens" to 16384,
+            "kg_request_max_output_tokens" to 1024, "kg_max_duration_seconds" to 90,
+            "kg_large_document_confirm_calls" to 8,
+        )
+        prefs.edit().apply {
+            numbers.forEach { (key, value) -> putInt(key, value) }
+            putBoolean("kg_jit_fallback", false)
+        }.commit()
+        val usage = context.getSharedPreferences("kg_usage", 0)
+        usage.edit().putString("kg_usage_ledger_v1", "local-usage-fixture").commit()
+        try {
+            val snapshot = store().snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
+            assertThat(snapshot.entries.filter { it.namespace == "rag" }.map { it.key })
+                .containsAtLeastElementsIn(numbers.keys + "kg_jit_fallback")
+            assertThat(snapshot.entries.none { it.namespace == "kg_usage" }).isTrue()
+            prefs.edit().clear().commit()
+            val before = store().snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
+            store().prepare("tx-kg-settings", before, snapshot)
+            store().commitPrepared("tx-kg-settings")
+            numbers.forEach { (key, value) -> assertThat(prefs.getInt(key, -1)).isEqualTo(value) }
+            assertThat(prefs.contains("kg_jit_fallback")).isTrue()
+            assertThat(prefs.getBoolean("kg_jit_fallback", true)).isFalse()
+            assertThat(usage.getString("kg_usage_ledger_v1", null)).isEqualTo("local-usage-fixture")
+        } finally {
+            usage.edit().clear().commit()
+        }
+    }
+
+    @Test
     fun `不限轮次与任务预算可备份恢复且不迁移自动执行同意`() = runBlocking {
         val prefs = context.getSharedPreferences("nexara_settings", 0)
         prefs.edit().putInt("loop_limit", 0).putInt("task_token_limit", 20_000)

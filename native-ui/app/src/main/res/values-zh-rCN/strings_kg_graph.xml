@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="kg_graph_displayed_count">已显示 %1$d / %2$d 个实体</string>
+    <string name="kg_graph_search_entities">搜索实体名称</string>
+    <string name="kg_graph_searching">正在搜索实体…</string>
+    <string name="kg_graph_search_empty">未找到匹配实体</string>
+    <string name="kg_graph_search_failed">实体搜索失败，请修改搜索词重试</string>
+    <string name="kg_graph_expand_neighbors">展开邻居</string>
+    <string name="kg_graph_expand_entity">展开“%1$s”的邻居</string>
+    <string name="kg_graph_reset_view">重置视图</string>
+    <string name="kg_graph_display_limit">已达到显示上限，请刷新或切换范围后探索其它实体</string>
+</resources>

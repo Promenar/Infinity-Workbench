@@ -1,5 +1,7 @@
 package com.promenar.nexara.data.rag
 
+private val noKgProgress: suspend (KgExtractionProgress) -> Unit = {}
+
 sealed interface FileIndexEvent {
     val workspaceRootUuid: String
     val fileUuid: String
@@ -14,6 +16,7 @@ sealed interface FileIndexEvent {
         val skipVectorization: Boolean = false,
         val kgStrategy: String? = null,
         val useConfiguredKgStrategy: Boolean = true,
+        val onKgProgress: suspend (KgExtractionProgress) -> Unit = noKgProgress,
     ) : FileIndexEvent {
         init {
             require(targetEpoch > 0) { "索引目标 epoch 必须大于 0" }

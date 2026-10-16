@@ -14,7 +14,7 @@ class RagConfigPersistence(
     fun loadFullConfig(): RagConfiguration {
         val retrieval = loadRetrievalConfig()
         val rag = loadRagConfig()
-        return RagConfiguration(
+        return com.promenar.nexara.data.rag.KgAdvancedSettings.load(RagConfiguration(
             enableMemory = retrieval.enableMemory,
             enableDocs = retrieval.enableDocs,
             enableKnowledgeGraph = retrieval.enableKnowledgeGraph,
@@ -46,7 +46,7 @@ class RagConfigPersistence(
             jitMaxChunks = retrieval.jitMaxChunks,
             summaryTemplate = rag.summaryTemplate,
             currentPreset = rag.currentPreset
-        )
+        ), prefs)
     }
     fun loadRagConfig(): AgentRagConfig {
         return AgentRagConfig(

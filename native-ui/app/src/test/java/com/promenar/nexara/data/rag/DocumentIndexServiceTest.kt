@@ -58,6 +58,32 @@ class DocumentIndexServiceTest {
     }
 
     @Test
+    fun `候选清理前图谱与任务完整终态已在同事务提交`() = runTest {
+        seedFileAndOldArtifacts()
+        var statusAtCleanup: String? = null
+        val service = RoomDocumentIndexService(database) {
+            candidate().copy(graphExtracted = true, kgProgress = KgExtractionProgress(1, 1), onGraphCommitted = {
+                statusAtCleanup = database.vectorizationTaskDao().getById(TASK)?.status
+            })
+        }
+
+        val result = service.rebuild(changed())
+
+        assertThat(result).isInstanceOf(DocumentIndexResult.Rebuilt::class.java)
+        assertThat(statusAtCleanup).isEqualTo("completed")
+        val edge = database.kgEdgeDao().getByDocId(FILE).single()
+        assertThat(database.kgNodeDao().getById(edge.sourceId)!!.name).isEqualTo("new-source")
+        assertThat(database.kgNodeDao().getById(edge.targetId)!!.name).isEqualTo("new-target")
+        assertThat(edge.normalizedRelation).isEqualTo("rel")
+        val evidence = database.kgEvidenceDao().getForEdges(listOf(edge.id)).single()
+        assertThat(evidence.sourceType).isEqualTo("document")
+        assertThat(evidence.docId).isEqualTo(FILE)
+        assertThat(evidence.contentHash).isEqualTo(HASH)
+        assertThat(evidence.taskId).isEqualTo(TASK)
+        assertThat(evidence.workspaceDocument).isTrue()
+    }
+
+    @Test
     fun `删除关闭admission后迟到候选不能提交派生数据`() = runTest {
         seedFileAndOldArtifacts()
         val gate = com.promenar.nexara.data.session.SessionExecutionGate()
@@ -438,11 +464,14 @@ class DocumentIndexServiceTest {
             ))
             val embedding = mockk<EmbeddingClient>()
             coEvery { embedding.embedDocuments(any()) } returns EmbeddingResult(listOf(floatArrayOf(1f, 0f)))
-            val graphBuilder = mockk<KnowledgeGraphCandidateBuilder>()
-            coEvery { graphBuilder.build(any(), FILE, any()) } returns ExtractionResult(
-                nodes = listOf(ExtractedNode("Alice", "person"), ExtractedNode("Bob", "person")),
-                edges = listOf(ExtractedEdge("Alice", "Bob", "knows")),
-            )
+            val graphRequests = mutableListOf<Triple<String, String, String>>()
+            val graphBuilder = KnowledgeGraphCandidateBuilder { text, fileUuid, contentHash ->
+                graphRequests += Triple(text, fileUuid, contentHash)
+                ExtractionResult(
+                    nodes = listOf(ExtractedNode("Alice", "person"), ExtractedNode("Bob", "person")),
+                    edges = listOf(ExtractedEdge("Alice", "Bob", "knows")),
+                )
+            }
             val builder = WorkspaceDocumentIndexCandidateBuilder(
                 database.fileEntryDao(),
                 embedding,
@@ -452,7 +481,7 @@ class DocumentIndexServiceTest {
 
             val candidate = builder.build(FileIndexEvent.Changed(ROOT, FILE, hash, current.updatedAt))
 
-            coVerify(exactly = 1) { graphBuilder.build("Alice knows Bob", FILE, hash) }
+            assertThat(graphRequests).containsExactly(Triple("Alice knows Bob", FILE, hash))
             assertThat(candidate.nodes.map { it.name }).containsExactly("Alice", "Bob")
             assertThat(candidate.edges.single().normalizedRelation).isEqualTo("knows")
             assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_EDGE)

@@ -13,8 +13,21 @@ import io.mockk.mockk
 import org.junit.Test
 
 class PreparedPromptBudgetGateTest {
+    @Test fun `图片传输编码不作为文本token且URL与base64预留一致`() {
+        val encoded = "A".repeat(128_000)
+        val embedded = prompt("解释图片").copy(messages = listOf(ProtocolMessage(role = "user", content = "解释图片",
+            imageUrls = listOf(com.promenar.nexara.data.remote.protocol.ImageInput(mimeType = "image/jpeg", base64 = encoded,
+                url = "data:image/jpeg;base64,$encoded")))))
+        val remote = embedded.copy(messages = listOf(embedded.messages.single().copy(imageUrls = listOf(
+            com.promenar.nexara.data.remote.protocol.ImageInput(mimeType = "image/jpeg", url = "https://example.invalid/image.jpg")))))
+        val inlineDecision = PreparedPromptBudgetGate.evaluate(session(), embedded, settings(128_000), false)
+        val remoteDecision = PreparedPromptBudgetGate.evaluate(session(), remote, settings(128_000), false)
+        assertThat(inlineDecision).isInstanceOf(ContextBudgetDecision.Allowed::class.java)
+        assertThat(inlineDecision).isEqualTo(remoteDecision)
+    }
+
     @Test
-    fun `无完整文档时不改变既有请求行为`() {
+    fun `无完整文档也计量全部提示词来源`() {
         val decision = PreparedPromptBudgetGate.evaluate(
             session(),
             prompt("普通消息"),
@@ -22,7 +35,14 @@ class PreparedPromptBudgetGateTest {
             false,
         )
 
-        assertThat(decision).isNull()
+        assertThat(decision).isInstanceOf(ContextBudgetDecision.Allowed::class.java)
+    }
+
+    @Test fun `无完整文档时超量图谱与搜索上下文也阻止发送`() {
+        val decision = PreparedPromptBudgetGate.evaluate(
+            session(), prompt("图谱和搜索资料".repeat(4000)), settings(8_000), false,
+        )
+        assertThat(decision).isInstanceOf(ContextBudgetDecision.Blocked::class.java)
     }
 
     @Test

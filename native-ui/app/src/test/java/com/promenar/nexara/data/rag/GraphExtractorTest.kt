@@ -28,6 +28,7 @@ class GraphExtractorTest {
         tempDir = Files.createTempDirectory("nexara_test_cache").toFile()
         mockApp = mockk(relaxed = true)
         every { mockApp.cacheDir } returns tempDir
+        every { mockApp.filesDir } returns File(tempDir, "durable").apply { mkdirs() }
 
         // 反射设置 NexaraApplication.instance
         val field = NexaraApplication::class.java.getDeclaredField("instance")
@@ -183,5 +184,57 @@ class GraphExtractorTest {
         coVerify(exactly = 0) { graphStore.clearGraphForDoc(any()) }
         coVerify(exactly = 0) { graphStore.upsertNode(any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { graphStore.createEdge(any(), any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `删除可丢弃分块缓存不会返还同文档已发生的调用预算`() = runTest {
+        var requests = 0
+        coEvery { protocol.sendPromptSync(any()) } answers {
+            requests++
+            PromptResponse("""{"nodes":[],"edges":[]}""", usage = com.promenar.nexara.data.remote.protocol.ProtocolUsage(2, 1))
+        }
+        val extractor = GraphExtractor(testKgClient(protocol), graphStore, "owner::model", chunkSize = 10, chunkOverlap = 0,
+            dispatcher = kotlinx.coroutines.test.StandardTestDispatcher(testScheduler), budget = KgExtractionBudget(maxCalls = 1))
+        extractor.extractCandidate("a".repeat(20), "cache-eviction-document")
+        File(tempDir, "kg_extraction_checkpoint").deleteRecursively()
+
+        val result = extractor.extractCandidate("a".repeat(20), "cache-eviction-document")
+
+        assertThat(requests).isEqualTo(1)
+        assertThat(result.progress!!.reason).isEqualTo(KgExtractionStopReason.CALLS)
+        assertThat(result.progress!!.processedChunks).isEqualTo(0)
+    }
+
+    @Test
+    fun `预算账本损坏时拒绝重新消费未知预算`() = runTest {
+        var requests = 0
+        coEvery { protocol.sendPromptSync(any()) } answers {
+            requests++
+            PromptResponse("""{"nodes":[],"edges":[]}""", usage = com.promenar.nexara.data.remote.protocol.ProtocolUsage(2, 1))
+        }
+        val extractor = GraphExtractor(testKgClient(protocol), graphStore, "owner::model", chunkSize = 10, chunkOverlap = 0,
+            dispatcher = kotlinx.coroutines.test.StandardTestDispatcher(testScheduler), budget = KgExtractionBudget(maxCalls = 1))
+        extractor.extractCandidate("a".repeat(20), "corrupt-budget-document")
+        File(tempDir, "durable").walkTopDown().first { it.name.startsWith("budget_") }.writeText("{")
+        File(tempDir, "kg_extraction_checkpoint").deleteRecursively()
+
+        val failure = runCatching { extractor.extractCandidate("a".repeat(20), "corrupt-budget-document") }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(requests).isEqualTo(1)
+    }
+
+    @Test
+    fun `已提交候选的精确清理保留其它文档版本账本`() {
+        val store = GraphExtractionCheckpoints(File(tempDir, "chunks"), File(tempDir, "budgets"))
+        val old = GraphCheckpointIdentity("old", "text", "owner::model", "prompt", 10, 0)
+        val current = old.copy(contentHash = "current")
+        store.saveBudget("document", old, GraphExtractionBudgetState(calls = 1))
+        store.saveBudget("document", current, GraphExtractionBudgetState(calls = 2))
+
+        store.clear("document", old)
+
+        assertThat(store.loadBudget("document", old)).isNull()
+        assertThat(store.loadBudget("document", current)!!.calls).isEqualTo(2)
     }
 }

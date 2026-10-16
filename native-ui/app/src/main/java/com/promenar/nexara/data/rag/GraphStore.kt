@@ -8,7 +8,13 @@ import kotlinx.serialization.json.*
 import java.util.UUID
 
 /** 实体全局共享，所有来源归属均由证据表达；业务唯一约束与 Room 事务共同保证并发幂等。 */
-class GraphStore(private val database: NexaraDatabase) {
+class GraphStore(internal val database: NexaraDatabase) {
+    suspend fun getGraphSubgraph(request: GraphSubgraphRequest = GraphSubgraphRequest()): GraphSubgraph =
+        GraphSubgraphStore(database).load(request)
+
+    suspend fun searchGraphEntities(request: GraphEntitySearchRequest): List<KgNode> =
+        GraphSubgraphStore(database).search(request)
+
     private val nodes get() = database.kgNodeDao()
     private val edges get() = database.kgEdgeDao()
     private val evidence get() = database.kgEvidenceDao()

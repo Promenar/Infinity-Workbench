@@ -228,7 +228,7 @@ class P0RuntimeIntegrationTest {
         val original = "旧工具结果".repeat(3000)
         val fixture = fixture(priorToolResults = listOf(original, "最近的结果"))
         fixture.preferences.edit()
-            .putInt("model_info_local::p0-integration-model_context", 2048)
+            .putInt("model_info_local::p0-integration-model_context", 4096)
             .putInt("tool_context_keep_rounds", 1)
             .putInt("task_token_limit", 5000)
             .putString("preset_summary_model", "local::p0-integration-model")
@@ -255,6 +255,10 @@ class P0RuntimeIntegrationTest {
         assertThat(json.decodeFromString<TokenUsage>(rawTokens).summaryTotal).isEqualTo(5000)
         assertThat(fixture.prompts).hasSize(1)
         assertThat(fixture.prompts.single().toolChoice).isEqualTo(ProtocolToolChoice.NONE)
+        assertThat(PreparedPromptBudgetGate.evaluate(
+            fixture.store.getSession("session")!!, fixture.prompts.single(), fixture.preferences, false,
+            "local::p0-integration-model",
+        )).isInstanceOf(com.promenar.nexara.data.document.ContextBudgetDecision.Allowed::class.java)
         val compressed = fixture.prompts.single().messages.first { it.role == "tool" }.content
         assertThat(compressed).contains("Truncated tool result")
         assertThat(compressed.length).isLessThan(original.length)

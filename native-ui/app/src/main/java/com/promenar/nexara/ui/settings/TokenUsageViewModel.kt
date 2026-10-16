@@ -8,6 +8,7 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.model.findModelPricing
 import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.domain.repository.DailyTokenStats
+import com.promenar.nexara.domain.repository.CategoryTokenStats
 import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.domain.repository.SessionTokenUsage
 import com.promenar.nexara.domain.repository.TokenUsageAggregate
@@ -38,6 +39,7 @@ data class TokenStatsState(
     val modelBreakdown: List<ModelCostInfo> = emptyList(),
     val topSessions: List<SessionTokenUsage> = emptyList(),
     val dailyTrend: List<DailyTokenStats> = emptyList(),
+    val categoryBreakdown: List<CategoryTokenStats> = emptyList(),
     val operation: TokenStatsOperation = TokenStatsOperation.READY,
     val error: TokenStatsErrorCode? = null,
     val showClearConfirm: Boolean = false
@@ -67,6 +69,7 @@ class TokenUsageViewModel(
                 val byModel = tokenStatsRepository.getUsageByModel()
                 val topSessions = tokenStatsRepository.getTopSessions(10)
                 val dailyTrend = tokenStatsRepository.getDailyTrend(7)
+                val categories = tokenStatsRepository.getUsageByCategory()
 
                 var globalCost = 0.0
                 val modelBreakdown = byModel.map { stats ->
@@ -95,6 +98,7 @@ class TokenUsageViewModel(
                     modelBreakdown = modelBreakdown,
                     topSessions = topSessions,
                     dailyTrend = dailyTrend,
+                    categoryBreakdown = categories,
                     operation = TokenStatsOperation.READY,
                 )
             } catch (cancelled: CancellationException) {
