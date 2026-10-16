@@ -56,6 +56,12 @@
         </activity>
 
         <service
+            android:name=".data.script.ScriptRuntimeService"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":script_runtime" />
+
+        <service
             android:name=".background.generation.GenerationForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />

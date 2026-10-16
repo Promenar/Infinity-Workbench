@@ -1,0 +1,90 @@
+package com.promenar.nexara.domain.script
+
+import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.script.ScriptHttpClient
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
+import kotlinx.coroutines.*
+import kotlinx.serialization.json.*
+import org.junit.jupiter.api.Test
+
+class ScriptHttpClientTest {
+    private fun args(url: String) = buildJsonObject { put("url", url) }
+
+    @Test fun `真实HTTP读取使用固定DNS且返回状态正文与请求头`() = runBlocking {
+        Fixture { socket -> respond(socket, "hello") }.use { fixture ->
+            var resolutions = 0
+            val client = ScriptHttpClient({ setOf("lan.test") }, { true }) {
+                assertThat(it).isEqualTo("lan.test")
+                resolutions++
+                arrayOf(InetAddress.getByName("127.0.0.1"))
+            }
+            val response = client.fetch(args("http://lan.test:${fixture.port}/test"), ScriptNetworkBudget())
+            assertThat(response["status"]).isEqualTo(JsonPrimitive(200))
+            assertThat(response["body"]).isEqualTo(JsonPrimitive("hello"))
+            assertThat(resolutions).isEqualTo(1)
+        }
+    }
+
+    @Test fun `重定向重新验证私有地址且拒绝全局明文禁令`() = runBlocking {
+        Fixture { socket -> socket.getOutputStream().apply { write("HTTP/1.1 302 Found\r\nLocation: http://10.0.0.1/secret\r\nContent-Length: 0\r\n\r\n".toByteArray()); flush() } }.use { fixture ->
+            val client = ScriptHttpClient({ setOf("127.0.0.1") }, { true }) { arrayOf(InetAddress.getByName(it)) }
+            try { client.fetch(args("http://127.0.0.1:${fixture.port}"), ScriptNetworkBudget()); error("应拒绝重定向") }
+            catch (failure: ScriptFailure) { assertThat(failure.code).isEqualTo("NETWORK_DENIED") }
+            val blocked = ScriptHttpClient({ setOf("127.0.0.1") }, { false }) { arrayOf(InetAddress.getByName(it)) }
+            try { blocked.fetch(args("http://127.0.0.1:${fixture.port}"), ScriptNetworkBudget()); error("应拒绝明文") }
+            catch (failure: ScriptFailure) { assertThat(failure.message).contains("明文") }
+        }
+    }
+
+    @Test fun `超大响应流在有界读取后拒绝`() = runBlocking {
+        Fixture { socket -> respond(socket, "x".repeat(65537)) }.use { fixture ->
+            val client = ScriptHttpClient({ setOf("127.0.0.1") }, { true }) { arrayOf(InetAddress.getByName(it)) }
+            try { client.fetch(args("http://127.0.0.1:${fixture.port}"), ScriptNetworkBudget()); error("应超限") }
+            catch (failure: ScriptFailure) { assertThat(failure.code).isEqualTo("NETWORK_LIMIT") }
+        }
+    }
+
+    @Test fun `取消关闭阻塞响应体不等待网络超时`() = runBlocking {
+        val headersSent = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        Fixture { socket ->
+            socket.getOutputStream().apply { write("HTTP/1.1 200 OK\r\nContent-Length: 1024\r\n\r\n".toByteArray()); flush() }
+            headersSent.countDown()
+            release.await(5, TimeUnit.SECONDS)
+        }.use { fixture ->
+            val client = ScriptHttpClient({ setOf("127.0.0.1") }, { true }) { arrayOf(InetAddress.getByName(it)) }
+            val pending = launch { client.fetch(args("http://127.0.0.1:${fixture.port}"), ScriptNetworkBudget()) }
+            try {
+                withContext(Dispatchers.IO) { check(headersSent.await(5, TimeUnit.SECONDS)) }
+                withTimeout(2000) { pending.cancelAndJoin() }
+                assertThat(pending.isCancelled).isTrue()
+            } finally { release.countDown() }
+        }
+    }
+
+    private fun respond(socket: Socket, text: String) {
+        val bytes = text.toByteArray()
+        socket.getOutputStream().apply {
+            write("HTTP/1.1 200 OK\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
+            write(bytes); flush()
+        }
+    }
+
+    private class Fixture(respond: (Socket) -> Unit) : AutoCloseable {
+        private val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).apply { soTimeout = 5000 }
+        val port get() = server.localPort
+        private val worker = thread(isDaemon = true, name = "script-http-test") {
+            runCatching { server.accept().use { socket ->
+                val input = socket.getInputStream().bufferedReader()
+                while (input.readLine()?.takeIf(String::isNotEmpty) != null) { }
+                respond(socket)
+            } }
+        }
+        override fun close() { server.close(); worker.join(1000) }
+    }
+}

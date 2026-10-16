@@ -171,7 +171,7 @@ class WorkspaceTextContentPolicy {
         private val TEXT_EXTENSIONS = setOf(
             "txt", "md", "markdown", "json", "jsonl", "xml", "yaml", "yml", "toml",
             "csv", "tsv", "log", "ini", "conf", "properties", "kt", "kts", "java",
-            "js", "jsx", "ts", "tsx", "css", "scss", "html", "htm", "py", "rb",
+            "js", "mjs", "jsx", "ts", "tsx", "css", "scss", "html", "htm", "py", "rb",
             "go", "rs", "c", "h", "cpp", "hpp", "swift", "sh", "zsh", "fish", "sql",
         )
         private val TEXT_APPLICATION_MIME_TYPES = setOf(

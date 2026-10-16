@@ -2,7 +2,9 @@
 
 `distribution` 为 `play` 与 `sideload`。两者共享代码与 `com.promenar.nexara.native`，Debug、DeviceTest、MinifiedTest 的后缀分别为 `.debug`、`.deviceTest`、`.minifiedTest`。同构建类型的两个渠道会覆盖彼此，不能并列安装。`DistributionCapabilities` 描述制品能力，不能代表系统已经授予权限。
 
-只有 `src/sideload/AndroidManifest.xml` 声明 `MANAGE_EXTERNAL_STORAGE`。所有文件访问业务尚未实现。设置页“导出诊断”生成的 JSONL 首行 `app.build` 包含 `distribution`、`allFilesAccessAvailable` 与版本。
+只有 `src/sideload/AndroidManifest.xml` 声明 `MANAGE_EXTERNAL_STORAGE`。侧载渠道的共享存储真实路径后端需取得系统“所有文件访问”授权；Play 渠道仅使用 SAF。设置页“导出诊断”生成的 JSONL 首行 `app.build` 包含 `distribution`、`allFilesAccessAvailable` 与版本。
+
+构建插件使用 Kotlin 2.4.10 编译器、Compose 与序列化插件，应用源码保留 2.2 语言级别；协程运行和测试库为 1.11.0。QuickJS 1.0.15 的 Android JNI 在两个渠道共用，JVM 单测仅在运行时替换为桌面 JNI。AAR 自带 JNI 消费端保留规则；项目不使用脚本对象反射绑定。隔离服务设备回归类为 `com.promenar.nexara.data.script.ScriptRuntimeDeviceTest`，设备测试默认 ABI 与 `nexara.deviceE2eAbi` 配置一致；ARM64 设备构建需显式传 `-Pnexara.deviceE2eAbi=arm64-v8a`。
 
 在 `native-ui/` 串行执行：
 

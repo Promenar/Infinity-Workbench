@@ -1,132 +1,60 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
-import android.content.Context
-import android.webkit.WebView
 import com.promenar.nexara.data.model.ToolResult
+import com.promenar.nexara.data.script.ScriptToolRunner
+import com.promenar.nexara.domain.script.*
+import com.promenar.nexara.domain.storage.ExternalFolderPaths
 import com.promenar.nexara.domain.tool.ToolRisk
-import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
-import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlin.coroutines.resume
+import com.promenar.nexara.ui.chat.manager.registry.*
 import kotlinx.coroutines.CancellationException
-import kotlinx.serialization.json.JsonObject
-import com.promenar.nexara.ui.chat.manager.registry.stringArgument
+import kotlinx.serialization.json.*
 
-class ExecJsSkill(
-    private val appContext: Context,
-    private val evaluator: suspend (String) -> String = { wrappedCode ->
-        withContext(Dispatchers.Main) {
-            suspendCancellableCoroutine { cont ->
-                val wv = WebView(appContext).also {
-                    it.settings.javaScriptEnabled = true
-                    it.settings.allowFileAccess = false
-                    it.settings.allowContentAccess = false
-                    it.settings.blockNetworkLoads = true
-                    it.settings.loadsImagesAutomatically = false
-                    it.settings.domStorageEnabled = false
-                    it.removeJavascriptInterface("searchBoxJavaBridge_")
-                    it.removeJavascriptInterface("accessibility")
-                    it.removeJavascriptInterface("accessibilityTraversal")
-                }
-                wv.evaluateJavascript(wrappedCode) { result ->
-                    cont.resume(result ?: "null")
-                    wv.destroy()
-                }
-                cont.invokeOnCancellation { wv.destroy() }
-            }
-        }
-    },
-) : SkillDefinition {
+class ExecJsSkill(private val runner: ScriptToolRunner) : SkillDefinition {
     override val id = "exec_js"
-    override val name = "exec_js"
-    override val description =
-        "Execute JavaScript code in a sandbox and return the result. " +
-        "Use for calculations, string transformations, JSON processing, " +
-        "or logic that requires precise execution. " +
-        "No file system or network access. " +
-        "Assign the final value to a variable named 'result'."
+    override val name = id
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SCRIPT
+    override val description = "在隔离进程执行 JavaScript，返回 result 变量（可为 Promise），未定义时返回最后表达式。支持 console、fs 工作区能力和 fetch；联网必须显式 allow_network=true。默认 30 秒，上限 300 秒。"
+    override val parametersSchema = """{"type":"object","properties":{"code":{"type":"string","description":"JavaScript 代码，返回 result 变量或最后表达式"},"allow_network":{"type":"boolean","default":false},"timeout_seconds":{"type":"integer","minimum":1,"maximum":300,"default":30}},"required":["code"]}"""
 
-    override val parametersSchema = """{
-        "type":"object",
-        "properties":{
-            "code":{"type":"string","description":"JavaScript code. Return value via 'result = ...;'"}
-        },
-        "required":["code"]
-    }""".trimIndent()
-
-    private val json = Json { ignoreUnknownKeys = true }
-
-    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
-        val code = args.stringArgument("code")
-            ?: return ToolResult("err", "Missing required parameter: code", "error")
-
-        if (code.length > 50000) {
-            return ToolResult("err", "Code too long (max 50000 chars)", "error")
-        }
-
-        return try {
-            val wrappedCode = buildString {
-                append("(function(){try{var result;")
-                append(code)
-                append(";return JSON.stringify({ok:true,value:result});")
-                append("}catch(e){return JSON.stringify({ok:false,error:e.toString()});}})()")
-            }
-
-            val output = withTimeoutOrNull(5000L) {
-                evaluator(wrappedCode)
-            }
-
-            if (output == null) {
-                return ToolResult(
-                    "exec_js_${System.currentTimeMillis()}",
-                    "Execution timed out (>5s)", "error"
-                )
-            }
-
-            val parsed = json.decodeFromString<JsResult>(decodeEvaluateJavascriptResult(output))
-            if (parsed.ok) {
-                ToolResult(
-                    "exec_js_${System.currentTimeMillis()}",
-                    "Result: ${parsed.value}", "success"
-                )
-            } else {
-                ToolResult(
-                    "exec_js_${System.currentTimeMillis()}",
-                    "JS Error: ${parsed.error}", "error"
-                )
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (e: Exception) {
-            ToolResult(
-                "exec_js_${System.currentTimeMillis()}",
-                "Execution failed: ${e.message}", "error"
-            )
-        }
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = scriptToolResult(id) {
+        val code = args.stringArgument("code") ?: throw ScriptFailure("INVALID_ARGUMENT", "缺少必填参数 code")
+        if (code.length > ScriptLimits.MAX_CODE_CHARS) throw ScriptFailure("INVALID_ARGUMENT", "代码超过 50,000 字符上限")
+        runner.execute(scriptRequest(args, code), context)
     }
-
-    /**
-     * WebView.evaluateJavascript 以 JSON 编码返回值；包装函数返回的是 JSON 字符串，
-     * 需先按 JSON 字符串完整解码（含 `\\`、`\uXXXX` 等转义），再解析其中的结果对象。
-     */
-    internal fun decodeEvaluateJavascriptResult(output: String): String {
-        val element = json.parseToJsonElement(output)
-        return if (element is JsonPrimitive && element.isString) element.content else element.toString()
-    }
-
-    @Serializable
-    private data class JsResult(
-        val ok: Boolean,
-        val value: JsonElement? = null,
-        val error: String? = null
-    )
 }
+
+class RunScriptSkill(private val runner: ScriptToolRunner) : SkillDefinition {
+    override val id = "run_script"
+    override val name = id
+    override val mcpServerId: String? = null
+    override val risk = ToolRisk.SCRIPT
+    override val description = "执行工作区或 /mnt/<别名>/ 中的 .js/.mjs 文件。args 为参数数组；相对模块只允许在入口文件所在目录内导入。模块通过 result 变量返回值。fs.read 返回 content/sha256，覆盖写入需 expected_sha256。联网默认关闭。"
+    override val parametersSchema = """{"type":"object","properties":{"path":{"type":"string"},"args":{"type":"array"},"allow_network":{"type":"boolean","default":false},"timeout_seconds":{"type":"integer","minimum":1,"maximum":300,"default":30}},"required":["path"]}"""
+
+    override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = scriptToolResult(id) {
+        val path = args.stringArgument("path")?.takeIf(String::isNotBlank) ?: throw ScriptFailure("INVALID_ARGUMENT", "缺少必填参数 path")
+        val normalized = ExternalFolderPaths.normalize(path)
+        if (!normalized.endsWith(".js") && !normalized.endsWith(".mjs")) throw ScriptFailure("INVALID_ARGUMENT", "只支持 .js/.mjs 文件")
+        val arguments = args["args"]?.let { it as? JsonArray ?: throw ScriptFailure("INVALID_ARGUMENT", "args 必须为数组") } ?: JsonArray(emptyList())
+        runner.execute(scriptRequest(args, "").copy(entryPath = normalized, args = arguments), context)
+    }
+}
+
+private fun scriptRequest(args: JsonObject, code: String): ScriptRequest {
+    val timeout = args["timeout_seconds"]?.let { (it as? JsonPrimitive)?.takeUnless { p -> p.isString }?.intOrNull ?: throw ScriptFailure("INVALID_ARGUMENT", "timeout_seconds 必须为整数") } ?: 30
+    val network = args["allow_network"]?.let { (it as? JsonPrimitive)?.takeUnless { p -> p.isString }?.booleanOrNull ?: throw ScriptFailure("INVALID_ARGUMENT", "allow_network 必须为布尔值") } ?: false
+    if (timeout !in 1..ScriptLimits.MAX_TIMEOUT_SECONDS) throw ScriptFailure("INVALID_ARGUMENT", "timeout_seconds 必须在 1–300 秒之间")
+    return ScriptRequest(code, allowNetwork = network, timeoutSeconds = timeout)
+}
+
+private suspend fun scriptToolResult(id: String, block: suspend () -> ScriptResult): ToolResult = try {
+    val result = block()
+    ToolResult("${id}_${System.currentTimeMillis()}", buildString {
+        if (result.errorCode == null) append("Result: ${result.value}")
+        else append("${result.errorCode}：${result.error}")
+        result.logs.forEach { append("\n[${it.level}] ${it.text}") }
+        if (result.logsTruncated) append("\n日志已截断")
+    }, if (result.errorCode == null) "success" else "error")
+} catch (cancelled: CancellationException) { throw cancelled }
+catch (failure: Exception) { ToolResult("${id}_error", "${(failure as? ScriptFailure)?.code ?: "INVALID_ARGUMENT"}：${failure.message?.take(512) ?: "参数无效"}", "error") }

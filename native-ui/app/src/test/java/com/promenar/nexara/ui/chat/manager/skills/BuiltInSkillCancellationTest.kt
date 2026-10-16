@@ -55,7 +55,7 @@ class BuiltInSkillCancellationTest {
 
         val cases = listOf(
             FileSearchSkill(workspaceRepository) to skillArgs("query" to "needle"),
-            ExecJsSkill(appContext) { throw cancellation } to skillArgs("code" to "result = 1"),
+            ExecJsSkill { _, _ -> throw cancellation } to skillArgs("code" to "result = 1"),
             ImageGenerationSkill(appContext, providerManager) { _, _, _ -> throw cancellation } to
                 skillArgs("prompt" to "test image"),
         )

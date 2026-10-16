@@ -261,6 +261,19 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val toolOutputStore by lazy {
         com.promenar.nexara.data.repository.ToolOutputStore(java.io.File(noBackupFilesDir, "tool-outputs"))
     }
+    val scriptSettings by lazy {
+        com.promenar.nexara.data.script.ScriptSettings(getSharedPreferences("nexara_settings", MODE_PRIVATE))
+    }
+    val scriptFileApprovals by lazy { com.promenar.nexara.data.script.ScriptFileApprovalBroker() }
+    private val scriptRuntime by lazy {
+        com.promenar.nexara.domain.script.SupervisedScriptRuntime { session ->
+            com.promenar.nexara.data.script.AndroidScriptProcess.bind(this, session)
+        }
+    }
+    private val scriptToolRunner by lazy {
+        com.promenar.nexara.data.script.AndroidScriptToolRunner(scriptRuntime, workspaceRepository, externalFolderManager,
+            fileOperationRepository, pendingDocumentIndexCoordinator, scriptFileApprovals, sessionToolGrantStore, scriptSettings)
+    }
     val generationInteractions by lazy { com.promenar.nexara.data.generation.GenerationInteractionStore() }
 
     suspend fun verifyTargetGrant(
@@ -617,7 +630,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             register(mounted(CreateDirectorySkill(workspaceRepository)))
             register(mounted(MoveFileSkill(workspaceRepository, pendingDocumentIndexCoordinator)))
             register(mounted(DeleteFileSkill(workspaceRepository)))
-            register(ExecJsSkill(this@NexaraApplication))
+            register(ExecJsSkill(scriptToolRunner))
+            register(com.promenar.nexara.ui.chat.manager.skills.RunScriptSkill(scriptToolRunner))
             register(InitializePlanSkill(taskRepository))
             register(UpdatePlanSkill(taskRepository))
             register(GetPlanSkill(taskRepository))
@@ -700,12 +714,17 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     override fun attachBaseContext(base: Context) {
+        if (android.os.Process.isIsolated()) {
+            super.attachBaseContext(base)
+            return
+        }
         val lang = LocaleHelper.getSavedLanguage(base)
         super.attachBaseContext(LocaleHelper.applyLanguage(base, lang))
     }
 
     override fun onCreate() {
         super.onCreate()
+        if (android.os.Process.isIsolated()) return
         instance = this
         com.promenar.nexara.utils.NexaraLogger.init(this)
 

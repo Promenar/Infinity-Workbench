@@ -206,29 +206,10 @@ class WebFetchSkill(
         } catch (e: Exception) {
             return "Unable to resolve host: ${e.localizedMessage ?: e.message}"
         }
-        if (addresses.any { it.isPrivateOrLocalAddress() }) {
+        if (addresses.isEmpty() || addresses.any { com.promenar.nexara.domain.network.PublicHttpPolicy.isPrivateOrLocalAddress(it) }) {
             return "Blocked URL: web_fetch cannot access localhost, private network, link-local, or multicast addresses."
         }
         return null
     }
 
-    private fun InetAddress.isPrivateOrLocalAddress(): Boolean {
-        if (isAnyLocalAddress || isLoopbackAddress || isLinkLocalAddress || isSiteLocalAddress || isMulticastAddress) {
-            return true
-        }
-        if (this is Inet4Address) {
-            val bytes = address.map { it.toInt() and 0xff }
-            return bytes[0] == 10 ||
-                (bytes[0] == 172 && bytes[1] in 16..31) ||
-                (bytes[0] == 192 && bytes[1] == 168) ||
-                (bytes[0] == 169 && bytes[1] == 254) ||
-                bytes[0] == 127 ||
-                bytes[0] == 0
-        }
-        if (this is Inet6Address) {
-            val first = address[0].toInt() and 0xff
-            return first == 0xfc || first == 0xfd || first == 0xfe
-        }
-        return false
-    }
 }

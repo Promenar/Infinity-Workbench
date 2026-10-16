@@ -45,7 +45,10 @@ object ApprovalPreview {
             "create_directory" -> Preview(Action.CREATE_DIRECTORY, newChild, null)
             "delete_file" -> Preview(Action.DELETE, target,
                 if ((args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true) "不可恢复：文件超过挂载回收区上限或用户明确要求永久删除。" else null)
-            "exec_js" -> Preview(Action.SCRIPT, "", args.string("code")?.let { excerpt(it, "") })
+            "exec_js", "run_script" -> Preview(Action.SCRIPT, if (toolName == "run_script") target else "", buildString {
+                if ((args["allow_network"] as? JsonPrimitive)?.booleanOrNull == true) appendLine("可联网")
+                args.string("code")?.let { append(excerpt(it, "")) }
+            }.trimEnd().ifEmpty { null })
             "move_file" -> Preview(
                 Action.MOVE,
                 target,

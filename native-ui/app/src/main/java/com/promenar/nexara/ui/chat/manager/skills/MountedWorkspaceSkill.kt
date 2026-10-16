@@ -169,7 +169,7 @@ class MountedWorkspaceSkill(
 private fun String.isMounted() = this == "/mnt" || startsWith("/mnt/")
 private fun fail(code: String, message: String): Nothing = throw ExternalFolderException(code, message)
 
-private class MountedWorkspaceRepository(
+internal class MountedWorkspaceRepository(
     private val base: IWorkspaceRepository,
     private val mounts: ExternalWorkspaceAccess,
     private val session: String,

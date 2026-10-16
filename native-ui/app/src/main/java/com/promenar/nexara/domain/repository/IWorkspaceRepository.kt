@@ -48,6 +48,10 @@ interface IWorkspaceRepository {
     ): FileEntry
 
     suspend fun moveToRecycleBin(workspaceRootUuid: String, uuid: String)
+    /** 版本条件必须与回收操作在同一工作区写锁下核验。 */
+    suspend fun moveToRecycleBinIfHash(workspaceRootUuid: String, uuid: String, expectedSha256: String) {
+        throw UnsupportedOperationException("仓库不支持带版本条件的删除")
+    }
     suspend fun restoreFromRecycleBin(workspaceRootUuid: String, uuid: String)
     suspend fun permanentDelete(workspaceRootUuid: String, uuid: String)
     suspend fun rollbackCreatedEntry(workspaceRootUuid: String, uuid: String)

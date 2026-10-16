@@ -80,6 +80,22 @@ class WorkspaceRepositoryTest {
     }
 
     @Test
+    fun `带哈希回收核验真实内容并在版本冲突时保留文件`() = runBlocking<Unit> {
+        insertSession("hash-delete", rootA.absolutePath)
+        val root = repo.ensureSessionRoot("hash-delete")
+        val file = repo.createFileInWorkspace(root.uuid, "hash-file", "a.txt", "original", root.uuid, "/a.txt")
+        repo.confirmCreatedEntry(root.uuid, file.uuid)
+        val physical = File(root.physicalRootPath, "a.txt")
+        physical.writeText("changed")
+        try { repo.moveToRecycleBinIfHash(root.uuid, file.uuid, Sha256Utils.hash("original")); error("应拒绝版本冲突") }
+        catch (failure: IllegalStateException) { assertThat(failure.message).contains("expected_sha256") }
+        assertThat(physical.readText()).isEqualTo("changed")
+        assertThat(repo.getByUuid(root.uuid, file.uuid)).isNotNull()
+        repo.moveToRecycleBinIfHash(root.uuid, file.uuid, Sha256Utils.hash("changed"))
+        assertThat(physical.exists()).isFalse()
+    }
+
+    @Test
     fun `所有文件生命周期操作接入统一journal并成功完成不留悬挂记录`() = runBlocking<Unit> {
         insertSession("journal-session", rootA.absolutePath)
         val journal = RecordingWorkspaceFileMutationJournal()

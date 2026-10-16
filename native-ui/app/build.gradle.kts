@@ -63,6 +63,11 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// 编译器读取 QuickJS 的 2.4 元数据，应用源码保持既有 2.2 语言规则。
+kotlin.compilerOptions {
+    languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)
+}
+
 val launcherIconTask = tasks.register("generateNexaraLauncherIcons") {
     group = "verification"
     description = "验证并生成所有应用变体的折叠 N 图标。"
@@ -272,6 +277,7 @@ ksp {
 }
 
 dependencies {
+    implementation("io.github.dokar3:quickjs-kt-android:1.0.15")
     // ─── Jetpack Compose BOM ───
     val composeBom = platform("androidx.compose:compose-bom:2026.06.00")
     implementation(composeBom)
@@ -308,7 +314,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
 
     // ─── 协程 ───
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // ─── 图片 (Multiplatform-Ready) ───
     implementation("io.coil-kt.coil3:coil:3.0.0")
@@ -348,7 +354,7 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
     testImplementation("org.junit.vintage:junit-vintage-engine:5.10.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.1")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("io.ktor:ktor-client-mock:2.3.7")
     testImplementation("com.google.truth:truth:1.2.0")
     testImplementation("io.mockk:mockk:1.13.12")
@@ -368,6 +374,14 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     "deviceTestImplementation"(composeBom)
     "deviceTestImplementation"("androidx.compose.ui:ui-test-manifest")
+}
+
+// JVM 测试加载桌面 JNI，设备和产品变体保持 Android JNI。
+configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configureEach {
+    resolutionStrategy.dependencySubstitution {
+        substitute(module("io.github.dokar3:quickjs-kt-android"))
+            .using(module("io.github.dokar3:quickjs-kt-jvm:1.0.15"))
+    }
 }
 
 tasks.withType<Test> {

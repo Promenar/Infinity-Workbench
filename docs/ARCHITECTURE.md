@@ -27,6 +27,10 @@ graph TD
 ```
 
 ### 关键组件
+
+- **隔离脚本运行时**：`ScriptEngine` 定义语言、执行与取消契约，`QuickJsScriptEngine` 在 `ScriptRuntimeService` 的隔离 UID 中运行。`AndroidScriptProcess` 使用有界 Messenger 消息、UID 与随机调用身份连接主进程；`SupervisedScriptRuntime` 串行复用当前会话服务，每次创建全新上下文，超时、取消和资源超限时直接强退并解绑，死亡后重建。
+- **脚本能力代理**：`ScriptToolRunner` 固定会话工作区及可见挂载身份，`ScriptWorkspaceGateway` 在原文件技能/仓库适配层执行读写删，`ScriptFileApprovalBroker` 提供带来源会话的文件风险审批。`ScriptHttpClient` 共用公网判定、精确局域网白名单、固定 DNS 和逐跳验证。入口读取与能力请求使用共享 4 槽 `ScriptCapabilityDispatcher`，阻塞系统 I/O 不拖住 watchdog；已进入后端的提交沿用原接口的取消与回滚边界。无数据库版本变化，白名单与写入审批配置不进入备份。
+
 - **NexaraApplication**: 全局上下文管理与服务初始化（嵌入/重排/图像生成客户端均在此懒加载）；`onCreate()` 自动创建 `WorkSpace` 物理目录；同时持有唯一 Application 级 `ThemePreferenceStore`。
 - **ThemePreferenceStore / NexaraTheme**: `ThemePreferenceStore` 是 `theme_mode` 与 `theme_color_source` 的唯一可变事实源，监听备份恢复产生的偏好变化并通过 `StateFlow` 发布；`MainActivity` 按生命周期收集后交给根 `NexaraTheme`，统一解析系统明暗、Nexara 双配色、Android 12+ 动态色及系统栏图标外观。正式 UI 只消费 `MaterialTheme.colorScheme` 与主题内注入的 `NexaraDomainColors`；Markdown、LaTeX、Mermaid、PlantUML、ECharts 与 HTML WebView 从当前主题生成 CSS/图表色板，主题变化会触发内容重建，无静态深色或 Glass 兼容桥。
 - **NexaraPageLayout / NexaraSettingsSection / NexaraSearchTopBar**: 管理页面共享 Material 3 骨架。页面根统一持有 system bars 与可选 IME insets；设置区使用透明连续列表和正文对齐分隔线；搜索由调用方持有 query/active 状态，Top App Bar 只负责焦点、IME、清除、返回优先级和 reduced-motion 兼容过渡。
