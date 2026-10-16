@@ -1,5 +1,6 @@
 import com.android.compose.screenshot.tasks.PreviewScreenshotUpdateTask
 import com.android.compose.screenshot.tasks.PreviewScreenshotValidationTask
+import com.promenar.nexara.buildlogic.GenerateLauncherIcons
 
 val realLlmEnvironmentNames = listOf(
     "NEXARA_TEST_LLM_BASE_URL",
@@ -60,6 +61,23 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
+}
+
+val launcherIconTask = tasks.register("generateNexaraLauncherIcons") {
+    group = "verification"
+    description = "验证并生成所有应用变体的折叠 N 图标。"
+}
+androidComponents.onVariants { variant ->
+    val capitalizedName = variant.name.replaceFirstChar { it.uppercaseChar() }
+    val generateIcons = tasks.register<GenerateLauncherIcons>("generate${capitalizedName}NexaraLauncherIcons") {
+        masterSvg.set(rootProject.layout.projectDirectory.file("../assets/branding/nexara-fold-master.svg"))
+        sourceRoots.from(layout.projectDirectory.dir("src"))
+        sourceRoots.from(provider {
+            android.sourceSets.flatMap { source -> source.res.directories.map { project.file(it) } }
+        })
+    }
+    variant.sources.res?.addGeneratedSourceDirectory(generateIcons, GenerateLauncherIcons::getOutputDirectory)
+    launcherIconTask.configure { dependsOn(generateIcons) }
 }
 
 android {
@@ -338,6 +356,7 @@ tasks.withType<Test> {
     useJUnitPlatform()
     workingDir = rootProject.projectDir
 }
+
 
 afterEvaluate {
     if (deviceE2eEnabled) return@afterEvaluate

@@ -1,0 +1,47 @@
+{
+  "package": {
+    "name": "nexara-fold-vector",
+    "title": "Nexara 折叠 N 矢量母版",
+    "profile": "digital",
+    "output_dir": "build/vector-delivery",
+    "zip_name": "nexara-fold-vector.zip"
+  },
+  "artworks": [
+    {
+      "id": "fold-master",
+      "label": "透明底黑标母版",
+      "source": "nexara-fold-master.svg",
+      "output": "nexara-fold-master.svg",
+      "width": "108px",
+      "height": "108px",
+      "outline_text": false,
+      "protected_ids": [
+        "brand-logo"
+      ]
+    },
+    {
+      "id": "fold-light",
+      "label": "白底黑标",
+      "source": "nexara-fold-light.svg",
+      "output": "nexara-fold-light.svg",
+      "width": "512px",
+      "height": "512px",
+      "outline_text": false,
+      "protected_ids": [
+        "brand-logo"
+      ]
+    },
+    {
+      "id": "fold-dark",
+      "label": "黑底白标",
+      "source": "nexara-fold-dark.svg",
+      "output": "nexara-fold-dark.svg",
+      "width": "512px",
+      "height": "512px",
+      "outline_text": false,
+      "protected_ids": [
+        "brand-logo"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+profile: digital
+background_light: "#FFFFFF"
+foreground_light: "#000000"
+background_dark: "#000000"
+foreground_dark: "#FFFFFF"
+android_canvas_dp: 108
+android_viewport_dp: 72
+safe_zone_diameter_dp: 66
+protected_group: brand-logo
+font_dependencies: []

@@ -1,5 +1,10 @@
 # Nexara
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/branding/nexara-fold-dark.svg">
+  <img src="assets/branding/nexara-fold-light.svg" alt="Nexara 折叠 N 图标" width="112" height="112">
+</picture>
+
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Android-green.svg)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg)
@@ -82,6 +87,8 @@ cd native-ui
 ```
 
 Debug 构建不需要发行签名变量。Release 构建必须通过进程环境提供 `NEXARA_KEYSTORE_PATH`、`NEXARA_STORE_PASSWORD`、`NEXARA_KEY_ALIAS` 和 `NEXARA_KEY_PASSWORD`；仓库不保存 keystore 或密码。
+
+应用图标采用[折叠 N 矢量母版](assets/branding/nexara-fold-master.svg)，白底黑标为主，夜间资源为黑底白标，并提供 Android 自适应与单色主题图层。各变体通过 Gradle Variant API 自动生成图标，IDE、ADE、命令行和 CI 的正常构建均使用同一母版；无需本机图像工具。制作规格、覆盖防护和验证方法见[图标契约](assets/branding/design-spec.md)。
 
 ### Metro CLI/TUI
 

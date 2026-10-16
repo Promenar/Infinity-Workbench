@@ -1,0 +1,42 @@
+{
+  "asset": "Nexara 折叠 N",
+  "adoption_date": "2026-10-16",
+  "current_requirements": [
+    "白底黑标主版本",
+    "黑底白标深色版本",
+    "保留三个折面与负形分离缝",
+    "Android 自适应及独立单色图层"
+  ],
+  "lineage": [
+    {
+      "file": "references/root-directions.png",
+      "sha256": "0ac21db208715ab1adc5a4408473bddff8cdef86796abec16a9119195df2abd2",
+      "direct_input": null,
+      "root": "references/root-directions.png",
+      "generative_edit": 0,
+      "status": "祖先提案，未作为最终图标"
+    },
+    {
+      "file": "references/fold-direction.png",
+      "sha256": "1dcbc3abacca607ec9d326aa4dea2632742cccfbd73d30100e4d3223dfecc93b",
+      "direct_input": "root-directions.png",
+      "root": "references/root-directions.png",
+      "generative_edit": 1,
+      "status": "第三列 C 折叠 N 被用户选定"
+    },
+    {
+      "file": "approved-fold-concept.png",
+      "sha256": "2a0f859258b3d6016e947dca2893de106c9859ede239fcfbdf5220979b6e435f",
+      "direct_input": "fold-direction.png",
+      "root": "references/root-directions.png",
+      "generative_edit": 2,
+      "status": "用户采用：白底黑标为主、黑底白标为深色"
+    }
+  ],
+  "master": {
+    "file": "nexara-fold-master.svg",
+    "source": "approved-fold-concept.png",
+    "method": "人工重建三条闭合贝塞尔路径；确定性矢量制作，不增加生成式编辑次数",
+    "status": "已按用户采用方向制作"
+  }
+}
