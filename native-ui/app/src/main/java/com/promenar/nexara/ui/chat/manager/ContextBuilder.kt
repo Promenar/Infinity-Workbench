@@ -291,19 +291,26 @@ class ContextBuilder(
         effectiveRagOptions: com.promenar.nexara.data.model.RagOptions
     ): RagRetrievalResult {
         val skipped = RagRetrievalResult("", emptyList(), null)
+        val isRagEnabled = effectiveRagOptions.enableMemory || effectiveRagOptions.enableDocs
+        if (!isRagEnabled) return skipped
         if (ragProvider == null) {
-            NexaraLogger.log("[ContextBuilder] ragProvider is null, skipping retrieval")
-            return skipped
+            NexaraLogger.log("[ContextBuilder] 检索 Provider 不可用")
+            return skipped.copy(trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE))
         }
 
         NexaraLogger.log("[ContextBuilder] effective ragOptions: docs=${effectiveRagOptions.enableDocs}/memory=${effectiveRagOptions.enableMemory}, isGlobal=${effectiveRagOptions.isGlobal}, rerank=${effectiveRagOptions.enableRerank}, kg=${effectiveRagOptions.enableKnowledgeGraph}")
 
-        val isRagEnabled = effectiveRagOptions.enableMemory || effectiveRagOptions.enableDocs
-        if (!isRagEnabled) return skipped
-
         return try {
-            ragProvider.retrieveContext(
+            val result = ragProvider.retrieveContext(
                 params.content, params.sessionId, effectiveRagOptions, params.onRagProgress
+            )
+            if (result.trace != null) result else result.copy(
+                trace = RagRetrievalTrace(
+                    outcome = if (result.context.isNotBlank() || result.references.isNotEmpty()) {
+                        RagRetrievalTrace.OUTCOME_HIT
+                    } else RagRetrievalTrace.OUTCOME_EMPTY,
+                    selectedCount = result.references.size,
+                ),
             )
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             throw e

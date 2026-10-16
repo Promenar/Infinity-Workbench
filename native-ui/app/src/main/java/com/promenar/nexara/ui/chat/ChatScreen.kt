@@ -491,28 +491,27 @@ fun ChatScreenContent(
                     val group = pipelineGroups[idx]
                     val isGeneratingGroup = idx == pipelineGroups.lastIndex && uiState.isGenerating
 
-                    if (!group.isUser) {
-                        val ragActiveMsg = selectRagActiveMessage(group.assistantMessages)
-
-                        if (ragActiveMsg != null) {
-                            val targetPhases = if (isGeneratingGroup) ragPhases else emptyList()
-                            val hasRagArtifacts = ragActiveMsg.hasRagArtifacts()
-                            val ragLoading = isGeneratingGroup && targetPhases.any { it.status == PhaseStatus.ACTIVE }
-                            val ragComplete = targetPhases.isNotEmpty() && targetPhases.all { it.status == PhaseStatus.DONE }
-                            if (targetPhases.isNotEmpty() || hasRagArtifacts) {
-                                RagProgressCard(
-                                    phases = targetPhases,
-                                    references = ragActiveMsg.ragReferences,
-                                    kgPaths = ragActiveMsg.kgPaths,
-                                    citations = ragActiveMsg.citations,
-                                    isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true,
-                                    trace = ragActiveMsg.ragMetadata?.trace,
-                                )
-                            }
-                        }
-                    }
-
                     PipelineBubble(
+                        ragContent = {
+                            val ragActiveMsg = selectRagActiveMessage(group.assistantMessages)
+
+                            if (ragActiveMsg != null) {
+                                val targetPhases = if (isGeneratingGroup) ragPhases else emptyList()
+                                val hasRagArtifacts = ragActiveMsg.hasRagArtifacts()
+                                val ragLoading = isGeneratingGroup && targetPhases.any { it.status == PhaseStatus.ACTIVE }
+                                val ragComplete = targetPhases.isNotEmpty() && targetPhases.all { it.status == PhaseStatus.DONE }
+                                if (targetPhases.isNotEmpty() || hasRagArtifacts) {
+                                    RagProgressCard(
+                                        phases = targetPhases,
+                                        references = ragActiveMsg.ragReferences,
+                                        kgPaths = ragActiveMsg.kgPaths,
+                                        citations = ragActiveMsg.citations,
+                                        isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true,
+                                        trace = ragActiveMsg.ragMetadata?.trace,
+                                    )
+                                }
+                            }
+                        },
                         group = group,
                         isGenerating = isGeneratingGroup,
                         status = uiState.status,

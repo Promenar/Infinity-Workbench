@@ -100,6 +100,8 @@ import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.flavours.gfm.GFMElementTypes
+import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
+import org.intellij.markdown.parser.MarkdownParser
 
 private fun ASTNode.findLinkDestination(): ASTNode? {
     children.forEach { child ->
@@ -359,11 +361,7 @@ fun MarkdownText(
         inspectionMode = LocalInspectionMode.current,
     )
     val processed = remember(markdown, isStreaming) {
-        val normalized = normalizeLatexDelimiters(markdown)
-        val raw = if (isStreaming) sanitizeStreamingMarkdown(normalized) else normalized
-        val safeTrimmed = safeTrimIndent(raw)
-        val repaired = repairCompressedMarkdownBoundaries(safeTrimmed)
-        insertCjkSpacing(repaired)
+        prepareMarkdownForRendering(markdown, isStreaming)
     }
 
     val smoothed = rememberSmoothStreamContent(
@@ -544,11 +542,19 @@ fun MarkdownText(
     }
 }
 
+private val markdownCodeIndent = Regex("^(?: {4}| {0,3}\\t)")
+
 internal fun safeTrimIndent(text: String): String {
-    if (text.lines().any { it.startsWith("    ") && it.trimStart().isNotEmpty() }) {
+    if (text.lines().any { markdownCodeIndent.containsMatchIn(it) && it.trimStart().isNotEmpty() }) {
         return text
     }
     return text.trimIndent()
+}
+
+internal fun prepareMarkdownForRendering(text: String, isStreaming: Boolean = false): String {
+    val normalized = normalizeLatexDelimiters(text)
+    val raw = if (isStreaming) sanitizeStreamingMarkdown(normalized) else normalized
+    return repairCompressedMarkdownBoundaries(safeTrimIndent(raw))
 }
 
 internal fun repairCompressedMarkdownBoundaries(text: String): String {
@@ -564,17 +570,47 @@ internal fun repairCompressedMarkdownBoundaries(text: String): String {
             key
         }
 
-    var processed = text
-    processed = protect(Regex("""`[^`]*`"""), processed)
-    processed = protect(Regex("""\[[^\]]+]\([^)]+\)"""), processed)
-    // 审计缺陷 P0-3：列表符号等压缩修复规则会把公式内 " - " 折成换行列表，导致 $...$ 跨行失配，先整体保护
+    val protectedTypes = setOf(
+        MarkdownElementTypes.CODE_FENCE,
+        MarkdownElementTypes.CODE_BLOCK,
+        MarkdownElementTypes.CODE_SPAN,
+        MarkdownElementTypes.INLINE_LINK,
+        MarkdownElementTypes.FULL_REFERENCE_LINK,
+        MarkdownElementTypes.SHORT_REFERENCE_LINK,
+        MarkdownElementTypes.LINK_DEFINITION,
+        MarkdownElementTypes.AUTOLINK,
+        MarkdownElementTypes.IMAGE,
+    )
+    val protectedNodes = mutableListOf<ASTNode>()
+    fun collectProtectedNodes(node: ASTNode) {
+        if (node.type in protectedTypes) {
+            protectedNodes += node
+        } else {
+            node.children.forEach(::collectProtectedNodes)
+        }
+    }
+
+    // 由解析器确定边界，保护多反引号、围栏、缩进代码和带嵌套括号的链接。
+    val hasProtectedSyntax = text.any { it == '`' || it == '~' || it == '[' || it == '<' } ||
+        text.lineSequence().any { markdownCodeIndent.containsMatchIn(it) }
+    if (hasProtectedSyntax) {
+        collectProtectedNodes(MarkdownParser(GFMFlavourDescriptor()).buildMarkdownTreeFromString(text))
+    }
+    var processed = StringBuilder(text).apply {
+        protectedNodes.asReversed().forEach { node ->
+            val key = "\u0000MD${counter++}\u0000"
+            protectedMap[key] = text.substring(node.startOffset, node.endOffset)
+            replace(node.startOffset, node.endOffset, key)
+        }
+    }.toString()
+    // 公式作为整体保护，避免后续边界修复改变公式内部的 Markdown 字符。
     processed = protect(Regex("""\$\$[\s\S]*?\$\$|\$[^\$\n]+\$"""), processed)
 
     processed = processed.replace(Regex("""[ \t]+---(?=#{1,6}(?!#))""")) {
         "\n\n---\n\n"
     }
 
-    processed = processed.replace(Regex("""(?m)(^|[^\S\n])\*\*(?=\d{1,2}\.[^\s])""")) { match ->
+    processed = processed.replace(Regex("""(?m)(^|[^\S\n])\*\*(?=\d{1,2}\.(?!\d)[^\s])""")) { match ->
         match.groupValues[1]
     }
 
@@ -584,14 +620,31 @@ internal fun repairCompressedMarkdownBoundaries(text: String): String {
         "$prefix${match.groupValues[2]} ${match.groupValues[3]}"
     }
 
-    processed = processed.replace(Regex("""(?m)(^|(?<=[^\nA-Za-z0-9]))[ \t]*(\d{1,2})\.[ \t]*([^\s])""")) { match ->
+    processed = processed.replace(Regex("""(?m)(^|(?<=[^\nA-Za-z0-9.]))[ \t]*(\d{1,2})\.(?!\d)[ \t]*([^\s])""")) { match ->
         val needsBreak = match.range.first > 0 && processed[match.range.first - 1] != '\n'
         val prefix = if (needsBreak) "\n" else ""
         "$prefix${match.groupValues[2]}. ${match.groupValues[3]}"
     }
 
-    processed = processed.replace(Regex("""(?m)(?<!\n)[ \t]+([-*+])[ \t]+(?=\S)""")) { match ->
-        "\n${match.groupValues[1]} "
+    // 冒号后至少两个同类标记才提供压缩列表的结构证据；普通句、算式和已有列表保持原文。
+    val compressedBulletList = Regex("""(?m)^([^:：\r\n]+[:：])[ \t]+([-*+])[ \t]+\S[^\r\n]*""")
+    val bulletMarker = Regex("""(?<!\S)([-*+])[ \t]+(?=\S)""")
+    processed = processed.replace(compressedBulletList) { list ->
+        val line = list.value
+        val prefix = list.groupValues[1]
+        val body = line.substring(prefix.length).trimStart(' ', '\t')
+        val markers = bulletMarker.findAll(body).toList()
+        if (markers.size < 2 || markers.any { it.groupValues[1] != list.groupValues[2] }) {
+            return@replace line
+        }
+        val items = markers.mapIndexed { index, marker ->
+            val end = markers.getOrNull(index + 1)?.range?.first ?: body.length
+            body.substring(marker.range.last + 1, end).trimEnd(' ', '\t')
+        }
+        if (items.any { it.isEmpty() || it.first().isDigit() || it.matches(Regex("""[\d.]+|[A-Za-z]""")) }) {
+            return@replace line
+        }
+        prefix + items.joinToString(separator = "\n", prefix = "\n") { "${list.groupValues[2]} $it" }
     }
 
     processed = processed.replace(Regex("""```(javascript|js|typescript|ts|kotlin|java|python|swift|go|rust|json|html|css)(?=(function|fun|class|const|let|var|import|def|public|private|val|return|\{|\[))""")) { match ->
@@ -617,7 +670,7 @@ internal fun repairCompressedMarkdownBoundaries(text: String): String {
         "$prefix> ${match.groupValues[2]}"
     }
 
-    for ((key, value) in protectedMap) {
+    for ((key, value) in protectedMap.entries.toList().asReversed()) {
         processed = processed.replace(key, value)
     }
 
@@ -654,16 +707,16 @@ private fun MarkdownSafe(
         dev.snipme.highlights.Highlights.Builder().theme(nexaraSyntaxTheme(isDark))
     }
 
-    val components = remember(fontSize, fontStyle, highlightsBuilder) {
+    val components = remember(fontSize, fontStyle, highlightsBuilder, compactSpacing) {
         markdownComponents(
-            heading1 = anchoredHeading({ it.typography.h1 }, MarkdownTokenTypes.ATX_CONTENT),
-            heading2 = anchoredHeading({ it.typography.h2 }, MarkdownTokenTypes.ATX_CONTENT),
-            heading3 = anchoredHeading({ it.typography.h3 }, MarkdownTokenTypes.ATX_CONTENT),
-            heading4 = anchoredHeading({ it.typography.h4 }, MarkdownTokenTypes.ATX_CONTENT),
-            heading5 = anchoredHeading({ it.typography.h5 }, MarkdownTokenTypes.ATX_CONTENT),
-            heading6 = anchoredHeading({ it.typography.h6 }, MarkdownTokenTypes.ATX_CONTENT),
-            setextHeading1 = anchoredHeading({ it.typography.h1 }, MarkdownTokenTypes.SETEXT_CONTENT),
-            setextHeading2 = anchoredHeading({ it.typography.h2 }, MarkdownTokenTypes.SETEXT_CONTENT),
+            heading1 = anchoredHeading({ it.typography.h1 }, MarkdownTokenTypes.ATX_CONTENT, compactSpacing),
+            heading2 = anchoredHeading({ it.typography.h2 }, MarkdownTokenTypes.ATX_CONTENT, compactSpacing),
+            heading3 = anchoredHeading({ it.typography.h3 }, MarkdownTokenTypes.ATX_CONTENT, compactSpacing),
+            heading4 = anchoredHeading({ it.typography.h4 }, MarkdownTokenTypes.ATX_CONTENT, compactSpacing),
+            heading5 = anchoredHeading({ it.typography.h5 }, MarkdownTokenTypes.ATX_CONTENT, compactSpacing),
+            heading6 = anchoredHeading({ it.typography.h6 }, MarkdownTokenTypes.ATX_CONTENT, compactSpacing),
+            setextHeading1 = anchoredHeading({ it.typography.h1 }, MarkdownTokenTypes.SETEXT_CONTENT, compactSpacing),
+            setextHeading2 = anchoredHeading({ it.typography.h2 }, MarkdownTokenTypes.SETEXT_CONTENT, compactSpacing),
             blockQuote = { model ->
                 val rawText = model.node.getUnescapedTextInNode(model.content)
                 val stripped = stripBlockQuoteMarkers(rawText)
@@ -773,7 +826,7 @@ private fun MarkdownSafe(
             },
             horizontalRule = { _ ->
                 HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 12.dp),
+                    modifier = Modifier.padding(vertical = if (compactSpacing) 3.dp else 12.dp),
                     thickness = 1.dp,
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
@@ -798,7 +851,7 @@ private fun MarkdownSafe(
             config = markdownAnnotatorConfig(eolAsNewLine = true),
         ),
         padding = markdownPadding(
-            block = if (compactSpacing) 3.dp else 8.dp,
+            block = if (compactSpacing) 3.dp else 12.dp,
             list = if (compactSpacing) 0.dp else 8.dp,
             listItemTop = if (compactSpacing) 1.dp else 4.dp,
             listItemBottom = if (compactSpacing) 1.dp else 4.dp,
@@ -1045,34 +1098,6 @@ private fun WideContentHost(
     }
 }
 
-internal fun insertCjkSpacing(text: String): String {
-    val protectedMap = mutableMapOf<String, String>()
-    var counter = 0
-
-    var processed = text.replace(Regex("`[^`]+`")) { match ->
-        val key = "\u0000IC${counter++}\u0000"
-        protectedMap[key] = match.value
-        key
-    }
-
-    processed = processed.replace(Regex("\\[([^\\]]+)\\]\\([^)]+\\)")) { match ->
-        val key = "\u0000LK${counter++}\u0000"
-        protectedMap[key] = match.value
-        key
-    }
-
-    val cjk = "\\u4e00-\\u9fff\\u3400-\\u4dbf\\uf900-\\ufaff\\u3000-\\u303f"
-    processed = processed
-        .replace(Regex("([$cjk])([a-zA-Z0-9])")) { "${it.groupValues[1]}\u200A${it.groupValues[2]}" }
-        .replace(Regex("([a-zA-Z0-9])([$cjk])")) { "${it.groupValues[1]}\u200A${it.groupValues[2]}" }
-
-    for ((key, value) in protectedMap) {
-        processed = processed.replace(key, value)
-    }
-
-    return processed
-}
-
 internal fun normalizeLatexDelimiters(text: String): String {
     return text
         .replace(Regex("""\\\[(.*?)\\]""", RegexOption.DOT_MATCHES_ALL)) {
@@ -1159,6 +1184,7 @@ internal fun slugify(text: String): String {
 private fun anchoredHeading(
     getStyle: (MarkdownComponentModel) -> TextStyle,
     contentChildType: IElementType,
+    compactSpacing: Boolean,
 ): MarkdownComponent = { model ->
     val headingText = model.node.getUnescapedTextInNode(model.content)
     val slug = slugify(headingText)
@@ -1169,6 +1195,7 @@ private fun anchoredHeading(
         style = getStyle(model),
         contentChildType = contentChildType,
         modifier = Modifier
+            .padding(top = if (compactSpacing) 2.dp else 6.dp)
             .testTag("heading-$slug")
             .semantics {
                 heading()

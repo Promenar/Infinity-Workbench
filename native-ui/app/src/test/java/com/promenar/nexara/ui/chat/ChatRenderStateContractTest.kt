@@ -304,9 +304,6 @@ class ChatRenderStateContractTest {
         ).readText()
         val cardSources = listOf(
             source
-                .substringAfter("fun RagProgressCard(")
-                .substringBefore("\n@Composable\nfun ToolExecutionTimeline("),
-            source
                 .substringAfter("fun SummaryCard(")
                 .substringBefore("\n@Composable\nfun ApprovalCard("),
             source.substringAfter("fun ApprovalCard("),
@@ -319,16 +316,12 @@ class ChatRenderStateContractTest {
             assertThat(cardSource).doesNotContain("GlassBorder")
         }
         assertThat(cardSources[0]).contains("MaterialTheme.colorScheme.surfaceContainerLow")
+        assertThat(cardSources[0]).contains("shape = MaterialTheme.shapes.large")
+        assertThat(cardSources[0]).doesNotContain("shape = MaterialTheme.shapes.extraLarge")
         assertThat(cardSources[0]).contains(
             "heightIn(min = NexaraSpacing.MinimumTouchTarget)",
         )
-        assertThat(cardSources[1]).contains("MaterialTheme.colorScheme.surfaceContainerLow")
-        assertThat(cardSources[1]).contains("shape = MaterialTheme.shapes.large")
-        assertThat(cardSources[1]).doesNotContain("shape = MaterialTheme.shapes.extraLarge")
-        assertThat(cardSources[1]).contains(
-            "heightIn(min = NexaraSpacing.MinimumTouchTarget)",
-        )
-        assertThat(cardSources[2]).contains("MaterialTheme.colorScheme.surfaceContainer")
-        assertThat(cardSources[2]).contains("MaterialTheme.colorScheme.outlineVariant")
+        assertThat(cardSources[1]).contains("MaterialTheme.colorScheme.surfaceContainer")
+        assertThat(cardSources[1]).contains("MaterialTheme.colorScheme.outlineVariant")
     }
 }

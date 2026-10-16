@@ -20,6 +20,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -114,29 +118,11 @@ internal fun messageCopyOverride(
 internal fun historicalGenerationFailureNotice(errorMessage: String?): UiStatusNotice =
     GenerationFailureNotice.fromPersisted(errorMessage)
 
-internal fun streamingReasoningPreview(
-    reasoning: String,
-    maxChars: Int = 1200,
-    maxLines: Int = 18
-): String {
-    if (reasoning.length <= maxChars && reasoning.lineSequence().count() <= maxLines) {
-        return reasoning
-    }
-
-    val tailByChars = reasoning.takeLast(maxChars)
-    val lineAligned = tailByChars.substringAfter('\n', tailByChars)
-    val tailLines = lineAligned
-        .lines()
-        .takeLast(maxLines)
-        .joinToString("\n")
-        .trimStart()
-
-    return if (tailLines.isBlank()) {
-        "...\n${reasoning.takeLast(maxChars).trimStart()}"
-    } else {
-        "...\n$tailLines"
-    }
-}
+internal fun streamingReasoningPreview(reasoning: String, maxChars: Int = 180): String =
+    reasoning.takeLast(maxChars.coerceAtLeast(1))
+        .dropWhile { it.isLowSurrogate() }
+        .replace(Regex("\\s+"), " ")
+        .trim()
 
 // ─────────────────────────────────────────────────────────────────
 //  PipelineBubble — 单轮 AI 对话的线性格局
@@ -144,7 +130,7 @@ internal fun streamingReasoningPreview(
 
 /**
  * 将一组 ASSISTANT+TOOL 消息渲染为单一气泡，
- * 内部以思考→工具→正文 的线性管道排列，步骤间以竖线连接。
+ * 检索、思考、工具与正文共享同一垂直间距，详情由各步骤按需展开。
  */
 @Composable
 fun PipelineBubble(
@@ -159,7 +145,8 @@ fun PipelineBubble(
     onRegenerate: ((String) -> Unit)? = null,
     onDelete: ((String) -> Unit)? = null,
     onBranch: ((String) -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    ragContent: @Composable () -> Unit = {},
 ) {
     if (group.isUser) {
         // USER 消息保持原样
@@ -186,8 +173,7 @@ fun PipelineBubble(
 
     Surface(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         color = Color.Transparent
     ) {
@@ -195,57 +181,56 @@ fun PipelineBubble(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalArrangement = Arrangement.spacedBy(ChatStepSpacing)
         ) {
+            ragContent()
             allSteps.forEachIndexed { index, step ->
                 val isLastInGroup = index == allSteps.lastIndex
                 
-                // ── 步骤渲染 ──
-                when (step) {
-                    is PipelineStep.Thinking -> {
-                        // 仅在当前确实处于思考状态且是最后一步思考时，才开启流式平滑渲染
-                        val isLastThinking = allSteps.filterIsInstance<PipelineStep.Thinking>().lastOrNull() == step
-                        // 推理活跃判定：整体生成中 + 最后一步思考 + 正文尚未开始（streamingContent 只累积 content，不含 reasoning）
-                        val isThinkingStreaming = isGenerating && isLastThinking && streamingContent.isEmpty()
-                        
-                        ThinkingTrace(
-                            reasoning = step.reasoning,
-                            isGenerating = isThinkingStreaming,
-                            fontSize = fontSize
-                        )
-                    }
-                    is PipelineStep.ToolExec -> {
-                        InlineToolRow(
-                            steps = step.steps,
-                            isExecuting = step.isExecuting,
-                            fontSize = fontSize
-                        )
-                    }
-                    is PipelineStep.Content -> {
-                        val displayContent = if (isLastInGroup && isGenerating) {
-                            streamingContent.ifEmpty { step.content }
-                        } else {
-                            step.content
-                        }
-                        val lastMsg = group.assistantMessages.lastOrNull()
-                        val copySource = lastMsg?.content ?: displayContent
-                        ContentSegment(
-                            content = displayContent,
-                            isStreaming = isLastInGroup && isGenerating,
-                            showStreamingCursor = renderPlan.showContentCursor,
-                            fontSize = fontSize,
-                            onContentChange = onContentChange,
-                            onCopy = messageCopyOverride(onCopy, copySource),
-                            onRegenerate = { lastMsg?.let { onRegenerate?.invoke(it.id) } },
-                            onDelete = { lastMsg?.let { onDelete?.invoke(it.id) } },
-                            onBranch = { lastMsg?.let { onBranch?.invoke(it.id) } },
-                        )
-                    }
-                }
+                key(when (step) {
+                    is PipelineStep.Thinking -> "thinking:${step.messageId}"
+                    is PipelineStep.ToolExec -> "tools:${step.steps.firstOrNull()?.id}"
+                    is PipelineStep.Content -> "content:$index"
+                }) {
+                    when (step) {
+                        is PipelineStep.Thinking -> {
+                            val isThinkingStreaming = isGenerating && isLastInGroup && streamingContent.isEmpty()
 
-                // ── 步骤间仅保留呼吸间距（用户裁决：引导线多余，无边框样式无需额外间隔线）──
-                if (index < allSteps.lastIndex && step !is PipelineStep.Thinking) {
-                    Spacer(modifier = Modifier.height(2.dp))
+                            ThinkingTrace(
+                                reasoning = step.reasoning,
+                                isGenerating = isThinkingStreaming,
+                                fontSize = fontSize
+                            )
+                        }
+                        is PipelineStep.ToolExec -> {
+                            InlineToolRow(
+                                steps = step.steps,
+                                isExecuting = step.isExecuting,
+                                fontSize = fontSize
+                            )
+                        }
+                        is PipelineStep.Content -> {
+                            val displayContent = if (isLastInGroup && isGenerating) {
+                                streamingContent.ifEmpty { step.content }
+                            } else {
+                                step.content
+                            }
+                            val lastMsg = group.assistantMessages.lastOrNull()
+                            val copySource = lastMsg?.content ?: displayContent
+                            ContentSegment(
+                                content = displayContent,
+                                isStreaming = isLastInGroup && isGenerating,
+                                showStreamingCursor = renderPlan.showContentCursor,
+                                fontSize = fontSize,
+                                onContentChange = onContentChange,
+                                onCopy = messageCopyOverride(onCopy, copySource),
+                                onRegenerate = { lastMsg?.let { onRegenerate?.invoke(it.id) } },
+                                onDelete = { lastMsg?.let { onDelete?.invoke(it.id) } },
+                                onBranch = { lastMsg?.let { onBranch?.invoke(it.id) } },
+                            )
+                        }
+                    }
+
                 }
             }
 
@@ -347,7 +332,8 @@ private fun ErrorMessageSegment(
 
 internal sealed class PipelineStep {
     data class Thinking(
-        val reasoning: String
+        val reasoning: String,
+        val messageId: String = "",
     ) : PipelineStep()
 
     data class ToolExec(
@@ -371,8 +357,15 @@ internal fun buildPipelineRenderPlan(
     isGenerating: Boolean,
     hasStreamingContent: Boolean
 ): PipelineRenderPlan {
-    val steps = buildPipelineSteps(messages).toMutableList()
     val finalAssistant = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
+    val steps = buildPipelineSteps(messages).map { step ->
+        if (step is PipelineStep.ToolExec) step.copy(
+            isExecuting = isGenerating && finalAssistant != null && toolInvocations(step.steps).any { invocation ->
+                !invocation.complete && (invocation.call?.timestamp ?: 0) > 0 &&
+                    invocation.call?.id?.startsWith("${finalAssistant.id}::") == true
+            },
+        ) else step
+    }.toMutableList()
     val finalAssistantIsPlaceholder = finalAssistant != null && finalAssistant.content.isBlank()
 
     if (isGenerating && hasStreamingContent && finalAssistantIsPlaceholder) {
@@ -413,23 +406,18 @@ private fun buildSyntheticExecutionSteps(
     if (toolCalls.isEmpty() && toolResults.isEmpty()) return emptyList()
 
     val steps = mutableListOf<ExecutionStep>()
-    val timestamp = System.currentTimeMillis()
+    val identity = "${toolCalls.hashCode()}-${toolResults.hashCode()}"
 
     toolCalls.forEachIndexed { index, args ->
-        val toolName = runCatching {
-            val payload = JSONObject(args)
-            sequenceOf("name", "tool", "function")
-                .map { payload.optString(it) }
-                .firstOrNull { it.isNotBlank() }
-        }.getOrNull()
+        val toolName = inferredToolName(ExecutionStep("source", "tool_call", toolArgs = args, timestamp = 0))
 
         steps.add(
             ExecutionStep(
-                id = "synthetic-tool-$timestamp-$index",
+                id = "synthetic-tool-$identity-$index",
                 type = "tool_call",
                 toolName = toolName,
                 toolArgs = args,
-                timestamp = timestamp + index
+                timestamp = 0
             )
         )
     }
@@ -437,10 +425,10 @@ private fun buildSyntheticExecutionSteps(
     toolResults.forEachIndexed { index, result ->
         steps.add(
             ExecutionStep(
-                id = "synthetic-result-$timestamp-$index",
+                id = "synthetic-result-$identity-$index",
                 type = if (result.contains("error", ignoreCase = true)) "error" else "tool_result",
-                content = result.take(500),
-                timestamp = timestamp + toolCalls.size + index
+                content = result,
+                timestamp = 0
             )
         )
     }
@@ -458,33 +446,57 @@ private fun extractSyntheticExecutionSteps(content: String): List<ExecutionStep>
     return buildSyntheticExecutionSteps(toolCalls, toolResults)
 }
 
+/** 消息只在展示副本中限定作用域，避免跨工具轮次复用调用 ID 时混淆真实调用。 */
+private fun scopedToolSteps(messageId: String, steps: List<ExecutionStep>): List<ExecutionStep> =
+    toolInvocations(steps).flatMapIndexed { index, invocation ->
+        invocation.steps.map { step ->
+            step.copy(id = "$messageId::${step.id}", toolCallId = "$messageId::invocation-$index")
+        }
+    }
+
 private fun buildPipelineSteps(messages: List<Message>): List<PipelineStep> {
     val steps = mutableListOf<PipelineStep>()
-
-    for (msg in messages) {
+    for ((messageIndex, msg) in messages.withIndex()) {
+        val knownToolNames = buildMap {
+            messages.subList(messageIndex + 1, messages.size).takeWhile { it.role == MessageRole.TOOL }.forEach { tool ->
+                if (!tool.toolCallId.isNullOrBlank() && !tool.name.isNullOrBlank()) put(tool.toolCallId, tool.name)
+            }
+            msg.executionSteps.orEmpty().forEach { execution ->
+                if (!execution.toolCallId.isNullOrBlank()) inferredToolName(execution)?.let { put(execution.toolCallId, it) }
+            }
+            msg.toolCalls.orEmpty().forEach { put(it.id, it.name) }
+        }
         if (msg.role == MessageRole.ASSISTANT) {
             // 1. 推理 → Thinking step
             if (!msg.reasoning.isNullOrBlank()) {
-                steps.add(PipelineStep.Thinking(reasoning = msg.reasoning!!))
+                steps.add(PipelineStep.Thinking(reasoning = msg.reasoning!!, messageId = msg.id))
             }
 
             // 2. 工具执行 → ToolExec step
             if (!msg.executionSteps.isNullOrEmpty()) {
-                steps.add(PipelineStep.ToolExec(
-                    steps = msg.executionSteps!!,
-                    isExecuting = false
-                ))
+                val namedSteps = msg.executionSteps!!.map { execution ->
+                    execution.copy(toolName = execution.toolName?.takeIf(String::isNotBlank)
+                        ?: knownToolNames[execution.toolCallId] ?: inferredToolName(execution))
+                }
+                val scoped = scopedToolSteps(msg.id, namedSteps)
+                if (scoped.isNotEmpty()) steps.add(PipelineStep.ToolExec(steps = scoped, isExecuting = false))
             }
 
             // 3. 正文 → Content step（含工具内容嗅探）
             if (msg.content.isNotBlank()) {
                 // 渲染层最后防线：对 content 做工具特征检测
                 if (hasInlineToolData(msg.content)) {
-                    val syntheticSteps = extractSyntheticExecutionSteps(msg.content)
-                    steps.add(PipelineStep.ToolExec(
-                        steps = syntheticSteps,
-                        isExecuting = false
-                    ))
+                    // 结构化执行事件是权威来源；正文嗅探仅兼容缺少执行事件的历史消息。
+                    val hasStructuredTools = msg.executionSteps.orEmpty().any {
+                        it.type == "tool_call" || it.type == "tool_result" || it.type == "error"
+                    }
+                    if (!hasStructuredTools) {
+                        val syntheticSteps = scopedToolSteps(msg.id, extractSyntheticExecutionSteps(msg.content))
+                        if (syntheticSteps.isNotEmpty()) steps.add(PipelineStep.ToolExec(
+                            steps = syntheticSteps,
+                            isExecuting = false,
+                        ))
+                    }
                     // 清洗后的剩余正文（移除工具 JSON/XML 部分）
                     val cleanContent = stripToolArtifacts(msg.content)
                     if (cleanContent.isNotBlank()) {
@@ -498,7 +510,14 @@ private fun buildPipelineSteps(messages: List<Message>): List<PipelineStep> {
         // TOOL 消息的内容已经在 executionSteps 中展示，此处跳过
     }
 
-    return steps
+    val merged = mutableListOf<PipelineStep>()
+    steps.forEach { step ->
+        val previous = merged.lastOrNull()
+        if (step is PipelineStep.ToolExec && previous is PipelineStep.ToolExec) {
+            merged[merged.lastIndex] = previous.copy(steps = previous.steps + step.steps)
+        } else merged.add(step)
+    }
+    return merged
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -510,122 +529,78 @@ internal fun ThinkingTrace(
     reasoning: String,
     isGenerating: Boolean,
     fontSize: Int,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    elapsedMs: Long? = null,
 ) {
-    var internalExpanded by remember { mutableStateOf(isGenerating) }
-    var collapsePending by remember { mutableStateOf(false) }
-
+    var internalExpanded by rememberSaveable { mutableStateOf(false) }
+    var measuredElapsed by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(isGenerating) {
         if (isGenerating) {
-            collapsePending = false
-            internalExpanded = true
-        } else {
-            collapsePending = true
-            delay(300L)
-            if (collapsePending) internalExpanded = false
+            val start = android.os.SystemClock.elapsedRealtime()
+            try {
+                while (true) {
+                    measuredElapsed = android.os.SystemClock.elapsedRealtime() - start
+                    delay(200L)
+                }
+            } finally {
+                measuredElapsed = android.os.SystemClock.elapsedRealtime() - start
+            }
         }
     }
-
-    val visibleReasoning = remember(reasoning, isGenerating) {
-        if (isGenerating) streamingReasoningPreview(reasoning) else reasoning
-    }
-    val targetFontSize = (fontSize - 2).coerceAtLeast(10)
-    val expansionStateDescription = stringResource(
-        if (internalExpanded) R.string.common_state_expanded
-        else R.string.common_state_collapsed
+    val duration = elapsedMs ?: measuredElapsed
+    val seconds = duration?.coerceAtLeast(0)?.div(1000)
+    val segments = if (isGenerating) {
+        listOf(stringResource(R.string.chat_thinking_elapsed, seconds ?: 0L), stringResource(R.string.chat_status_thinking))
+    } else listOf(
+        if (seconds == null) stringResource(R.string.chat_status_thought)
+        else stringResource(R.string.chat_thought_duration, seconds),
     )
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag(UiTags.CHAT_THINKING_TRACE)
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-                .clickable {
-                    collapsePending = false
-                    internalExpanded = !internalExpanded
+    val expansionState = stringResource(
+        if (internalExpanded) R.string.common_state_expanded else R.string.common_state_collapsed,
+    )
+    Column(modifier = modifier.fillMaxWidth().testTag(UiTags.CHAT_THINKING_TRACE)) {
+        CompactStepRow(
+            segments = segments,
+            icon = Icons.Rounded.CheckCircle,
+            active = isGenerating,
+            fontSize = fontSize,
+            expanded = internalExpanded,
+            state = expansionState,
+            tag = UiTags.CHAT_THINKING_TOGGLE,
+            clickLabel = stringResource(if (internalExpanded) R.string.common_cd_collapse else R.string.common_cd_expand),
+            onClick = { internalExpanded = !internalExpanded },
+            preview = if (isGenerating) {{
+                val tail = remember(reasoning) { streamingReasoningPreview(reasoning) }
+                val scroll = rememberScrollState(initial = Int.MAX_VALUE)
+                LaunchedEffect(tail) {
+                    snapshotFlow { scroll.maxValue }.collect { scroll.scrollTo(it) }
                 }
-                .semantics { stateDescription = expansionStateDescription }
-                .testTag(UiTags.CHAT_THINKING_TOGGLE),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            shape = MaterialTheme.shapes.medium
-        ) {
-            Row(
-                modifier = Modifier.padding(
-                    horizontal = NexaraSpacing.Large,
-                    vertical = NexaraSpacing.Small
-                ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)
-            ) {
-                if (isGenerating) {
-                    val transition = rememberInfiniteTransition(label = "thinking_trace")
-                    val alpha by transition.animateFloat(
-                        initialValue = 0.3f,
-                        targetValue = 1f,
-                        animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
-                        label = "thinking_trace_alpha"
-                    )
-                    Box(
-                        Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .alpha(alpha)
-                            .background(MaterialTheme.colorScheme.primary)
-                    )
-                } else {
-                    Icon(
-                        Icons.Rounded.CheckCircle,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
+                Box(
+                    modifier = Modifier.weight(0.52f).fadingReasoningTail(),
+                ) {
+                    Text(
+                        text = tail,
+                        softWrap = false,
+                        maxLines = 1,
+                        modifier = Modifier.horizontalScroll(scroll, enabled = false),
+                        style = NexaraTypography.labelSmall.copy(fontSize = (fontSize - 1).coerceAtLeast(11).sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     )
                 }
-                Text(
-                    text = stringResource(
-                        if (isGenerating) R.string.chat_status_thinking
-                        else R.string.chat_status_thought
-                    ),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.weight(1f))
-                Icon(
-                    imageVector = if (internalExpanded) {
-                        Icons.Rounded.ExpandLess
-                    } else {
-                        Icons.Rounded.ExpandMore
-                    },
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
+            }} else null,
+        )
         if (internalExpanded && reasoning.isNotBlank()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
+            MarkdownText(
+                markdown = reasoning,
+                isStreaming = isGenerating,
+                fontSize = (fontSize - 2).coerceAtLeast(10),
+                showCursor = false,
+                overrideColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                compactSpacing = true,
+                modifier = Modifier.fillMaxWidth()
                     .testTag(UiTags.CHAT_THINKING_CONTENT)
-                    .padding(
-                        start = NexaraSpacing.Large,
-                        top = NexaraSpacing.Small,
-                        bottom = NexaraSpacing.Small,
-                        end = NexaraSpacing.Large
-                    )
-            ) {
-                MarkdownText(
-                    markdown = visibleReasoning,
-                    isStreaming = isGenerating,
-                    fontSize = targetFontSize,
-                    showCursor = false,
-                    overrideColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    compactSpacing = true
-                )
-            }
+                    .padding(horizontal = 8.dp),
+            )
         }
     }
 }
@@ -675,161 +650,87 @@ private fun AssistantMetadataRow(
 // ─────────────────────────────────────────────────────────────────
 
 @Composable
-private fun InlineToolRow(
+internal fun InlineToolRow(
     steps: List<ExecutionStep>,
     isExecuting: Boolean,
-    fontSize: Int
+    fontSize: Int,
 ) {
-    var isExpanded by remember { mutableStateOf(false) } // 默认折叠
-
-    // 分类：tool_call 和 tool_result
-    val callSteps = steps.filter { it.type == "tool_call" || it.toolName != null }
-    val resultSteps = steps.filter { it.type == "tool_result" || it.type == "error" }
-    val hasError = steps.any { it.type == "error" }
-    val toolName = steps.firstOrNull()?.toolName?.takeIf { it.isNotBlank() }
-        ?: stringResource(R.string.chat_tool_default_name)
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .clickable { isExpanded = !isExpanded } // 移到此处修复涟漪超出容器 Bug
-                    .padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Small),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                if (isExecuting) {
-                    val infiniteTransition = rememberInfiniteTransition(label = "tool_dot")
-                    val dotAlpha by infiniteTransition.animateFloat(
-                        initialValue = 0.3f, targetValue = 1f,
-                        animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
-                        label = "alpha"
-                    )
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .alpha(dotAlpha)
-                            .background(MaterialTheme.colorScheme.tertiary)
-                    )
-                } else if (hasError) {
-                    Icon(
-                        Icons.Rounded.Cancel, null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(16.dp)
-                    )
-                } else {
-                    Icon(
-                        Icons.Rounded.CheckCircle, null,
-                        tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-                Text(
-                    text = toolName,
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        fontWeight = FontWeight.Medium
-                    ),
-                    color = MaterialTheme.colorScheme.tertiary
-                )
-                if (hasError && !isExecuting) {
-                    Text(
-                        text = stringResource(R.string.chat_tool_error),
-                        style = NexaraTypography.labelSmall.copy(fontSize = (fontSize - 1).coerceAtLeast(10).sp),
-                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
-                    )
-                }
-                Spacer(modifier = Modifier.weight(1f))
-                Icon(
-                    if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                    null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(16.dp)
-                )
-            }
+    var isExpanded by rememberSaveable { mutableStateOf(false) }
+    val invocations = remember(steps) { toolInvocations(steps) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(isExecuting) {
+        if (isExecuting) while (true) {
+            now = System.currentTimeMillis()
+            delay(200L)
         }
-
-        // ── 展开内容：调用参数 + 返回结果 ──
-        AnimatedVisibility(
-            visible = isExpanded && steps.isNotEmpty(),
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                callSteps.forEach { call ->
-                    if (!call.toolArgs.isNullOrBlank()) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.4f),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 2.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.chat_tool_arguments, call.toolArgs!!),
-                                    modifier = Modifier.padding(8.dp),
-                                    style = NexaraTypography.labelSmall.copy(
-                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                        fontSize = (fontSize - 3).coerceAtLeast(9).sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                )
-                            }
+    }
+    val hasError = invocations.any { it.failed }
+    val state = stringResource(when {
+        isExecuting -> R.string.chat_tool_running
+        hasError -> R.string.chat_tool_failed
+        invocations.any { !it.complete } -> R.string.chat_tool_pending
+        else -> R.string.chat_tool_completed
+    })
+    val name = if (invocations.size > 1) stringResource(R.string.chat_tools_count, invocations.size)
+        else invocations.firstOrNull()?.name ?: stringResource(R.string.chat_tool_default_name)
+    val duration = toolGroupDurationMs(invocations, nowMs = if (isExecuting) now else null)
+    val segments = buildList {
+        add(name)
+        add(state)
+        if (duration != null) add(toolDurationText(duration).let { stringResource(it.resId, *it.args.toTypedArray()) })
+    }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        CompactStepRow(
+            segments = segments,
+            icon = if (hasError) Icons.Rounded.Cancel else Icons.Rounded.CheckCircle,
+            active = isExecuting,
+            fontSize = fontSize,
+            expanded = isExpanded,
+            state = stringResource(if (isExpanded) R.string.common_state_expanded else R.string.common_state_collapsed),
+            clickLabel = stringResource(if (isExpanded) R.string.common_cd_collapse else R.string.common_cd_expand),
+            tag = "CHAT_TOOL_TOGGLE",
+            tone = if (hasError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            onClick = { isExpanded = !isExpanded },
+        )
+        if (isExpanded) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(ChatStepSpacing),
+            ) {
+                invocations.forEach { invocation ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        NexaraMetaLine(
+                            segments = buildList {
+                                add(invocation.name ?: stringResource(R.string.chat_tool_default_name))
+                                invocation.durationMs?.let { ms -> add(toolDurationText(ms).let { stringResource(it.resId, *it.args.toTypedArray()) }) }
+                            },
+                            style = NexaraTypography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        invocation.call?.toolArgs?.takeIf(String::isNotBlank)?.let { args ->
+                            Text(
+                                text = stringResource(R.string.chat_tool_arguments, args),
+                                style = NexaraTypography.bodySmall.copy(fontSize = (fontSize - 1).coerceAtLeast(11).sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                    }
-                }
-                resultSteps.forEach { result ->
-                    val toolImages = remember(result.data) { extractToolImageModels(result.data) }
-                    if (toolImages.isNotEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            toolImages.take(4).forEach { imageModel ->
+                        invocation.results.forEach { result ->
+                            val images = remember(result.data) { extractToolImageModels(result.data) }
+                            images.take(4).forEach { imageModel ->
                                 ChatImageThumbnail(
                                     imageModel = imageModel,
                                     contentDescription = stringResource(R.string.chat_cd_tool_image),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(min = 120.dp, max = 220.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceContainerLow),
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 220.dp)
+                                        .clip(MaterialTheme.shapes.small),
                                     contentScale = ContentScale.Fit,
                                 )
                             }
-                        }
-                    }
-                    if (!result.content.isNullOrBlank()) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.4f),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth() // 展开内容与正文等宽
-                                    .padding(bottom = 2.dp)
-                            ) {
+                            result.content?.takeIf(String::isNotBlank)?.let { content ->
                                 Text(
-                                    text = result.content!!.take(300) + if (result.content!!.length > 300) "…" else "",
-                                    modifier = Modifier.padding(8.dp),
-                                    style = NexaraTypography.labelSmall.copy(
-                                        fontSize = (fontSize - 3).coerceAtLeast(9).sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        lineHeight = ((fontSize - 3).coerceAtLeast(9) * 1.4).sp
-                                    ),
-                                    maxLines = 4
+                                    text = content,
+                                    style = NexaraTypography.bodySmall.copy(fontSize = (fontSize - 1).coerceAtLeast(11).sp),
+                                    color = if (result.type == "error") MaterialTheme.colorScheme.error
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -881,10 +782,7 @@ private fun ContentSegment(
                 showCursor = showStreamingCursor,
                 fontSize = fontSize,
                 onContentChange = onContentChange,
-                compactSpacing = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
+                modifier = Modifier.fillMaxWidth()
             )
         }
 

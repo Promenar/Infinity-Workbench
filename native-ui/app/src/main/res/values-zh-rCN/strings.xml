@@ -1369,11 +1369,11 @@
     <string name="rag_details_unknown_source">未知来源</string>
     <string name="rag_details_link_error">无法打开此链接。</string>
     <string name="rag_details_retry">重试</string>
-    <string name="chat_rag_summary_hit">知识库命中 %1$d 条</string>
-    <string name="chat_rag_summary_empty">知识库未命中</string>
-    <string name="chat_rag_summary_unavailable">未检索知识库：嵌入模型不可用</string>
-    <string name="chat_rag_summary_no_scope">未检索知识库：未选择文档</string>
-    <string name="chat_rag_summary_failed">知识库检索失败</string>
+    <string name="chat_rag_summary_hit">命中 %1$d 条</string>
+    <string name="chat_rag_summary_empty">未命中</string>
+    <string name="chat_rag_summary_unavailable">未能检索</string>
+    <string name="chat_rag_summary_no_scope">未能检索</string>
+    <string name="chat_rag_summary_failed">未能检索</string>
     <string name="chat_rag_summary_web">联网 %1$d 条</string>
     <string name="rag_trace_title">检索过程</string>
     <string name="chat_rag_summary_reranked">已重排</string>
@@ -1588,4 +1588,14 @@
     <string name="model_catalog_records">%1$d 条</string>
     <string name="model_catalog_bundled_snapshot">内置快照</string>
     <string name="local_models_slot_empty">暂无模型</string>
+    <string name="chat_rag_source_knowledge">知识库</string>
+    <string name="chat_rag_summary_ready">已检索</string>
+    <string name="chat_thinking_elapsed">%1$d 秒</string>
+    <string name="chat_thought_duration">已思考 %1$d 秒</string>
+    <string name="chat_tools_count">调用了 %1$d 个工具</string>
+    <string name="chat_tool_duration">%1$d 毫秒</string>
+    <string name="chat_tool_pending">等待执行</string>
+    <string name="chat_tool_failed">失败</string>
+    <string name="chat_rag_source_web">联网检索</string>
+    <string name="chat_tool_duration_seconds">%1$s 秒</string>
 </resources>

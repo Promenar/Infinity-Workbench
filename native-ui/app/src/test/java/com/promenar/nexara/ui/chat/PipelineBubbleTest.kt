@@ -56,10 +56,10 @@ class PipelineBubbleTest {
     }
 
     @Test
-    fun `streaming reasoning preview keeps short reasoning unchanged`() {
+    fun `短推理预览合并换行且保留内容`() {
         val reasoning = "1. 先确认输入\n2. 再组织输出"
 
-        assertThat(streamingReasoningPreview(reasoning)).isEqualTo(reasoning)
+        assertThat(streamingReasoningPreview(reasoning)).isEqualTo("1. 先确认输入 2. 再组织输出")
     }
 
     @Test
@@ -68,12 +68,12 @@ class PipelineBubbleTest {
             "$index. 推理步骤 $index"
         }
 
-        val result = streamingReasoningPreview(reasoning, maxChars = 240, maxLines = 6)
+        val result = streamingReasoningPreview(reasoning, maxChars = 240)
 
-        assertThat(result).startsWith("...\n")
+        assertThat(result).doesNotContain("\n")
         assertThat(result).contains("40. 推理步骤 40")
         assertThat(result).doesNotContain("1. 推理步骤 1")
-        assertThat(result.lines().size).isAtMost(7)
+        assertThat(result.length).isAtMost(240)
     }
 
     @Test
@@ -123,28 +123,6 @@ class PipelineBubbleTest {
         assertThat(plan.steps).isEmpty()
         assertThat(plan.showStandaloneCursor).isTrue()
         assertThat(plan.showContentCursor).isFalse()
-    }
-
-    @Test
-    fun `会话表面使用 M3 语义角色并保留思考轨迹`() {
-        val source = pipelineBubbleSource()
-
-        assertThat(source).contains("internal fun ThinkingTrace(")
-        assertThat(source).contains("MaterialTheme.colorScheme.surfaceContainerLow")
-        assertThat(source).contains("MaterialTheme.colorScheme.secondaryContainer")
-        assertThat(source).contains("MaterialTheme.colorScheme.onSecondaryContainer")
-        val thinkingTraceSource = source
-            .substringAfter("internal fun ThinkingTrace(")
-            .substringBefore("//  InlineToolRow")
-        assertThat(thinkingTraceSource).doesNotContain(".drawWithContent")
-        assertThat(thinkingTraceSource).doesNotContain("drawLine(")
-        assertThat(thinkingTraceSource).doesNotContain("drawCircle(")
-        assertThat(thinkingTraceSource).doesNotContain("CHAT_THINKING_COLLAPSED_CONNECTOR")
-        assertThat(thinkingTraceSource).doesNotContain("AnimatedVisibility(visible = internalExpanded")
-        assertThat(thinkingTraceSource).doesNotContain(".fillMaxHeight()")
-        assertThat(source).contains("index < allSteps.lastIndex && step !is PipelineStep.Thinking")
-        assertThat(source).doesNotContain("private fun InlineThinkingRow(")
-        assertThat(source).doesNotContain("import com.promenar.nexara.ui.common.NexaraGlassCard")
     }
 
     @Test

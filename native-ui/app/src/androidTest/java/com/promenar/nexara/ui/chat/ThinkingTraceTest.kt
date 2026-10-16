@@ -63,84 +63,51 @@ class ThinkingTraceTest {
     }
 
     @Test
-    fun generatingThinkingTraceDefaultsToExpanded() {
+    fun generatingThinkingTraceDefaultsToCollapsed() {
         rule.setContent {
             NexaraTheme {
-                ThinkingTrace(
-                    reasoning = "正在分析中...",
-                    isGenerating = true,
-                    fontSize = 14,
-                )
+                ThinkingTrace(reasoning = "正在分析中...", isGenerating = true, fontSize = 14)
             }
         }
-
-        // 生成态默认展开，内容可见
         rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE)
-            .assertIsDisplayed()
-            .assertHasClickAction()
-            .assertHeightIsAtLeast(48.dp)
-
-        assertExpansionState(R.string.common_state_expanded)
+            .assertIsDisplayed().assertHasClickAction().assertHeightIsAtLeast(48.dp)
+        assertExpansionState(R.string.common_state_collapsed)
+        rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsNotDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE).performClick()
         rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsDisplayed()
     }
 
     @Test
-    fun completedGenerationCollapsesOnlyAfterThreeHundredMilliseconds() {
-        val isGenerating = mutableStateOf(true)
+    fun completionKeepsDefaultCollapsed() {
+        val generating = mutableStateOf(true)
         rule.setContent {
             NexaraTheme {
-                ThinkingTrace(
-                    reasoning = "正在分析中...",
-                    isGenerating = isGenerating.value,
-                    fontSize = 14,
-                )
+                ThinkingTrace(reasoning = "正在分析中...", isGenerating = generating.value, fontSize = 14)
             }
         }
-        assertExpansionState(R.string.common_state_expanded)
-        rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsDisplayed()
-
-        rule.mainClock.autoAdvance = false
-        rule.runOnIdle { isGenerating.value = false }
-        rule.mainClock.advanceTimeByFrame()
-        assertExpansionState(R.string.common_state_expanded)
-
-        rule.mainClock.advanceTimeBy(299L, ignoreFrameDuration = true)
-        assertExpansionState(R.string.common_state_expanded)
-
-        rule.mainClock.advanceTimeBy(1L, ignoreFrameDuration = true)
-        rule.mainClock.advanceTimeByFrame()
         assertExpansionState(R.string.common_state_collapsed)
+        rule.runOnIdle { generating.value = false }
+        rule.waitForIdle()
+        assertExpansionState(R.string.common_state_collapsed)
+        rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsNotDisplayed()
     }
 
     @Test
-    fun reopeningDuringCompletionDelayCancelsPendingCollapse() {
-        val isGenerating = mutableStateOf(true)
+    fun explicitExpansionSurvivesCompletion() {
+        val generating = mutableStateOf(true)
         rule.setContent {
             NexaraTheme {
-                ThinkingTrace(
-                    reasoning = "正在分析中...",
-                    isGenerating = isGenerating.value,
-                    fontSize = 14,
-                )
+                ThinkingTrace(reasoning = "正在分析中...", isGenerating = generating.value, fontSize = 14)
             }
         }
+        rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE).performClick()
         rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsDisplayed()
-
-        rule.mainClock.autoAdvance = false
-        rule.runOnIdle { isGenerating.value = false }
-        rule.mainClock.advanceTimeByFrame()
-
-        rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE).performClick()
-        rule.mainClock.advanceTimeByFrame()
-        assertExpansionState(R.string.common_state_collapsed)
-
-        rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE).performClick()
-        rule.mainClock.advanceTimeByFrame()
+        rule.runOnIdle { generating.value = false }
+        rule.waitForIdle()
         assertExpansionState(R.string.common_state_expanded)
-
-        rule.mainClock.advanceTimeBy(300L, ignoreFrameDuration = true)
-        rule.mainClock.advanceTimeByFrame()
-        assertExpansionState(R.string.common_state_expanded)
+        rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsDisplayed()
+        rule.onNodeWithTag(UiTags.CHAT_THINKING_TOGGLE).performClick()
+        rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT).assertIsNotDisplayed()
     }
 
     private fun assertExpansionState(stringRes: Int) {

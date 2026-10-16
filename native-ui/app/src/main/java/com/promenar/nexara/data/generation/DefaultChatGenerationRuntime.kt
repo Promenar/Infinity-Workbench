@@ -89,13 +89,14 @@ interface GenerationUiPort {
     fun removePostProcessTask(id: String)
 }
 
+// 检索轨迹本身也是需要持久化的结果：未命中、嵌入不可用等情形没有引用，但检索指示器仍要显示。
 private fun ContextBuilderResult.hasPersistableRagContext(): Boolean =
     ragContext.isNotBlank() || ragReferences.isNotEmpty() || citations.isNotEmpty() ||
-        kgPaths.isNotEmpty() || ragUsage != null
+        kgPaths.isNotEmpty() || ragUsage != null || ragTrace != null
 
 private fun ContextBuilderResult.toMessageRagUpdateOptions(): UpdateMessageOptions? {
-    if (ragReferences.isEmpty() && citations.isEmpty() && kgPaths.isEmpty()) return null
-    val hasReferenceMetadata = ragReferences.isNotEmpty() || citations.isNotEmpty()
+    if (ragReferences.isEmpty() && citations.isEmpty() && kgPaths.isEmpty() && ragTrace == null) return null
+    val hasReferenceMetadata = ragReferences.isNotEmpty() || citations.isNotEmpty() || ragTrace != null
     return UpdateMessageOptions(
         ragReferences = ragReferences.ifEmpty { null },
         citations = citations.ifEmpty { null },
@@ -104,7 +105,8 @@ private fun ContextBuilderResult.toMessageRagUpdateOptions(): UpdateMessageOptio
             com.promenar.nexara.data.model.RagMetadata(
                 chunkCount = ragReferences.size,
                 totalTokens = ragUsage?.ragSystem ?: 0,
-                retrievalTimeMs = 0,
+                retrievalTimeMs = ragTrace?.searchTimeMs ?: 0,
+                trace = ragTrace,
             )
         } else null,
     )

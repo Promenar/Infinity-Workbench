@@ -5,6 +5,8 @@ import com.promenar.nexara.data.model.KgNode
 import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.model.RagMetadata
+import com.promenar.nexara.data.model.RagRetrievalTrace
 import org.junit.jupiter.api.Test
 
 class ChatScreenRagSelectionTest {
@@ -13,6 +15,38 @@ class ChatScreenRagSelectionTest {
         nodes = listOf(KgNode("n1", "Nexara", "project")),
         edges = emptyList(),
     )
+
+    @Test
+    fun `只有未命中不可用或失败轨迹的消息均提供检索入口`() {
+        listOf(
+            RagRetrievalTrace.OUTCOME_EMPTY,
+            RagRetrievalTrace.OUTCOME_UNAVAILABLE,
+            RagRetrievalTrace.OUTCOME_FAILED,
+        ).forEach { outcome ->
+            val message = Message(
+                id = outcome,
+                role = MessageRole.ASSISTANT,
+                content = "回复",
+                ragMetadata = RagMetadata(trace = RagRetrievalTrace(outcome = outcome)),
+            )
+
+            assertThat(message.hasRagArtifacts()).isTrue()
+        }
+    }
+
+    @Test
+    fun `工具续轮后仍选中持有检索轨迹的首条回复`() {
+        val first = Message(
+            id = "first",
+            role = MessageRole.ASSISTANT,
+            content = "调用工具",
+            ragMetadata = RagMetadata(trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE)),
+        )
+        val continuation = Message(id = "next", role = MessageRole.ASSISTANT, content = "后续回复")
+
+        assertThat(selectRagActiveMessage(listOf(first, continuation))).isEqualTo(first)
+        assertThat(continuation.hasRagArtifacts()).isFalse()
+    }
 
     @Test
     fun `multiple assistant messages select the one containing only kgPaths`() {

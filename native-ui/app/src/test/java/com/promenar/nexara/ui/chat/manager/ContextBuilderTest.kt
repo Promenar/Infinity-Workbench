@@ -7,6 +7,7 @@ import com.promenar.nexara.data.model.KgNode
 import com.promenar.nexara.data.model.KgPath
 import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.RagReference
+import com.promenar.nexara.data.model.RagRetrievalTrace
 import com.promenar.nexara.data.model.RagUsage
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.TaskState
@@ -341,6 +342,70 @@ class ContextBuilderTest {
         fail = true
         assertThat(builder.buildContext(params).ragTrace?.outcome)
             .isEqualTo(com.promenar.nexara.data.model.RagRetrievalTrace.OUTCOME_FAILED)
+    }
+
+    @Test
+    fun `检索开启但Provider缺失时记录不可用轨迹`() = testScope.runTest {
+        val session = Session(id = "s1", agentId = "a1", ragOptions = RagOptions(enableMemory = true))
+
+        val result = ContextBuilder().buildContext(
+            ContextBuilderParams("s1", "问题", assistantMsgId = "m1", session = session),
+        )
+
+        assertThat(result.ragTrace?.outcome).isEqualTo(RagRetrievalTrace.OUTCOME_UNAVAILABLE)
+        assertThat(result.retrieval.ragTrace).isEqualTo(result.ragTrace)
+        assertThat(result.ragReferences).isEmpty()
+    }
+
+    @Test
+    fun `检索关闭且Provider缺失时不产生轨迹`() = testScope.runTest {
+        val session = Session(
+            id = "s1",
+            agentId = "a1",
+            ragOptions = RagOptions(enableMemory = false, enableDocs = false),
+        )
+
+        val result = ContextBuilder().buildContext(
+            ContextBuilderParams("s1", "问题", assistantMsgId = "m1", session = session),
+        )
+
+        assertThat(result.ragTrace).isNull()
+        assertThat(result.retrieval.ragTrace).isNull()
+    }
+
+    @Test
+    fun `Provider未记录轨迹且返回空结果时补齐未命中轨迹`() = testScope.runTest {
+        val result = buildContextWithUntracedRagResult(RagRetrievalResult("", emptyList(), null))
+
+        assertThat(result.ragTrace?.outcome).isEqualTo(RagRetrievalTrace.OUTCOME_EMPTY)
+        assertThat(result.ragTrace?.selectedCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `Provider未记录轨迹且返回引用时补齐命中轨迹`() = testScope.runTest {
+        val reference = RagReference("r1", "检索正文", "文档")
+        val result = buildContextWithUntracedRagResult(
+            RagRetrievalResult("检索正文", listOf(reference), RagUsage(ragSystem = 8)),
+        )
+
+        assertThat(result.ragTrace?.outcome).isEqualTo(RagRetrievalTrace.OUTCOME_HIT)
+        assertThat(result.ragTrace?.selectedCount).isEqualTo(1)
+        assertThat(result.ragReferences).containsExactly(reference)
+    }
+
+    private suspend fun buildContextWithUntracedRagResult(result: RagRetrievalResult): ContextBuilderResult {
+        val provider = object : RagProvider {
+            override suspend fun retrieveContext(
+                query: String,
+                sessionId: String,
+                options: RagOptions,
+                onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?,
+            ): RagRetrievalResult = result
+        }
+        val session = Session(id = "s1", agentId = "a1", ragOptions = RagOptions(enableDocs = true))
+        return ContextBuilder(ragProvider = provider).buildContext(
+            ContextBuilderParams("s1", "问题", assistantMsgId = "m1", session = session),
+        )
     }
 
     @Test

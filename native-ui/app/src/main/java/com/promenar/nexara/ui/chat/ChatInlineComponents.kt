@@ -36,7 +36,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.testTag as semanticsTestTag
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -109,121 +108,6 @@ fun SummaryIndicator(
                 style = NexaraTypography.labelMedium,
                 color = MaterialTheme.colorScheme.primary
             )
-        }
-    }
-}
-
-@Composable
-fun ThinkingBlock(
-    reasoning: String,
-    isGenerating: Boolean,
-    fontSize: Int = 13
-) {
-    var isExpanded by remember { mutableStateOf(false) }
-
-    // Auto-expand during generation, auto-collapse when generation finishes
-    LaunchedEffect(reasoning.isNotBlank(), isGenerating) {
-        if (reasoning.isNotBlank() && isGenerating) {
-            isExpanded = true
-        } else if (!isGenerating) {
-            isExpanded = false
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth(0.85f)
-                .clickable { isExpanded = !isExpanded },
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (isGenerating) {
-                    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-                    val alpha by infiniteTransition.animateFloat(
-                        initialValue = 0.4f,
-                        targetValue = 1f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(800),
-                            repeatMode = RepeatMode.Reverse
-                        ),
-                        label = "alpha"
-                    )
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .alpha(alpha)
-                            .background(MaterialTheme.colorScheme.primary)
-                    )
-                } else {
-                    Icon(
-                        Icons.Rounded.CheckCircle,
-                        null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-                
-                Text(
-                    text = if (isGenerating) stringResource(R.string.chat_status_thinking) else stringResource(R.string.chat_status_thought),
-                    style = NexaraTypography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                
-                if (reasoning.isNotBlank()) {
-                    Icon(
-                        if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                        null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = isExpanded && reasoning.isNotBlank(),
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
-        ) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.2f),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .fillMaxWidth(0.95f),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f))
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    CompositionLocalProvider(
-                        LocalTextStyle provides NexaraTypography.bodySmall.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                            fontSize = (fontSize - 2).coerceAtLeast(10).sp,
-                            lineHeight = (fontSize + 3).sp,
-                            fontStyle = FontStyle.Italic
-                        )
-                    ) {
-                        MarkdownText(
-                            markdown = reasoning,
-                            modifier = Modifier.fillMaxWidth(),
-                            isStreaming = isGenerating,
-                            fontSize = (fontSize - 2).coerceAtLeast(10),
-                            showCursor = false // Hide cursor in thinking block to avoid double cursors
-                        )
-                    }
-                }
-            }
         }
     }
 }
@@ -433,150 +317,47 @@ fun RagProgressCard(
 ) {
     var showDetailsSheet by remember { mutableStateOf(false) }
 
-    val hasReferences = references?.isNullOrEmpty() == false
-    val hasKgPaths = kgPaths?.isNullOrEmpty() == false
-    val hasCitations = citations?.isNullOrEmpty() == false
-
-    // 如果是历史消息（phases 为空且已完成），自动回退使用默认的 8 步已完成状态填充
-    val displayPhases = if (phases.isEmpty() && isComplete) {
-        RAG_DEFAULT_PHASES
-    } else {
-        phases
-    }
-
+    val displayPhases = if (phases.isEmpty() && isComplete) RAG_DEFAULT_PHASES else phases
     val activePhase = displayPhases.find { it.status == PhaseStatus.ACTIVE }
-    val visiblePhase = activePhase
-        ?: displayPhases.lastOrNull { it.id == "ready" && it.status == PhaseStatus.DONE }
-    val retrievalReady = isComplete || visiblePhase?.id == "ready"
-
-    // 自动匹配当前精细状态描述；有检索记录时以命中摘要为准
-    val traceSegments = trace?.takeIf { isComplete }?.let { retrievalTrace ->
-        buildList {
-            ragCardSummary(retrievalTrace, references.orEmpty().size).forEach { part ->
+    val ready = isComplete || displayPhases.any { it.id == "ready" && it.status == PhaseStatus.DONE }
+    val progress = if (ready) 1f else (activePhase?.progress ?: 0).coerceIn(0, 100) / 100f
+    val webOnly = trace == null && references.isNullOrEmpty() && kgPaths.isNullOrEmpty() && !citations.isNullOrEmpty()
+    val source = stringResource(if (webOnly) R.string.chat_rag_source_web else R.string.chat_rag_source_knowledge)
+    val segments = buildList {
+        add(source)
+        when {
+            ready && trace != null -> ragCardSummary(trace, references.orEmpty().size).forEach { part ->
                 add(stringResource(part.resId, *part.args.toTypedArray()))
             }
-            citations.orEmpty().size.takeIf { it > 0 }?.let { add(stringResource(R.string.chat_rag_summary_web, it)) }
+            ready && !references.isNullOrEmpty() -> add(stringResource(R.string.chat_rag_summary_hit, references.size))
+            ready -> add(stringResource(R.string.chat_rag_summary_ready))
+            activePhase != null -> add(localizedRagPhaseName(activePhase))
+            else -> add(stringResource(R.string.chat_rag_preparing))
         }
+        if (ready && !citations.isNullOrEmpty()) add(stringResource(R.string.chat_rag_summary_web, citations.size))
+        if (!ready) add("${(progress * 100).toInt()}%")
     }
-    val currentText = when {
-        traceSegments != null -> traceSegments.joinToString("，") // wrap-check: allow 无障碍状态描述，排版由 NexaraMetaLine 承担
-        isComplete -> {
-            if (hasCitations && (hasReferences || hasKgPaths)) stringResource(R.string.chat_rag_ready_references)
-            else if (hasCitations) stringResource(R.string.chat_rag_ready_web)
-            else stringResource(R.string.chat_rag_ready_knowledge)
-        }
-        visiblePhase != null -> localizedRagPhaseName(visiblePhase)
-        displayPhases.isNotEmpty() -> stringResource(R.string.chat_rag_preparing)
-        else -> {
-            if (hasCitations && (hasReferences || hasKgPaths)) stringResource(R.string.chat_rag_ready_references)
-            else if (hasCitations) stringResource(R.string.chat_rag_ready_web)
-            else stringResource(R.string.chat_rag_ready_generic)
-        }
-    }
-
-    val progress = when {
-        retrievalReady -> 1f
-        activePhase != null -> (activePhase.progress.coerceIn(0, 100) / 100f)
-        else -> 0f
-    }
+    val tone = trace?.let(::ragOutcomeTone) ?: RagOutcomeTone.HIT
     val openDetailsLabel = stringResource(R.string.chat_rag_open_details)
-    val doneLabel = stringResource(R.string.chat_rag_done)
-    val openDetails = { showDetailsSheet = true }
-    val accessibilityState = if (retrievalReady) "$currentText · $doneLabel" else currentText // wrap-check: allow 无障碍状态描述，不参与排版
-
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
-            .clickable(
-                onClickLabel = openDetailsLabel,
-                role = Role.Button,
-                onClick = openDetails,
-            )
-            .clearAndSetSemantics {
-                semanticsTestTag = UiTags.RAG_PROGRESS_CARD
-                role = Role.Button
-                stateDescription = accessibilityState
-                onClick(label = openDetailsLabel) {
-                    openDetails()
-                    true
-                }
-                if (!retrievalReady) {
-                    progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f)
-                }
-            },
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = NexaraElevation.Level0
-    ) {
-        Row(
-            modifier = Modifier.padding(
-                horizontal = NexaraSpacing.Large,
-                vertical = NexaraSpacing.Small,
-            ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-        ) {
-            if (retrievalReady) {
-                val tone = trace?.let(::ragOutcomeTone) ?: RagOutcomeTone.HIT
-                Icon(
-                    imageVector = when (tone) {
-                        RagOutcomeTone.HIT -> Icons.Rounded.CheckCircle
-                        RagOutcomeTone.NEUTRAL -> Icons.Rounded.Info
-                        RagOutcomeTone.ATTENTION -> Icons.Rounded.Warning
-                    },
-                    contentDescription = null,
-                    tint = when (tone) {
-                        RagOutcomeTone.HIT -> MaterialTheme.colorScheme.primary
-                        RagOutcomeTone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
-                        RagOutcomeTone.ATTENTION -> MaterialTheme.colorScheme.error
-                    },
-                    modifier = Modifier.size(18.dp),
-                )
-            } else {
-                CircularProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier
-                        .size(18.dp)
-                        .clearAndSetSemantics {},
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    strokeWidth = 2.dp,
-                )
-            }
-            if (traceSegments != null) {
-                NexaraMetaLine(
-                    segments = traceSegments,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clearAndSetSemantics {},
-                )
-            } else {
-                Text(
-                    text = currentText,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clearAndSetSemantics {},
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Text(
-                text = if (retrievalReady) {
-                    stringResource(R.string.chat_rag_done)
-                } else {
-                    "${(progress * 100).toInt()}%"
-                },
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.clearAndSetSemantics {},
-            )
-        }
-    }
+    CompactStepRow(
+        segments = segments,
+        icon = when (tone) {
+            RagOutcomeTone.HIT -> Icons.Rounded.CheckCircle
+            RagOutcomeTone.NEUTRAL -> Icons.Rounded.Info
+            RagOutcomeTone.ATTENTION -> Icons.Rounded.Warning
+        },
+        active = !ready,
+        progress = if (ready) null else progress,
+        tone = when (tone) {
+            RagOutcomeTone.ATTENTION -> MaterialTheme.colorScheme.error
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        state = if (ready) stringResource(R.string.chat_rag_done) else segments.last(),
+        clickLabel = openDetailsLabel,
+        tag = UiTags.RAG_PROGRESS_CARD,
+        onClick = { showDetailsSheet = true },
+        modifier = modifier,
+    )
 
     if (showDetailsSheet) {
         RagDetailsSheet(

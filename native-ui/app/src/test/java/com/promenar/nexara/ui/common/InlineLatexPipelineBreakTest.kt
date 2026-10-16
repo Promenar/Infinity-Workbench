@@ -3,7 +3,7 @@ package com.promenar.nexara.ui.common
 import com.google.common.truth.Truth.assertThat
 import org.junit.jupiter.api.Test
 
-/** 临时诊断：逐级跑 MarkdownText 变换链，定位哪一级破坏行内 LaTeX 分段（审计缺陷 P0-3）。 */
+/** 验证正文预处理与富文本分段能完整保留行内公式。 */
 class InlineLatexPipelineBreakTest {
 
     private val full = """
@@ -70,14 +70,14 @@ class InlineLatexPipelineBreakTest {
     }
 
     @Test
-    fun `stage4 insertCjkSpacing keeps inline latex`() {
-        val text = insertCjkSpacing(repairCompressedMarkdownBoundaries(safeTrimIndent(normalizeLatexDelimiters(full))))
+    fun `完整正文预处理保留行内公式`() {
+        val text = prepareMarkdownForRendering(full)
         assertThat(hasInlineLatex(text)).isTrue()
     }
 
     @Test
     fun `stage5 full pipeline segments inline latex`() {
-        val processed = insertCjkSpacing(repairCompressedMarkdownBoundaries(safeTrimIndent(normalizeLatexDelimiters(full))))
+        val processed = prepareMarkdownForRendering(full)
         val segments = splitRichSegments(processed)
         val kinds = segments.map { it::class.simpleName }
         assertThat(kinds).contains("InlineLatex")

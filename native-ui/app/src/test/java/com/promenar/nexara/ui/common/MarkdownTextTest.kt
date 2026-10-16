@@ -9,6 +9,18 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 
 class MarkdownTextTest {
+    @Test
+    fun `完整预处理保留空格与Tab混合缩进代码`() {
+        for (spaces in listOf(" ", "  ", "   ")) {
+            val input = "${spaces}\t#标题 1.内容 > 引用\n${spaces}\t2.下一行"
+            assertThat(prepareMarkdownForRendering(input)).isEqualTo(input)
+        }
+    }
+    @Test
+    fun `完整预处理保留Tab缩进代码内容`() {
+        val input = "\t#标题 1.内容 > 引用\n\t2.下一行"
+        assertThat(prepareMarkdownForRendering(input)).isEqualTo(input)
+    }
 
     @Nested
     inner class NormalizeLatexDelimiters {
@@ -225,6 +237,79 @@ class MarkdownTextTest {
         }
 
         @Test
+        fun `小数和百分比保持原文`() {
+            val input = "算一下3.7% 年化，收益率为0.85%，本金增长1.25倍。"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
+
+        @Test
+        fun `版本号和价格保持原文`() {
+            val input = "版本 1.2.3、v0.41.0，价格为￥12.99 和 100.50 元。"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
+
+        @Test
+        fun `加粗小数保持标记和数字`() {
+            val input = "**3.7%** 年化收益"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
+
+        @Test
+        fun `有序列表的数字内容保持完整`() {
+            val input = "1. 3.7% 年化\n2. 12.99 元\n3. 版本 1.2.3"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
+
+        @Test
+        fun `普通句和算式中的减号加号乘号保持原文`() {
+            val input = "比较 A - B，计算 10 - 3 - 2、A + B + C 和 A * B * C。"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
+
+        @Test
+        fun `已有列表项内的算式不生成新列表项`() {
+            val input = "- 计算 10 - 3 + 2\n- 比较 A - B"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
+
+        @Test
+        fun `冒号引出的连续同类列表标记恢复换行`() {
+            listOf('-', '*', '+').forEach { marker ->
+                val input = "要点： $marker 第一项 $marker 第二项 $marker 第三项"
+                val expected = "要点：\n$marker 第一项\n$marker 第二项\n$marker 第三项"
+
+                assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(expected)
+            }
+        }
+
+        @Test
+        fun `孤立标记和混合标记不被猜测为压缩列表`() {
+            val input = "前文 - 后文\n要点： - 第一项 + 第二项\n计算：10 - 3 - 2"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
+
+        @Test
+        fun `冒号后的负数百分比算式保持原文`() {
+            val input = "计算： - 3.7% - 2.5%"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
+
+        @Test
+        fun `普通文本的CRLF换行保持原文`() {
+            val input = "第一段。\r\n\r\n比较 A - B。"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
+
+        @Test
         fun `separates compressed markdown table rows`() {
             val input = "###表格测试|功能|状态|备注||---|---|---||粗体|✅|正常工作||斜体|✅|正常工作"
             val result = repairCompressedMarkdownBoundaries(input)
@@ -250,41 +335,68 @@ class MarkdownTextTest {
 
             assertThat(result).isEqualTo(input)
         }
+
+        @Test
+        fun `缩进代码中的标题列表和引用标记保持原文`() {
+            val input = "正文\n\n    #标题 1.内容 A - B > 引用\n    2.下一行"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
+
+        @Test
+        fun `反引号和波浪号围栏中的内容保持原文`() {
+            val input = "```text\n要点： - 第一项 - 第二项\n#标题 1.内容 `值` > 引用\n```\n\n~~~text\n#标题 1.内容 A - B > 引用\n~~~"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
+
+        @Test
+        fun `多反引号行内代码保持原文`() {
+            val input = "保留 ``内容 `#标题 1.内容 A - B` 结束``。"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
+
+        @Test
+        fun `带嵌套括号的链接和引用链接保持原文`() {
+            val input = "[比较 [A - B] #标题](https://example.com/a_(b))\n\n[A - B #标题][手册]\n\n[手册]: https://example.com"
+
+            assertThat(repairCompressedMarkdownBoundaries(input)).isEqualTo(input)
+        }
     }
 
     @Nested
-    inner class InsertCjkSpacing {
+    inner class PreserveOriginalSpacing {
 
         @Test
-        fun `inserts hair space between cjk and following ascii letter`() {
-            val result = insertCjkSpacing("测试hello")
-            assertThat(result).isEqualTo("测试\u200Ahello")
+        fun `汉字后接英文时保持原文`() {
+            val result = prepareMarkdownForRendering("测试hello")
+            assertThat(result).isEqualTo("测试hello")
         }
 
         @Test
-        fun `inserts hair space between ascii letter and following cjk`() {
-            val result = insertCjkSpacing("hello测试")
-            assertThat(result).isEqualTo("hello\u200A测试")
+        fun `英文后接汉字时保持原文`() {
+            val result = prepareMarkdownForRendering("hello测试")
+            assertThat(result).isEqualTo("hello测试")
         }
 
         @Test
-        fun `inserts hair space between cjk and digit boundary`() {
-            // 函数在 CJK 与数字边界双向插入窄空格（共→3 与 3→项 都插）
-            val result = insertCjkSpacing("共3项")
-            assertThat(result).isEqualTo("共\u200A3\u200A项")
+        fun `汉字与数字相邻时保持原文`() {
+            val result = prepareMarkdownForRendering("共3项")
+            assertThat(result).isEqualTo("共3项")
         }
 
         @Test
         fun `does not insert inside inline code spans`() {
             // Code containing CJK+ASCII adjacency must be preserved verbatim.
-            val result = insertCjkSpacing("前`测a`后")
+            val result = prepareMarkdownForRendering("前`测a`后")
             assertThat(result).isEqualTo("前`测a`后")
             assertThat(result).doesNotContain("\u200A")
         }
 
         @Test
         fun `does not insert inside link text or url`() {
-            val result = insertCjkSpacing("见[测试a](http://x.com)末")
+            val result = prepareMarkdownForRendering("见[测试a](http://x.com)末")
             assertThat(result).isEqualTo("见[测试a](http://x.com)末")
             assertThat(result).doesNotContain("\u200A")
         }
@@ -292,19 +404,26 @@ class MarkdownTextTest {
         @Test
         fun `leaves pure english text unchanged`() {
             val input = "hello world foo bar"
-            assertThat(insertCjkSpacing(input)).isEqualTo(input)
+            assertThat(prepareMarkdownForRendering(input)).isEqualTo(input)
         }
 
         @Test
         fun `leaves pure cjk text unchanged`() {
             val input = "测试中文标点"
-            assertThat(insertCjkSpacing(input)).isEqualTo(input)
+            assertThat(prepareMarkdownForRendering(input)).isEqualTo(input)
         }
 
         @Test
-        fun `inserts on both sides around mixed tokens`() {
-            val result = insertCjkSpacing("中文ABC中文")
-            assertThat(result).isEqualTo("中文\u200AABC\u200A中文")
+        fun `混排词组两侧保持原文`() {
+            val result = prepareMarkdownForRendering("中文ABC中文")
+            assertThat(result).isEqualTo("中文ABC中文")
+        }
+
+        @Test
+        fun `中文标点和已有空白保持原文`() {
+            val input = "选 A 还是选 B、中文ABC，XX  新闻、保留\u200A原有间隔。"
+
+            assertThat(prepareMarkdownForRendering(input)).isEqualTo(input)
         }
     }
 
