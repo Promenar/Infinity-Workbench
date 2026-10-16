@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+# 即使调用者启用了 bash -x，也不跟踪设备验收中的认证参数。
+set +x
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "${REPO_ROOT}/scripts/ci/lib/android-instrumentation.sh"
@@ -47,6 +49,19 @@ ORIGINAL_ACCELEROMETER_ROTATION=""
 ORIGINAL_USER_ROTATION=""
 PENDING_NOTIFICATION_SCREENSHOT_STAGE=""
 PENDING_NOTIFICATION_SCREENSHOT_EXPECTED=""
+SSH_HELPER="${REPO_ROOT}/scripts/ci/ssh-device-session.py"
+SSH_REVERSE_PORT=""
+SSH_REVERSE_ACTIVE=false
+if [[ -n "${NEXARA_SSH_TEST_SESSION:-}" ]]; then
+    if [[ "${NEXARA_SSH_TEST_SESSION}" != /* ]]; then
+        export NEXARA_SSH_TEST_SESSION="${PWD}/${NEXARA_SSH_TEST_SESSION}"
+    fi
+    python3 "${SSH_HELPER}" validate
+fi
+
+redact_output() {
+    python3 "${SSH_HELPER}" redact
+}
 
 mkdir -p "${ARTIFACT_DIR}"
 printf 'api_level=%s\nabi=%s\nscope=%s\ndistribution=sideload\nbuild_type=deviceTest\n' \
@@ -56,12 +71,12 @@ printf 'api_level=%s\nabi=%s\nscope=%s\ndistribution=sideload\nbuild_type=device
 capture_artifacts() {
     local exit_code="$1"
     set +e
-    adb logcat -d -v threadtime > "${ARTIFACT_DIR}/logcat.txt" 2>&1
-    adb logcat -b crash -d -v threadtime > "${ARTIFACT_DIR}/crash-log.txt" 2>&1
-    adb shell dumpsys activity processes > "${ARTIFACT_DIR}/activity-processes.txt" 2>&1
-    adb shell dumpsys package "${TARGET_PACKAGE}" > "${ARTIFACT_DIR}/target-package.txt" 2>&1
+    adb logcat -d -v threadtime 2>&1 | redact_output > "${ARTIFACT_DIR}/logcat.txt"
+    adb logcat -b crash -d -v threadtime 2>&1 | redact_output > "${ARTIFACT_DIR}/crash-log.txt"
+    adb shell dumpsys activity processes 2>&1 | redact_output > "${ARTIFACT_DIR}/activity-processes.txt"
+    adb shell dumpsys package "${TARGET_PACKAGE}" 2>&1 | redact_output > "${ARTIFACT_DIR}/target-package.txt"
     adb shell uiautomator dump /sdcard/nexara-window.xml >/dev/null 2>&1
-    adb pull /sdcard/nexara-window.xml "${ARTIFACT_DIR}/window.xml" >/dev/null 2>&1
+    adb shell cat /sdcard/nexara-window.xml 2>/dev/null | redact_output > "${ARTIFACT_DIR}/window.xml"
     adb exec-out screencap -p > "${ARTIFACT_DIR}/screen.png" 2>/dev/null
     printf '%s\n' "${exit_code}" > "${ARTIFACT_DIR}/exit-code.txt"
     set -e
@@ -114,6 +129,10 @@ restore_device_display_state() {
 
 finish_run() {
     local exit_code="$1"
+    if [[ "${SSH_REVERSE_ACTIVE}" == "true" ]]; then
+        adb reverse --remove "tcp:${SSH_REVERSE_PORT}" >/dev/null 2>&1 || true
+        SSH_REVERSE_ACTIVE=false
+    fi
     if [[ -n "${PENDING_NOTIFICATION_SCREENSHOT_STAGE}" ]]; then
         pull_notification_permission_screenshots \
             "${PENDING_NOTIFICATION_SCREENSHOT_STAGE}" \
@@ -151,13 +170,46 @@ run_test() {
     shift 2
     local output_file="${ARTIFACT_DIR}/${name}.txt"
     local status
+    local -a pipeline_status
     echo "运行设备测试：${name}"
     set +e
     python3 "${TIMEOUT_HELPER}" "${INSTRUMENT_TIMEOUT_SECONDS}" adb shell am instrument -w -r "$@" "${runner}" \
-        2>&1 | tee "${output_file}"
-    status="${PIPESTATUS[0]}"
+        2>&1 | redact_output | tee "${output_file}"
+    pipeline_status=("${PIPESTATUS[@]}")
+    status="${pipeline_status[0]}"
     set -e
+    if (( pipeline_status[1] != 0 || pipeline_status[2] != 0 )); then
+        echo "设备测试输出脱敏或产物写入失败：${name}" >&2
+        return 1
+    fi
     nexara_assert_normal_instrumentation_output "${output_file}" "${status}"
+}
+
+run_ssh_device_contracts() {
+    if [[ -z "${NEXARA_SSH_TEST_SESSION:-}" ]]; then
+        echo "跳过 SSH 设备用例：未设置 NEXARA_SSH_TEST_SESSION。"
+        return 0
+    fi
+    SSH_REVERSE_PORT="$(python3 "${SSH_HELPER}" port)"
+    # 仅经 ADB 到宿主回环；不使用 10.0.2.2，也不覆盖调用者已有的 reverse 规则。
+    adb reverse --no-rebind "tcp:${SSH_REVERSE_PORT}" "tcp:${SSH_REVERSE_PORT}"
+    SSH_REVERSE_ACTIVE=true
+    prepare_target_for_foreground_notification
+    local output_file="${ARTIFACT_DIR}/ssh-runtime.txt"
+    local -a pipeline_status
+    echo "运行设备测试：ssh-runtime"
+    set +e
+    python3 "${SSH_HELPER}" run --runner "${APP_RUNNER}" --timeout "${INSTRUMENT_TIMEOUT_SECONDS}" \
+        2>&1 | tee "${output_file}"
+    pipeline_status=("${PIPESTATUS[@]}")
+    set -e
+    if (( pipeline_status[1] != 0 )); then
+        echo "SSH 设备测试产物写入失败" >&2
+        return 1
+    fi
+    nexara_assert_normal_instrumentation_output "${output_file}" "${pipeline_status[0]}"
+    adb reverse --remove "tcp:${SSH_REVERSE_PORT}"
+    SSH_REVERSE_ACTIVE=false
 }
 
 run_layout_and_accessibility_contracts() {
@@ -327,12 +379,12 @@ run_expected_relay_death() {
     python3 "${TIMEOUT_HELPER}" "${INSTRUMENT_TIMEOUT_SECONDS}" adb shell am instrument -w -r \
         -e class com.promenar.nexara.data.backup.AndroidRestoreRelayEndToEndTest \
         -e restoreRelayPhase "${phase}" \
-        "${APP_RUNNER}" 2>&1 | tee "${output_file}"
+        "${APP_RUNNER}" 2>&1 | redact_output | tee "${output_file}"
     status="${PIPESTATUS[0]}"
     set -e
 
     nexara_assert_expected_process_death_output "${output_file}" "${status}"
-    adb logcat -b main -d -v threadtime -s NexaraLogger:D '*:S' > "${relay_log_file}" 2>&1
+    adb logcat -b main -d -v threadtime -s NexaraLogger:D '*:S' 2>&1 | redact_output > "${relay_log_file}"
     if ! grep -Eq '\[NexaraRestoreRelay\] relay_pid=[0-9]+ main_pid=[0-9]+ payload=none' "${relay_log_file}"; then
         echo "预期进程死亡阶段缺少 RestoreRelayActivity 专属执行证据：${relay_log_file}" >&2
         return 1
@@ -419,8 +471,19 @@ run_test prompt-editor-contracts "${APP_RUNNER}" \
     -e class com.promenar.nexara.ui.common.UnifiedPromptEditorE2ETest
 run_layout_and_accessibility_contracts
 
+# API 31 minimum 与 API 35 full 共用这些真实设备能力合同。
+run_test external-folder-saf "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.storage.SafExternalFolderDeviceTest
+run_test script-runtime "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.script.ScriptRuntimeDeviceTest
+run_test rich-content-webview "${APP_RUNNER}" \
+    -e class com.promenar.nexara.ui.renderer.RichContentWebViewDeviceTest
+run_test rich-content-theme "${APP_RUNNER}" \
+    -e class com.promenar.nexara.ui.renderer.RichContentThemeTest
+
 if [[ "${DEVICE_E2E_SCOPE}" == "minimum" ]]; then
-    adb logcat -b crash -d -v threadtime > "${ARTIFACT_DIR}/crash-after-tests.txt" 2>&1
+    echo "跳过 SSH 设备用例：minimum 范围不运行 SSH。"
+    adb logcat -b crash -d -v threadtime 2>&1 | redact_output > "${ARTIFACT_DIR}/crash-after-tests.txt"
     if grep -Eq "Process: ${TARGET_PACKAGE_REGEX}([,[:space:]]|$)|ANR in ${TARGET_PACKAGE_REGEX}" "${ARTIFACT_DIR}/crash-after-tests.txt"; then
         echo "最低 SDK 核心回归后 crash buffer 包含 Nexara 崩溃" >&2
         exit 1
@@ -428,6 +491,20 @@ if [[ "${DEVICE_E2E_SCOPE}" == "minimum" ]]; then
     echo "API ${API_LEVEL} 最低 SDK 核心可达性、无障碍与自适应布局测试全部通过。"
     exit 0
 fi
+
+run_test external-folder-real-path "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.storage.RealPathExternalFolderDeviceTest
+run_test database-migration-1-2 "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration1To2Test
+run_test database-migration-2-3 "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration2To3Test
+run_test database-migration-1-current "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration1To5Test
+run_test database-migration-18-21 "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.local.db.NexaraDatabaseMigration18To21Test
+run_test legacy-database-promotion "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.local.db.LegacyDatabasePromoterInstrumentedTest
+run_ssh_device_contracts
 
 run_test onboarding-seed-first-chat "${APP_RUNNER}" \
     -e class com.promenar.nexara.onboarding.OnboardingAndroidEndToEndTest#forceStopPhaseCheckpoint \
@@ -496,7 +573,7 @@ force_stop_target
 run_test generation-cold-stop "${APP_RUNNER}" \
     -e class com.promenar.nexara.background.generation.GenerationForegroundServiceColdStartDeviceTest#coldStopDuringStartupRecoveryStopsGracefullyWithoutCoordinator
 
-adb logcat -b crash -d -v threadtime > "${ARTIFACT_DIR}/crash-after-tests.txt" 2>&1
+adb logcat -b crash -d -v threadtime 2>&1 | redact_output > "${ARTIFACT_DIR}/crash-after-tests.txt"
 if grep -Eq "Process: ${TARGET_PACKAGE_REGEX}([,[:space:]]|$)|ANR in ${TARGET_PACKAGE_REGEX}" "${ARTIFACT_DIR}/crash-after-tests.txt"; then
     echo "设备回归后 crash buffer 包含 Nexara 崩溃" >&2
     exit 1

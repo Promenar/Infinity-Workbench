@@ -14,6 +14,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 移动端设备验收基础设施（2026-10-17）
+
+- 增加离线真实 WebView 的公式、流程图、图表、文件/内容与私网请求门禁、导航阻止及池复用设备合同；minimum/full 同时接入 SAF 与隔离脚本全部 8 例。
+- 增加 SSH 设备合同，覆盖首次信任、错误指纹、exec/超时、SFTP 条件写入冲突、PTY、回环转发、密码脱敏、前台通知及真实 Agent 工具审批账本；独立 MINA 宿主夹具仅监听回环，认证会话使用 0600 临时文件，不进入 APK。
+- full 接入侧载真实路径、旧库提升和 v18→v21 独立迁移等设备合同；SSH 使用受控 ADB reverse、认证参数标准输入注入与产物前脱敏，补充运行步骤及宿主工具回归。
+
 ### 隔离脚本运行时（2026-10-17）
 
 - `exec_js` 使用隔离进程 QuickJS，支持 result、最后表达式、Promise、可选联网与超时；新增工作区 `.js/.mjs` 文件执行工具 `run_script` 及同根相对模块。两个渠道共用实现，移除 WebView 执行路径。

@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <provider
+            android:name="com.promenar.nexara.ui.renderer.RichContentDeviceProvider"
+            android:authorities="${applicationId}.richcontentfixture"
+            android:exported="true" />
+        <provider
             android:name="com.promenar.nexara.share.core.ShareFixtureProvider"
             android:authorities="${applicationId}.sharefixture"
             android:exported="true"

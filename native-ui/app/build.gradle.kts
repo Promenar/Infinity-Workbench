@@ -399,6 +399,30 @@ configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configu
     }
 }
 
+// 宿主夹具使用独立 Java 类路径，MINA 不进入应用或 instrumentation APK。
+val sshTestServerRuntime by configurations.creating
+dependencies {
+    add(sshTestServerRuntime.name, "org.apache.sshd:sshd-core:2.16.0")
+    add(sshTestServerRuntime.name, "org.apache.sshd:sshd-sftp:2.16.0")
+    add(sshTestServerRuntime.name, "org.slf4j:slf4j-nop:2.0.17")
+}
+val compileSshTestServer by tasks.registering(JavaCompile::class) {
+    source(fileTree("src/sshTestServer/java") { include("**/*.java") })
+    classpath = sshTestServerRuntime
+    destinationDirectory.set(layout.buildDirectory.dir("classes/sshTestServer"))
+    options.release.set(17)
+    options.encoding = "UTF-8"
+}
+tasks.register<JavaExec>("runSshTestServer") {
+    group = "verification"
+    description = "前台运行仅监听宿主回环的 SSH 设备验收夹具；Ctrl-C 退出。"
+    dependsOn(compileSshTestServer)
+    classpath = files(compileSshTestServer.flatMap { it.destinationDirectory }) + sshTestServerRuntime
+    mainClass.set("com.promenar.nexara.testserver.SshTestServer")
+    workingDir = project.projectDir
+    standardInput = System.`in`
+}
+
 tasks.withType<Test> {
     useJUnitPlatform()
     workingDir = rootProject.projectDir

@@ -13,7 +13,7 @@
 ./gradlew :app:lintSideloadDebug
 ./gradlew :app:assembleSideloadDebug :app:assemblePlayDebug
 ./gradlew :app:assembleSideloadMinifiedTest :app:assemblePlayMinifiedTest
-./gradlew -Pnexara.deviceE2e=true :app:assembleSideloadDeviceTest :app:assembleSideloadDeviceTestAndroidTest :mainactivity-e2e:assembleDeviceTest
+./gradlew -Pnexara.deviceE2e=true -Pnexara.deviceE2eAbi=arm64-v8a :app:assembleSideloadDeviceTest :app:assembleSideloadDeviceTestAndroidTest :mainactivity-e2e:assembleDeviceTest
 ./gradlew :app:validateSideloadDebugScreenshotTest :app:validatePlayDebugScreenshotTest
 python3 ../scripts/ci/check-distribution-manifests.py
 ```
@@ -49,3 +49,50 @@ Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得
 主控在专用设备分别检查：离线公式与 Mermaid/ECharts、知识图谱模板、公共 CDN HTML 与 HTTPS 重定向、HTML PNG 导出、PlantUML；尝试访问环回、局域网、链路本地、混合 DNS 与公网转内网重定向应失败，点击链接不跳转。设备运行证据与 JVM 判定测试分别记录，编译通过不能代替运行验收。
 
 历史发行账本与已完成计划中的旧任务、路径属于当时证据；当前可执行入口以本说明、工作流和 PDEC 为准。
+
+## 本机设备验收
+
+Google APIs ARM64 模拟器使用 `arm64-v8a`，API 31 执行 `minimum`，API 35 执行 `full`。两个范围均运行原有核心/恢复/布局合同，以及 SAF 实际授权往返、隔离 QuickJS 全部 8 例、富内容 WebView 全部 7 例。`full` 另运行侧载真实路径、v1/v2 及独立 v18→v21 迁移、旧库提升、通知/备份恢复/导入等合同。富内容用例只使用打包的 KaTeX、Mermaid 与 ECharts，读取 DOM/JS 结果，不依赖外网或像素比较。
+
+在仓库根完成静态检查与 ARM64 测试包构建：
+
+```bash
+(cd native-ui && ./gradlew --no-daemon :app:testSideloadDebugUnitTest :app:testPlayDebugUnitTest :app:lintSideloadDebug)
+(cd native-ui && ./gradlew --no-daemon -Pnexara.deviceE2e=true -Pnexara.deviceE2eAbi=arm64-v8a :app:assembleSideloadDeviceTest :app:assembleSideloadDeviceTestAndroidTest :mainactivity-e2e:assembleDeviceTest)
+bash -n scripts/ci/android-device-core-e2e.sh
+python3 scripts/ci/check-text-wrapping.py
+python3 scripts/ci/test-ssh-device-session.py
+```
+
+在单独终端从仓库根启动宿主 SSH 服务，保持前台运行：
+
+```bash
+cd native-ui
+./gradlew --no-daemon :app:runSshTestServer --args='--port 2222 --echo-port 2223'
+```
+
+`--root <空目录>` 可指定 SFTP 根；省略时自动创建临时目录，服务退出时回收。指定目录必须为空，退出后保留供检查。服务只监听宿主 `127.0.0.1:2222` 与 `127.0.0.1:2223`，随机主机密钥只在内存，一次性密码和指纹只写入 `native-ui/app/build/ssh-test-server/session.json`（目录 0700、文件 0600）。MINA 使用独立宿主 Java 类路径，不进入任何 APK。不要打印会话文件或开启命令跟踪；服务退出会删除会话文件，启动新服务后必须使用新文件。
+
+服务提供固定合成 exec 命令：`device-exec` 返回 stdout/stderr 与退出码 7，`device-sleep` 用于超时，`device-active` 返回正在休眠的命令数，`device-secret` 用于脱敏验证；PTY shell 输出 `pty-ready:<TERM>`，按行回显 `echo:<输入>`，`exit` 关闭。服务不执行宿主 shell。SFTP 限定在临时根，direct-tcpip 仅允许连接宿主 `127.0.0.1` 的回显端口，禁用远端监听、Agent 与 X11 转发。
+
+宿主客户端自测在另一终端从仓库根运行 `python3 scripts/ci/selftest-ssh-server.py`，通过系统自带 `ssh`/`sftp` 验证 exec、SFTP、PTY 与转发。密码经 0700 临时 askpass 脚本读取会话文件，只交给客户端，不进入命令行、日志或报告。服务的前台输入关闭也会触发回收；受限终端中还可运行 `python3 scripts/ci/ssh-device-session.py stop --session native-ui/app/build/ssh-test-server/session.json`，删除当前会话租约后服务自动关闭端口并退出。
+
+在另一终端从仓库根设置两台已获授权的专用模拟器序列号，分别串行运行：
+
+```bash
+adb devices -l
+export NEXARA_SSH_TEST_SESSION="$PWD/native-ui/app/build/ssh-test-server/session.json"
+export NEXARA_DEVICE_E2E_ABI=arm64-v8a
+
+export ANDROID_SERIAL='<API31 实际序列号>'
+NEXARA_DEVICE_E2E_SCOPE=minimum bash scripts/ci/android-device-core-e2e.sh
+
+export ANDROID_SERIAL='<API35 实际序列号>'
+NEXARA_DEVICE_E2E_SCOPE=full bash scripts/ci/android-device-core-e2e.sh
+```
+
+设备脚本沿用 `ANDROID_SERIAL`，会构建、安装测试包并清空测试应用数据。SSH 只在 `full` 且设置了会话文件时运行，否则明确打印“跳过 SSH 设备用例”。脚本通过 `adb reverse --no-rebind tcp:2222 tcp:2222` 将设备 `127.0.0.1` 接到宿主回环；按会话中的实际端口建立，成功或失败退出均移除自身规则，已有同端口规则不会被覆盖。没有采用 `10.0.2.2` 路线；ADB 连通性及 API 31/35 WebView、PTY、前台通知的实际结果必须由主控运行验证。
+
+脚本在 Python 进程内读取会话，经 `adb shell` 标准输入传入 `-e sshPort`、`sshEchoPort`、`sshFingerprint`、`sshPassword` 与 `sshUsername`；密码不进入宿主命令行参数。instrumentation、logcat、dumpsys 和窗口 XML 在输出或落盘前脱敏。手动直接运行 `SshDeviceTest` 且缺少必要参数会以 assumption 明确跳过；脚本配置了 SSH 后，任何跳过、空套件、失败或超时都不能判定通过。
+
+默认产物分别写入 `artifacts/android-device-api-31-arm64-v8a/` 与 `artifacts/android-device-api-35-arm64-v8a/`，含逐阶段 instrumentation 输出、矩阵、退出码、脱敏日志与截图；SSH 阶段输出为 `ssh-runtime.txt`。可用 `ANDROID_E2E_ARTIFACT_DIR` 设置独立目录，`ANDROID_E2E_TIMEOUT_SECONDS` 调整每阶段超时（默认 120 秒）。两台验收结束后，在服务终端按 Ctrl-C 关闭宿主夹具。
