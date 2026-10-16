@@ -130,7 +130,7 @@ class KgCorrectnessRegressionTest {
     @Test
     fun `JIT缓存与归并写入不延迟当前请求`() = runTest {
         coEvery { protocol.sendPromptSync(any()) } returns PromptResponse(GRAPH)
-        coEvery { cacheDao.insert(any()) } coAnswers { delay(100); Unit }
+        coEvery { store.persistJit(any(), any(), any(), any()) } coAnswers { delay(100); true }
         val result = testMicroExtractor(protocol, store, cacheDao).extract(refs(), "q", "s")
         assertThat(result?.edges).hasSize(1)
         assertThat(testScheduler.currentTime).isEqualTo(0)
@@ -219,7 +219,7 @@ class KgCorrectnessRegressionTest {
         val entered = CompletableDeferred<Unit>()
         val cancelled = CompletableDeferred<Unit>()
         coEvery { protocol.sendPromptSync(any()) } returns PromptResponse(GRAPH)
-        coEvery { cacheDao.insert(any()) } coAnswers {
+        coEvery { store.persistJit(any(), any(), any(), any()) } coAnswers {
             entered.complete(Unit)
             try { awaitCancellation() } finally { cancelled.complete(Unit) }
         }

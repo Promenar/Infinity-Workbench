@@ -111,6 +111,7 @@ data class RagReference(
     val recallRank: Int? = null,
     /** 来源类型，取值见 [RagReferenceKind]。 */
     val kind: String? = null,
+    val documentContentHash: String? = null,
 )
 
 object RagReferenceKind {
@@ -182,7 +183,8 @@ data class KgPath(
     val queryKeywords: List<String> = emptyList(),
     val nodes: List<KgNode> = emptyList(),
     val edges: List<KgEdge> = emptyList(),
-    val reasoning: String? = null
+    val reasoning: String? = null,
+    val sourceDocumentIds: List<String> = emptyList(),
 )
 
 @Serializable

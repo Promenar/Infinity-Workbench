@@ -1,5 +1,8 @@
 package com.promenar.nexara.data.rag
 
+import com.promenar.nexara.data.local.db.seedKgNode
+import com.promenar.nexara.data.local.db.seedKgEdge
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -159,8 +162,7 @@ class DocumentIndexServiceTest {
             val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
             database.fileEntryDao().update(current.copy(inRecycleBin = true))
             database.vectorDao().deleteByDocId(FILE)
-            database.kgEdgeDao().deleteByDocId(FILE)
-            database.kgNodeDao().deleteByFileUuid(FILE)
+            database.kgEvidenceDao().clearDocument(FILE)
             candidate()
         }
 
@@ -196,13 +198,13 @@ class DocumentIndexServiceTest {
             id = "global-vector", content = "global searchable",
             embedding = byteArrayOf(0, 0, 0, 0), metadata = "{}", createdAt = 1,
         ))
-        database.kgNodeDao().insert(KgNodeEntity(id = "legacy-a", name = "legacy-a", createdAt = 1))
-        database.kgNodeDao().insert(KgNodeEntity(id = "legacy-b", name = "legacy-b", createdAt = 1))
-        database.kgNodeDao().insert(KgNodeEntity(id = "global-node", name = "global", createdAt = 1))
-        database.kgEdgeDao().insert(KgEdgeEntity(
+        database.seedKgNode(KgNodeEntity(id = "legacy-a", name = "legacy-a", createdAt = 1), docId = FILE, workspaceDocument = true)
+        database.seedKgNode(KgNodeEntity(id = "legacy-b", name = "legacy-b", createdAt = 1), docId = FILE, workspaceDocument = true)
+        database.seedKgNode(KgNodeEntity(id = "global-node", name = "global", createdAt = 1))
+        database.seedKgEdge(KgEdgeEntity(
             id = "legacy-edge", sourceId = "legacy-a", targetId = "legacy-b",
-            relation = "rel", docId = FILE, sessionId = "session", createdAt = 1,
-        ))
+            relation = "rel", createdAt = 1,
+        ) , sessionId = "session", docId = FILE, workspaceDocument = true)
 
         assertThat(database.vectorDao().getById("legacy-vector")).isNotNull()
         assertThat(database.kgEdgeDao().getById("legacy-edge")).isNotNull()
@@ -356,7 +358,8 @@ class DocumentIndexServiceTest {
         assertThat(database.vectorDao().searchByKeyword("old searchable")).isEmpty()
         assertThat(database.vectorDao().searchByKeyword("new searchable").map { it.id })
             .containsExactly(NEW_VECTOR)
-        assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(NEW_EDGE)
+        assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.relation }).containsExactly("rel")
+        assertThat(database.kgEvidenceDao().affectedByDocument(FILE).map { it.taskId }.distinct()).containsExactly(TASK)
         assertThat(database.kgNodeDao().getById("old-source")).isNull()
         assertThat(database.documentTagDao().getByDocId(FILE)).hasSize(1)
         assertThat(database.vectorizationTaskDao().getByDocId(FILE)).hasSize(1)
@@ -375,9 +378,9 @@ class DocumentIndexServiceTest {
                 materializedPath = "/other.txt",
             ),
         )
-        database.kgNodeDao().insert(KgNodeEntity(
-            id = "unrelated-orphan", name = "unrelated", createdAt = 1, fileUuid = "other-file",
-        ))
+        database.seedKgNode(KgNodeEntity(
+            id = "unrelated-orphan", name = "unrelated", createdAt = 1,
+        ) , docId = "other-file", workspaceDocument = true)
         val service = RoomDocumentIndexService(database) { error("删除不应构建候选") }
 
         val result = service.rebuild(FileIndexEvent.Deleted(ROOT, FILE))
@@ -451,8 +454,7 @@ class DocumentIndexServiceTest {
 
             coVerify(exactly = 1) { graphBuilder.build("Alice knows Bob", FILE, hash) }
             assertThat(candidate.nodes.map { it.name }).containsExactly("Alice", "Bob")
-            assertThat(candidate.edges.single().docId).isEqualTo(FILE)
-            assertThat(candidate.edges.single().fileUuid).isEqualTo(FILE)
+            assertThat(candidate.edges.single().normalizedRelation).isEqualTo("knows")
             assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_EDGE)
         } finally {
             file.delete()
@@ -557,9 +559,9 @@ class DocumentIndexServiceTest {
             createdAt = 1, updatedAt = EPOCH,
         ))
         database.vectorDao().insert(vector(OLD_VECTOR, "old searchable"))
-        database.kgNodeDao().insert(node("old-source"))
-        database.kgNodeDao().insert(node("old-target"))
-        database.kgEdgeDao().insert(edge(OLD_EDGE, "old-source", "old-target"))
+        database.seedKgNode(node("old-source"), docId = FILE, workspaceDocument = true)
+        database.seedKgNode(node("old-target"), docId = FILE, workspaceDocument = true)
+        database.seedKgEdge(edge(OLD_EDGE, "old-source", "old-target"), docId = FILE, workspaceDocument = true)
         database.tagDao().insert(TagEntity("tag", "tag", createdAt = 1))
         database.documentTagDao().insert(DocumentTagEntity(FILE, "tag", 1))
         database.vectorizationTaskDao().insert(VectorizationTaskEntity(
@@ -589,12 +591,12 @@ class DocumentIndexServiceTest {
     )
 
     private fun node(id: String) = KgNodeEntity(
-        id = id, name = id, createdAt = 1, fileUuid = FILE,
+        id = id, name = id, createdAt = 1,
     )
 
     private fun edge(id: String, source: String, target: String) = KgEdgeEntity(
-        id = id, sourceId = source, targetId = target, relation = "rel", docId = FILE,
-        createdAt = 1, fileUuid = FILE,
+        id = id, sourceId = source, targetId = target, relation = "rel",
+        createdAt = 1,
     )
 
     private companion object {

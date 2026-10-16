@@ -1,5 +1,8 @@
 package com.promenar.nexara.data.repository
 
+import com.promenar.nexara.data.local.db.seedKgNode
+import com.promenar.nexara.data.local.db.seedKgEdge
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -1339,7 +1342,7 @@ class WorkspaceRepositoryTest {
         }
         val queue = com.promenar.nexara.data.rag.VectorizationQueue(
             vectorStore = com.promenar.nexara.data.rag.VectorStore(
-                db.vectorDao(), db.kgNodeDao(), db.kgEdgeDao(),
+                db.vectorDao(), db.kgNodeDao(), db.kgEdgeDao(), db.kgEvidenceDao(),
             ),
             embeddingClient = embeddingClient,
             graphExtractor = graphExtractor,
@@ -1539,16 +1542,16 @@ class WorkspaceRepositoryTest {
             id = "vector-$fileUuid", docId = fileUuid, content = "indexed",
             embedding = byteArrayOf(0, 0, 0, 0), createdAt = 1, fileUuid = fileUuid,
         ))
-        db.kgNodeDao().insert(com.promenar.nexara.data.local.db.entity.KgNodeEntity(
-            id = "source-$fileUuid", name = "source", createdAt = 1, fileUuid = fileUuid,
-        ))
-        db.kgNodeDao().insert(com.promenar.nexara.data.local.db.entity.KgNodeEntity(
-            id = "target-$fileUuid", name = "target", createdAt = 1, fileUuid = fileUuid,
-        ))
-        db.kgEdgeDao().insert(com.promenar.nexara.data.local.db.entity.KgEdgeEntity(
+        db.seedKgNode(com.promenar.nexara.data.local.db.entity.KgNodeEntity(
+            id = "source-$fileUuid", name = "source-$fileUuid", createdAt = 1,
+        ) , docId = fileUuid, workspaceDocument = true)
+        db.seedKgNode(com.promenar.nexara.data.local.db.entity.KgNodeEntity(
+            id = "target-$fileUuid", name = "target-$fileUuid", createdAt = 1,
+        ) , docId = fileUuid, workspaceDocument = true)
+        db.seedKgEdge(com.promenar.nexara.data.local.db.entity.KgEdgeEntity(
             id = "edge-$fileUuid", sourceId = "source-$fileUuid", targetId = "target-$fileUuid",
-            relation = "rel", docId = fileUuid, createdAt = 1, fileUuid = fileUuid,
-        ))
+            relation = "rel", createdAt = 1,
+        ) , docId = fileUuid, workspaceDocument = true)
         db.tagDao().insert(com.promenar.nexara.data.local.db.entity.TagEntity("tag-$fileUuid", "tag", createdAt = 1))
         db.documentTagDao().insert(com.promenar.nexara.data.local.db.entity.DocumentTagEntity(
             fileUuid, "tag-$fileUuid", 1,

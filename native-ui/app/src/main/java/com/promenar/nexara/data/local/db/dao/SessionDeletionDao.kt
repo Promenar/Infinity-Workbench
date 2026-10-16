@@ -39,18 +39,6 @@ interface SessionDeletionDao {
     @Query("DELETE FROM document_tags WHERE doc_id IN (:fileUuids)")
     suspend fun deleteDocumentTags(fileUuids: List<String>): Int
 
-    @Query("DELETE FROM kg_edges WHERE session_id = :sessionId OR doc_id IN (:fileUuids) OR file_uuid IN (:fileUuids)")
-    suspend fun deleteKgEdges(sessionId: String, fileUuids: List<String>): Int
-
-    @Query("DELETE FROM kg_edges WHERE session_id = :sessionId")
-    suspend fun deleteKgEdgesBySession(sessionId: String): Int
-
-    @Query("DELETE FROM kg_nodes WHERE session_id = :sessionId OR file_uuid IN (:fileUuids)")
-    suspend fun deleteKgNodes(sessionId: String, fileUuids: List<String>): Int
-
-    @Query("DELETE FROM kg_nodes WHERE session_id = :sessionId")
-    suspend fun deleteKgNodesBySession(sessionId: String): Int
-
     @Query("DELETE FROM kg_jit_cache")
     suspend fun invalidateKgJitCache(): Int
 

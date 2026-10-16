@@ -301,6 +301,7 @@ class MemoryManager(
                 rerankScore = if (reranked) r.similarity else null,
                 rankChange = if (reranked) recallRank?.let { it - (finalIndex + 1) } else null,
                 documentId = r.docId,
+                documentContentHash = r.documentContentHash ?: documentContentHashFromVectorMetadata(r.metadata),
                 recallRank = recallRank,
                 kind = when (type) {
                     "memory" -> RagReferenceKind.MEMORY

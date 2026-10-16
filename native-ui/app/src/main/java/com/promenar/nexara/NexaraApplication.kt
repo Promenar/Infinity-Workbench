@@ -18,6 +18,7 @@ import com.promenar.nexara.data.local.db.MIGRATION_2_3
 import com.promenar.nexara.data.local.db.MIGRATION_3_4
 import com.promenar.nexara.data.local.db.MIGRATION_4_5
 import com.promenar.nexara.data.local.db.MIGRATION_5_18
+import com.promenar.nexara.data.local.db.MIGRATION_18_19
 import com.promenar.nexara.data.local.db.MIGRATION_17_18
 import com.promenar.nexara.data.local.db.LegacyDatabasePromoter
 import com.promenar.nexara.data.backup.BackupRuntime
@@ -197,7 +198,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val database: NexaraDatabase by lazy {
         LegacyDatabasePromoter.promote(this)
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19)
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
                     if (com.promenar.nexara.BuildConfig.DEBUG) {
@@ -1105,15 +1106,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         VectorStore(
             vectorDao = database.vectorDao(),
             kgNodeDao = database.kgNodeDao(),
-            kgEdgeDao = database.kgEdgeDao()
+            kgEdgeDao = database.kgEdgeDao(),
+            kgEvidenceDao = database.kgEvidenceDao(),
         )
     }
 
     val graphStore: GraphStore by lazy {
-        GraphStore(
-            kgNodeDao = database.kgNodeDao(),
-            kgEdgeDao = database.kgEdgeDao()
-        )
+        GraphStore(database)
     }
 
     val keywordSearcher: KeywordSearcher by lazy {
