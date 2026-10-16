@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 19,
-    "identityHash": "7ec310065cda4e529f966a4d08266757",
+    "identityHash": "694f9ee43b8b6fbca993a11d4a789f64",
     "entities": [
       {
         "tableName": "agents",
@@ -938,7 +938,7 @@
       },
       {
         "tableName": "kg_nodes",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `type` TEXT NOT NULL, `metadata` TEXT, `session_id` TEXT, `agent_id` TEXT, `source_type` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER, `stale` INTEGER NOT NULL DEFAULT 0, `file_uuid` TEXT, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `type` TEXT NOT NULL, `metadata` TEXT, `created_at` INTEGER NOT NULL, `updated_at` INTEGER, `normalized_name` TEXT NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -964,22 +964,6 @@
             "affinity": "TEXT"
           },
           {
-            "fieldPath": "sessionId",
-            "columnName": "session_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "agentId",
-            "columnName": "agent_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sourceType",
-            "columnName": "source_type",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
             "fieldPath": "createdAt",
             "columnName": "created_at",
             "affinity": "INTEGER",
@@ -991,16 +975,10 @@
             "affinity": "INTEGER"
           },
           {
-            "fieldPath": "stale",
-            "columnName": "stale",
-            "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
-          },
-          {
-            "fieldPath": "fileUuid",
-            "columnName": "file_uuid",
-            "affinity": "TEXT"
+            "fieldPath": "normalizedName",
+            "columnName": "normalized_name",
+            "affinity": "TEXT",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -1008,11 +986,23 @@
           "columnNames": [
             "id"
           ]
-        }
+        },
+        "indices": [
+          {
+            "name": "index_kg_nodes_normalized_name_type",
+            "unique": true,
+            "columnNames": [
+              "normalized_name",
+              "type"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_kg_nodes_normalized_name_type` ON `${TABLE_NAME}` (`normalized_name`, `type`)"
+          }
+        ]
       },
       {
         "tableName": "kg_edges",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `source_id` TEXT NOT NULL, `target_id` TEXT NOT NULL, `relation` TEXT NOT NULL, `weight` REAL NOT NULL, `doc_id` TEXT, `session_id` TEXT, `agent_id` TEXT, `source_type` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `stale` INTEGER NOT NULL DEFAULT 0, `file_uuid` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`source_id`) REFERENCES `kg_nodes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`target_id`) REFERENCES `kg_nodes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `source_id` TEXT NOT NULL, `target_id` TEXT NOT NULL, `relation` TEXT NOT NULL, `weight` REAL NOT NULL, `created_at` INTEGER NOT NULL, `normalized_relation` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`source_id`) REFERENCES `kg_nodes`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`target_id`) REFERENCES `kg_nodes`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "id",
@@ -1045,43 +1035,16 @@
             "notNull": true
           },
           {
-            "fieldPath": "docId",
-            "columnName": "doc_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sessionId",
-            "columnName": "session_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "agentId",
-            "columnName": "agent_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sourceType",
-            "columnName": "source_type",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
             "fieldPath": "createdAt",
             "columnName": "created_at",
             "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "stale",
-            "columnName": "stale",
-            "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
-          },
-          {
-            "fieldPath": "fileUuid",
-            "columnName": "file_uuid",
-            "affinity": "TEXT"
+            "fieldPath": "normalizedRelation",
+            "columnName": "normalized_relation",
+            "affinity": "TEXT",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -1110,19 +1073,21 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_kg_edges_target_id` ON `${TABLE_NAME}` (`target_id`)"
           },
           {
-            "name": "index_kg_edges_doc_id",
-            "unique": false,
+            "name": "index_kg_edges_source_id_target_id_normalized_relation",
+            "unique": true,
             "columnNames": [
-              "doc_id"
+              "source_id",
+              "target_id",
+              "normalized_relation"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_kg_edges_doc_id` ON `${TABLE_NAME}` (`doc_id`)"
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_kg_edges_source_id_target_id_normalized_relation` ON `${TABLE_NAME}` (`source_id`, `target_id`, `normalized_relation`)"
           }
         ],
         "foreignKeys": [
           {
             "table": "kg_nodes",
-            "onDelete": "CASCADE",
+            "onDelete": "RESTRICT",
             "onUpdate": "NO ACTION",
             "columns": [
               "source_id"
@@ -1133,7 +1098,7 @@
           },
           {
             "table": "kg_nodes",
-            "onDelete": "CASCADE",
+            "onDelete": "RESTRICT",
             "onUpdate": "NO ACTION",
             "columns": [
               "target_id"
@@ -1200,6 +1165,205 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_kg_jit_cache_expires_at` ON `${TABLE_NAME}` (`expires_at`)"
+          }
+        ]
+      },
+      {
+        "tableName": "kg_evidence",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `node_id` TEXT, `edge_id` TEXT, `source_type` TEXT NOT NULL, `doc_id` TEXT, `session_id` TEXT, `content_hash` TEXT NOT NULL, `task_id` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `workspace_document` INTEGER NOT NULL, `weight` REAL, PRIMARY KEY(`id`), FOREIGN KEY(`node_id`) REFERENCES `kg_nodes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`edge_id`) REFERENCES `kg_edges`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nodeId",
+            "columnName": "node_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "edgeId",
+            "columnName": "edge_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceType",
+            "columnName": "source_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "docId",
+            "columnName": "doc_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "contentHash",
+            "columnName": "content_hash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskId",
+            "columnName": "task_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "workspaceDocument",
+            "columnName": "workspace_document",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "weight",
+            "columnName": "weight",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_kg_evidence_node_id",
+            "unique": false,
+            "columnNames": [
+              "node_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_kg_evidence_node_id` ON `${TABLE_NAME}` (`node_id`)"
+          },
+          {
+            "name": "index_kg_evidence_edge_id",
+            "unique": false,
+            "columnNames": [
+              "edge_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_kg_evidence_edge_id` ON `${TABLE_NAME}` (`edge_id`)"
+          },
+          {
+            "name": "index_kg_evidence_doc_id",
+            "unique": false,
+            "columnNames": [
+              "doc_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_kg_evidence_doc_id` ON `${TABLE_NAME}` (`doc_id`)"
+          },
+          {
+            "name": "index_kg_evidence_session_id",
+            "unique": false,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_kg_evidence_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          },
+          {
+            "name": "index_kg_evidence_task_id",
+            "unique": false,
+            "columnNames": [
+              "task_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_kg_evidence_task_id` ON `${TABLE_NAME}` (`task_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "kg_nodes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "node_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "kg_edges",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "edge_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "kg_jit_cache_sources",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`cache_key` TEXT NOT NULL, `doc_id` TEXT NOT NULL, `content_hash` TEXT NOT NULL, PRIMARY KEY(`cache_key`, `doc_id`), FOREIGN KEY(`cache_key`) REFERENCES `kg_jit_cache`(`cache_key`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "cacheKey",
+            "columnName": "cache_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "docId",
+            "columnName": "doc_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentHash",
+            "columnName": "content_hash",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "cache_key",
+            "doc_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_kg_jit_cache_sources_doc_id",
+            "unique": false,
+            "columnNames": [
+              "doc_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_kg_jit_cache_sources_doc_id` ON `${TABLE_NAME}` (`doc_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "kg_jit_cache",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "cache_key"
+            ],
+            "referencedColumns": [
+              "cache_key"
+            ]
           }
         ]
       },
@@ -1829,7 +1993,7 @@
       },
       {
         "tableName": "workspace_files",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uuid` TEXT NOT NULL, `workspace_root_uuid` TEXT NOT NULL, `parent_uuid` TEXT, `name` TEXT NOT NULL, `hash` TEXT NOT NULL, `mime_type` TEXT, `size_bytes` INTEGER NOT NULL, `is_directory` INTEGER NOT NULL, `physical_root_path` TEXT NOT NULL, `materialized_path` TEXT NOT NULL, `vectorized_at` INTEGER, `vector_version` INTEGER NOT NULL, `kg_extracted_at` INTEGER, `kg_version` INTEGER NOT NULL, `last_write_session_id` TEXT, `locked_by_session_id` TEXT, `lock_expires_at` INTEGER, `in_recycle_bin` INTEGER NOT NULL, `recycled_at` INTEGER, `original_parent_uuid` TEXT, `original_materialized_path` TEXT, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`uuid`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uuid` TEXT NOT NULL, `workspace_root_uuid` TEXT NOT NULL, `parent_uuid` TEXT, `name` TEXT NOT NULL, `hash` TEXT NOT NULL, `mime_type` TEXT, `size_bytes` INTEGER NOT NULL, `is_directory` INTEGER NOT NULL, `physical_root_path` TEXT NOT NULL, `materialized_path` TEXT NOT NULL, `vectorized_at` INTEGER, `vector_version` INTEGER NOT NULL, `kg_extracted_at` INTEGER, `kg_strategy` TEXT, `kg_version` INTEGER NOT NULL, `last_write_session_id` TEXT, `locked_by_session_id` TEXT, `lock_expires_at` INTEGER, `in_recycle_bin` INTEGER NOT NULL, `recycled_at` INTEGER, `original_parent_uuid` TEXT, `original_materialized_path` TEXT, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`uuid`))",
         "fields": [
           {
             "fieldPath": "uuid",
@@ -1904,6 +2068,11 @@
             "fieldPath": "kgExtractedAt",
             "columnName": "kg_extracted_at",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "kgStrategy",
+            "columnName": "kg_strategy",
+            "affinity": "TEXT"
           },
           {
             "fieldPath": "kgVersion",
@@ -2475,111 +2644,11 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_workspace_mutations_state` ON `${TABLE_NAME}` (`state`)"
           }
         ]
-      },
-      {
-        "tableName": "ssh_hosts",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `alias` TEXT NOT NULL, `hostname` TEXT NOT NULL, `port` INTEGER NOT NULL DEFAULT 22, `username` TEXT NOT NULL, `auth_type` TEXT NOT NULL DEFAULT 'KEY', `jump_alias` TEXT, `trusted_key_type` TEXT, `trusted_fingerprint` TEXT, `keep_terminal` INTEGER NOT NULL DEFAULT 0, `local_forward_port` INTEGER, `forward_host` TEXT NOT NULL DEFAULT '127.0.0.1', `forward_port` INTEGER, PRIMARY KEY(`id`))",
-        "fields": [
-          {
-            "fieldPath": "id",
-            "columnName": "id",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "alias",
-            "columnName": "alias",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "hostname",
-            "columnName": "hostname",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "port",
-            "columnName": "port",
-            "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "22"
-          },
-          {
-            "fieldPath": "username",
-            "columnName": "username",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "authType",
-            "columnName": "auth_type",
-            "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "'KEY'"
-          },
-          {
-            "fieldPath": "jumpAlias",
-            "columnName": "jump_alias",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "trustedKeyType",
-            "columnName": "trusted_key_type",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "trustedFingerprint",
-            "columnName": "trusted_fingerprint",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "keepTerminal",
-            "columnName": "keep_terminal",
-            "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
-          },
-          {
-            "fieldPath": "localForwardPort",
-            "columnName": "local_forward_port",
-            "affinity": "INTEGER"
-          },
-          {
-            "fieldPath": "forwardHost",
-            "columnName": "forward_host",
-            "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "'127.0.0.1'"
-          },
-          {
-            "fieldPath": "forwardPort",
-            "columnName": "forward_port",
-            "affinity": "INTEGER"
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "id"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_ssh_hosts_alias",
-            "unique": true,
-            "columnNames": [
-              "alias"
-            ],
-            "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_ssh_hosts_alias` ON `${TABLE_NAME}` (`alias`)"
-          }
-        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7ec310065cda4e529f966a4d08266757')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '694f9ee43b8b6fbca993a11d4a789f64')"
     ]
   }
 }

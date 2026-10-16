@@ -122,6 +122,7 @@ internal fun kgPathStableKey(path: KgPath): String = canonicalStableIdentity(
         }
         .sorted()
         .joinToString(separator = "\u001f"),
+    path.sourceDocumentIds.sorted().joinToString(separator = "\u001f"),
     path.edges.map(::kgEdgeStableKey).sorted().joinToString(separator = "\u001f"),
     path.reasoning.orEmpty(),
 )
@@ -276,7 +277,7 @@ fun RagDetailsSheetContent(
             when (tabs[selectedTabIndex]) {
                 RagDetailsTab.Retrieved -> RetrievedReferencesList(references, trace)
                 RagDetailsTab.WebSearch -> WebCitationsList(citations, ::requestOpen)
-                RagDetailsTab.KnowledgeGraph -> KnowledgeGraphList(kgPaths)
+                RagDetailsTab.KnowledgeGraph -> KnowledgeGraphList(kgPaths, references)
             }
         }
     }
@@ -545,7 +546,7 @@ private fun WebCitationRow(citation: Citation, index: Int, onOpen: (String) -> U
 }
 
 @Composable
-private fun KnowledgeGraphList(kgPaths: List<KgPath>) {
+private fun KnowledgeGraphList(kgPaths: List<KgPath>, references: List<RagReference>) {
     val keyedPaths = remember(kgPaths) {
         stableKeyedItems(kgPaths, ::kgPathStableKey)
     }
@@ -564,7 +565,7 @@ private fun KnowledgeGraphList(kgPaths: List<KgPath>) {
             val path = keyedPath.value
             val keyedEdges = stableKeyedItems(path.edges, ::kgEdgeStableKey)
             item(key = "$pathKey:header") {
-                KgPathHeader(path, pathIndex)
+                KgPathHeader(path, pathIndex, references)
             }
             itemsIndexed(
                 items = keyedEdges,
@@ -612,7 +613,7 @@ private fun KnowledgeGraphList(kgPaths: List<KgPath>) {
 }
 
 @Composable
-private fun KgPathHeader(path: KgPath, pathIndex: Int) {
+private fun KgPathHeader(path: KgPath, pathIndex: Int, references: List<RagReference>) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -629,6 +630,17 @@ private fun KgPathHeader(path: KgPath, pathIndex: Int) {
                 text = stringResource(R.string.rag_details_path_label, pathIndex + 1),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        if (path.sourceDocumentIds.isNotEmpty()) {
+            val sources = path.sourceDocumentIds.map { id ->
+                references.firstOrNull { it.documentId == id }?.source?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: id
+            }
+            NexaraIdentifierText(
+                text = stringResource(R.string.rag_details_kg_sources, sources.joinToString("、")),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 36.dp),
             )
         }
         Text(

@@ -147,13 +147,7 @@ private fun MermaidFullScreenDialog(
                 factory = { webView },
                 update = { wv ->
                     wv.settings.defaultFontSize = fontSize
-                    wv.loadDataWithBaseURL(
-                        "file:///android_asset/",
-                        html,
-                        "text/html",
-                        "UTF-8",
-                        null
-                    )
+                    wv.loadRichContent(html)
                 },
                 modifier = Modifier
                     .fillMaxSize()

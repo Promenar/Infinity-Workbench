@@ -11,5 +11,14 @@
             android:authorities="${applicationId}.backupsaffixture"
             android:exported="true"
             android:grantUriPermissions="true" />
+        <provider
+            android:name="com.promenar.nexara.data.storage.ExternalFolderDeviceDocumentsProvider"
+            android:authorities="${applicationId}.externalfoldersfixture"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS" />
+        <activity
+            android:name="com.promenar.nexara.data.storage.ExternalFolderGrantActivity"
+            android:exported="true" />
     </application>
 </manifest>

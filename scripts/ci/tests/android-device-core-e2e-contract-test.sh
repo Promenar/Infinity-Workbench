@@ -62,12 +62,15 @@ assert_count "${RELEASE_WORKFLOW}" "e2e-scope: full" 2
 assert_count "${ANDROID_CI_WORKFLOW}" "- api-level: 35" 1
 assert_count "${ANDROID_CI_WORKFLOW}" "- api-level: 36" 1
 assert_count "${RELEASE_WORKFLOW}" "- api-level: 31" 1
-assert_count "${RELEASE_WORKFLOW}" "- api-level: 35" 3
-assert_count "${RELEASE_WORKFLOW}" "- api-level: 36" 3
+assert_count "${RELEASE_WORKFLOW}" "- api-level: 35" 4
+assert_count "${RELEASE_WORKFLOW}" "- api-level: 36" 4
 assert_contains "${RELEASE_WORKFLOW}" "签名 R8 APK 无密钥冷安装 smoke"
 
 assert_contains "${DEVICE_SCRIPT}" 'NEXARA_DEVICE_E2E_SCOPE:-full'
 assert_contains "${DEVICE_SCRIPT}" 'BUILD_TYPE_TASK="DeviceTest"'
+assert_contains "${DEVICE_SCRIPT}" 'DISTRIBUTION_TASK="Sideload"'
+assert_contains "${DEVICE_SCRIPT}" 'outputs/apk/sideload/deviceTest/app-sideload-deviceTest.apk'
+assert_contains "${DEVICE_SCRIPT}" 'outputs/apk/androidTest/sideload/deviceTest/app-sideload-deviceTest-androidTest.apk'
 artifact_resolution_block="$(sed -n '/^ARTIFACT_DIR_INPUT=/,/^INSTRUMENT_TIMEOUT_SECONDS=/p' "${DEVICE_SCRIPT}")"
 [[ -n "${artifact_resolution_block}" ]] || fail "设备 E2E 必须先保存 ARTIFACT_DIR_INPUT 再规范路径"
 for artifact_path_contract in \
@@ -87,10 +90,10 @@ assert_not_contains "${DEVICE_SCRIPT}" 'MinifiedTest'
 assert_not_contains "${DEVICE_SCRIPT}" 'minifiedTest'
 assert_contains "${DEVICE_SCRIPT}" 'minimum|full'
 assert_contains "${DEVICE_SCRIPT}" 'target=${TARGET_PACKAGE}'
-assert_contains "${DEVICE_SCRIPT}" 'app-deviceTest.apk'
-assert_contains "${DEVICE_SCRIPT}" 'app-deviceTest-androidTest.apk'
+assert_contains "${DEVICE_SCRIPT}" 'app-sideload-deviceTest.apk'
+assert_contains "${DEVICE_SCRIPT}" 'app-sideload-deviceTest-androidTest.apk'
 assert_contains "${DEVICE_SCRIPT}" 'mainactivity-e2e-deviceTest.apk'
-assert_contains "${DEVICE_SCRIPT}" ':app:assemble${BUILD_TYPE_TASK}'
+assert_contains "${DEVICE_SCRIPT}" ':app:assemble${DISTRIBUTION_TASK}${BUILD_TYPE_TASK}'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.AccessibilitySmokeTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.common.UnifiedPromptEditorE2ETest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.nexara.ui.AdaptiveNavigationTest'

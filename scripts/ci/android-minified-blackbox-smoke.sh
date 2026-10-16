@@ -16,8 +16,8 @@ FIXTURE_SHARE_COMPONENT="${FIXTURE_PACKAGE}/.BlackBoxFixtureShareActivity"
 TALKBACK_PACKAGE="com.google.android.marvin.talkback"
 NOTIFICATION_PERMISSION="android.permission.POST_NOTIFICATIONS"
 FIXTURE_APK="${NATIVE_ROOT}/blackbox-fixture/build/outputs/apk/debug/blackbox-fixture-debug.apk"
-DEFAULT_TARGET_APK="${NATIVE_ROOT}/app/build/outputs/apk/minifiedTest/app-minifiedTest.apk"
-DEFAULT_MAPPING="${NATIVE_ROOT}/app/build/outputs/mapping/minifiedTest/mapping.txt"
+DEFAULT_TARGET_APK="${NATIVE_ROOT}/app/build/outputs/apk/sideload/minifiedTest/app-sideload-minifiedTest.apk"
+DEFAULT_MAPPING="${NATIVE_ROOT}/app/build/outputs/mapping/sideloadMinifiedTest/mapping.txt"
 TEXT_CANARY_NAME="release-index-canary.txt"
 TEXT_CANARY_MIME="text/plain"
 API_LEVEL="$(adb shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
@@ -237,7 +237,7 @@ if [[ "${SKIP_BUILD}" == "false" ]]; then
     chmod +x gradlew
     if [[ "${DEFAULT_MINIFIED_MODE}" == "true" ]]; then
         ./gradlew --no-daemon --stacktrace -Pnexara.deviceE2eAbi="${TARGET_ABI}" \
-            :app:assembleMinifiedTest :blackbox-fixture:assembleDebug --console=plain
+            :app:assembleSideloadMinifiedTest :blackbox-fixture:assembleDebug --console=plain
     else
         ./gradlew --no-daemon --stacktrace :blackbox-fixture:assembleDebug --console=plain
     fi

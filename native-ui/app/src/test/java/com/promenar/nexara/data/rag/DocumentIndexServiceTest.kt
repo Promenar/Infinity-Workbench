@@ -1,5 +1,8 @@
 package com.promenar.nexara.data.rag
 
+import com.promenar.nexara.data.local.db.seedKgNode
+import com.promenar.nexara.data.local.db.seedKgEdge
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -159,8 +162,7 @@ class DocumentIndexServiceTest {
             val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
             database.fileEntryDao().update(current.copy(inRecycleBin = true))
             database.vectorDao().deleteByDocId(FILE)
-            database.kgEdgeDao().deleteByDocId(FILE)
-            database.kgNodeDao().deleteByFileUuid(FILE)
+            database.kgEvidenceDao().clearDocument(FILE)
             candidate()
         }
 
@@ -196,13 +198,13 @@ class DocumentIndexServiceTest {
             id = "global-vector", content = "global searchable",
             embedding = byteArrayOf(0, 0, 0, 0), metadata = "{}", createdAt = 1,
         ))
-        database.kgNodeDao().insert(KgNodeEntity(id = "legacy-a", name = "legacy-a", createdAt = 1))
-        database.kgNodeDao().insert(KgNodeEntity(id = "legacy-b", name = "legacy-b", createdAt = 1))
-        database.kgNodeDao().insert(KgNodeEntity(id = "global-node", name = "global", createdAt = 1))
-        database.kgEdgeDao().insert(KgEdgeEntity(
+        database.seedKgNode(KgNodeEntity(id = "legacy-a", name = "legacy-a", createdAt = 1), docId = FILE, workspaceDocument = true)
+        database.seedKgNode(KgNodeEntity(id = "legacy-b", name = "legacy-b", createdAt = 1), docId = FILE, workspaceDocument = true)
+        database.seedKgNode(KgNodeEntity(id = "global-node", name = "global", createdAt = 1))
+        database.seedKgEdge(KgEdgeEntity(
             id = "legacy-edge", sourceId = "legacy-a", targetId = "legacy-b",
-            relation = "rel", docId = FILE, sessionId = "session", createdAt = 1,
-        ))
+            relation = "rel", createdAt = 1,
+        ) , sessionId = "session", docId = FILE, workspaceDocument = true)
 
         assertThat(database.vectorDao().getById("legacy-vector")).isNotNull()
         assertThat(database.kgEdgeDao().getById("legacy-edge")).isNotNull()
@@ -356,7 +358,8 @@ class DocumentIndexServiceTest {
         assertThat(database.vectorDao().searchByKeyword("old searchable")).isEmpty()
         assertThat(database.vectorDao().searchByKeyword("new searchable").map { it.id })
             .containsExactly(NEW_VECTOR)
-        assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(NEW_EDGE)
+        assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.relation }).containsExactly("rel")
+        assertThat(database.kgEvidenceDao().affectedByDocument(FILE).map { it.taskId }.distinct()).containsExactly(TASK)
         assertThat(database.kgNodeDao().getById("old-source")).isNull()
         assertThat(database.documentTagDao().getByDocId(FILE)).hasSize(1)
         assertThat(database.vectorizationTaskDao().getByDocId(FILE)).hasSize(1)
@@ -375,9 +378,9 @@ class DocumentIndexServiceTest {
                 materializedPath = "/other.txt",
             ),
         )
-        database.kgNodeDao().insert(KgNodeEntity(
-            id = "unrelated-orphan", name = "unrelated", createdAt = 1, fileUuid = "other-file",
-        ))
+        database.seedKgNode(KgNodeEntity(
+            id = "unrelated-orphan", name = "unrelated", createdAt = 1,
+        ) , docId = "other-file", workspaceDocument = true)
         val service = RoomDocumentIndexService(database) { error("删除不应构建候选") }
 
         val result = service.rebuild(FileIndexEvent.Deleted(ROOT, FILE))
@@ -436,7 +439,7 @@ class DocumentIndexServiceTest {
             val embedding = mockk<EmbeddingClient>()
             coEvery { embedding.embedDocuments(any()) } returns EmbeddingResult(listOf(floatArrayOf(1f, 0f)))
             val graphBuilder = mockk<KnowledgeGraphCandidateBuilder>()
-            coEvery { graphBuilder.build(any(), FILE) } returns ExtractionResult(
+            coEvery { graphBuilder.build(any(), FILE, any()) } returns ExtractionResult(
                 nodes = listOf(ExtractedNode("Alice", "person"), ExtractedNode("Bob", "person")),
                 edges = listOf(ExtractedEdge("Alice", "Bob", "knows")),
             )
@@ -449,10 +452,9 @@ class DocumentIndexServiceTest {
 
             val candidate = builder.build(FileIndexEvent.Changed(ROOT, FILE, hash, current.updatedAt))
 
-            coVerify(exactly = 1) { graphBuilder.build("Alice knows Bob", FILE) }
+            coVerify(exactly = 1) { graphBuilder.build("Alice knows Bob", FILE, hash) }
             assertThat(candidate.nodes.map { it.name }).containsExactly("Alice", "Bob")
-            assertThat(candidate.edges.single().docId).isEqualTo(FILE)
-            assertThat(candidate.edges.single().fileUuid).isEqualTo(FILE)
+            assertThat(candidate.edges.single().normalizedRelation).isEqualTo("knows")
             assertThat(database.kgEdgeDao().getByDocId(FILE).map { it.id }).containsExactly(OLD_EDGE)
         } finally {
             file.delete()
@@ -486,7 +488,7 @@ class DocumentIndexServiceTest {
             assertThat(candidate.vectors).isEmpty()
             assertThat(candidate.nodes).isEmpty()
             coVerify(exactly = 0) { embedding.embedDocuments(any()) }
-            coVerify(exactly = 0) { graphBuilder.build(any(), any()) }
+            coVerify(exactly = 0) { graphBuilder.build(any(), any(), any()) }
         } finally {
             file.delete()
         }
@@ -515,6 +517,36 @@ class DocumentIndexServiceTest {
         assertThat(recoverable.map { it.uuid }).contains(FILE)
     }
 
+    @Test
+    fun `配置启用KG的候选提交持久完成标记且页面重建后仍可读取`() = runTest {
+        seedFileAndOldArtifacts()
+        val service = RoomDocumentIndexService(database, now = { EPOCH }) {
+            DocumentIndexCandidate(listOf(vector(NEW_VECTOR, "new")), graphExtracted = true)
+        }
+        assertThat(service.rebuild(changed())).isInstanceOf(DocumentIndexResult.Rebuilt::class.java)
+        val reloaded = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+        assertThat(reloaded.kgExtractedAt).isEqualTo(EPOCH)
+        assertThat(com.promenar.nexara.ui.chat.components.resolveKgStatus(reloaded, emptyMap()))
+            .isEqualTo(com.promenar.nexara.ui.common.KgStatus.COMPLETED)
+    }
+
+    @Test
+    fun `手动KG空图事务保留向量和向量完成标记并清理旧关系`() = runTest {
+        seedFileAndOldArtifacts()
+        val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+        database.fileEntryDao().update(current.copy(vectorizedAt = 123))
+        val service = RoomDocumentIndexService(database, now = { EPOCH }) {
+            DocumentIndexCandidate(emptyList(), graphExtracted = true)
+        }
+        val result = service.rebuild(changed().copy(skipVectorization = true, kgStrategy = "full"))
+        assertThat(result).isInstanceOf(DocumentIndexResult.Rebuilt::class.java)
+        assertThat(database.vectorDao().getByDocId(FILE).single().id).isEqualTo(OLD_VECTOR)
+        assertThat(database.kgEdgeDao().getByDocId(FILE)).isEmpty()
+        val after = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+        assertThat(after.vectorizedAt).isEqualTo(123)
+        assertThat(after.kgExtractedAt).isEqualTo(EPOCH)
+    }
+
     private suspend fun seedFileAndOldArtifacts() {
         database.sessionDao().insert(SessionEntity("session", "__system__", "session", workspaceRootUuid = ROOT, createdAt = 1, updatedAt = 1))
         database.fileEntryDao().insert(FileEntry(
@@ -527,9 +559,9 @@ class DocumentIndexServiceTest {
             createdAt = 1, updatedAt = EPOCH,
         ))
         database.vectorDao().insert(vector(OLD_VECTOR, "old searchable"))
-        database.kgNodeDao().insert(node("old-source"))
-        database.kgNodeDao().insert(node("old-target"))
-        database.kgEdgeDao().insert(edge(OLD_EDGE, "old-source", "old-target"))
+        database.seedKgNode(node("old-source"), docId = FILE, workspaceDocument = true)
+        database.seedKgNode(node("old-target"), docId = FILE, workspaceDocument = true)
+        database.seedKgEdge(edge(OLD_EDGE, "old-source", "old-target"), docId = FILE, workspaceDocument = true)
         database.tagDao().insert(TagEntity("tag", "tag", createdAt = 1))
         database.documentTagDao().insert(DocumentTagEntity(FILE, "tag", 1))
         database.vectorizationTaskDao().insert(VectorizationTaskEntity(
@@ -559,12 +591,12 @@ class DocumentIndexServiceTest {
     )
 
     private fun node(id: String) = KgNodeEntity(
-        id = id, name = id, createdAt = 1, fileUuid = FILE,
+        id = id, name = id, createdAt = 1,
     )
 
     private fun edge(id: String, source: String, target: String) = KgEdgeEntity(
-        id = id, sourceId = source, targetId = target, relation = "rel", docId = FILE,
-        createdAt = 1, fileUuid = FILE,
+        id = id, sourceId = source, targetId = target, relation = "rel",
+        createdAt = 1,
     )
 
     private companion object {

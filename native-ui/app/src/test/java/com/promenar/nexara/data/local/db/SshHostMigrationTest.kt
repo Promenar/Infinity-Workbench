@@ -25,10 +25,16 @@ class SshHostMigrationTest {
     fun `v18迁移保留中文业务数据并创建不含凭据的SSH表`() = verifyMigration(18)
 
     @Test
-    fun `v5经18前进到19并保留中文业务数据`() = verifyMigration(5)
+    fun `v5经18前进到21并保留中文业务数据`() = verifyMigration(5)
 
     @Test
-    fun `公开v17经18前进到19并保留中文业务数据`() = verifyMigration(17)
+    fun `公开v17经18前进到21并保留中文业务数据`() = verifyMigration(17)
+
+    @Test
+    fun `v19前进到21保留知识图谱并创建SSH表`() = verifyMigration(19)
+
+    @Test
+    fun `v20前进到21保留知识图谱和外部挂载并创建SSH表`() = verifyMigration(20)
 
     private fun verifyMigration(version: Int) {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -40,20 +46,32 @@ class SshHostMigrationTest {
                 if (version == 17) createPublishedV17(database) else createExported(database, version)
                 database.version = version
                 seed(database, "agents", mapOf("id" to "ssh-migration-agent", "name" to "保留中文😀"))
+                seed(database, "kg_nodes", mapOf("id" to "ssh-migration-node", "name" to "测试实体",
+                    "normalized_name" to "测试实体", "type" to "concept"))
+                if (version >= 20) seed(database, "external_mounts", mapOf("id" to "ssh-migration-mount",
+                    "alias" to "docs", "source_type" to "saf_tree", "source_id" to "content://test/tree/docs"))
             }
             val room = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
-                .addMigrations(MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19)
+                .addMigrations(MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                 .allowMainThreadQueries()
                 .build()
             try {
                 val database = room.openHelper.writableDatabase
                 database.query("PRAGMA user_version").use { cursor ->
                     check(cursor.moveToFirst())
-                    assertThat(cursor.getInt(0)).isEqualTo(19)
+                    assertThat(cursor.getInt(0)).isEqualTo(21)
                 }
                 database.query("SELECT name FROM agents WHERE id='ssh-migration-agent'").use { cursor ->
                     check(cursor.moveToFirst())
                     assertThat(cursor.getString(0)).isEqualTo("保留中文😀")
+                }
+                database.query("SELECT name FROM kg_nodes WHERE id='ssh-migration-node'").use { cursor ->
+                    check(cursor.moveToFirst())
+                    assertThat(cursor.getString(0)).isEqualTo("测试实体")
+                }
+                if (version >= 20) database.query("SELECT alias FROM external_mounts WHERE id='ssh-migration-mount'").use { cursor ->
+                    check(cursor.moveToFirst())
+                    assertThat(cursor.getString(0)).isEqualTo("docs")
                 }
                 database.query("PRAGMA table_info(ssh_hosts)").use { cursor ->
                     val columns = buildSet { while (cursor.moveToNext()) add(cursor.getString(1)) }

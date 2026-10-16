@@ -52,6 +52,34 @@ class DualDatabaseRecoveryJournalTest {
         } finally { root.toFile().deleteRecursively() }
     }
 
+    @Test
+    fun `publishing journal accepts authenticated v18 v19 v20 and v21 candidates but rejects unknown identities`() {
+        val root = Files.createTempDirectory("dual-db-journal-schema")
+        try {
+            val journal = FileDualDatabaseRecoveryJournal(root, DigestAuthenticator)
+            val publishing = record().copy(
+                stage = DualDatabaseRecoveryStage.DB_PUBLISHING,
+                workingAttemptId = "attempt-candidate",
+                workingLegacySha256 = "c".repeat(64),
+                workingCurrentSha256 = "d".repeat(64),
+                treeArchivesComplete = true,
+                candidateRelativePath = "candidate.db",
+                candidateSha256 = "e".repeat(64),
+                candidateCommitMarker = "dual-database-recovery-v1:tx-1",
+                idMappingSha256 = "f".repeat(64),
+            )
+            listOf(CURRENT_V18_IDENTITY, CURRENT_V19_IDENTITY, CURRENT_V20_IDENTITY, CURRENT_V21_IDENTITY).forEach { identity ->
+                journal.write(publishing.copy(candidateRoomIdentity = identity))
+                assertThat(journal.read()?.candidateRoomIdentity).isEqualTo(identity)
+            }
+            assertThat(runCatching {
+                journal.write(publishing.copy(candidateRoomIdentity = "untrusted-room-identity"))
+            }.isFailure).isTrue()
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
     private fun record() = DualDatabaseRecoveryRecord(
         transactionId = "tx-1",
         stage = DualDatabaseRecoveryStage.SNAPSHOTTED,

@@ -3,13 +3,18 @@ package com.promenar.nexara.domain.tool
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import java.net.URI
 
 /**
  * 按调用参数追加的审批规则：工具本身风险低，但某些参数可能把会话数据带到外部。
- * 只在半自动模式下生效；手动模式本就逐个审批，自动模式由用户明确放行。
+ * 外传参数在半自动模式审批；不可恢复删除在全部模式下逐次审批。
  */
 object ToolArgumentApprovalRules {
+    fun requiresExplicitApproval(toolName: String, arguments: String): Boolean = toolName == "delete_file" &&
+        runCatching {
+            ((Json.parseToJsonElement(arguments) as? JsonObject)?.get("irreversible") as? JsonPrimitive)?.booleanOrNull == true
+        }.getOrDefault(false)
     private const val WEB_FETCH = "web_fetch"
     private const val MAX_URL_LENGTH = 300
     private const val MAX_PATH_SEGMENT_LENGTH = 80

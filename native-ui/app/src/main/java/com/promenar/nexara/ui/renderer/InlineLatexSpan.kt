@@ -3,7 +3,6 @@ package com.promenar.nexara.ui.renderer
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -60,7 +59,7 @@ fun InlineLatexSpan(
         AndroidView(
             factory = { webView },
             update = { wv ->
-                wv.webViewClient = object : WebViewClient() {
+                wv.webViewClient = object : RichContentWebViewClient(context) {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         view?.evaluateJavascript(
                             "(function(){ return document.body.scrollWidth + ',' + document.body.scrollHeight; })()"
@@ -88,13 +87,7 @@ fun InlineLatexSpan(
                         }
                     }
                 }
-                wv.loadDataWithBaseURL(
-                    "file:///android_asset/",
-                    html,
-                    "text/html",
-                    "UTF-8",
-                    null
-                )
+                wv.loadRichContent(html)
             },
             modifier = Modifier
                 .fillMaxWidth()

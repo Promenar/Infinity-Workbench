@@ -1,5 +1,8 @@
 package com.promenar.nexara.data.repository
 
+import com.promenar.nexara.data.local.db.seedKgNode
+import com.promenar.nexara.data.local.db.seedKgEdge
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -1312,7 +1315,7 @@ class WorkspaceRepositoryTest {
     }
 
     @Test
-    fun `legacy已写向量后删除回滚迁移为reference重建且不重复叠加`() = runBlocking<Unit> {
+    fun `legacyKG先迁移为reference且删除回滚后不复活派生数据`() = runBlocking<Unit> {
         insertSession("session-a", rootA.absolutePath)
         val root = repo.ensureSessionRoot("session-a")
         val entry = repo.createFileInWorkspace(root.uuid, "file", "a.txt", "A", root.uuid, "/a.txt")
@@ -1321,7 +1324,6 @@ class WorkspaceRepositoryTest {
         )
         val graphStarted = CompletableDeferred<Unit>()
         val graphCancelled = CompletableDeferred<Unit>()
-        val rebuildCompleted = CompletableDeferred<Unit>()
         val embeddingClient = mockk<com.promenar.nexara.data.rag.EmbeddingClient>()
         coEvery { embeddingClient.embedDocuments(any()) } answers {
             com.promenar.nexara.data.rag.EmbeddingResult(
@@ -1329,29 +1331,10 @@ class WorkspaceRepositoryTest {
             )
         }
         val graphExtractor = mockk<com.promenar.nexara.data.rag.GraphExtractor>()
-        coEvery { graphExtractor.extractAndSave(any(), any()) } coAnswers {
-            graphStarted.complete(Unit)
-            try {
-                awaitCancellation()
-            } finally {
-                graphCancelled.complete(Unit)
-            }
-        }
         val documentService = object : com.promenar.nexara.data.rag.DocumentIndexService {
             override suspend fun rebuild(event: com.promenar.nexara.data.rag.FileIndexEvent): com.promenar.nexara.data.rag.DocumentIndexResult {
-                db.vectorDao().deleteByDocId(event.fileUuid)
-                db.vectorDao().insert(
-                    com.promenar.nexara.data.local.db.entity.VectorEntity(
-                        id = "rebuilt-vector",
-                        docId = event.fileUuid,
-                        content = "rebuilt",
-                        embedding = byteArrayOf(0, 0, 0, 0),
-                        createdAt = 2,
-                        fileUuid = event.fileUuid,
-                    ),
-                )
-                rebuildCompleted.complete(Unit)
-                return com.promenar.nexara.data.rag.DocumentIndexResult.Rebuilt(event.fileUuid)
+                graphStarted.complete(Unit)
+                try { awaitCancellation() } finally { graphCancelled.complete(Unit) }
             }
 
             override suspend fun delete(workspaceRootUuid: String, fileUuid: String) =
@@ -1359,7 +1342,7 @@ class WorkspaceRepositoryTest {
         }
         val queue = com.promenar.nexara.data.rag.VectorizationQueue(
             vectorStore = com.promenar.nexara.data.rag.VectorStore(
-                db.vectorDao(), db.kgNodeDao(), db.kgEdgeDao(),
+                db.vectorDao(), db.kgNodeDao(), db.kgEdgeDao(), db.kgEvidenceDao(),
             ),
             embeddingClient = embeddingClient,
             graphExtractor = graphExtractor,
@@ -1371,7 +1354,7 @@ class WorkspaceRepositoryTest {
         )
         queue.enqueueDocument(root.uuid, entry.uuid, entry.name, "A", kgStrategy = "full")
         kotlinx.coroutines.withTimeout(5_000) { graphStarted.await() }
-        assertThat(db.vectorDao().getByDocId(entry.uuid)).hasSize(1)
+        assertThat(db.vectorDao().getByDocId(entry.uuid)).isEmpty()
         repo.moveToRecycleBin(root.uuid, entry.uuid)
         repo = WorkspaceRepository(
             db.fileEntryDao(), db.workspaceSeqDao(), fileOps = TestWorkspaceFileOps(),
@@ -1383,7 +1366,6 @@ class WorkspaceRepositoryTest {
 
         assertThat(failure).isInstanceOf(IllegalStateException::class.java)
         kotlinx.coroutines.withTimeout(5_000) { graphCancelled.await() }
-        assertThat(kotlinx.coroutines.withTimeoutOrNull(250) { rebuildCompleted.await() }).isNull()
         assertThat(File(rootA, ".recycle_bin/file").readText()).isEqualTo("A")
         assertThat(db.vectorDao().getByDocId(entry.uuid)).isEmpty()
         queue.shutdown()
@@ -1560,16 +1542,16 @@ class WorkspaceRepositoryTest {
             id = "vector-$fileUuid", docId = fileUuid, content = "indexed",
             embedding = byteArrayOf(0, 0, 0, 0), createdAt = 1, fileUuid = fileUuid,
         ))
-        db.kgNodeDao().insert(com.promenar.nexara.data.local.db.entity.KgNodeEntity(
-            id = "source-$fileUuid", name = "source", createdAt = 1, fileUuid = fileUuid,
-        ))
-        db.kgNodeDao().insert(com.promenar.nexara.data.local.db.entity.KgNodeEntity(
-            id = "target-$fileUuid", name = "target", createdAt = 1, fileUuid = fileUuid,
-        ))
-        db.kgEdgeDao().insert(com.promenar.nexara.data.local.db.entity.KgEdgeEntity(
+        db.seedKgNode(com.promenar.nexara.data.local.db.entity.KgNodeEntity(
+            id = "source-$fileUuid", name = "source-$fileUuid", createdAt = 1,
+        ) , docId = fileUuid, workspaceDocument = true)
+        db.seedKgNode(com.promenar.nexara.data.local.db.entity.KgNodeEntity(
+            id = "target-$fileUuid", name = "target-$fileUuid", createdAt = 1,
+        ) , docId = fileUuid, workspaceDocument = true)
+        db.seedKgEdge(com.promenar.nexara.data.local.db.entity.KgEdgeEntity(
             id = "edge-$fileUuid", sourceId = "source-$fileUuid", targetId = "target-$fileUuid",
-            relation = "rel", docId = fileUuid, createdAt = 1, fileUuid = fileUuid,
-        ))
+            relation = "rel", createdAt = 1,
+        ) , docId = fileUuid, workspaceDocument = true)
         db.tagDao().insert(com.promenar.nexara.data.local.db.entity.TagEntity("tag-$fileUuid", "tag", createdAt = 1))
         db.documentTagDao().insert(com.promenar.nexara.data.local.db.entity.DocumentTagEntity(
             fileUuid, "tag-$fileUuid", 1,

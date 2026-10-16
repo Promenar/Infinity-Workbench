@@ -104,6 +104,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.repository.CompositeWorkspaceConstants
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
+import com.promenar.nexara.domain.storage.IExternalFolderManager
 import com.promenar.nexara.ui.common.FileIndexStatus
 import com.promenar.nexara.ui.common.IndexStatusBadge
 import com.promenar.nexara.ui.common.KgStatus
@@ -158,6 +159,8 @@ internal fun hasFileNodeMenuActions(
 internal fun FilesPanel(
     workspaceRootUuid: String?,
     workspaceRepo: IWorkspaceRepository,
+    sessionId: String? = null,
+    externalFolderManager: IExternalFolderManager? = null,
     searchQuery: String = "",
     useScroll: Boolean = true,
     onReindex: ((String) -> Unit)? = null,
@@ -374,6 +377,14 @@ internal fun FilesPanel(
                 .padding(bottom = if (showSelectionOverlay && isMultiSelectMode) 88.dp else 0.dp),
         ) {
             val bodyModifier = if (useScroll) Modifier.weight(1f) else Modifier.fillMaxWidth()
+            externalFolderManager?.let { manager ->
+                ExternalFoldersPanel(
+                    sessionId = sessionId,
+                    workspaceRootUuid = workspaceRootUuid,
+                    manager = manager,
+                    onReindex = onReindex,
+                )
+            }
             deleteFailure?.let { failure ->
                 val failedLabel = stringResource(R.string.common_cd_failed)
                 Row(
@@ -598,7 +609,7 @@ private fun FileTreeRow(
             hasDelete = if (isVirtualSession) false else onDelete != null,
             hasRename = onRename != null,
             hasMove = if (isVirtualSession) false else onMove != null,
-            hasExtractKG = if (isVirtualSession) false else onExtractKG != null,
+            hasExtractKG = !isVirtualSession && onExtractKG != null && com.promenar.nexara.data.rag.DocumentReferenceExtractor.supports(file),
             hasViewKG = if (isVirtualSession) false else onViewKG != null,
             hasCopy = if (isVirtualSession) false else onCopy != null,
         )
@@ -680,7 +691,7 @@ private fun FileTreeRow(
                             modifier = Modifier.testTag(UiTags.fileNodeReindex(file.uuid)),
                         )
                     }
-                    if (onExtractKG != null && !isSessionFile) {
+                    if (onExtractKG != null && !isSessionFile && com.promenar.nexara.data.rag.DocumentReferenceExtractor.supports(file)) {
                         DropdownMenuItem(
                             leadingIcon = {
                                 Icon(
@@ -1248,10 +1259,10 @@ private fun resolveIndexStatus(file: FileEntry, indexingFileIds: Set<String> = e
     return FileIndexStatus.INDEXED
 }
 
-private fun resolveKgStatus(file: FileEntry, kgExtractionStates: Map<String, KgStatus>): KgStatus {
+internal fun resolveKgStatus(file: FileEntry, kgExtractionStates: Map<String, KgStatus>): KgStatus {
     val state = kgExtractionStates[file.uuid]
-    if (state != null) return state
-    if (file.kgExtractedAt != null) return KgStatus.COMPLETED
+    if (state == KgStatus.IN_PROGRESS || state == KgStatus.FAILED) return state
+    if ((file.kgExtractedAt ?: 0) >= file.updatedAt && file.kgExtractedAt != null) return KgStatus.COMPLETED
     return KgStatus.NOT_STARTED
 }
 

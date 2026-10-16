@@ -62,13 +62,16 @@ class NexaraDatabaseMigration1To5Test {
 
         helper.runMigrationsAndValidate(
             DATABASE_NAME,
-            18,
+            21,
             true,
             MIGRATION_1_2,
             MIGRATION_2_3,
             MIGRATION_3_4,
             MIGRATION_4_5,
             MIGRATION_5_18,
+            MIGRATION_18_19,
+            MIGRATION_19_20,
+            MIGRATION_20_21,
         ).use { database ->
             assertThat(database.stringQuery("SELECT name FROM agents WHERE id='agent-v1'"))
                 .isEqualTo("Legacy Agent")

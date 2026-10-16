@@ -5,46 +5,22 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.promenar.nexara.data.local.db.KgIdentity
 
 @Entity(
     tableName = "kg_edges",
     foreignKeys = [
-        ForeignKey(
-            entity = KgNodeEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["source_id"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-        ForeignKey(
-            entity = KgNodeEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["target_id"],
-            onDelete = ForeignKey.CASCADE,
-        )
+        ForeignKey(entity = KgNodeEntity::class, parentColumns = ["id"], childColumns = ["source_id"], onDelete = ForeignKey.RESTRICT),
+        ForeignKey(entity = KgNodeEntity::class, parentColumns = ["id"], childColumns = ["target_id"], onDelete = ForeignKey.RESTRICT),
     ],
-    indices = [Index("source_id"), Index("target_id"), Index("doc_id")]
+    indices = [Index("source_id"), Index("target_id"), Index(value = ["source_id", "target_id", "normalized_relation"], unique = true)],
 )
 data class KgEdgeEntity(
-    @PrimaryKey
-    val id: String,
-    @ColumnInfo(name = "source_id")
-    val sourceId: String,
-    @ColumnInfo(name = "target_id")
-    val targetId: String,
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "source_id") val sourceId: String,
+    @ColumnInfo(name = "target_id") val targetId: String,
     val relation: String,
     val weight: Double = 1.0,
-    @ColumnInfo(name = "doc_id")
-    val docId: String? = null,
-    @ColumnInfo(name = "session_id")
-    val sessionId: String? = null,
-    @ColumnInfo(name = "agent_id")
-    val agentId: String? = null,
-    @ColumnInfo(name = "source_type")
-    val sourceType: String = "full",
-    @ColumnInfo(name = "created_at")
-    val createdAt: Long,
-    @ColumnInfo(name = "stale", defaultValue = "0")
-    val stale: Boolean = false,
-    @ColumnInfo(name = "file_uuid")
-    val fileUuid: String? = null,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "normalized_relation") val normalizedRelation: String = KgIdentity.normalize(relation),
 )

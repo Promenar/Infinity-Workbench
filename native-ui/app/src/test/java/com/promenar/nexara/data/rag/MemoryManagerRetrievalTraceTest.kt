@@ -33,7 +33,7 @@ class MemoryManagerRetrievalTraceTest {
             .allowMainThreadQueries()
             .build()
         database.sessionDao().insert(SessionEntity(id = "s1", agentId = "agent", createdAt = 1L, updatedAt = 1L))
-        vectorStore = VectorStore(database.vectorDao(), database.kgNodeDao(), database.kgEdgeDao())
+        vectorStore = VectorStore(database.vectorDao(), database.kgNodeDao(), database.kgEdgeDao(), database.kgEvidenceDao())
         vectorStore.addVectorRecords(
             listOf(
                 doc("doc-1", "alpha", floatArrayOf(1f, 0f)),
@@ -62,7 +62,7 @@ class MemoryManagerRetrievalTraceTest {
     private fun manager(rerankClient: RerankClient? = null, threshold: Float = 0.1f) = MemoryManager(
         vectorStore = vectorStore,
         keywordSearcher = KeywordSearcher(database.vectorDao()),
-        graphStore = GraphStore(database.kgNodeDao(), database.kgEdgeDao()),
+        graphStore = GraphStore(database),
         embeddingClient = embedding,
         rerankClient = rerankClient,
         ragConfig = RagConfiguration(

@@ -10,8 +10,8 @@
 
 ## 2. 项目特定架构与文档注册表
 本项目的完整文档治理体系和文档注册表已在以下文件中声明：
-- **[文档注册表]** — [.agent/registry.md](file:///Users/promenar/Codex/Nexara/.agent/registry.md)
-- **[跨会话交接说明]** — [.agent/handover.md](file:///Users/promenar/Codex/Nexara/.agent/handover.md)
+- **[文档注册表]** — [.agent/registry.md](.agent/registry.md)
+- **[跨会话交接说明]** — [.agent/handover.md](.agent/handover.md)
 
 ## 3. 技术栈特定红线
 本项目是一个包含 Android 原生 Compose UI (`native-ui`) 的多模块项目。
@@ -22,6 +22,9 @@
 - **Android/Gradle 编译清理**：当出现诡异的编译问题时，务必首先执行 `./gradlew clean`。
 
 ## 4. 项目排障沉淀
+
+当前 Android 任务显式指定 `distribution` 风味：日常使用 `:app:testSideloadDebugUnitTest`、`:app:lintSideloadDebug`、`:app:assembleSideloadDebug`、`:app:validateSideloadDebugScreenshotTest`；另构建 `:app:assemblePlayDebug` 并执行 `python3 scripts/ci/check-distribution-manifests.py`。Gradle 在 `native-ui/` 运行，Python 检查在仓库根运行。两个渠道的 APK、mapping 与设备构建入口见 [docs/distribution-builds.md](docs/distribution-builds.md)。
+
 - **Markdown 渲染排障分层**：遇到“Markdown 标记存在但排版堆成一坨”时，必须先区分两类根因：
   - 文本中已有换行，但渲染库按 CommonMark 软换行规则吞掉换行；
   - 上游模型原始输出已经缺少真实换行，只剩标题、列表、表格等 Markdown 标记压在同一行。
@@ -34,4 +37,4 @@
 - commit/push 授权不包含 tag、PR、GitHub Release、强推或历史改写；这些操作仍需用户明确授权。用户当轮明确要求暂停提交或不推送时，以最新指令为准。
 
 ---
-*规范更新于 2026-07-20。请每次开启新会话时首先阅读本文件，并检查 `.agent/handover.md` 的 Next Steps！*
+*规范更新于 2026-10-17。请每次开启新会话时首先阅读本文件，并检查 `.agent/handover.md` 的 Next Steps！*

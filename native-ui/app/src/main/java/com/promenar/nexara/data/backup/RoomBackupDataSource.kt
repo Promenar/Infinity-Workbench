@@ -34,6 +34,9 @@ import java.util.UUID
 internal const val ROOM_SCHEMA_V1_IDENTITY_HASH = "1cec46d28d19744e8cb885fe6abdfcf1"
 internal const val ROOM_SCHEMA_V2_IDENTITY_HASH = "7777303c63145d5bbb9b161b38f94495"
 internal const val ROOM_SCHEMA_V4_IDENTITY_HASH = "a48dd118f5212b60e657cbb257b75d92"
+internal const val ROOM_SCHEMA_V19_IDENTITY_HASH = "694f9ee43b8b6fbca993a11d4a789f64"
+internal const val ROOM_SCHEMA_V20_IDENTITY_HASH = "4cbc9d57e418ec09a3469f1fcdc6bac6"
+internal const val ROOM_SCHEMA_V21_IDENTITY_HASH = com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V21_IDENTITY_HASH
 internal const val ROOM_SCHEMA_V18_IDENTITY_HASH = "c32f59706ea482fd5697681569c6fdb5"
 
 class RoomBackupDataSource(
@@ -455,8 +458,9 @@ class RoomBackupDataSource(
         }
         return when (decoded.schemaVersion) {
             DATABASE_SCHEMA_VERSION -> decoded
-            1 -> upgradeV1Payload(decoded)
-            2 -> upgradeV2Payload(decoded)
+            1 -> upgradeV3Payload(upgradeV1Payload(decoded))
+            2 -> upgradeV3Payload(upgradeV2Payload(decoded))
+            3 -> upgradeV3Payload(decoded)
             else -> decoded
         }
     }
@@ -511,6 +515,18 @@ class RoomBackupDataSource(
                     )
                 }
             ),
+        )
+    }
+
+    /** 历史备份没有建图意图列，补空值以保全源数据，不推断新的付费抽取授权。 */
+    private fun upgradeV3Payload(payload: DatabaseBackupPayload): DatabaseBackupPayload {
+        val files = payload.tables["workspace_files"]
+            ?: throw BackupValidationException("数据库 payload 缺少表: workspace_files")
+        return payload.copy(
+            schemaVersion = DATABASE_SCHEMA_VERSION,
+            tables = payload.tables + ("workspace_files" to files.map { row ->
+                JsonObject(row + ("kg_strategy" to (row["kg_strategy"] ?: JsonNull)))
+            }),
         )
     }
 
@@ -665,10 +681,8 @@ class RoomBackupDataSource(
         val identityHash = sqlite.query(
             "SELECT identity_hash FROM room_master_table WHERE id = 42"
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-        if (identityHash != ROOM_SCHEMA_V18_IDENTITY_HASH &&
-            identityHash != com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V19_IDENTITY_HASH
-        ) {
-            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v18/v19")
+        if (sqlite.version != 21 || identityHash != ROOM_SCHEMA_V21_IDENTITY_HASH) {
+            throw BackupValidationException("当前 Room schema 不是受支持的精确 schema v21")
         }
         INSERT_ORDER.forEach { table ->
             val columns = sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
@@ -1437,7 +1451,7 @@ class RoomBackupDataSource(
 
     private companion object {
         const val MAX_CONFIGURATION_SNAPSHOT_ATTEMPTS = 3
-        const val DATABASE_SCHEMA_VERSION = 3
+        const val DATABASE_SCHEMA_VERSION = 4
         const val FILE_TABLE = "workspace_files"
         const val OWNER_MARKER = ".restore-owner"
         const val OLD_CLEANUP_MARKER = ".restore-cleanup-owner"
@@ -1450,6 +1464,7 @@ class RoomBackupDataSource(
 
         // 用户源数据。明确排除 vectors/FTS/KG/JIT/vectorization_tasks/audit_logs/
         // tool_execution_ledger/file_versions，它们均为可重建派生数据、运行态账本或版本缓存。
+        // external_mounts/external_snapshots 依赖本机目录授权，不进入可移植备份。
         val INSERT_ORDER = listOf(
             "agents",
             "sessions",
@@ -1467,8 +1482,9 @@ class RoomBackupDataSource(
         )
         val DELETE_ORDER = INSERT_ORDER.reversed()
         val DERIVED_DELETE_ORDER = listOf(
+            "external_snapshots",
             "mcp_tool_snapshots", "workspace_mutations", "tool_execution_ledger", "file_versions", "vectorization_tasks",
-            "kg_edges", "kg_nodes", "kg_jit_cache", "vectors_fts", "vectors", "audit_logs",
+            "kg_evidence", "kg_jit_cache_sources", "kg_edges", "kg_nodes", "kg_jit_cache", "vectors_fts", "vectors", "audit_logs",
         )
     }
 }

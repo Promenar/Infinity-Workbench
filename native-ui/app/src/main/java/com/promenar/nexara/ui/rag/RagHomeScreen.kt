@@ -127,6 +127,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
+import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.domain.model.Folder
 import com.promenar.nexara.domain.repository.MemoryVectorRecord
 import com.promenar.nexara.ui.chat.components.FileBatchOperationResult
@@ -338,6 +339,7 @@ fun RagHomeScreen(
     onNavigateToGraph: () -> Unit = {},
     onNavigateToDocEditor: (String, String) -> Unit = { _, _ -> },
 ) {
+    val externalFolderManager = (LocalContext.current.applicationContext as? NexaraApplication)?.externalFolderManager
     val stats by viewModel.stats.collectAsState()
     val folders by viewModel.folders.collectAsState()
     val folderStats by viewModel.folderStats.collectAsState()
@@ -473,6 +475,7 @@ fun RagHomeScreen(
         kgExtractionStates,
         availableWorkspaceRoots,
         selectedWorkspaceSessionId,
+        externalFolderManager,
     ) {
         { modifier, selectedDocumentIds, requestDelete ->
             BackHandler(enabled = folderStack.isNotEmpty() && searchQuery.isBlank()) {
@@ -495,6 +498,10 @@ fun RagHomeScreen(
                             FilesPanel(
                                 workspaceRootUuid = workspaceRootUuid,
                                 workspaceRepo = viewModel.getWorkspaceRepo(),
+                                sessionId = selectedWorkspaceSessionId?.takeUnless {
+                                    it == CompositeWorkspaceConstants.GLOBAL_KNOWLEDGE_SESSION_ID
+                                },
+                                externalFolderManager = externalFolderManager,
                                 currentParentUuid = activeFolderId,
                                 searchQuery = "",
                                 useScroll = true,

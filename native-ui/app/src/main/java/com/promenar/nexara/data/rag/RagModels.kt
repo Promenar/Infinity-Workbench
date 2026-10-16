@@ -42,7 +42,8 @@ data class SearchResult(
     val endMessageId: String? = null,
     val createdAt: Long,
     val similarity: Float,
-    val originalSimilarity: Float? = null
+    val originalSimilarity: Float? = null,
+    val documentContentHash: String? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -156,15 +157,27 @@ data class KgEdge(
     val weight: Double = 1.0,
     val docId: String? = null,
     val sourceType: String = "full",
-    val createdAt: Long
+    val createdAt: Long,
+    val documentIds: List<String> = emptyList(),
 )
+
+@Serializable
+enum class KgExtractionStatus { SUCCESS, PARSE_FAILURE, TIMEOUT, CANCELLED, PROVIDER_ERROR }
 
 @Serializable
 data class ExtractionResult(
     val nodes: List<ExtractedNode>,
     val edges: List<ExtractedEdge>,
-    val error: String? = null
-)
+    val error: String? = null,
+    val status: KgExtractionStatus = if (error == null) KgExtractionStatus.SUCCESS else KgExtractionStatus.PROVIDER_ERROR,
+) {
+    val isSuccess: Boolean get() = status == KgExtractionStatus.SUCCESS && error == null
+
+    companion object {
+        fun failure(status: KgExtractionStatus, message: String) =
+            ExtractionResult(emptyList(), emptyList(), message, status)
+    }
+}
 
 @Serializable
 data class ExtractedNode(
@@ -188,8 +201,18 @@ data class MicroGraphResult(
     val context: String,
     val sourceChunkIds: List<String>,
     val query: String,
-    val extractedAt: Long
-)
+    val extractedAt: Long,
+    val status: KgExtractionStatus = KgExtractionStatus.SUCCESS,
+    val error: String? = null,
+    val sourceDocumentIds: List<String> = emptyList(),
+) {
+    val isSuccess: Boolean get() = status == KgExtractionStatus.SUCCESS && error == null
+
+    companion object {
+        fun failure(status: KgExtractionStatus, message: String, query: String) =
+            MicroGraphResult(emptyList(), emptyList(), "", emptyList(), query, System.currentTimeMillis(), status, message)
+    }
+}
 
 @Serializable
 data class VectorizationTask(

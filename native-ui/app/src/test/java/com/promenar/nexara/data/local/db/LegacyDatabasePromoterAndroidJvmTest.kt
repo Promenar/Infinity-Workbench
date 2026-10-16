@@ -6,6 +6,11 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.room.Room
 import com.google.common.truth.Truth.assertThat
+import java.io.File
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -100,7 +105,7 @@ class LegacyDatabasePromoterAndroidJvmTest {
     }
 
     @Test
-    fun productionPromotionAcceptsExactCurrentV19DatabaseWhenHistoricalSourceAlsoExists() {
+    fun productionPromotionAcceptsExactCurrentV21DatabaseWhenHistoricalSourceAlsoExists() {
         createValidPublishedLegacyDatabase()
         Room.databaseBuilder(context, NexaraDatabase::class.java, "nexara_v2.db")
             .allowMainThreadQueries().build().also { it.openHelper.writableDatabase }.close()
@@ -111,7 +116,7 @@ class LegacyDatabasePromoterAndroidJvmTest {
     }
 
     @Test
-    fun productionPromotionRejectsV19WithoutUniqueSshAliasIndex() {
+    fun productionPromotionRejectsV21WithoutUniqueSshAliasIndex() {
         createValidPublishedLegacyDatabase()
         Room.databaseBuilder(context, NexaraDatabase::class.java, "nexara_v2.db")
             .allowMainThreadQueries().build().also { it.openHelper.writableDatabase }.close()
@@ -123,33 +128,33 @@ class LegacyDatabasePromoterAndroidJvmTest {
     }
 
     @Test
-    fun productionPromotionRejectsV19WithPartialSshAliasIndex() = assertSshContractRejected { sqlite ->
+    fun productionPromotionRejectsV21WithPartialSshAliasIndex() = assertSshContractRejected { sqlite ->
         sqlite.execSQL("DROP INDEX index_ssh_hosts_alias")
         sqlite.execSQL("CREATE UNIQUE INDEX index_ssh_hosts_alias ON ssh_hosts(alias) WHERE alias='restricted-only'")
     }
 
     @Test
-    fun productionPromotionRejectsV19WithNullableSshAlias() = assertSshColumnRejected(
+    fun productionPromotionRejectsV21WithNullableSshAlias() = assertSshColumnRejected(
         "alias TEXT NOT NULL", "alias TEXT",
     )
 
     @Test
-    fun productionPromotionRejectsV19WithSshPortTypeDrift() = assertSshColumnRejected(
+    fun productionPromotionRejectsV21WithSshPortTypeDrift() = assertSshColumnRejected(
         "port INTEGER NOT NULL DEFAULT 22", "port TEXT NOT NULL DEFAULT 22",
     )
 
     @Test
-    fun productionPromotionRejectsV19WithSshPortDefaultDrift() = assertSshColumnRejected(
+    fun productionPromotionRejectsV21WithSshPortDefaultDrift() = assertSshColumnRejected(
         "port INTEGER NOT NULL DEFAULT 22", "port INTEGER NOT NULL DEFAULT 2222",
     )
 
     @Test
-    fun productionPromotionRejectsV19WithSshPrimaryKeyDrift() = assertSshColumnRejected(
+    fun productionPromotionRejectsV21WithSshPrimaryKeyDrift() = assertSshColumnRejected(
         "PRIMARY KEY(id)", "PRIMARY KEY(alias)",
     )
 
     @Test
-    fun productionPromotionRejectsV19WithUnknownIdentity() {
+    fun productionPromotionRejectsV21WithUnknownIdentity() {
         createValidPublishedLegacyDatabase()
         Room.databaseBuilder(context, NexaraDatabase::class.java, "nexara_v2.db")
             .allowMainThreadQueries().build().also { it.openHelper.writableDatabase }.close()
@@ -157,6 +162,95 @@ class LegacyDatabasePromoterAndroidJvmTest {
             .use { it.execSQL("UPDATE room_master_table SET identity_hash='unknown' WHERE id=42") }
 
         assertThrows(java.io.IOException::class.java) { LegacyDatabasePromoter.promote(context) }
+        assertThat(context.getDatabasePath("nexara.db").isFile).isTrue()
+    }
+
+    @Test
+    fun productionPromotionAcceptsExactV18DatabaseBeforeRoomUpgrade() {
+        createValidPublishedLegacyDatabase()
+        createCurrentDatabase(18)
+
+        assertThat(LegacyDatabasePromoter.promote(context))
+            .isEqualTo(LegacyDatabasePromotionResult.CurrentDatabaseExists)
+        SQLiteDatabase.openDatabase(context.getDatabasePath("nexara_v2.db").path, null, SQLiteDatabase.OPEN_READONLY)
+            .use { sqlite -> assertThat(sqlite.version).isEqualTo(18) }
+    }
+
+    @Test
+    fun productionPromotionAcceptsExactV19DatabaseBeforeRoomUpgrade() {
+        createValidPublishedLegacyDatabase()
+        createCurrentDatabase(19)
+
+        assertThat(LegacyDatabasePromoter.promote(context))
+            .isEqualTo(LegacyDatabasePromotionResult.CurrentDatabaseExists)
+        SQLiteDatabase.openDatabase(context.getDatabasePath("nexara_v2.db").path, null, SQLiteDatabase.OPEN_READONLY)
+            .use { sqlite -> assertThat(sqlite.version).isEqualTo(19) }
+    }
+
+    @Test
+    fun productionPromotionAcceptsExactV20DatabaseBeforeRoomUpgrade() {
+        createValidPublishedLegacyDatabase()
+        createCurrentDatabase(20)
+        assertThat(LegacyDatabasePromoter.promote(context))
+            .isEqualTo(LegacyDatabasePromotionResult.CurrentDatabaseExists)
+        SQLiteDatabase.openDatabase(context.getDatabasePath("nexara_v2.db").path, null, SQLiteDatabase.OPEN_READONLY)
+            .use { sqlite -> assertThat(sqlite.version).isEqualTo(20) }
+    }
+
+    @Test
+    fun productionPromotionRejectsV21IdentityWithV20Structure() {
+        createValidPublishedLegacyDatabase()
+        createCurrentDatabase(20)
+        SQLiteDatabase.openDatabase(context.getDatabasePath("nexara_v2.db").path, null, SQLiteDatabase.OPEN_READWRITE)
+            .use { sqlite ->
+                sqlite.version = 21
+                sqlite.execSQL("UPDATE room_master_table SET identity_hash=? WHERE id=42", arrayOf(NEXARA_SCHEMA_V21_IDENTITY_HASH))
+            }
+        assertThrows(java.io.IOException::class.java) { LegacyDatabasePromoter.promote(context) }
+    }
+
+    @Test
+    fun productionPromotionRejectsV19IdentityWithV20Header() {
+        createValidPublishedLegacyDatabase()
+        createCurrentDatabase(19)
+        SQLiteDatabase.openDatabase(context.getDatabasePath("nexara_v2.db").path, null, SQLiteDatabase.OPEN_READWRITE)
+            .use { sqlite -> sqlite.version = 20 }
+
+        assertThrows(java.io.IOException::class.java) { LegacyDatabasePromoter.promote(context) }
+    }
+
+    @Test
+    fun productionPromotionRejectsV20MissingExternalSnapshotTableDespiteMatchingIdentity() {
+        createValidPublishedLegacyDatabase()
+        createCurrentDatabase(20)
+        SQLiteDatabase.openDatabase(context.getDatabasePath("nexara_v2.db").path, null, SQLiteDatabase.OPEN_READWRITE)
+            .use { sqlite -> sqlite.execSQL("DROP TABLE external_snapshots") }
+
+        assertThrows(java.io.IOException::class.java) { LegacyDatabasePromoter.promote(context) }
+    }
+
+    @Test
+    fun productionPromotionRejectsV18IdentityWithV19Header() {
+        createValidPublishedLegacyDatabase()
+        Room.databaseBuilder(context, NexaraDatabase::class.java, "nexara_v2.db")
+            .allowMainThreadQueries()
+            .build()
+            .also { it.openHelper.writableDatabase }
+            .close()
+        SQLiteDatabase.openDatabase(
+            context.getDatabasePath("nexara_v2.db").path,
+            null,
+            SQLiteDatabase.OPEN_READWRITE,
+        ).use { sqlite ->
+            sqlite.execSQL(
+                "UPDATE room_master_table SET identity_hash='c32f59706ea482fd5697681569c6fdb5' WHERE id=42",
+            )
+            sqlite.version = 19
+        }
+
+        assertThrows(java.io.IOException::class.java) {
+            LegacyDatabasePromoter.promote(context)
+        }
         assertThat(context.getDatabasePath("nexara.db").isFile).isTrue()
     }
 
@@ -171,6 +265,25 @@ class LegacyDatabasePromoterAndroidJvmTest {
 
         assertThat(readSentinel("nexara.db")).isEqualTo("legacy-sentinel")
         assertThat(readSentinel("nexara_v2.db")).isEqualTo("current-sentinel")
+    }
+
+    private fun createCurrentDatabase(version: Int) {
+        val schema = Json.parseToJsonElement(
+            File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json").readText(),
+        ).jsonObject.getValue("database").jsonObject
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath("nexara_v2.db"), null).use { sqlite ->
+            schema.getValue("entities").jsonArray.forEach { element ->
+                val entity = element.jsonObject
+                val table = entity.getValue("tableName").jsonPrimitive.content
+                sqlite.execSQL(entity.getValue("createSql").jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                entity["indices"]?.jsonArray?.forEach { index ->
+                    sqlite.execSQL(index.jsonObject.getValue("createSql").jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                }
+                entity["contentSyncTriggers"]?.jsonArray?.forEach { sqlite.execSQL(it.jsonPrimitive.content) }
+            }
+            schema.getValue("setupQueries").jsonArray.forEach { sqlite.execSQL(it.jsonPrimitive.content) }
+            sqlite.version = version
+        }
     }
 
     private fun createValidPublishedLegacyDatabase(sentinel: String? = null) {

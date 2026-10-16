@@ -1,7 +1,6 @@
 package com.promenar.nexara.data.local.db.recovery
 
 import com.google.common.truth.Truth.assertThat
-import com.promenar.nexara.data.local.db.NEXARA_SCHEMA_V19_IDENTITY_HASH
 import org.junit.Test
 
 class AndroidDualDatabaseSourceContractTest {
@@ -11,8 +10,41 @@ class AndroidDualDatabaseSourceContractTest {
     }
 
     @Test
-    fun `已通过完整身份验证的v19不进入旧双库合并`() {
-        assertThat(requiresDualDatabaseRecovery(source(19, NEXARA_SCHEMA_V19_IDENTITY_HASH))).isFalse()
+    fun `retained public v17 beside verified current v19 is normal post promotion state`() {
+        assertThat(requiresDualDatabaseRecovery(source(19, CURRENT_V19_IDENTITY))).isFalse()
+    }
+
+    @Test
+    fun `retained public v17 beside verified current v20 is normal post promotion state`() {
+        assertThat(requiresDualDatabaseRecovery(source(20, CURRENT_V20_IDENTITY))).isFalse()
+    }
+
+    @Test
+    fun `untrusted identities do not bypass recovery based on the version alone`() {
+        assertThat(requiresDualDatabaseRecovery(source(18, "untrusted-room-identity"))).isTrue()
+        assertThat(requiresDualDatabaseRecovery(source(19, CURRENT_V18_IDENTITY))).isTrue()
+        assertThat(requiresDualDatabaseRecovery(source(20, CURRENT_V19_IDENTITY))).isTrue()
+        assertThat(requiresDualDatabaseRecovery(source(19, CURRENT_V20_IDENTITY))).isTrue()
+        assertThat(requiresDualDatabaseRecovery(source(19, "5aa1bdf81ceefffeebbbbb1088436b05"))).isTrue()
+        assertThat(requiresDualDatabaseRecovery(source(21, CURRENT_V20_IDENTITY))).isTrue()
+    }
+
+    @Test
+    fun `精确v21身份不进入旧双库合并`() {
+        assertThat(requiresDualDatabaseRecovery(source(21, CURRENT_V21_IDENTITY))).isFalse()
+    }
+
+    @Test
+    fun `v18到v21拒绝任意交叉版本身份和未知身份`() {
+        val identities = mapOf(18 to CURRENT_V18_IDENTITY, 19 to CURRENT_V19_IDENTITY,
+            20 to CURRENT_V20_IDENTITY, 21 to CURRENT_V21_IDENTITY)
+        identities.forEach { (version, identity) ->
+            assertThat(requiresDualDatabaseRecovery(source(version, identity))).isFalse()
+            identities.filterKeys { it != version }.values.forEach { other ->
+                assertThat(requiresDualDatabaseRecovery(source(version, other))).isTrue()
+            }
+            assertThat(requiresDualDatabaseRecovery(source(version, "unknown"))).isTrue()
+        }
     }
 
     @Test

@@ -159,7 +159,7 @@ class KnowledgeGraphViewModelTest {
         assertThat(vm.nodes.value).isEmpty()
         assertThat(vm.documentSelectionRequired.value).isTrue()
         coVerify(exactly = 1) { graphStore.getGraphData() }
-        coVerify(exactly = 1) { graphStore.getGraphData(any(), any(), any()) }
+        coVerify(exactly = 1) { graphStore.getGraphData(any(), any()) }
     }
 
     @Test

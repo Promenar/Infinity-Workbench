@@ -73,8 +73,15 @@ object NexaraLogger {
     fun getDiagnosticFile(context: Context): File = File(context.filesDir, DIAGNOSTIC_FILE_NAME)
 
     suspend fun prepareDiagnosticExport(context: Context): File = withContext(Dispatchers.IO) {
-        getDiagnosticFile(context).also { file ->
-            if (!file.exists()) file.createNewFile()
+        File(context.filesDir, "nexara_diagnostics_export.jsonl").also { export ->
+            val metadata = org.json.JSONObject(
+                com.promenar.nexara.distribution.DistributionCapabilities.diagnosticFields(),
+            ).apply { put("event", "app.build") }
+            export.bufferedWriter().use { writer ->
+                writer.appendLine(metadata.toString())
+                val source = getDiagnosticFile(context)
+                if (source.exists()) source.bufferedReader().use { it.copyTo(writer) }
+            }
         }
     }
 

@@ -11,6 +11,7 @@ android {
     defaultConfig {
         minSdk = 31
         targetSdk = 36
+        missingDimensionStrategy("distribution", "sideload")
         testInstrumentationRunner = "com.promenar.nexara.MainActivityE2eRunner"
     }
 

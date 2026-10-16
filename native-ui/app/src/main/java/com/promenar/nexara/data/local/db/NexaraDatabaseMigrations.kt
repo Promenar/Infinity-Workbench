@@ -161,7 +161,7 @@ val MIGRATION_5_18 = object : Migration(5, 18) {
 }
 
 /** SSH 主机配置独立持久化，认证材料只由 SecretStore 保存。 */
-val MIGRATION_18_19 = object : Migration(18, 19) {
+val MIGRATION_20_21 = object : Migration(20, 21) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE IF NOT EXISTS ssh_hosts (
@@ -205,6 +205,42 @@ val MIGRATION_17_18 = object : Migration(17, 18) {
         } finally {
             db.execSQL("PRAGMA legacy_alter_table=OFF")
         }
+    }
+}
+
+val MIGRATION_19_20 = object : Migration(19, 20) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS external_mounts (
+                id TEXT NOT NULL,
+                alias TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                scope_key TEXT NOT NULL,
+                read_only INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                unavailable_reason TEXT,
+                PRIMARY KEY(id)
+            )""".trimIndent(),
+        )
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS index_external_mounts_scope_key_alias " +
+                "ON external_mounts(scope_key, alias)",
+        )
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS external_snapshots (
+                mount_id TEXT NOT NULL,
+                source_path TEXT NOT NULL,
+                workspace_root_uuid TEXT NOT NULL,
+                file_uuid TEXT NOT NULL,
+                source_modified INTEGER NOT NULL,
+                content_hash TEXT NOT NULL,
+                imported_at INTEGER NOT NULL,
+                PRIMARY KEY(mount_id, source_path, workspace_root_uuid),
+                FOREIGN KEY(mount_id) REFERENCES external_mounts(id) ON UPDATE NO ACTION ON DELETE CASCADE
+            )""".trimIndent(),
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_external_snapshots_mount_id ON external_snapshots(mount_id)")
     }
 }
 

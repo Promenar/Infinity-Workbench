@@ -43,7 +43,7 @@ class LegacyDatabasePromoterInstrumentedTest {
     }
 
     @Test
-    fun `正式v19与保留v17并存时精确验证且源文件字节不变`() {
+    fun `正式v21与保留v17并存时精确验证且源文件字节不变`() {
         verifyCurrentDatabaseWithoutSourceWrites(NexaraDatabase::class.java)
     }
 

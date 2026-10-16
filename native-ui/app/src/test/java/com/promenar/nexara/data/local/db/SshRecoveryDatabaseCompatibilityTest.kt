@@ -35,7 +35,7 @@ class SshRecoveryDatabaseCompatibilityTest {
     }
 
     @Test
-    fun `保留历史库时Promoter精确验证正式v19且不覆盖旧数据`() {
+    fun `保留历史库时Promoter精确验证正式v21且不覆盖旧数据`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.deleteDatabase("nexara.db")
         context.deleteDatabase("nexara_v2.db")
@@ -63,7 +63,7 @@ class SshRecoveryDatabaseCompatibilityTest {
     }
 
     @Test
-    fun `旧主库头与v19WAL共存时Promoter接受完整新库且源库零写入`() {
+    fun `旧主库头与v21WAL共存时Promoter接受完整新库且源库零写入`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.deleteDatabase("nexara.db")
         context.deleteDatabase("nexara_v2.db")
@@ -88,7 +88,7 @@ class SshRecoveryDatabaseCompatibilityTest {
                 sqlite.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use {
                     check(it.moveToFirst() && it.getInt(0) == 0)
                 }
-                sqlite.version = 19
+                sqlite.version = 21
                 RandomAccessFile(main, "r").use { file -> file.seek(60); assertThat(file.readInt()).isEqualTo(5) }
                 val before = sourceHashes(context)
                 assertThat(before.keys).contains("nexara_v2.db-wal")

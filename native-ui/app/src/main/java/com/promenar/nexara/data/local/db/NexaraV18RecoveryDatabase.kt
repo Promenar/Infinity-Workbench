@@ -10,11 +10,8 @@ import com.promenar.nexara.data.local.db.entity.AuditLogEntity
 import com.promenar.nexara.data.local.db.entity.ContextSummaryEntity
 import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.DocumentTagEntity
-import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.FileVersionEntity
-import com.promenar.nexara.data.local.db.entity.KgEdgeEntity
 import com.promenar.nexara.data.local.db.entity.KgJitCacheEntity
-import com.promenar.nexara.data.local.db.entity.KgNodeEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.local.db.entity.McpToolSnapshotEntity
 import com.promenar.nexara.data.local.db.entity.MessageEntity
@@ -40,8 +37,8 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
         ContextSummaryEntity::class,
         TagEntity::class,
         DocumentTagEntity::class,
-        KgNodeEntity::class,
-        KgEdgeEntity::class,
+        RecoveryV18KgNodeEntity::class,
+        RecoveryV18KgEdgeEntity::class,
         KgJitCacheEntity::class,
         VectorizationTaskEntity::class,
         AuditLogEntity::class,
@@ -49,7 +46,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
         CustomSkillEntity::class,
         McpServerEntity::class,
         McpToolSnapshotEntity::class,
-        FileEntry::class,
+        RecoveryV18FileEntry::class,
         WorkspaceSeqEntity::class,
         TaskNodeEntity::class,
         ToolExecutionLedgerEntity::class,
