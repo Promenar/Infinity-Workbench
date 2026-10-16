@@ -350,11 +350,27 @@ fun RagHomeScreen(
     val isRetryingPendingRenameIndex by viewModel.isRetryingPendingRenameIndex.collectAsState()
     val memoryVectors by viewModel.memoryVectors.collectAsState()
     val kgExtractionStates by viewModel.kgExtractionStates.collectAsState()
+    val kgConfirmation by viewModel.kgExtractionConfirmation.collectAsState()
     val workspaceRootUuid by viewModel.workspaceRootUuid.collectAsState()
     val availableWorkspaceRoots by viewModel.availableWorkspaceRoots.collectAsState()
     val selectedWorkspaceSessionId by viewModel.selectedWorkspaceSessionId.collectAsState()
     val indexingFileIds by viewModel.indexingDocIds.collectAsState()
     val searchState by viewModel.searchState.collectAsState()
+
+    kgConfirmation?.let { confirmation ->
+        com.promenar.nexara.ui.common.ConfirmDialog(
+            show = true,
+            onDismiss = viewModel::dismissKnowledgeGraphConfirmation,
+            onConfirm = viewModel::confirmKnowledgeGraphExtraction,
+            title = stringResource(R.string.kg_extraction_confirm_title),
+            description = stringResource(
+                R.string.kg_extraction_confirm_description, confirmation.title, confirmation.estimate.calls,
+                confirmation.estimate.inputTokens.toString(), confirmation.estimate.outputTokenLimit.toString(),
+                confirmation.budget.maxCalls, confirmation.budget.maxOutputTokens.toString(), confirmation.budget.maxDurationMs / 1_000,
+            ),
+            destructive = false,
+        )
+    }
 
     var currentTab by rememberSaveable { mutableStateOf(PortalTab.DOCUMENTS) }
     var searchQuery by rememberSaveable { mutableStateOf("") }

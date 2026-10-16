@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="kg_retrieval_section">Knowledge graph retrieval</string>
+    <string name="kg_jit_fallback_title">Persistent graph first, JIT when needed</string>
+    <string name="kg_jit_fallback_desc">Extract visible retrieved chunks only when graph coverage is insufficient</string>
+    <string name="kg_retrieval_hops">Expansion hops</string>
+    <string name="kg_seed_limit">Maximum seed entities</string>
+    <string name="kg_node_limit">Maximum retrieved entities</string>
+    <string name="kg_path_limit">Maximum retrieved paths</string>
+    <string name="kg_context_budget">Graph context token limit (conservative estimate)</string>
+    <string name="kg_jit_seed_threshold">Minimum seeds before JIT fallback</string>
+    <string name="kg_extraction_budget_section">Document extraction budgets</string>
+    <string name="kg_budget_calls">Maximum calls per document version</string>
+    <string name="kg_budget_output">Maximum output tokens per document</string>
+    <string name="kg_budget_request_output">Maximum output tokens per request</string>
+    <string name="kg_budget_duration">Maximum extraction time (seconds)</string>
+    <string name="kg_budget_confirm_threshold">Confirm when estimated calls exceed</string>
+    <string name="kg_budget_partial_hint">Budget limits keep processed chunks as a partial graph. Usage estimates are labelled.</string>
+    <string name="kg_source_persistent">Persistent graph</string>
+    <string name="kg_source_jit">Instant extraction</string>
+    <string name="kg_hit_summary">%1$d entities · %2$d paths</string>
+    <string name="kg_trimmed_summary">%1$d low-score paths omitted by budget</string>
+</resources>

@@ -145,6 +145,76 @@ class RagViewModelTest {
     }
 
     @Test
+    fun `大文档先展示调用与token估算且只有确认后才以已确认策略入队`() = runTest {
+        val file = fileEntry("large-kg", "large.txt", materializedPath = "/large.txt").copy(mimeType = "text/plain")
+        coEvery { workspaceRepository.getByUuid("rag-root", file.uuid) } returns file
+        val vm = createViewModel(kgEstimator = { com.promenar.nexara.data.rag.KgExtractionEstimate(20, 14_000, 40_960, 20, true) })
+        advanceUntilIdle()
+
+        vm.extractKG(file.uuid)
+        advanceUntilIdle()
+        assertThat(vm.kgExtractionConfirmation.value!!.estimate.calls).isEqualTo(20)
+        assertThat(vm.kgExtractionConfirmation.value!!.estimate.inputTokens).isEqualTo(14_000)
+        coVerify(exactly = 0) { vectorizationQueue.enqueueDocumentReference(any(), any(), any(), any(), any(), any(), any(), any()) }
+
+        vm.confirmKnowledgeGraphExtraction()
+        advanceUntilIdle()
+        assertThat(vm.kgExtractionConfirmation.value).isNull()
+        coVerify(exactly = 1) {
+            vectorizationQueue.enqueueDocumentReference("rag-root", file.uuid, file.name, "text/plain", file.hash, file.updatedAt, "full_confirmed", true)
+        }
+    }
+
+    @Test
+    fun `确认期间文档版本变化会重新展示估算且不复用授权`() = runTest {
+        val file = fileEntry("changed-kg", "large.txt", materializedPath = "/large.txt").copy(mimeType = "text/plain")
+        coEvery { workspaceRepository.getByUuid("rag-root", file.uuid) } returns file
+        val vm = createViewModel(kgEstimator = { com.promenar.nexara.data.rag.KgExtractionEstimate(20, 14_000, 40_960, 20, true) })
+        advanceUntilIdle()
+        vm.extractKG(file.uuid)
+        advanceUntilIdle()
+
+        coEvery { workspaceRepository.getByUuid("rag-root", file.uuid) } returns file.copy(hash = "changed", updatedAt = 2)
+        vm.confirmKnowledgeGraphExtraction()
+        advanceUntilIdle()
+
+        assertThat(vm.kgExtractionConfirmation.value!!.contentHash).isEqualTo("changed")
+        coVerify(exactly = 0) { vectorizationQueue.enqueueDocumentReference(any(), any(), any(), any(), any(), any(), any(), any()) }
+        vm.dismissKnowledgeGraphConfirmation()
+        assertThat(vm.kgExtractionConfirmation.value).isNull()
+    }
+
+    @Test
+    fun `新版本只做向量索引时清除旧版本部分KG状态且文件图标遵守epoch`() = runTest {
+        var listener: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { vectorizationQueue.setOnStateChange(any()) } answers {
+            listener = firstArg()
+            AutoCloseable { }
+        }
+        val vm = createViewModel()
+        advanceUntilIdle()
+        val old = com.promenar.nexara.data.rag.VectorizationTask(
+            "version-a", "document_reference", docId = "versioned-kg", workspaceRootUuid = "rag-root",
+            kgStrategy = "full", status = "partial", targetContentHash = "hash-a", targetEpoch = 1,
+            lastChunkIndex = 2, totalChunks = 5, updatedAt = 1,
+        )
+        val versionA = fileEntry("versioned-kg", "versioned.txt", materializedPath = "/versioned.txt")
+            .copy(hash = "hash-a", mimeType = "text/plain", kgStrategy = "partial:2:5:1")
+        listener!!.invoke(listOf(old), old)
+        assertThat(com.promenar.nexara.ui.chat.components.resolveKgStatus(versionA, vm.kgExtractionStates.value))
+            .isEqualTo(KgStatus.PARTIAL)
+
+        val current = old.copy(id = "version-b", status = "pending", kgStrategy = null,
+            targetContentHash = "hash-b", targetEpoch = 2, updatedAt = 2)
+        listener!!.invoke(listOf(old, current), current)
+
+        assertThat(vm.kgExtractionStates.value).doesNotContainKey("versioned-kg")
+        assertThat(com.promenar.nexara.ui.chat.components.resolveKgStatus(
+            versionA.copy(hash = "hash-b", updatedAt = 2), vm.kgExtractionStates.value))
+            .isEqualTo(KgStatus.NOT_STARTED)
+    }
+
+    @Test
     fun `手动KG队列失败在UI显示失败且ViewModel重建不丢失持久完成态`() = runTest {
         var listener: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
         every { vectorizationQueue.setOnStateChange(any()) } answers {
@@ -370,6 +440,9 @@ class RagViewModelTest {
         configSaver: ((com.promenar.nexara.data.rag.RagConfiguration) -> Unit)? = null,
         listRoots: (suspend () -> List<RagWorkspaceSource>)? = null,
         ensureForSession: (suspend (String) -> FileEntry)? = null,
+        kgEstimator: suspend (FileEntry) -> com.promenar.nexara.data.rag.KgExtractionEstimate = {
+            com.promenar.nexara.data.rag.KgExtractionEstimate(1, 100, 2048, 1, false)
+        },
     ): RagViewModel {
         assertThat(app.vectorizationQueue).isSameInstanceAs(vectorizationQueue)
         val ragPrefs = mockk<android.content.SharedPreferences>(relaxed = true)
@@ -384,6 +457,7 @@ class RagViewModelTest {
             injectedEnsureRagWorkspaceRoot = ensureRagWorkspaceRoot,
             injectedListRagWorkspaceRoots = listRoots,
             injectedEnsureRagWorkspaceRootForSession = ensureForSession,
+            injectedKgEstimator = kgEstimator,
         )
     }
 

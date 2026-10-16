@@ -1250,7 +1250,8 @@ private fun resolveIndexStatus(file: FileEntry, indexingFileIds: Set<String> = e
 
 internal fun resolveKgStatus(file: FileEntry, kgExtractionStates: Map<String, KgStatus>): KgStatus {
     val state = kgExtractionStates[file.uuid]
-    if (state == KgStatus.IN_PROGRESS || state == KgStatus.FAILED) return state
+    if (state == KgStatus.IN_PROGRESS || state == KgStatus.FAILED || state == KgStatus.PARTIAL) return state
+    if (file.kgStrategy?.takeIf { it.startsWith("partial:") }?.substringAfterLast(':')?.toLongOrNull() == file.updatedAt) return KgStatus.PARTIAL
     if ((file.kgExtractedAt ?: 0) >= file.updatedAt && file.kgExtractedAt != null) return KgStatus.COMPLETED
     return KgStatus.NOT_STARTED
 }

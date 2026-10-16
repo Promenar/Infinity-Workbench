@@ -336,13 +336,15 @@ internal fun AdvancedRetrievalScreenContent(
                 }
             }
 
+            KgRetrievalSettings(config, actions.onConfigChanged)
+
             Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }
 
 @Composable
-private fun AdaptiveSlider(
+internal fun AdaptiveSlider(
     label: String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
@@ -403,7 +405,7 @@ private fun AdaptiveSlider(
 
 /** 卡片内的开关行：与同卡片的标题、滑块左缘对齐（卡片已有 16dp 内边距，不再叠加列表项内边距）。 */
 @Composable
-private fun InlineToggleRow(
+internal fun InlineToggleRow(
     title: String,
     description: String,
     checked: Boolean,

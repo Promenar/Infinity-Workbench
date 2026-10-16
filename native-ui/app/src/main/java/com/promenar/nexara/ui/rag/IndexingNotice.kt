@@ -23,6 +23,9 @@ object IndexingNotice {
     const val CODE_EXTRACTING_KG = "rag.index.extracting_kg"
     const val CODE_COMPLETED = "rag.index.completed"
     const val CODE_PARTIAL = "rag.index.partial"
+    const val CODE_KG_PROGRESS = "rag.index.kg_progress"
+    const val CODE_KG_PARTIAL = "rag.index.kg_partial"
+    const val CODE_KG_CONFIRMATION = "rag.index.kg_confirmation"
     const val CODE_WARNING = "rag.index.warning"
     const val CODE_FAILED = "rag.index.failed"
     const val CODE_IMPORT_FAILED = "rag.index.import_failed"
@@ -46,11 +49,19 @@ object IndexingNotice {
             technical = task.subStatus,
         )
         "saving" -> UiStatusNotice(NoticeSeverity.Info, CODE_SAVING, technical = task.subStatus)
-        "extracting" -> UiStatusNotice(NoticeSeverity.Info, CODE_EXTRACTING_KG, technical = task.subStatus)
+        "extracting" -> if (task.totalChunks != null) UiStatusNotice(
+            NoticeSeverity.Info, CODE_KG_PROGRESS,
+            formatArgs = listOf(task.lastChunkIndex.toString(), task.totalChunks.toString()), technical = task.subStatus,
+        ) else UiStatusNotice(NoticeSeverity.Info, CODE_EXTRACTING_KG, technical = task.subStatus)
         "completed" -> UiStatusNotice(NoticeSeverity.Success, CODE_COMPLETED, technical = task.subStatus)
         "partial" -> UiStatusNotice(
             severity = NoticeSeverity.Warning,
-            code = CODE_PARTIAL,
+            code = when {
+                task.error == com.promenar.nexara.data.rag.VectorizationQueue.KG_CONFIRMATION_REQUIRED -> CODE_KG_CONFIRMATION
+                task.error?.startsWith("kg.budget.") == true -> CODE_KG_PARTIAL
+                else -> CODE_PARTIAL
+            },
+            formatArgs = listOf(task.lastChunkIndex.toString(), task.totalChunks?.toString() ?: "?"),
             technical = listOfNotNull(task.error, task.subStatus).joinToString(" | ").ifEmpty { null },
         )
         "warning" -> UiStatusNotice(
@@ -93,6 +104,9 @@ object IndexingNotice {
         CODE_EXTRACTING_KG -> ResolvedStatus(R.string.rag_index_phase_extracting_kg)
         CODE_COMPLETED -> ResolvedStatus(R.string.rag_index_phase_completed)
         CODE_PARTIAL -> ResolvedStatus(R.string.rag_index_phase_partial)
+        CODE_KG_PROGRESS -> ResolvedStatus(R.string.kg_extraction_progress, notice.formatArgs)
+        CODE_KG_PARTIAL -> ResolvedStatus(R.string.kg_extraction_partial, notice.formatArgs)
+        CODE_KG_CONFIRMATION -> ResolvedStatus(R.string.kg_extraction_confirmation_needed, notice.formatArgs)
         CODE_WARNING -> ResolvedStatus(R.string.rag_index_phase_warning)
         CODE_FAILED -> ResolvedStatus(R.string.rag_index_phase_failed)
         CODE_IMPORT_FAILED -> ResolvedStatus(R.string.rag_import_failed)

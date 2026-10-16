@@ -3,6 +3,9 @@ package com.promenar.nexara.ui.rag
 import com.promenar.nexara.R
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.rag.GraphData
+import com.promenar.nexara.data.rag.GraphSubgraph
+import com.promenar.nexara.data.rag.GraphSubgraphRequest
+import com.promenar.nexara.data.rag.GraphEntitySearchRequest
 import com.promenar.nexara.data.rag.GraphStore
 import com.promenar.nexara.data.rag.KgDocumentOption
 import com.promenar.nexara.data.rag.KgNode
@@ -20,6 +23,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -65,10 +70,24 @@ class KnowledgeGraphViewModelTest {
     ) = KgEdge(id = id, sourceId = sourceId, targetId = targetId, relation = relation, createdAt = 100L)
 
     @Test
-    fun `init loadGraph uses repo getAllNodes and getAllEdges`() = runTest {
+    fun `初始图谱只展示有界子图`() = runTest {
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(
+            (1..300).map { dataNode(id = "node-$it") },
+            emptyList(),
+            total = 301,
+        )
+
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+
+        assertThat(vm.nodes.value.size).isAtMost(300)
+        assertThat(vm.totalNodeCount.value).isEqualTo(301)
+    }
+
+    @Test
+    fun `初始图谱映射有界读取返回的实体`() = runTest {
         val nodes = listOf(dataNode(id = "n1", name = "Alpha", type = "concept"))
         val edges = listOf(dataEdge(id = "e1", sourceId = "n1", targetId = "n2"))
-        coEvery { graphStore.getGraphData() } returns GraphData(nodes, edges)
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(nodes, edges)
 
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
@@ -86,7 +105,7 @@ class KnowledgeGraphViewModelTest {
             dataNode(id = "p", type = "person"),
             dataNode(id = "o", type = "other")
         )
-        coEvery { graphStore.getGraphData() } returns GraphData(nodes, emptyList())
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(nodes, emptyList())
 
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
@@ -97,7 +116,7 @@ class KnowledgeGraphViewModelTest {
 
     @Test
     fun `isLoading is false after loadGraph completes`() = runTest {
-        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(emptyList(), emptyList())
 
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
@@ -106,7 +125,7 @@ class KnowledgeGraphViewModelTest {
 
     @Test
     fun `loadGraph handles exception gracefully`() = runTest {
-        coEvery { graphStore.getGraphData() } throws RuntimeException("db error")
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } throws RuntimeException("db error")
 
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
@@ -118,7 +137,7 @@ class KnowledgeGraphViewModelTest {
     fun `文档选项加载异常暴露可重试typed error而非伪装为空列表`() = runTest {
         coEvery { graphStore.getDocumentOptions() } throws
             IllegalStateException("private document option detail")
-        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(emptyList(), emptyList())
 
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
@@ -135,7 +154,7 @@ class KnowledgeGraphViewModelTest {
         coEvery { graphStore.getDocumentOptions() } throws
             IllegalStateException("first failure") andThen
             listOf(KgDocumentOption(docId = "doc-a", title = "Alpha"))
-        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(emptyList(), emptyList())
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
         vm.retryDocumentOptions()
@@ -147,7 +166,7 @@ class KnowledgeGraphViewModelTest {
 
     @Test
     fun `文档模式未选择docId时不复用全局图且明确要求选择`() = runTest {
-        coEvery { graphStore.getGraphData() } returns GraphData(
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(
             listOf(dataNode(id = "global")),
             emptyList(),
         )
@@ -158,21 +177,21 @@ class KnowledgeGraphViewModelTest {
         assertThat(vm.selectedDocumentId.value).isNull()
         assertThat(vm.nodes.value).isEmpty()
         assertThat(vm.documentSelectionRequired.value).isTrue()
-        coVerify(exactly = 1) { graphStore.getGraphData() }
-        coVerify(exactly = 1) { graphStore.getGraphData(any(), any()) }
+        coVerify(exactly = 1) { graphStore.getGraphSubgraph(GraphSubgraphRequest()) }
+        coVerify(exactly = 1) { graphStore.getGraphSubgraph(any()) }
     }
 
     @Test
     fun `全局与文档scope切换每次重读GraphStore且不复用跨scope缓存`() = runTest {
-        coEvery { graphStore.getGraphData() } returnsMany listOf(
-            GraphData(listOf(dataNode(id = "global-1")), emptyList()),
-            GraphData(listOf(dataNode(id = "global-2")), emptyList()),
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returnsMany listOf(
+            subgraph(listOf(dataNode(id = "global-1")), emptyList()),
+            subgraph(listOf(dataNode(id = "global-2")), emptyList()),
         )
-        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } returnsMany listOf(
-            GraphData(listOf(dataNode(id = "doc-a-1")), emptyList()),
-            GraphData(listOf(dataNode(id = "doc-a-2")), emptyList()),
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-a")) } returnsMany listOf(
+            subgraph(listOf(dataNode(id = "doc-a-1")), emptyList()),
+            subgraph(listOf(dataNode(id = "doc-a-2")), emptyList()),
         )
-        coEvery { graphStore.getGraphData(docIds = listOf("doc-b")) } returns GraphData(
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-b")) } returns subgraph(
             listOf(dataNode(id = "doc-b-node")),
             emptyList(),
         )
@@ -189,19 +208,19 @@ class KnowledgeGraphViewModelTest {
         assertThat(vm.nodes.value.map { it.id }).containsExactly("global-2")
         assertThat(vm.graphState.value.scopeKey).isEqualTo("global")
 
-        coVerify(exactly = 2) { graphStore.getGraphData() }
-        coVerify(exactly = 2) { graphStore.getGraphData(docIds = listOf("doc-a")) }
-        coVerify(exactly = 1) { graphStore.getGraphData(docIds = listOf("doc-b")) }
+        coVerify(exactly = 2) { graphStore.getGraphSubgraph(GraphSubgraphRequest()) }
+        coVerify(exactly = 2) { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-a")) }
+        coVerify(exactly = 1) { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-b")) }
     }
 
     @Test
     fun `跨文档scope加载失败不会泄露上一文档图`() = runTest {
-        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
-        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } returns GraphData(
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(emptyList(), emptyList())
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-a")) } returns subgraph(
             listOf(dataNode(id = "last-good")),
             emptyList(),
         )
-        coEvery { graphStore.getGraphData(docIds = listOf("doc-b")) } throws
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-b")) } throws
             IllegalStateException("private database detail")
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
         vm.loadGraphByDoc("doc-a")
@@ -218,9 +237,9 @@ class KnowledgeGraphViewModelTest {
 
     @Test
     fun `同scope显式刷新失败保留last good并标记stale`() = runTest {
-        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
-        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } returns
-            GraphData(listOf(dataNode(id = "last-good")), emptyList()) andThenThrows
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(emptyList(), emptyList())
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-a")) } returns
+            subgraph(listOf(dataNode(id = "last-good")), emptyList()) andThenThrows
             IllegalStateException("refresh failed")
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
         vm.loadGraphByDoc("doc-a")
@@ -231,18 +250,18 @@ class KnowledgeGraphViewModelTest {
         assertThat(vm.graphState.value.scopeKey).isEqualTo("document:doc-a")
         assertThat(vm.graphState.value.isStale).isTrue()
         assertThat(vm.loadError.value?.code).isEqualTo(KgLoadErrorCode.LoadFailed)
-        coVerify(exactly = 2) { graphStore.getGraphData(docIds = listOf("doc-a")) }
+        coVerify(exactly = 2) { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-a")) }
     }
 
     @Test
     fun `切换scope立即清空画布并进入新scope loading`() = runTest {
         val releaseB = CompletableDeferred<Unit>()
-        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
-        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } returns
-            GraphData(listOf(dataNode(id = "doc-a-node")), emptyList())
-        coEvery { graphStore.getGraphData(docIds = listOf("doc-b")) } coAnswers {
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(emptyList(), emptyList())
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-a")) } returns
+            subgraph(listOf(dataNode(id = "doc-a-node")), emptyList())
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-b")) } coAnswers {
             releaseB.await()
-            GraphData(listOf(dataNode(id = "doc-b-node")), emptyList())
+            subgraph(listOf(dataNode(id = "doc-b-node")), emptyList())
         }
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
         vm.loadGraphByDoc("doc-a")
@@ -259,12 +278,12 @@ class KnowledgeGraphViewModelTest {
     @Test
     fun `迟到文档加载不会覆盖更新的文档选择`() = runTest {
         val releaseA = CompletableDeferred<Unit>()
-        coEvery { graphStore.getGraphData() } returns GraphData(emptyList(), emptyList())
-        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } coAnswers {
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(emptyList(), emptyList())
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-a")) } coAnswers {
             withContext(NonCancellable) { releaseA.await() }
-            GraphData(listOf(dataNode(id = "doc-a-node")), emptyList())
+            subgraph(listOf(dataNode(id = "doc-a-node")), emptyList())
         }
-        coEvery { graphStore.getGraphData(docIds = listOf("doc-b")) } returns GraphData(
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-b")) } returns subgraph(
             listOf(dataNode(id = "doc-b-node")),
             emptyList(),
         )
@@ -281,13 +300,13 @@ class KnowledgeGraphViewModelTest {
     @Test
     fun `切回已缓存全局图会取消迟到文档结果`() = runTest {
         val releaseDocument = CompletableDeferred<Unit>()
-        coEvery { graphStore.getGraphData() } returns GraphData(
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(
             listOf(dataNode(id = "global-node")),
             emptyList(),
         )
-        coEvery { graphStore.getGraphData(docIds = listOf("doc-a")) } coAnswers {
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(docId = "doc-a")) } coAnswers {
             withContext(NonCancellable) { releaseDocument.await() }
-            GraphData(listOf(dataNode(id = "doc-a-node")), emptyList())
+            subgraph(listOf(dataNode(id = "doc-a-node")), emptyList())
         }
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
@@ -301,16 +320,53 @@ class KnowledgeGraphViewModelTest {
 
     @Test
     fun `概念模式首次加载不会被重置为全局模式`() = runTest {
-        coEvery { graphStore.getGraphData() } returnsMany listOf(
-            GraphData(emptyList(), emptyList()),
-            GraphData(listOf(dataNode(id = "concept-node")), emptyList()),
-        )
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns subgraph(emptyList(), emptyList())
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest(conceptOnly = true)) } returns
+            subgraph(listOf(dataNode(id = "concept-node")), emptyList())
         val vm = KnowledgeGraphViewModel(repo, graphStore, app)
 
         vm.setViewMode(KgViewMode.CONCEPT)
 
         assertThat(vm.viewMode.value).isEqualTo(KgViewMode.CONCEPT)
         assertThat(vm.graphState.value.scopeKey).isEqualTo("concept:mode")
-        coVerify(exactly = 2) { graphStore.getGraphData() }
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("concept-node")
+        coVerify(exactly = 1) { graphStore.getGraphSubgraph(GraphSubgraphRequest(conceptOnly = true)) }
     }
+
+    @Test
+    fun `展开把当前实体作为保留集合并更新同一子图与总数`() = runTest {
+        coEvery { graphStore.getGraphSubgraph(GraphSubgraphRequest()) } returns
+            subgraph(listOf(dataNode("root")), emptyList(), total = 500)
+        coEvery { graphStore.getGraphSubgraph(match { it.expandNodeId == "root" && it.retainedNodeIds == listOf("root") && it.nodeLimit <= 300 }) } returns
+            subgraph(listOf(dataNode("root"), dataNode("neighbor")), listOf(dataEdge(sourceId = "root", targetId = "neighbor")), total = 500)
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+
+        vm.expandNode("root")
+
+        assertThat(vm.nodes.value.map { it.id }).containsExactly("root", "neighbor")
+        assertThat(vm.edges.value.single().targetId).isEqualTo("neighbor")
+        assertThat(vm.totalNodeCount.value).isEqualTo(500)
+    }
+
+    @Test
+    fun `实体搜索遵循当前文档并在切换范围时清空结果`() = runTest {
+        coEvery { graphStore.getGraphSubgraph(any()) } returns subgraph(emptyList(), emptyList())
+        coEvery { graphStore.searchGraphEntities(GraphEntitySearchRequest("人工", docId = "doc-a")) } returns
+            listOf(dataNode("found", "人工智能"))
+        val vm = KnowledgeGraphViewModel(repo, graphStore, app)
+        vm.loadGraphByDoc("doc-a")
+
+        vm.searchEntities("人工")
+        advanceTimeBy(200)
+        runCurrent()
+
+        assertThat(vm.searchResults.value.map { it.id }).containsExactly("found")
+        assertThat(vm.isSearching.value).isFalse()
+        vm.loadGraphByDoc("doc-b")
+        assertThat(vm.searchQuery.value).isEmpty()
+        assertThat(vm.searchResults.value).isEmpty()
+    }
+
+    private fun subgraph(nodes: List<KgNode>, edges: List<KgEdge>, total: Int = nodes.size) =
+        GraphSubgraph(GraphData(nodes, edges), total)
 }

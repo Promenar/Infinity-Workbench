@@ -13,7 +13,11 @@ import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import com.promenar.nexara.utils.NexaraLogger
+
+private val noGraphCommit: suspend () -> Unit = {}
 
 interface DocumentIndexService {
     suspend fun rebuild(event: FileIndexEvent): DocumentIndexResult
@@ -26,7 +30,10 @@ interface DocumentIndexService {
 }
 
 sealed interface DocumentIndexResult {
-    data class Rebuilt(val fileUuid: String, val contentTruncated: Boolean = false) : DocumentIndexResult
+    data class Rebuilt(
+        val fileUuid: String, val contentTruncated: Boolean = false,
+        val kgProgress: KgExtractionProgress? = null,
+    ) : DocumentIndexResult
     data class Deleted(val fileUuid: String) : DocumentIndexResult
     data class HashChanged(val currentHash: String?) : DocumentIndexResult
     data class Failed(val failure: Throwable) : DocumentIndexResult
@@ -38,6 +45,9 @@ data class DocumentIndexCandidate(
     val edges: List<KgEdgeEntity> = emptyList(),
     val graphExtracted: Boolean = false,
     val contentTruncated: Boolean = false,
+    val kgProgress: KgExtractionProgress? = null,
+    val preserveExistingGraph: Boolean = false,
+    val onGraphCommitted: suspend () -> Unit = noGraphCommit,
 )
 
 fun interface DocumentIndexCandidateBuilder {
@@ -46,13 +56,30 @@ fun interface DocumentIndexCandidateBuilder {
 
 fun interface KnowledgeGraphCandidateBuilder {
     suspend fun build(text: String, fileUuid: String, contentHash: String): ExtractionResult
+
+    suspend fun build(text: String, fileUuid: String, contentHash: String, onProgress: suspend (KgExtractionProgress) -> Unit): ExtractionResult =
+        build(text, fileUuid, contentHash)
+
+    fun estimate(text: String, config: RagConfiguration): KgExtractionEstimate =
+        KgExtractionBudget.from(config).estimate(text, config.docChunkSize.coerceAtLeast(400), config.chunkOverlap.coerceAtMost(200))
+
+    suspend fun onCommitted(text: String, fileUuid: String, contentHash: String) = Unit
 }
 
 class GraphExtractorKnowledgeGraphCandidateBuilder(
     private val graphExtractor: GraphExtractor,
 ) : KnowledgeGraphCandidateBuilder {
     override suspend fun build(text: String, fileUuid: String, contentHash: String): ExtractionResult =
-        graphExtractor.extractCandidate(text, fileUuid, contentHash)
+        graphExtractor.extractCandidate(text, fileUuid, contentHash, retainCompletedCheckpoints = true)
+
+    override suspend fun build(text: String, fileUuid: String, contentHash: String, onProgress: suspend (KgExtractionProgress) -> Unit): ExtractionResult =
+        graphExtractor.extractCandidate(text, fileUuid, contentHash, onProgress, retainCompletedCheckpoints = true)
+
+    override fun estimate(text: String, config: RagConfiguration) = graphExtractor.estimate(text)
+
+    override suspend fun onCommitted(text: String, fileUuid: String, contentHash: String) {
+        graphExtractor.clearCommittedCheckpoints(text, fileUuid, contentHash)
+    }
 }
 
 class WorkspaceDocumentIndexCandidateBuilder(
@@ -82,15 +109,27 @@ class WorkspaceDocumentIndexCandidateBuilder(
             (event.useConfiguredKgStrategy && ragConfig.enableKnowledgeGraph)
         val graph = if (shouldExtractGraph) {
             val builder = requireNotNull(graphCandidateBuilder) { "启用知识图谱后必须配置候选构建器" }
-            val result = builder.build(extraction.graphText, event.fileUuid, event.contentHash)
+            val estimate = builder.estimate(extraction.graphText, ragConfig)
+            val result = if (estimate.requiresConfirmation && event.kgStrategy != KgExtractionBudget.CONFIRMED_STRATEGY) {
+                ExtractionResult(emptyList(), emptyList(), status = KgExtractionStatus.PARTIAL,
+                    progress = KgExtractionProgress(0, estimate.calls, KgExtractionStopReason.CONFIRMATION_REQUIRED))
+            } else builder.build(extraction.graphText, event.fileUuid, event.contentHash, event.onKgProgress)
             check(result.isSuccess) { "知识图谱候选构建失败（${result.status}）：${result.error}" }
-            ValidatedGraph.from(result.nodes, result.edges).toExtractionResult()
+            result.progress?.let { event.onKgProgress(it) }
+            ValidatedGraph.from(result.nodes, result.edges).let { result.copy(nodes = it.nodes, edges = it.edges) }
         } else null
         require(file.sha256() == event.contentHash) { "候选构建期间文件内容已变化" }
         val timestamp = now()
         val nodeIds = graph?.nodes.orEmpty().associate { ValidatedGraph.identity(it.name) to UUID.randomUUID().toString() }
         DocumentIndexCandidate(
-            graphExtracted = shouldExtractGraph,
+            graphExtracted = shouldExtractGraph && (graph?.progress?.let { !it.isPartial || it.processedChunks > 0 } ?: true),
+            kgProgress = graph?.progress,
+            preserveExistingGraph = graph?.progress?.let { it.isPartial && it.processedChunks == 0 } == true,
+            onGraphCommitted = {
+                if (graph != null && graph.progress?.isPartial != true) {
+                    graphCandidateBuilder?.onCommitted(extraction.graphText, event.fileUuid, event.contentHash)
+                }
+            },
             contentTruncated = extraction.truncated,
             vectors = if (event.skipVectorization) emptyList() else extraction.chunks.mapIndexed { index, content ->
                 VectorEntity(
@@ -175,7 +214,7 @@ class RoomDocumentIndexService(
             return DocumentIndexResult.Failed(failure)
         }
         return try {
-            withWorkspaceAdmission(event.workspaceRootUuid) {
+            val result = withWorkspaceAdmission(event.workspaceRootUuid) {
                 database.withTransaction {
                 val current = database.fileEntryDao().getActiveByUuid(event.workspaceRootUuid, event.fileUuid)
                 if (current?.hash != event.contentHash ||
@@ -194,7 +233,8 @@ class RoomDocumentIndexService(
                 ) {
                     return@withTransaction DocumentIndexResult.HashChanged(current.hash)
                 }
-                artifacts.clear(event.workspaceRootUuid, event.fileUuid, deleteTags = false, clearVectors = !event.skipVectorization)
+                artifacts.clear(event.workspaceRootUuid, event.fileUuid, deleteTags = false,
+                    clearVectors = !event.skipVectorization, clearGraph = !candidate.preserveExistingGraph)
                 if (candidate.vectors.isNotEmpty()) database.vectorDao().insertAll(candidate.vectors)
                 GraphStore(database).commitCandidate(candidate, KgSource(
                     type = "document", docId = event.fileUuid, contentHash = event.contentHash,
@@ -203,12 +243,48 @@ class RoomDocumentIndexService(
                 val timestamp = maxOf(now(), event.targetEpoch)
                 database.fileEntryDao().update(current.copy(
                     vectorizedAt = if (event.skipVectorization) current.vectorizedAt else timestamp,
-                    kgExtractedAt = timestamp.takeIf { candidate.graphExtracted || event.kgStrategy != null },
-                    kgStrategy = if (candidate.graphExtracted) event.kgStrategy ?: current.kgStrategy ?: "full" else current.kgStrategy,
+                    kgExtractedAt = when {
+                        candidate.preserveExistingGraph -> current.kgExtractedAt
+                        candidate.kgProgress?.isPartial == true -> null
+                        else -> timestamp.takeIf { candidate.graphExtracted || event.kgStrategy != null }
+                    },
+                    kgStrategy = when {
+                        candidate.preserveExistingGraph -> current.kgStrategy
+                        candidate.kgProgress?.isPartial == true -> "partial:${candidate.kgProgress.processedChunks}:${candidate.kgProgress.totalChunks}:${event.targetEpoch}"
+                        candidate.graphExtracted -> "full"
+                        else -> current.kgStrategy
+                    },
                 ))
-                DocumentIndexResult.Rebuilt(event.fileUuid, candidate.contentTruncated)
+                val kgProgress = candidate.kgProgress
+                val partial = candidate.contentTruncated || kgProgress?.isPartial == true
+                // 图谱、文档标记与任务终态一起提交，提交后的进程死亡不会重新消费整份预算。
+                check(database.vectorizationTaskDao().update(activeTask.copy(
+                    status = if (partial) "partial" else "completed",
+                    totalChunks = kgProgress?.totalChunks ?: activeTask.totalChunks,
+                    lastChunkIndex = kgProgress?.processedChunks ?: activeTask.lastChunkIndex,
+                    progress = if (kgProgress?.isPartial == true && kgProgress.totalChunks > 0) {
+                        100.0 * kgProgress.processedChunks / kgProgress.totalChunks
+                    } else if (kgProgress?.isPartial == true) 0.0 else 100.0,
+                    error = when (kgProgress?.reason) {
+                        KgExtractionStopReason.CONFIRMATION_REQUIRED -> VectorizationQueue.KG_CONFIRMATION_REQUIRED
+                        KgExtractionStopReason.CALLS -> "kg.budget.calls"
+                        KgExtractionStopReason.OUTPUT_TOKENS -> "kg.budget.output_tokens"
+                        KgExtractionStopReason.DURATION -> "kg.budget.duration"
+                        else -> null
+                    },
+                    subStatus = kgProgress?.description ?: "处理完成",
+                    contentTruncated = candidate.contentTruncated,
+                    updatedAt = timestamp,
+                )) == 1) { "索引任务终态提交失败" }
+                DocumentIndexResult.Rebuilt(event.fileUuid, candidate.contentTruncated, candidate.kgProgress)
                 }
             }
+            if (result is DocumentIndexResult.Rebuilt) {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    try { candidate.onGraphCommitted() } catch (_: Exception) { NexaraLogger.log("[KG] 已提交断点清理失败") }
+                }
+            }
+            result
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (failure: Throwable) {
@@ -276,9 +352,9 @@ private const val DOCUMENT_REFERENCE_TYPE = "document_reference"
 class RoomDocumentArtifacts(
     private val database: NexaraDatabase,
 ) {
-    suspend fun clear(workspaceRootUuid: String, fileUuid: String, deleteTags: Boolean, clearVectors: Boolean = true) {
+    suspend fun clear(workspaceRootUuid: String, fileUuid: String, deleteTags: Boolean, clearVectors: Boolean = true, clearGraph: Boolean = true) {
         if (clearVectors) database.vectorDao().deleteByDocId(fileUuid)
-        database.kgEvidenceDao().clearDocument(fileUuid)
+        if (clearGraph) database.kgEvidenceDao().clearDocument(fileUuid)
         if (deleteTags) database.documentTagDao().deleteByDocId(fileUuid)
     }
 }

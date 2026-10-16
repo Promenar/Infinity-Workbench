@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.rag
 
 import android.content.Context
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.NexaraApplication
@@ -9,6 +10,7 @@ import com.promenar.nexara.data.model.ProviderConfig
 import com.promenar.nexara.data.remote.*
 import com.promenar.nexara.data.remote.protocol.*
 import io.mockk.*
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -40,6 +42,7 @@ class KgApplicationRoutingTest {
         app = spyk(realApp)
         every { app.getSharedPreferences(any(), any()) } answers { context.getSharedPreferences(firstArg(), secondArg()) }
         every { app.cacheDir } returns context.cacheDir
+        every { app.filesDir } returns context.filesDir
         every { app.graphStore } returns mockk(relaxed = true)
         val database = mockk<NexaraDatabase>(relaxed = true)
         every { app.database } returns database
@@ -97,32 +100,48 @@ class KgApplicationRoutingTest {
     }
 
     @Test
-    fun `保留的聊天ContextBuilder在配置变化后使用新JIT模型与提示词`() = runTest {
-        val rag = object : com.promenar.nexara.ui.chat.manager.RagProvider {
-            override suspend fun retrieveContext(query: String, sessionId: String, options: com.promenar.nexara.data.model.RagOptions,
-                onProgress: ((String, Int, String?) -> Unit)?) = com.promenar.nexara.ui.chat.manager.RagRetrievalResult(
-                "RAG", listOf(com.promenar.nexara.data.model.RagReference("r", "text", "doc")), null,
-            )
-        }
-        val builder = com.promenar.nexara.ui.chat.manager.ContextBuilder(ragProvider = rag, kgProvider = app.kgProvider)
-        val params = com.promenar.nexara.ui.chat.manager.ContextBuilderParams(
-            sessionId = "s", content = "q", assistantMsgId = "m",
-            session = com.promenar.nexara.data.model.Session("s", "a",
-                ragOptions = com.promenar.nexara.data.model.RagOptions(enableMemory = true, enableKnowledgeGraph = true)),
-        )
-        builder.buildContext(params)
-        app.getSharedPreferences("rag_settings", 0).edit().putString("kg_model", "next::new")
-            .putString("kg_prompt", "新的关系提示词").commit()
-        every { router.resolve("next::new") } returns ProviderResolution.Success(resolved.copy(
-            modelId = "next::new", providerId = "next", remoteModelId = "new",
-            config = resolved.config.copy(baseUrl = "https://next.invalid", defaultModel = "new"),
+    fun `保留的聊天ContextBuilder在配置变化后使用新JIT模型与提示词`() = runBlocking<Unit> {
+        val database = Room.inMemoryDatabaseBuilder(app, NexaraDatabase::class.java)
+            .allowMainThreadQueries().setQueryExecutor { it.run() }.setTransactionExecutor { it.run() }.build()
+        every { app.graphStore } returns GraphStore(database)
+        every { app.database } returns database
+        database.fileEntryDao().insert(com.promenar.nexara.data.local.db.entity.FileEntry(
+            uuid = "doc", workspaceRootUuid = "root", parentUuid = "root", name = "doc.txt", hash = "doc-hash",
+            physicalRootPath = "/tmp/kg-routing-fixture", materializedPath = "/doc.txt",
+            createdAt = 1, updatedAt = 1,
         ))
-        app.rebuildGraphExtractor()
+        try {
+            val rag = object : com.promenar.nexara.ui.chat.manager.RagProvider {
+                override suspend fun retrieveContext(query: String, sessionId: String, options: com.promenar.nexara.data.model.RagOptions,
+                    onProgress: ((String, Int, String?) -> Unit)?) = com.promenar.nexara.ui.chat.manager.RagRetrievalResult(
+                    "RAG", listOf(com.promenar.nexara.data.model.RagReference(
+                        "r", "text", "doc", documentId = "doc", documentContentHash = "doc-hash")), null,
+                )
+            }
+            val builder = com.promenar.nexara.ui.chat.manager.ContextBuilder(ragProvider = rag, kgProvider = app.kgProvider)
+            val params = com.promenar.nexara.ui.chat.manager.ContextBuilderParams(
+                sessionId = "s", content = "q", assistantMsgId = "m",
+                session = com.promenar.nexara.data.model.Session("s", "a",
+                    ragOptions = com.promenar.nexara.data.model.RagOptions(enableMemory = true,
+                        activeDocIds = listOf("doc"), enableKnowledgeGraph = true)),
+            )
+            builder.buildContext(params)
+            app.getSharedPreferences("rag_settings", 0).edit().putString("kg_model", "next::new")
+                .putString("kg_prompt", "新的关系提示词").commit()
+            every { router.resolve("next::new") } returns ProviderResolution.Success(resolved.copy(
+                modelId = "next::new", providerId = "next", remoteModelId = "new",
+                config = resolved.config.copy(baseUrl = "https://next.invalid", defaultModel = "new"),
+            ))
+            app.rebuildGraphExtractor()
 
-        builder.buildContext(params)
+            builder.buildContext(params)
 
-        coVerify(exactly = 1) {
-            ownerProtocol.sendPromptSync(match { it.model == "new" && it.messages.first().content == "新的关系提示词" })
+            coVerify(exactly = 1) {
+                ownerProtocol.sendPromptSync(match { it.model == "new" && it.messages.first().content == "新的关系提示词" })
+            }
+        } finally {
+            app.microGraphExtractor.close()
+            database.close()
         }
     }
 

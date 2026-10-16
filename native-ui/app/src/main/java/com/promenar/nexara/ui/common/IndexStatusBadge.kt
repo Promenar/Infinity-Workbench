@@ -117,6 +117,7 @@ fun IndexStatusBadge(
 
 enum class KgStatus {
     COMPLETED,
+    PARTIAL,
     IN_PROGRESS,
     FAILED,
     NOT_STARTED,
@@ -125,6 +126,7 @@ enum class KgStatus {
 @StringRes
 internal fun KgStatus.descriptionResource(): Int = when (this) {
     KgStatus.COMPLETED -> R.string.common_cd_success
+    KgStatus.PARTIAL -> R.string.kg_status_partial
     KgStatus.IN_PROGRESS -> R.string.rag_status_indexing
     KgStatus.FAILED -> R.string.common_cd_failed
     KgStatus.NOT_STARTED -> R.string.rag_status_pending
@@ -143,12 +145,14 @@ fun KgStatusIcon(
     val colors = MaterialTheme.colorScheme
     val icon = when (status) {
         KgStatus.COMPLETED -> Icons.Rounded.CheckCircle
+        KgStatus.PARTIAL -> Icons.Rounded.HourglassEmpty
         KgStatus.IN_PROGRESS -> Icons.Rounded.Sync
         KgStatus.FAILED -> Icons.Rounded.Error
         KgStatus.NOT_STARTED -> Icons.Rounded.AccountTree
     }
     val tint = when (status) {
         KgStatus.COMPLETED -> colors.tertiary
+        KgStatus.PARTIAL -> colors.tertiary
         KgStatus.IN_PROGRESS -> colors.primary
         KgStatus.FAILED -> colors.error
         KgStatus.NOT_STARTED -> colors.onSurfaceVariant

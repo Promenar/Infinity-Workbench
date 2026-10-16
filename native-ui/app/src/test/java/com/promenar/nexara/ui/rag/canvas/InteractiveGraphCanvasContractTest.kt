@@ -14,4 +14,11 @@ class InteractiveGraphCanvasContractTest {
     fun `系统允许动画时保留装饰脉冲`() {
         assertThat(shouldAnimateDecorativePulse(1f)).isTrue()
     }
+
+    @Test
+    fun `页面不可见或布局休眠时停止装饰脉冲`() {
+        assertThat(shouldAnimateDecorativePulse(1f, isVisible = false, isSimulating = true)).isFalse()
+        assertThat(shouldAnimateDecorativePulse(1f, isVisible = true, isSimulating = false)).isFalse()
+        assertThat(shouldAnimateDecorativePulse(1f, isVisible = true, isSimulating = true)).isTrue()
+    }
 }

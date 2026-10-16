@@ -13,6 +13,12 @@ data class ModelTokenStats(
     val usage: TokenUsageAggregate
 )
 
+data class CategoryTokenStats(
+    val category: String,
+    val usage: TokenUsageAggregate,
+    val calls: Long = 0,
+)
+
 data class SessionTokenUsage(
     val sessionId: String,
     val title: String?,
@@ -36,5 +42,7 @@ interface ITokenStatsRepository {
     suspend fun getUsageBySession(sessionId: String): TokenUsageAggregate
     suspend fun getTopSessions(limit: Int): List<SessionTokenUsage>
     suspend fun getDailyTrend(days: Int): List<DailyTokenStats>
+    suspend fun getUsageByCategory(): List<CategoryTokenStats> =
+        listOf(CategoryTokenStats("chat", getTotalUsage()))
     suspend fun resetStats()
 }

@@ -36,6 +36,9 @@ internal object BackupPreferencePolicy {
             "query_rewrite_strategy", "query_rewrite_count", "query_rewrite_model", "enable_hybrid_search",
             "hybrid_alpha", "hybrid_bm25_boost", "enable_memory", "enable_docs", "enable_kg", "kg_model",
             "kg_prompt", "kg_free_mode", "kg_extraction_timeout",
+            "kg_retrieval_hops", "kg_max_seeds", "kg_max_nodes", "kg_max_edges", "kg_context_max_tokens",
+            "kg_jit_fallback", "kg_jit_min_seeds", "kg_max_calls", "kg_max_output_tokens",
+            "kg_request_max_output_tokens", "kg_max_duration_seconds", "kg_large_document_confirm_calls",
             "cost_strategy", "show_retrieval_progress",
             "show_retrieval_details", "track_retrieval_metrics", "embed_dimension",
             "max_embed_tokens_per_call", "embedding_base_url", "embedding_model", "rerank_base_url",
@@ -72,6 +75,7 @@ internal object BackupPreferencePolicy {
             "step", "language", "provider_id", "model_id", "agent_id", "session_id",
         ),
         "catalog_update_schedule" to setOf("checkedat"),
+        "kg_usage" to setOf("kg_usage_ledger_v1"),
     )
 
     // 只为读取旧备份时识别并丢弃；不得继续导出或写回设备。
@@ -111,8 +115,8 @@ internal object BackupPreferencePolicy {
 
     fun isDenied(key: String): Boolean {
         val normalized = normalize(key)
-        // 数字用量预算不是认证令牌；只允许这个精确键例外。
-        if (normalized == "task_token_limit") return false
+        // 数字预算逐键列举，不能把认证令牌的通用拒绝规则放宽。
+        if (normalized in setOf("task_token_limit", "kg_context_max_tokens", "kg_max_output_tokens", "kg_request_max_output_tokens")) return false
         return deniedFragments.any(normalized::contains)
     }
 
