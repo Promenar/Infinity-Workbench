@@ -23,7 +23,7 @@ internal fun interface RecoveryPathRewriter {
 }
 
 /**
- * 两侧都已在私有 working 副本迁移到 v18 后执行。当前侧为基底，旧侧全部标识符固定映射，
+ * 两侧都已在私有 working 副本迁移到相同的受信任 schema 后执行。当前侧为基底，旧侧全部标识符固定映射，
  * 不修改聊天正文；只处理已知结构化ID字段。
  */
 internal class DualDatabaseGraphMerger(

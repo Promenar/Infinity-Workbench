@@ -1052,7 +1052,7 @@ fun ApprovalCard(
                             Text(stringResource(R.string.chat_approval_approve_current), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold))
                         }
                     }
-                    if (onAlwaysAllow != null && !currentTarget.isNullOrBlank()) {
+                    if (onAlwaysAllow != null && !currentTarget.isNullOrBlank() && ToolExecutionTargets.canRemember(currentTarget)) {
                         val alwaysAllowA11y = stringResource(
                             R.string.chat_approval_always_allow_target_a11y,
                             currentName,

@@ -27,6 +27,7 @@ internal object LegacyDatabasePromoter {
     private const val PUBLISHED_V17_IDENTITY_HASH = "3311ec5f07e8df42c02fd09163c49f6e"
     private const val CURRENT_V5_IDENTITY_HASH = "3c6ffe1572c71bac7e866a33388a5a3b"
     private const val CURRENT_V18_IDENTITY_HASH = "c32f59706ea482fd5697681569c6fdb5"
+    private const val CURRENT_V19_IDENTITY_HASH = "5aa1bdf81ceefffeebbbbb1088436b05"
     private const val VALIDATION_DIRECTORY_PREFIX = ".nexara-db-validation-"
     private val currentSidecarSuffixes = listOf("-wal", "-shm", "-journal")
     private val validationCopyLock = Any()
@@ -37,7 +38,7 @@ internal object LegacyDatabasePromoter {
         val currentMain = databaseDirectory.resolve(CURRENT_NAME)
         if (Files.exists(currentMain) && Files.exists(legacyMain)) {
             val currentVersion = validateCurrentDatabase(currentMain)
-            if (currentVersion == 18) {
+            if (currentVersion == 18 || currentVersion == 19) {
                 return LegacyDatabasePromotionResult.CurrentDatabaseExists
             }
             validatePublishedV17WithoutSourceWrites(legacyMain)
@@ -146,6 +147,10 @@ internal object LegacyDatabasePromoter {
                     !sqlite.hasColumn("messages", "legacy_attachments")
                 18 -> identity == CURRENT_V18_IDENTITY_HASH && commonContract &&
                     sqlite.hasColumn("messages", "legacy_attachments")
+                19 -> identity == CURRENT_V19_IDENTITY_HASH && commonContract &&
+                    sqlite.hasColumn("messages", "legacy_attachments") &&
+                    sqlite.hasColumn("external_mounts", "scope_key") &&
+                    sqlite.hasColumn("external_snapshots", "mount_id")
                 else -> false
             }
             if (!exactContract) {

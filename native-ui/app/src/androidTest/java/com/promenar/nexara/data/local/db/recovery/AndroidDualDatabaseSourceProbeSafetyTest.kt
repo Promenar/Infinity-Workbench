@@ -20,19 +20,23 @@ import org.junit.Test
 
 /** 真实Android descriptor/SQLite测试，不以Fake或provider跳过代替路径安全证据。 */
 class AndroidDualDatabaseSourceProbeSafetyTest {
-    @Test fun routingOnlyV18HeaderSkipsProbeButPromoterStillRejectsWrongIdentity() = fixture { context, root ->
-        val current = context.getDatabasePath(CURRENT_DATABASE_NAME).toPath()
-        java.nio.channels.FileChannel.open(current, StandardOpenOption.WRITE).use {
-            it.write(java.nio.ByteBuffer.allocate(4).putInt(18).apply { flip() }, 60)
-            it.force(true)
+    @Test fun currentSchemaHeaderSkipsProbeButPromoterStillRejectsWrongIdentity() {
+        listOf(18, 19).forEach { version ->
+            fixture { context, root ->
+                val current = context.getDatabasePath(CURRENT_DATABASE_NAME).toPath()
+                java.nio.channels.FileChannel.open(current, StandardOpenOption.WRITE).use {
+                    it.write(java.nio.ByteBuffer.allocate(4).putInt(version).apply { flip() }, 60)
+                    it.force(true)
+                }
+                val before = sourceHashes(context)
+                assertThat(AndroidDualDatabaseSourceProbe(context).inspectDualSources()).isNull()
+                assertThat(Files.exists(root.resolve("no_backup/dual-db-probes-v1"))).isFalse()
+                assertThrows(java.io.IOException::class.java) {
+                    com.promenar.nexara.data.local.db.LegacyDatabasePromoter.promote(context)
+                }
+                assertThat(sourceHashes(context)).isEqualTo(before)
+            }
         }
-        val before = sourceHashes(context)
-        assertThat(AndroidDualDatabaseSourceProbe(context).inspectDualSources()).isNull()
-        assertThat(Files.exists(root.resolve("no_backup/dual-db-probes-v1"))).isFalse()
-        assertThrows(java.io.IOException::class.java) {
-            com.promenar.nexara.data.local.db.LegacyDatabasePromoter.promote(context)
-        }
-        assertThat(sourceHashes(context)).isEqualTo(before)
     }
 
     @Test fun retainedProbeLimitStopsWithoutDeletingUnknownContent() = fixture { context, root ->

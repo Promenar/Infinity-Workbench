@@ -38,7 +38,7 @@ class LegacyDatabasePromoterInstrumentedTest {
     }
 
     @Test
-    fun exactV18WithFtsAndRetainedV17UsesCurrentDatabaseWithoutSourceWrites() {
+    fun exactV19WithFtsAndRetainedV17UsesCurrentDatabaseWithoutSourceWrites() {
         createPublishedV17Database()
         Room.databaseBuilder(context, NexaraDatabase::class.java, CURRENT_NAME)
             .allowMainThreadQueries()

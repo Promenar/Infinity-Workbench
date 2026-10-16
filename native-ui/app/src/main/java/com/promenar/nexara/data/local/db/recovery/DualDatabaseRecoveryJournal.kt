@@ -197,7 +197,8 @@ internal class FileDualDatabaseRecoveryJournal(
         }
         if (record.stage >= DualDatabaseRecoveryStage.DB_PUBLISHING) {
             check(record.candidateRelativePath?.isSafeRecoveryRelative() == true &&
-                record.candidateSha256.isSha256() && record.candidateRoomIdentity == CURRENT_V18_IDENTITY) {
+                record.candidateSha256.isSha256() &&
+                record.candidateRoomIdentity in setOf(CURRENT_V18_IDENTITY, CURRENT_V19_IDENTITY)) {
                 "双库候选数据库证明缺失"
             }
             check(!record.candidateCommitMarker.isNullOrBlank() && record.idMappingSha256.isSha256()) {

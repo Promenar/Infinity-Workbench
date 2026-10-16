@@ -7,6 +7,19 @@ import java.io.IOException
 
 class SessionRuntimeDataCleanupTest {
     @Test
+    fun `前序清理失败不能跳过会话挂载授权释放`() = runTest {
+        var mountsCleaned = false
+        val failure = runCatching {
+            cleanupSessionRuntimeData(
+                { throw IOException("grants failed") },
+                { throw IOException("outputs failed") },
+                { mountsCleaned = true; throw IOException("mounts failed") },
+            )
+        }.exceptionOrNull()!!
+        assertThat(mountsCleaned).isTrue()
+        assertThat(failure.suppressed.map { it.message }).containsExactly("outputs failed", "mounts failed").inOrder()
+    }
+    @Test
     fun `授权清理失败仍尝试输出清理并保留两个失败`() = runTest {
         val attempted = mutableListOf<String>()
         val error = runCatching {

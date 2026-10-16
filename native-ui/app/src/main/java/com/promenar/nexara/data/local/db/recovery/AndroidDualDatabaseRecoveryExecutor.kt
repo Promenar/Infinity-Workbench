@@ -11,6 +11,7 @@ import com.promenar.nexara.data.local.db.MIGRATION_3_4
 import com.promenar.nexara.data.local.db.MIGRATION_4_5
 import com.promenar.nexara.data.local.db.MIGRATION_5_18
 import com.promenar.nexara.data.local.db.MIGRATION_17_18
+import com.promenar.nexara.data.local.db.MIGRATION_18_19
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import java.nio.ByteBuffer
 import java.nio.file.Files
@@ -84,19 +85,20 @@ internal class AndroidDualDatabaseRecoveryExecutor(
         val attemptRoot = workingRoot.resolve(record.transactionId).resolve(attemptId)
         ensureDirectory(attemptRoot)
         val snapshotFiles = archiveRoot.resolve(record.transactionId).resolve("files")
+        // 文件名已写入进行中恢复记录，保留以兼容既有 v18 事务。
         val legacy = attemptRoot.resolve("legacy-v18.db")
         val current = attemptRoot.resolve("current-v18.db")
         materializeDatabase(snapshotFiles, record.legacy, legacy)
         materializeDatabase(snapshotFiles, record.current, current)
-        migrateToV18(legacy)
+        migrateToCurrentSchema(legacy)
         normalizeTrustedAppPathAliases(legacy)
         ensureRagWorkspaceSession(legacy, recoveredTitle = "恢复的旧版知识库")
-        checkpointAndVerifyV18(legacy)
+        checkpointAndVerifySupportedSchema(legacy)
         faultHook?.invoke(DualDatabaseRecoveryFaultPoint.AFTER_LEGACY_MIGRATION)
-        migrateToV18(current)
+        migrateToCurrentSchema(current)
         normalizeTrustedAppPathAliases(current)
         ensureRagWorkspaceSession(current, recoveredTitle = "当前知识库")
-        checkpointAndVerifyV18(current)
+        checkpointAndVerifySupportedSchema(current)
         faultHook?.invoke(DualDatabaseRecoveryFaultPoint.BEFORE_STAGED_JOURNAL)
         val next = record.copy(
             stage = DualDatabaseRecoveryStage.STAGED,
@@ -277,7 +279,7 @@ internal class AndroidDualDatabaseRecoveryExecutor(
         val pathMap = pathMapForRole(record, "legacy")
         val currentPathMap = pathMapForRole(record, "current")
         rewriteWorkspacePaths(candidate, currentPathMap)
-        checkpointAndVerifyV18(candidate)
+        checkpointAndVerifySupportedSchema(candidate)
         val rootIdentities = activePublications.associate { publication ->
             targetPath(publication).toString() to requireNotNull(publication.targetRootIdentity)
         }
@@ -285,13 +287,13 @@ internal class AndroidDualDatabaseRecoveryExecutor(
         val merge = DualDatabaseGraphMerger(RecoveryPathRewriter { _, _, value ->
             rewriteKnownPath(value, pathMap)
         }, rootIdentities).merge(candidate, legacy, commitMarker)
-        checkpointAndVerifyV18(candidate)
+        val candidateIdentity = checkpointAndVerifySupportedSchema(candidate)
         val unresolved = merge.unresolvedReferences.joinToString("\n").toByteArray(Charsets.UTF_8)
         val next = record.copy(
             stage = DualDatabaseRecoveryStage.DB_PUBLISHING,
             candidateRelativePath = candidateName,
             candidateSha256 = digest(candidate),
-            candidateRoomIdentity = CURRENT_V18_IDENTITY,
+            candidateRoomIdentity = candidateIdentity,
             candidateCommitMarker = commitMarker,
             idMappingSha256 = merge.idMappingSha256,
             unresolvedReferenceReportSha256 = recoverySha256(unresolved),
@@ -373,16 +375,16 @@ internal class AndroidDualDatabaseRecoveryExecutor(
         return next
     }
 
-    private fun migrateToV18(path: Path) {
+    private fun migrateToCurrentSchema(path: Path) {
         val isolatedContext = object : ContextWrapper(appContext) {
             override fun getDatabasePath(name: String): java.io.File = path.toFile()
         }
         val database = Room.databaseBuilder(isolatedContext, NexaraDatabase::class.java, path.fileName.toString())
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19)
             .build()
         try {
                 database.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
-                    check(cursor.moveToFirst() && cursor.getInt(0) == 18) { "working数据库迁移未达到v18" }
+                    check(cursor.moveToFirst() && cursor.getInt(0) == 19) { "working数据库迁移未达到v19" }
                 }
                 database.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
                     check(cursor.moveToFirst() && cursor.getInt(0) == 0) { "working数据库WAL无法checkpoint" }
@@ -662,19 +664,24 @@ internal class AndroidDualDatabaseRecoveryExecutor(
         }
     }
 
-    private fun checkpointAndVerifyV18(path: Path) {
-        SQLiteDatabase.openDatabase(path.toString(), null, SQLiteDatabase.OPEN_READWRITE).use { sqlite ->
+    private fun checkpointAndVerifySupportedSchema(path: Path): String {
+        val identity = SQLiteDatabase.openDatabase(path.toString(), null, SQLiteDatabase.OPEN_READWRITE).use { sqlite ->
             sqlite.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { check(it.moveToFirst() && it.getInt(0) == 0) }
             sqlite.rawQuery("PRAGMA quick_check(1)", null).use { check(it.moveToFirst() && it.getString(0) == "ok") }
-            check(sqlite.version == 18 && sqlite.roomIdentity() == CURRENT_V18_IDENTITY) { "候选数据库不是可信v18" }
+            val identity = sqlite.roomIdentity()
+            check(isTrustedCurrentRoomSchema(sqlite.version, identity)) { "候选数据库不是受支持的精确 Room schema" }
+            identity
         }
         Files.deleteIfExists(path.resolveSibling(path.fileName.toString() + "-shm"))
         Files.deleteIfExists(path.resolveSibling(path.fileName.toString() + "-wal"))
+        return identity
     }
 
     private fun verifyPublishedCandidate(path: Path, record: DualDatabaseRecoveryRecord) {
         check(digest(path) == record.candidateSha256) { "已发布候选数据库摘要不匹配" }
-        checkpointAndVerifyV18(path)
+        check(checkpointAndVerifySupportedSchema(path) == record.candidateRoomIdentity) {
+            "候选数据库 Room identity 与认证记录不一致"
+        }
         SQLiteDatabase.openDatabase(path.toString(), null, SQLiteDatabase.OPEN_READONLY).use { sqlite ->
             sqlite.rawQuery(
                 "SELECT mapping_sha256 FROM dual_database_recovery_receipts WHERE transaction_marker=?",

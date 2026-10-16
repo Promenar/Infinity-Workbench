@@ -21,6 +21,7 @@ data class SessionToolGrant(val toolName: String, val target: String)
 class SessionToolGrantStore(private val root: File) {
     suspend fun grant(sessionId: String, toolName: String, target: String) {
         require(sessionId.isNotBlank() && toolName.isNotBlank() && target.isNotBlank()) { "授权元组不能为空" }
+        if (!com.promenar.nexara.domain.tool.ToolExecutionTargets.canRemember(target)) return
         locked {
             val current = read(sessionId)
             val grant = SessionToolGrant(toolName, target)
@@ -30,6 +31,7 @@ class SessionToolGrantStore(private val root: File) {
 
     suspend fun contains(sessionId: String, toolName: String, target: String): Boolean {
         if (sessionId.isBlank() || toolName.isBlank() || target.isBlank()) return false
+        if (!com.promenar.nexara.domain.tool.ToolExecutionTargets.canRemember(target)) return false
         return locked { SessionToolGrant(toolName, target) in read(sessionId) }
     }
 

@@ -9,6 +9,7 @@ import com.promenar.nexara.data.local.db.dao.AttachmentDao
 import com.promenar.nexara.data.local.db.dao.AuditLogDao
 import com.promenar.nexara.data.local.db.dao.ContextSummaryDao
 import com.promenar.nexara.data.local.db.dao.DocumentTagDao
+import com.promenar.nexara.data.local.db.dao.ExternalMountDao
 import com.promenar.nexara.data.local.db.dao.FileEntryDao
 import com.promenar.nexara.data.local.db.dao.FileVersionDao
 import com.promenar.nexara.data.local.db.dao.KgEdgeDao
@@ -32,6 +33,8 @@ import com.promenar.nexara.data.local.db.entity.AuditLogEntity
 import com.promenar.nexara.data.local.db.entity.ContextSummaryEntity
 import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.DocumentTagEntity
+import com.promenar.nexara.data.local.db.entity.ExternalMountEntity
+import com.promenar.nexara.data.local.db.entity.ExternalSnapshotEntity
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.FileVersionEntity
 import com.promenar.nexara.data.local.db.entity.KgEdgeEntity
@@ -76,8 +79,10 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
         ToolExecutionLedgerEntity::class,
         FileVersionEntity::class,
         WorkspaceMutationEntity::class,
+        ExternalMountEntity::class,
+        ExternalSnapshotEntity::class,
     ],
-    version = 18,
+    version = 19,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -104,4 +109,5 @@ abstract class NexaraDatabase : RoomDatabase() {
     abstract fun toolExecutionLedgerDao(): ToolExecutionLedgerDao
     abstract fun fileVersionDao(): FileVersionDao
     abstract fun workspaceMutationDao(): WorkspaceMutationDao
+    abstract fun externalMountDao(): ExternalMountDao
 }

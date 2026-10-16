@@ -12,6 +12,8 @@ import com.promenar.nexara.data.local.db.entity.AttachmentEntity
 import com.promenar.nexara.data.local.db.entity.ContextSummaryEntity
 import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.DocumentTagEntity
+import com.promenar.nexara.data.local.db.entity.ExternalMountEntity
+import com.promenar.nexara.data.local.db.entity.ExternalSnapshotEntity
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.local.db.entity.MessageEntity
@@ -105,6 +107,41 @@ class RoomBackupDataSourceTest {
         assertFails { newDataSource().snapshot(CANONICAL_CONTENT) }
 
         assertThat(db.workspaceMutationDao().get("snapshot-pending")).isNotNull()
+    }
+
+    @Test
+    fun `backup excludes device mounts and restore clears their derived snapshot references`() = runBlocking {
+        seedCompleteGraph()
+        val mount = ExternalMountEntity("local-mount", "资料", "saf_tree", "content://test/tree/local", "", false, 1)
+        db.externalMountDao().insert(mount)
+        db.externalMountDao().putSnapshot(
+            ExternalSnapshotEntity("local-mount", "/文件.txt", "root-1", "file-1", 2, "old-hash", 3),
+        )
+        val source = newDataSource()
+        val snapshot = source.snapshot(CANONICAL_CONTENT)
+        val tables = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8))
+            .jsonObject.getValue("tables").jsonObject
+        assertThat(tables.keys).containsNoneOf("external_mounts", "external_snapshots")
+
+        source.restore(validated(snapshot))
+
+        assertThat(db.externalMountDao().get("local-mount")).isEqualTo(mount)
+        assertThat(db.externalMountDao().snapshots("local-mount", "/文件.txt")).isEmpty()
+    }
+
+    @Test
+    fun `restore rejects a current database whose Room identity is untrusted`() = runBlocking {
+        seedCompleteGraph()
+        val source = newDataSource()
+        val snapshot = source.snapshot(CANONICAL_CONTENT)
+        db.openHelper.writableDatabase.execSQL(
+            "UPDATE room_master_table SET identity_hash='untrusted-room-identity' WHERE id=42",
+        )
+
+        assertFails { source.restore(validated(snapshot)) }
+
+        assertThat(db.agentDao().getById("agent-1")).isNotNull()
+        assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
     }
 
     @Test

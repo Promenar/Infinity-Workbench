@@ -19,9 +19,14 @@ internal const val PUBLIC_V17_IDENTITY = "3311ec5f07e8df42c02fd09163c49f6e"
 internal const val PUBLIC_V2_IDENTITY = "7777303c63145d5bbb9b161b38f94495"
 internal const val INTERNAL_V5_IDENTITY = "3c6ffe1572c71bac7e866a33388a5a3b"
 internal const val CURRENT_V18_IDENTITY = "c32f59706ea482fd5697681569c6fdb5"
+internal const val CURRENT_V19_IDENTITY = "5aa1bdf81ceefffeebbbbb1088436b05"
 internal const val DUAL_DATABASE_RECOVERY_INDEX_HOLD = "dual-database-recovery-hold-v1"
 internal const val RAG_WORKSPACE_SESSION_ID = "__nexara_rag_workspace__"
 internal const val RAG_SYSTEM_AGENT_ID = "__system__"
+
+internal fun isTrustedCurrentRoomSchema(version: Int, identity: String): Boolean =
+    (version == 18 && identity == CURRENT_V18_IDENTITY) ||
+        (version == 19 && identity == CURRENT_V19_IDENTITY)
 
 @Serializable
 enum class DualDatabaseRecoveryStage {

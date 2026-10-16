@@ -6,6 +6,11 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.room.Room
 import com.google.common.truth.Truth.assertThat
+import java.io.File
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -86,7 +91,7 @@ class LegacyDatabasePromoterAndroidJvmTest {
     }
 
     @Test
-    fun productionPromotionAcceptsExactCurrentV18DatabaseWhenHistoricalSourceAlsoExists() {
+    fun productionPromotionAcceptsExactCurrentV19DatabaseWhenHistoricalSourceAlsoExists() {
         createValidPublishedLegacyDatabase()
         Room.databaseBuilder(context, NexaraDatabase::class.java, "nexara_v2.db")
             .allowMainThreadQueries()
@@ -96,6 +101,57 @@ class LegacyDatabasePromoterAndroidJvmTest {
 
         assertThat(LegacyDatabasePromoter.promote(context))
             .isEqualTo(LegacyDatabasePromotionResult.CurrentDatabaseExists)
+        assertThat(context.getDatabasePath("nexara.db").isFile).isTrue()
+    }
+
+    @Test
+    fun productionPromotionAcceptsExactV18DatabaseBeforeRoomUpgrade() {
+        createValidPublishedLegacyDatabase()
+        val schema = Json.parseToJsonElement(
+            File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/18.json").readText(),
+        ).jsonObject.getValue("database").jsonObject
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath("nexara_v2.db"), null).use { sqlite ->
+            schema.getValue("entities").jsonArray.forEach { element ->
+                val entity = element.jsonObject
+                val table = entity.getValue("tableName").jsonPrimitive.content
+                sqlite.execSQL(entity.getValue("createSql").jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                entity["indices"]?.jsonArray?.forEach { index ->
+                    sqlite.execSQL(index.jsonObject.getValue("createSql").jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                }
+                entity["contentSyncTriggers"]?.jsonArray?.forEach { sqlite.execSQL(it.jsonPrimitive.content) }
+            }
+            schema.getValue("setupQueries").jsonArray.forEach { sqlite.execSQL(it.jsonPrimitive.content) }
+            sqlite.version = 18
+        }
+
+        assertThat(LegacyDatabasePromoter.promote(context))
+            .isEqualTo(LegacyDatabasePromotionResult.CurrentDatabaseExists)
+        SQLiteDatabase.openDatabase(context.getDatabasePath("nexara_v2.db").path, null, SQLiteDatabase.OPEN_READONLY)
+            .use { sqlite -> assertThat(sqlite.version).isEqualTo(18) }
+    }
+
+    @Test
+    fun productionPromotionRejectsV18IdentityWithV19Header() {
+        createValidPublishedLegacyDatabase()
+        Room.databaseBuilder(context, NexaraDatabase::class.java, "nexara_v2.db")
+            .allowMainThreadQueries()
+            .build()
+            .also { it.openHelper.writableDatabase }
+            .close()
+        SQLiteDatabase.openDatabase(
+            context.getDatabasePath("nexara_v2.db").path,
+            null,
+            SQLiteDatabase.OPEN_READWRITE,
+        ).use { sqlite ->
+            sqlite.execSQL(
+                "UPDATE room_master_table SET identity_hash='c32f59706ea482fd5697681569c6fdb5' WHERE id=42",
+            )
+            sqlite.version = 19
+        }
+
+        assertThrows(java.io.IOException::class.java) {
+            LegacyDatabasePromoter.promote(context)
+        }
         assertThat(context.getDatabasePath("nexara.db").isFile).isTrue()
     }
 
