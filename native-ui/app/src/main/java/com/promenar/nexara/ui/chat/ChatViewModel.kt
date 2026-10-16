@@ -308,6 +308,7 @@ class ChatViewModel(
             if (call == null || skill == null) null else com.promenar.nexara.data.generation.resolveSessionToolTarget(
                 session, skill.toProtocolTool(), call.arguments,
                 (application as NexaraApplication).workspaceRepository,
+                (application as NexaraApplication).externalFolderManager,
             )
         },
     )

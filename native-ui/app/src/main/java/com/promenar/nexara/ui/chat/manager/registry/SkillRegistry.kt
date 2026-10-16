@@ -45,4 +45,7 @@ interface SkillExecutionContext {
     val agentId: String
     val workspacePath: String?
     val workspaceRootUuid: String
+    /** 执行底座已核验的审批目标，供技能固定来源身份。 */
+    val approvedExecutionTarget: String? get() = null
+    val isApprovalBoundExecution: Boolean get() = false
 }

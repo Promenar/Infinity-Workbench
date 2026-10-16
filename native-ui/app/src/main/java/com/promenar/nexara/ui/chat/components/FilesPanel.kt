@@ -104,6 +104,7 @@ import com.promenar.nexara.R
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.repository.CompositeWorkspaceConstants
 import com.promenar.nexara.domain.repository.IWorkspaceRepository
+import com.promenar.nexara.domain.storage.IExternalFolderManager
 import com.promenar.nexara.ui.common.FileIndexStatus
 import com.promenar.nexara.ui.common.IndexStatusBadge
 import com.promenar.nexara.ui.common.KgStatus
@@ -158,6 +159,8 @@ internal fun hasFileNodeMenuActions(
 internal fun FilesPanel(
     workspaceRootUuid: String?,
     workspaceRepo: IWorkspaceRepository,
+    sessionId: String? = null,
+    externalFolderManager: IExternalFolderManager? = null,
     searchQuery: String = "",
     useScroll: Boolean = true,
     onReindex: ((String) -> Unit)? = null,
@@ -374,6 +377,14 @@ internal fun FilesPanel(
                 .padding(bottom = if (showSelectionOverlay && isMultiSelectMode) 88.dp else 0.dp),
         ) {
             val bodyModifier = if (useScroll) Modifier.weight(1f) else Modifier.fillMaxWidth()
+            externalFolderManager?.let { manager ->
+                ExternalFoldersPanel(
+                    sessionId = sessionId,
+                    workspaceRootUuid = workspaceRootUuid,
+                    manager = manager,
+                    onReindex = onReindex,
+                )
+            }
             deleteFailure?.let { failure ->
                 val failedLabel = stringResource(R.string.common_cd_failed)
                 Row(

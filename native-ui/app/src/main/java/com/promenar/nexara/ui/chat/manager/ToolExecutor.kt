@@ -280,7 +280,15 @@ class ToolExecutor internal constructor(
             }
         }
 
-        val result = executeSkill(currentSkill, arguments, call, currentSession)
+        val approvedCall = currentSession.approvalRequest
+            ?.takeIf { it.assistantMessageId == targetMsgId }
+            ?.calls?.singleOrNull {
+                it.toolCallId == call.id && it.runtimeToolId == expectedIdentity.runtimeToolId &&
+                    it.argumentsDigest == expectedIdentity.argumentsDigest && it.definitionDigest == expectedIdentity.definitionDigest
+            }
+        val approvedTarget = expectedGrantTargets[call.id] ?: approvedCall?.executionTarget
+        val approvalBound = call.id in expectedGrantTargets || expectedIdentity.requiresApproval || approvedCall != null
+        val result = executeSkill(currentSkill, arguments, call, currentSession, approvedTarget, approvalBound)
         hooks.afterSkillExecution()
         val failed = result.status != "success"
         val safeResultData = sanitizeResultData(result.data, failed)
@@ -368,6 +376,8 @@ class ToolExecutor internal constructor(
         arguments: JsonObject,
         tc: ToolCall,
         session: com.promenar.nexara.data.model.Session,
+        approvedTarget: String?,
+        approvalBound: Boolean,
     ): ToolResult {
         return try {
             skill.execute(
@@ -376,6 +386,8 @@ class ToolExecutor internal constructor(
                     override val sessionId = session.id
                     override val agentId = session.agentId
                     override val workspacePath = session.workspacePath
+                    override val approvedExecutionTarget = approvedTarget
+                    override val isApprovalBoundExecution = approvalBound
                     override val workspaceRootUuid = session.workspaceRootUuid
                         ?: throw SecurityException("Session workspace root is missing")
                 }

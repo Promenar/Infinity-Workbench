@@ -7,6 +7,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 
 /** 完整授权目标使用 JSON 元组编码；显示格式不参与授权比较。 */
 object ToolExecutionTargets {
@@ -30,13 +31,13 @@ object ToolExecutionTargets {
             val command = args.string("command")?.takeIf(String::isNotBlank) ?: return null
             return tuple("process", host.lowercase(Locale.ROOT), command)
         }
-        return when (tool.function.name) {
+        val target = when (tool.function.name) {
             "read_file", "write_file", "patch_file", "diff_file", "delete_file" ->
                 entryPath(args, resolvedPaths)?.let { tuple("path", it) }
             "create_file", "create_directory" -> {
                 val name = validName(args.string("name")) ?: return null
                 val parent = entryPath(args, resolvedPaths, "parentUuid", "parentPath", "/") ?: return null
-                tuple("path", childPath(parent, name))
+                childPath(parent, name).takeUnless { it == "/mnt" }?.let { tuple("path", it) }
             }
             "move_file" -> moveTarget(args, resolvedPaths)
             "list_files" -> entryPath(args, resolvedPaths, "parentUuid", "path", "/")
@@ -46,12 +47,21 @@ object ToolExecutionTargets {
             "exec_js" -> args.string("code")?.let { tuple("tool", tool.function.name) }
             else -> null
         }
+        return if (target != null && tool.function.name == "delete_file" && (args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true) {
+            JsonArray((Json.parseToJsonElement(target) as JsonArray) + JsonObject(mapOf("oneShot" to JsonPrimitive(true)))).toString()
+        } else target
     }
+
+    fun canRemember(target: String): Boolean = runCatching {
+        val metadata = (Json.parseToJsonElement(target) as? JsonArray)?.lastOrNull() as? JsonObject
+        (metadata?.get("oneShot") as? JsonPrimitive)?.booleanOrNull != true
+    }.getOrDefault(true)
 
     /** 清除不可见控制字符与格式控制后按 UTF-16 长度限制显示，保留完整代理对。 */
     fun display(target: String, maxChars: Int = 240): String {
         if (maxChars <= 0) return ""
         val parts = runCatching { Json.parseToJsonElement(target) as? JsonArray }.getOrNull()
+            ?.let { array -> if (array.lastOrNull() is JsonObject) JsonArray(array.dropLast(1)) else array }
             ?.map { (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content ?: return@map null }
             ?.takeIf { it.none { part -> part == null } }
             ?.filterNotNull()
@@ -95,7 +105,9 @@ object ToolExecutionTargets {
         } else {
             source.substringBeforeLast('/').ifEmpty { "/" }
         }
-        return tuple("move", source, childPath(parent, newName ?: source.substringAfterLast('/')))
+        val destination = childPath(parent, newName ?: source.substringAfterLast('/'))
+        if (source == "/mnt" || destination == "/mnt") return null
+        return tuple("move", source, destination)
     }
 
     private fun entryPath(
@@ -121,7 +133,8 @@ object ToolExecutionTargets {
         ) return null
         val segments = path.replace('\\', '/').split('/').filter(String::isNotEmpty)
         if (segments.any { it == "." || it == ".." || it.startsWith(".nexara", ignoreCase = true) } ||
-            segments.firstOrNull() == ".recycle_bin"
+            segments.firstOrNull() == ".recycle_bin" ||
+            segments.firstOrNull() == "mnt" && segments.drop(1).any { it == ".recycle_bin" }
         ) return null
         return "/" + segments.joinToString("/")
     }

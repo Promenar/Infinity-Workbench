@@ -47,7 +47,7 @@ internal class AndroidDualDatabaseSourceProbe(
             !Files.exists(databaseDirectory.resolve(CURRENT_DATABASE_NAME), LinkOption.NOFOLLOW_LINKS)) return null
         return fileSystem.openDirectory(databaseDirectory).use { source ->
             // 仅决定是否交回既有Promoter完整验真，不以SQLite头证明schema/Room identity可信。
-            if (routesToCurrentV18Validation(source)) return@use null
+            if (routesToCurrentSchemaValidation(source)) return@use null
             val before = fingerprintDatabaseFiles(source)
             hook?.invoke(SourceProbePhase.SOURCE_SCANNED, source.path)
             val validationBase = noBackupDirectory.resolve("dual-db-probes-v1")
@@ -72,13 +72,14 @@ internal class AndroidDualDatabaseSourceProbe(
                             val legacy = inspectCopied(validation, "legacy", LEGACY_DATABASE_NAME,
                                 setOf(17 to PUBLIC_V17_IDENTITY), fingerprints)
                             val current = inspectCopied(validation, "current", CURRENT_DATABASE_NAME,
-                                setOf(2 to PUBLIC_V2_IDENTITY, 5 to INTERNAL_V5_IDENTITY, 18 to CURRENT_V18_IDENTITY, 19 to CURRENT_V19_IDENTITY), fingerprints)
+                                setOf(2 to PUBLIC_V2_IDENTITY, 5 to INTERNAL_V5_IDENTITY,
+                                    18 to CURRENT_V18_IDENTITY, 19 to CURRENT_V19_IDENTITY, 20 to CURRENT_V20_IDENTITY), fingerprints)
                             check(fingerprintDatabaseFiles(source) == before) { "数据库源在探测期间发生变化" }
                             requireBinding(source)
                             hook?.invoke(SourceProbePhase.BEFORE_CLEANUP, created.path)
                             requireValidationBinding(parent, name, created.key)
                             validation.cleanup(parent, name)
-                            // 已保留v17旁边的合法v18属于promoter正常完成态。
+                            // 精确验证的当前库由 Promoter 接管，保留的 v17 不触发合并。
                             if (requiresDualDatabaseRecovery(current)) DualDatabaseSourcePair(legacy, current) else null
                         } catch (failure: Exception) {
                             // 不按临时路径猜测归属，不递归清理失败或替换后的内容。
@@ -90,7 +91,7 @@ internal class AndroidDualDatabaseSourceProbe(
         }
     }
 
-    private fun routesToCurrentV18Validation(source: SnapshotDirectory): Boolean {
+    private fun routesToCurrentSchemaValidation(source: SnapshotDirectory): Boolean {
         val before = source.node(CURRENT_DATABASE_NAME)?.takeUnless { it.directory } ?: return false
         if (before.size < 100) return false
         val header = ByteBuffer.allocate(100)
@@ -100,7 +101,7 @@ internal class AndroidDualDatabaseSourceProbe(
         check(source.node(CURRENT_DATABASE_NAME) == before) { "当前数据库头读取期间身份变化" }
         requireBinding(source)
         val magic = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
-        return header.array().copyOfRange(0, magic.size).contentEquals(magic) && header.getInt(60) in setOf(18, 19)
+        return header.array().copyOfRange(0, magic.size).contentEquals(magic) && header.getInt(60) in setOf(18, 19, 20)
     }
 
     private fun requireBinding(source: SnapshotDirectory) {
@@ -174,7 +175,7 @@ internal class AndroidDualDatabaseSourceProbe(
             val contract = sqlite.version to sqlite.roomIdentity()
             check(contract in accepted) { "${name}版本或Room identity不属于已验证公开合同" }
             validatePublishedShape(sqlite, role, contract.first)
-            if (role == "current" && contract.first !in setOf(18, 19) && sqlite.hasTable("workspace_mutations")) {
+            if (role == "current" && contract.first !in setOf(18, 19, 20) && sqlite.hasTable("workspace_mutations")) {
                 sqlite.rawQuery("SELECT 1 FROM workspace_mutations LIMIT 1", null).use {
                     check(!it.moveToFirst()) { "当前数据库存在尚未完成的工作区文件 journal" }
                 }
@@ -202,10 +203,17 @@ internal class AndroidDualDatabaseSourceProbe(
                     !has("messages", "attachments") && !has("messages", "legacy_attachments") &&
                         has("agents", "name_customized") && has("workspace_files", "workspace_root_uuid") &&
                         has("vectorization_tasks", "workspace_root_uuid")
-                role == "current" && version in setOf(18, 19) ->
+                role == "current" && version == 18 ->
                     !has("messages", "attachments") && has("messages", "legacy_attachments") &&
                         has("agents", "name_customized") && has("workspace_files", "workspace_root_uuid") &&
                         has("vectorization_tasks", "workspace_root_uuid")
+                role == "current" && version in setOf(19, 20) ->
+                    !has("messages", "attachments") && has("messages", "legacy_attachments") &&
+                        has("agents", "name_customized") && has("workspace_files", "workspace_root_uuid") &&
+                        has("vectorization_tasks", "workspace_root_uuid") && has("kg_nodes", "normalized_name") &&
+                        has("kg_evidence", "content_hash") && has("kg_jit_cache_sources", "cache_key") &&
+                        has("workspace_files", "kg_strategy") &&
+                        (version == 19 || (has("external_mounts", "scope_key") && has("external_snapshots", "mount_id")))
                 else -> false
             }
             if (!valid) throw IOException("${role}数据库结构与已验证发布合同不一致")
@@ -360,4 +368,5 @@ private fun digestExactly(channel: SeekableByteChannel, size: Long): String {
 }
 private fun MessageDigest.hex(): String = digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-internal fun requiresDualDatabaseRecovery(current: RecoveryDatabaseSource): Boolean = current.userVersion !in setOf(18, 19)
+internal fun requiresDualDatabaseRecovery(current: RecoveryDatabaseSource): Boolean =
+    !isTrustedCurrentRoomSchema(current.userVersion, current.roomIdentity)

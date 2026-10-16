@@ -1,0 +1,25 @@
+package com.promenar.nexara.domain.storage
+
+import com.promenar.nexara.data.local.db.entity.FileEntry
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
+
+/** 一次工具调用固定可见挂载身份，防止同别名换源穿过多次仓库访问。 */
+class ExternalMountOperationBindings(val mountIds: Map<String, String>) : AbstractCoroutineContextElement(Key) {
+    companion object Key : CoroutineContext.Key<ExternalMountOperationBindings>
+}
+
+/** 工具只依赖虚拟命名空间和后端契约，不判断存储来源。 */
+interface ExternalWorkspaceAccess : IExternalFolderManager {
+    suspend fun visible(sessionId: String): List<ExternalMount>
+    suspend fun resolveUuid(sessionId: String, uuid: String): String?
+    suspend fun entry(sessionId: String, path: String): FileEntry?
+    suspend fun write(sessionId: String, path: String, bytes: ByteArray, expectedSha256: String?, createOnly: Boolean): FileEntry
+    suspend fun createDirectory(sessionId: String, path: String): FileEntry
+    suspend fun delete(sessionId: String, path: String, expectedSha256: String?, irreversible: Boolean)
+    suspend fun backupBeforeMove(sessionId: String, path: String): String
+    suspend fun completeMoveBackup(sessionId: String, backupId: String)
+    suspend fun deleteSessionMounts(sessionId: String)
+    fun backend(sessionId: String, mountIds: Map<String, String> = emptyMap()): ExternalFolderBackend
+    suspend fun version(sessionId: String, path: String, hash: String): ByteArray?
+}

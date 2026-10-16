@@ -644,6 +644,57 @@ class ToolExecutorTest {
     }
 
     @Test
+    fun `持久授权目标原样传给技能执行上下文`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val target = """["path","/mnt/termux/a.txt",{"mountIds":{"termux":"mount"}}]"""
+        var received: String? = null
+        var approvalBound = false
+        val base = testSkill("write_file") { ToolResult("write", "written", status = "success") }
+        val skill = object : SkillDefinition by base {
+            override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+                received = context.approvedExecutionTarget
+                approvalBound = context.isApprovalBoundExecution
+                return ToolResult("write", "written", status = "success")
+            }
+        }
+        val registry = singleSkillRegistry(skill)
+        val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = RecordingLedger(),
+            grantVerifier = { _, _, _, _ -> true })
+        executor.executeTools("s1", "m1", listOf(ToolCall("write", "write_file", "{}")),
+            preparedTools = registry.getAllTools(), expectedGrantTargets = mapOf("write" to target))
+        assertThat(received).isEqualTo(target)
+        assertThat(approvalBound).isTrue()
+    }
+
+    @Test
+    fun `显式批准目标只传递给身份完全匹配的调用`() = testScope.runTest {
+        val target = """["path","/mnt/termux/a.txt",{"mountIds":{"termux":"mount"}}]"""
+        for (matches in listOf(true, false)) {
+            val sessionId = "approval-$matches"
+            seedSessionWithAssistant(sessionId)
+            var received: String? = null
+            val base = testSkill("write_file") { ToolResult("write", "written", status = "success") }
+            val skill = object : SkillDefinition by base {
+                override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+                    received = context.approvedExecutionTarget
+                    return ToolResult("write", "written", status = "success")
+                }
+            }
+            val registry = singleSkillRegistry(skill)
+            val call = ToolCall("write", "write_file", "{}")
+            val identity = (ToolInvocationIdentityFactory.fromPreparedToolCall(call, registry.getAllTools().single(), true)
+                as ToolInvocationIdentityResolution.Valid).identity
+            val request = com.promenar.nexara.data.repository.ToolApprovalRequestFactory.create("m1", listOf(
+                com.promenar.nexara.data.repository.ApprovalCallCandidate(call, ToolRisk.FILE_WRITE, identity, target)))
+            val stored = if (matches) request else request.copy(calls = request.calls.map { it.copy(argumentsDigest = "different") })
+            store.updateSession(sessionId) { it.copy(approvalRequest = stored) }
+            ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = RecordingLedger())
+                .executeTools(sessionId, "m1", listOf(call), preparedTools = registry.getAllTools())
+            assertThat(received).isEqualTo(if (matches) target else null)
+        }
+    }
+
+    @Test
     fun `免审批调用缺失授权验证器时失败关闭而普通批准保持可执行`() = testScope.runTest {
         seedSessionWithAssistant()
         var writes = 0
