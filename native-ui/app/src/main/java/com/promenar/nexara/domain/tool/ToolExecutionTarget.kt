@@ -44,7 +44,8 @@ object ToolExecutionTargets {
             return sshTarget("remote_path", host, path, sshIdentities)
         }
         if (tool.risk == ToolRisk.PROCESS) {
-            val host = args.string("host")?.trim()?.takeIf(String::isNotBlank) ?: return null
+            val host = if (tool.function.name == "termux_exec") "termux"
+                else args.string("host")?.trim()?.takeIf(String::isNotBlank) ?: return null
             val command = args.string("command")?.takeIf(String::isNotBlank) ?: return null
             if (tool.function.name == "ssh_exec") {
                 if (!SSH_ALIAS.matches(host)) return null
@@ -53,7 +54,7 @@ object ToolExecutionTargets {
             return tuple("process", host.lowercase(Locale.ROOT), command)
         }
         val target = when (tool.function.name) {
-            "read_file", "write_file", "patch_file", "diff_file", "delete_file" ->
+            "read_file", "write_file", "patch_file", "diff_file", "delete_file", "run_script" ->
                 entryPath(args, resolvedPaths)?.let { tuple("path", it) }
             "create_file", "create_directory" -> {
                 val name = validName(args.string("name")) ?: return null

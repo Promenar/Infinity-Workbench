@@ -18,6 +18,7 @@ class McpSkill(
     override val mcpServerId: String? = null
 ) : SkillDefinition {
     override val sourceId: String = "mcp"
+    override val risk get() = mcpClient.defaultToolRisk
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
         return try {

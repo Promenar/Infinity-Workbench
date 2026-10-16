@@ -149,6 +149,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     open val secretStore: SecretStore by lazy { AndroidKeystoreSecretStore(this) }
+    val termuxRuntime: com.promenar.nexara.data.termux.TermuxRuntime by lazy {
+        com.promenar.nexara.data.termux.TermuxRuntime(this)
+    }
+    open val mcpConnectionSettings: com.promenar.nexara.data.remote.mcp.McpConnectionSettings by lazy {
+        com.promenar.nexara.data.remote.mcp.McpConnectionSettings(getSharedPreferences("nexara_settings", MODE_PRIVATE), secretStore)
+    }
+
     val sshHostStore: com.promenar.nexara.data.ssh.SshHostStore by lazy {
         com.promenar.nexara.data.ssh.RoomSshHostStore(database.sshHostDao(), secretStore)
     }
@@ -269,6 +276,19 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
     val toolOutputStore by lazy {
         com.promenar.nexara.data.repository.ToolOutputStore(java.io.File(noBackupFilesDir, "tool-outputs"))
+    }
+    val scriptSettings by lazy {
+        com.promenar.nexara.data.script.ScriptSettings(getSharedPreferences("nexara_settings", MODE_PRIVATE))
+    }
+    val scriptFileApprovals by lazy { com.promenar.nexara.data.script.ScriptFileApprovalBroker() }
+    private val scriptRuntime by lazy {
+        com.promenar.nexara.domain.script.SupervisedScriptRuntime { session ->
+            com.promenar.nexara.data.script.AndroidScriptProcess.bind(this, session)
+        }
+    }
+    private val scriptToolRunner by lazy {
+        com.promenar.nexara.data.script.AndroidScriptToolRunner(scriptRuntime, workspaceRepository, externalFolderManager,
+            fileOperationRepository, pendingDocumentIndexCoordinator, scriptFileApprovals, sessionToolGrantStore, scriptSettings)
     }
     val generationInteractions by lazy { com.promenar.nexara.data.generation.GenerationInteractionStore() }
 
@@ -620,6 +640,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             fun mounted(skill: com.promenar.nexara.ui.chat.manager.registry.SkillDefinition) =
                 com.promenar.nexara.ui.chat.manager.skills.MountedWorkspaceSkill(skill, externalFolderManager, workspaceRepository, fileOperationRepository, pendingDocumentIndexCoordinator)
             register(CalculatorSkill())
+            register(com.promenar.nexara.ui.chat.manager.skills.TermuxExecSkill(termuxRuntime::executeRequest) {
+                com.promenar.nexara.data.termux.TermuxPreferences.isEnabled(getSharedPreferences("nexara_settings", MODE_PRIVATE))
+            })
             com.promenar.nexara.ui.chat.manager.skills.sshTools(sshRuntime).forEach(::register)
             register(WebSearchSkill(this@NexaraApplication, httpClient, secretStore))
             register(WebSearchTavilySkill(this@NexaraApplication, httpClient, secretStore))
@@ -636,7 +659,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             register(mounted(CreateDirectorySkill(workspaceRepository)))
             register(mounted(MoveFileSkill(workspaceRepository, pendingDocumentIndexCoordinator)))
             register(mounted(DeleteFileSkill(workspaceRepository)))
-            register(ExecJsSkill(this@NexaraApplication))
+            register(ExecJsSkill(scriptToolRunner))
+            register(com.promenar.nexara.ui.chat.manager.skills.RunScriptSkill(scriptToolRunner))
             register(InitializePlanSkill(taskRepository))
             register(UpdatePlanSkill(taskRepository))
             register(GetPlanSkill(taskRepository))
@@ -650,7 +674,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     val mcpSkillRegistry: McpSkillRegistry by lazy {
-        McpSkillRegistry(skillRepository as SkillRepository, httpClient, generationScope)
+        McpSkillRegistry(skillRepository as SkillRepository, httpClient, generationScope, connectionSettings = mcpConnectionSettings)
     }
 
     /** Agent Skills 指令包存储（ADR-022）。 */
@@ -719,12 +743,17 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     override fun attachBaseContext(base: Context) {
+        if (android.os.Process.isIsolated()) {
+            super.attachBaseContext(base)
+            return
+        }
         val lang = LocaleHelper.getSavedLanguage(base)
         super.attachBaseContext(LocaleHelper.applyLanguage(base, lang))
     }
 
     override fun onCreate() {
         super.onCreate()
+        if (android.os.Process.isIsolated()) return
         instance = this
         com.promenar.nexara.utils.NexaraLogger.init(this)
 

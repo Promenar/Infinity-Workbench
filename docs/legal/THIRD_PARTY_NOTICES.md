@@ -1,3 +1,11 @@
+## QuickJS 脚本引擎
+
+- Android 依赖：`io.github.dokar3:quickjs-kt-android:1.0.15`；JVM 测试使用同版本 `quickjs-kt-jvm`，不打入 APK。
+- 绑定库来源：[dokar3/quickjs-kt v1.0.15](https://github.com/dokar3/quickjs-kt/tree/v1.0.15)，Apache-2.0；[完整许可](licenses/quickjs-kt-1.0.15-Apache-2.0.txt)。
+- 上游内嵌引擎：[bellard/quickjs，提交 04be246001599f5995fa2f2d8c91a0f198d3f34c](https://github.com/bellard/quickjs/tree/04be246001599f5995fa2f2d8c91a0f198d3f34c)，MIT，版权 Fabrice Bellard、Charlie Gordon；[完整许可](licenses/quickjs-MIT.txt)。
+- 上游内嵌容器：[eteran/c-vector，提交 774773d4cb1e66dd736e90e7f482d4f22af464c6](https://github.com/eteran/c-vector/tree/774773d4cb1e66dd736e90e7f482d4f22af464c6)，MIT，版权 Evan Teran；[完整许可](licenses/c-vector-MIT.txt)。子模块身份从绑定库的固定版本树核验。
+- 保留各库原许可、版权及免责条款。Apache-2.0 可纳入 GPL-3.0 项目，参见 [Apache 官方兼容性说明](https://www.apache.org/licenses/GPL-compatibility.html)。Chaquopy 未纳入产品分发。
+
 ## models.dev 第三方归属与许可
 
 ### 上游项目

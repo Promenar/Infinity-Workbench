@@ -10,6 +10,19 @@ import org.junit.Test
 class ToolExecutionTargetTest {
     private val sshIdentities = mapOf("termux" to SshExecutionIdentity("host-1", "identity-1"))
     @Test
+    fun `Termux审批固定主机且绑定原始完整命令`() {
+        val termux = tool("termux_exec", risk = ToolRisk.PROCESS)
+        assertThat(ToolExecutionTargets.extract(termux, """{"command":"printf 'a\\nb'","workdir":"~/src"}"""))
+            .isEqualTo("""["process","termux","printf 'a\\nb'"]""")
+        assertThat(ToolExecutionTargets.extract(termux, """{"host":"remote","command":"id"}"""))
+            .isEqualTo("""["process","termux","id"]""")
+        listOf("{}", """{"command":" "}""", """{"command":12}""").forEach {
+            assertThat(ToolExecutionTargets.extract(termux, it)).isNull()
+        }
+        assertThat(ToolExecutionTargets.extract(tool("other_process", risk = ToolRisk.PROCESS), """{"command":"id"}""")).isNull()
+    }
+
+    @Test
     fun `SSH路径授权保留远端路径语义且PTY发送绑定解析的主机和原始输入`() {
         assertThat(extract("sftp_write", """{"host":"termux","path":"./A/../data","content":"value"}"""))
             .isEqualTo("""["remote_path","termux","./A/../data",{"sshHostId":"host-1","sshIdentity":"identity-1"}]""")

@@ -84,6 +84,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.promenar.nexara.R
+import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.data.remote.mcp.McpEndpointPolicy
 import com.promenar.nexara.BuildConfig
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.common.*
@@ -662,6 +664,9 @@ private fun ToolsPanel(
     var geminiSearchEnabled by remember(options.enableGeminiSearch) { mutableStateOf(options.enableGeminiSearch) }
     val customSkills by chatViewModel.availableSessionCustomSkills.collectAsStateWithLifecycle()
     val mcpServers by chatViewModel.availableSessionMcpServers.collectAsStateWithLifecycle()
+    val mcpSettings = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? NexaraApplication)
+        ?.mcpConnectionSettings
+    val mcpConnectionRevision = mcpSettings?.revision?.collectAsStateWithLifecycle()?.value
 
     Column(
         modifier = Modifier
@@ -726,9 +731,11 @@ private fun ToolsPanel(
             )
         }
 
-        val selectableMcpServers = mcpServers.filter { server ->
-            server.enabled && server.type.equals("http", ignoreCase = true) &&
-                server.url.startsWith("https://", ignoreCase = true)
+        val selectableMcpServers = remember(mcpServers, mcpConnectionRevision) {
+            mcpServers.filter { server ->
+                server.enabled && (mcpSettings?.isAllowed(server.id, server.type, server.url)
+                    ?: McpEndpointPolicy.isAllowed(server.type, server.url))
+            }
         }
         if (selectableMcpServers.isNotEmpty()) {
             Text(

@@ -1,6 +1,7 @@
 package com.promenar.nexara.data.remote.mcp
 
 import com.promenar.nexara.BuildConfig
+import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.tool.ToolSchemaValidation
 import com.promenar.nexara.domain.tool.ToolSchemaValidator
 import io.ktor.client.HttpClient
@@ -14,7 +15,6 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import java.net.URI
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import io.ktor.utils.io.readUTF8LineTo
@@ -50,12 +50,19 @@ class McpInputRequiredUnsupportedException : Exception("MCP_INPUT_REQUIRED_UNSUP
 class McpClient(
     private val httpClient: HttpClient,
     private val serverUrl: String,
+    private val connectionSettings: McpConnectionSettings? = null,
+    private val serverId: String? = null,
+    private val isCurrent: () -> Boolean = { true },
 ) {
+    private val endpointKind = McpEndpointPolicy.kind(serverUrl)
+    val defaultToolRisk: ToolRisk
+        get() = if (endpointKind == McpEndpointPolicy.Kind.LOOPBACK_HTTP) ToolRisk.PROCESS else ToolRisk.UNKNOWN
     private val requestId = AtomicLong(1)
     private val discoveredHeaderParameters = mutableMapOf<String, Set<String>>()
 
     init {
-        requireModernHttpsUrl(serverUrl)
+        require(endpointKind != null) { "MCP_HTTPS_REQUIRED" }
+        require(isAllowed()) { "MCP_LOOPBACK_DISABLED_OR_TOKEN_REQUIRED" }
     }
 
     suspend fun listTools(): List<McpTool> {
@@ -135,30 +142,54 @@ class McpClient(
         val params = JsonObject(rawParams + ("_meta" to requestMetadata()))
         val request = JsonRpcRequest(method = method, params = params, id = id)
         return try {
-            httpClient.preparePost(serverUrl) {
-                contentType(ContentType.Application.Json)
-                header(HttpHeaders.Accept, ACCEPT)
-                header(HEADER_PROTOCOL_VERSION, PROTOCOL_VERSION)
-                header(HEADER_METHOD, method)
-                toolName?.let { header(HEADER_NAME, it) }
-                parameterHeaders.forEach { (name, value) -> header(name, value) }
-                setBody(Json.encodeToString(JsonRpcRequest.serializer(), request))
-            }.execute { response ->
-                if (!response.status.isSuccess()) {
-                    throw McpProtocolException("MCP_HTTP_${response.status.value}")
+            ensureAllowed()
+            val token = if (endpointKind == McpEndpointPolicy.Kind.LOOPBACK_HTTP) {
+                connectionSettings?.readBearerToken(requireNotNull(serverId))
+                    ?: throw McpProtocolException("MCP_BEARER_TOKEN_REQUIRED")
+            } else {
+                null
+            }
+            ensureAllowed()
+            // 明文环回请求不跟随重定向；包装客户端复用引擎但不持有其生命周期。
+            val localClient = if (endpointKind == McpEndpointPolicy.Kind.LOOPBACK_HTTP) {
+                HttpClient(httpClient.engine) { followRedirects = false }
+            } else {
+                null
+            }
+            try {
+                (localClient ?: httpClient).preparePost(serverUrl) {
+                    contentType(ContentType.Application.Json)
+                    header(HttpHeaders.Accept, ACCEPT)
+                    header(HEADER_PROTOCOL_VERSION, PROTOCOL_VERSION)
+                    header(HEADER_METHOD, method)
+                    token?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+                    toolName?.let { header(HEADER_NAME, it) }
+                    parameterHeaders.forEach { (name, value) -> header(name, value) }
+                    setBody(Json.encodeToString(JsonRpcRequest.serializer(), request))
+                }.execute { response ->
+                    if (!response.status.isSuccess()) {
+                        throw McpProtocolException("MCP_HTTP_${response.status.value}")
+                    }
+                    val root = parseRpcResponse(response, id)
+                    if (root["jsonrpc"]?.jsonPrimitive?.contentOrNull != "2.0") {
+                        throw McpProtocolException("MCP_RPC_VERSION_MISMATCH")
+                    }
+                    if (root["id"] != JsonPrimitive(id)) throw McpProtocolException("MCP_RPC_ID_MISMATCH")
+                    if (root["error"] != null && root["error"] !is JsonNull) {
+                        throw McpProtocolException("MCP_RPC_ERROR")
+                    }
+                    root["result"] ?: throw McpProtocolException("MCP_RPC_RESULT_MISSING")
                 }
-                val root = parseRpcResponse(response, id)
-                if (root["jsonrpc"]?.jsonPrimitive?.contentOrNull != "2.0") {
-                    throw McpProtocolException("MCP_RPC_VERSION_MISMATCH")
-                }
-                if (root["id"] != JsonPrimitive(id)) throw McpProtocolException("MCP_RPC_ID_MISMATCH")
-                if (root["error"] != null && root["error"] !is JsonNull) {
-                    throw McpProtocolException("MCP_RPC_ERROR")
-                }
-                root["result"] ?: throw McpProtocolException("MCP_RPC_RESULT_MISSING")
+            } finally {
+                localClient?.close()
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (error: McpProtocolException) {
+            throw error
+        } catch (error: Exception) {
+            if (endpointKind != McpEndpointPolicy.Kind.LOOPBACK_HTTP) throw error
+            throw McpProtocolException("MCP_REQUEST_FAILED")
         }
     }
 
@@ -308,11 +339,12 @@ class McpClient(
         return primitive.content
     }
 
-    private fun requireModernHttpsUrl(url: String) {
-        val uri = runCatching { URI(url) }.getOrNull() ?: throw IllegalArgumentException("MCP_URL_INVALID")
-        require(uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank() && uri.userInfo == null) {
-            "MCP_HTTPS_REQUIRED"
-        }
+    private fun isAllowed(): Boolean = connectionSettings?.isAllowed(serverId.orEmpty(), "http", serverUrl)
+        ?: McpEndpointPolicy.isAllowed("http", serverUrl)
+
+    private fun ensureAllowed() {
+        if (!isCurrent()) throw McpProtocolException("MCP_SERVER_CHANGED")
+        if (!isAllowed()) throw McpProtocolException("MCP_LOOPBACK_DISABLED_OR_TOKEN_REQUIRED")
     }
 
     private companion object {

@@ -1,89 +1,62 @@
 package com.promenar.nexara.ui.chat.manager.skills
 
-import android.content.Context
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.script.ScriptToolRunner
+import com.promenar.nexara.domain.script.*
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
-import io.mockk.every
-import io.mockk.mockk
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
-import org.junit.jupiter.api.BeforeEach
+import kotlinx.serialization.json.*
 import org.junit.jupiter.api.Test
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class ExecJsSkillTest {
-
-    private lateinit var mockContext: Context
-    private lateinit var skill: ExecJsSkill
-    private val testExecContext = object : SkillExecutionContext {
+    private val context = object : SkillExecutionContext {
         override val sessionId = "s1"
         override val agentId = "a1"
         override val workspacePath: String? = null
         override val workspaceRootUuid = "root-1"
     }
+    private val runner = ScriptToolRunner { request, _ -> ScriptResult(JsonPrimitive(request.code.length)) }
 
-    @BeforeEach
-    fun setUp() {
-        mockContext = mockk(relaxed = true)
-        every { mockContext.applicationContext } returns mockContext
-        skill = ExecJsSkill(mockContext)
+    @Test fun `缺少代码或超过字符上限均不进入运行时`() = runTest {
+        val skill = ExecJsSkill(runner)
+        assertThat(skill.execute(buildJsonObject {}, context).status).isEqualTo("error")
+        assertThat(skill.execute(buildJsonObject { put("code", "x".repeat(50001)) }, context).status).isEqualTo("error")
+        assertThat(skill.execute(buildJsonObject { put("code", "x".repeat(50000)) }, context).content).isEqualTo("Result: 50000")
     }
 
-    @Test
-    fun `returns error for missing code parameter`() = runTest {
-        val result = skill.execute(skillArgs(), testExecContext)
-        assertThat(result.status).isEqualTo("error")
-        assertThat(result.content).contains("Missing required parameter: code")
+    @Test fun `默认禁网30秒且合法选项原样传入`() = runTest {
+        val skill = ExecJsSkill { request, _ ->
+            assertThat(request.allowNetwork).isFalse()
+            assertThat(request.timeoutSeconds).isEqualTo(30)
+            ScriptResult(JsonPrimitive("中 C:\\tmp \"q\""))
+        }
+        assertThat(skill.execute(buildJsonObject { put("code", "1") }, context).content).contains("中")
+        val enabled = ExecJsSkill { request, _ ->
+            assertThat(request.allowNetwork).isTrue()
+            assertThat(request.timeoutSeconds).isEqualTo(300)
+            ScriptResult()
+        }
+        assertThat(enabled.execute(buildJsonObject { put("code", "1"); put("allow_network", true); put("timeout_seconds", 300) }, context).status).isEqualTo("success")
+        for (seconds in listOf(0, 301)) assertThat(enabled.execute(buildJsonObject { put("code", "1"); put("timeout_seconds", seconds) }, context).status).isEqualTo("error")
     }
 
-    @Test
-    fun `returns error for code too long`() = runTest {
-        val longCode = "a".repeat(50001)
-        val result = skill.execute(skillArgs("code" to longCode), testExecContext)
-        assertThat(result.status).isEqualTo("error")
-        assertThat(result.content).contains("Code too long")
+    @Test fun `脚本文件参数规范化且保留args`() = runTest {
+        val skill = RunScriptSkill { request, _ ->
+            assertThat(request.entryPath).isEqualTo("/mnt/demo/main.mjs")
+            assertThat(request.args).isEqualTo(buildJsonArray { add("a") })
+            ScriptResult()
+        }
+        assertThat(skill.execute(buildJsonObject { put("path", "mnt/demo//main.mjs"); put("args", buildJsonArray { add("a") }) }, context).status).isEqualTo("success")
+        assertThat(skill.execute(buildJsonObject { put("path", "/../a.js") }, context).status).isEqualTo("error")
+        assertThat(skill.execute(buildJsonObject { put("path", "/a.py") }, context).status).isEqualTo("error")
     }
 
-    @Test
-    fun `accepts code at max length boundary`() = runTest {
-        val maxCode = "a".repeat(50000)
-        val result = skill.execute(skillArgs("code" to maxCode), testExecContext)
-        assertThat(result.status).isNotEqualTo("Missing required parameter: code")
+    @Test fun `运行时失败明确返回且协程取消不被吞掉`() = runTest {
+        val failing = ExecJsSkill { _, _ -> ScriptResult(errorCode = "MEMORY_LIMIT", error = "内存超限") }
+        assertThat(failing.execute(buildJsonObject { put("code", "1") }, context).content).contains("MEMORY_LIMIT")
+        val cancelled = ExecJsSkill { _, _ -> throw CancellationException("用户取消") }
+        try { cancelled.execute(buildJsonObject { put("code", "1") }, context); error("应传播取消") }
+        catch (_: CancellationException) { }
     }
-
-    @Test
-    fun `id is exec_js`() {
-        assertThat(skill.id).isEqualTo("exec_js")
-    }
-
-    @Test
-    fun `parametersSchema requires code`() {
-        assertThat(skill.parametersSchema).contains("\"required\":[\"code\"]")
-    }
-
-    @Test
-    fun `decodes WebView JSON string results with escapes and unicode`() = runTest {
-        // WebView 对字符串返回值再做一层 JSON 编码，内部包含反斜杠与 Unicode 转义。
-        val inner = """{"ok":true,"value":"C:\\tmp \u4e2d \"q\""}"""
-        val encoded = kotlinx.serialization.json.JsonPrimitive(inner).toString()
-        val evaluating = ExecJsSkill(mockContext, evaluator = { encoded })
-
-        val result = evaluating.execute(skillArgs("code" to "result = 1"), testExecContext)
-
-        assertThat(result.status).isEqualTo("success")
-        assertThat(result.content).contains("中")
-    }
-
-    @Test
-    fun `surfaces script errors from decoded result`() = runTest {
-        val encoded = kotlinx.serialization.json.JsonPrimitive("""{"ok":false,"error":"ReferenceError: x"}""").toString()
-        val evaluating = ExecJsSkill(mockContext, evaluator = { encoded })
-
-        val result = evaluating.execute(skillArgs("code" to "x"), testExecContext)
-
-        assertThat(result.status).isEqualTo("error")
-        assertThat(result.content).contains("ReferenceError")
-    }
-
-
 }

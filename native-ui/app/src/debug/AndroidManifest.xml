@@ -17,5 +17,6 @@
         </receiver>
         <activity android:name=".ui.settings.SecretFieldTestActivity" android:exported="false" />
         <activity android:name=".ui.settings.BackupTestActivity" android:exported="false" />
+        <service android:name=".data.script.ScriptIsolationProbeService" android:isolatedProcess="true" android:exported="false" android:process=":script_probe" />
     </application>
 </manifest>
