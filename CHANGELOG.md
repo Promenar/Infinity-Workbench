@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 设备验收修复（2026-10-17）
+
+- 侧载真实路径挂载：Android SELinux 禁止应用创建硬链接（`link` 返回 EACCES），发布新文件时改走已有的独占新建回退；修复前设备上所有写入均失败。
+- 设备测试：双库恢复工作区用例打开当前库时注册 v18→v21 前进迁移；SAF 跨 UID 测试提供商与授权 Activity 改为 Java，避免测试 APK 独立进程缺少 Kotlin 标准库而崩溃。
+
 ### 隔离脚本运行时（2026-10-17）
 
 - `exec_js` 使用隔离进程 QuickJS，支持 result、最后表达式、Promise、可选联网与超时；新增工作区 `.js/.mjs` 文件执行工具 `run_script` 及同根相对模块。两个渠道共用实现，移除 WebView 执行路径。
