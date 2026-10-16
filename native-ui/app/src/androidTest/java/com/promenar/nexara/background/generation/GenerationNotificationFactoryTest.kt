@@ -6,8 +6,10 @@ import android.app.NotificationManager
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.MainActivity
+import com.promenar.nexara.R
 import com.promenar.nexara.domain.generation.GenerationError
 import com.promenar.nexara.domain.generation.GenerationPhase
+import com.promenar.nexara.domain.generation.GenerationProgress
 import com.promenar.nexara.domain.generation.GenerationTaskSnapshot
 import com.promenar.nexara.navigation.AppIntentRouter
 import org.junit.Test
@@ -25,13 +27,17 @@ class GenerationNotificationFactoryTest {
             generatedChars = 42,
             startedAt = 1L,
             error = GenerationError("sk-secret prompt"),
+            progress = GenerationProgress(rounds = 3, calls = 7, tokens = 4096, estimated = true),
         )
 
         val notification = factory.create(snapshot)
 
         val text = notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString()
         assertThat(text).doesNotContain("sk-secret")
-        assertThat(text).contains("42")
+        // 正文展示累计轮次、调用次数与 token（估算时带标记），不再展示已生成字符数。
+        val expected = context.getString(R.string.p0_progress, 3, 7, 4096L, context.getString(R.string.p0_estimated))
+        assertThat(text).isEqualTo(expected)
+        assertThat(text).contains("4096")
         assertThat(notification.visibility).isEqualTo(Notification.VISIBILITY_PRIVATE)
         assertThat(notification.priority).isEqualTo(Notification.PRIORITY_LOW)
         assertThat(notification.sound).isNull()

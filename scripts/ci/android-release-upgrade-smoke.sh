@@ -63,14 +63,14 @@ wait_for_upgraded_startup() {
             for suffix in -wal -shm; do
                 adb_cmd pull "${upgraded_db}${suffix}" "${probe_db}${suffix}" >/dev/null 2>&1 || true
             done
-            if [[ "$(sqlite3 "${probe_db}" 'PRAGMA user_version;' 2>/dev/null || true)" == "18" ]] &&
+            if [[ "$(sqlite3 "${probe_db}" 'PRAGMA user_version;' 2>/dev/null || true)" == "21" ]] &&
                 [[ "$(adb_cmd shell test -f "${identity_marker}" && echo yes | tr -d '\r')" == "yes" ]]; then
                 return 0
             fi
         fi
         sleep 1
     done
-    echo "升级启动在 ${timeout_seconds}s 内未完成 v18 数据库与工作区身份认领" >&2
+    echo "升级启动在 ${timeout_seconds}s 内未完成 v21 数据库与工作区身份认领" >&2
     return 1
 }
 
@@ -332,12 +332,12 @@ for suffix in -wal -shm; do
     adb_cmd pull "${upgraded_remote_db}${suffix}" "${tmp_root}/upgraded.db${suffix}" >/dev/null 2>&1 || true
 done
 
-[[ "$(sqlite3 "${tmp_root}/upgraded.db" 'PRAGMA user_version;')" == "18" ]] || {
-    echo "覆盖升级后 Room schema 不是 v18" >&2
+[[ "$(sqlite3 "${tmp_root}/upgraded.db" 'PRAGMA user_version;')" == "21" ]] || {
+    echo "覆盖升级后 Room schema 不是 v21" >&2
     exit 1
 }
-[[ "$(sqlite3 "${tmp_root}/upgraded.db" 'SELECT identity_hash FROM room_master_table WHERE id=42;')" == "c32f59706ea482fd5697681569c6fdb5" ]] || {
-    echo "覆盖升级后 Room identity hash 不匹配 v18 导出 schema" >&2
+[[ "$(sqlite3 "${tmp_root}/upgraded.db" 'SELECT identity_hash FROM room_master_table WHERE id=42;')" == "b59d4265cdf25db536fb91226cd85ab3" ]] || {
+    echo "覆盖升级后 Room identity hash 不匹配 v21 导出 schema" >&2
     exit 1
 }
 [[ "$(sqlite3 "${tmp_root}/upgraded.db" "SELECT name FROM agents WHERE id='upgrade-agent';")" == "Upgrade Agent" ]] || {

@@ -40,6 +40,7 @@ All notable changes to this project will be documented in this file.
 
 - SSH 工具定义对齐公共 schema 门禁，恢复命令审批、SFTP 文本读取与 PTY 输出读取；超时、输出量、读取范围和等待时限继续由运行时强制校验。
 - `exec_js` / `run_script` 工具定义移除不受支持的 `minimum`/`maximum`，修复真实聊天中两者预检即以 `INVALID_DEFINITION` 失败；新增覆盖全部内置工具 schema 的定义预检回归测试。
+- 发行覆盖升级门禁 `android-release-upgrade-smoke.sh` 的目标库改为 v21（identity `b59d4265…`），否则当前版本发行流程会在升级阶段失败；前台生成通知设备用例改为断言轮次、调用与 token 进度正文。
 - 侧载真实路径挂载：Android SELinux 禁止应用创建硬链接（`link` 返回 EACCES），发布新文件时改走已有的独占新建回退；修复前设备上所有写入均失败。
 - 设备测试：双库恢复工作区用例打开当前库时注册 v18→v21 前进迁移；SAF 跨 UID 测试提供商与授权 Activity 改为 Java，避免测试 APK 独立进程缺少 Kotlin 标准库而崩溃。
 

@@ -357,14 +357,14 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         )
         self.assertEqual(completed.stdout.strip(), "com.promenar.nexara.native")
 
-    def test_upgrade_smoke_uses_public_v17_database_contract_and_current_v18_target(self) -> None:
+    def test_upgrade_smoke_uses_public_v17_database_contract_and_current_v21_target(self) -> None:
         self.assertIn('remote_db="${data_dir}/databases/nexara.db"', UPGRADE_SMOKE)
         self.assertIn("公开旧版 Room schema 不是实测 v17", UPGRADE_SMOKE)
         self.assertIn("3311ec5f07e8df42c02fd09163c49f6e", UPGRADE_SMOKE)
         self.assertNotIn("name_customized,description_customized", UPGRADE_SMOKE)
         self.assertIn('upgraded_remote_db="${data_dir}/databases/nexara_v2.db"', UPGRADE_SMOKE)
-        self.assertIn("覆盖升级后 Room schema 不是 v18", UPGRADE_SMOKE)
-        self.assertIn("c32f59706ea482fd5697681569c6fdb5", UPGRADE_SMOKE)
+        self.assertIn("覆盖升级后 Room schema 不是 v21", UPGRADE_SMOKE)
+        self.assertIn("b59d4265cdf25db536fb91226cd85ab3", UPGRADE_SMOKE)
         self.assertIn("UPGRADE_ATTACHMENT_SENTINEL", UPGRADE_SMOKE)
         self.assertIn("WAL_ONLY_SENTINEL", UPGRADE_SMOKE)
         self.assertIn('push "${wal_fixture}/${db_name}-wal" "${remote_db}-wal"', UPGRADE_SMOKE)
