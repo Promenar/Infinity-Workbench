@@ -8,6 +8,7 @@ import com.promenar.nexara.data.security.SecretId
 import com.promenar.nexara.data.security.SecretStore
 import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
+import com.promenar.nexara.data.remote.mcp.McpConnectionSettings
 import com.promenar.nexara.ui.chat.manager.registry.McpSkillRegistry
 import com.promenar.nexara.ui.chat.manager.registry.McpSyncResult
 import com.promenar.nexara.ui.theme.NexaraColorSource
@@ -23,6 +24,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -189,6 +191,63 @@ class SettingsViewModelTest {
         coVerify(exactly = 1) {
             skillRepo.insertMcpServer(match { it.url == "https://mcp.example.test" && it.type == "http" })
         }
+    }
+
+    @Test
+    fun `本机MCP添加入口要求显式开启与Bearer令牌`() = runTest {
+        val settings = McpConnectionSettings(prefs, MemorySecretStore())
+        every { mockApp.mcpConnectionSettings } returns settings
+        coEvery { skillRepo.insertMcpServer(any()) } returns Unit
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+
+        vm.addMcpServer("本机", "http://127.0.0.1:8765/mcp", "http", "test-only-bearer")
+        assertThat(vm.mcpConfigError.value).isEqualTo(McpConfigError.INVALID_ENDPOINT)
+        vm.setAllowLoopbackMcp(true)
+        vm.addMcpServer("本机", "http://127.0.0.1:8765/mcp", "http")
+        assertThat(vm.mcpConfigError.value).isEqualTo(McpConfigError.BEARER_REQUIRED)
+        vm.addMcpServer("非环回", "http://localhost:8765/mcp", "http", "test-only-bearer")
+        assertThat(vm.mcpConfigError.value).isEqualTo(McpConfigError.INVALID_ENDPOINT)
+        coVerify(exactly = 0) { skillRepo.insertMcpServer(any()) }
+    }
+
+    @Test
+    fun `本机MCP先保存SecretStore凭据再添加服务器配置`() = runTest {
+        val settings = McpConnectionSettings(prefs, MemorySecretStore())
+        every { mockApp.mcpConnectionSettings } returns settings
+        val savedServer = io.mockk.slot<McpServerEntity>()
+        coEvery { skillRepo.insertMcpServer(capture(savedServer)) } coAnswers {
+            assertThat(settings.readBearerToken(firstArg<McpServerEntity>().id)).isEqualTo("test-only-bearer")
+            Unit
+        }
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+        vm.setAllowLoopbackMcp(true)
+        val completed = CompletableDeferred<Boolean>()
+        vm.addMcpServer("本机", "http://127.0.0.1:8765/mcp", "http", "test-only-bearer") {
+            completed.complete(it)
+        }
+
+        assertThat(completed.await()).isTrue()
+        assertThat(savedServer.captured.url).isEqualTo("http://127.0.0.1:8765/mcp")
+        assertThat(vm.mcpConfigError.value).isNull()
+        assertThat(settings.readBearerToken(savedServer.captured.id)).isEqualTo("test-only-bearer")
+    }
+
+    @Test
+    fun `本机MCP数据库保存失败会清理新建的凭据`() = runTest {
+        val settings = McpConnectionSettings(prefs, MemorySecretStore())
+        every { mockApp.mcpConnectionSettings } returns settings
+        val attemptedServer = io.mockk.slot<McpServerEntity>()
+        coEvery { skillRepo.insertMcpServer(capture(attemptedServer)) } throws IllegalStateException("database unavailable")
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+        vm.setAllowLoopbackMcp(true)
+        val completed = CompletableDeferred<Boolean>()
+        vm.addMcpServer("本机", "http://127.0.0.1:8765/mcp", "http", "test-only-bearer") {
+            completed.complete(it)
+        }
+
+        assertThat(completed.await()).isFalse()
+        assertThat(settings.readBearerToken(attemptedServer.captured.id)).isNull()
+        assertThat(vm.mcpConfigError.value).isEqualTo(McpConfigError.SAVE_FAILED)
     }
 
     @Test

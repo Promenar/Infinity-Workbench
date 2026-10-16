@@ -149,6 +149,13 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     open val secretStore: SecretStore by lazy { AndroidKeystoreSecretStore(this) }
+    val termuxRuntime: com.promenar.nexara.data.termux.TermuxRuntime by lazy {
+        com.promenar.nexara.data.termux.TermuxRuntime(this)
+    }
+    open val mcpConnectionSettings: com.promenar.nexara.data.remote.mcp.McpConnectionSettings by lazy {
+        com.promenar.nexara.data.remote.mcp.McpConnectionSettings(getSharedPreferences("nexara_settings", MODE_PRIVATE), secretStore)
+    }
+
     val sshHostStore: com.promenar.nexara.data.ssh.SshHostStore by lazy {
         com.promenar.nexara.data.ssh.RoomSshHostStore(database.sshHostDao(), secretStore)
     }
@@ -617,6 +624,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             fun mounted(skill: com.promenar.nexara.ui.chat.manager.registry.SkillDefinition) =
                 com.promenar.nexara.ui.chat.manager.skills.MountedWorkspaceSkill(skill, externalFolderManager, workspaceRepository, fileOperationRepository, pendingDocumentIndexCoordinator)
             register(CalculatorSkill())
+            register(com.promenar.nexara.ui.chat.manager.skills.TermuxExecSkill(termuxRuntime::executeRequest) {
+                com.promenar.nexara.data.termux.TermuxPreferences.isEnabled(getSharedPreferences("nexara_settings", MODE_PRIVATE))
+            })
             com.promenar.nexara.ui.chat.manager.skills.sshTools(sshRuntime).forEach(::register)
             register(WebSearchSkill(this@NexaraApplication, httpClient, secretStore))
             register(WebSearchTavilySkill(this@NexaraApplication, httpClient, secretStore))
@@ -647,7 +657,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     val mcpSkillRegistry: McpSkillRegistry by lazy {
-        McpSkillRegistry(skillRepository as SkillRepository, httpClient, generationScope)
+        McpSkillRegistry(skillRepository as SkillRepository, httpClient, generationScope, connectionSettings = mcpConnectionSettings)
     }
 
     /** Agent Skills 指令包存储（ADR-022）。 */

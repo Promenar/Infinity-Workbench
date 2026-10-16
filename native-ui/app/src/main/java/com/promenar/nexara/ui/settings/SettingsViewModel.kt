@@ -28,6 +28,7 @@ import com.promenar.nexara.data.local.db.entity.CustomSkillEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.repository.ISkillRepository
 import com.promenar.nexara.ui.chat.manager.registry.McpSkillRegistry
+import com.promenar.nexara.data.remote.mcp.McpEndpointPolicy
 import com.promenar.nexara.domain.repository.ITokenStatsRepository
 import com.promenar.nexara.domain.repository.IVectorRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -91,6 +92,8 @@ data class McpServerUiModel(
     val isSupported: Boolean = true,
     val syncError: String? = null,
 )
+
+enum class McpConfigError { INVALID_ENDPOINT, BEARER_REQUIRED, SAVE_FAILED }
 
 data class SkillInfo(
     val id: String,
@@ -305,6 +308,9 @@ class SettingsViewModel(
     private val _mcpServers = MutableStateFlow<List<McpServerUiModel>>(emptyList())
     val mcpServers: StateFlow<List<McpServerUiModel>> = _mcpServers.asStateFlow()
     private val mcpSyncErrors = mutableMapOf<String, String>()
+    val allowLoopbackMcp get() = app.mcpConnectionSettings.allowLoopbackHttp
+    private val _mcpConfigError = MutableStateFlow<McpConfigError?>(null)
+    val mcpConfigError: StateFlow<McpConfigError?> = _mcpConfigError.asStateFlow()
 
     private val _userName = MutableStateFlow(application.getString(R.string.settings_default_user_name))
     val userName: StateFlow<String> = _userName.asStateFlow()
@@ -410,7 +416,7 @@ class SettingsViewModel(
             app.skillRepository.getAllMcpServers().collectLatest { entities ->
                 _mcpServers.value = entities.map { entity ->
                     val snapshots = app.skillRepository.getMcpToolSnapshots(entity.id)
-                    val supported = isModernMcpServer(entity.type, entity.url)
+                    val supported = isModernMcpServer(entity.type, entity.url, entity.id)
                     McpServerUiModel(
                         id = entity.id,
                         name = entity.name,
@@ -781,17 +787,77 @@ class SettingsViewModel(
             .apply()
     }
 
-    // MCP Methods
-    fun addMcpServer(name: String, url: String, type: String) {
+    // MCP 配置与同步。
+    fun setAllowLoopbackMcp(enabled: Boolean) {
+        app.mcpConnectionSettings.setAllowLoopbackHttp(enabled)
+        _mcpConfigError.value = null
+        _mcpServers.update { servers ->
+            servers.map { server ->
+                val supported = isModernMcpServer(server.type, server.url, server.id)
+                server.copy(isSupported = supported, isConnected = supported && server.tools.isNotEmpty())
+            }
+        }
+    }
+
+    fun clearMcpConfigError() { _mcpConfigError.value = null }
+
+    fun addMcpServer(
+        name: String,
+        url: String,
+        type: String,
+        bearerToken: String = "",
+        onComplete: (Boolean) -> Unit = {},
+    ) {
+        val normalizedUrl = url.trim()
+        val isLoopback = McpEndpointPolicy.kind(normalizedUrl) == McpEndpointPolicy.Kind.LOOPBACK_HTTP
+        if (isLoopback && !McpEndpointPolicy.isValidBearerToken(bearerToken)) {
+            _mcpConfigError.value = McpConfigError.BEARER_REQUIRED
+            onComplete(false)
+            return
+        }
+        if (name.isBlank() || !McpEndpointPolicy.isAllowed(
+                type = type,
+                url = normalizedUrl,
+                allowLoopbackHttp = isLoopback && app.mcpConnectionSettings.allowLoopbackHttp.value,
+                hasBearerToken = isLoopback && McpEndpointPolicy.isValidBearerToken(bearerToken),
+            )
+        ) {
+            _mcpConfigError.value = McpConfigError.INVALID_ENDPOINT
+            onComplete(false)
+            return
+        }
+        _mcpConfigError.value = null
         viewModelScope.launch {
-            if (!isModernMcpServer(type, url)) return@launch
             val server = McpServerEntity(
                 id = "mcp_${IdGenerator.uuid()}",
-                name = name,
-                url = url,
+                name = name.trim(),
+                url = normalizedUrl,
                 type = type
             )
-            app.skillRepository.insertMcpServer(server)
+            var bearerSaved = false
+            var serverSaved = false
+            val success = try {
+                if (isLoopback) {
+                    app.mcpConnectionSettings.saveBearerToken(server.id, bearerToken)
+                    bearerSaved = true
+                    check(app.mcpConnectionSettings.isAllowed(server.id, type, normalizedUrl))
+                }
+                app.skillRepository.insertMcpServer(server)
+                serverSaved = true
+                true
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _mcpConfigError.value = McpConfigError.SAVE_FAILED
+                false
+            } finally {
+                if (bearerSaved && !serverSaved) {
+                    withContext(kotlinx.coroutines.NonCancellable) {
+                        runCatching { app.mcpConnectionSettings.removeBearerToken(server.id) }
+                    }
+                }
+            }
+            onComplete(success)
         }
     }
 
@@ -808,6 +874,15 @@ class SettingsViewModel(
                     callIntervalMs = server.callIntervalMs,
                     isDefault = server.isDefault
                 ))
+                if (McpEndpointPolicy.kind(server.url) == McpEndpointPolicy.Kind.LOOPBACK_HTTP) {
+                    try {
+                        app.mcpConnectionSettings.removeBearerToken(id)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        _mcpConfigError.value = McpConfigError.SAVE_FAILED
+                    }
+                }
             }
         }
     }
@@ -868,11 +943,12 @@ class SettingsViewModel(
         }
     }
 
-    private fun isModernMcpServer(type: String, url: String): Boolean {
-        if (!type.equals("http", ignoreCase = true)) return false
-        val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
-        return uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank() && uri.userInfo == null
-    }
+    private fun isModernMcpServer(type: String, url: String, serverId: String): Boolean =
+        if (McpEndpointPolicy.kind(url) == McpEndpointPolicy.Kind.LOOPBACK_HTTP) {
+            app.mcpConnectionSettings.isAllowed(serverId, type, url)
+        } else {
+            McpEndpointPolicy.isAllowed(type, url)
+        }
 
     fun retryLastError() {
         when (_settingsError.value) {

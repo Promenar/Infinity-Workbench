@@ -66,10 +66,13 @@ internal object BackupPreferencePolicy {
         ),
     )
 
-    // 权限询问与本地推理能力属于设备状态，不能随备份迁移到能力或授权不同的新设备。
+    // 权限询问与本地执行能力属于设备状态，不能随备份迁移到能力或授权不同的新设备。
     private val exactDenied = mapOf(
         "provider" to setOf("last_local_model"),
-        "settings" to setOf("local_models_enabled", "local_auto_load", "last_local_model", "unlimited_auto_confirmed"),
+        "settings" to setOf(
+            "local_models_enabled", "local_auto_load", "last_local_model", "unlimited_auto_confirmed",
+            "termux_integration_enabled", "mcp_allow_loopback_http",
+        ),
         "generation_notification_permission" to setOf("post_notifications_asked"),
         "onboarding" to setOf(
             "step", "language", "provider_id", "model_id", "agent_id", "session_id",

@@ -96,6 +96,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
+import com.promenar.nexara.data.remote.mcp.McpEndpointPolicy
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSlider
@@ -114,6 +115,7 @@ private data class AgentSkillEditorState(
 fun SkillsScreen(
     onNavigateBack: () -> Unit,
     onOpenSsh: () -> Unit = {},
+    onOpenTermux: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
@@ -192,6 +194,13 @@ fun SkillsScreen(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) {
                 Text(stringResource(R.string.ssh_settings_entry), modifier = Modifier.fillMaxWidth())
+            }
+
+            androidx.compose.material3.TextButton(
+                onClick = onOpenTermux,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Text("Termux 接入与诊断", modifier = Modifier.fillMaxWidth())
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -319,14 +328,24 @@ fun SkillsScreen(
     if (showAddMcp) {
         var mcpName by remember { mutableStateOf("") }
         var mcpUrl by remember { mutableStateOf("") }
+        var mcpBearer by remember { mutableStateOf("") }
+        var mcpSaving by remember { mutableStateOf(false) }
+        val allowLoopback by viewModel.allowLoopbackMcp.collectAsState()
+        val configError by viewModel.mcpConfigError.collectAsState()
+        val isLoopback = McpEndpointPolicy.kind(mcpUrl.trim()) == McpEndpointPolicy.Kind.LOOPBACK_HTTP
+        val canSave = mcpName.isNotBlank() && !mcpSaving && McpEndpointPolicy.isAllowed(
+            "http", mcpUrl.trim(), allowLoopback, McpEndpointPolicy.isValidBearerToken(mcpBearer),
+        )
+        androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.clearMcpConfigError() }
         ModalBottomSheet(
-            onDismissRequest = { showAddMcp = false },
+            onDismissRequest = { if (!mcpSaving) showAddMcp = false },
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(24.dp)
                     .padding(bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -337,6 +356,7 @@ fun SkillsScreen(
                     textStyle = LocalTextStyle.current.forInput(),
                     value = mcpName,
                     onValueChange = { mcpName = it },
+                    enabled = !mcpSaving,
                     label = { Text(stringResource(R.string.skills_mcp_name_placeholder)) },
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -345,26 +365,85 @@ fun SkillsScreen(
                     textStyle = LocalTextStyle.current.forInput(),
                     value = mcpUrl,
                     onValueChange = { mcpUrl = it },
+                    enabled = !mcpSaving,
                     label = { Text(stringResource(R.string.skills_mcp_url_placeholder)) },
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 Text(
-                    text = stringResource(R.string.skills_mcp_https_only),
+                    text = stringResource(R.string.mcp_connection_policy),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
+                Row(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
+                        value = allowLoopback,
+                        enabled = !mcpSaving,
+                        role = Role.Switch,
+                        onValueChange = viewModel::setAllowLoopbackMcp,
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.mcp_allow_loopback_http),
+                        modifier = Modifier.weight(1f).padding(end = 12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Switch(checked = allowLoopback, onCheckedChange = null, enabled = !mcpSaving)
+                }
+                if (allowLoopback) {
+                    Text(
+                        stringResource(R.string.mcp_loopback_security_notice),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (isLoopback) {
+                    OutlinedTextField(
+                        textStyle = LocalTextStyle.current.forInput(),
+                        value = mcpBearer,
+                        onValueChange = { mcpBearer = it },
+                        enabled = !mcpSaving,
+                        label = { Text(stringResource(R.string.mcp_bearer_token)) },
+                        supportingText = { Text(stringResource(R.string.mcp_bearer_token_storage)) },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
+                            autoCorrectEnabled = false,
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                val errorMessage = when (configError) {
+                    McpConfigError.INVALID_ENDPOINT -> R.string.mcp_invalid_endpoint
+                    McpConfigError.BEARER_REQUIRED -> R.string.mcp_bearer_required
+                    McpConfigError.SAVE_FAILED -> R.string.mcp_config_save_failed
+                    null -> null
+                }
+                if (errorMessage != null) {
+                    Text(
+                        stringResource(errorMessage),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 Button(
                     onClick = {
-                        if (mcpName.isNotBlank() && mcpUrl.startsWith("https://", ignoreCase = true)) {
-                            viewModel.addMcpServer(mcpName, mcpUrl, "http")
-                            showAddMcp = false
+                        mcpSaving = true
+                        viewModel.addMcpServer(mcpName, mcpUrl, "http", mcpBearer) { saved ->
+                            mcpSaving = false
+                            if (saved) {
+                                mcpBearer = ""
+                                showAddMcp = false
+                            }
                         }
                     },
+                    enabled = canSave,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(stringResource(R.string.skills_mcp_add_btn))
+                    Text(stringResource(if (mcpSaving) R.string.mcp_config_saving else R.string.skills_mcp_add_btn))
                 }
             }
         }
@@ -806,6 +885,8 @@ private fun McpServerItem(
                 )
                 Text(
                     text = when {
+                        !server.isSupported && McpEndpointPolicy.kind(server.url) == McpEndpointPolicy.Kind.LOOPBACK_HTTP ->
+                            stringResource(R.string.mcp_loopback_unavailable)
                         !server.isSupported -> stringResource(R.string.skills_mcp_legacy_unsupported)
                         server.syncError != null -> stringResource(R.string.skills_mcp_sync_error, server.syncError)
                         else -> stringResource(R.string.skills_mcp_modern_transport)

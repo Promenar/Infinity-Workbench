@@ -14,6 +14,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Termux 本机终端与环回 MCP（2026-10-17）
+
+- 新增默认关闭的 Termux 集成与 `termux_exec`，通过 RUN_COMMAND 后台运行 bash，支持工作目录、stdin、默认 60 秒与最多 600 秒超时；PROCESS 审批固定绑定 `termux` 和完整命令。两个发行渠道均声明调用权限与包可见性。
+- 显式应用内 PendingIntent 回调按唯一请求 ID 关联，分别保留 stdout/stderr 的原始长度及截断标记，识别安装、版本、权限和外部应用开关错误。超时/取消只结束本地等待并丢弃迟到结果，提示命令可能仍在执行。
+- 工具设置新增 Termux 诊断与分步引导，提供安装与权限入口、外部调用配置命令、SSH 公钥与 authorized_keys 命令复制、主目录 SAF 授权挂载及 Android 子进程/唤醒锁说明。
+- 本机 MCP 为默认关闭的高级选项，HTTP 仅允许显式端口的 `127.0.0.1`，访问令牌必填并存于 SecretStore；发现和执行使用 Bearer，工具默认 PROCESS 风险。主配置和 Debug 网络安全配置均仅对精确 `127.0.0.1` 放开明文，认证请求不跟随重定向。
+- Termux 与本机 HTTP MCP 的启用开关显式登记为设备本地授权状态，不进入跨设备备份；本机 MCP 令牌不进入现有备份白名单。
+
 ### 原生 SSH、SFTP 与交互终端（2026-10-17）
 
 - 工具设置新增 SSH 主机管理，支持密码、Ed25519 生成与口令保护的 OpenSSH 私钥导入、公钥复制、首次指纹确认与变化拦截。Room v21 保存非秘密主机配置，认证材料独立加密保存；SSH 配置及凭据均不进入应用备份。

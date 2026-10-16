@@ -43,7 +43,8 @@ object ToolExecutionTargets {
             return tuple("remote_path", host, path)
         }
         if (tool.risk == ToolRisk.PROCESS) {
-            val host = args.string("host")?.trim()?.takeIf(String::isNotBlank) ?: return null
+            val host = if (tool.function.name == "termux_exec") "termux"
+                else args.string("host")?.trim()?.takeIf(String::isNotBlank) ?: return null
             val command = args.string("command")?.takeIf(String::isNotBlank) ?: return null
             return tuple("process", host.lowercase(Locale.ROOT), command)
         }
