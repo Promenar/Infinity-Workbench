@@ -39,7 +39,7 @@ import org.robolectric.annotation.Config
 import java.nio.file.Path
 
 /**
- * 以 Room 生成的真实 v18 schema 验证双库全图合并契约。
+ * 以 Room 生成的真实 v20 schema 验证双库全图合并契约。
  *
  * 夹具故意同时在 current 与 legacy 使用相同业务 ID；旧侧数据必须进入稳定命名空间，
  * 但 MCP 远端工具名属于业务协议名称，工具调用 JSON 中的引用则必须跟随对应 ID 映射。
@@ -48,7 +48,7 @@ import java.nio.file.Path
 @Config(sdk = [33], application = Application::class)
 class DualDatabaseFullGraphContractTest {
     @Test
-    fun `real v18 composite file task and complete graph references survive merge`() {
+    fun `real v20 composite file task and complete graph references survive merge`() {
         withDatabasePair(includeVectorizationTask = true) { currentPath, legacyPath ->
             val result = merge(currentPath, legacyPath)
 
@@ -80,7 +80,7 @@ class DualDatabaseFullGraphContractTest {
     }
 
     @Test
-    fun `real v18 mcp document rag and closed tool references remain reachable`() {
+    fun `real v20 mcp document rag and closed tool references remain reachable`() {
         withDatabasePair(includeVectorizationTask = false) { currentPath, legacyPath ->
             val result = merge(currentPath, legacyPath)
             assertThat(result.unresolvedReferences.filter { it.startsWith("required:") }).isEmpty()

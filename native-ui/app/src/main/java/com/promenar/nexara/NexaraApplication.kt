@@ -19,6 +19,7 @@ import com.promenar.nexara.data.local.db.MIGRATION_3_4
 import com.promenar.nexara.data.local.db.MIGRATION_4_5
 import com.promenar.nexara.data.local.db.MIGRATION_5_18
 import com.promenar.nexara.data.local.db.MIGRATION_18_19
+import com.promenar.nexara.data.local.db.MIGRATION_19_20
 import com.promenar.nexara.data.local.db.MIGRATION_17_18
 import com.promenar.nexara.data.local.db.LegacyDatabasePromoter
 import com.promenar.nexara.data.backup.BackupRuntime
@@ -198,7 +199,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val database: NexaraDatabase by lazy {
         LegacyDatabasePromoter.promote(this)
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
                     if (com.promenar.nexara.BuildConfig.DEBUG) {
@@ -272,7 +273,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction(skill.name, skill.description, skill.parametersSchema),
             risk = skill.risk, runtimeToolId = skill.runtimeToolId, sourceId = skill.sourceId, mcpServerId = skill.mcpServerId,
         )
-        return com.promenar.nexara.data.generation.resolveSessionToolTarget(session, tool, args.toString(), workspaceRepository) == target &&
+        return com.promenar.nexara.data.generation.resolveSessionToolTarget(session, tool, args.toString(), workspaceRepository, externalFolderManager) == target &&
             sessionToolGrantStore.contains(session.id, skill.name, target)
     }
 
@@ -384,6 +385,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 com.promenar.nexara.data.session.cleanupSessionRuntimeData(
                     { sessionToolGrantStore.deleteSession(sessionId) },
                     { toolOutputStore.deleteSession(sessionId) },
+                    { externalFolderManager.deleteSessionMounts(sessionId) },
                 )
             },
         )
@@ -485,6 +487,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             toolGrantStore = sessionToolGrantStore,
             workspaceRepository = workspaceRepository,
             outputStore = toolOutputStore,
+            externalFolders = externalFolderManager,
             interactionStore = generationInteractions,
         )
         com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
@@ -552,6 +555,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         )
     }
 
+    val externalFolderManager: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess by lazy {
+        com.promenar.nexara.data.storage.ExternalFolderManager(this, database.externalMountDao(), workspaceRepository, pendingDocumentIndexCoordinator)
+    }
+
     val pendingDocumentIndexCoordinator: PendingDocumentIndexCoordinator by lazy {
         PendingDocumentIndexCoordinator(
             downstream = FileIndexEventSink { event -> vectorizationQueue.publish(event) },
@@ -596,22 +603,24 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     val presetSkillRegistry: DefaultSkillRegistry by lazy {
         DefaultSkillRegistry().apply {
+            fun mounted(skill: com.promenar.nexara.ui.chat.manager.registry.SkillDefinition) =
+                com.promenar.nexara.ui.chat.manager.skills.MountedWorkspaceSkill(skill, externalFolderManager, workspaceRepository, fileOperationRepository, pendingDocumentIndexCoordinator)
             register(CalculatorSkill())
             register(WebSearchSkill(this@NexaraApplication, httpClient, secretStore))
             register(WebSearchTavilySkill(this@NexaraApplication, httpClient, secretStore))
             register(WebSearchSearXNGSkill(this@NexaraApplication, httpClient))
             register(WebFetchSkill(httpClient))
             register(ImageGenerationSkill(this@NexaraApplication, ProviderManager.getInstance()))
-            register(FileReadSkill(fileOperationRepository, workspaceRepository))
-            register(FileWriteSkill(fileOperationRepository, workspaceRepository))
-            register(FileDiffSkill(fileOperationRepository, workspaceRepository))
-            register(FilePatchSkill(fileOperationRepository, workspaceRepository))
-            register(FileListSkill(workspaceRepository))
-            register(FileSearchSkill(workspaceRepository, fileOperationRepository))
-            register(CreateFileSkill(workspaceRepository, fileOperationRepository))
-            register(CreateDirectorySkill(workspaceRepository))
-            register(MoveFileSkill(workspaceRepository, pendingDocumentIndexCoordinator))
-            register(DeleteFileSkill(workspaceRepository))
+            register(mounted(FileReadSkill(fileOperationRepository, workspaceRepository)))
+            register(mounted(FileWriteSkill(fileOperationRepository, workspaceRepository)))
+            register(mounted(FileDiffSkill(fileOperationRepository, workspaceRepository)))
+            register(mounted(FilePatchSkill(fileOperationRepository, workspaceRepository)))
+            register(mounted(FileListSkill(workspaceRepository)))
+            register(mounted(FileSearchSkill(workspaceRepository, fileOperationRepository)))
+            register(mounted(CreateFileSkill(workspaceRepository, fileOperationRepository)))
+            register(mounted(CreateDirectorySkill(workspaceRepository)))
+            register(mounted(MoveFileSkill(workspaceRepository, pendingDocumentIndexCoordinator)))
+            register(mounted(DeleteFileSkill(workspaceRepository)))
             register(ExecJsSkill(this@NexaraApplication))
             register(InitializePlanSkill(taskRepository))
             register(UpdatePlanSkill(taskRepository))

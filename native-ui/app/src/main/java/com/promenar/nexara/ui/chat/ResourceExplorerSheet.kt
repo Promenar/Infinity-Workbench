@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.promenar.nexara.R
+import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.ui.chat.components.FilesPanel
 import com.promenar.nexara.ui.chat.components.RecycleBinPanel
 import com.promenar.nexara.ui.chat.components.ResourceExplorerViewModel
@@ -87,6 +88,7 @@ fun ResourceExplorerSheet(
         )
     )
 ) {
+    val externalFolderManager = (LocalContext.current.applicationContext as? NexaraApplication)?.externalFolderManager
     DisposableEffect(sessionId, viewModel) {
         viewModel.loadSession(sessionId)
         onDispose { viewModel.deactivateSession() }
@@ -139,6 +141,8 @@ fun ResourceExplorerSheet(
                 FilesPanel(
                     workspaceRootUuid = workspaceRootUuid,
                     workspaceRepo = viewModel.workspaceRepo,
+                    sessionId = sessionId,
+                    externalFolderManager = externalFolderManager,
                     searchQuery = searchQuery,
                     rootFiles = rootFiles,
                     isLoading = isLoading,

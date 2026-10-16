@@ -18,7 +18,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
-/** 依据官方 APK 在空白模拟器生成的 schema 验证，不从当前 v18 schema 反向构造旧库。 */
+/** 依据官方 APK 在空白模拟器生成的 schema 验证，不从当前 schema 反向构造旧库。 */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
 class PublishedDatabaseMigrationTest {
@@ -59,14 +59,14 @@ class PublishedDatabaseMigrationTest {
                 })
             }
             val room = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
                 .allowMainThreadQueries()
                 .build()
             try {
                 val database = room.openHelper.writableDatabase
                 database.query("PRAGMA user_version").use { cursor ->
                     check(cursor.moveToFirst())
-                    assertThat(cursor.getInt(0)).isEqualTo(19)
+                    assertThat(cursor.getInt(0)).isEqualTo(20)
                 }
                 database.query("SELECT content,session_id,legacy_attachments FROM messages WHERE id='published-message'").use { cursor ->
                     check(cursor.moveToFirst())

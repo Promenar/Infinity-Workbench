@@ -139,6 +139,7 @@ internal class DefaultChatGenerationRuntime(
     private val workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository? = null,
     private val outputStore: com.promenar.nexara.data.repository.ToolOutputStore? = null,
     private val interactionStore: GenerationInteractionStore? = null,
+    private val externalFolders: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess? = null,
 ) : ChatGenerationRuntime {
     private val inFlightCompressor = InFlightToolContextCompressor()
     private var activeToolBudget: GenerationToolBudget? = null
@@ -514,7 +515,7 @@ internal class DefaultChatGenerationRuntime(
         val preparedByName = preparedTools.groupBy { it.function.name }
         val targets = calls.associate { call ->
             val tool = preparedByName[call.name]?.singleOrNull()
-            call.id to tool?.let { resolveSessionToolTarget(session, it, call.arguments, workspaceRepository) }
+            call.id to tool?.let { resolveSessionToolTarget(session, it, call.arguments, workspaceRepository, externalFolders) }
         }
         val requestedPendingIds = policyPendingIds.filterTo(mutableSetOf()) { id ->
             val call = calls.first { it.id == id }
