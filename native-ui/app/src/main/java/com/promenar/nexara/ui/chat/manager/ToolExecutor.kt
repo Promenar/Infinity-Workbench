@@ -3,6 +3,7 @@ package com.promenar.nexara.ui.chat.manager
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.Message
 import com.promenar.nexara.data.model.MessageRole
+import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.data.model.UpdateMessageOptions
@@ -54,6 +55,7 @@ class ToolExecutor internal constructor(
     private val ledger: ToolExecutionLedger? = null,
     private val executionGate: SessionExecutionGate? = null,
     private val hooks: ToolExecutorHooks = ToolExecutorHooks(),
+    private val grantVerifier: (suspend (Session, SkillDefinition, JsonObject, String) -> Boolean)? = null,
 ) {
     suspend fun executeTools(
         sessionId: String,
@@ -61,13 +63,15 @@ class ToolExecutor internal constructor(
         toolCalls: List<ToolCall>,
         allowedToolCallIds: Set<String> = toolCalls.mapTo(mutableSetOf()) { it.id },
         preparedTools: List<ProtocolTool>? = null,
+        expectedGrantTargets: Map<String, String> = emptyMap(),
     ) {
+        val grantTargets = expectedGrantTargets.toMap()
         val gate = executionGate
         if (gate == null) {
-            executeToolsAdmitted(sessionId, assistantMessageId, toolCalls, allowedToolCallIds, preparedTools)
+            executeToolsAdmitted(sessionId, assistantMessageId, toolCalls, allowedToolCallIds, preparedTools, grantTargets)
         } else {
             gate.withNewSessionAdmission(sessionId) {
-                executeToolsAdmitted(sessionId, assistantMessageId, toolCalls, allowedToolCallIds, preparedTools)
+                executeToolsAdmitted(sessionId, assistantMessageId, toolCalls, allowedToolCallIds, preparedTools, grantTargets)
             }
         }
     }
@@ -109,6 +113,7 @@ class ToolExecutor internal constructor(
         toolCalls: List<ToolCall>,
         allowedToolCallIds: Set<String> = toolCalls.mapTo(mutableSetOf()) { it.id },
         preparedTools: List<ProtocolTool>? = null,
+        expectedGrantTargets: Map<String, String> = emptyMap(),
     ) {
         val session = store.getSession(sessionId) ?: return
         val targetMsgId = assistantMessageId
@@ -179,6 +184,7 @@ class ToolExecutor internal constructor(
                     key = key,
                     expectedIdentity = expectedIdentity,
                     activeLedger = activeLedger,
+                    expectedGrantTargets = expectedGrantTargets,
                 )
             } catch (cancelled: CancellationException) {
                 terminalizeInvocationCancellation(
@@ -203,6 +209,7 @@ class ToolExecutor internal constructor(
         key: ToolExecutionKey,
         expectedIdentity: ToolInvocationIdentity,
         activeLedger: ToolExecutionLedger,
+        expectedGrantTargets: Map<String, String>,
     ) {
         val currentSession = store.getSession(sessionId)
         val currentResolvedTool = currentSession?.let(toolResolver::resolve)
@@ -251,6 +258,27 @@ class ToolExecutor internal constructor(
             timestamp = System.currentTimeMillis(),
             taskStepId = currentFocusId
         ))
+
+        if (call.id in expectedGrantTargets) {
+            val grantStillValid = try {
+                grantVerifier?.invoke(currentSession, currentSkill, arguments, expectedGrantTargets.getValue(call.id)) == true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                false
+            }
+            if (!grantStillValid) {
+                finishClaimedFailure(
+                    activeLedger = activeLedger,
+                    key = key,
+                    toolName = call.name,
+                    thoughtSignature = targetMsg.thoughtSignature,
+                    failureMessage = "工具执行失败：目标授权已失效，已安全终止。",
+                    failureReason = "目标授权无效",
+                )
+                return
+            }
+        }
 
         val result = executeSkill(currentSkill, arguments, call, currentSession)
         hooks.afterSkillExecution()
@@ -400,13 +428,15 @@ class ToolExecutor internal constructor(
         key: ToolExecutionKey,
         toolName: String,
         thoughtSignature: String?,
+        failureMessage: String = "工具执行失败：工具定义已变化，已安全终止。",
+        failureReason: String = "工具定义身份不一致",
     ) {
         val terminal = activeLedger.finishWithResult(
             key = key,
             toolName = toolName,
-            content = "工具执行失败：工具定义已变化，已安全终止。",
+            content = failureMessage,
             thoughtSignature = thoughtSignature,
-            outcome = ToolExecutionOutcome.Failed("工具定义身份不一致"),
+            outcome = ToolExecutionOutcome.Failed(failureReason),
         )
         terminal?.let { messageManager.mirrorPersistedMessage(key.sessionId, it) }
     }

@@ -60,6 +60,7 @@ data class GenerationTaskSnapshot(
     val generatedChars: Int,
     val startedAt: Long,
     val error: GenerationError? = null,
+    val progress: GenerationProgress = GenerationProgress(),
 )
 
 sealed interface StartGenerationResult {

@@ -253,6 +253,28 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         SessionRepository(database.sessionDao(), database.messageDao())
     }
 
+    val sessionToolGrantStore by lazy {
+        com.promenar.nexara.data.repository.SessionToolGrantStore(java.io.File(noBackupFilesDir, "tool-grants"))
+    }
+    val toolOutputStore by lazy {
+        com.promenar.nexara.data.repository.ToolOutputStore(java.io.File(noBackupFilesDir, "tool-outputs"))
+    }
+    val generationInteractions by lazy { com.promenar.nexara.data.generation.GenerationInteractionStore() }
+
+    suspend fun verifyTargetGrant(
+        session: com.promenar.nexara.data.model.Session,
+        skill: com.promenar.nexara.ui.chat.manager.registry.SkillDefinition,
+        args: kotlinx.serialization.json.JsonObject,
+        target: String,
+    ): Boolean {
+        val tool = com.promenar.nexara.data.remote.protocol.ProtocolTool(
+            function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction(skill.name, skill.description, skill.parametersSchema),
+            risk = skill.risk, runtimeToolId = skill.runtimeToolId, sourceId = skill.sourceId, mcpServerId = skill.mcpServerId,
+        )
+        return com.promenar.nexara.data.generation.resolveSessionToolTarget(session, tool, args.toString(), workspaceRepository) == target &&
+            sessionToolGrantStore.contains(session.id, skill.name, target)
+    }
+
     val messageRepository: IMessageRepository by lazy {
         MessageRepository(database.messageDao())
     }
@@ -357,6 +379,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                     target.fileUuids,
                 )
             },
+            cleanupSessionData = { sessionId ->
+                com.promenar.nexara.data.session.cleanupSessionRuntimeData(
+                    { sessionToolGrantStore.deleteSession(sessionId) },
+                    { toolOutputStore.deleteSession(sessionId) },
+                )
+            },
         )
     }
 
@@ -405,6 +433,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             taskRepository,
             toolExecutionLedger,
             sessionExecutionGate,
+            grantVerifier = this::verifyTargetGrant,
         )
     }
     private val generationPostProcessor by lazy {
@@ -452,6 +481,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             toolResolver = sessionToolResolver,
             presentationStore = generationPresentationStore,
             skillCatalog = { agentSkillStore.enabledSkills() },
+            toolGrantStore = sessionToolGrantStore,
+            workspaceRepository = workspaceRepository,
+            outputStore = toolOutputStore,
+            interactionStore = generationInteractions,
         )
         com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
             applicationScope = generationScope,
@@ -578,6 +611,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             register(InitializePlanSkill(taskRepository))
             register(UpdatePlanSkill(taskRepository))
             register(GetPlanSkill(taskRepository))
+            register(com.promenar.nexara.ui.chat.manager.skills.ReadToolOutputSkill(toolOutputStore))
             register(DropPlanSkill(taskRepository))
         }
     }

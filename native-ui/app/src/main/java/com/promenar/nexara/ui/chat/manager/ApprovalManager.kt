@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.chat.manager
 
 import com.promenar.nexara.data.model.ApprovalRequest
+import com.promenar.nexara.data.model.ApprovalCallIdentity
+import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.ExecutionStep
 import com.promenar.nexara.data.model.LoopStatus
 import com.promenar.nexara.data.model.MessageRole
@@ -13,6 +15,7 @@ import com.promenar.nexara.data.repository.ApprovalTransition
 import com.promenar.nexara.data.repository.ExactToolApprovalCompletion
 import com.promenar.nexara.data.repository.ExactToolApprovalDecision
 import com.promenar.nexara.data.repository.ToolApprovalRequestFactory
+import com.promenar.nexara.data.repository.SessionToolGrantStore
 import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.ui.chat.ChatStore
 import kotlinx.coroutines.CancellationException
@@ -29,6 +32,8 @@ class ApprovalManager(
     private val messageManager: MessageManager,
     private val sessionRepository: ISessionRepository,
     private val executionGate: SessionExecutionGate? = null,
+    private val toolGrantStore: SessionToolGrantStore? = null,
+    private val resolveExecutionTarget: (suspend (Session, String, ApprovalCallIdentity) -> String?)? = null,
 ) {
     private val approvalLocks = ConcurrentHashMap<String, Mutex>()
     private var onGenerateMessage: (suspend (sessionId: String, content: String, isResumption: Boolean) -> Unit)? = null
@@ -71,11 +76,12 @@ class ApprovalManager(
         sessionId: String,
         expectedRequest: ApprovalRequest? = null,
         approved: Boolean = true,
-        intervention: String? = null
+        intervention: String? = null,
+        rememberTarget: Boolean = false,
     ) {
         val action: suspend () -> Unit = {
             approvalLock(sessionId).withLock {
-                resumeGenerationLocked(sessionId, expectedRequest, approved, intervention)
+                resumeGenerationLocked(sessionId, expectedRequest, approved, intervention, rememberTarget)
             }
         }
         val gate = executionGate
@@ -103,6 +109,7 @@ class ApprovalManager(
         expectedRequest: ApprovalRequest?,
         approved: Boolean,
         intervention: String?,
+        rememberTarget: Boolean,
     ) {
         val session = store.getSession(sessionId) ?: return
         val approvalRequest = session.approvalRequest ?: return
@@ -117,7 +124,7 @@ class ApprovalManager(
         }
         val exact = expectedRequest ?: return
         if (approvalRequest != exact || !ToolApprovalRequestFactory.isValid(exact)) return
-        resumeExactToolApproval(sessionId, session, exact, approved, intervention)
+        resumeExactToolApproval(sessionId, session, exact, approved, intervention, rememberTarget)
     }
 
     private suspend fun resumeExactToolApproval(
@@ -126,12 +133,30 @@ class ApprovalManager(
         request: ApprovalRequest,
         approved: Boolean,
         intervention: String?,
+        rememberTarget: Boolean,
     ) {
         if (approved && onExecuteTools == null) return
         val assistantMessageId = request.assistantMessageId ?: return
         val targetMessage = session.messages.firstOrNull {
             it.id == assistantMessageId && it.role == MessageRole.ASSISTANT
         } ?: return
+        val currentCall = request.calls.first()
+        val resolve = resolveExecutionTarget
+        if (currentCall.executionTarget != null && resolve != null) {
+            val resolved = try {
+                resolve(session, assistantMessageId, currentCall)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            if (resolved != currentCall.executionTarget) {
+                terminateCurrentApproval(sessionId, ToolLedgerState.CANCELLED, assistantMessageId)
+                setApprovalRequest(sessionId, null)
+                setLoopStatus(sessionId, LoopStatus.PAUSED)
+                return
+            }
+        }
         val decision = ledger.decideExactToolApproval(sessionId, request, approved)
         if (decision !is ExactToolApprovalDecision.Decided) return
 
@@ -158,6 +183,13 @@ class ApprovalManager(
         }
         if (approved) {
             try {
+                if (rememberTarget) {
+                    val current = request.calls.first()
+                    current.executionTarget?.takeIf(String::isNotBlank)?.let { target ->
+                        val grants = checkNotNull(toolGrantStore) { "会话授权存储不可用" }
+                        grants.grant(sessionId, current.toolName, target)
+                    }
+                }
                 onExecuteTools?.invoke(
                     sessionId,
                     assistantMessageId,
@@ -241,10 +273,15 @@ class ApprovalManager(
         return completion
     }
 
-    private suspend fun terminateCurrentApproval(sessionId: String, state: ToolLedgerState) {
+    private suspend fun terminateCurrentApproval(
+        sessionId: String,
+        state: ToolLedgerState,
+        assistantMessageId: String? = null,
+    ) {
         val session = store.getSession(sessionId) ?: return
         val target = session.messages.lastOrNull {
-            it.role == MessageRole.ASSISTANT && !it.pendingApprovalToolIds.isNullOrEmpty()
+            it.role == MessageRole.ASSISTANT && !it.pendingApprovalToolIds.isNullOrEmpty() &&
+                (assistantMessageId == null || it.id == assistantMessageId)
         } ?: return
         terminalPendingTools(sessionId, target.id, state)
         mirrorClosedApproval(sessionId, target.id, LoopStatus.PAUSED)

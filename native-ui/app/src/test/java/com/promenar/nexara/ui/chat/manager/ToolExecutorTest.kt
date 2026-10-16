@@ -17,6 +17,7 @@ import com.promenar.nexara.data.repository.ToolInvocationIdentityResolution
 import com.promenar.nexara.data.repository.ToolLedgerState
 import com.promenar.nexara.data.repository.ToolRegistrationResult
 import com.promenar.nexara.data.repository.ToolTerminalRequest
+import com.promenar.nexara.data.repository.SessionToolGrantStore
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
@@ -29,6 +30,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -39,6 +42,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.boolean
 import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
 import com.promenar.nexara.domain.tool.ToolRisk
+import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import kotlinx.coroutines.CancellationException
 import io.mockk.coEvery
 import io.mockk.every
@@ -46,6 +50,8 @@ import io.mockk.mockk
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ToolExecutorTest {
+    @get:Rule
+    val grantFiles = TemporaryFolder()
     private lateinit var store: ChatStore
     private lateinit var toolExecutor: ToolExecutor
     private lateinit var messageManager: MessageManager
@@ -514,6 +520,198 @@ class ToolExecutorTest {
         assertThat(executions).isEqualTo(0)
         assertThat(ledger.state(ToolExecutionKey("s1", "m1", "revoked-builtin")))
             .isEqualTo(ToolLedgerState.FAILED)
+    }
+
+    @Test
+    fun `批次内移动 uuid 后仅持旧目标授权的写入和删除在副作用前拒绝`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val paths = mutableMapOf("entry" to "/before/a.md")
+        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        val oldTarget = """["path","/before/a.md"]"""
+        grants.grant("s1", "write_file", oldTarget)
+        grants.grant("s1", "delete_file", oldTarget)
+        val sideEffects = mutableListOf<String>()
+        val move = testSkill(
+            name = "move_file",
+            schema = """{"type":"object","properties":{"uuid":{"type":"string"},"newParentPath":{"type":"string"}},"required":["uuid","newParentPath"]}""",
+            risk = ToolRisk.FILE_WRITE,
+        ) { args ->
+            paths[args.getValue("uuid").jsonPrimitive.content] = "/after/a.md"
+            sideEffects += "move"
+            ToolResult("move-result", "moved", status = "success")
+        }
+        val write = testSkill(
+            "write_file", schema = """{"type":"object","properties":{"uuid":{"type":"string"}},"required":["uuid"]}""",
+            risk = ToolRisk.FILE_WRITE,
+        ) {
+            sideEffects += "write"
+            ToolResult("write-result", "written", status = "success")
+        }
+        val delete = testSkill(
+            "delete_file", schema = """{"type":"object","properties":{"uuid":{"type":"string"}},"required":["uuid"]}""",
+            risk = ToolRisk.DELETE,
+        ) {
+            sideEffects += "delete"
+            ToolResult("delete-result", "deleted", status = "success")
+        }
+        val registry = skillsRegistry(move, write, delete)
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(
+            store, messageManager, registry, testToolResolver(registry), ledger = ledger,
+            grantVerifier = { session, skill, args, expected ->
+                ToolExecutionTargets.extract(skill.toPreparedTool(), args.toString(), paths) == expected &&
+                    grants.contains(session.id, skill.name, expected)
+            },
+        )
+        val calls = listOf(
+            ToolCall("move", "move_file", """{"uuid":"entry","newParentPath":"/after"}"""),
+            ToolCall("write", "write_file", """{"uuid":"entry"}"""),
+            ToolCall("delete", "delete_file", """{"uuid":"entry"}"""),
+        )
+
+        executor.executeTools(
+            "s1", "m1", calls, preparedTools = registry.getAllTools(),
+            expectedGrantTargets = mapOf("write" to oldTarget, "delete" to oldTarget),
+        )
+
+        assertThat(paths["entry"]).isEqualTo("/after/a.md")
+        assertThat(sideEffects).containsExactly("move")
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", "move"))).isEqualTo(ToolLedgerState.SUCCEEDED)
+        listOf("write", "delete").forEach { id ->
+            assertThat(ledger.state(ToolExecutionKey("s1", "m1", id))).isEqualTo(ToolLedgerState.FAILED)
+            val message = store.getSession("s1")!!.messages.single { it.role == MessageRole.TOOL && it.toolCallId == id }
+            assertThat(message.content).contains("授权")
+        }
+    }
+
+    @Test
+    fun `授权撤销后已准备的免审批调用在执行前拒绝`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val target = """["path","/a.md"]"""
+        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        grants.grant("s1", "write_file", target)
+        var writes = 0
+        val skill = testSkill("write_file") { writes++; ToolResult("write", "written", status = "success") }
+        val registry = singleSkillRegistry(skill)
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(
+            store, messageManager, registry, testToolResolver(registry), ledger = ledger,
+            hooks = ToolExecutorHooks(beforeAppendStep = { grants.revoke("s1", "write_file", target) }),
+            grantVerifier = { session, currentSkill, _, expected -> grants.contains(session.id, currentSkill.name, expected) },
+        )
+        val prepared = registry.getAllTools()
+
+        executor.executeTools(
+            "s1", "m1", listOf(ToolCall("write", "write_file", "{}")), preparedTools = prepared,
+            expectedGrantTargets = mapOf("write" to target),
+        )
+
+        assertThat(writes).isEqualTo(0)
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", "write"))).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(store.getSession("s1")!!.messages.single { it.role == MessageRole.TOOL }.content).contains("授权")
+    }
+
+    @Test
+    fun `目标与持久授权未变的免审批调用正常执行一次`() = testScope.runTest {
+        seedSessionWithAssistant()
+        val paths = mapOf("entry" to "/docs/a.md")
+        val target = """["path","/docs/a.md"]"""
+        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        grants.grant("s1", "write_file", target)
+        var writes = 0
+        val skill = testSkill(
+            "write_file", schema = """{"type":"object","properties":{"uuid":{"type":"string"}},"required":["uuid"]}""",
+            risk = ToolRisk.FILE_WRITE,
+        ) { writes++; ToolResult("write", "written", status = "success") }
+        val registry = singleSkillRegistry(skill)
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(
+            store, messageManager, registry, testToolResolver(registry), ledger = ledger,
+            grantVerifier = { session, currentSkill, args, expected ->
+                ToolExecutionTargets.extract(currentSkill.toPreparedTool(), args.toString(), paths) == expected &&
+                    grants.contains(session.id, currentSkill.name, expected)
+            },
+        )
+
+        executor.executeTools(
+            "s1", "m1", listOf(ToolCall("write", "write_file", """{"uuid":"entry"}""")),
+            preparedTools = registry.getAllTools(), expectedGrantTargets = mapOf("write" to target),
+        )
+
+        assertThat(writes).isEqualTo(1)
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", "write"))).isEqualTo(ToolLedgerState.SUCCEEDED)
+        assertThat(store.getSession("s1")!!.messages.single { it.role == MessageRole.TOOL }.content).isEqualTo("written")
+    }
+
+    @Test
+    fun `免审批调用缺失授权验证器时失败关闭而普通批准保持可执行`() = testScope.runTest {
+        seedSessionWithAssistant()
+        var writes = 0
+        val skill = testSkill("write_file") { writes++; ToolResult("write", "written", status = "success") }
+        val registry = singleSkillRegistry(skill)
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = ledger)
+
+        executor.executeTools(
+            "s1", "m1", listOf(ToolCall("grant", "write_file", "{}")), preparedTools = registry.getAllTools(),
+            expectedGrantTargets = mapOf("grant" to """["path","/a.md"]"""),
+        )
+        executor.executeTools(
+            "s1", "m1", listOf(ToolCall("approved", "write_file", "{}")), preparedTools = registry.getAllTools(),
+        )
+
+        assertThat(writes).isEqualTo(1)
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", "grant"))).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", "approved"))).isEqualTo(ToolLedgerState.SUCCEEDED)
+    }
+
+    @Test
+    fun `授权验证异常受控拒绝且不暴露异常详情`() = testScope.runTest {
+        seedSessionWithAssistant()
+        var writes = 0
+        val skill = testSkill("write_file") { writes++; ToolResult("write", "written", status = "success") }
+        val registry = singleSkillRegistry(skill)
+        val ledger = RecordingLedger()
+        val executor = ToolExecutor(
+            store, messageManager, registry, testToolResolver(registry), ledger = ledger,
+            grantVerifier = { _, _, _, _ -> throw IllegalStateException("授权读取内部详情") },
+        )
+
+        executor.executeTools(
+            "s1", "m1", listOf(ToolCall("grant", "write_file", "{}")), preparedTools = registry.getAllTools(),
+            expectedGrantTargets = mapOf("grant" to """["path","/a.md"]"""),
+        )
+
+        assertThat(writes).isEqualTo(0)
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", "grant"))).isEqualTo(ToolLedgerState.FAILED)
+        val message = store.getSession("s1")!!.messages.single { it.role == MessageRole.TOOL }
+        assertThat(message.content).contains("授权")
+        assertThat(message.content).doesNotContain("授权读取内部详情")
+    }
+
+    @Test
+    fun `授权验证取消沿用取消补偿且不会执行工具`() = testScope.runTest {
+        seedSessionWithAssistant()
+        var writes = 0
+        val skill = testSkill("write_file") { writes++; ToolResult("write", "written", status = "success") }
+        val registry = singleSkillRegistry(skill)
+        val ledger = RecordingLedger()
+        val cancellation = CancellationException("授权验证取消")
+        val executor = ToolExecutor(
+            store, messageManager, registry, testToolResolver(registry), ledger = ledger,
+            grantVerifier = { _, _, _, _ -> throw cancellation },
+        )
+
+        val failure = runCatching {
+            executor.executeTools(
+                "s1", "m1", listOf(ToolCall("grant", "write_file", "{}")), preparedTools = registry.getAllTools(),
+                expectedGrantTargets = mapOf("grant" to """["path","/a.md"]"""),
+            )
+        }.exceptionOrNull()
+
+        assertThat(failure).isSameInstanceAs(cancellation)
+        assertThat(writes).isEqualTo(0)
+        assertThat(ledger.state(ToolExecutionKey("s1", "m1", "grant"))).isEqualTo(ToolLedgerState.CANCELLED)
     }
 
     @Test
@@ -1479,6 +1677,7 @@ class ToolExecutorTest {
         name: String,
         description: String = "test",
         schema: String = """{"type":"object","properties":{}}""",
+        risk: ToolRisk = ToolRisk.SAFE_READ,
         execute: suspend (JsonObject) -> ToolResult,
     ) = object : SkillDefinition {
         override val id = name
@@ -1486,7 +1685,7 @@ class ToolExecutorTest {
         override val description = description
         override val mcpServerId: String? = null
         override val parametersSchema = schema
-        override val risk = ToolRisk.SAFE_READ
+        override val risk = risk
         override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = execute(args)
     }
 
@@ -1494,6 +1693,12 @@ class ToolExecutorTest {
         override fun getSkill(name: String): SkillDefinition? = skill.takeIf { it.name == name }
         override fun getAllSkills(): List<SkillDefinition> = listOf(skill)
         override fun getAllTools(allowedIds: List<String>?): List<ProtocolTool> = listOf(skill.toPreparedTool())
+    }
+
+    private fun skillsRegistry(vararg skills: SkillDefinition) = object : SkillRegistry {
+        override fun getSkill(name: String): SkillDefinition? = skills.singleOrNull { it.name == name }
+        override fun getAllSkills(): List<SkillDefinition> = skills.toList()
+        override fun getAllTools(allowedIds: List<String>?): List<ProtocolTool> = skills.map { it.toPreparedTool() }
     }
 
     private fun testToolResolver(registry: SkillRegistry?) = SessionToolResolver { session ->

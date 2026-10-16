@@ -135,7 +135,17 @@ internal class DefaultChatGenerationRuntime(
     private val contentStrategy: ChatGenerationContentStrategy,
     private val ui: GenerationUiPort,
     private val skillCatalog: () -> List<com.promenar.nexara.data.skills.AgentSkillMetadata> = { emptyList() },
+    private val toolGrantStore: com.promenar.nexara.data.repository.SessionToolGrantStore? = null,
+    private val workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository? = null,
+    private val outputStore: com.promenar.nexara.data.repository.ToolOutputStore? = null,
+    private val interactionStore: GenerationInteractionStore? = null,
 ) : ChatGenerationRuntime {
+    private val inFlightCompressor = InFlightToolContextCompressor()
+    private var activeToolBudget: GenerationToolBudget? = null
+    private var baselineTokens = 0L
+    private var mainSpentTokens = 0L
+    private var summarySpentTokens = 0L
+    private var summaryUsageEstimated = false
     private var preparedRoute: ChatProviderRoute? = null
     private var preparedContext: ContextBuilderResult? = null
     private var preparedPrompt: PromptRequest? = null
@@ -157,6 +167,18 @@ internal class DefaultChatGenerationRuntime(
             it.id == assistantMessageId(request) && it.role == MessageRole.ASSISTANT
         }) { "生成目标消息不存在" }
         ui.setGenerating(true)
+        activeToolBudget = readToolBudget()
+        baselineTokens = consumedToolUsageInTurn(session.messages, request).tokens
+        ensureAutomaticConsent(request, session.executionMode)
+    }
+
+    private suspend fun ensureAutomaticConsent(request: GenerationRequest, mode: String) {
+        val consent = UnlimitedAutomationConsent(settings)
+        if (consent.requiresConfirmation(toolBudget(request).maxRounds == 0, mode)) {
+            val confirmed = interactionStore?.awaitDecision(request.sessionId, GenerationInteractionKind.UNLIMITED_AUTO) == true
+            if (!confirmed) throw CancellationException("用户未确认不限轮次全自动执行")
+            consent.confirm()
+        }
     }
 
     override suspend fun buildContext(request: GenerationRequest): GenerationPreparationOutcome {
@@ -269,20 +291,55 @@ internal class DefaultChatGenerationRuntime(
             stream = true,
             streamTimeout = (inference.streamTimeout ?: 120).toLong() * 1000,
         )
-        val compaction = PreparedPromptBudgetGate.compactToolResults(session, prompt, settings, route.modelId)
-        val budgetedPrompt = if (compaction != null && compaction.elidedCount > 0) {
-            NexaraLogger.diagnostic(
-                "generation.tool_results_compacted",
-                mapOf(
-                    "sessionId" to request.sessionId,
-                    "elided" to compaction.elidedCount.toString(),
-                    "estimatedTokens" to compaction.estimatedTokens.toString(),
-                ),
-            )
-            prompt.copy(messages = compaction.messages)
-        } else {
-            prompt
+        val offloaded = prompt.messages.map { message ->
+            if (message.role != "tool" || outputStore == null) message else {
+                val content = try {
+                    outputStore.offload(request.sessionId, message.content)
+                } catch (cancelled: CancellationException) { throw cancelled
+                } catch (_: java.io.IOException) {
+                    InFlightToolContextCompressor.headTail(message.content, 2000) +
+                        "\n[Output storage unavailable; full content remains in conversation history.]"
+                }
+                message.copy(content = content)
+            }
         }
+        val window = PreparedPromptBudgetGate.resolveWindow(session, prompt, settings, route.modelId)
+        val contextTokens = window.modelContextTokens
+        val requestMessages = if (contextTokens != null) {
+            val ratio = settings.getInt("tool_context_ratio_percent", 70).coerceIn(10, 90) / 100.0
+            val target = minOf((contextTokens * ratio).toInt(), contextTokens - window.outputReserveTokens)
+            val toolTokens = prompt.tools.orEmpty().sumOf {
+                ApproximateTokenEstimator.estimate(it.function.name + it.function.description + it.function.parameters)
+            }
+            inFlightCompressor.compact(
+                offloaded,
+                target.coerceAtLeast(1),
+                extraTokens = toolTokens,
+                keepRecentRounds = settings.getInt("tool_context_keep_rounds", 3).coerceIn(1, 10),
+            ) { text ->
+                val limit = toolBudget(request).maxTokens
+                if (finalAnswerMode || (limit > 0 && baselineTokens + mainSpentTokens + summarySpentTokens >= limit)) {
+                    null
+                } else {
+                    var reportedSummaryUsage: TokenUsage? = null
+                    val summarized = kotlinx.coroutines.withTimeoutOrNull(12_000) {
+                        RoutedToolResultSummarizer(routeGate, localProviderFactory).summarizeWithUsage(
+                            text, settings.getString("preset_summary_model", ""), route.modelId ?: prompt.model,
+                            onUsage = { reportedSummaryUsage = it },
+                        )
+                    }
+                    val usage = summarized?.usage ?: reportedSummaryUsage ?: TokenUsage(
+                        input = ApproximateTokenEstimator.estimate(text) + 128,
+                        output = 256,
+                        total = ApproximateTokenEstimator.estimate(text) + 384,
+                        estimated = true,
+                    )
+                    recordSummaryUsage(request, usage)
+                    summarized?.content
+                }
+            }
+        } else offloaded
+        val budgetedPrompt = prompt.copy(messages = requestMessages)
         val hasFullContextDocuments = request.userMessageId
             ?.let { id -> session.messages.firstOrNull { it.id == id } }
             ?.userDocuments
@@ -391,7 +448,7 @@ internal class DefaultChatGenerationRuntime(
             snapshot.content,
             UpdateMessageOptions(
                 reasoning = snapshot.reasoning.ifBlank { null },
-                tokens = TokenUsage(snapshot.inputTokens, snapshot.outputTokens, snapshot.totalTokens),
+                tokens = mainAndSummaryUsage(request, snapshot),
                 toolCalls = calls.takeIf { it.isNotEmpty() },
                 clearToolCalls = calls.isEmpty(),
                 citations = snapshot.citations.map {
@@ -404,17 +461,67 @@ internal class DefaultChatGenerationRuntime(
         )
     }
 
+    override suspend fun recordTaskUsage(request: GenerationRequest, snapshot: GenerationSnapshot) {
+        mainSpentTokens += snapshot.totalTokens
+        val content = store.getSession(request.sessionId)?.messages?.firstOrNull { it.id == assistantMessageId(request) }?.content
+            ?: return
+        messageManager.updateMessageContent(request.sessionId, assistantMessageId(request), content,
+            UpdateMessageOptions(tokens = mainAndSummaryUsage(request, snapshot)))
+    }
+
+    private fun mainAndSummaryUsage(request: GenerationRequest, snapshot: GenerationSnapshot): TokenUsage {
+        val existing = store.getSession(request.sessionId)?.messages?.firstOrNull { it.id == assistantMessageId(request) }?.tokens
+            ?: TokenUsage()
+        fun add(a: Int, b: Int) = (a.toLong() + b).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        return existing.copy(
+            input = add(snapshot.inputTokens, existing.summaryInput),
+            output = add(snapshot.outputTokens, existing.summaryOutput),
+            total = add(snapshot.totalTokens, existing.summaryTotal),
+            estimated = snapshot.tokensEstimated || existing.summaryEstimated,
+        )
+    }
+
+    private suspend fun recordSummaryUsage(request: GenerationRequest, usage: TokenUsage) {
+        summarySpentTokens += usage.total
+        summaryUsageEstimated = summaryUsageEstimated || usage.estimated
+        val message = store.getSession(request.sessionId)?.messages?.firstOrNull { it.id == assistantMessageId(request) } ?: return
+        val existing = message.tokens ?: TokenUsage()
+        fun add(a: Int, b: Int) = (a.toLong() + b).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val combined = existing.copy(
+            input = add(existing.input, usage.input), output = add(existing.output, usage.output), total = add(existing.total, usage.total),
+            estimated = existing.estimated || usage.estimated,
+            summaryInput = add(existing.summaryInput, usage.input), summaryOutput = add(existing.summaryOutput, usage.output),
+            summaryTotal = add(existing.summaryTotal, usage.total), summaryEstimated = existing.summaryEstimated || usage.estimated,
+        )
+        messageManager.updateMessageContent(request.sessionId, assistantMessageId(request), message.content, UpdateMessageOptions(tokens = combined))
+        messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
+    }
+
+    override fun additionalTokenUsage(request: GenerationRequest): GenerationToolUsage =
+        GenerationToolUsage(tokens = summarySpentTokens, tokensEstimated = summaryUsageEstimated)
+
     override suspend fun handleTools(
         request: GenerationRequest,
         toolCalls: List<GenerationToolCall>,
     ): GenerationToolDecision {
         val session = store.getSession(request.sessionId) ?: error("生成会话不存在")
         messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
+        ensureAutomaticConsent(request, session.executionMode.ifEmpty { "semi" })
         val calls = toolCalls.map { ToolCall(it.id, it.name, it.arguments) }
-        val requestedPendingIds = contentStrategy
+        val policyPendingIds = contentStrategy
             .pendingApprovalIds(calls, session.executionMode.ifEmpty { "semi" })
             .toSet()
         val preparedByName = preparedTools.groupBy { it.function.name }
+        val targets = calls.associate { call ->
+            val tool = preparedByName[call.name]?.singleOrNull()
+            call.id to tool?.let { resolveSessionToolTarget(session, it, call.arguments, workspaceRepository) }
+        }
+        val requestedPendingIds = policyPendingIds.filterTo(mutableSetOf()) { id ->
+            val call = calls.first { it.id == id }
+            val target = targets[id]
+            target == null || toolGrantStore?.contains(session.id, call.name, target) != true
+        }
+        val grantTargets = (policyPendingIds - requestedPendingIds).associateWith { targets.getValue(it)!! }
         val validInvocations = calls.mapNotNull { call ->
             val tool = preparedByName[call.name]?.singleOrNull() ?: return@mapNotNull null
             val resolved = ToolInvocationIdentityFactory.fromPreparedToolCall(
@@ -437,12 +544,13 @@ internal class DefaultChatGenerationRuntime(
             calls,
             allowedIds,
             preparedTools,
+            expectedGrantTargets = grantTargets,
         )
         if (pendingIds.isNotEmpty()) {
             val approval = ToolApprovalRequestFactory.create(
                 assistantMessageId = assistantMessageId(request),
                 candidates = validInvocations.filter { it.first.id in pendingIds }.map { (call, tool, identity) ->
-                    ApprovalCallCandidate(call, tool.risk, identity)
+                    ApprovalCallCandidate(call, tool.risk, identity, executionTarget = targets[call.id])
                 },
                 reason = "Execution mode: ${session.executionMode.ifEmpty { "semi" }}",
             )
@@ -483,10 +591,28 @@ internal class DefaultChatGenerationRuntime(
         return GenerationToolDecision.CONTINUE
     }
 
-    override fun toolBudget(request: GenerationRequest): GenerationToolBudget = GenerationToolBudget(
-        maxRounds = settings.getInt(LOOP_LIMIT_KEY, DEFAULT_TOOL_ROUNDS_PER_GENERATION)
-            .coerceIn(1, MAX_CONFIGURABLE_TOOL_ROUNDS),
-    )
+    override fun toolBudget(request: GenerationRequest): GenerationToolBudget = activeToolBudget ?: readToolBudget()
+
+    private fun readToolBudget(): GenerationToolBudget {
+        val saved = settings.getInt(LOOP_LIMIT_KEY, DEFAULT_TOOL_ROUNDS_PER_GENERATION)
+        return GenerationToolBudget(
+            maxRounds = if (saved == 0) 0 else saved.coerceIn(1, MAX_CONFIGURABLE_TOOL_ROUNDS),
+            maxCalls = if (saved == 0) 0 else com.promenar.nexara.domain.generation.MAX_TOOL_CALLS_PER_GENERATION,
+            maxTokens = settings.getInt("task_token_limit", 0).coerceAtLeast(0).toLong(),
+        )
+    }
+
+    override fun estimatedInputTokens(request: GenerationRequest): Int = preparedPrompt?.let { prompt ->
+        prompt.messages.sumOf(ApproximateTokenEstimator::estimate) + prompt.tools.orEmpty().sumOf {
+            ApproximateTokenEstimator.estimate(it.function.name + it.function.description + it.function.parameters)
+        }
+    } ?: 0
+
+    override fun loopDetectionThreshold(request: GenerationRequest): Int =
+        settings.getInt("tool_loop_repeat_limit", 3).coerceIn(2, 20)
+
+    override suspend fun confirmLoopContinuation(request: GenerationRequest): Boolean =
+        interactionStore?.awaitDecision(request.sessionId, GenerationInteractionKind.REPEATED_TOOL) == true
 
     override suspend fun consumedToolUsage(request: GenerationRequest): GenerationToolUsage {
         val messages = store.getSession(request.sessionId)?.messages ?: return GenerationToolUsage()
@@ -891,14 +1017,26 @@ internal fun consumedToolUsageInTurn(
     val excluded = request.messageIdsToReplace + request.assistantMessageId
     var rounds = 0
     var calls = 0
+    var tokens = 0L
+    var estimated = false
     for (message in messages.drop(start + 1)) {
         if (message.role == MessageRole.USER) break
         if (message.role != MessageRole.ASSISTANT || message.id in excluded) continue
+        val usage = message.tokens
+        val reported = usage?.let { maxOf(it.total.toLong(), it.input.toLong() + it.output) } ?: 0
+        if (reported > 0) {
+            tokens += reported
+            estimated = estimated || usage?.estimated == true
+        } else {
+            tokens += ApproximateTokenEstimator.estimate(message.content + message.reasoning.orEmpty()) +
+                message.toolCalls.orEmpty().sumOf { ApproximateTokenEstimator.estimate(it.name + it.arguments) }
+            if (message.content.isNotBlank() || !message.reasoning.isNullOrBlank() || !message.toolCalls.isNullOrEmpty()) estimated = true
+        }
         val count = message.toolCalls?.size ?: 0
         if (count > 0) {
             rounds++
             calls += count
         }
     }
-    return GenerationToolUsage(rounds, calls)
+    return GenerationToolUsage(rounds, calls, tokens, estimated)
 }

@@ -29,10 +29,11 @@ class SessionDeletionCoordinatorTest {
                 override suspend fun complete(staged: StagedSessionWorkspaceMutation) = Unit
             },
             deleteDatabase = { _, _ -> error("不应进入工作区删除事务") },
+            cleanupSessionData = { events += "private-data-cleanup" },
         )
 
         assertThat(coordinator.delete("session-1")).isEqualTo(SessionDeletionResult.Deleted)
-        assertThat(events).containsExactly("generation", "execution", "database-only").inOrder()
+        assertThat(events).containsExactly("generation", "execution", "database-only", "private-data-cleanup").inOrder()
     }
 
     @Test
@@ -55,7 +56,106 @@ class SessionDeletionCoordinatorTest {
             "vector-commit",
             "journal-complete",
             "post-commit",
+            "private-data-cleanup",
         ).inOrder()
+    }
+
+    @Test
+    fun `首次解析已删除会话时仍清理遗留私有数据`() = runTest {
+        val events = mutableListOf<String>()
+        val coordinator = coordinator(target(), events, resolve = { null })
+
+        assertThat(coordinator.delete("session-1")).isEqualTo(SessionDeletionResult.AlreadyDeleted)
+        assertThat(events).containsExactly("private-data-cleanup")
+    }
+
+    @Test
+    fun `锁定后确认会话已删除时仍清理遗留私有数据`() = runTest {
+        val events = mutableListOf<String>()
+        var resolutions = 0
+        val coordinator = coordinator(
+            target(),
+            events,
+            resolve = { if (resolutions++ == 0) target() else null },
+        )
+
+        assertThat(coordinator.delete("session-1")).isEqualTo(SessionDeletionResult.AlreadyDeleted)
+        assertThat(events).containsExactly("generation-cancel-join", "private-data-cleanup").inOrder()
+    }
+
+    @Test
+    fun `数据库提交后即使journal收尾失败也清理私有数据`() = runTest {
+        val events = mutableListOf<String>()
+        val failure = java.io.IOException("journal completion failed")
+
+        val result = coordinator(target(), events, completionFailure = failure).delete("session-1")
+
+        assertThat(result).isInstanceOf(SessionDeletionResult.Failed::class.java)
+        assertThat((result as SessionDeletionResult.Failed).error.cause).hasMessageThat().isEqualTo(failure.message)
+        assertThat(events.takeLast(3))
+            .containsExactly("vector-commit", "journal-complete", "private-data-cleanup").inOrder()
+    }
+
+    @Test
+    fun `私有数据清理失败可在已删除路径重试且不重复提交数据库`() = runTest {
+        var current: SessionDeletionTarget? = target()
+        var databaseDeleteCount = 0
+        val cleanupSessions = mutableListOf<String>()
+        val coordinator = SessionDeletionCoordinator(
+            gate = SessionExecutionGate(),
+            resolveTarget = { current },
+            cancelAndJoinGeneration = {},
+            closePendingExecution = {},
+            acquireVectorBarrier = { NoOpSessionDeletionBarrier },
+            journal = object : SessionWorkspaceMutationJournal {
+                override suspend fun stage(target: SessionDeletionTarget) = StagedSessionWorkspaceMutation("op", target)
+                override suspend fun rollback(staged: StagedSessionWorkspaceMutation) = Unit
+                override suspend fun complete(staged: StagedSessionWorkspaceMutation) = Unit
+            },
+            deleteDatabase = { _, _ ->
+                databaseDeleteCount++
+                current = null
+            },
+            cleanupSessionData = { session ->
+                cleanupSessions += session
+                if (cleanupSessions.size == 1) throw java.io.IOException("cleanup failed")
+            },
+        )
+
+        val first = coordinator.delete("session-1")
+        assertThat(first).isInstanceOf(SessionDeletionResult.Failed::class.java)
+        assertThat((first as SessionDeletionResult.Failed).error.code).isEqualTo(SessionDeletionErrorCode.WORKSPACE)
+        assertThat(coordinator.delete("session-1")).isEqualTo(SessionDeletionResult.AlreadyDeleted)
+        assertThat(databaseDeleteCount).isEqualTo(1)
+        assertThat(cleanupSessions).containsExactly("session-1", "session-1").inOrder()
+    }
+
+    @Test
+    fun `无工作区数据库删除失败时不得清理私有数据`() = runTest {
+        val events = mutableListOf<String>()
+        val failure = IllegalStateException("database failed")
+        val coordinator = databaseOnlyCoordinator(events) {
+            events += "database-only"
+            throw failure
+        }
+
+        val result = coordinator.delete("session-1")
+
+        assertThat(result).isInstanceOf(SessionDeletionResult.Failed::class.java)
+        assertThat((result as SessionDeletionResult.Failed).error.cause).isSameInstanceAs(failure)
+        assertThat(events).containsExactly("generation", "execution", "database-only").inOrder()
+    }
+
+    @Test
+    fun `无工作区数据库确认已删除时仍清理私有数据`() = runTest {
+        val events = mutableListOf<String>()
+        val coordinator = databaseOnlyCoordinator(events) {
+            events += "database-only"
+            false
+        }
+
+        assertThat(coordinator.delete("session-1")).isEqualTo(SessionDeletionResult.AlreadyDeleted)
+        assertThat(events).containsExactly("generation", "execution", "database-only", "private-data-cleanup").inOrder()
     }
 
     @Test
@@ -395,9 +495,11 @@ class SessionDeletionCoordinatorTest {
         events: MutableList<String>,
         databaseFailure: Throwable? = null,
         completionFailure: Throwable? = null,
+        resolve: suspend (String) -> SessionDeletionTarget? = { target },
+        cleanupSessionData: suspend (String) -> Unit = { events += "private-data-cleanup" },
     ) = SessionDeletionCoordinator(
         gate = SessionExecutionGate(),
-        resolveTarget = { target },
+        resolveTarget = resolve,
         cancelAndJoinGeneration = { events += "generation-cancel-join" },
         closePendingExecution = { events += "approval-close" },
         acquireVectorBarrier = {
@@ -424,5 +526,26 @@ class SessionDeletionCoordinatorTest {
             databaseFailure?.let { throw it }
         },
         afterDatabaseCommit = { events += "post-commit" },
+        cleanupSessionData = cleanupSessionData,
+    )
+
+    private fun databaseOnlyCoordinator(
+        events: MutableList<String>,
+        deleteDatabaseOnly: suspend (String) -> Boolean,
+    ) = SessionDeletionCoordinator(
+        gate = SessionExecutionGate(),
+        resolveTarget = { error("无工作区会话不应解析物理根") },
+        isDatabaseOnlySession = { true },
+        deleteDatabaseOnly = deleteDatabaseOnly,
+        cancelAndJoinGeneration = { events += "generation" },
+        closePendingExecution = { events += "execution" },
+        acquireVectorBarrier = { error("不应申请工作区向量屏障") },
+        journal = object : SessionWorkspaceMutationJournal {
+            override suspend fun stage(target: SessionDeletionTarget) = error("不应stage")
+            override suspend fun rollback(staged: StagedSessionWorkspaceMutation) = Unit
+            override suspend fun complete(staged: StagedSessionWorkspaceMutation) = Unit
+        },
+        deleteDatabase = { _, _ -> error("不应进入工作区删除事务") },
+        cleanupSessionData = { events += "private-data-cleanup" },
     )
 }

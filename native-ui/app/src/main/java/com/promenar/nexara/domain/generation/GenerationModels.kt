@@ -21,7 +21,7 @@ enum class GenerationRuntimePolicy { BACKGROUND_ALLOWED, FOREGROUND_ONLY }
 /** Provider 明确声明的成功终止原因；不得由 EOF 或局部内容推断。 */
 enum class CompletionReason { END_TURN, TOOL_CALLS }
 
-/** 单次生成允许确认的工具调用总数硬上限，与工具循环轮次上限相互独立。 */
+/** 固定轮次模式的调用次数上限。 */
 const val MAX_TOOL_CALLS_PER_GENERATION = 200
 
 /** 未配置时单次生成允许的工具循环轮次。 */
@@ -30,14 +30,16 @@ const val DEFAULT_TOOL_ROUNDS_PER_GENERATION = 50
 /** 用户可配置的工具循环轮次上限。 */
 const val MAX_CONFIGURABLE_TOOL_ROUNDS = 100
 
-/** 单次生成的工具预算；任一维度耗尽后拒绝剩余调用并进入一次无新工具执行的总结轮。 */
+/** 单次任务预算；0 表示该维度不限，耗尽后进入一次只收尾的请求。 */
 data class GenerationToolBudget(
     val maxRounds: Int = DEFAULT_TOOL_ROUNDS_PER_GENERATION,
     val maxCalls: Int = MAX_TOOL_CALLS_PER_GENERATION,
+    val maxTokens: Long = 0,
 ) {
     init {
-        require(maxRounds > 0) { "maxRounds 必须大于 0" }
-        require(maxCalls > 0) { "maxCalls 必须大于 0" }
+        require(maxRounds >= 0) { "maxRounds 不得为负，0 表示不限" }
+        require(maxCalls >= 0) { "maxCalls 不得为负，0 表示不限" }
+        require(maxTokens >= 0) { "maxTokens 不得为负，0 表示关闭" }
     }
 }
 
@@ -55,7 +57,19 @@ data class GenerationRequest(
 )
 
 /** 已消耗的工具轮次与调用数。 */
-data class GenerationToolUsage(val rounds: Int = 0, val calls: Int = 0)
+data class GenerationToolUsage(
+    val rounds: Int = 0,
+    val calls: Int = 0,
+    val tokens: Long = 0,
+    val tokensEstimated: Boolean = false,
+)
+
+data class GenerationProgress(
+    val rounds: Int = 0,
+    val calls: Int = 0,
+    val tokens: Long = 0,
+    val estimated: Boolean = false,
+)
 
 data class GenerationToolCall(
     val id: String,
@@ -72,6 +86,7 @@ data class GenerationSnapshot(
     val totalTokens: Int = 0,
     val citations: List<GenerationCitation> = emptyList(),
     val failure: GenerationFailure? = null,
+    val tokensEstimated: Boolean = false,
 )
 
 data class GenerationCitation(val title: String, val url: String, val source: String? = null)
@@ -97,6 +112,7 @@ sealed interface GenerationPreparationOutcome {
 enum class GenerationTerminalStatus { SUCCESS, ERROR, CANCELLED }
 
 sealed interface GenerationEvent {
+    data class ProgressChanged(val progress: GenerationProgress) : GenerationEvent
     data class PhaseChanged(val phase: GenerationPhase) : GenerationEvent
     data class SnapshotChanged(val snapshot: GenerationSnapshot) : GenerationEvent
     data class TargetChanged(val assistantMessageId: String) : GenerationEvent

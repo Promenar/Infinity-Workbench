@@ -34,6 +34,25 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     @Test
+    fun `不限轮次与任务预算可备份恢复且不迁移自动执行同意`() = runBlocking {
+        val prefs = context.getSharedPreferences("nexara_settings", 0)
+        prefs.edit().putInt("loop_limit", 0).putInt("task_token_limit", 20_000)
+            .putInt("tool_context_ratio_percent", 70).putInt("tool_context_keep_rounds", 3)
+            .putInt("tool_loop_repeat_limit", 3).putBoolean("unlimited_auto_confirmed", true).commit()
+        val snapshot = store().snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
+        assertThat(snapshot.entries.first { it.key == "loop_limit" }.value).isEqualTo("0")
+        assertThat(snapshot.entries.first { it.key == "task_token_limit" }.value).isEqualTo("20000")
+        assertThat(snapshot.entries.none { it.key == "unlimited_auto_confirmed" }).isTrue()
+        prefs.edit().clear().commit()
+        val before = store().snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
+        store().prepare("tx-p0-runtime", before, snapshot)
+        store().commitPrepared("tx-p0-runtime")
+        assertThat(prefs.getInt("loop_limit", -1)).isEqualTo(0)
+        assertThat(prefs.getInt("task_token_limit", -1)).isEqualTo(20_000)
+        assertThat(prefs.getBoolean("unlimited_auto_confirmed", false)).isFalse()
+    }
+
+    @Test
     fun `snapshot preserves all SharedPreferences value types across six namespaces and filters denied keys`(): Unit = runBlocking {
         context.getSharedPreferences("nexara_provider", 0).edit()
             .putString("model", "m1")

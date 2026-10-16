@@ -21,6 +21,9 @@ import com.promenar.nexara.domain.tool.ToolSchemaValidator
 import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import java.security.MessageDigest
@@ -58,6 +61,7 @@ data class ApprovalCallCandidate(
     val call: ToolCall,
     val risk: ToolRisk,
     val identity: ToolInvocationIdentity,
+    val executionTarget: String? = null,
 )
 
 object ToolApprovalRequestFactory {
@@ -85,6 +89,7 @@ object ToolApprovalRequestFactory {
                 requiresApproval = true,
                 argumentsSummary = summarizeArguments(candidate.call.arguments),
                 risk = candidate.risk.name.lowercase(),
+                executionTarget = candidate.executionTarget,
             )
         }
         return createFromIdentities(assistantMessageId, identities, reason)
@@ -113,7 +118,7 @@ object ToolApprovalRequestFactory {
                 call.toolCallId.isNotBlank() && call.runtimeToolId.isNotBlank() &&
                     call.toolName.isNotBlank() && call.argumentsDigest.isNotBlank() &&
                     call.definitionDigest.isNotBlank() && call.requiresApproval &&
-                    call.risk.isNotBlank()
+                    call.risk.isNotBlank() && (call.executionTarget == null || call.executionTarget.isNotBlank())
             } && request.identityHash == identityHash(request)
 
     fun identityHash(request: ApprovalRequest): String {
@@ -128,6 +133,16 @@ object ToolApprovalRequestFactory {
                 append('\u0000').append(call.requiresApproval)
                 append('\u0000').append(call.argumentsSummary)
                 append('\u0000').append(call.risk)
+            }
+            if (request.calls.any { it.executionTarget != null }) {
+                // 无目标的历史请求保持原摘要；新增目标按完整元组绑定，防止分隔符碰撞。
+                append('\u0000').append("execution_targets_v1").append('\u0000')
+                append(JsonArray(request.calls.map { call ->
+                    JsonArray(listOf(
+                        JsonPrimitive(call.toolCallId),
+                        call.executionTarget?.let(::JsonPrimitive) ?: JsonNull,
+                    ))
+                }))
             }
         }
         return sha256Hex(raw)
@@ -1193,7 +1208,7 @@ class ToolExecutionLedgerRepository(
             val risk = ToolRisk.entries.singleOrNull {
                 it.name.lowercase() == approvalCall.risk
             } ?: return null
-            ApprovalCallCandidate(call, risk, identity)
+            ApprovalCallCandidate(call, risk, identity, approvalCall.executionTarget)
         }
         val expected = runCatching {
             ToolApprovalRequestFactory.create(

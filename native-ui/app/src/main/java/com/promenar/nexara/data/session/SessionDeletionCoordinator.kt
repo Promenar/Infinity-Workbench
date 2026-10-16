@@ -63,6 +63,7 @@ class SessionDeletionCoordinator(
     private val journal: SessionWorkspaceMutationJournal,
     private val deleteDatabase: suspend (SessionDeletionTarget, operationId: String) -> Unit,
     private val afterDatabaseCommit: suspend (SessionDeletionTarget) -> Unit = {},
+    private val cleanupSessionData: suspend (String) -> Unit = {},
 ) {
     suspend fun delete(sessionId: String): SessionDeletionResult = try {
         gate.withSessionDeletionSequence(sessionId) {
@@ -97,7 +98,7 @@ class SessionDeletionCoordinator(
             throw cancelled
         } catch (failure: Throwable) {
             return failed(SessionDeletionErrorCode.INVALID_TARGET, failure)
-        } ?: return SessionDeletionResult.AlreadyDeleted
+        } ?: return alreadyDeleted(sessionId)
 
         return try {
             gate.withDeletion(
@@ -119,7 +120,7 @@ class SessionDeletionCoordinator(
                 throw cancelled
             } catch (failure: Throwable) {
                 return@withDeletion failed(SessionDeletionErrorCode.INVALID_TARGET, failure)
-            } ?: return@withDeletion SessionDeletionResult.AlreadyDeleted
+            } ?: return@withDeletion alreadyDeleted(sessionId)
             if (!target.hasSameWorkspaceOwnership(firstTarget)) {
                 return@withDeletion failed(
                     SessionDeletionErrorCode.INVALID_TARGET,
@@ -177,8 +178,15 @@ class SessionDeletionCoordinator(
                     afterDatabaseCommit(target)
                 }
             }.exceptionOrNull()
+            // 数据库提交后独立尝试私有数据清理，物理收尾失败不应遗留会话授权或输出。
+            val cleanupFailure = cleanupPrivateDataFailure(sessionId)
             if (completionFailure != null) {
+                if (cleanupFailure != null && cleanupFailure !== completionFailure) {
+                    completionFailure.addSuppressed(cleanupFailure)
+                }
                 failed(SessionDeletionErrorCode.WORKSPACE, completionFailure)
+            } else if (cleanupFailure != null) {
+                failed(SessionDeletionErrorCode.WORKSPACE, cleanupFailure)
             } else {
                 SessionDeletionResult.Deleted
             }
@@ -195,13 +203,26 @@ class SessionDeletionCoordinator(
     private suspend fun deleteDatabaseOnlySession(sessionId: String): SessionDeletionResult = try {
         cancelAndJoinGeneration(sessionId)
         closePendingExecution(sessionId)
-        if (deleteDatabaseOnly(sessionId)) SessionDeletionResult.Deleted
+        val deleted = deleteDatabaseOnly(sessionId)
+        val cleanupFailure = cleanupPrivateDataFailure(sessionId)
+        if (cleanupFailure != null) failed(SessionDeletionErrorCode.WORKSPACE, cleanupFailure)
+        else if (deleted) SessionDeletionResult.Deleted
         else SessionDeletionResult.AlreadyDeleted
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (failure: Throwable) {
         failed(SessionDeletionErrorCode.DATABASE, failure)
     }
+
+    private suspend fun alreadyDeleted(sessionId: String): SessionDeletionResult {
+        val cleanupFailure = cleanupPrivateDataFailure(sessionId)
+        return if (cleanupFailure == null) SessionDeletionResult.AlreadyDeleted
+        else failed(SessionDeletionErrorCode.WORKSPACE, cleanupFailure)
+    }
+
+    private suspend fun cleanupPrivateDataFailure(sessionId: String): Throwable? = runCatching {
+        withContext(NonCancellable) { cleanupSessionData(sessionId) }
+    }.exceptionOrNull()
 
     private fun failed(code: SessionDeletionErrorCode, cause: Throwable) =
         SessionDeletionResult.Failed(SessionDeletionError(code, cause))

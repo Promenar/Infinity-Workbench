@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_approval_execution_target">Target: %1$s</string>
+    <string name="chat_approval_execution_target_unknown">The execution target could not be confirmed.</string>
+    <string name="chat_approval_high_risk_target_warning">Deletion and process commands can change or remove data. Check the target before allowing repeated execution in this session.</string>
+    <string name="chat_approval_always_allow_target">Always allow this target in this session</string>
+    <string name="chat_approval_always_allow_target_a11y">Approve %1$s and always allow target %2$s in this session</string>
+</resources>

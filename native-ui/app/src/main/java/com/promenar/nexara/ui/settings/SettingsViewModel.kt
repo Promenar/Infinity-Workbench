@@ -361,8 +361,27 @@ class SettingsViewModel(
     val loopLimit: StateFlow<Int> = _loopLimit.asStateFlow()
 
     fun updateLoopLimit(limit: Int) {
-        _loopLimit.value = limit
-        prefs.edit().putInt("loop_limit", limit).apply()
+        _loopLimit.value = limit.coerceIn(0, 100)
+        prefs.edit().putInt("loop_limit", _loopLimit.value).apply()
+    }
+
+    val taskTokenLimit = MutableStateFlow(prefs.getInt("task_token_limit", 0))
+    val toolContextRatio = MutableStateFlow(prefs.getInt("tool_context_ratio_percent", 70))
+    val toolContextKeepRounds = MutableStateFlow(prefs.getInt("tool_context_keep_rounds", 3))
+    val toolLoopRepeatLimit = MutableStateFlow(prefs.getInt("tool_loop_repeat_limit", 3))
+
+    fun updateTaskTokenLimit(value: Int) = updateRuntimeInt("task_token_limit", value.coerceIn(0, 10_000_000), taskTokenLimit)
+    fun updateToolContextRatio(value: Int) = updateRuntimeInt("tool_context_ratio_percent", value.coerceIn(10, 90), toolContextRatio)
+    fun updateToolContextKeepRounds(value: Int) = updateRuntimeInt("tool_context_keep_rounds", value.coerceIn(1, 10), toolContextKeepRounds)
+    fun updateToolLoopRepeatLimit(value: Int) = updateRuntimeInt("tool_loop_repeat_limit", value.coerceIn(2, 20), toolLoopRepeatLimit)
+
+    private fun updateRuntimeInt(key: String, value: Int, state: MutableStateFlow<Int>) {
+        prefs.edit().putInt(key, value).apply()
+        state.value = value
+    }
+
+    fun resetUnlimitedAutoConsent() {
+        viewModelScope.launch { com.promenar.nexara.data.generation.UnlimitedAutomationConsent(prefs).reset() }
     }
 
 
@@ -420,6 +439,10 @@ class SettingsViewModel(
         _language.value = prefs.getString("language", "zh") ?: "zh"
         _hapticEnabled.value = prefs.getBoolean("haptic_enabled", true)
         _loopLimit.value = prefs.getInt("loop_limit", 50)
+        taskTokenLimit.value = prefs.getInt("task_token_limit", 0)
+        toolContextRatio.value = prefs.getInt("tool_context_ratio_percent", 70)
+        toolContextKeepRounds.value = prefs.getInt("tool_context_keep_rounds", 3)
+        toolLoopRepeatLimit.value = prefs.getInt("tool_loop_repeat_limit", 3)
     }
 
     /** 刷新模型列表（远程获取 + ModelSpecs 数据库回退 + 元数据更新） */

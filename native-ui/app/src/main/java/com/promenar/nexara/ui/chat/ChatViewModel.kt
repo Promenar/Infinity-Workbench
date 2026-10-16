@@ -55,6 +55,7 @@ import com.promenar.nexara.data.session.BranchSessionResult
 import com.promenar.nexara.data.session.BranchSessionUseCase
 import com.promenar.nexara.domain.repository.IAgentRepository
 import com.promenar.nexara.ui.chat.manager.ApprovalManager
+import com.promenar.nexara.ui.chat.manager.registry.toProtocolTool
 import com.promenar.nexara.ui.chat.manager.ContextBuilder
 import com.promenar.nexara.ui.chat.manager.ContextBuilderParams
 import com.promenar.nexara.ui.chat.manager.ContextBuilderResult
@@ -289,6 +290,7 @@ class ChatViewModel(
         (application as NexaraApplication).taskRepository,
         toolLedger,
         (application as NexaraApplication).sessionExecutionGate,
+        grantVerifier = (application as NexaraApplication)::verifyTargetGrant,
     )
     private val taskPlanActions = TaskPlanActions((application as NexaraApplication).taskRepository)
     private val summaryManager = SummaryManager(llmProvider)
@@ -298,7 +300,34 @@ class ChatViewModel(
         messageManager,
         sessionRepository,
         (application as NexaraApplication).sessionExecutionGate,
+        (application as NexaraApplication).sessionToolGrantStore,
+        resolveExecutionTarget = { session, assistantMessageId, identity ->
+            val call = session.messages.firstOrNull { it.id == assistantMessageId }?.toolCalls.orEmpty()
+                .firstOrNull { it.id == identity.toolCallId && it.name == identity.toolName }
+            val skill = skillRegistry?.getSkillByRuntimeToolId(identity.runtimeToolId)
+            if (call == null || skill == null) null else com.promenar.nexara.data.generation.resolveSessionToolTarget(
+                session, skill.toProtocolTool(), call.arguments,
+                (application as NexaraApplication).workspaceRepository,
+            )
+        },
     )
+    val currentSessionGrants = MutableStateFlow<List<com.promenar.nexara.data.repository.SessionToolGrant>>(emptyList())
+
+    fun refreshSessionGrants() {
+        val id = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            val grants = (application as NexaraApplication).sessionToolGrantStore.list(id)
+            if (_currentSessionId.value == id) currentSessionGrants.value = grants
+        }
+    }
+
+    fun revokeSessionGrant(grant: com.promenar.nexara.data.repository.SessionToolGrant) {
+        val id = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            (application as NexaraApplication).sessionToolGrantStore.revoke(id, grant.toolName, grant.target)
+            refreshSessionGrants()
+        }
+    }
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText
@@ -1446,6 +1475,11 @@ class ChatViewModel(
         submitApproval(sessionId, expectedRequest, approved = true, intervention = intervention)
     }
 
+    fun alwaysAllowTarget(expectedRequest: ApprovalRequest) {
+        val sessionId = _currentSessionId.value ?: return
+        submitApproval(sessionId, expectedRequest, approved = true, intervention = null, rememberTarget = true)
+    }
+
     /**
      * 批准当前批次中剩余的全部调用：按队列逐个精确批准，最后一个决定后由审批管理器统一继续生成。
      * 新一轮生成产生的审批（属于其它助手消息）不在本次批准范围内。
@@ -1474,6 +1508,7 @@ class ChatViewModel(
         expectedRequest: ApprovalRequest,
         approved: Boolean,
         intervention: String?,
+        rememberTarget: Boolean = false,
     ) {
         if (!approvalSubmissionMutex.tryLock()) return
         _isApprovalSubmitting.value = true
@@ -1484,6 +1519,7 @@ class ChatViewModel(
                     expectedRequest = expectedRequest,
                     approved = approved,
                     intervention = intervention,
+                    rememberTarget = rememberTarget,
                 )
             } finally {
                 _isApprovalSubmitting.value = false
