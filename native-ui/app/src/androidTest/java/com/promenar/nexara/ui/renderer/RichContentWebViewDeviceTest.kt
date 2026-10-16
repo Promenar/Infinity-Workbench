@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
 import org.junit.After
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -65,6 +66,9 @@ class RichContentWebViewDeviceTest {
     }
 
     @Test fun mermaidFlowchartProducesSvg() {
+        // 打包的 Mermaid 使用 Chromium 94 起支持的语法；更旧的系统 WebView 上产品模板退化为显示图表源码。
+        val webViewMajor = WebView.getCurrentWebViewPackage()?.versionName?.substringBefore('.')?.toIntOrNull() ?: 0
+        assumeTrue("系统 WebView $webViewMajor 低于 Mermaid 所需的 94，跳过渲染断言", webViewMajor >= 94)
         load("""
             <script src="${ASSETS}mermaid/mermaid.min.js"></script>
             <div class="mermaid">graph TD; A[Start] --> B[Finish];</div>
