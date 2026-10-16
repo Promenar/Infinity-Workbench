@@ -10,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -165,7 +166,7 @@ class RichContentWebViewDeviceTest {
 
     private fun load(body: String) {
         val documentId = UUID.randomUUID().toString()
-        rule.runOnUiThread { view.loadRichContent("<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body data-device-document='$documentId'>$body</body></html>") }
+        rule.runOnUiThread { view.loadRichContent("<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body data-device-document='$documentId'><script>window.__deviceErrors=[];window.addEventListener('error',e=>window.__deviceErrors.push(String(e.message||e.type)+' '+String((e.target&&(e.target.src||e.target.href))||'')),true);</script>$body</body></html>") }
         // 等待目标文档，不能把初始 about:blank 的 readyState 误判为加载完成。
         await("document.readyState === 'complete' && document.body && document.body.dataset.deviceDocument === '$documentId'")
     }
@@ -183,7 +184,10 @@ class RichContentWebViewDeviceTest {
             if (evaluate("Boolean($expression)") == "true") return
             SystemClock.sleep(50)
         }
-        assertThat(evaluate("Boolean($expression)")).isEqualTo("true")
+        // 失败时附带页面状态，便于区分资源未加载、脚本异常与断言条件本身。
+        val diagnostics = evaluate("""JSON.stringify({url: location.href, readyState: document.readyState,
+            errors: window.__deviceErrors || [], body: document.body ? document.body.innerHTML.slice(0, 600) : null})""")
+        assertWithMessage(diagnostics).that(evaluate("Boolean($expression)")).isEqualTo("true")
     }
 
     private fun evaluate(script: String): String {
