@@ -122,14 +122,14 @@ class ProviderManager private constructor(
     ) {
         ProviderConfigurationRevision.publishMutation(afterProviderConfigurationWriteStarted) {
             val existingName = providerPrefs.getString("protocol_id", null)
-            val existingType = existingName?.let(::decodePersistedProtocol)
+            val existingType = readMainProtocol()
             require(existingName == null || existingType != null || credentialUpdate !is CredentialUpdate.Preserve) {
                 "未知历史协议必须明确替换或清除凭证"
             }
             validateCredentialTransition(existingType, protocolType, credentialUpdate)
             providerPrefs.edit()
-                .putString("protocol_id", protocolType::class.simpleName)
-                .putString("protocol_id_name", protocolType.displayName) // 新增：人类可读协议名
+                .putString("protocol_id", protocolType.persistedId)
+                .putString("protocol_id_name", protocolType.displayName)
                 .putString("base_url", baseUrl)
                 .putString("model", model)
                 .apply()
@@ -149,8 +149,7 @@ class ProviderManager private constructor(
      */
     @Synchronized
     fun getMainProviderConfig(): ProviderConfig? {
-        val protocolName = providerPrefs.getString("protocol_id", null) ?: return null
-        val protocolType = decodePersistedProtocol(protocolName) ?: return null
+        val protocolType = readMainProtocol() ?: return null
         return ProviderConfig(
             protocolType = protocolType,
             baseUrl = providerPrefs.getString("base_url", "") ?: "",
@@ -195,7 +194,7 @@ class ProviderManager private constructor(
         if (config == null) {
             NexaraLogger.log("[ProviderManager] 提供商配置未找到: modelId=$modelId pid=$pid")
         } else if (config.baseUrl.isBlank()) {
-            NexaraLogger.log("[ProviderManager] baseUrl 为空: modelId=$modelId pid=$pid protocolType=${config.protocolType::class.simpleName}")
+            NexaraLogger.log("[ProviderManager] baseUrl 为空: modelId=$modelId pid=$pid protocolType=${config.protocolType.persistedId}")
         }
         return config
     }
@@ -213,10 +212,8 @@ class ProviderManager private constructor(
             val prefix = "extra_provider_$i"
             val resolvedId = resolveExtraProviderId(i)
             if (resolvedId == providerId) {
-                val protocolName = settingsPrefs.getString("${prefix}_protocol", null)
-                    ?: settingsPrefs.getString("${prefix}_type", null) ?: return null
                 return ProviderConfig(
-                    protocolType = decodePersistedProtocol(protocolName) ?: return null,
+                    protocolType = readExtraProtocol(prefix) ?: return null,
                     baseUrl = settingsPrefs.getString("${prefix}_base_url", "") ?: "",
                     apiKey = readSecret(SecretCatalog.providerApiKey(resolvedId)),
                     model = settingsPrefs.getString("${prefix}_model", "") ?: "",
@@ -285,7 +282,7 @@ class ProviderManager private constructor(
             val name = settingsPrefs.getString("${prefix}_name", null) ?: realId
             val protoName = settingsPrefs.getString("${prefix}_protocol", null)
                 ?: settingsPrefs.getString("${prefix}_type", null) ?: ""
-            val protocolType = decodePersistedProtocol(protoName)
+            val protocolType = readExtraProtocol(prefix)
             if (protocolType == null) {
                 unsupportedItems += UnsupportedProviderListItem(
                     id = realId,
@@ -303,7 +300,7 @@ class ProviderManager private constructor(
                 ProviderListItem(
                     id = realId,
                     name = name,
-                    typeName = protoName,
+                    typeName = protocolType.displayName,
                     baseUrl = settingsPrefs.getString("${prefix}_base_url", "") ?: "",
                     model = settingsPrefs.getString("${prefix}_model", "") ?: "",
                     protocolType = protocolType,
@@ -421,7 +418,7 @@ class ProviderManager private constructor(
             PersistedExtraProvider(
                 id = item.id,
                 name = item.name,
-                protocolName = item.protocolType::class.simpleName.orEmpty(),
+                protocolName = item.protocolType.persistedId,
                 baseUrl = item.baseUrl,
                 model = item.model,
                 enabled = item.enabled,
@@ -467,7 +464,7 @@ class ProviderManager private constructor(
             val protocolName = settingsPrefs.getString("${prefix}_protocol", null)
                 ?: settingsPrefs.getString("${prefix}_type", null)
                 ?: return@mapNotNull null
-            if (decodePersistedProtocol(protocolName) != null) return@mapNotNull null
+            if (readExtraProtocol(prefix) != null) return@mapNotNull null
             PersistedExtraProvider(
                 id = resolveExtraProviderId(index),
                 name = settingsPrefs.getString("${prefix}_name", null) ?: return@mapNotNull null,
@@ -494,8 +491,7 @@ class ProviderManager private constructor(
         val model: String
         val name: String?
         if (providerId == "default") {
-            val protocolName = providerPrefs.getString("protocol_id", null) ?: return null
-            protocolType = decodePersistedProtocol(protocolName) ?: return null
+            protocolType = readMainProtocol() ?: return null
             baseUrl = providerPrefs.getString("base_url", "").orEmpty()
             model = providerPrefs.getString("model", "").orEmpty()
             name = providerPrefs.getString("provider_name", null)
@@ -503,9 +499,7 @@ class ProviderManager private constructor(
             val count = settingsPrefs.getInt("extra_providers_count", 0)
             val index = (0 until count).firstOrNull { resolveExtraProviderId(it) == providerId } ?: return null
             val prefix = "extra_provider_$index"
-            val protocolName = settingsPrefs.getString("${prefix}_protocol", null)
-                ?: settingsPrefs.getString("${prefix}_type", null) ?: return null
-            protocolType = decodePersistedProtocol(protocolName) ?: return null
+            protocolType = readExtraProtocol(prefix) ?: return null
             baseUrl = settingsPrefs.getString("${prefix}_base_url", "").orEmpty()
             model = settingsPrefs.getString("${prefix}_model", "").orEmpty()
             name = settingsPrefs.getString("${prefix}_name", null)
@@ -528,7 +522,7 @@ class ProviderManager private constructor(
         val name: String
         if (providerId == "default") {
             rawProtocolId = providerPrefs.getString("protocol_id", null) ?: return null
-            if (decodePersistedProtocol(rawProtocolId) != null) return null
+            if (readMainProtocol() != null) return null
             baseUrl = providerPrefs.getString("base_url", "").orEmpty()
             model = providerPrefs.getString("model", "").orEmpty()
             name = providerPrefs.getString("provider_name", null) ?: rawProtocolId
@@ -540,7 +534,7 @@ class ProviderManager private constructor(
             rawProtocolId = settingsPrefs.getString("${prefix}_protocol", null)
                 ?: settingsPrefs.getString("${prefix}_type", null)
                 ?: return null
-            if (decodePersistedProtocol(rawProtocolId) != null) return null
+            if (readExtraProtocol(prefix) != null) return null
             baseUrl = settingsPrefs.getString("${prefix}_base_url", "").orEmpty()
             model = settingsPrefs.getString("${prefix}_model", "").orEmpty()
             name = settingsPrefs.getString("${prefix}_name", null) ?: providerId
@@ -557,21 +551,54 @@ class ProviderManager private constructor(
     }
 
     fun isPersistedProtocolUnsupported(providerId: String): Boolean {
-        val protocolName = if (providerId == "default") {
-            providerPrefs.getString("protocol_id", null)
+        return if (providerId == "default") {
+            if (!providerPrefs.contains("protocol_id")) return false
+            readMainProtocol() == null
         } else {
             val count = settingsPrefs.getInt("extra_providers_count", 0)
             val index = (0 until count).firstOrNull { resolveExtraProviderId(it) == providerId }
                 ?: return false
             val prefix = "extra_provider_$index"
-            settingsPrefs.getString("${prefix}_protocol", null)
-                ?: settingsPrefs.getString("${prefix}_type", null)
-        } ?: return false
-        return decodePersistedProtocol(protocolName) == null
+            if (!settingsPrefs.contains("${prefix}_protocol") && !settingsPrefs.contains("${prefix}_type")) return false
+            readExtraProtocol(prefix) == null
+        }
     }
 
-    private fun decodePersistedProtocol(name: String): ProtocolType? = try {
-        ProtocolType.fromLegacyName(name)
+    @Synchronized
+    private fun readMainProtocol(): ProtocolType? {
+        val name = providerPrefs.getString("protocol_id", null) ?: return null
+        val protocol = decodePersistedProtocol(
+            name = name,
+            displayName = providerPrefs.getString("protocol_id_name", null),
+            baseUrl = providerPrefs.getString("base_url", "").orEmpty(),
+        ) ?: return null
+        if (name != protocol.persistedId) {
+            providerPrefs.edit().putString("protocol_id", protocol.persistedId).apply()
+        }
+        return protocol
+    }
+
+    @Synchronized
+    private fun readExtraProtocol(prefix: String): ProtocolType? {
+        val stored = settingsPrefs.getString("${prefix}_protocol", null)
+        val name = stored ?: settingsPrefs.getString("${prefix}_type", null) ?: return null
+        val protocol = decodePersistedProtocol(
+            name = name,
+            baseUrl = settingsPrefs.getString("${prefix}_base_url", "").orEmpty(),
+        ) ?: return null
+        if (stored != protocol.persistedId) {
+            settingsPrefs.edit().putString("${prefix}_protocol", protocol.persistedId).apply()
+        }
+        return protocol
+    }
+
+    /** 成功解析后仅规范化协议字段，无法识别时保留全部原值与凭据。 */
+    private fun decodePersistedProtocol(
+        name: String,
+        baseUrl: String,
+        displayName: String? = null,
+    ): ProtocolType? = try {
+        ProtocolType.fromPersistedName(name = name, baseUrl = baseUrl, displayName = displayName)
     } catch (_: com.promenar.nexara.data.remote.protocol.UnsupportedPersistedProtocolException) {
         null
     }

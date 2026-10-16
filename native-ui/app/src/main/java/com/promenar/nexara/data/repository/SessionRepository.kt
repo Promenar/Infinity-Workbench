@@ -15,6 +15,8 @@ import com.promenar.nexara.data.model.json
 import com.promenar.nexara.data.model.toDomain
 import com.promenar.nexara.data.model.toEntity
 import com.promenar.nexara.domain.model.ExecutionModeCodec
+import com.promenar.nexara.utils.NexaraLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.serializer
@@ -58,9 +60,17 @@ open class SessionRepository(
     }
 
     override suspend fun getAll(): List<Session> {
-        return sessionDao.getAll().map { entity ->
-            val messages = messageDao.getBySession(entity.id).map { it.toDomain() }
-            entity.toDomain().copy(messages = messages)
+        return sessionDao.getAll().mapNotNull { entity ->
+            try {
+                val messages = messageDao.getBySession(entity.id).map { it.toDomain() }
+                entity.toDomain().copy(messages = messages)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                // 日志器仅保留异常类别，不输出 JSON 或消息正文。
+                NexaraLogger.logError("SessionRepository.getAll sessionId=${entity.id}", failure)
+                null
+            }
         }
     }
 

@@ -11,6 +11,7 @@ import com.promenar.nexara.domain.tool.ToolRisk
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import java.net.URI
 
 @Serializable
 data class ImageInput(
@@ -188,57 +189,59 @@ sealed class StreamChunk {
 }
 
 sealed class ProtocolType(
+    /** 与构建混淆无关的存储标识；发布后保持不变。 */
+    val persistedId: String,
     val displayName: String,
     val defaultBaseUrl: String,
     val defaultPath: String,
     val iconRes: Int? = null
 ) {
     data object OpenAI_ChatCompletions : ProtocolType(
-        "OpenAI Chat Completions", "https://api.openai.com", "/v1/chat/completions", R.drawable.ic_provider_openai
+        "OpenAI_ChatCompletions", "OpenAI Chat Completions", "https://api.openai.com", "/v1/chat/completions", R.drawable.ic_provider_openai
     )
     data object OpenAI_Responses : ProtocolType(
-        "OpenAI Responses", "https://api.openai.com", "/v1/responses", R.drawable.ic_provider_openai
+        "OpenAI_Responses", "OpenAI Responses", "https://api.openai.com", "/v1/responses", R.drawable.ic_provider_openai
     )
     data object Anthropic_Messages : ProtocolType(
-        "Anthropic Messages", "https://api.anthropic.com", "/v1/messages", R.drawable.ic_provider_anthropic
+        "Anthropic_Messages", "Anthropic Messages", "https://api.anthropic.com", "/v1/messages", R.drawable.ic_provider_anthropic
     )
     data object Google_VertexAI : ProtocolType(
-        "Google Vertex AI", "https://us-central1-aiplatform.googleapis.com", "", R.drawable.ic_provider_gemini
+        "Google_VertexAI", "Google Vertex AI", "https://us-central1-aiplatform.googleapis.com", "", R.drawable.ic_provider_gemini
     )
     data object Cohere_Chat : ProtocolType(
-        "Cohere Chat", "https://api.cohere.ai", "/v2/chat", R.drawable.ic_provider_cohere
+        "Cohere_Chat", "Cohere Chat", "https://api.cohere.ai", "/v2/chat", R.drawable.ic_provider_cohere
     )
     data object Mistral_Chat : ProtocolType(
-        "Mistral Chat", "https://api.mistral.ai", "/v1/chat/completions", R.drawable.ic_provider_mistral
+        "Mistral_Chat", "Mistral Chat", "https://api.mistral.ai", "/v1/chat/completions", R.drawable.ic_provider_mistral
     )
     data object DeepSeek : ProtocolType(
-        "DeepSeek", "https://api.deepseek.com", "/chat/completions", R.drawable.ic_provider_deepseek
+        "DeepSeek", "DeepSeek", "https://api.deepseek.com", "/chat/completions", R.drawable.ic_provider_deepseek
     )
     data object Generic_OpenAI_Compat : ProtocolType(
-        "OpenAI 兼容 (通用)", "", "/v1/chat/completions", R.drawable.ic_provider_custom
+        "Generic_OpenAI_Compat", "OpenAI 兼容 (通用)", "", "/v1/chat/completions", R.drawable.ic_provider_custom
     )
 
     // ── 国产提供商（均兼容 OpenAI Chat Completions 协议） ──
     data object Moonshot_Kimi : ProtocolType(
-        "Moonshot (Kimi)", "https://api.moonshot.cn", "/v1/chat/completions", R.drawable.ic_provider_kimi
+        "Moonshot_Kimi", "Moonshot (Kimi)", "https://api.moonshot.cn", "/v1/chat/completions", R.drawable.ic_provider_kimi
     )
     data object Qwen_DashScope : ProtocolType(
-        "通义千问 (Qwen)", "https://dashscope.aliyuncs.com/compatible-mode", "/v1/chat/completions", R.drawable.ic_provider_qwen
+        "Qwen_DashScope", "通义千问 (Qwen)", "https://dashscope.aliyuncs.com/compatible-mode", "/v1/chat/completions", R.drawable.ic_provider_qwen
     )
     data object Zhipu_GLM : ProtocolType(
-        "智谱 (GLM)", "https://open.bigmodel.cn/api/paas", "/v4/chat/completions", R.drawable.ic_provider_zhipu
+        "Zhipu_GLM", "智谱 (GLM)", "https://open.bigmodel.cn/api/paas", "/v4/chat/completions", R.drawable.ic_provider_zhipu
     )
     data object Doubao_ByteDance : ProtocolType(
-        "豆包 (Doubao)", "https://ark.cn-beijing.volces.com/api", "/v3/chat/completions", R.drawable.ic_provider_doubao
+        "Doubao_ByteDance", "豆包 (Doubao)", "https://ark.cn-beijing.volces.com/api", "/v3/chat/completions", R.drawable.ic_provider_doubao
     )
     data object Yi_ZeroOne : ProtocolType(
-        "零一万物 (Yi)", "https://api.lingyiwanwu.com", "/v1/chat/completions", R.drawable.ic_provider_yi
+        "Yi_ZeroOne", "零一万物 (Yi)", "https://api.lingyiwanwu.com", "/v1/chat/completions", R.drawable.ic_provider_yi
     )
     data object Baichuan : ProtocolType(
-        "百川 (Baichuan)", "https://api.baichuan-ai.com", "/v1/chat/completions", R.drawable.ic_provider_baichuan
+        "Baichuan", "百川 (Baichuan)", "https://api.baichuan-ai.com", "/v1/chat/completions", R.drawable.ic_provider_baichuan
     )
 
-    data object Local : ProtocolType("本地推理", "", "", R.drawable.ic_provider_local)
+    data object Local : ProtocolType("Local", "本地推理", "", "", R.drawable.ic_provider_local)
 
     companion object {
         // ── 向后兼容别名 (旧 ProtocolId 枚举名) ──────────────────
@@ -251,15 +254,80 @@ sealed class ProtocolType(
         @Deprecated("Use Local", ReplaceWith("Local"))
         val LOCAL: ProtocolType get() = Local
 
-        /** 从旧 ProtocolId 枚举名迁移到新 ProtocolType */
-        fun fromLegacyName(name: String): ProtocolType = when (name.uppercase()) {
-            "OPENAI" -> OpenAI_ChatCompletions
-            "ANTHROPIC" -> Anthropic_Messages
-            "VERTEX_AI" -> Google_VertexAI
-            "LOCAL" -> Local
-            else -> entries.firstOrNull { it::class.simpleName.equals(name, ignoreCase = true) }
+        /** 无上下文解析仅接受稳定标识与旧枚举别名。 */
+        fun fromLegacyName(name: String): ProtocolType {
+            entries.firstOrNull { it.persistedId.equals(name, ignoreCase = true) }?.let { return it }
+            return when (name.uppercase()) {
+                "OPENAI" -> OpenAI_ChatCompletions
+                "ANTHROPIC" -> Anthropic_Messages
+                "VERTEX_AI" -> Google_VertexAI
+                "LOCAL" -> Local
+                else -> throw UnsupportedPersistedProtocolException()
+            }
+        }
+
+        /** 按稳定标识、旧枚举别名、显示名、发布混淆表的顺序解析历史存储。 */
+        fun fromPersistedName(name: String, baseUrl: String, displayName: String? = null): ProtocolType {
+            val known = try {
+                fromLegacyName(name)
+            } catch (_: UnsupportedPersistedProtocolException) {
+                null
+            }
+            known?.let { return it }
+            val protocols = entries
+            protocols.firstOrNull { it.displayName == displayName }?.let { return it }
+
+            val candidateIds = legacyObfuscatedIdsByRelease.mapNotNull { it[name] }.toSet()
+            val candidates = protocols.filter { it.persistedId in candidateIds }
+            if (candidates.size == 1) return candidates.single()
+            val compatible = candidates.filter { (it == Local) == baseUrl.isBlank() }
+            if (compatible.size == 1) return compatible.single()
+
+            val host = urlHost(baseUrl)
+            val hostMatches = compatible.filter {
+                host != null && host.equals(urlHost(it.defaultBaseUrl), ignoreCase = true)
+            }
+            // 主机不属于任何候选预设时，用户填的是自建或第三方网关，通用兼容协议是唯一合理解释。
+            if (hostMatches.isEmpty() && host != null && Generic_OpenAI_Compat in compatible) {
+                return Generic_OpenAI_Compat
+            }
+            val preferred = hostMatches.ifEmpty { compatible }
+            if (preferred.size == 1) return preferred.single()
+            return preferred.firstOrNull { it.persistedId == legacyObfuscatedIdsByRelease.last()[name] }
                 ?: throw UnsupportedPersistedProtocolException()
         }
+
+        private fun urlHost(url: String): String? = try {
+            URI(url.trim()).host
+        } catch (_: java.net.URISyntaxException) {
+            null
+        }
+
+        // 来源：已发布签名包 b86ebeaf、fcf9750c、83622a1a 的 ProtocolType 子类字节码，按发布顺序排列。
+        // 仅用于读取旧数据；基类混淆名不代表协议，所有写入均使用 persistedId。
+        private val legacyObfuscatedIdsByRelease = listOf(
+            mapOf(
+                "tr4" to "Anthropic_Messages", "ur4" to "Baichuan", "vr4" to "Cohere_Chat",
+                "wr4" to "DeepSeek", "xr4" to "Doubao_ByteDance", "yr4" to "Generic_OpenAI_Compat",
+                "zr4" to "Google_VertexAI", "as4" to "Local", "bs4" to "Mistral_Chat",
+                "cs4" to "Moonshot_Kimi", "ds4" to "OpenAI_ChatCompletions", "es4" to "OpenAI_Responses",
+                "fs4" to "Qwen_DashScope", "gs4" to "Yi_ZeroOne", "hs4" to "Zhipu_GLM",
+            ),
+            mapOf(
+                "ds4" to "Anthropic_Messages", "es4" to "Baichuan", "fs4" to "Cohere_Chat",
+                "gs4" to "DeepSeek", "hs4" to "Doubao_ByteDance", "is4" to "Generic_OpenAI_Compat",
+                "js4" to "Google_VertexAI", "ks4" to "Local", "ls4" to "Mistral_Chat",
+                "ms4" to "Moonshot_Kimi", "ns4" to "OpenAI_ChatCompletions", "os4" to "OpenAI_Responses",
+                "ps4" to "Qwen_DashScope", "qs4" to "Yi_ZeroOne", "rs4" to "Zhipu_GLM",
+            ),
+            mapOf(
+                "fs4" to "Anthropic_Messages", "gs4" to "Baichuan", "hs4" to "Cohere_Chat",
+                "is4" to "DeepSeek", "js4" to "Doubao_ByteDance", "ks4" to "Generic_OpenAI_Compat",
+                "ls4" to "Google_VertexAI", "ms4" to "Local", "ns4" to "Mistral_Chat",
+                "os4" to "Moonshot_Kimi", "ps4" to "OpenAI_ChatCompletions", "qs4" to "OpenAI_Responses",
+                "rs4" to "Qwen_DashScope", "ss4" to "Yi_ZeroOne", "ts4" to "Zhipu_GLM",
+            ),
+        )
 
         val entries: List<ProtocolType> get() = listOfNotNull(
             OpenAI_ChatCompletions, OpenAI_Responses, Anthropic_Messages,

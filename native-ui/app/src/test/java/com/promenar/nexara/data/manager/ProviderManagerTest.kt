@@ -215,6 +215,7 @@ class ProviderManagerTest {
     fun `未知主Provider保持可见可恢复且Router在网络前typed fail closed`() {
         app.getSharedPreferences("nexara_provider", 0).edit()
             .putString("protocol_id", "Future_Unknown_Protocol")
+            .remove("protocol_id_name")
             .putString("provider_name", "历史主提供商")
             .putString("base_url", "https://legacy.invalid/v1")
             .commit()

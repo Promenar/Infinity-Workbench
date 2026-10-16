@@ -14,6 +14,7 @@ import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.domain.model.ExecutionModeCodec
 import com.promenar.nexara.ui.chat.ChatStore
 import com.promenar.nexara.ui.chat.manager.SessionManager
+import com.promenar.nexara.utils.NexaraLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -82,13 +83,21 @@ class SessionListViewModel(
                 val agent = agentRepository.observeById(agentId).first()
                 _agentName.value = agent?.name ?: "Agent"
                 _agentColor.value = agent?.color ?: Agent(id = agentId, name = "").color
-            } catch (_: Exception) {}
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                NexaraLogger.logError("SessionListViewModel.loadAgent", failure)
+            }
 
             try {
                 sessionMutationMutex.withLock {
                     refreshSessionsFromRepository()
                 }
-            } catch (_: Exception) {}
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                NexaraLogger.logError("SessionListViewModel.loadSessions", failure)
+            }
         }
     }
 
