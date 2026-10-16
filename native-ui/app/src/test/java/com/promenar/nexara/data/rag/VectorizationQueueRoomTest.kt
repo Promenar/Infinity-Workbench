@@ -21,6 +21,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -51,14 +52,14 @@ class VectorizationQueueRoomTest {
     }
 
     @Test
-    fun `真实Room中的失败任务通过Update重置不会触发主键冲突`() = runTest {
+    fun `真实Room中的失败任务更换活动标识且不触发主键冲突`() = runTest {
         seedFileAndTask("failed")
         val queue = queue(StandardTestDispatcher(TestCoroutineScheduler()))
 
         val id = queue.enqueueDocumentReference(ROOT, DOC, source.name, "text/plain", "hash-v1", 2)
 
-        assertThat(id).isEqualTo(TASK)
-        assertThat(database.vectorizationTaskDao().getById(TASK)?.status).isEqualTo("pending")
+        assertThat(id).isNotEqualTo(TASK)
+        assertThat(database.vectorizationTaskDao().getById(id)?.status).isEqualTo("pending")
         assertThat(queue.getQueueLength()).isEqualTo(1)
         queue.shutdown()
     }
@@ -71,8 +72,9 @@ class VectorizationQueueRoomTest {
         val result = queue.resumeInterruptedTasks()
 
         assertThat(result.isSuccess).isTrue()
-        assertThat(database.vectorizationTaskDao().getById(TASK)?.status).isEqualTo("pending")
-        assertThat(queue.snapshotState().queue.map { it.id }).containsExactly(TASK)
+        val active = database.vectorizationTaskDao().getByWorkspaceFile(ROOT, DOC, VectorizationQueue.TYPE_DOCUMENT_REFERENCE)!!
+        assertThat(active.status).isEqualTo("pending")
+        assertThat(queue.snapshotState().queue.map { it.id }).containsExactly(active.id)
         queue.shutdown()
     }
 
@@ -107,10 +109,10 @@ class VectorizationQueueRoomTest {
             .isEqualTo(DUAL_DATABASE_RECOVERY_INDEX_HOLD)
 
         assertThat(queue.retryDocumentReference(ROOT, DOC)).isTrue()
-        val retried = database.vectorizationTaskDao().getById(TASK)
+        val retried = database.vectorizationTaskDao().getByWorkspaceFile(ROOT, DOC, VectorizationQueue.TYPE_DOCUMENT_REFERENCE)
         assertThat(retried?.status).isEqualTo("pending")
         assertThat(retried?.subStatus).isNotEqualTo(DUAL_DATABASE_RECOVERY_INDEX_HOLD)
-        assertThat(queue.snapshotState().queue.map { it.id }).containsExactly(TASK)
+        assertThat(queue.snapshotState().queue.map { it.id }).containsExactly(retried!!.id)
         queue.shutdown()
     }
 
@@ -188,13 +190,18 @@ class VectorizationQueueRoomTest {
 
         try {
             assertThat(database.vectorizationTaskDao().getById(TASK)).isNull()
-            assertThat(replacement.snapshotState().queue.map { it.id }).containsExactly(TASK)
+            val active = replacement.snapshotState().queue.single()
+            assertThat(active.id).isNotEqualTo(TASK)
+            assertThat(active.docId).isEqualTo(DOC)
+            assertThat(active.targetContentHash).isEqualTo("hash-v1")
+            assertThat(active.targetEpoch).isEqualTo(2)
         } finally {
             allowFinal.complete(Unit)
         }
         runCurrent()
 
         assertThat(replacement.snapshotState().queue).isEmpty()
+        assertThat(database.vectorizationTaskDao().getByDocId(DOC)).isEmpty()
         assertThat(replacement).isNotSameInstanceAs(old)
         replacement.shutdown()
     }
@@ -288,7 +295,7 @@ class VectorizationQueueRoomTest {
     }
 
     @Test
-    fun `文件型Room数据库关闭后重开能恢复失败任务并由Queue复用同一task_id重置为pending`() = runTest {
+    fun `文件型Room数据库重开后恢复失败目标并以新活动标识重新入队`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         // 测试上下文下的唯一数据库文件名，避免与其它用例或历史残留冲突
         val dbName = "nexara-reopen-${java.util.UUID.randomUUID()}.db"
@@ -323,15 +330,15 @@ class VectorizationQueueRoomTest {
             assertThat(restoredDoc!!.workspaceRootUuid).isEqualTo(ROOT)
             assertThat(restoredDoc.uuid).isEqualTo(DOC)
 
-            // 4) 用重开的 DAO 构造 Queue，复用同一 task id 并安全重置为 pending，不发生主键冲突
+            // 使用恢复出的目标建立独立重试实例，不发生主键冲突。
             val queue = queue(
                 StandardTestDispatcher(TestCoroutineScheduler()),
                 reopened,
             )
             val id = queue.enqueueDocumentReference(ROOT, DOC, source.name, "text/plain", "hash-v1", 2)
 
-            assertThat(id).isEqualTo(TASK)
-            assertThat(reopened.vectorizationTaskDao().getById(TASK)?.status).isEqualTo("pending")
+            assertThat(id).isNotEqualTo(TASK)
+            assertThat(reopened.vectorizationTaskDao().getById(id)?.status).isEqualTo("pending")
             assertThat(queue.getQueueLength()).isEqualTo(1)
             queue.shutdown()
         } finally {
@@ -820,48 +827,23 @@ class VectorizationQueueRoomTest {
     }
 
     @Test
-    fun `legacy不可迁移时abort先清理vector与KG再安全重跑`() = runTest {
+    fun `legacyKG缺少可解析文件引用时失败且不产生半成品`() = runTest {
         seedFilesWithoutTask()
         val entry = database.fileEntryDao().getByUuid(ROOT, DOC)!!
         database.fileEntryDao().update(entry.copy(mimeType = null))
-        val embedding = mockk<EmbeddingClient>()
-        coEvery { embedding.embedDocuments(any()) } answers {
-            EmbeddingResult(firstArg<List<String>>().map { floatArrayOf(1f, 0f) })
-        }
-        val graph = mockk<GraphExtractor>()
-        val graphCalls = AtomicInteger()
-        val firstGraphStarted = CompletableDeferred<Unit>()
-        val secondGraphStarted = CompletableDeferred<Unit>()
-        coEvery { graph.extractAndSave(any(), any()) } coAnswers {
-            if (graphCalls.incrementAndGet() == 1) firstGraphStarted.complete(Unit)
-            else secondGraphStarted.complete(Unit)
-            awaitCancellation()
-        }
-        coJustRun { graph.clearPersistedGraphForDoc(DOC) }
-        val queue = VectorizationQueue(
-            vectorStore = VectorStore(database.vectorDao(), database.kgNodeDao(), database.kgEdgeDao()),
-            embeddingClient = embedding,
-            graphExtractor = graph,
-            vectorDao = database.vectorDao(),
-            vectorizationTaskDao = database.vectorizationTaskDao(),
-            dispatcher = StandardTestDispatcher(testScheduler),
-            fileEntryDao = database.fileEntryDao(),
-            documentIndexService = ImmediateDocumentIndexService,
-        )
+        val queue = queue(StandardTestDispatcher(testScheduler))
         queue.enqueueDocument(ROOT, DOC, source.name, "content", kgStrategy = "full")
-        runCurrent()
-        firstGraphStarted.await()
-        assertThat(database.vectorDao().getByDocId(DOC)).hasSize(1)
+        advanceUntilIdle()
 
+        assertThat(database.vectorDao().getByDocId(DOC)).isEmpty()
+        assertThat(database.kgEdgeDao().getByDocId(DOC)).isEmpty()
+        assertThat(database.vectorizationTaskDao().getByDocId(DOC).single().status).isEqualTo("failed")
         val barrier = queue.acquireDeleteBarrier(ROOT, listOf(DOC))
         barrier.awaitReady()
         barrier.abort()
-        runCurrent()
-        secondGraphStarted.await()
-
-        assertThat(database.vectorDao().getByDocId(DOC)).hasSize(1)
+        advanceUntilIdle()
+        assertThat(database.vectorDao().getByDocId(DOC)).isEmpty()
         queue.shutdown()
-        runCurrent()
     }
 
     @Test

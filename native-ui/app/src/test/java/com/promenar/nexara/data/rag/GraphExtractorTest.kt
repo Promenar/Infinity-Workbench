@@ -46,8 +46,8 @@ class GraphExtractorTest {
     }
 
     @Test
-    fun `extractAndSave split text and extracts correctly without docId`() = runTest {
-        val extractor = GraphExtractor(
+    fun `extractCandidate split text and extracts correctly without docId`() = runTest {
+        val extractor = testGraphExtractor(
             protocol = protocol,
             graphStore = graphStore,
             chunkSize = 10,
@@ -76,7 +76,7 @@ class GraphExtractorTest {
             )
         )
 
-        val result = extractor.extractAndSave(text)
+        val result = extractor.extractCandidate(text)
 
         assertThat(result.error).isNull()
         assertThat(result.nodes).hasSize(2)
@@ -88,9 +88,9 @@ class GraphExtractorTest {
     }
 
     @Test
-    fun `extractAndSave saves progressive checkpoints and resumes after interruption`() = runTest {
+    fun `extractCandidate saves progressive checkpoints and resumes after interruption`() = runTest {
         val docId = "test-doc-123"
-        val extractor = GraphExtractor(
+        val extractor = testGraphExtractor(
             protocol = protocol,
             graphStore = graphStore,
             chunkSize = 10,
@@ -117,16 +117,16 @@ class GraphExtractorTest {
             }
         }
 
-        val result1 = extractor.extractAndSave(text, docId = docId)
+        val result1 = extractor.extractCandidate(text, docId = docId)
 
         // 验证第一次返回的是中断错误，且没有 upsert 进数据库（原子写保护）
-        assertThat(result1.error).contains("Extraction interrupted")
+        assertThat(result1.status).isEqualTo(KgExtractionStatus.PROVIDER_ERROR)
         coVerify(exactly = 0) { graphStore.clearGraphForDoc(any()) }
         coVerify(exactly = 0) { graphStore.upsertNode(any(), any(), any(), any()) }
 
         // 验证 checkpoint 文件已成功落盘
-        val chunk0File = File(tempDir, "kg_extraction_checkpoint/$docId/chunk_0.json")
-        val chunk1File = File(tempDir, "kg_extraction_checkpoint/$docId/chunk_1.json")
+        val chunk0File = File(tempDir, "kg_extraction_checkpoint").walkTopDown().first { it.name == "chunk_0.json" }
+        val chunk1File = File(chunk0File.parentFile, "chunk_1.json")
         assertThat(chunk0File.exists()).isTrue()
         assertThat(chunk1File.exists()).isFalse()
 
@@ -142,30 +142,30 @@ class GraphExtractorTest {
             }"""
         )
 
-        val result2 = extractor.extractAndSave(text, docId = docId)
+        val result2 = extractor.extractCandidate(text, docId = docId)
 
-        // 验证完全成功，最终节点合并，旧图谱原子清除落库，并打扫干净 checkpoint
+        // 候选完成后清理断点；实际写库由索引事务负责。
         assertThat(result2.error).isNull()
         assertThat(result2.nodes.map { it.name }).containsExactly("NodeA", "NodeB")
 
         // 验证只请求了 1 次（只请求了未完成的 chunk 1，chunk 0 则是秒级从 checkpoint 缓存中加载）
         coVerify(exactly = 1) { protocol.sendPromptSync(any()) }
 
-        // 验证事务清理旧图谱且落库成功
-        coVerify(exactly = 1) { graphStore.clearGraphForDoc(docId) }
-        coVerify(atLeast = 1) { graphStore.upsertNode(any(), any(), any(), any()) }
+        // 候选构建不修改旧图谱。
+        coVerify(exactly = 0) { graphStore.clearGraphForDoc(docId) }
+        coVerify(exactly = 0) { graphStore.upsertNode(any(), any(), any(), any()) }
 
-        // 验证完全提取落库后，打扫临时 checkpoint 缓存，防止垃圾垃圾残留
-        val checkpointDir = File(tempDir, "kg_extraction_checkpoint/$docId")
+        // 候选完成后清理缓存。
+        val checkpointDir = File(tempDir, "kg_extraction_checkpoint/${kgSha256(docId)}")
         assertThat(checkpointDir.exists()).isFalse()
     }
 
     @Test
     fun `chunk取消必须透传且不得进入图谱写入`() = runTest {
         coEvery { protocol.sendPromptSync(any()) } throws CancellationException("deleted")
-        val extractor = GraphExtractor(protocol, graphStore)
+        val extractor = testGraphExtractor(protocol, graphStore)
 
-        val failure = runCatching { extractor.extractAndSave("cancel me", docId = "doc") }
+        val failure = runCatching { extractor.extractCandidate("cancel me", docId = "doc") }
             .exceptionOrNull()
 
         assertThat(failure).isInstanceOf(CancellationException::class.java)
@@ -174,43 +174,14 @@ class GraphExtractorTest {
     }
 
     @Test
-    fun `node写入取消必须透传且不继续写后node与edge`() = runTest {
+    fun `候选不调用任何图谱写入API`() = runTest {
         coEvery { protocol.sendPromptSync(any()) } returns PromptResponse(
-            content = """{
-                "nodes":[{"name":"NodeA","type":"concept"},{"name":"NodeB","type":"concept"}],
-                "edges":[{"source":"NodeA","target":"NodeB","relation":"rel","weight":1.0}]
-            }""",
+            content = """{"nodes":[{"name":"Alpha","type":"person"},{"name":"Beta","type":"person"}],"edges":[{"source":"Alpha","target":"Beta","relation":"knows"}]}""",
         )
-        coEvery { graphStore.upsertNode(any(), any(), any(), any()) } throws
-            CancellationException("deleted")
-        val extractor = GraphExtractor(protocol, graphStore)
-
-        val failure = runCatching { extractor.extractAndSave("nodes", docId = "doc") }
-            .exceptionOrNull()
-
-        assertThat(failure).isInstanceOf(CancellationException::class.java)
-        coVerify(exactly = 1) { graphStore.upsertNode(any(), any(), any(), any()) }
-        coVerify(exactly = 0) { graphStore.createEdge(any(), any(), any(), any(), any(), any()) }
-    }
-
-    @Test
-    fun `edge写入取消必须透传且不伪装成成功`() = runTest {
-        coEvery { protocol.sendPromptSync(any()) } returns PromptResponse(
-            content = """{
-                "nodes":[{"name":"NodeA","type":"concept"},{"name":"NodeB","type":"concept"}],
-                "edges":[{"source":"NodeA","target":"NodeB","relation":"rel","weight":1.0}]
-            }""",
-        )
-        coEvery { graphStore.upsertNode("NodeA", any(), any(), any()) } returns "a"
-        coEvery { graphStore.upsertNode("NodeB", any(), any(), any()) } returns "b"
-        coEvery { graphStore.createEdge(any(), any(), any(), any(), any(), any()) } throws
-            CancellationException("deleted")
-        val extractor = GraphExtractor(protocol, graphStore)
-
-        val failure = runCatching { extractor.extractAndSave("edge", docId = "doc") }
-            .exceptionOrNull()
-
-        assertThat(failure).isInstanceOf(CancellationException::class.java)
-        coVerify(exactly = 1) { graphStore.createEdge("a", "b", "rel", "doc", 1.0, any()) }
+        val result = testGraphExtractor(protocol, graphStore).extractCandidate("text", "doc")
+        assertThat(result.isSuccess).isTrue()
+        coVerify(exactly = 0) { graphStore.clearGraphForDoc(any()) }
+        coVerify(exactly = 0) { graphStore.upsertNode(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { graphStore.createEdge(any(), any(), any(), any(), any(), any(), any()) }
     }
 }

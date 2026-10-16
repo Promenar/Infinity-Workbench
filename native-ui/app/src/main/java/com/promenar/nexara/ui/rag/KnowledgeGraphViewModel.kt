@@ -350,8 +350,7 @@ class KnowledgeGraphViewModel(
                     val app = application as NexaraApplication
                     val repo = KnowledgeGraphRepository(
                         kgNodeDao = app.database.kgNodeDao(),
-                        kgEdgeDao = app.database.kgEdgeDao(),
-                        graphExtractor = app.graphExtractor
+                        kgEdgeDao = app.database.kgEdgeDao()
                     )
                     return KnowledgeGraphViewModel(repo, app.graphStore, application) as T
                 }

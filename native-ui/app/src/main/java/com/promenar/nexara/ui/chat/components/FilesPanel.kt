@@ -598,7 +598,7 @@ private fun FileTreeRow(
             hasDelete = if (isVirtualSession) false else onDelete != null,
             hasRename = onRename != null,
             hasMove = if (isVirtualSession) false else onMove != null,
-            hasExtractKG = if (isVirtualSession) false else onExtractKG != null,
+            hasExtractKG = !isVirtualSession && onExtractKG != null && com.promenar.nexara.data.rag.DocumentReferenceExtractor.supports(file),
             hasViewKG = if (isVirtualSession) false else onViewKG != null,
             hasCopy = if (isVirtualSession) false else onCopy != null,
         )
@@ -680,7 +680,7 @@ private fun FileTreeRow(
                             modifier = Modifier.testTag(UiTags.fileNodeReindex(file.uuid)),
                         )
                     }
-                    if (onExtractKG != null && !isSessionFile) {
+                    if (onExtractKG != null && !isSessionFile && com.promenar.nexara.data.rag.DocumentReferenceExtractor.supports(file)) {
                         DropdownMenuItem(
                             leadingIcon = {
                                 Icon(
@@ -1248,10 +1248,10 @@ private fun resolveIndexStatus(file: FileEntry, indexingFileIds: Set<String> = e
     return FileIndexStatus.INDEXED
 }
 
-private fun resolveKgStatus(file: FileEntry, kgExtractionStates: Map<String, KgStatus>): KgStatus {
+internal fun resolveKgStatus(file: FileEntry, kgExtractionStates: Map<String, KgStatus>): KgStatus {
     val state = kgExtractionStates[file.uuid]
-    if (state != null) return state
-    if (file.kgExtractedAt != null) return KgStatus.COMPLETED
+    if (state == KgStatus.IN_PROGRESS || state == KgStatus.FAILED) return state
+    if ((file.kgExtractedAt ?: 0) >= file.updatedAt && file.kgExtractedAt != null) return KgStatus.COMPLETED
     return KgStatus.NOT_STARTED
 }
 

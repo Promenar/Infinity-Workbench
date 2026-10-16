@@ -4,7 +4,6 @@ import com.promenar.nexara.data.local.db.dao.KgEdgeDao
 import com.promenar.nexara.data.local.db.dao.KgNodeDao
 import com.promenar.nexara.data.local.db.entity.KgEdgeEntity
 import com.promenar.nexara.data.local.db.entity.KgNodeEntity
-import com.promenar.nexara.data.rag.GraphExtractor
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -16,12 +15,10 @@ class KnowledgeGraphRepositoryTest {
 
     private val kgNodeDao: KgNodeDao = mockk()
     private val kgEdgeDao: KgEdgeDao = mockk()
-    private val graphExtractor: GraphExtractor = mockk()
 
     private val repo = KnowledgeGraphRepository(
         kgNodeDao = kgNodeDao,
-        kgEdgeDao = kgEdgeDao,
-        graphExtractor = graphExtractor
+        kgEdgeDao = kgEdgeDao
     )
 
     private fun nodeEntity(

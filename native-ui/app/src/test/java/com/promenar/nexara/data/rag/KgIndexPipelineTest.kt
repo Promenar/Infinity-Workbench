@@ -1,0 +1,289 @@
+package com.promenar.nexara.data.rag
+
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.local.db.NexaraDatabase
+import com.promenar.nexara.data.local.db.entity.*
+import com.promenar.nexara.data.remote.protocol.LlmProtocol
+import com.promenar.nexara.data.remote.protocol.PromptResponse
+import com.promenar.nexara.ui.chat.components.resolveKgStatus
+import com.promenar.nexara.ui.common.KgStatus
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import io.mockk.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.test.*
+import org.apache.poi.xwpf.usermodel.XWPFDocument
+import org.junit.After
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import java.io.File
+import java.nio.file.Files
+import java.security.MessageDigest
+
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+class KgIndexPipelineTest {
+    private lateinit var database: NexaraDatabase
+    private lateinit var root: File
+    private val embedding = mockk<EmbeddingClient>()
+
+    @Before
+    fun setup() = runBlocking<Unit> {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        // JVM 套件没有打包 Android assets，读取当前依赖自身的字体资源，解析器保持真实实现。
+        val classResource = requireNotNull(PDDocument::class.java.getResource("PDDocument.class"))
+        val dependencyJar = File((classResource.openConnection() as java.net.JarURLConnection).jarFileURL.toURI())
+        val transforms = generateSequence(dependencyJar.parentFile) { it.parentFile }.first { it.name == "transforms" }
+        val assetsRoot = transforms.listFiles().orEmpty().asSequence()
+            .flatMap { File(it, "transformed").listFiles().orEmpty().asSequence() }
+            .filter { it.name.contains("pdfbox") }
+            .map { File(it, "assets") }
+            .first { File(it, "com/tom_roush/pdfbox/resources/afm/Times-Roman.afm").isFile }
+        val assets = mockk<android.content.res.AssetManager>()
+        every { assets.open(any()) } answers { File(assetsRoot, firstArg<String>()).inputStream() }
+        val resourcesContext = mockk<Context>()
+        every { resourcesContext.applicationContext } returns resourcesContext
+        every { resourcesContext.assets } returns assets
+        PDFBoxResourceLoader.init(resourcesContext)
+        database = Room.inMemoryDatabaseBuilder(context, NexaraDatabase::class.java).allowMainThreadQueries()
+            .setQueryExecutor { it.run() }.setTransactionExecutor { it.run() }.build()
+        root = Files.createTempDirectory("kg-index-pipeline").toFile()
+        database.sessionDao().insert(SessionEntity("session", "__system__", "session", workspaceRootUuid = "root", createdAt = 1, updatedAt = 1))
+        database.fileEntryDao().insert(FileEntry(
+            uuid = "root", workspaceRootUuid = "root", parentUuid = null, name = "root", hash = "",
+            isDirectory = true, physicalRootPath = root.path, materializedPath = "/", createdAt = 1, updatedAt = 1,
+        ))
+        coEvery { embedding.embedDocuments(any()) } answers { EmbeddingResult(firstArg<List<String>>().map { floatArrayOf(1f, 0f) }) }
+    }
+
+    @After
+    fun cleanup() {
+        if (::database.isInitialized) database.close()
+        if (::root.isInitialized) root.deleteRecursively()
+    }
+
+    @Test
+    fun `文档清理不删除其它任务尚未连边的节点`() = runTest {
+        val file = register("cleanup.txt", "text/plain", "text".toByteArray())
+        seedOld(file)
+        database.kgNodeDao().insert(KgNodeEntity("pending-other", "Other task", createdAt = 1))
+        GraphStore(database.kgNodeDao(), database.kgEdgeDao()).clearGraphForDoc(file.uuid)
+        assertThat(database.kgNodeDao().getById("pending-other")).isNotNull()
+        assertThat(database.kgEdgeDao().getByDocId(file.uuid)).isEmpty()
+    }
+
+    @Test
+    fun `重复归并置信度不累加越界`() = runTest {
+        val file = register("weight.txt", "text/plain", "text".toByteArray())
+        seedOld(file)
+        val edge = database.kgEdgeDao().getByDocId(file.uuid).single()
+        database.kgEdgeDao().insert(edge.copy(weight = 0.9))
+        GraphStore(database.kgNodeDao(), database.kgEdgeDao()).createEdge(edge.sourceId, edge.targetId, edge.relation, file.uuid, 0.8)
+        assertThat(database.kgEdgeDao().getByDocId(file.uuid).single().weight).isEqualTo(0.9)
+    }
+
+    @Test
+    fun `全量合法空图仍完成向量事务并持久标记`() = runTest {
+        val file = register("empty.txt", "text/plain", "no relations".toByteArray())
+        seedOld(file)
+        val protocol = mockk<LlmProtocol>()
+        coEvery { protocol.sendPromptSync(any()) } returns PromptResponse("""{"nodes":[],"edges":[]}""")
+        val graph = testGraphExtractor(protocol, GraphStore(database.kgNodeDao(), database.kgEdgeDao()), checkpointRoot = File(root, "checkpoints"))
+        val (queue, _) = pipeline(GraphExtractorKnowledgeGraphCandidateBuilder(graph))
+        enqueue(queue, file, skipVectorization = false)
+        advanceUntilIdle()
+
+        assertThat(database.vectorizationTaskDao().getByDocId(file.uuid)).isEmpty()
+        assertThat(database.vectorDao().getByDocId(file.uuid).single().content).isEqualTo("no relations")
+        assertThat(database.kgEdgeDao().getByDocId(file.uuid)).isEmpty()
+        assertThat(resolveKgStatus(database.fileEntryDao().getByUuid("root", file.uuid)!!, emptyMap())).isEqualTo(KgStatus.COMPLETED)
+        queue.shutdown()
+    }
+
+    @Test
+    fun `手动PDF与DOCX和大文本经过真实解析器且保留向量`() = runTest {
+        val received = mutableMapOf<String, String>()
+        val (queue, _) = pipeline { text, id, _ ->
+            received[id] = text
+            ExtractionResult(emptyList(), emptyList())
+        }
+        val pdf = File(root, "source.pdf")
+        PDDocument().use { document ->
+            val page = PDPage()
+            document.addPage(page)
+            PDPageContentStream(document, page).use { stream ->
+                stream.beginText(); stream.setFont(PDType1Font.HELVETICA, 12f)
+                stream.newLineAtOffset(20f, 700f); stream.showText("PDF Alpha knows Beta"); stream.endText()
+            }
+            document.save(pdf)
+        }
+        val docx = File(root, "source.docx")
+        XWPFDocument().use { document ->
+            document.createParagraph().createRun().setText("DOCX Alpha knows Beta")
+            docx.outputStream().use { document.write(it) }
+        }
+        val files = listOf(
+            register("read.pdf", "application/pdf", pdf.readBytes()),
+            register("read.docx", DocumentReferenceExtractor.DOCX_MIME, docx.readBytes()),
+            register("large.txt", "text/plain", ("a".repeat(300 * 1024) + "END").toByteArray()),
+        )
+        for (file in files) { seedOld(file); enqueue(queue, file) }
+        advanceUntilIdle()
+
+        assertThat(received["read.pdf"]).contains("PDF Alpha knows Beta")
+        assertThat(received["read.docx"]).contains("DOCX Alpha knows Beta")
+        assertThat(received["large.txt"]!!.length).isEqualTo(300 * 1024 + 3)
+        assertThat(received["large.txt"]).endsWith("END")
+        files.forEach { file ->
+            assertThat(database.vectorDao().getByDocId(file.uuid).single().id).isEqualTo("old-${file.uuid}")
+            assertThat(database.fileEntryDao().getByUuid("root", file.uuid)!!.kgExtractedAt).isNotNull()
+        }
+        coVerify(exactly = 0) { embedding.embedDocuments(any()) }
+        queue.shutdown()
+    }
+
+    @Test
+    fun `删除屏障等待不响应取消的迟到回片且文档关系不复活`() = runTest {
+        val file = register("deleted.txt", "text/plain", "Alpha Beta".toByteArray())
+        seedOld(file)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val (queue, service) = pipeline { _, _, _ ->
+            entered.complete(Unit)
+            withContext(NonCancellable) { release.await() }
+            ExtractionResult(listOf(ExtractedNode("Alpha", "person"), ExtractedNode("Beta", "person")), listOf(ExtractedEdge("Alpha", "Beta", "knows")))
+        }
+        enqueue(queue, file)
+        runCurrent()
+        entered.await()
+        val barrier = queue.acquireDeleteBarrier("root", listOf(file.uuid))
+        val deletion = async {
+            barrier.awaitReady()
+            service.delete("root", file.uuid)
+            database.fileEntryDao().delete(file)
+            barrier.commit()
+        }
+        runCurrent()
+        assertThat(deletion.isCompleted).isFalse()
+        release.complete(Unit)
+        advanceUntilIdle()
+        deletion.await()
+
+        assertThat(database.kgEdgeDao().getByDocIdForLifecycleCleanup(file.uuid)).isEmpty()
+        assertThat(database.vectorDao().getByDocId(file.uuid)).isEmpty()
+        assertThat(database.kgNodeDao().getAll()).isEmpty()
+        assertThat(database.vectorizationTaskDao().getByDocId(file.uuid)).isEmpty()
+        queue.shutdown()
+    }
+
+    @Test
+    fun `同内容正在向量化时手动KG请求升级活动任务且旧候选不能提交`() = runTest {
+        val file = register("upgrade.txt", "text/plain", "Alpha Beta".toByteArray())
+        val entered = CompletableDeferred<Unit>()
+        var calls = 0
+        coEvery { embedding.embedDocuments(any()) } coAnswers {
+            if (++calls == 1) { entered.complete(Unit); awaitCancellation() }
+            EmbeddingResult(firstArg<List<String>>().map { floatArrayOf(1f, 0f) })
+        }
+        var graphCalls = 0
+        val (queue, _) = pipeline { _, _, _ ->
+            graphCalls++
+            ExtractionResult(listOf(ExtractedNode("Alpha", "person"), ExtractedNode("Beta", "person")), listOf(ExtractedEdge("Alpha", "Beta", "knows")))
+        }
+        val oldId = queue.enqueueDocumentReference("root", file.uuid, file.name, file.mimeType!!, file.hash, file.updatedAt)
+        runCurrent()
+        entered.await()
+        val newId = enqueue(queue, file)
+        assertThat(newId).isNotEqualTo(oldId)
+        advanceUntilIdle()
+        assertThat(graphCalls).isEqualTo(1)
+        assertThat(database.vectorDao().getByDocId(file.uuid)).hasSize(1)
+        assertThat(database.kgEdgeDao().getByDocId(file.uuid)).hasSize(1)
+        assertThat(database.fileEntryDao().getByUuid("root", file.uuid)!!.kgExtractedAt).isNotNull()
+        queue.shutdown()
+    }
+
+    @Test
+    fun `失败展示期间立即重抽会建立新活动任务并执行`() = runTest {
+        val file = register("retry.txt", "text/plain", "Alpha Beta".toByteArray())
+        val (_, goodService) = pipeline { _, _, _ -> ExtractionResult(emptyList(), emptyList()) }
+        var calls = 0
+        val service = object : DocumentIndexService by goodService {
+            override suspend fun rebuild(event: FileIndexEvent): DocumentIndexResult =
+                if (++calls == 1) DocumentIndexResult.Failed(IllegalStateException("storage unavailable")) else goodService.rebuild(event)
+        }
+        val queue = queue(service)
+        val failureShown = CompletableDeferred<Unit>()
+        queue.beforeFailureDisplayDelayForTest = { failureShown.complete(Unit); awaitCancellation() }
+        val oldId = enqueue(queue, file)
+        runCurrent()
+        failureShown.await()
+        val newId = enqueue(queue, file)
+        assertThat(newId).isNotEqualTo(oldId)
+        advanceUntilIdle()
+        assertThat(calls).isEqualTo(2)
+        assertThat(database.vectorizationTaskDao().getByDocId(file.uuid)).isEmpty()
+        assertThat(database.fileEntryDao().getByUuid("root", file.uuid)!!.kgExtractedAt).isNotNull()
+        queue.shutdown()
+    }
+
+    @Test
+    fun `事务写库失败保留旧图与完成标记且队列报告失败`() = runTest {
+        val file = register("failed.txt", "text/plain", "Alpha Beta".toByteArray())
+        seedOld(file)
+        val builder = WorkspaceDocumentIndexCandidateBuilder(database.fileEntryDao(), embedding, RagConfiguration(),
+            dispatcher = StandardTestDispatcher(testScheduler), graphCandidateBuilder = { _, _, _ -> ExtractionResult(emptyList(), emptyList()) })
+        val service = RoomDocumentIndexService(database) { event ->
+            builder.build(event).copy(edges = listOf(KgEdgeEntity("bad", "missing", "missing2", "knows", docId = file.uuid, fileUuid = file.uuid, createdAt = 1)))
+        }
+        val queue = queue(service)
+        enqueue(queue, file)
+        advanceUntilIdle()
+
+        assertThat(database.vectorizationTaskDao().getByDocId(file.uuid).single().status).isEqualTo("failed")
+        assertThat(database.kgEdgeDao().getByDocId(file.uuid).single().id).isEqualTo("edge-${file.uuid}")
+        assertThat(database.fileEntryDao().getByUuid("root", file.uuid)!!.kgExtractedAt).isEqualTo(1)
+        queue.shutdown()
+    }
+
+    private fun TestScope.pipeline(graph: KnowledgeGraphCandidateBuilder): Pair<VectorizationQueue, DocumentIndexService> {
+        val builder = WorkspaceDocumentIndexCandidateBuilder(database.fileEntryDao(), embedding, RagConfiguration(docChunkSize = 800, chunkOverlap = 100),
+            dispatcher = StandardTestDispatcher(testScheduler), graphCandidateBuilder = graph)
+        val service = RoomDocumentIndexService(database, candidateBuilder = builder)
+        return queue(service) to service
+    }
+
+    private fun TestScope.queue(service: DocumentIndexService) = VectorizationQueue(
+        VectorStore(database.vectorDao(), database.kgNodeDao(), database.kgEdgeDao()), embedding, null,
+        database.vectorDao(), database.vectorizationTaskDao(), dispatcher = StandardTestDispatcher(testScheduler),
+        fileEntryDao = database.fileEntryDao(), documentIndexService = service,
+    )
+
+    private suspend fun enqueue(queue: VectorizationQueue, file: FileEntry, skipVectorization: Boolean = true) =
+        queue.enqueueDocumentReference("root", file.uuid, file.name, file.mimeType!!, file.hash, file.updatedAt, "full", skipVectorization)
+
+    private suspend fun register(name: String, mime: String, bytes: ByteArray): FileEntry {
+        File(root, name).writeBytes(bytes)
+        val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        val file = FileEntry(uuid = name, workspaceRootUuid = "root", parentUuid = "root", name = name, hash = hash,
+            mimeType = mime, sizeBytes = bytes.size.toLong(), physicalRootPath = root.path, materializedPath = "/$name", createdAt = 1, updatedAt = 2)
+        database.fileEntryDao().insert(file)
+        return file
+    }
+
+    private suspend fun seedOld(file: FileEntry) {
+        database.vectorDao().insert(VectorEntity(id = "old-${file.uuid}", docId = file.uuid, content = "old", embedding = ByteArray(8), createdAt = 1, fileUuid = file.uuid))
+        database.kgNodeDao().insert(KgNodeEntity("a-${file.uuid}", "Old Alpha", createdAt = 1, fileUuid = file.uuid))
+        database.kgNodeDao().insert(KgNodeEntity("b-${file.uuid}", "Old Beta", createdAt = 1, fileUuid = file.uuid))
+        database.kgEdgeDao().insert(KgEdgeEntity("edge-${file.uuid}", "a-${file.uuid}", "b-${file.uuid}", "knows", docId = file.uuid, fileUuid = file.uuid, createdAt = 1))
+        database.fileEntryDao().update(file.copy(vectorizedAt = 1, kgExtractedAt = 1))
+    }
+}
