@@ -51,7 +51,7 @@ val finalReleaseArtifactTasks = setOf(
 )
 
 fun releaseArtifactTask(taskName: String): Boolean {
-    val normalized = taskName.lowercase()
+    val normalized = taskName.lowercase().replace("sideload", "").replace("play", "")
     return normalized in finalReleaseArtifactTasks || normalized.startsWith("publishrelease")
 }
 
@@ -98,6 +98,20 @@ android {
             localeFilters += listOf("en", "zh-rCN")
         }
 
+    }
+
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("String", "DISTRIBUTION", "\"play\"")
+            buildConfigField("boolean", "ALL_FILES_ACCESS_AVAILABLE", "false")
+        }
+        create("sideload") {
+            dimension = "distribution"
+            buildConfigField("String", "DISTRIBUTION", "\"sideload\"")
+            buildConfigField("boolean", "ALL_FILES_ACCESS_AVAILABLE", "true")
+        }
     }
 
     signingConfigs {
@@ -229,12 +243,16 @@ android {
 
 }
 
-tasks.withType<PreviewScreenshotValidationTask>().configureEach {
-    systemProperty("user.timezone", "Asia/Shanghai")
-}
-
-tasks.withType<PreviewScreenshotUpdateTask>().configureEach {
-    systemProperty("user.timezone", "Asia/Shanghai")
+// 插件在变体注册期间设置目录；待所有项目完成配置后绑定共用基线，避免被覆盖。
+gradle.projectsEvaluated {
+    tasks.withType<PreviewScreenshotValidationTask>().configureEach {
+        systemProperty("user.timezone", "Asia/Shanghai")
+        testEngineInput.referenceImageDir.set(layout.projectDirectory.dir("src/screenshotTestDebug/reference"))
+    }
+    tasks.withType<PreviewScreenshotUpdateTask>().configureEach {
+        systemProperty("user.timezone", "Asia/Shanghai")
+        testEngineInput.referenceImageDir.set(layout.projectDirectory.dir("src/screenshotTestDebug/reference"))
+    }
 }
 
 gradle.taskGraph.whenReady {
@@ -360,13 +378,13 @@ tasks.withType<Test> {
 
 afterEvaluate {
     if (deviceE2eEnabled) return@afterEvaluate
-    val debugUnitTest = tasks.named<Test>("testDebugUnitTest")
+    val debugUnitTest = tasks.named<Test>("testSideloadDebugUnitTest")
     tasks.register<Test>("localGatewayIntegrationTest") {
         group = "verification"
         description = "显式测试本机无密钥聚合网关的五个模型；只发送有界合成文本与工具夹具。"
         testClassesDirs = debugUnitTest.get().testClassesDirs
         classpath = debugUnitTest.get().classpath
-        dependsOn("compileDebugUnitTestSources", "processDebugUnitTestJavaRes")
+        dependsOn("compileSideloadDebugUnitTestSources", "processSideloadDebugUnitTestJavaRes")
         filter { includeTestsMatching("*LocalGatewayIntegrationTest") }
         systemProperty("nexara.localGatewayIntegration", "true")
         providers.gradleProperty("nexara.localGatewayModels").orNull?.let {
@@ -404,7 +422,7 @@ afterEvaluate {
             showStandardStreams = false
         }
         if (configured) {
-            dependsOn("compileDebugUnitTestSources", "processDebugUnitTestJavaRes")
+            dependsOn("compileSideloadDebugUnitTestSources", "processSideloadDebugUnitTestJavaRes")
         }
         onlyIf {
             if (!configured) logger.lifecycle("integration credentials unavailable")

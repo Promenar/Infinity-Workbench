@@ -8,6 +8,7 @@ NATIVE_ROOT="${REPO_ROOT}/native-ui"
 DEVICE_E2E_ABI="${NEXARA_DEVICE_E2E_ABI:-x86_64}"
 DEVICE_E2E_SCOPE="${NEXARA_DEVICE_E2E_SCOPE:-full}"
 BUILD_TYPE_TASK="DeviceTest"
+DISTRIBUTION_TASK="Sideload"
 API_LEVEL="$(adb shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
 case "${DEVICE_E2E_ABI}" in
     x86_64|arm64-v8a) ;;
@@ -18,8 +19,8 @@ case "${DEVICE_E2E_ABI}" in
 esac
 TARGET_PACKAGE="com.promenar.nexara.native.deviceTest"
 TARGET_PACKAGE_REGEX="${TARGET_PACKAGE//./\\.}"
-APP_APK="${NATIVE_ROOT}/app/build/outputs/apk/deviceTest/app-deviceTest.apk"
-APP_TEST_APK="${NATIVE_ROOT}/app/build/outputs/apk/androidTest/deviceTest/app-deviceTest-androidTest.apk"
+APP_APK="${NATIVE_ROOT}/app/build/outputs/apk/sideload/deviceTest/app-sideload-deviceTest.apk"
+APP_TEST_APK="${NATIVE_ROOT}/app/build/outputs/apk/androidTest/sideload/deviceTest/app-sideload-deviceTest-androidTest.apk"
 MAIN_ACTIVITY_TEST_APK="${NATIVE_ROOT}/mainactivity-e2e/build/outputs/apk/deviceTest/mainactivity-e2e-deviceTest.apk"
 case "${DEVICE_E2E_SCOPE}" in
     minimum|full) ;;
@@ -48,7 +49,7 @@ PENDING_NOTIFICATION_SCREENSHOT_STAGE=""
 PENDING_NOTIFICATION_SCREENSHOT_EXPECTED=""
 
 mkdir -p "${ARTIFACT_DIR}"
-printf 'api_level=%s\nabi=%s\nscope=%s\nbuild_type=deviceTest\n' \
+printf 'api_level=%s\nabi=%s\nscope=%s\ndistribution=sideload\nbuild_type=deviceTest\n' \
     "${API_LEVEL}" "${DEVICE_E2E_ABI}" "${DEVICE_E2E_SCOPE}" \
     > "${ARTIFACT_DIR}/matrix.txt"
 
@@ -349,8 +350,8 @@ cd "${NATIVE_ROOT}"
 chmod +x gradlew
 ./gradlew --no-daemon --stacktrace -Pnexara.deviceE2e=true \
     -Pnexara.deviceE2eAbi="${DEVICE_E2E_ABI}" \
-    ":app:assemble${BUILD_TYPE_TASK}" \
-    ":app:assemble${BUILD_TYPE_TASK}AndroidTest" \
+    ":app:assemble${DISTRIBUTION_TASK}${BUILD_TYPE_TASK}" \
+    ":app:assemble${DISTRIBUTION_TASK}${BUILD_TYPE_TASK}AndroidTest" \
     ":mainactivity-e2e:assemble${BUILD_TYPE_TASK}"
 
 require_file "${APP_APK}"

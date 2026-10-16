@@ -80,11 +80,28 @@ def continued_shell_commands(script: str, executable: str) -> list[list[str]]:
 class ReleaseWorkflowReliabilityTest(unittest.TestCase):
     def test_android_ci_collects_all_quality_failures_without_ignoring_exit_status(self) -> None:
         commands = continued_shell_commands(ANDROID_CI, "./gradlew")
-        quality = next(command for command in commands if ":app:validateDebugScreenshotTest" in command)
+        quality = next(command for command in commands if ":app:validateSideloadDebugScreenshotTest" in command)
         self.assertIn("--continue", quality)
-        for task in (":app:testDebugUnitTest", ":app:lintDebug", ":app:assembleDebug"):
+        for task in (":app:testSideloadDebugUnitTest", ":app:lintSideloadDebug", ":app:assembleSideloadDebug"):
             self.assertIn(task, quality)
         self.assertNotIn("continue-on-error: true", ANDROID_CI)
+
+    def test_distribution_assets_and_smoke_are_independent(self) -> None:
+        build = workflow_job("build-release")
+        publish = workflow_job("publish")
+        smoke = workflow_job("signed-apk-smoke")
+        for flavor, suffix in (("sideload", ""), ("play", "-play")):
+            asset = f"nexara-v0.2.2-beta{suffix}.apk"
+            self.assertIn(f"outputs/apk/{flavor}/release/app-{flavor}-release.apk", build)
+            self.assertIn(f"dist/{asset}", publish)
+            self.assertIn(f"dist/{asset}.sha256", publish)
+            self.assertIn(f"apk-name: {asset}", smoke)
+            self.assertIn(f"distribution: {flavor}", smoke)
+        self.assertIn('matrix.apk-name', smoke)
+        self.assertIn('matrix.distribution', smoke)
+        self.assertIn('check-distribution-manifests.py', ANDROID_CI)
+        self.assertIn('check-distribution-manifests.py', build)
+        self.assertNotIn('-play.apk', workflow_job("signed-apk-upgrade-smoke"))
 
     def test_release_identity_matches_android_source(self) -> None:
         version_name = re.search(r'versionName\s*=\s*"([^"\n]+)"', APP_BUILD).group(1)
@@ -241,17 +258,20 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
                     "--no-daemon",
                     "--stacktrace",
                     "--no-build-cache",
-                    ":app:validateDebugScreenshotTest",
+                    ":app:validateSideloadDebugScreenshotTest",
                 ],
                 [
                     "./gradlew",
                     "--no-daemon",
                     "--stacktrace",
                     "--no-build-cache",
-                    ":app:testDebugUnitTest",
-                    ":app:lintDebug",
-                    ":app:assembleDebug",
-                    ":app:assembleRelease",
+                    ":app:testSideloadDebugUnitTest",
+                    ":app:lintSideloadDebug",
+                    ":app:assembleSideloadDebug",
+                    ":app:assemblePlayDebug",
+                    ":app:testPlayDebugUnitTest",
+                    ":app:assembleSideloadRelease",
+                    ":app:assemblePlayRelease",
                 ],
             ],
         )
@@ -262,8 +282,9 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertNotRegex(build_step, r"(?m)^\s*set\s+\+e\b")
 
     def test_r8_evidence_and_download_integrity_are_mandatory(self) -> None:
-        self.assertIn("outputs/mapping/release/mapping.txt", RELEASE)
-        self.assertRegex(RELEASE, r"test -s .*mapping\.txt")
+        self.assertIn('outputs/mapping/${distribution}Release', RELEASE)
+        self.assertIn('for distribution in sideload play; do', workflow_job("build-release"))
+        self.assertIn('test -s "${mapping_path}"', RELEASE)
         for filename in ("mapping.txt", "seeds.txt", "usage.txt", "configuration.txt"):
             self.assertIn(filename, RELEASE)
         self.assertGreaterEqual(RELEASE.count("sha256sum -c"), 2)
@@ -613,8 +634,8 @@ is_expected_resumed_activity "$2"
 
     def test_release_workflow_api35_api36_matrix_includes_minified_blackbox(self) -> None:
         self.assertEqual(RELEASE.count("- api-level: 31"), 1)
-        self.assertEqual(RELEASE.count("- api-level: 35"), 3)
-        self.assertEqual(RELEASE.count("- api-level: 36"), 3)
+        self.assertEqual(RELEASE.count("- api-level: 35"), 4)
+        self.assertEqual(RELEASE.count("- api-level: 36"), 4)
 
 
 if __name__ == "__main__":

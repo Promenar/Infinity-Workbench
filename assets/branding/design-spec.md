@@ -17,7 +17,7 @@
 
 Android 图层尺寸、安全区与单色规则依据[Android 官方自适应图标规范](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive)。
 
-项目通过 `native-ui/buildSrc` 的 `GenerateLauncherIcons` 和 `androidComponents.onVariants`，把每个变体的生成任务接入 `variant.sources.res.addGeneratedSourceDirectory`。资源合并自动依赖生成任务；`:app:generateNexaraLauncherIcons` 可单独生成并验证所有变体。普通 `assembleRelease`、`bundleRelease`、Android Studio、其它 IDE/ADE、CI 和命令行均使用这条 Gradle 链路，无需额外图像工具、插件、Python 或 Node。
+项目通过 `native-ui/buildSrc` 的 `GenerateLauncherIcons` 和 `androidComponents.onVariants`，把每个变体的生成任务接入 `variant.sources.res.addGeneratedSourceDirectory`。资源合并自动依赖生成任务；`:app:generateNexaraLauncherIcons` 可单独生成并验证所有变体。`assembleSideloadRelease`、`assemblePlayRelease`、对应 `bundleSideloadRelease` / `bundlePlayRelease`、Android Studio、其它 IDE/ADE、CI 和命令行均使用这条 Gradle 链路，无需额外图像工具、插件、Python 或 Node。
 
 每个变体拥有独立生成目录，由 Android Gradle Plugin 分配。自动生成：
 

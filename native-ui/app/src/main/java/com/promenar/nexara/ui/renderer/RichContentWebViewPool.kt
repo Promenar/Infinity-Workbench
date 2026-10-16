@@ -5,7 +5,10 @@ import android.graphics.Color
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.webkit.WebSettings
+import android.webkit.WebChromeClient
+import android.webkit.PermissionRequest
+import android.webkit.CookieManager
 
 object RichContentWebViewPool {
     private const val MAX_POOL_SIZE = 3
@@ -24,7 +27,10 @@ object RichContentWebViewPool {
 
     fun release(webView: WebView) {
         webView.visibility = View.GONE
+        webView.stopLoading()
+        webView.webViewClient = RichContentWebViewClient(webView.context)
         webView.loadUrl("about:blank")
+        webView.clearHistory()
         if (pool.size < MAX_POOL_SIZE) {
             pool.addLast(webView)
         } else {
@@ -37,6 +43,7 @@ object RichContentWebViewPool {
         pool.clear()
     }
 
+    @Suppress("DEPRECATION")
     private fun createWebView(context: Context): WebView {
         return WebView(context).apply {
             // 使用 MATCH_PARENT 而非 WRAP_CONTENT，避免 WebView 内部测量时
@@ -46,12 +53,29 @@ object RichContentWebViewPool {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
             settings.javaScriptEnabled = true
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            settings.allowFileAccessFromFileURLs = false
+            settings.allowUniversalAccessFromFileURLs = false
+            // 所有资源由安全客户端返回，禁止 Chromium 自行联网绕过 DNS/重定向门禁。
+            settings.blockNetworkLoads = true
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.domStorageEnabled = false
+            settings.databaseEnabled = false
+            settings.setGeolocationEnabled(false)
+            settings.javaScriptCanOpenWindowsAutomatically = false
+            settings.setSupportMultipleWindows(false)
+            settings.mediaPlaybackRequiresUserGesture = true
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
             settings.loadWithOverviewMode = true
             settings.useWideViewPort = true
             setBackgroundColor(Color.TRANSPARENT)
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
-            webViewClient = WebViewClient()
+            webViewClient = RichContentWebViewClient(context)
+            webChromeClient = object : WebChromeClient() {
+                override fun onPermissionRequest(request: PermissionRequest) { request.deny() }
+            }
         }
     }
 }

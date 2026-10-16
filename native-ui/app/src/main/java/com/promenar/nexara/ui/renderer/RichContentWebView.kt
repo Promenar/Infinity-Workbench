@@ -2,7 +2,6 @@ package com.promenar.nexara.ui.renderer
 
 import android.annotation.SuppressLint
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -164,7 +163,7 @@ fun RichContentWebView(
     val palette = rememberRichContentPalette()
     var webViewHeight by remember { mutableIntStateOf(minHeight) }
 
-    // ── 根治时序竞态：WebViewClient 必须在 loadDataWithBaseURL 之前就位 ──
+    // WebViewClient 必须在首次文档加载前绑定，以共享安全文档快照与测高回调。
     // 通过 rememberUpdatedState 保持 minHeight/maxHeight 引用的新鲜度，
     // 避免 WebViewClient 闭包捕获过期参数值。
     val currentMinHeight by rememberUpdatedState(minHeight)
@@ -172,7 +171,7 @@ fun RichContentWebView(
 
     val webView = remember {
         RichContentWebViewPool.acquire(context).apply {
-            webViewClient = object : WebViewClient() {
+            webViewClient = object : RichContentWebViewClient(context) {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     // 双重测量 + 延迟重测，覆盖 JS 动态渲染（Mermaid/ECharts 等）
                     fun measure() {
@@ -200,7 +199,6 @@ fun RichContentWebView(
     DisposableEffect(webView) {
         onDispose {
             // 归还前重置 WebViewClient，防止测高闭包在池中长期持有
-            webView.webViewClient = WebViewClient()
             RichContentWebViewPool.release(webView)
         }
     }
@@ -211,13 +209,7 @@ fun RichContentWebView(
             wv.settings.defaultFontSize = fontSize
             if (lastLoadedHtml != finalHtml) {
                 lastLoadedHtml = finalHtml
-                wv.loadDataWithBaseURL(
-                    "file:///android_asset/",
-                    finalHtml,
-                    "text/html",
-                    "UTF-8",
-                    null
-                )
+                wv.loadRichContent(finalHtml)
             }
         },
         modifier = modifier
