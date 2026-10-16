@@ -8,8 +8,10 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.data.generation.DefaultSessionToolResolver
+import com.promenar.nexara.data.generation.resolveSessionToolTarget
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.AgentEntity
 import com.promenar.nexara.data.model.Message
@@ -90,10 +92,13 @@ class SshDeviceTest {
         assertThat(observed.fingerprint).isEqualTo(fingerprint)
         assertThat(store.trust(host.alias, null, observed, host)).isTrue()
         assertThat(runtime.exec(owner, host.alias, "device-exec").exitCode).isEqualTo(7)
-        runtime.closeOwner(owner)
         val trusted = store.find(host.alias)!!
-        store.save(trusted.copy(trustedFingerprint = "SHA256:" + "A".repeat(43)))
+        val wrongKey = SshHostKey(observed.type, "SHA256:" + "A".repeat(43))
+        assertThat(store.trust(host.alias, trusted.trustedFingerprint, wrongKey, trusted)).isTrue()
+        assertThat(store.find(host.alias)?.trustedFingerprint).isEqualTo(wrongKey.fingerprint)
         assertThat(failure { runtime.exec(owner, host.alias, "device-exec") }).isEqualTo("HOST_KEY_CHANGED")
+        trust()
+        assertThat(runtime.exec(owner, host.alias, "device-exec").exitCode).isEqualTo(7)
     }
 
     @Test fun execReturnsSeparateStreamsAndExitCode() = runBlocking {
@@ -133,18 +138,18 @@ class SshDeviceTest {
             hash?.let { put("expected_sha256", it) }
         }
         val initial = call("sftp_write", args("设备初始😀"))
-        assertThat(initial.status).isEqualTo("success")
+        assertWithMessage(initial.content).that(initial.status).isEqualTo("success")
         val hash = Json.parseToJsonElement(initial.content).jsonObject.getValue("sha256").jsonPrimitive.content
         val written = call("sftp_write", args("条件写入成功", hash))
-        assertThat(written.status).isEqualTo("success")
+        assertWithMessage(written.content).that(written.status).isEqualTo("success")
         val conflict = call("sftp_write", args("不得覆盖", hash))
         assertThat(conflict.status).isEqualTo("error")
         assertThat(conflict.content).contains("SHA256_CONFLICT")
         val read = call("sftp_read", buildJsonObject { put("host", host.alias); put("path", path) })
-        assertThat(read.status).isEqualTo("success")
+        assertWithMessage(read.content).that(read.status).isEqualTo("success")
         assertThat(Json.parseToJsonElement(read.content).jsonObject.getValue("content").jsonPrimitive.content).isEqualTo("条件写入成功")
         val listed = call("sftp_list", buildJsonObject { put("host", host.alias); put("path", "/") })
-        assertThat(listed.status).isEqualTo("success")
+        assertWithMessage(listed.content).that(listed.status).isEqualTo("success")
         val entries = Json.parseToJsonElement(listed.content).jsonObject.getValue("entries").jsonArray
         assertThat(entries.map { it.jsonObject.getValue("name").jsonPrimitive.content }).contains(path.removePrefix("/"))
         assertThat(entries.any { ".nexara-" in it.jsonObject.getValue("name").jsonPrimitive.content }).isFalse()
@@ -250,11 +255,20 @@ class SshDeviceTest {
             val prepared = resolver.resolve(chat.getSession(sessionId)!!)
             executor.executeTools(sessionId, assistant.id, listOf(call), allowedToolCallIds = emptySet(), preparedTools = prepared)
             val key = ToolExecutionKey(sessionId, assistant.id, call.id)
-            assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.PENDING_APPROVAL)
+            assertWithMessage("工具消息：%s", messages.getBySession(sessionId).filter { it.role == MessageRole.TOOL }.map { it.content })
+                .that(ledger.state(key)).isEqualTo(ToolLedgerState.PENDING_APPROVAL)
             assertThat(messages.getBySession(sessionId).none { it.role == MessageRole.TOOL }).isTrue()
             val identity = ledger.invocationIdentity(key)!!
+            val tool = prepared.single { it.function.name == call.name }
+            val target = resolveSessionToolTarget(chat.getSession(sessionId)!!, tool, call.arguments, null,
+                sshHostStore = store, sshSessionHost = runtime::sessionHost)
+            assertThat(target).isNotNull()
+            val tuple = Json.parseToJsonElement(target!!).jsonArray
+            assertThat(tuple.take(3).map { it.jsonPrimitive.content }).containsExactly("process", host.alias, "device-exec").inOrder()
+            assertThat(tuple.last().jsonObject.getValue("sshHostId").jsonPrimitive.content).isEqualTo(host.id)
+            assertThat(tuple.last().jsonObject.getValue("sshIdentity").jsonPrimitive.content).isEqualTo(store.find(host.alias)!!.executionIdentity().digest)
             val request = ToolApprovalRequestFactory.create(assistant.id,
-                listOf(ApprovalCallCandidate(call, tools.single { it.name == "ssh_exec" }.risk, identity)))
+                listOf(ApprovalCallCandidate(call, tool.risk, identity, executionTarget = target)))
             assertThat(ledger.createToolApproval(sessionId, assistant.id, listOf(call), setOf(call.id), request)).isEqualTo(ToolApprovalCreation.CREATED)
             assertThat(ledger.decideExactToolApproval(sessionId, request, true)).isInstanceOf(ExactToolApprovalDecision.Decided::class.java)
             chat.upsertSession(sessions.getById(sessionId)!!)
