@@ -6,10 +6,13 @@ import org.junit.Test
 
 class ToolExecutionPolicyTest {
     @Test
-    fun `semi 只允许已知安全只读工具免审批`() {
-        assertThat(ToolExecutionPolicy.requiresApproval(ExecutionMode.SEMI, ToolRisk.SAFE_READ)).isFalse()
+    fun `semi 只允许已知安全只读与会话内部状态工具免审批`() {
+        val exempt = setOf(ToolRisk.SAFE_READ, ToolRisk.SESSION_STATE)
+        exempt.forEach { risk ->
+            assertThat(ToolExecutionPolicy.requiresApproval(ExecutionMode.SEMI, risk)).isFalse()
+        }
 
-        ToolRisk.entries.filterNot { it == ToolRisk.SAFE_READ }.forEach { risk ->
+        ToolRisk.entries.filterNot { it in exempt }.forEach { risk ->
             assertThat(ToolExecutionPolicy.requiresApproval(ExecutionMode.SEMI, risk)).isTrue()
         }
     }

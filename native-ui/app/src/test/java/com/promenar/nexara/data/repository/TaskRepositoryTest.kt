@@ -14,6 +14,8 @@ import com.promenar.nexara.domain.repository.PlanPatchOp
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
+import kotlinx.coroutines.flow.first
+import com.promenar.nexara.data.local.db.entity.TaskNodeEntity
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -106,7 +108,7 @@ class TaskRepositoryTest {
         val result = repo.initializePlan(sessionId, "第二个任务", tree)
 
         assertThat(result.status).isEqualTo("conflict")
-        assertThat(result.title).isEqualTo("收集资料")
+        assertThat(result.title).isEqualTo("第一个任务")
     }
 
     @Test
@@ -413,6 +415,87 @@ class TaskRepositoryTest {
         assertThat(caught).isTrue()
         val plan = repo.getPlan(sessionId)!!
         assertThat(plan.steps[0].children[0].title).isEqualTo("阅读文档")
+    }
+
+    private suspend fun insertSession(id: String) {
+        sessionDao.insert(SessionEntity(id = id, agentId = "agent1", createdAt = 1000L, updatedAt = 1000L))
+    }
+
+    private fun setStatus(stepId: String, status: String) =
+        PlanPatchOp(action = "set_status", stepId = stepId, payload = mapOf("status" to status))
+
+    @Test
+    fun `不同会话的同名步骤互不覆盖`() = runBlocking {
+        insertSession("other-session")
+        repo.initializePlan(sessionId, "会话一", buildTree("1" to "A1", "2" to "A2"))
+        repo.initializePlan("other-session", "会话二", buildTree("1" to "B1", "2" to "B2"))
+
+        repo.updatePlan("other-session", listOf(setStatus("2", "done")))
+
+        val first = repo.getPlan(sessionId)!!
+        assertThat(first.title).isEqualTo("会话一")
+        assertThat(first.steps.map { it.id to it.title }).containsExactly("1" to "A1", "2" to "A2").inOrder()
+        assertThat(first.steps.map { it.status }).containsExactly("doing", "todo").inOrder()
+        val second = repo.getPlan("other-session")!!
+        assertThat(second.steps.map { it.title }).containsExactly("B1", "B2").inOrder()
+        assertThat(second.steps[1].status).isEqualTo("done")
+    }
+
+    @Test
+    fun `状态同义词归一化且无效状态报错`() = runBlocking {
+        repo.initializePlan(sessionId, "测试", buildTree("1" to "第一步", "2" to "第二步"))
+
+        val result = repo.updatePlan(sessionId, listOf(setStatus("1", "completed"), setStatus("2", "in_progress")))
+
+        assertThat(result.steps.map { it.status }).containsExactly("done", "doing").inOrder()
+        val error = runCatching { repo.updatePlan(sessionId, listOf(setStatus("2", "finished-ish"))) }.exceptionOrNull()
+        assertThat(error).isInstanceOf(IllegalArgumentException::class.java)
+        assertThat(error!!.message).contains("todo")
+    }
+
+    @Test
+    fun `未知步骤与无活跃计划都明确报错`() = runBlocking {
+        val noPlan = runCatching { repo.updatePlan(sessionId, listOf(setStatus("1", "done"))) }.exceptionOrNull()
+        assertThat(noPlan).isInstanceOf(IllegalStateException::class.java)
+
+        repo.initializePlan(sessionId, "测试", buildTree("1" to "第一步"))
+        val unknown = runCatching { repo.updatePlan(sessionId, listOf(setStatus("9", "done"))) }.exceptionOrNull()
+        assertThat(unknown).isInstanceOf(IllegalArgumentException::class.java)
+        assertThat(unknown!!.message).contains("9")
+    }
+
+    @Test
+    fun `计划目标持久化且不出现在步骤树与进度中`() = runBlocking {
+        repo.initializePlan(sessionId, "发布 \"v2\" 版本", buildTree("1" to "打包"))
+
+        val plan = repo.getPlan(sessionId)!!
+        assertThat(plan.title).isEqualTo("发布 \"v2\" 版本")
+        assertThat(plan.steps.map { it.id }).containsExactly("1")
+        assertThat(repo.countLeafProgress(plan.steps)).isEqualTo(0 to 1)
+        assertThat(repo.observeActiveTree(sessionId).first().map { it.id }).containsExactly("1")
+        assertThat(repo.observeGoal(sessionId).first()).isEqualTo("发布 \"v2\" 版本")
+    }
+
+    @Test
+    fun `重复步骤ID被拒绝`() = runBlocking {
+        val error = runCatching {
+            repo.initializePlan(sessionId, "测试", buildTree("1" to "甲", "1" to "乙"))
+        }.exceptionOrNull()
+
+        assertThat(error).isInstanceOf(IllegalArgumentException::class.java)
+        assertThat(repo.getPlan(sessionId)).isNull()
+    }
+
+    @Test
+    fun `无命名空间的旧步骤仍可在本会话内更新`() = runBlocking {
+        dao.upsertAll(listOf(
+            TaskNodeEntity(id = "legacy-1", sessionId = sessionId, title = "旧步骤", status = "doing", createdAt = 1L, updatedAt = 1L),
+        ))
+
+        val result = repo.updatePlan(sessionId, listOf(setStatus("legacy-1", "done")))
+
+        assertThat(result.steps.single().id).isEqualTo("legacy-1")
+        assertThat(result.steps.single().status).isEqualTo("done")
     }
 
     @Test

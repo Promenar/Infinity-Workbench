@@ -202,6 +202,7 @@ data class ChatScreenActions(
     val onRegenerateMessage: (String) -> Unit = {},
     val onBranchMessage: (String) -> Unit = {},
     val onApprove: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
+    val onApproveAll: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onDecline: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onRemovePostProcessTask: (String) -> Unit = {},
     val onManualSummary: () -> Unit = {},
@@ -566,6 +567,7 @@ fun ChatScreenContent(
                                 },
                                 enabled = !uiState.isApprovalSubmitting,
                                 onApprove = { actions.onApprove(request) },
+                                onApproveAll = { actions.onApproveAll(request) },
                                 onDecline = { actions.onDecline(request) },
                             )
                         }
@@ -835,6 +837,7 @@ private fun approvalDescription(
 private fun approvalRiskLabel(risk: String): String = stringResource(
     when (risk) {
         "safe_read" -> R.string.chat_approval_risk_safe_read
+        "session_state" -> R.string.chat_approval_risk_session_state
         "file_write" -> R.string.chat_approval_risk_file_write
         "patch" -> R.string.chat_approval_risk_patch
         "delete" -> R.string.chat_approval_risk_delete

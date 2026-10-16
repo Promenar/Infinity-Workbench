@@ -17,6 +17,66 @@ import io.mockk.mockk
 import org.junit.Test
 
 class ChatGenerationContentStrategyTest {
+    private val write = ToolCall("call-w", "write_file", "{}")
+    private val read = ToolCall("call-r", "read_file", "{}")
+
+    @Test
+    fun `空白助手占位与失败空消息不进入协议历史`() {
+        val history = sanitizeProtocolHistory(listOf(
+            Message("u1", MessageRole.USER, "第一问"),
+            Message("a1", MessageRole.ASSISTANT, "", isError = true),
+            Message("u2", MessageRole.USER, "第二问"),
+            Message("a2", MessageRole.ASSISTANT, ""),
+        ))
+
+        assertThat(history.map { it.id }).containsExactly("u1", "u2").inOrder()
+    }
+
+    @Test
+    fun `没有结果的工具调用补齐未执行结果`() {
+        val history = sanitizeProtocolHistory(listOf(
+            Message("u1", MessageRole.USER, "改文件"),
+            Message("a1", MessageRole.ASSISTANT, "", toolCalls = listOf(read, write)),
+            Message("t1", MessageRole.TOOL, "内容", toolCallId = "call-r", name = "read_file"),
+            Message("u2", MessageRole.USER, "算了，换个做法"),
+        ))
+
+        assertThat(history.map { it.role }).containsExactly(
+            MessageRole.USER, MessageRole.ASSISTANT, MessageRole.TOOL, MessageRole.TOOL, MessageRole.USER,
+        ).inOrder()
+        val synthetic = history[3]
+        assertThat(synthetic.toolCallId).isEqualTo("call-w")
+        assertThat(synthetic.name).isEqualTo("write_file")
+        assertThat(synthetic.content).isEqualTo(MISSING_TOOL_RESULT_CONTENT)
+    }
+
+    @Test
+    fun `孤立或重复的工具结果被丢弃`() {
+        val history = sanitizeProtocolHistory(listOf(
+            Message("u1", MessageRole.USER, "写文件"),
+            // 调用已被清空的历史损坏形态：结果失去调用方
+            Message("a1", MessageRole.ASSISTANT, "文件已写好"),
+            Message("t-orphan", MessageRole.TOOL, "写入成功", toolCallId = "call-w"),
+            Message("a2", MessageRole.ASSISTANT, "", toolCalls = listOf(read)),
+            Message("t1", MessageRole.TOOL, "第一次", toolCallId = "call-r"),
+            Message("t1-dup", MessageRole.TOOL, "重复", toolCallId = "call-r"),
+        ))
+
+        assertThat(history.map { it.id }).containsExactly("u1", "a1", "a2", "t1").inOrder()
+    }
+
+    @Test
+    fun `完整配对的工具轮次原样保留`() {
+        val messages = listOf(
+            Message("u1", MessageRole.USER, "读文件"),
+            Message("a1", MessageRole.ASSISTANT, "我先读取", toolCalls = listOf(read)),
+            Message("t1", MessageRole.TOOL, "内容", toolCallId = "call-r"),
+            Message("a2", MessageRole.ASSISTANT, "读完了"),
+        )
+
+        assertThat(sanitizeProtocolHistory(messages)).isEqualTo(messages)
+    }
+
     @Test
     fun `文本文档只作为完整用户内容进入协议历史`() {
         val document = MessageDocumentAttachment(
@@ -154,7 +214,7 @@ class ChatGenerationContentStrategyTest {
         )
 
         assertThat(prompt.map { it.content })
-            .containsExactly("system", "question", "")
+            .containsExactly("system", "question")
             .inOrder()
         assertThat(prompt.map { it.content }).doesNotContain("old answer")
     }

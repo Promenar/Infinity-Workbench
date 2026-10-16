@@ -14,6 +14,7 @@ import com.promenar.nexara.data.remote.protocol.ProtocolTool
 import com.promenar.nexara.data.remote.protocol.ProtocolToolCall
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import com.promenar.nexara.domain.model.ExecutionModeCodec
+import com.promenar.nexara.domain.usecase.DEFAULT_ACTIVE_CONTEXT_WINDOW
 import com.promenar.nexara.domain.tool.ToolExecutionPolicy
 import com.promenar.nexara.domain.tool.ToolRisk
 import java.security.MessageDigest
@@ -25,6 +26,53 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+
+/** 补齐缺失工具结果时回传给模型的说明。 */
+internal const val MISSING_TOOL_RESULT_CONTENT = "工具未执行：该调用在得到结果前已被中断，没有可用结果。"
+
+/**
+ * 发送前的协议历史结构修复，保证 Provider 接受的调用/结果配对约束：
+ * - 跳过正文为空且没有工具调用的助手消息（失败占位、本轮尚未生成的目标消息）；
+ * - 工具结果只保留紧随其调用方助手消息、且尚未出现过的那一条，其余孤立或重复结果丢弃；
+ * - 助手消息中没有结果的工具调用补一条“未执行”结果，避免历史损坏后每次请求都被拒绝。
+ */
+internal fun sanitizeProtocolHistory(messages: List<Message>): List<Message> {
+    val result = mutableListOf<Message>()
+    var openCalls: Map<String, ToolCall> = emptyMap()
+    val answered = mutableSetOf<String>()
+    fun closeOpenCalls() {
+        openCalls.values.filter { it.id !in answered }.forEach { call ->
+            result += Message(
+                id = "synthetic_tool_result_${call.id}",
+                role = MessageRole.TOOL,
+                content = MISSING_TOOL_RESULT_CONTENT,
+                toolCallId = call.id,
+                name = call.name,
+            )
+        }
+        openCalls = emptyMap()
+        answered.clear()
+    }
+    for (message in messages) {
+        if (message.role == MessageRole.TOOL) {
+            val callId = message.toolCallId
+            if (callId != null && callId in openCalls && answered.add(callId)) result += message
+            continue
+        }
+        closeOpenCalls()
+        if (message.role != MessageRole.ASSISTANT) {
+            result += message
+            continue
+        }
+        val original = message.toolCalls.orEmpty()
+        val calls = original.filter { it.id.isNotBlank() }.distinctBy { it.id }
+        if (message.content.isBlank() && calls.isEmpty()) continue
+        result += if (calls.size == original.size) message else message.copy(toolCalls = calls)
+        openCalls = calls.associateBy { it.id }
+    }
+    closeOpenCalls()
+    return result
+}
 
 data class GenerationContentNormalization(
     val content: String,
@@ -66,7 +114,7 @@ class DefaultChatGenerationContentStrategy(
         excludedMessageIds: Set<String>,
     ): List<ProtocolMessage> = buildList {
         if (systemPrompt.isNotBlank()) add(ProtocolMessage(role = "system", content = systemPrompt))
-        val windowSize = session.inferenceParams?.activeContextWindow ?: 10
+        val windowSize = session.inferenceParams?.activeContextWindow ?: DEFAULT_ACTIVE_CONTEXT_WINDOW
         val eligibleMessages = session.messages.filterNot { it.id in excludedMessageIds }
         val pinnedIndex = pinnedUserMessageId?.let { id ->
             eligibleMessages.indexOfFirst { it.id == id && it.role == MessageRole.USER }
@@ -87,7 +135,7 @@ class DefaultChatGenerationContentStrategy(
                 activeMessages
             }
         }
-        protocolMessages.forEach { message ->
+        sanitizeProtocolHistory(protocolMessages).forEach { message ->
             add(
                 when (message.role) {
                     MessageRole.USER -> ProtocolMessage(

@@ -22,6 +22,7 @@ data class TaskPanelUiState(
 fun taskPanelUiState(
     tree: List<TaskStep>,
     isGenerating: Boolean,
+    goal: String? = null,
 ): TaskPanelUiState? {
     val leaves = buildList {
         fun appendLeaves(nodes: List<TaskStep>) {
@@ -37,7 +38,7 @@ fun taskPanelUiState(
     val current = unfinished.firstOrNull { it.status == "doing" } ?: unfinished.first()
     return TaskPanelUiState(
         planId = tree.firstOrNull()?.id.orEmpty(),
-        title = tree.firstOrNull()?.title.orEmpty(),
+        title = goal?.takeIf(String::isNotBlank) ?: tree.firstOrNull()?.title.orEmpty(),
         currentStepTitle = current.title,
         currentStepId = current.id,
         doneCount = leaves.count { it.status == "done" },

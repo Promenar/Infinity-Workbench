@@ -6,6 +6,8 @@ enum class GenerationPhase {
     CONNECTING,
     THINKING,
     STREAMING,
+    /** 正在执行本轮已获准的工具调用；生成仍在进行，可停止。 */
+    EXECUTING_TOOLS,
     WAITING_APPROVAL,
     POST_PROCESSING,
     COMPLETED,
@@ -47,7 +49,8 @@ data class GenerationRequest(
     val imageDataUrls: List<String>,
     val runtimePolicy: GenerationRuntimePolicy,
     val rollbackUserOnPreparationFailure: Boolean = false,
-    val assistantMessageIdToReplace: String? = null,
+    /** 本次生成成功（或进入等待审批）后才删除的旧回复消息；失败或取消时保留。 */
+    val messageIdsToReplace: Set<String> = emptySet(),
     val requestId: String = assistantMessageId,
 )
 

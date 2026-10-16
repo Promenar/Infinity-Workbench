@@ -18,7 +18,28 @@ data class ContextBuilderResult(
     val ragReferences: List<RagReference>,
     val ragUsage: RagUsage?,
     val finalSystemPrompt: String,
-    val kgPaths: List<com.promenar.nexara.data.model.KgPath> = emptyList()
+    val kgPaths: List<com.promenar.nexara.data.model.KgPath> = emptyList(),
+    /** 本次构建所用的检索结果；同一次生成的后续工具轮次以 [ContextBuilderParams.cachedRetrieval] 复用。 */
+    val retrieval: ContextRetrieval = ContextRetrieval(
+        searchContext = searchContext,
+        searchCitations = citations,
+        ragContext = ragContext,
+        ragReferences = ragReferences,
+        ragUsage = ragUsage,
+        kgContext = "",
+        kgPaths = kgPaths,
+    ),
+)
+
+/** 依赖用户问题的检索结果（联网搜索、文档与记忆、知识图谱），与工具轮次无关。 */
+data class ContextRetrieval(
+    val searchContext: String,
+    val searchCitations: List<com.promenar.nexara.data.model.Citation>,
+    val ragContext: String,
+    val ragReferences: List<RagReference>,
+    val ragUsage: RagUsage?,
+    val kgContext: String,
+    val kgPaths: List<com.promenar.nexara.data.model.KgPath>,
 )
 
 data class ContextBuilderParams(
@@ -36,6 +57,8 @@ data class ContextBuilderParams(
     val availableToolNames: Set<String>? = null,
     /** 已启用且可通过 activate_skill 加载的技能（ADR-022）。 */
     val availableSkills: List<com.promenar.nexara.data.skills.AgentSkillMetadata> = emptyList(),
+    /** 同一次生成中首轮的检索结果；非空时跳过联网搜索、RAG 与 KG 检索，只重建系统提示。 */
+    val cachedRetrieval: ContextRetrieval? = null,
 )
 
 interface WebSearchProvider {
@@ -71,6 +94,40 @@ class ContextBuilder(
     private val taskRepository: ITaskRepository? = null
 ) {
     suspend fun buildContext(params: ContextBuilderParams): ContextBuilderResult {
+        val retrieval = params.cachedRetrieval ?: retrieve(params)
+
+        // 预取任务计划（suspend 调用）
+        val activePlan: TaskState? = try {
+            taskRepository?.getPlan(params.sessionId)
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            NexaraLogger.logError("ContextBuilder.TaskPlanFetch", e)
+            null
+        }
+
+        val systemPrompt = buildSystemPrompt(
+            params = params,
+            ragContext = retrieval.ragContext,
+            ragReferences = retrieval.ragReferences,
+            searchContext = retrieval.searchContext,
+            kgContext = retrieval.kgContext,
+            activePlan = activePlan
+        )
+
+        return ContextBuilderResult(
+            searchContext = retrieval.searchContext,
+            ragContext = retrieval.ragContext,
+            citations = retrieval.searchCitations,
+            ragReferences = retrieval.ragReferences,
+            ragUsage = retrieval.ragUsage,
+            finalSystemPrompt = systemPrompt,
+            kgPaths = retrieval.kgPaths,
+            retrieval = retrieval,
+        )
+    }
+
+    private suspend fun retrieve(params: ContextBuilderParams): ContextRetrieval {
         val (searchContext, searchCitations) = if (params.session.options.webSearch) {
             val cleanedQuery = cleanSearchQuery(params.content)
             NexaraLogger.log("[ContextBuilder] 被动联网搜索 Query 已提炼: inputChars=${params.content.length}, outputChars=${cleanedQuery.length}")
@@ -98,35 +155,17 @@ class ContextBuilder(
             }
         } else "" to emptyList<com.promenar.nexara.data.model.KgPath>()
 
-        // 预取任务计划（suspend 调用）
-        val activePlan: TaskState? = try {
-            taskRepository?.getPlan(params.sessionId)
-        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            NexaraLogger.logError("ContextBuilder.TaskPlanFetch", e)
-            null
-        }
-
-        val systemPrompt = buildSystemPrompt(
-            params = params,
-            ragContext = ragResult.first,
-            ragReferences = ragResult.second,
+        return ContextRetrieval(
             searchContext = searchContext,
-            kgContext = kgContext,
-            activePlan = activePlan
-        )
-
-        return ContextBuilderResult(
-            searchContext = searchContext,
+            searchCitations = searchCitations,
             ragContext = ragResult.first,
-            citations = searchCitations,
             ragReferences = ragResult.second,
             ragUsage = ragResult.third,
-            finalSystemPrompt = systemPrompt,
-            kgPaths = kgPaths
+            kgContext = kgContext,
+            kgPaths = kgPaths,
         )
     }
+
 
     /**
      * 合并 session/temp RagOptions 后应用 agent 检索配置，作为 RAG 与 KG 共用的唯一 effective 配置。

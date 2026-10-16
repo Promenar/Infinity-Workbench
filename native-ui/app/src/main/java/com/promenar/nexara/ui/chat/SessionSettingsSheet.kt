@@ -1,5 +1,6 @@
 package com.promenar.nexara.ui.chat
 
+import com.promenar.nexara.domain.usecase.withDefaults
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -325,12 +326,18 @@ private fun ParamsPanel(
     session: com.promenar.nexara.data.model.Session?,
     chatViewModel: ChatViewModel
 ) {
+    // 保存只写会话显式覆盖项；显示时未覆盖的温度、Top P、最大输出回退为智能体预设的实际取值。
     val params = session?.inferenceParams ?: com.promenar.nexara.data.model.InferenceParams()
-    
-    var currentTemperature by remember(params.temperature) { mutableStateOf((params.temperature ?: 0.7).toFloat()) }
+    val agentDefaults by androidx.compose.runtime.produceState<com.promenar.nexara.data.model.InferenceParams?>(
+        initialValue = null,
+        session?.agentId,
+    ) { value = chatViewModel.agentInferenceDefaults() }
+    val shown = params.withDefaults(agentDefaults)
+
+    var currentTemperature by remember(shown.temperature) { mutableStateOf((shown.temperature ?: 0.7).toFloat()) }
     var currentTimeout by remember(params.streamTimeout) { mutableStateOf(params.streamTimeout ?: 120) }
-    var currentTopP by remember(params.topP) { mutableStateOf((params.topP ?: 1.0).toFloat()) }
-    var currentMaxTokens by remember(params.maxTokens) { mutableStateOf(params.maxTokens ?: 0) }
+    var currentTopP by remember(shown.topP) { mutableStateOf((shown.topP ?: 1.0).toFloat()) }
+    var currentMaxTokens by remember(shown.maxTokens) { mutableStateOf(shown.maxTokens ?: 0) }
     
     var currentTopK by remember(params.topK) { mutableStateOf(params.topK ?: 0) }
     var currentRepetitionPenalty by remember(params.repetitionPenalty) { mutableStateOf((params.repetitionPenalty ?: 1.0).toFloat()) }

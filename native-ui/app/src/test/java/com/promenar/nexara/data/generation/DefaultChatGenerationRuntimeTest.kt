@@ -392,7 +392,7 @@ class DefaultChatGenerationRuntimeTest {
     @Test
     fun `重试多轮工具调用失败会回滚本轮创建的全部消息`() = runTest {
         val fixture = postProcessFixture()
-        val request = fixture.request.copy(assistantMessageIdToReplace = "old-assistant")
+        val request = fixture.request.copy(messageIdsToReplace = setOf("old-assistant"))
         fixture.store.update {
             ChatState(
                 sessions = listOf(
@@ -1027,7 +1027,7 @@ class DefaultChatGenerationRuntimeTest {
                             agentId = "agent",
                             modelId = "local::model",
                             executionMode = "auto",
-                            options = SessionOptions(toolsEnabled = true),
+                            options = SessionOptions(toolsEnabled = true, webSearch = true),
                             messages = listOf(user, initialAssistant),
                         ),
                     ),
@@ -1087,6 +1087,13 @@ class DefaultChatGenerationRuntimeTest {
             )
             override fun createClient(resolved: ResolvedProviderModel): UnifiedLlmClient = error("local")
         }
+        var searches = 0
+        val countingSearch = object : com.promenar.nexara.ui.chat.manager.WebSearchProvider {
+            override suspend fun search(query: String): Pair<String, List<com.promenar.nexara.data.model.Citation>> {
+                searches++
+                return "SEARCH-CONTEXT-MARKER" to emptyList()
+            }
+        }
         val toolExecutor = mockk<ToolExecutor>()
         val executorPreparedSnapshots = mutableListOf<List<ProtocolTool>>()
         coEvery { toolExecutor.executeTools(any(), any(), any(), any(), any()) } coAnswers {
@@ -1129,7 +1136,7 @@ class DefaultChatGenerationRuntimeTest {
             agentRepository = mockk<IAgentRepository> { coEvery { getById(any()) } returns null },
             configResolver = AgentConfigResolver(settings),
             routeGate = ChatProviderRouteGate(router, UnconfinedTestDispatcher(testScheduler)),
-            contextBuilder = ContextBuilder(),
+            contextBuilder = ContextBuilder(webSearchProvider = countingSearch),
             messageManager = messageManager,
             localProviderFactory = { provider },
             provider = provider,
@@ -1156,5 +1163,10 @@ class DefaultChatGenerationRuntimeTest {
             .containsExactly("call-1", "call-2").inOrder()
         assertThat(executorPreparedSnapshots).isNotEmpty()
         assertThat(executorPreparedSnapshots.all { it == advertisedTools }).isTrue()
+        // 检索只依赖用户问题：三轮请求只联网一次，且每轮系统提示都带同一份检索结果。
+        assertThat(searches).isEqualTo(1)
+        assertThat(prompts.all { prompt ->
+            prompt.messages.first { it.role == "system" }.content.contains("SEARCH-CONTEXT-MARKER")
+        }).isTrue()
     }
 }

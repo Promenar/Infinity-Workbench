@@ -53,7 +53,7 @@ class MainActivityChatFlowE2eTest {
         app.resetE2eObservations()
         prepareModels()
         seedSession(approval = null)
-        assertThat(app.chatStore.getSession(sessionId)?.messages).hasSize(1)
+        assertThat(app.chatStore.getSession(sessionId)?.messages).hasSize(2)
         app.getSharedPreferences("nexara_onboarding", 0)
             .edit().putString("step", "LANGUAGE").commit()
         assertThat(
@@ -181,11 +181,19 @@ class MainActivityChatFlowE2eTest {
 
     private suspend fun seedSession(approval: ApprovalRequest?) {
         app.sessionRepository.delete(sessionId)
+        val user = Message(
+            id = "e2e-user",
+            role = MessageRole.USER,
+            content = "fixture request",
+            createdAt = 1_000L,
+        )
         val assistant = Message(
             id = "e2e-assistant",
             role = MessageRole.ASSISTANT,
             content = "fixture response",
             modelId = secondModelId,
+            parentMessageId = user.id,
+            createdAt = 1_001L,
         )
         val session = Session(
             id = sessionId,
@@ -194,9 +202,10 @@ class MainActivityChatFlowE2eTest {
             modelId = if (approval == null) firstModelId else secondModelId,
             approvalRequest = approval,
             loopStatus = if (approval == null) LoopStatus.IDLE else LoopStatus.WAITING_FOR_APPROVAL,
-            messages = listOf(assistant),
+            messages = listOf(user, assistant),
         )
         app.sessionRepository.create(session.copy(messages = emptyList()))
+        app.messageRepository.insert(user, sessionId)
         app.messageRepository.insert(assistant, sessionId)
         app.chatStore.update { ChatState(sessions = listOf(session)) }
     }

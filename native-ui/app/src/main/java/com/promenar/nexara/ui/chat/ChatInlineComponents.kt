@@ -2,6 +2,8 @@
 package com.promenar.nexara.ui.chat
 
 
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.animation.*
 import com.promenar.nexara.ui.theme.forReading
 import androidx.compose.animation.core.*
@@ -1006,7 +1008,8 @@ fun ApprovalCard(
     executionTime: String? = null,
     enabled: Boolean = true,
     onApprove: () -> Unit = {},
-    onDecline: () -> Unit = {}
+    onDecline: () -> Unit = {},
+    onApproveAll: (() -> Unit)? = null,
 ) {
     val accentColor = if (isExecuted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
     val currentCall = calls.firstOrNull()
@@ -1165,6 +1168,7 @@ fun ApprovalCard(
                 }
 
                 if (!isExecuted) {
+                  Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -1205,6 +1209,23 @@ fun ApprovalCard(
                             Text(stringResource(R.string.chat_approval_approve_current), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold))
                         }
                     }
+                    if (onApproveAll != null && remainingCount > 0) {
+                        TextButton(
+                            onClick = onApproveAll,
+                            enabled = enabled,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                                .testTag(UiTags.CHAT_APPROVAL_APPROVE_ALL),
+                        ) {
+                            Text(
+                                stringResource(R.string.chat_approval_approve_all, calls.size),
+                                style = NexaraTypography.labelMedium,
+                                color = accentColor,
+                            )
+                        }
+                    }
+                  }
                 }
             }
         }

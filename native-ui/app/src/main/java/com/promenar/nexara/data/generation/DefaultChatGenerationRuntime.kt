@@ -4,7 +4,9 @@ import android.content.SharedPreferences
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.document.ContextBudgetDecision
 import com.promenar.nexara.data.model.ApprovalRequest
-import com.promenar.nexara.data.model.InferenceParams
+import com.promenar.nexara.domain.usecase.DEFAULT_ACTIVE_CONTEXT_WINDOW
+import com.promenar.nexara.domain.usecase.inferenceDefaults
+import com.promenar.nexara.domain.usecase.withDefaults
 import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.PhaseStatus
 import com.promenar.nexara.data.model.PostProcessStatus
@@ -138,6 +140,8 @@ internal class DefaultChatGenerationRuntime(
     private var finalAnswerMode = false
     private var currentAssistantMessageId: String? = null
     private var rollbackBaselineMessageIds: Set<String> = emptySet()
+    private var replacementCommitted = false
+    private var cachedRetrieval: com.promenar.nexara.ui.chat.manager.ContextRetrieval? = null
 
     override suspend fun prepare(request: GenerationRequest) {
         val session = requireNotNull(store.getSession(request.sessionId)) { "生成会话不存在" }
@@ -152,7 +156,8 @@ internal class DefaultChatGenerationRuntime(
     }
 
     override suspend fun buildContext(request: GenerationRequest): GenerationPreparationOutcome {
-        ui.replaceRagPhases(defaultRagPhases())
+        val reusedRetrieval = cachedRetrieval
+        if (reusedRetrieval == null) ui.replaceRagPhases(defaultRagPhases())
         val session = store.getSession(request.sessionId) ?: error("生成会话不存在")
         val agent = agentRepository.getById(session.agentId)
         val agentConfig = configResolver.resolve(agent)
@@ -189,6 +194,7 @@ internal class DefaultChatGenerationRuntime(
                     params.copy(
                         availableToolNames = toolNames,
                         availableSkills = if (ACTIVATE_SKILL_TOOL in toolNames) skillCatalog() else emptyList(),
+                        cachedRetrieval = reusedRetrieval,
                     ),
                 )
             }
@@ -209,25 +215,25 @@ internal class DefaultChatGenerationRuntime(
             is ChatRoutePreparation.Success -> preparation.route to preparation.context
         }
         ui.setProviderFailure(null)
-        if (!context.hasPersistableRagContext()) {
-            ui.replaceRagPhases(emptyList())
-            messageManager.clearMessageRagState(request.sessionId, assistantMessageId(request))
-        } else {
-            ui.updateRagPhases { phases ->
-                val executed = phases.filter { it.status != PhaseStatus.PENDING }.map { it.id }.toSet()
-                phases.map { if (it.id in executed) it.copy(status = PhaseStatus.DONE) else it }
+        // 检索只依赖用户问题：首轮检索并把引用挂到首条回复上，后续工具轮次复用结果，不重复联网与检索。
+        if (reusedRetrieval == null) {
+            if (!context.hasPersistableRagContext()) {
+                ui.replaceRagPhases(emptyList())
+                messageManager.clearMessageRagState(request.sessionId, assistantMessageId(request))
+            } else {
+                ui.updateRagPhases { phases ->
+                    val executed = phases.filter { it.status != PhaseStatus.PENDING }.map { it.id }.toSet()
+                    phases.map { if (it.id in executed) it.copy(status = PhaseStatus.DONE) else it }
+                }
             }
-        }
-        context.toMessageRagUpdateOptions()?.let {
-            messageManager.updateMessageContent(request.sessionId, assistantMessageId(request), "", it)
-            messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
+            context.toMessageRagUpdateOptions()?.let {
+                messageManager.updateMessageContent(request.sessionId, assistantMessageId(request), "", it)
+                messageManager.flushNonApprovalUpdatesNow(request.sessionId, assistantMessageId(request))
+            }
+            cachedRetrieval = context.retrieval
         }
         val tools = routeTools
-        val inference = session.inferenceParams ?: InferenceParams(
-            temperature = agentConfig.temperature,
-            topP = agentConfig.topP,
-            maxTokens = agentConfig.maxTokens,
-        )
+        val inference = session.inferenceParams.withDefaults(agentConfig.inferenceDefaults())
         preparedRoute = route
         preparedContext = context
         preparedTools = tools
@@ -241,7 +247,7 @@ internal class DefaultChatGenerationRuntime(
                 session,
                 systemPrompt,
                 request.userMessageId,
-                setOfNotNull(request.assistantMessageIdToReplace),
+                request.messageIdsToReplace,
             ),
             model = requireNotNull(route.remoteModelId),
             temperature = inference.temperature,
@@ -462,6 +468,8 @@ internal class DefaultChatGenerationRuntime(
                     loopStatus = com.promenar.nexara.data.model.LoopStatus.WAITING_FOR_APPROVAL,
                 )
             }
+            // 新回复已持久化待审批调用，本次运行在此结束且不会再到达终态，旧回复必须在此完成替换。
+            commitReplacement(request)
             ui.setGenerating(false)
             return GenerationToolDecision.WAIT_FOR_APPROVAL
         }
@@ -550,7 +558,7 @@ internal class DefaultChatGenerationRuntime(
                     NexaraLogger.logError("[GenerationRuntime] addTurnToMemory failed", error)
                 }
             }
-            val windowSize = session.inferenceParams?.activeContextWindow ?: 10
+            val windowSize = session.inferenceParams?.activeContextWindow ?: DEFAULT_ACTIVE_CONTEXT_WINDOW
             if (session.messages.size <= windowSize) return
             val activeIds = contentStrategy.safeActiveWindow(session.messages, windowSize).map { it.id }.toSet()
             val overflow = session.messages.filter { it.id !in activeIds && !it.isArchived }
@@ -596,10 +604,10 @@ internal class DefaultChatGenerationRuntime(
                 )
             } else null,
         )
-        request.assistantMessageIdToReplace?.let { replacedId ->
+        if (request.messageIdsToReplace.isNotEmpty()) {
             if (status == GenerationTerminalStatus.SUCCESS) {
-                messageManager.deleteMessage(request.sessionId, replacedId)
-            } else {
+                commitReplacement(request)
+            } else if (!replacementCommitted) {
                 messageManager.discardPreparedMessages(
                     request.sessionId,
                     messagesCreatedSincePrepare(request),
@@ -612,6 +620,18 @@ internal class DefaultChatGenerationRuntime(
         messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
 
     override fun cancelProvider() = provider.cancel()
+
+    /** 删除被本次生成替换的旧回复；只执行一次，删除失败向上抛出以保留旧回复并走持久化失败路径。 */
+    private suspend fun commitReplacement(request: GenerationRequest) {
+        if (replacementCommitted || request.messageIdsToReplace.isEmpty()) return
+        val present = store.getSession(request.sessionId)?.messages.orEmpty().mapTo(hashSetOf()) { it.id }
+        request.messageIdsToReplace.filter { it in present }.forEach { replacedId ->
+            if (store.getSession(request.sessionId)?.messages?.any { it.id == replacedId } == true) {
+                messageManager.deleteMessage(request.sessionId, replacedId)
+            }
+        }
+        replacementCommitted = true
+    }
 
     private fun assistantMessageId(request: GenerationRequest): String =
         currentAssistantMessageId ?: request.assistantMessageId
@@ -629,7 +649,7 @@ internal class DefaultChatGenerationRuntime(
         failure: ProviderResolution.Failure?,
     ) {
         ui.setFailureSurface(
-            if (request.assistantMessageIdToReplace == null) {
+            if (request.messageIdsToReplace.isEmpty()) {
                 GenerationFailureSurface.INLINE_MESSAGE
             } else {
                 GenerationFailureSurface.OVERLAY
@@ -639,7 +659,7 @@ internal class DefaultChatGenerationRuntime(
         ui.setProviderFailure(failure)
         ui.setGenerating(false)
         ui.onHandledFailure()
-        if (request.assistantMessageIdToReplace != null) {
+        if (request.messageIdsToReplace.isNotEmpty()) {
             messageManager.discardPreparedMessages(
                 request.sessionId,
                 messagesCreatedSincePrepare(request),
@@ -664,7 +684,7 @@ internal class DefaultChatGenerationRuntime(
         ui.setProviderFailure(null)
         ui.setGenerating(false)
         ui.onHandledFailure()
-        if (request.assistantMessageIdToReplace != null) {
+        if (request.messageIdsToReplace.isNotEmpty()) {
             messageManager.discardPreparedMessages(
                 request.sessionId,
                 messagesCreatedSincePrepare(request),

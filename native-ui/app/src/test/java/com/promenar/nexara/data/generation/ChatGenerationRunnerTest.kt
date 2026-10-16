@@ -91,7 +91,7 @@ class ChatGenerationRunnerTest {
         assertThat(events.phases()).containsExactly(
             GenerationPhase.PREPARING, GenerationPhase.BUILDING_CONTEXT,
             GenerationPhase.CONNECTING, GenerationPhase.THINKING,
-            GenerationPhase.WAITING_APPROVAL,
+            GenerationPhase.EXECUTING_TOOLS,
             GenerationPhase.BUILDING_CONTEXT,
             GenerationPhase.CONNECTING, GenerationPhase.THINKING, GenerationPhase.STREAMING,
             GenerationPhase.POST_PROCESSING, GenerationPhase.COMPLETED,
@@ -116,7 +116,9 @@ class ChatGenerationRunnerTest {
 
         ChatGenerationRunner(runtime).run(request(), events::add)
 
-        assertThat(events.phases().last()).isEqualTo(GenerationPhase.WAITING_APPROVAL)
+        assertThat(events.phases().takeLast(2))
+            .containsExactly(GenerationPhase.EXECUTING_TOOLS, GenerationPhase.WAITING_APPROVAL)
+            .inOrder()
         assertThat(runtime.flushCount).isEqualTo(1)
         assertThat(runtime.terminals).isEmpty()
     }

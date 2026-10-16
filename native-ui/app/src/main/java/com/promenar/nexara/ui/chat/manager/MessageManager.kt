@@ -669,11 +669,19 @@ class MessageManager(
         sessionId: String,
         messageId: String,
         onAbortGeneration: ((String) -> Unit)? = null
+    ) = deleteMessages(sessionId, listOf(messageId), onAbortGeneration)
+
+    /** 删除多条消息及其派生子消息（工具结果等），Store 与数据库一次性同步。 */
+    suspend fun deleteMessages(
+        sessionId: String,
+        messageIds: List<String>,
+        onAbortGeneration: ((String) -> Unit)? = null
     ) {
+        if (messageIds.isEmpty()) return
         val storeMessages = store.getSession(sessionId)?.messages.orEmpty()
         val persistedMessages = messageRepository.getBySession(sessionId)
         val allMessages = (storeMessages + persistedMessages).distinctBy { it.id }
-        val removalIds = messageRemovalIds(allMessages, messageId)
+        val removalIds = messageIds.flatMapTo(linkedSetOf()) { messageRemovalIds(allMessages, it) }.toList()
         val state = store.get()
         if (
             state.currentGeneratingSessionId == sessionId &&
@@ -699,6 +707,22 @@ class MessageManager(
             }
         } finally {
             finishPurge(purgeKeys)
+        }
+    }
+
+    /** 撤销删除：重新写入消息，并按创建时间把它们放回原位置。 */
+    suspend fun restoreMessages(sessionId: String, messages: List<Message>) {
+        if (messages.isEmpty()) return
+        messages.forEach { messageRepository.insert(it, sessionId) }
+        val restoredIds = messages.mapTo(hashSetOf()) { it.id }
+        store.update { state ->
+            state.copy(
+                sessions = state.sessions.map { s ->
+                    if (s.id == sessionId) {
+                        s.copy(messages = (s.messages.filterNot { it.id in restoredIds } + messages).sortedBy { it.createdAt })
+                    } else s
+                }
+            )
         }
     }
 
@@ -752,10 +776,8 @@ class MessageManager(
             .map { it.id }
         val purgeKeys = purgeMessageState(sessionId, targetIds)
         try {
-            try {
-                messageRepository.deleteMessagesAfter(sessionId, timestamp)
-            } catch (_: Exception) {
-            }
+            // 数据库删除失败必须向上抛出，避免 Store 已删而数据库仍保留、重启后旧消息回流。
+            messageRepository.deleteMessagesAfter(sessionId, timestamp)
 
             store.update { state ->
                 state.copy(

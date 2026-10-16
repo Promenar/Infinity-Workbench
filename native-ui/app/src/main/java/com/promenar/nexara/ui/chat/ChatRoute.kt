@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -195,8 +196,11 @@ fun ChatRoute(
     val activeTaskTree by remember(sessionId, resolvedDependencies.taskRepository) {
         resolvedDependencies.taskRepository.observeActiveTree(sessionId)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
-    val taskPanel = remember(activeTaskTree, uiState.isGenerating) {
-        taskPanelUiState(activeTaskTree, uiState.isGenerating)
+    val activeTaskGoal by remember(sessionId, resolvedDependencies.taskRepository) {
+        resolvedDependencies.taskRepository.observeGoal(sessionId)
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val taskPanel = remember(activeTaskTree, activeTaskGoal, uiState.isGenerating) {
+        taskPanelUiState(activeTaskTree, uiState.isGenerating, activeTaskGoal)
     }
     val inputText by chatViewModel.inputText.collectAsStateWithLifecycle()
     val tokenState by chatViewModel.tokenIndicatorState.collectAsStateWithLifecycle()
@@ -206,6 +210,7 @@ fun ChatRoute(
     val draftDocuments by chatViewModel.draftDocuments.collectAsStateWithLifecycle()
     val isImportingDocument by chatViewModel.isImportingDocument.collectAsStateWithLifecycle()
     val draftConsumptionEpoch by chatViewModel.draftConsumptionEpoch.collectAsStateWithLifecycle()
+    val deletionUndo by chatViewModel.deletionUndo.collectAsStateWithLifecycle()
     val providerModels by ProviderManager.getInstance().providerModels.collectAsStateWithLifecycle()
     val modelDisplayNames = remember(providerModels, uiState.session?.modelId, uiState.messages) {
         resolveModelDisplayNames(
@@ -401,6 +406,21 @@ fun ChatRoute(
         )
     }
 
+    val deletedLabel = stringResource(R.string.chat_undo_delete)
+    val undoLabel = stringResource(R.string.chat_btn_undo)
+    LaunchedEffect(deletionUndo) {
+        val undo = deletionUndo ?: return@LaunchedEffect
+        snackbarAction = chatViewModel::undoLastDeletion
+        snackbarData = NexaraSnackbarData(deletedLabel, SnackbarType.INFO, undoLabel)
+        snackbarHostState.currentSnackbarData?.dismiss()
+        val result = snackbarHostState.showSnackbar(
+            message = deletedLabel,
+            actionLabel = undoLabel,
+            duration = SnackbarDuration.Long,
+        )
+        if (result == SnackbarResult.Dismissed) chatViewModel.dismissDeletionUndo(undo.token)
+    }
+
     ChatScreenContent(
         state = ChatScreenState(
             uiState = uiState,
@@ -455,6 +475,7 @@ fun ChatRoute(
                 }
             },
             onApprove = { request -> chatViewModel.approveRequest(request) },
+            onApproveAll = chatViewModel::approveAllRequests,
             onDecline = chatViewModel::rejectRequest,
             onRemovePostProcessTask = chatViewModel::removePostProcessTask,
             onManualSummary = chatViewModel::summarizeHistory,

@@ -159,6 +159,9 @@ data class ChatUiState(
 )
 
 enum class BackgroundWarningKind { FGS_UNAVAILABLE, NOTIFICATIONS_UNAVAILABLE }
+/** 删除后的撤销提示：[count] 为被删除的消息条数。 */
+data class DeletionUndo(val token: String, val count: Int)
+
 data class BackgroundGenerationWarning(
     val taskId: String,
     val kind: BackgroundWarningKind,
@@ -177,7 +180,7 @@ internal data class PendingPermissionTurn(
     val text: String,
     val imageDataUrls: List<String>,
     val documents: List<MessageDocumentAttachment>,
-    val assistantMessageIdToReplace: String? = null,
+    val assistantMessageIdsToReplace: Set<String> = emptySet(),
     val reuseUserMessageId: String? = null,
 )
 
@@ -383,6 +386,13 @@ class ChatViewModel(
     private var fontSizePersistenceJob: Job? = null
     private val sendPreparationMutex = Mutex()
     private val approvalSubmissionMutex = Mutex()
+    /** 重新生成期间被替换、暂不展示的旧回复；成功后由运行时删除，失败或取消后恢复展示。 */
+    private val _replacingMessageIds = MutableStateFlow<Set<String>>(emptySet())
+    /** 隐藏旧回复所对应的生成任务；该任务结束或进入等待审批后恢复展示（成功时旧回复已被删除）。 */
+    private var replacingTaskId: String? = null
+    private val _deletionUndo = MutableStateFlow<DeletionUndo?>(null)
+    /** 最近一次删除的可撤销提示；为空表示没有可撤销的删除。 */
+    val deletionUndo: StateFlow<DeletionUndo?> = _deletionUndo
 
     @Suppress("UNCHECKED_CAST")
     val uiState: StateFlow<ChatUiState> = combine(
@@ -399,6 +409,7 @@ class ChatViewModel(
         _backgroundServiceStoppedError,
         _backgroundWarning,
         _isApprovalSubmitting,
+        _replacingMessageIds,
     ) { args: Array<Any?> ->
         val state = args[0] as com.promenar.nexara.ui.chat.ChatState
         val sessionId = args[1] as String?
@@ -413,6 +424,7 @@ class ChatViewModel(
         val backgroundServiceStoppedError = args[10] as BackgroundServiceStoppedError?
         val backgroundWarning = args[11] as BackgroundGenerationWarning?
         val isApprovalSubmitting = args[12] as Boolean
+        val replacingMessageIds = args[13] as Set<String>
 
         val session = state.sessions.find { it.id == sessionId }
         if (session != null) {
@@ -421,7 +433,9 @@ class ChatViewModel(
         ChatUiState(
             session = session,
             agentName = agentName,
-            messages = session?.messages ?: emptyList(),
+            messages = session?.messages.orEmpty().let { messages ->
+                if (replacingMessageIds.isEmpty()) messages else messages.filterNot { it.id in replacingMessageIds }
+            },
             isGenerating = isGenerating,
             isLoading = isLoading,
             status = status,
@@ -487,7 +501,8 @@ class ChatViewModel(
                         _generationStatus.value = when {
                             presentation.handledFailure ->
                                 if (failureAcknowledged) GenerationStatus.IDLE else GenerationStatus.ERROR
-                            presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.THINKING ->
+                            presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.THINKING ||
+                                presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.EXECUTING_TOOLS ->
                                 GenerationStatus.THINKING
                             presentation.phase == com.promenar.nexara.domain.generation.GenerationPhase.STREAMING ->
                                 GenerationStatus.RECEIVING
@@ -517,6 +532,12 @@ class ChatViewModel(
                         generationPresentationStore.observe(sessionId),
                     ) { task, presentation -> task to presentation }
                         .collect { (task, presentation) ->
+                        replacingTaskId?.let { replacing ->
+                            if (task == null || task.taskId != replacing || task.phase in FOREGROUND_STOPPING_PHASES) {
+                                replacingTaskId = null
+                                _replacingMessageIds.value = emptySet()
+                            }
+                        }
                         if (task == null) {
                             _isGenerating.value = false
                             observedTaskId?.let {
@@ -550,6 +571,7 @@ class ChatViewModel(
                             com.promenar.nexara.domain.generation.GenerationPhase.CONNECTING -> GenerationStatus.UPLOADING
                             com.promenar.nexara.domain.generation.GenerationPhase.THINKING -> GenerationStatus.THINKING
                             com.promenar.nexara.domain.generation.GenerationPhase.STREAMING -> GenerationStatus.RECEIVING
+                            com.promenar.nexara.domain.generation.GenerationPhase.EXECUTING_TOOLS -> GenerationStatus.THINKING
                             com.promenar.nexara.domain.generation.GenerationPhase.COMPLETED -> GenerationStatus.COMPLETED
                             com.promenar.nexara.domain.generation.GenerationPhase.FAILED -> GenerationStatus.ERROR
                             com.promenar.nexara.domain.generation.GenerationPhase.CANCELLED -> GenerationStatus.IDLE
@@ -601,9 +623,7 @@ class ChatViewModel(
             }
         }
         approvalManager.setCallbacks(
-            onGenerateMessage = { sessionId, content, isResumption ->
-                generateMessage(sessionId, content, isResumption)
-            },
+            onGenerateMessage = { sessionId, _, _ -> resumeAfterApproval(sessionId) },
             onExecuteTools = { sessionId, targetMessageId, allowedToolCallIds ->
                 val session = store.getSession(sessionId) ?: return@setCallbacks
                 val msg = session.messages.find { it.id == targetMessageId } ?: return@setCallbacks
@@ -686,6 +706,7 @@ class ChatViewModel(
         cancelPendingPreparation()
         generationJob = viewModelScope.launch {
             sendPreparationMutex.withLock {
+                closePendingApprovalBeforeNewTurn(sessionId)
                 _generationStatus.update { GenerationStatus.UPLOADING }
                 _isGenerating.update { true }
                 _error.update { null }
@@ -730,7 +751,7 @@ class ChatViewModel(
         text: String,
         imageDataUrls: List<String>,
         documents: List<MessageDocumentAttachment>,
-        assistantMessageIdToReplace: String? = null,
+        assistantMessageIdsToReplace: Set<String> = emptySet(),
         reuseUserMessageId: String? = null,
     ) {
         when (
@@ -746,7 +767,7 @@ class ChatViewModel(
                     imageDataUrls,
                     documents,
                     backgroundAllowed = true,
-                    assistantMessageIdToReplace = assistantMessageIdToReplace,
+                    assistantMessageIdsToReplace = assistantMessageIdsToReplace,
                     reuseUserMessageId = reuseUserMessageId,
                 )
             com.promenar.nexara.background.generation.BackgroundGenerationPolicy.FOREGROUND_ONLY ->
@@ -757,7 +778,7 @@ class ChatViewModel(
                     imageDataUrls,
                     documents,
                     backgroundAllowed = false,
-                    assistantMessageIdToReplace = assistantMessageIdToReplace,
+                    assistantMessageIdsToReplace = assistantMessageIdsToReplace,
                     reuseUserMessageId = reuseUserMessageId,
                 )
             com.promenar.nexara.background.generation.BackgroundGenerationPolicy.REQUIRES_PERMISSION -> {
@@ -768,7 +789,7 @@ class ChatViewModel(
                     text,
                     imageDataUrls,
                     documents,
-                    assistantMessageIdToReplace,
+                    assistantMessageIdsToReplace,
                     reuseUserMessageId,
                 )
                 mutableNotificationPermissionRequest.value = NotificationPermissionRequest(token)
@@ -806,7 +827,7 @@ class ChatViewModel(
                         pending.imageDataUrls,
                         pending.documents,
                         backgroundAllowed = granted,
-                        assistantMessageIdToReplace = pending.assistantMessageIdToReplace,
+                        assistantMessageIdsToReplace = pending.assistantMessageIdsToReplace,
                         reuseUserMessageId = pending.reuseUserMessageId,
                     )
                 } catch (_: Exception) {
@@ -825,7 +846,7 @@ class ChatViewModel(
         imageDataUrls: List<String>,
         documents: List<MessageDocumentAttachment>,
         backgroundAllowed: Boolean,
-        assistantMessageIdToReplace: String?,
+        assistantMessageIdsToReplace: Set<String>,
         reuseUserMessageId: String?,
     ) {
         if (reuseUserMessageId != null) {
@@ -835,7 +856,7 @@ class ChatViewModel(
                 reuseUserMessageId,
                 text,
                 backgroundAllowed,
-                assistantMessageIdToReplace,
+                assistantMessageIdsToReplace,
             )
         } else {
             enqueuePreparedUserTurn(sessionId, session, text, imageDataUrls, documents, backgroundAllowed)
@@ -848,7 +869,7 @@ class ChatViewModel(
         userMessageId: String,
         text: String,
         backgroundAllowed: Boolean,
-        assistantMessageIdToReplace: String?,
+        assistantMessageIdsToReplace: Set<String>,
     ): Boolean {
         val assistantMessageId = IdGenerator.message("ai")
         messageManager.addMessage(
@@ -862,6 +883,7 @@ class ChatViewModel(
                 createdAt = System.currentTimeMillis(),
             ),
         )
+        _replacingMessageIds.value = assistantMessageIdsToReplace
         val start = try {
             generateMessage(
                 sessionId = sessionId,
@@ -872,9 +894,10 @@ class ChatViewModel(
                 userContent = text,
                 backgroundAllowed = backgroundAllowed,
                 rollbackUserOnPreparationFailure = false,
-                assistantMessageIdToReplace = assistantMessageIdToReplace,
+                assistantMessageIdsToReplace = assistantMessageIdsToReplace,
             )
         } catch (failure: Throwable) {
+            _replacingMessageIds.value = emptySet()
             withContext(NonCancellable) {
                 runCatching {
                     messageManager.discardPreparedMessages(sessionId, listOf(assistantMessageId))
@@ -882,6 +905,8 @@ class ChatViewModel(
             }
             throw failure
         }
+        replacingTaskId = (start as? com.promenar.nexara.domain.generation.StartGenerationResult.Started)?.taskId
+        if (replacingTaskId == null) _replacingMessageIds.value = emptySet()
         if (
             start is com.promenar.nexara.domain.generation.StartGenerationResult.Busy ||
             start is com.promenar.nexara.domain.generation.StartGenerationResult.Rejected ||
@@ -1019,6 +1044,47 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * 新回合（发送、重新生成、删除待审批回复）开始前关闭仍在等待的审批：
+     * 未决调用写入“已取消”结果，协议历史中每个工具调用都有对应结果。
+     */
+    private suspend fun closePendingApprovalBeforeNewTurn(sessionId: String) {
+        if (store.getSession(sessionId)?.approvalRequest == null) return
+        try {
+            approvalManager.cancelPendingApproval(sessionId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            // 台账无法写入取消结果时仍须放行新回合；缺失的结果由协议历史修复补齐。
+            NexaraLogger.logError("[ChatViewModel] close pending approval failed", error)
+            approvalManager.setApprovalRequest(sessionId, null)
+            approvalManager.setLoopStatus(sessionId, com.promenar.nexara.data.model.LoopStatus.PAUSED)
+        }
+    }
+
+    /**
+     * 审批决定完成后继续本轮：新建助手消息承接后续回答并携带本轮用户消息，
+     * 发起工具调用的原消息与其工具结果保持不变，协议历史才能保持调用与结果成对。
+     */
+    internal suspend fun resumeAfterApproval(sessionId: String) {
+        val session = store.getSession(sessionId) ?: return
+        val anchorIndex = session.messages.indexOfLast { it.role == MessageRole.ASSISTANT }
+        if (anchorIndex < 0) return
+        val anchor = session.messages[anchorIndex]
+        val userMessage = anchor.parentMessageId
+            ?.let { parentId -> session.messages.firstOrNull { it.id == parentId && it.role == MessageRole.USER } }
+            ?: session.messages.take(anchorIndex).lastOrNull { it.role == MessageRole.USER }
+            ?: return
+        enqueuePreparedAssistantRetry(
+            sessionId = sessionId,
+            session = session,
+            userMessageId = userMessage.id,
+            text = userMessage.content,
+            backgroundAllowed = currentBackgroundAllowed(),
+            assistantMessageIdsToReplace = emptySet(),
+        )
+    }
+
     @Suppress("UNUSED_PARAMETER")
     private suspend fun generateMessage(
         sessionId: String,
@@ -1030,7 +1096,7 @@ class ChatViewModel(
         backgroundAllowed: Boolean = currentBackgroundAllowed(),
         rollbackUserOnPreparationFailure: Boolean = false,
         clearDraftOnConnecting: Boolean = false,
-        assistantMessageIdToReplace: String? = null,
+        assistantMessageIdsToReplace: Set<String> = emptySet(),
     ): com.promenar.nexara.domain.generation.StartGenerationResult? {
         val session = store.getSession(sessionId) ?: return null
         val assistantMsgId = existingAssistantMsgId
@@ -1052,7 +1118,7 @@ class ChatViewModel(
                 com.promenar.nexara.domain.generation.GenerationRuntimePolicy.FOREGROUND_ONLY
             },
             rollbackUserOnPreparationFailure = rollbackUserOnPreparationFailure,
-            assistantMessageIdToReplace = assistantMessageIdToReplace,
+            messageIdsToReplace = assistantMessageIdsToReplace,
             requestId = IdGenerator.message("generation"),
         )
         if (clearDraftOnConnecting) {
@@ -1246,6 +1312,9 @@ class ChatViewModel(
     }
 
     private fun resetSessionTransientState() {
+        replacingTaskId = null
+        _replacingMessageIds.value = emptySet()
+        _deletionUndo.value = null
         _streamingContent.value = ""
         _postProcessTasks.value = emptyList()
         _ragPhases.value = emptyList()
@@ -1380,36 +1449,31 @@ class ChatViewModel(
 
     fun retryLastMessage() {
         val sessionId = _currentSessionId.value ?: return
-        val session = store.getSession(sessionId) ?: return
-
-        val lastUserMsg = session.messages.lastOrNull { it.role == MessageRole.USER }
-        if (lastUserMsg == null) return
-
-        val lastAssistantMsg = session.messages.lastOrNull { it.role == MessageRole.ASSISTANT }
-
-        cancelCurrentSessionGeneration()
-        generationJob = viewModelScope.launch {
-            try {
-                applyBackgroundPolicyGate(
-                    sessionId,
-                    session,
-                    lastUserMsg.content,
-                    lastUserMsg.userImages.orEmpty(),
-                    lastUserMsg.userDocuments.orEmpty(),
-                    assistantMessageIdToReplace = lastAssistantMsg?.id,
-                    reuseUserMessageId = lastUserMsg.id,
-                )
-            } catch (_: Exception) {
-                _error.update { "无法安全删除旧回复，已取消重试。" }
-                _generationStatus.update { GenerationStatus.ERROR }
-                _isGenerating.update { false }
-            }
-        }
+        val lastUserMsg = store.getSession(sessionId)?.messages?.lastOrNull { it.role == MessageRole.USER } ?: return
+        regenerateMessage(lastUserMsg.id)
     }
 
     fun approveRequest(expectedRequest: ApprovalRequest, intervention: String? = null) {
         val sessionId = _currentSessionId.value ?: return
         submitApproval(sessionId, expectedRequest, approved = true, intervention = intervention)
+    }
+
+    /**
+     * 批准当前批次中剩余的全部调用：按队列逐个精确批准，最后一个决定后由审批管理器统一继续生成。
+     * 新一轮生成产生的审批（属于其它助手消息）不在本次批准范围内。
+     */
+    fun approveAllRequests(expectedRequest: ApprovalRequest) {
+        val sessionId = _currentSessionId.value ?: return
+        if (!approvalSubmissionMutex.tryLock()) return
+        _isApprovalSubmitting.value = true
+        viewModelScope.launch {
+            try {
+                approvalManager.approveAll(sessionId, expectedRequest)
+            } finally {
+                _isApprovalSubmitting.value = false
+                approvalSubmissionMutex.unlock()
+            }
+        }
     }
 
     fun rejectRequest(expectedRequest: ApprovalRequest) {
@@ -1473,43 +1537,6 @@ class ChatViewModel(
 
     fun regenerateLastMessage() {
         retryLastMessage()
-    }
-
-    fun editAndResend(messageId: String, newContent: String) {
-        val sessionId = _currentSessionId.value ?: return
-        val session = store.getSession(sessionId) ?: return
-
-        val msgIndex = session.messages.indexOfFirst { it.id == messageId }
-        if (msgIndex < 0) return
-
-        cancelCurrentSessionGeneration()
-        generationJob = viewModelScope.launch {
-            messageManager.updateMessageContent(sessionId, messageId, newContent, UpdateMessageOptions())
-
-            val toRemove = session.messages.drop(msgIndex + 1).map { it.id }
-            toRemove.forEach { id ->
-                if (store.getSession(sessionId)?.messages?.any { it.id == id } == true) {
-                    messageManager.deleteMessage(sessionId, id)
-                }
-            }
-
-            _inputText.update { "" }
-            _error.update { null }
-            _generationNotice.value = null
-
-            val assistantMsgId = IdGenerator.message("ai")
-            val updatedSession = store.getSession(sessionId) ?: return@launch
-            val assistantMessage = Message(
-                id = assistantMsgId,
-                role = MessageRole.ASSISTANT,
-                content = "",
-                modelId = updatedSession.modelId,
-                parentMessageId = messageId,
-                createdAt = System.currentTimeMillis()
-            )
-            messageManager.addMessage(sessionId, assistantMessage)
-            generateMessage(sessionId, "", false, assistantMsgId, messageId, newContent)
-        }
     }
 
     private val _currentRagOptions = MutableStateFlow(com.promenar.nexara.data.model.RagOptions())
@@ -1608,30 +1635,6 @@ class ChatViewModel(
         _compressionState.update { CompressionState() }
     }
 
-    fun resendMessage(messageId: String) {
-        val sessionId = _currentSessionId.value ?: return
-        val session = store.getSession(sessionId) ?: return
-        val message = session.messages.find { it.id == messageId } ?: return
-        
-        if (message.role == MessageRole.USER) {
-            // Re-trigger from user message
-            regenerateMessage(messageId)
-        } else {
-            // Find preceding user message
-            val userMsg = session.messages.takeWhile { it.id != messageId }.lastOrNull { it.role == MessageRole.USER }
-            if (userMsg != null) {
-                regenerateMessage(userMsg.id)
-            } else {
-                // Just regenerate from current state
-                cancelCurrentSessionGeneration()
-                generationJob = viewModelScope.launch {
-                    messageManager.deleteMessage(sessionId, messageId) { stopGeneration() }
-                    generateMessage(sessionId, "", false)
-                }
-            }
-        }
-    }
-
     fun toggleTool(toolName: String, enabled: Boolean) {
         val sessionId = _currentSessionId.value ?: return
         val session = store.getSession(sessionId) ?: return
@@ -1687,6 +1690,15 @@ class ChatViewModel(
         val sessionId = _currentSessionId.value ?: return
         viewModelScope.launch {
             sessionManager.updateSessionTitle(sessionId, title)
+        }
+    }
+
+    /** 当前会话智能体预设的推理参数，供设置面板显示会话未覆盖项的实际取值。 */
+    suspend fun agentInferenceDefaults(): InferenceParams {
+        val agentId = _currentSessionId.value?.let(store::getSession)?.agentId
+        val agent = agentId?.let { agentRepository.getById(it) }
+        return configResolver.resolve(agent).let {
+            InferenceParams(temperature = it.temperature, topP = it.topP, maxTokens = it.maxTokens)
         }
     }
 
@@ -1747,24 +1759,14 @@ class ChatViewModel(
     private val lastDeletedMessages = mutableListOf<Pair<String, Message>>()
 
     fun undoLastDeletion() {
+        _deletionUndo.value = null
         if (lastDeletedMessages.isEmpty()) return
+        val restored = lastDeletedMessages.toList()
+        lastDeletedMessages.clear()
         viewModelScope.launch {
-            // Sort by createdAt to ensure correct order when re-inserting
-            val sorted = lastDeletedMessages.sortedBy { it.second.createdAt }
-            sorted.forEach { (sid, msg) ->
-                messageManager.addMessage(sid, msg)
+            restored.groupBy({ it.first }, { it.second }).forEach { (sid, messages) ->
+                messageManager.restoreMessages(sid, messages.sortedBy { it.createdAt })
             }
-            lastDeletedMessages.clear()
-        }
-    }
-
-    private suspend fun backupAndTruncate(sessionId: String, timestamp: Long) {
-        val session = store.getSession(sessionId) ?: return
-        val toDelete = session.messages.filter { it.createdAt >= timestamp }
-        if (toDelete.isNotEmpty()) {
-            lastDeletedMessages.clear()
-            toDelete.forEach { lastDeletedMessages.add(sessionId to it) }
-            messageManager.deleteMessagesAfter(sessionId, timestamp) { stopGeneration() }
         }
     }
 
@@ -1785,31 +1787,41 @@ class ChatViewModel(
         // 生成由应用级 owner 持有；ViewModel 销毁只移除观察者，不终止请求。
     }
 
+    /**
+     * 删除消息。助手回复按整轮删除（同一气泡中的全部助手与工具消息），用户消息连同其回复一起删除；
+     * 删除后发布可撤销提示。
+     */
     fun deleteMessage(messageId: String) {
         val sessionId = _currentSessionId.value ?: return
         val session = store.getSession(sessionId) ?: return
-        session.messages.find { it.id == messageId } ?: return
-        val removalIds = messageRemovalIds(session.messages, messageId).toSet()
-        val messagesToRestore = session.messages.filter { it.id in removalIds }
-        
+        val target = session.messages.find { it.id == messageId } ?: return
+        val targetIds = if (target.role == MessageRole.USER) {
+            listOf(messageId)
+        } else {
+            buildPipelineGroups(session.messages)
+                .firstOrNull { group -> !group.isUser && group.messages.any { it.id == messageId } }
+                ?.messages?.map { it.id }
+                ?: listOf(messageId)
+        }
+
         viewModelScope.launch {
+            val approvalTarget = store.getSession(sessionId)?.approvalRequest?.assistantMessageId
+            val expanded = targetIds.flatMapTo(linkedSetOf()) { messageRemovalIds(session.messages, it) }
+            if (approvalTarget != null && approvalTarget in expanded) {
+                closePendingApprovalBeforeNewTurn(sessionId)
+            }
+            val current = store.getSession(sessionId)?.messages.orEmpty()
+            val removalIds = targetIds.flatMapTo(linkedSetOf()) { messageRemovalIds(current, it) }
+            val messagesToRestore = current.filter { it.id in removalIds }
+            messageManager.deleteMessages(sessionId, targetIds) { stopGeneration() }
             lastDeletedMessages.clear()
             messagesToRestore.forEach { lastDeletedMessages.add(sessionId to it) }
-            messageManager.deleteMessage(sessionId, messageId) { stopGeneration() }
+            _deletionUndo.value = DeletionUndo(IdGenerator.message("undo"), messagesToRestore.size)
         }
     }
 
-    fun editMessage(messageId: String, newContent: String) {
-        val sessionId = _currentSessionId.value ?: return
-        val session = store.getSession(sessionId) ?: return
-        val message = session.messages.find { it.id == messageId } ?: return
-        
-        cancelCurrentSessionGeneration()
-        generationJob = viewModelScope.launch {
-            backupAndTruncate(sessionId, message.createdAt + 1)
-            messageManager.updateMessageContent(sessionId, messageId, newContent)
-            generateMessage(sessionId, "", false)
-        }
+    fun dismissDeletionUndo(token: String) {
+        if (_deletionUndo.value?.token == token) _deletionUndo.value = null
     }
 
     fun updateMessageContentOnly(messageId: String, newContent: String) {
@@ -1817,37 +1829,49 @@ class ChatViewModel(
         messageManager.updateMessageContent(sessionId, messageId, newContent)
     }
 
+    /**
+     * 从 [messageId] 所在轮次的用户消息重新生成。该用户消息之后的全部消息先隐藏，
+     * 新回复成功（或进入等待审批）后才删除；启动失败、准备失败或取消时旧消息原样恢复。
+     */
     fun regenerateMessage(messageId: String) {
         val sessionId = _currentSessionId.value ?: return
-        val session = store.getSession(sessionId) ?: return
-        val message = session.messages.find { it.id == messageId } ?: return
-        val userMessage = if (message.role == MessageRole.USER) {
-            message
+        val initial = store.getSession(sessionId) ?: return
+        val index = initial.messages.indexOfFirst { it.id == messageId }
+        if (index < 0) return
+        val userIndex = if (initial.messages[index].role == MessageRole.USER) {
+            index
         } else {
-            session.messages
-                .filter { it.role == MessageRole.USER && it.createdAt < message.createdAt }
-                .maxByOrNull { it.createdAt }
-        } ?: return
-        
+            initial.messages.subList(0, index).indexOfLast { it.role == MessageRole.USER }
+        }
+        if (userIndex < 0) return
+        val userMessage = initial.messages[userIndex]
+
         cancelCurrentSessionGeneration()
         generationJob = viewModelScope.launch {
-            // Delete all messages strictly after this one with backup
-            backupAndTruncate(sessionId, userMessage.createdAt + 1)
-            
-            // Create a new assistant message
-            val assistantMsgId = IdGenerator.message("ai")
-            val assistantMessage = Message(
-                id = assistantMsgId,
-                role = MessageRole.ASSISTANT,
-                content = "",
-                modelId = session.modelId,
-                parentMessageId = userMessage.id,
-                createdAt = System.currentTimeMillis()
-            )
-            messageManager.addMessage(sessionId, assistantMessage)
-            
-            // Trigger regeneration
-            generateMessage(sessionId, "", false, assistantMsgId, userMessage.id, userMessage.content)
+            try {
+                closePendingApprovalBeforeNewTurn(sessionId)
+                val session = store.getSession(sessionId) ?: return@launch
+                val currentIndex = session.messages.indexOfFirst { it.id == userMessage.id }
+                if (currentIndex < 0) return@launch
+                val replacedIds = session.messages.drop(currentIndex + 1).mapTo(linkedSetOf()) { it.id }
+                applyBackgroundPolicyGate(
+                    sessionId,
+                    session,
+                    userMessage.content,
+                    userMessage.userImages.orEmpty(),
+                    userMessage.userDocuments.orEmpty(),
+                    assistantMessageIdsToReplace = replacedIds,
+                    reuseUserMessageId = userMessage.id,
+                )
+            } catch (cancelled: CancellationException) {
+                _replacingMessageIds.value = emptySet()
+                throw cancelled
+            } catch (_: Exception) {
+                _replacingMessageIds.value = emptySet()
+                _error.update { "无法安全删除旧回复，已取消重试。" }
+                _generationStatus.update { GenerationStatus.ERROR }
+                _isGenerating.update { false }
+            }
         }
     }
 
@@ -2037,7 +2061,7 @@ class ChatViewModel(
             }
             
             val summary = session.summary ?: ""
-            val activeMsgs = getSafeActiveWindow(session.messages, session.inferenceParams?.activeContextWindow ?: 10)
+            val activeMsgs = getSafeActiveWindow(session.messages, session.inferenceParams?.activeContextWindow ?: com.promenar.nexara.domain.usecase.DEFAULT_ACTIVE_CONTEXT_WINDOW)
             
             val systemTokens = PostProcessor.estimateTokens(fullSystemPrompt)
             val summaryTokens = PostProcessor.estimateTokens(summary)

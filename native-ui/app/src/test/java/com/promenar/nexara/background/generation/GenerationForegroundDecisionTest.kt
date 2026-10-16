@@ -17,6 +17,14 @@ class GenerationForegroundDecisionTest {
     }
 
     @Test
+    fun `自动执行工具期间保持前台服务`() {
+        val snapshot = snapshot(GenerationPhase.EXECUTING_TOOLS)
+
+        assertThat(reduceGenerationForeground("task", snapshot))
+            .isEqualTo(GenerationForegroundDecision.Update(snapshot))
+    }
+
+    @Test
     fun `等待审批终态持久化失败与空状态都停止前台服务`() {
         val stoppingPhases = listOf(
             GenerationPhase.WAITING_APPROVAL,

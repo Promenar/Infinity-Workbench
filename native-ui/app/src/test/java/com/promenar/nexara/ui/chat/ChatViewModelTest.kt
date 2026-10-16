@@ -573,17 +573,25 @@ class ChatViewModelTest {
         kotlinx.coroutines.Dispatchers.resetMain()
     }
 
-    private fun seedSession(id: String = "s1") {
+    private fun seedSession(
+        id: String = "s1",
+        messages: List<Message> = emptyList(),
+        approvalRequest: ApprovalRequest? = null,
+    ) {
         val session = Session(
             id = id,
             agentId = "a1",
             title = "Test",
             modelId = "gpt-4o",
+            messages = messages,
+            approvalRequest = approvalRequest,
+            loopStatus = if (approvalRequest != null) LoopStatus.WAITING_FOR_APPROVAL else LoopStatus.IDLE,
             workspaceRootUuid = "test-workspace-root",
             workspacePath = "/test/workspace",
             createdAt = 1000L,
             updatedAt = 1000L
         )
+        messages.forEach { savedMessages.add(it to id) }
         savedSessions.add(session)
         viewModel.loadSession(id)
     }
@@ -1294,6 +1302,172 @@ class ChatViewModelTest {
             .containsExactly("second", "second-response").inOrder()
         assertThat(storeMessages.none { it.content == "first" }).isTrue()
         assertThat(repositoryMessages.none { it.content == "first" }).isTrue()
+    }
+
+    private fun kotlinx.coroutines.test.TestScope.awaitReal(condition: () -> Boolean) {
+        repeat(250) {
+            advanceUntilIdle()
+            if (condition()) return
+            Thread.sleep(20)
+        }
+        advanceUntilIdle()
+    }
+
+    private val executedWriteCall = ToolCall("call-1", "write_file", "{\"path\":\"/a.md\"}")
+
+    /** 一轮已执行完审批工具的会话：用户消息、发起调用的助手消息与工具结果。 */
+    private fun approvedToolTurn(): List<Message> = listOf(
+        Message(id = "u1", role = MessageRole.USER, content = "写文件", createdAt = 2000L),
+        Message(
+            id = "a1",
+            role = MessageRole.ASSISTANT,
+            content = "我来写入文件",
+            toolCalls = listOf(executedWriteCall),
+            parentMessageId = "u1",
+            createdAt = 2001L,
+        ),
+        Message(
+            id = "t1",
+            role = MessageRole.TOOL,
+            content = "写入成功",
+            toolCallId = "call-1",
+            name = "write_file",
+            parentMessageId = "a1",
+            createdAt = 2002L,
+        ),
+    )
+
+    @Test
+    fun `审批后恢复生成新建助手消息并保留原工具调用`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession(messages = approvedToolTurn()); advanceUntilIdle()
+        fakeStreamChunks = listOf(
+            StreamChunk.TextDelta("文件已写好"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+        )
+
+        viewModel.resumeAfterApproval("s1"); advanceUntilIdle()
+
+        val messages = viewModel.uiState.value.messages
+        val original = messages.single { it.id == "a1" }
+        assertThat(original.toolCalls).containsExactly(executedWriteCall)
+        assertThat(original.content).isEqualTo("我来写入文件")
+        val answer = messages.last { it.role == MessageRole.ASSISTANT }
+        assertThat(answer.id).isNotEqualTo("a1")
+        assertThat(answer.content).isEqualTo("文件已写好")
+        assertThat(answer.parentMessageId).isEqualTo("u1")
+        val sent = requireNotNull(lastPromptRequest).messages.filterNot { it.role == "system" }
+        assertThat(sent.map { it.role }).containsExactly("user", "assistant", "tool").inOrder()
+        assertThat(sent[1].toolCalls?.map { it.id }).containsExactly("call-1")
+        assertThat(sent[2].toolCallId).isEqualTo("call-1")
+    }
+
+    @Test
+    fun `等待审批时发送新消息先关闭审批且历史中的调用都有结果`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        val pending = listOf(
+            Message(id = "u1", role = MessageRole.USER, content = "写文件", createdAt = 2000L),
+            Message(
+                id = "a1",
+                role = MessageRole.ASSISTANT,
+                content = "",
+                toolCalls = listOf(executedWriteCall),
+                pendingApprovalToolIds = listOf("call-1"),
+                parentMessageId = "u1",
+                createdAt = 2001L,
+            ),
+        )
+        seedSession(
+            messages = pending,
+            approvalRequest = ApprovalRequest(assistantMessageId = "a1", type = "tool"),
+        ); advanceUntilIdle()
+        fakeStreamChunks = listOf(
+            StreamChunk.TextDelta("好的，换个做法"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+        )
+
+        viewModel.sendMessage("算了，换个做法")
+        // 审批台账走真实 Room 事务（后台线程），按真实时间等待其完成。
+        awaitReal { lastPromptRequest != null && viewModel.uiState.value.messages.last().content == "好的，换个做法" }
+
+        assertThat(viewModel.uiState.value.approvalRequest).isNull()
+        val sent = requireNotNull(lastPromptRequest).messages.filterNot { it.role == "system" }
+        assertThat(sent.map { it.role }).containsExactly("user", "assistant", "tool", "user").inOrder()
+        assertThat(sent[2].toolCallId).isEqualTo("call-1")
+    }
+
+    /** 一轮多消息回复：工具调用、工具结果与最终回答。 */
+    private fun multiMessageTurn(): List<Message> = listOf(
+        Message(id = "u1", role = MessageRole.USER, content = "查一下", createdAt = 2000L),
+        Message(
+            id = "a1",
+            role = MessageRole.ASSISTANT,
+            content = "",
+            toolCalls = listOf(ToolCall("call-r", "read_file", "{}")),
+            parentMessageId = "u1",
+            createdAt = 2001L,
+        ),
+        Message(
+            id = "t1",
+            role = MessageRole.TOOL,
+            content = "内容",
+            toolCallId = "call-r",
+            name = "read_file",
+            parentMessageId = "a1",
+            createdAt = 2002L,
+        ),
+        Message(id = "a2", role = MessageRole.ASSISTANT, content = "旧回答", parentMessageId = "u1", createdAt = 2003L),
+    )
+
+    @Test
+    fun `重新生成替换整轮多消息回复且旧回复不进入Prompt`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession(messages = multiMessageTurn()); advanceUntilIdle()
+        fakeStreamChunks = listOf(
+            StreamChunk.TextDelta("新回答"),
+            StreamChunk.Completed(com.promenar.nexara.domain.generation.CompletionReason.END_TURN),
+        )
+
+        viewModel.regenerateMessage("a2"); advanceUntilIdle()
+
+        val messages = viewModel.uiState.value.messages
+        assertThat(messages.map { it.content }).containsExactly("查一下", "新回答").inOrder()
+        assertThat(savedMessages.map { it.first.id }).containsNoneOf("a1", "t1", "a2")
+        val sent = requireNotNull(lastPromptRequest).messages.filterNot { it.role == "system" }
+        assertThat(sent.map { it.content }).containsExactly("查一下")
+    }
+
+    @Test
+    fun `重新生成期间隐藏旧回复且停止后原样恢复`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession(messages = multiMessageTurn()); advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.TextDelta("生成中"))
+        holdStreamOpen = true
+
+        viewModel.regenerateMessage("u1"); advanceUntilIdle()
+        assertThat(viewModel.uiState.value.messages.map { it.id }).containsNoneOf("a1", "t1", "a2")
+
+        viewModel.stopGeneration(); advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.messages.map { it.id })
+            .containsExactly("u1", "a1", "t1", "a2").inOrder()
+    }
+
+    @Test
+    fun `删除助手回复按整轮删除并可撤销`() = runTest {
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        seedSession(messages = multiMessageTurn()); advanceUntilIdle()
+
+        viewModel.deleteMessage("a2"); advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.messages.map { it.id }).containsExactly("u1")
+        assertThat(viewModel.deletionUndo.value?.count).isEqualTo(3)
+
+        viewModel.undoLastDeletion(); advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.messages.map { it.id })
+            .containsExactly("u1", "a1", "t1", "a2").inOrder()
+        assertThat(viewModel.deletionUndo.value).isNull()
     }
 
     @Test

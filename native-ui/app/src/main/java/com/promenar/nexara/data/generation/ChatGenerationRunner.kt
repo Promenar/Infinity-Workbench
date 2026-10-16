@@ -286,8 +286,13 @@ class ChatGenerationRunner(
                 val decision = if (finalAnswerMode) {
                     GenerationToolDecision.CONTINUE
                 } else {
-                    phase(GenerationPhase.WAITING_APPROVAL)
-                    runtime.handleTools(request, effectiveTools)
+                    // 自动执行的工具仍属于生成过程；只有真正挂起等待用户决定时才进入 WAITING_APPROVAL。
+                    phase(GenerationPhase.EXECUTING_TOOLS)
+                    runtime.handleTools(request, effectiveTools).also { result ->
+                        if (result == GenerationToolDecision.WAIT_FOR_APPROVAL) {
+                            phase(GenerationPhase.WAITING_APPROVAL)
+                        }
+                    }
                 }
                 when (decision) {
                     GenerationToolDecision.CONTINUE -> {

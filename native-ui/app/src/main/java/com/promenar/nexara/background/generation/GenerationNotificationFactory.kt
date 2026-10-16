@@ -99,6 +99,7 @@ class GenerationNotificationFactory(
         GenerationPhase.BUILDING_CONTEXT,
         GenerationPhase.CONNECTING -> R.string.generation_notification_preparing
         GenerationPhase.THINKING -> R.string.generation_notification_thinking
+        GenerationPhase.EXECUTING_TOOLS -> R.string.generation_notification_executing_tools
         GenerationPhase.STREAMING,
         GenerationPhase.POST_PROCESSING -> R.string.generation_notification_generating
         GenerationPhase.WAITING_APPROVAL,

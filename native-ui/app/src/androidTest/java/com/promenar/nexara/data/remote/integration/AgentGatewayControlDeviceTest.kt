@@ -36,6 +36,14 @@ class AgentGatewayControlDeviceTest {
             .that(resumed.terminalPhase).isEqualTo(GenerationPhase.COMPLETED)
         assertWithMessage("审批后文件内容不符\n${resumed.describe()}")
             .that(harness.readWorkspaceFile("/approval.md")?.trim()).isEqualTo("approved-content")
+        // 审批恢复不得改写发起调用的消息：每条工具结果都能找到其调用方。
+        val calledIds = resumed.messages.flatMap { it.toolCalls.orEmpty() }.map { it.id }.toSet()
+        assertWithMessage("审批后存在失去调用方的工具结果\n${resumed.describe()}")
+            .that(resumed.toolMessages.mapNotNull { it.toolCallId }.all { it in calledIds }).isTrue()
+
+        val followUp = harness.sendAndAwait("Reply with the single word: done.")
+        assertWithMessage("审批后的下一轮被 Provider 拒绝\n${followUp.describe()}")
+            .that(followUp.terminalPhase).isEqualTo(GenerationPhase.COMPLETED)
     }
 
     @Test

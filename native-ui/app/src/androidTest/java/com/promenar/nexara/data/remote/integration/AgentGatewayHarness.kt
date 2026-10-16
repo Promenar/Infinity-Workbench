@@ -181,6 +181,7 @@ class AgentGatewayHarness(private val remoteModel: String) {
             GenerationPhase.CONNECTING,
             GenerationPhase.THINKING,
             GenerationPhase.STREAMING,
+            GenerationPhase.EXECUTING_TOOLS,
             GenerationPhase.POST_PROCESSING,
         )
 

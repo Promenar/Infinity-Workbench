@@ -433,14 +433,43 @@ class ApprovalManagerTest {
     }
 
     @Test
-    fun resumeGenerationRejectsAndPauses() = testScope.runTest {
+    fun approveAllExecutesEveryCallInBatchAndResumesOnce() = testScope.runTest {
+        val calls = listOf(ToolCall("w1", "write_file", "{}"), ToolCall("w2", "write_file", "{}"))
+        val request = seedExactApproval(calls)
+        val executed = mutableListOf<String>()
+        var resumed = 0
+        approvalManager.setCallbacks(
+            onGenerateMessage = { _, _, _ -> resumed++ },
+            onExecuteTools = { sessionId, messageId, ids ->
+                ids.forEach { id ->
+                    executed += id
+                    ledger.states[ToolExecutionKey(sessionId, messageId, id)] = ToolLedgerState.SUCCEEDED
+                }
+            },
+        )
+
+        approvalManager.approveAll("s1", request)
+
+        assertThat(executed).containsExactly("w1", "w2").inOrder()
+        assertThat(resumed).isEqualTo(1)
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
+    }
+
+    @Test
+    fun resumeGenerationRejectsAndContinuesWithRejectedResult() = testScope.runTest {
         val request = seedExactApproval()
+        var resumed = 0
+        approvalManager.setCallbacks(
+            onGenerateMessage = { _, _, _ -> resumed++ },
+            onExecuteTools = { _, _, _ -> },
+        )
 
         approvalManager.resumeGeneration("s1", request, approved = false)
 
         val session = store.getSession("s1")!!
-        assertThat(session.loopStatus).isEqualTo(LoopStatus.PAUSED)
         assertThat(session.approvalRequest).isNull()
+        assertThat(session.messages.filter { it.role == MessageRole.TOOL }.all { it.content.contains("已拒绝") }).isTrue()
+        assertThat(resumed).isEqualTo(1)
     }
 
     @Test

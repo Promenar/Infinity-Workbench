@@ -82,6 +82,22 @@ class ApprovalManager(
         if (gate == null) action() else gate.withNewSessionAdmission(sessionId, action)
     }
 
+    /**
+     * 依次精确批准 [expectedRequest] 所在批次的全部剩余调用；最后一个决定后按常规流程继续生成。
+     * 继续生成后产生的新审批属于其它助手消息，不在本次批准范围内。
+     */
+    suspend fun approveAll(sessionId: String, expectedRequest: ApprovalRequest) {
+        val assistantMessageId = expectedRequest.assistantMessageId ?: return
+        var request: ApprovalRequest? = expectedRequest
+        var remaining = expectedRequest.calls.size.coerceAtLeast(1)
+        while (request != null && remaining-- > 0) {
+            val current: ApprovalRequest = request
+            resumeGeneration(sessionId, expectedRequest = current, approved = true)
+            request = store.getSession(sessionId)?.approvalRequest
+                ?.takeIf { it.assistantMessageId == assistantMessageId && it != current }
+        }
+    }
+
     private suspend fun resumeGenerationLocked(
         sessionId: String,
         expectedRequest: ApprovalRequest?,
@@ -274,7 +290,9 @@ class ApprovalManager(
         } else {
             return
         }
-        if (completion.transition.loopStatus == LoopStatus.WAITING_FOR_APPROVAL || !approved) return
+        // 批次中仍有待决定的调用时继续等待；全部决定后（含拒绝）都继续生成，
+        // 模型据已拒绝/已执行的结果收尾或改用其它做法，与系统提示的审批约定一致。
+        if (completion.transition.loopStatus == LoopStatus.WAITING_FOR_APPROVAL) return
         onGenerateMessage?.invoke(sessionId, intervention.orEmpty(), true)
     }
 

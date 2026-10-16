@@ -347,10 +347,18 @@ class ToolExecutor internal constructor(
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
-            ToolResult(id = tc.id, content = "工具执行失败", status = "error")
+        } catch (invalid: IllegalArgumentException) {
+            ToolResult(id = tc.id, content = executionFailureDetail(invalid), status = "error")
+        } catch (invalid: IllegalStateException) {
+            ToolResult(id = tc.id, content = executionFailureDetail(invalid), status = "error")
+        } catch (error: Exception) {
+            ToolResult(id = tc.id, content = "工具内部错误（${error::class.java.simpleName}）", status = "error")
         }
     }
+
+    /** 参数或状态类错误对模型可纠正：回传脱敏后的原因，而非笼统的“执行失败”。 */
+    private fun executionFailureDetail(error: Exception): String =
+        error.message?.let(::sanitizeCitationText)?.takeIf(String::isNotBlank) ?: "参数或当前状态不满足工具要求"
 
     private suspend fun finishInvalidCall(
         activeLedger: ToolExecutionLedger,

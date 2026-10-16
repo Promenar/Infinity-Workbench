@@ -11,23 +11,34 @@ import com.promenar.nexara.domain.repository.PlanPatchOp
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
-import org.json.JSONArray
 
+/**
+ * 会话任务计划仓库。
+ *
+ * 步骤 ID 由模型给出（常见为 "1"、"2"），而 `task_nodes.id` 是全局主键，因此落库 ID 统一加
+ * `sessionId::` 命名空间，对外（模型、界面）始终使用去掉前缀的步骤 ID；所有读写都先在本会话的
+ * 活跃节点中解析步骤，不同会话的同名步骤互不影响。无前缀的旧数据按原 ID 在本会话内兼容读取。
+ *
+ * 计划目标保存在一条隐藏的元数据节点中（状态 [META_STATUS]），不出现在步骤树、进度与上下文里。
+ */
 class TaskRepository(
     private val dao: TaskNodeDao,
     private val database: RoomDatabase? = null
 ) : ITaskRepository {
 
-    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-
     override fun observeActiveTree(sessionId: String): Flow<List<TaskStep>> {
         return dao.observeActiveTree(sessionId).map { entities ->
-            buildTree(entities)
+            buildTree(sessionId, entities.filterNot(::isMeta))
         }
     }
 
+    override fun observeGoal(sessionId: String): Flow<String?> =
+        dao.observeActiveTree(sessionId).map { entities ->
+            entities.takeIf { nodes -> nodes.any { !isMeta(it) } }?.firstOrNull(::isMeta)?.title
+        }
+
     override suspend fun initializePlan(sessionId: String, goal: String, tree: List<TaskStep>): TaskState {
+        validateTree(tree)
         if (database != null) {
             return database.withTransaction {
                 initializePlanInternal(sessionId, goal, tree)
@@ -42,8 +53,9 @@ class TaskRepository(
         tree: List<TaskStep>,
     ): TaskState {
         val existing = dao.getAllActiveBySession(sessionId)
-        if (existing.isNotEmpty()) {
-            val existingTree = buildTree(existing)
+        val existingSteps = existing.filterNot(::isMeta)
+        if (existingSteps.isNotEmpty()) {
+            val existingTree = buildTree(sessionId, existingSteps)
             val (done, total) = countLeafProgress(existingTree)
             if (total > 0 && done == total) {
                 dao.deleteBySession(sessionId)
@@ -52,14 +64,14 @@ class TaskRepository(
             val rootStep = existingTree.firstOrNull()
             return TaskState(
                 id = rootStep?.id ?: "",
-                title = rootStep?.title ?: goal,
+                title = existing.firstOrNull(::isMeta)?.title ?: rootStep?.title ?: goal,
                 status = "conflict",
                 steps = existingTree,
-                currentFocusStepId = existing.find { it.status == "doing" }?.id,
+                currentFocusStepId = existingSteps.find { it.status == "doing" }?.id?.let { externalId(sessionId, it) },
                 createdAt = rootStep?.createdAt ?: System.currentTimeMillis()
             )
         }
-
+        if (existing.isNotEmpty()) dao.deleteBySession(sessionId)
         return createPlan(sessionId, goal, tree)
     }
 
@@ -71,143 +83,130 @@ class TaskRepository(
         val now = System.currentTimeMillis()
         val entities = mutableListOf<TaskNodeEntity>()
         flattenTree(tree, sessionId, parentId = null, now, entities)
-        dao.upsertAll(entities)
-
-        val firstLeaf = entities.firstOrNull { e ->
-            entities.none { it.parentId == e.id }
-        }
-        if (firstLeaf != null) {
-            dao.updateStatus(firstLeaf.id, "doing", null, now)
-        }
-
-        val saved = dao.getAllActiveBySession(sessionId)
-        val builtTree = buildTree(saved)
-        val (done, total) = countLeafProgress(builtTree)
-        val rootStep = builtTree.firstOrNull()
-        val doingNode = saved.find { it.status == "doing" }
-
-        return TaskState(
-            id = rootStep?.id ?: "",
-            title = goal,
-            status = deriveRootStatus(builtTree),
-            steps = builtTree,
-            currentFocusStepId = doingNode?.id,
-            createdAt = now
+        val firstLeaf = entities.firstOrNull { e -> entities.none { it.parentId == e.id } }
+        dao.upsertAll(
+            entities.map { if (it.id == firstLeaf?.id) it.copy(status = "doing") else it } +
+                goalNode(sessionId, goal, now),
         )
+        return requireNotNull(getPlan(sessionId)) { "计划创建后读取失败" }.copy(createdAt = now)
     }
 
     override suspend fun updatePlan(sessionId: String, operations: List<PlanPatchOp>): TaskState {
         if (database != null) {
             return database.withTransaction {
                 applyPlanOperations(sessionId, operations)
-                getPlan(sessionId)!!
+                requireNotNull(getPlan(sessionId)) { NO_ACTIVE_PLAN_MESSAGE }
             }
         }
 
         applyPlanOperations(sessionId, operations)
-        return getPlan(sessionId)!!
+        return requireNotNull(getPlan(sessionId)) { NO_ACTIVE_PLAN_MESSAGE }
     }
 
     private suspend fun applyPlanOperations(sessionId: String, operations: List<PlanPatchOp>) {
         val now = System.currentTimeMillis()
 
         for (op in operations) {
+            val nodes = activeSteps(sessionId)
+            check(nodes.isNotEmpty()) { NO_ACTIVE_PLAN_MESSAGE }
             when (op.action) {
                 "set_status" -> {
-                    val stepId = op.stepId
-                        ?: throw IllegalArgumentException("set_status requires stepId")
-                    val newStatus = op.payload?.get("status")
-                        ?: throw IllegalArgumentException("set_status requires payload.status")
-                    val note = op.payload?.get("note")
-
-                    val childCount = dao.getChildCount(stepId)
+                    val node = resolve(sessionId, nodes, op.stepId, op.action)
+                    val newStatus = normalizeStatus(
+                        op.payload?.get("status")
+                            ?: throw IllegalArgumentException("set_status 需要 payload.status。"),
+                    )
+                    val childCount = nodes.count { it.parentId == node.id }
                     if (childCount > 0) {
-                        val node = dao.getById(stepId) ?: continue
                         throw ParentStatusDerivedException(
-                            stepId = stepId,
+                            stepId = externalId(sessionId, node.id),
                             title = node.title,
                             childCount = childCount
                         )
                     }
-
                     if (newStatus == "doing") {
                         dao.resetDoingToTodo(sessionId, now)
                     }
-
-                    dao.updateStatus(stepId, newStatus, note, now)
+                    dao.updateStatus(node.id, newStatus, op.payload?.get("note") ?: node.note, now)
                 }
                 "add_step" -> {
-                    val parentId = op.parentId
-                    val title = op.payload?.get("title") ?: "New step"
-                    val sortOrderStr = op.payload?.get("sortOrder")
-                    val sortOrder = sortOrderStr?.toIntOrNull() ?: 0
-                    val id = op.stepId ?: java.util.UUID.randomUUID().toString()
-                    val entity = TaskNodeEntity(
-                        id = id,
-                        sessionId = sessionId,
-                        parentId = parentId,
-                        sortOrder = sortOrder,
-                        title = title,
-                        status = "todo",
-                        createdAt = now,
-                        updatedAt = now
+                    val parent = op.parentId?.let { resolve(sessionId, nodes, it, "add_step.parentId") }
+                    val title = op.payload?.get("title")?.takeIf(String::isNotBlank)
+                        ?: throw IllegalArgumentException("add_step 需要 payload.title。")
+                    val requestedId = op.stepId?.takeIf(String::isNotBlank)
+                    if (requestedId != null) {
+                        require(requestedId != GOAL_NODE_KEY) { "步骤 ID \"$GOAL_NODE_KEY\" 为保留字。" }
+                        require(findNode(sessionId, nodes, requestedId) == null) { "步骤 ID \"$requestedId\" 已存在。" }
+                    }
+                    val siblings = nodes.filter { it.parentId == parent?.id }
+                    val sortOrder = op.payload?.get("sortOrder")?.toIntOrNull()
+                        ?: ((siblings.maxOfOrNull { it.sortOrder } ?: -1) + 1)
+                    dao.upsert(
+                        TaskNodeEntity(
+                            id = internalId(sessionId, requestedId ?: java.util.UUID.randomUUID().toString()),
+                            sessionId = sessionId,
+                            parentId = parent?.id,
+                            sortOrder = sortOrder,
+                            title = title,
+                            status = "todo",
+                            createdAt = now,
+                            updatedAt = now
+                        ),
                     )
-                    dao.upsert(entity)
                 }
                 "remove_step" -> {
-                    val stepId = op.stepId
-                        ?: throw IllegalArgumentException("remove_step requires stepId")
-                    dropRecursive(stepId, now)
+                    val node = resolve(sessionId, nodes, op.stepId, op.action)
+                    collectDescendants(node.id, nodes).forEach { dao.markDropped(it, now) }
                 }
                 "move_step" -> {
-                    val stepId = op.stepId
-                        ?: throw IllegalArgumentException("move_step requires stepId")
-                    val node = dao.getById(stepId) ?: continue
-                    val newParentId = op.payload?.get("newParentId") ?: op.parentId
-                    validateMoveTarget(sessionId, node, newParentId)
+                    val node = resolve(sessionId, nodes, op.stepId, op.action)
+                    val newParent = (op.payload?.get("newParentId") ?: op.parentId)
+                        ?.let { resolve(sessionId, nodes, it, "move_step.newParentId") }
+                    if (newParent != null) {
+                        if (newParent.id == node.id || newParent.id in collectDescendants(node.id, nodes)) {
+                            throw TaskCycleException(
+                                externalId(sessionId, node.id),
+                                externalId(sessionId, newParent.id),
+                            )
+                        }
+                    }
                     val newSortOrder = op.payload?.get("newSortOrder")?.toIntOrNull() ?: node.sortOrder
-                    val updated = node.copy(
-                        parentId = newParentId,
-                        sortOrder = newSortOrder,
-                        updatedAt = now
-                    )
-                    dao.upsert(updated)
+                    dao.upsert(node.copy(parentId = newParent?.id, sortOrder = newSortOrder, updatedAt = now))
                 }
                 "update_title" -> {
-                    val stepId = op.stepId
-                        ?: throw IllegalArgumentException("update_title requires stepId")
-                    val newTitle = op.payload?.get("title")
-                        ?: throw IllegalArgumentException("update_title requires payload.title")
-                    val node = dao.getById(stepId) ?: continue
+                    val node = resolve(sessionId, nodes, op.stepId, op.action)
+                    val newTitle = op.payload?.get("title")?.takeIf(String::isNotBlank)
+                        ?: throw IllegalArgumentException("update_title 需要 payload.title。")
                     dao.upsert(node.copy(title = newTitle, updatedAt = now))
                 }
                 "set_note" -> {
-                    val stepId = op.stepId
-                        ?: throw IllegalArgumentException("set_note requires stepId")
+                    val node = resolve(sessionId, nodes, op.stepId, op.action)
                     val note = op.payload?.get("note")
-                        ?: throw IllegalArgumentException("set_note requires payload.note")
-                    val node = dao.getById(stepId) ?: continue
+                        ?: throw IllegalArgumentException("set_note 需要 payload.note。")
                     dao.upsert(node.copy(note = note, updatedAt = now))
                 }
+                else -> throw IllegalArgumentException(
+                    "未知操作 \"${op.action}\"，可用操作：set_status、add_step、remove_step、move_step、update_title、set_note。",
+                )
             }
         }
     }
 
     override suspend fun getPlan(sessionId: String): TaskState? {
         val nodes = dao.getAllActiveBySession(sessionId)
-        if (nodes.isEmpty()) return null
+        val steps = nodes.filterNot(::isMeta)
+        if (steps.isEmpty()) return null
 
-        val tree = buildTree(nodes)
-        val (done, total) = countLeafProgress(tree)
+        val tree = buildTree(sessionId, steps)
         val rootStep = tree.firstOrNull()
-        val doingNode = nodes.find { it.status == "doing" }
+        val doingNode = steps.find { it.status == "doing" }
 
         return TaskState(
             id = rootStep?.id ?: "",
-            title = rootStep?.title ?: "",
+            title = nodes.firstOrNull(::isMeta)?.title ?: rootStep?.title ?: "",
             status = deriveRootStatus(tree),
             steps = tree,
-            currentFocusStepId = doingNode?.id,
+            currentFocusStepId = doingNode?.id?.let { externalId(sessionId, it) },
             createdAt = rootStep?.createdAt ?: 0
         )
     }
@@ -227,7 +226,6 @@ class TaskRepository(
             statuses.all { it == "done" } -> "done"
             statuses.any { it == "doing" } -> "doing"
             statuses.any { it == "dropped" } -> "partial_dropped"
-            statuses.all { it == "todo" || it == "pending" } -> "todo"
             else -> "todo"
         }
     }
@@ -249,6 +247,44 @@ class TaskRepository(
         return done to total
     }
 
+    private suspend fun activeSteps(sessionId: String): List<TaskNodeEntity> =
+        dao.getAllActiveBySession(sessionId).filterNot(::isMeta)
+
+    private fun findNode(sessionId: String, nodes: List<TaskNodeEntity>, stepId: String): TaskNodeEntity? =
+        nodes.firstOrNull { it.id == internalId(sessionId, stepId) }
+            ?: nodes.firstOrNull { it.id == stepId && it.sessionId == sessionId }
+
+    private fun resolve(
+        sessionId: String,
+        nodes: List<TaskNodeEntity>,
+        stepId: String?,
+        action: String,
+    ): TaskNodeEntity {
+        val id = stepId?.takeIf(String::isNotBlank)
+            ?: throw IllegalArgumentException("$action 需要 stepId。")
+        return findNode(sessionId, nodes, id) ?: throw IllegalArgumentException(
+            "步骤 \"$id\" 不存在。当前步骤：" +
+                nodes.sortedBy { it.sortOrder }.take(MAX_LISTED_STEP_IDS)
+                    .joinToString("、") { externalId(sessionId, it.id) } + "。",
+        )
+    }
+
+    private fun validateTree(tree: List<TaskStep>) {
+        val ids = mutableListOf<String>()
+        fun walk(steps: List<TaskStep>) {
+            steps.forEach { step ->
+                require(step.title.isNotBlank()) { "步骤标题不能为空。" }
+                step.id.takeIf(String::isNotBlank)?.let(ids::add)
+                walk(step.children)
+            }
+        }
+        walk(tree)
+        require(tree.isNotEmpty()) { "tree 至少需要一个步骤。" }
+        require(GOAL_NODE_KEY !in ids) { "步骤 ID \"$GOAL_NODE_KEY\" 为保留字。" }
+        val duplicates = ids.groupBy { it }.filterValues { it.size > 1 }.keys
+        require(duplicates.isEmpty()) { "步骤 ID 重复：${duplicates.joinToString("、")}。" }
+    }
+
     private fun flattenTree(
         tree: List<TaskStep>,
         sessionId: String,
@@ -258,7 +294,7 @@ class TaskRepository(
     ) {
         for ((index, step) in tree.withIndex()) {
             val entity = TaskNodeEntity(
-                id = step.id.ifBlank { java.util.UUID.randomUUID().toString() },
+                id = internalId(sessionId, step.id.ifBlank { java.util.UUID.randomUUID().toString() }),
                 sessionId = sessionId,
                 parentId = parentId,
                 sortOrder = if (step.sortOrder > 0) step.sortOrder else index,
@@ -280,24 +316,18 @@ class TaskRepository(
         }
     }
 
-    private fun buildTree(entities: List<TaskNodeEntity>): List<TaskStep> {
+    private fun buildTree(sessionId: String, entities: List<TaskNodeEntity>): List<TaskStep> {
         val byParent = entities.groupBy { it.parentId }
         fun toStep(entity: TaskNodeEntity): TaskStep {
-            val childEntities = byParent[entity.id] ?: emptyList()
-            val children = childEntities
+            val children = (byParent[entity.id] ?: emptyList())
                 .sortedBy { it.sortOrder }
                 .map { toStep(it) }
-            val derivedStatus = if (children.isNotEmpty()) {
-                deriveParentStatus(children)
-            } else {
-                entity.status
-            }
             return TaskStep(
-                id = entity.id,
-                parentId = entity.parentId,
+                id = externalId(sessionId, entity.id),
+                parentId = entity.parentId?.let { externalId(sessionId, it) },
                 title = entity.title,
                 description = entity.description,
-                status = derivedStatus,
+                status = if (children.isNotEmpty()) deriveParentStatus(children) else entity.status,
                 sortOrder = entity.sortOrder,
                 note = entity.note,
                 artifactFileUuids = entity.artifactFileUuids?.let { raw ->
@@ -313,19 +343,11 @@ class TaskRepository(
                 updatedAt = entity.updatedAt
             )
         }
-        return (byParent[null] ?: emptyList())
+        val ids = entities.mapTo(hashSetOf()) { it.id }
+        return entities
+            .filter { it.parentId == null || it.parentId !in ids }
             .sortedBy { it.sortOrder }
             .map { toStep(it) }
-    }
-
-    private suspend fun dropRecursive(nodeId: String, now: Long) {
-        val node = dao.getById(nodeId) ?: return
-        if (node.status == "dropped") return
-        val allNodes = dao.getAllActiveBySession(node.sessionId)
-        val toDrop = collectDescendants(nodeId, allNodes)
-        for (id in toDrop) {
-            dao.markDropped(id, now)
-        }
     }
 
     private fun collectDescendants(rootId: String, allNodes: List<TaskNodeEntity>): List<String> {
@@ -342,51 +364,27 @@ class TaskRepository(
         return result
     }
 
-    private suspend fun validateMoveTarget(
-        sessionId: String,
-        node: TaskNodeEntity,
-        newParentId: String?
-    ) {
-        if (node.sessionId != sessionId) {
-            throw IllegalArgumentException("move_step target does not belong to session")
-        }
-        if (newParentId == null) return
-        if (newParentId == node.id) {
-            throw TaskCycleException(node.id, newParentId)
-        }
-
-        val allNodes = dao.getAllActiveBySession(sessionId)
-        val newParent = allNodes.firstOrNull { it.id == newParentId }
-            ?: throw IllegalArgumentException("move_step newParentId not found in active plan: $newParentId")
-        if (newParent.sessionId != sessionId) {
-            throw IllegalArgumentException("move_step newParentId does not belong to session")
-        }
-        if (newParentId in collectDescendants(node.id, allNodes)) {
-            throw TaskCycleException(node.id, newParentId)
-        }
-    }
-
     private fun deriveRootStatus(steps: List<TaskStep>): String {
         if (steps.isEmpty()) return "idle"
         val (done, total) = countLeafProgress(steps)
         return when {
             total == 0 -> "idle"
             done == total -> "done"
-            steps.any { hasDoing(it) } -> "active"
-            steps.all { allDropped(it) } -> "dropped"
             else -> "active"
         }
     }
 
-    private fun hasDoing(step: TaskStep): Boolean {
-        if (step.status == "doing") return true
-        return step.children.any { hasDoing(it) }
-    }
+    private fun goalNode(sessionId: String, goal: String, now: Long) = TaskNodeEntity(
+        id = internalId(sessionId, GOAL_NODE_KEY),
+        sessionId = sessionId,
+        sortOrder = -1,
+        title = goal,
+        status = META_STATUS,
+        createdAt = now,
+        updatedAt = now,
+    )
 
-    private fun allDropped(step: TaskStep): Boolean {
-        if (step.children.isEmpty()) return step.status == "dropped"
-        return step.children.all { allDropped(it) }
-    }
+    private fun isMeta(entity: TaskNodeEntity): Boolean = entity.status == META_STATUS
 
     class ParentStatusDerivedException(
         val stepId: String,
@@ -398,4 +396,33 @@ class TaskRepository(
         val stepId: String,
         val newParentId: String
     ) : Exception("不能把任务步骤移动到自身或自己的子步骤下。")
+
+    companion object {
+        /** 计划目标元数据节点的状态值；不属于任何步骤状态。 */
+        const val META_STATUS = "meta"
+        const val GOAL_NODE_KEY = "__goal__"
+        const val NO_ACTIVE_PLAN_MESSAGE = "当前没有活跃计划，请先调用 initialize_plan 创建计划。"
+        private const val ID_SEPARATOR = "::"
+        private const val MAX_LISTED_STEP_IDS = 30
+
+        /** 步骤状态的规范取值。 */
+        val STEP_STATUSES = listOf("todo", "doing", "done", "dropped")
+
+        /** 把模型常用的状态同义词归一为规范取值；无法识别时抛出带可用取值的错误。 */
+        fun normalizeStatus(raw: String): String = when (raw.trim().lowercase().replace('-', '_').replace(' ', '_')) {
+            "todo", "pending", "not_started", "open" -> "todo"
+            "doing", "in_progress", "active", "started", "working" -> "doing"
+            "done", "completed", "complete", "finished", "success", "succeeded" -> "done"
+            "dropped", "skipped", "cancelled", "canceled", "abandoned" -> "dropped"
+            else -> throw IllegalArgumentException(
+                "无效状态 \"$raw\"，可用值：${STEP_STATUSES.joinToString("、")}。",
+            )
+        }
+
+        internal fun internalId(sessionId: String, externalId: String): String =
+            "$sessionId$ID_SEPARATOR$externalId"
+
+        internal fun externalId(sessionId: String, internalId: String): String =
+            internalId.removePrefix("$sessionId$ID_SEPARATOR")
+    }
 }
