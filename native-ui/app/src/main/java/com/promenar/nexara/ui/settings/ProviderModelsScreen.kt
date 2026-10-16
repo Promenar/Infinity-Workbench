@@ -23,6 +23,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import com.promenar.nexara.ui.common.verticalFadingEdges
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -237,10 +242,17 @@ internal fun ProviderModelsScreenContent(
         onBack = onNavigateBack,
         modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_SCREEN_ROOT),
     ) { contentPadding ->
+        // 只固定搜索栏；操作、目录信息、同步提示与模型随同一列表滚动，列表底部延伸到系统导航栏后方。
+        val listState = rememberLazyListState()
+        val layoutDirection = LocalLayoutDirection.current
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPadding)
+                .padding(
+                    start = contentPadding.calculateStartPadding(layoutDirection),
+                    top = contentPadding.calculateTopPadding(),
+                    end = contentPadding.calculateEndPadding(layoutDirection),
+                )
                 .imePadding(),
         ) {
         NexaraSearchBar(
@@ -250,84 +262,45 @@ internal fun ProviderModelsScreenContent(
             modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_SEARCH_FIELD),
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        ProviderModelsTopActions(
-            isFetching = state.isFetching,
-            onRefresh = actions.onRefresh,
-            onAdd = { showAddDialog = true },
-            onDisableAll = actions.onDisableAll,
-            onDeleteAll = { showDeleteAllDialog = true },
-        )
-
-        state.catalogStatus?.let { catalog ->
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    NexaraMetaLine(
-                        segments = if (catalog.cached) {
-                            listOf(
-                                stringResource(R.string.model_catalog_label),
-                                catalog.generatedAt.orEmpty().take(10),
-                                stringResource(R.string.model_catalog_records, catalog.recordCount),
-                            )
-                        } else {
-                            listOf(
-                                stringResource(R.string.model_catalog_label),
-                                stringResource(R.string.model_catalog_bundled_snapshot),
-                            )
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (catalog.phase == com.promenar.nexara.data.model.catalog.CatalogUpdatePhase.FAILED) {
-                        Text(stringResource(R.string.model_catalog_failed), style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error)
-                    }
-                    if (catalog.phase == com.promenar.nexara.data.model.catalog.CatalogUpdatePhase.APPLY_FAILED) {
-                        Text(stringResource(R.string.model_catalog_apply_failed), style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error)
-                    }
-                }
-                TextButton(
-                    onClick = actions.onRefreshCatalog,
-                    enabled = catalog.phase != com.promenar.nexara.data.model.catalog.CatalogUpdatePhase.UPDATING,
-                    modifier = Modifier.testTag("model_catalog_refresh"),
-                ) {
-                    Text(stringResource(if (catalog.phase == com.promenar.nexara.data.model.catalog.CatalogUpdatePhase.UPDATING)
-                        R.string.model_catalog_updating else R.string.model_catalog_update))
-                }
-            }
-        }
-
-        // 同步反馈消息：据 severity 着色，据 code+args 经 stringResource 双语格式化
-        val effectiveSyncNotice = state.syncNotice ?: if (state.isFetching) ModelSyncNotice.loading() else null
-        AnimatedVisibility(
-            visible = effectiveSyncNotice != null,
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(200)),
-            modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_NOTICE),
-        ) {
-            effectiveSyncNotice?.let { notice ->
-                ModelSyncNoticeBanner(
-                    notice = notice,
-                    dismissEnabled = !state.isFetching,
-                    onDismiss = actions.onClearNotice,
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
         LazyColumn(
+            state = listState,
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(bottom = 40.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = contentPadding.calculateBottomPadding()),
             modifier = Modifier
                 .weight(1f)
+                .verticalFadingEdges(top = listState.canScrollBackward)
                 .testTag(UiTags.PROVIDER_MODELS_LIST),
         ) {
+            item("actions") {
+                ProviderModelsTopActions(
+                    isFetching = state.isFetching,
+                    onRefresh = actions.onRefresh,
+                    onAdd = { showAddDialog = true },
+                    onDisableAll = actions.onDisableAll,
+                    onDeleteAll = { showDeleteAllDialog = true },
+                )
+            }
+
+            state.catalogStatus?.let { catalog ->
+                item("catalog") {
+                    ModelCatalogStatusLine(catalog = catalog, onRefresh = actions.onRefreshCatalog)
+                }
+            }
+
+            // 同步反馈消息：据 severity 着色，据 code+args 经 stringResource 双语格式化
+            val effectiveSyncNotice = state.syncNotice ?: if (state.isFetching) ModelSyncNotice.loading() else null
+            if (effectiveSyncNotice != null) {
+                item("notice") {
+                    Box(modifier = Modifier.animateItem().testTag(UiTags.PROVIDER_MODELS_NOTICE)) {
+                        ModelSyncNoticeBanner(
+                            notice = effectiveSyncNotice,
+                            dismissEnabled = !state.isFetching,
+                            onDismiss = actions.onClearNotice,
+                        )
+                    }
+                }
+            }
+
             when (
                 reduceProviderModelsListState(
                     isLoading = state.isFetching,
@@ -744,6 +717,59 @@ private fun capabilityLabelResource(capability: String): Int? {
         ModelTypeLabelResources[typeIndex]
     } else {
         CapabilityTags.firstOrNull { it.key.equals(capability, ignoreCase = true) }?.labelRes
+    }
+}
+
+/** 模型目录状态：一行说明加更新入口；失败时在下方补一行错误。 */
+@Composable
+private fun ModelCatalogStatusLine(
+    catalog: com.promenar.nexara.data.model.catalog.CatalogUpdateStatus,
+    onRefresh: () -> Unit,
+) {
+    val updating = catalog.phase == com.promenar.nexara.data.model.catalog.CatalogUpdatePhase.UPDATING
+    val errorRes = when (catalog.phase) {
+        com.promenar.nexara.data.model.catalog.CatalogUpdatePhase.FAILED -> R.string.model_catalog_failed
+        com.promenar.nexara.data.model.catalog.CatalogUpdatePhase.APPLY_FAILED -> R.string.model_catalog_apply_failed
+        else -> null
+    }
+    Column(modifier = Modifier.fillMaxWidth().padding(start = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            NexaraMetaLine(
+                segments = if (catalog.cached) {
+                    listOf(
+                        stringResource(R.string.model_catalog_label),
+                        catalog.generatedAt.orEmpty().take(10),
+                        stringResource(R.string.model_catalog_records, catalog.recordCount),
+                    )
+                } else {
+                    listOf(
+                        stringResource(R.string.model_catalog_label),
+                        stringResource(R.string.model_catalog_bundled_snapshot),
+                    )
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                onClick = onRefresh,
+                enabled = !updating,
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.testTag("model_catalog_refresh"),
+            ) {
+                Text(
+                    stringResource(if (updating) R.string.model_catalog_updating else R.string.model_catalog_update),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+        if (errorRes != null) {
+            Text(
+                stringResource(errorRes),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
     }
 }
 

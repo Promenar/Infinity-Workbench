@@ -51,7 +51,7 @@ import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.common.toModelSelectionUiModel
-import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -229,8 +229,8 @@ internal fun RagAdvancedScreenContent(
         }
     }
 
-    val resolver = remember { ModelMetadataResolver() }
-    val modelItems = remember(allModels) {
+    val resolver = ModelCatalogRuntime.resolver
+    val modelItems = remember(allModels, resolver) {
         allModels.map { it.toModelSelectionUiModel(resolver) }
     }
 

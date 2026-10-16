@@ -135,7 +135,9 @@ fun TokenUsageScreen(
                 Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
                     state.topSessions.forEachIndexed { index, session ->
                         SessionRankingRow(index + 1, session)
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        if (index < state.topSessions.lastIndex) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(20.dp))
@@ -216,7 +218,7 @@ private fun GlobalStatsCard(state: TokenStatsState) {
         )
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(

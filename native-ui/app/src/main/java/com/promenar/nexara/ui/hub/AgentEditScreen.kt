@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.agent.PresetAgents
-import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.ui.avatar.rememberAvatarCropLauncher
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.SettingsViewModel
@@ -85,7 +85,7 @@ fun AgentEditScreen(
     val avatarPath by viewModel.avatarPath.collectAsState()
 
     val allModels by settingsViewModel.providerModels.collectAsState()
-    val resolver = remember { ModelMetadataResolver() }
+    val resolver = ModelCatalogRuntime.resolver
     val resolvedModels = remember(allModels, resolver) {
         allModels.map { it.toModelSelectionUiModel(resolver) }
     }

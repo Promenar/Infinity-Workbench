@@ -1,6 +1,10 @@
 package com.promenar.nexara.ui.settings
 
 import androidx.compose.foundation.clickable
+import com.promenar.nexara.ui.common.ModelBrandTile
+import com.promenar.nexara.ui.common.ModelBrandResolver
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -212,8 +216,9 @@ internal fun ProviderListScreenContent(
 
 @Composable
 private fun ProviderGroupDivider() {
+    // 分隔线从正文起点开始，与头像列对齐。
     HorizontalDivider(
-        modifier = Modifier.padding(horizontal = 16.dp),
+        modifier = Modifier.padding(start = 72.dp, end = 16.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
     )
 }
@@ -231,23 +236,19 @@ private fun UnsupportedProviderCard(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-            .padding(vertical = 4.dp)
             .clickable(onClick = onEdit)
             .testTag(UiTags.settingsProviderCard(provider.id))
             .semantics {
                 stateDescription = unsupportedDescription
             },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = { ProviderAvatar(provider.name, baseUrl = null) },
         headlineContent = {
             Text(
                 text = provider.name,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontSize = 17.sp,
-                    lineHeight = 22.sp,
-                    fontWeight = FontWeight.SemiBold,
-                ),
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         },
@@ -428,6 +429,11 @@ private fun ProviderCard(
             },
         )
     }
+    val credentialMissing = when (provider.protocolType) {
+        ProtocolType.Google_VertexAI -> !provider.hasVertexCredentials
+        ProtocolType.Local -> false
+        else -> !provider.hasApiKey
+    }
     val providerStateDescription = stringResource(
         R.string.settings_provider_status_summary,
         enabledStatus,
@@ -444,7 +450,6 @@ private fun ProviderCard(
         modifier = Modifier
             .fillMaxWidth()
             .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-            .padding(vertical = 4.dp)
             .testTag(UiTags.settingsProviderCard(provider.id))
             .semantics { stateDescription = providerStateDescription }
             .clickable(
@@ -453,37 +458,46 @@ private fun ProviderCard(
                 onClick = onClick,
             ),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = { ProviderAvatar(provider.name, provider.baseUrl) },
         headlineContent = {
             Text(
                 text = provider.name,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontSize = 17.sp,
-                    lineHeight = 22.sp,
-                    fontWeight = FontWeight.SemiBold,
-                ),
+                style = MaterialTheme.typography.titleMedium,
                 color = if (provider.enabled) {
                     MaterialTheme.colorScheme.onSurface
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
-                maxLines = 3,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         },
         supportingContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                NexaraMetaLine(
-                    segments = listOf(localizedTypeName, enabledStatus, credentialStatus),
-                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 19.sp),
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                // 常态（已启用）不占位；停用时在详情首行给出中性标记，不挤占名称宽度。
+                if (!provider.enabled) ProviderStatePill(enabledStatus)
+                Text(
+                    text = localizedTypeName,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 NexaraIdentifierText(
                     text = provider.baseUrl.removePrefix("https://").removePrefix("http://"),
-                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 17.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                // 凭据就绪是常态，只在缺失时提示需要处理。
+                if (credentialMissing) {
+                    Text(
+                        text = credentialStatus,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         },
         trailingContent = {
@@ -562,4 +576,42 @@ private fun ProviderCard(
             }
         },
     )
+}
+
+/** 提供商头像：能识别品牌时显示品牌标志，否则显示名称首字。 */
+@Composable
+private fun ProviderAvatar(name: String, baseUrl: String?) {
+    val brand = remember(name, baseUrl) { ModelBrandResolver.brandKey(name, baseUrl) }
+    if (brand != null) {
+        ModelBrandTile(modelId = brand, size = 40.dp)
+        return
+    }
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = name.trim().take(1).uppercase().ifEmpty { "?" },
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+    }
+}
+
+@Composable
+private fun ProviderStatePill(label: String) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        )
+    }
 }

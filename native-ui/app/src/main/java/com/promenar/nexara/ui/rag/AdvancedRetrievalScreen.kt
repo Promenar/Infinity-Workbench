@@ -191,37 +191,13 @@ internal fun AdvancedRetrievalScreenContent(
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                ListItem(
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    headlineContent = {
-                        Text(
-                            text = stringResource(R.string.retrieval_hybrid_enable),
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = stringResource(R.string.retrieval_hybrid_desc),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    },
-                    trailingContent = {
-                        Switch(
-                            checked = config.enableHybridSearch,
-                            onCheckedChange = null,
-                            modifier = Modifier.testTag("advanced_retrieval_hybrid_switch"),
-                        )
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("advanced_retrieval_hybrid_toggle")
-                        .toggleable(
-                            value = config.enableHybridSearch,
-                            role = Role.Switch,
-                            onValueChange = { enabled ->
-                                actions.onConfigChanged { copy(enableHybridSearch = enabled) }
-                            },
-                        )
+                InlineToggleRow(
+                    title = stringResource(R.string.retrieval_hybrid_enable),
+                    description = stringResource(R.string.retrieval_hybrid_desc),
+                    checked = config.enableHybridSearch,
+                    onCheckedChange = { enabled -> actions.onConfigChanged { copy(enableHybridSearch = enabled) } },
+                    rowTag = "advanced_retrieval_hybrid_toggle",
+                    switchTag = "advanced_retrieval_hybrid_switch",
                 )
 
                 if (config.enableHybridSearch) {
@@ -331,37 +307,13 @@ internal fun AdvancedRetrievalScreenContent(
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                ListItem(
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    headlineContent = {
-                        Text(
-                            text = stringResource(R.string.retrieval_rewrite_enable),
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = stringResource(R.string.retrieval_rewrite_desc),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    },
-                    trailingContent = {
-                        Switch(
-                            checked = config.enableQueryRewrite,
-                            onCheckedChange = null,
-                            modifier = Modifier.testTag("advanced_retrieval_rewrite_switch"),
-                        )
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("advanced_retrieval_rewrite_toggle")
-                        .toggleable(
-                            value = config.enableQueryRewrite,
-                            role = Role.Switch,
-                            onValueChange = { enabled ->
-                                actions.onConfigChanged { copy(enableQueryRewrite = enabled) }
-                            },
-                        )
+                InlineToggleRow(
+                    title = stringResource(R.string.retrieval_rewrite_enable),
+                    description = stringResource(R.string.retrieval_rewrite_desc),
+                    checked = config.enableQueryRewrite,
+                    onCheckedChange = { enabled -> actions.onConfigChanged { copy(enableQueryRewrite = enabled) } },
+                    rowTag = "advanced_retrieval_rewrite_toggle",
+                    switchTag = "advanced_retrieval_rewrite_switch",
                 )
 
                 if (config.enableQueryRewrite) {
@@ -446,5 +398,36 @@ private fun AdaptiveSlider(
             valueRange = valueRange,
             enabled = enabled
         )
+    }
+}
+
+/** 卡片内的开关行：与同卡片的标题、滑块左缘对齐（卡片已有 16dp 内边距，不再叠加列表项内边距）。 */
+@Composable
+private fun InlineToggleRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    rowTag: String,
+    switchTag: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(rowTag)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Switch(checked = checked, onCheckedChange = null, modifier = Modifier.testTag(switchTag))
     }
 }

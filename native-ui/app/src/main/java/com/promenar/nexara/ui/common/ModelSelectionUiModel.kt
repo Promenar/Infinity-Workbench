@@ -2,6 +2,7 @@ package com.promenar.nexara.ui.common
 
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.model.catalog.ModelCapability
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.data.model.catalog.ModelMetadataOverride
 import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
 import com.promenar.nexara.data.model.catalog.ModelWorkload
@@ -107,7 +108,13 @@ internal fun ModelSelectionUiModel.isChatSelectionCandidate(): Boolean = when (c
     SupportState.UNKNOWN -> workload == ModelWorkload.GENERATIVE_TEXT
 }
 
-fun ModelInfo.toModelSelectionUiModel(resolver: ModelMetadataResolver): ModelSelectionUiModel {
+/**
+ * 选择器投影。默认使用运行时已加载的完整模型目录：网关同步的模型通常带一份空的供应商元数据，
+ * 工作负载与名称只能从目录得到；只用内置覆盖表会把目录内的对话模型判为未知并从选择器中隐藏。
+ */
+fun ModelInfo.toModelSelectionUiModel(
+    resolver: ModelMetadataResolver = ModelCatalogRuntime.resolver,
+): ModelSelectionUiModel {
     val userOverride = toModelSelectionUserOverride()
     val resolved = resolver.resolve(
         remoteModelId = remoteModelId,

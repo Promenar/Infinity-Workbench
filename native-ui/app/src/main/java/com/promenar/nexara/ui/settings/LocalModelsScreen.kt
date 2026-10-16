@@ -467,7 +467,7 @@ private fun SlotCard(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = if (models.isEmpty()) "No models" else stringResource(R.string.local_models_load_model),
+                        text = if (models.isEmpty()) stringResource(R.string.local_models_slot_empty) else stringResource(R.string.local_models_load_model),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

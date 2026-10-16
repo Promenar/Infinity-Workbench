@@ -66,7 +66,8 @@ class RagSettingsMaterialContractTest {
     fun `global and advanced retrieval pages use continuous list sections`() {
         listOf("advanced", "ragAdvanced").forEach { key ->
             val screen = sources.getValue(key)
-            assertThat(screen).contains("ListItem(")
+            // 列表行可以是 ListItem，也可以是与卡片内边距对齐的整行 toggleable 开关行。
+            assertThat(screen.contains("ListItem(") || screen.contains(".toggleable(")).isTrue()
             assertThat(screen).contains("HorizontalDivider(")
             assertThat(screen).contains("Slider(")
             assertThat(screen).doesNotContain("Modifier.alpha(")

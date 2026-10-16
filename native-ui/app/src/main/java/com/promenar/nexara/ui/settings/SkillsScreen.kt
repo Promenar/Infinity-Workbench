@@ -4,6 +4,15 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import com.promenar.nexara.ui.common.NexaraIdentifierText
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -170,41 +179,10 @@ fun SkillsScreen(
                 .padding(contentPadding),
         ) {
 
-            BettboxListGroup {
-                ListItem(
-                    headlineContent = {
-                    Text(stringResource(R.string.skills_loop_limit), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                },
-                supportingContent = {
-                    Text(stringResource(R.string.skills_loop_limit_desc), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                },
-                trailingContent = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        IconButton(
-                            onClick = { viewModel.updateLoopLimit((loopLimit - 1).coerceAtLeast(1)) },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(Icons.Rounded.Remove, contentDescription = stringResource(R.string.common_cd_decrease))
-                        }
-                        Text(
-                            text = "$loopLimit",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        IconButton(
-                            onClick = { viewModel.updateLoopLimit((loopLimit + 1).coerceAtMost(100)) },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_cd_increase))
-                        }
-                    }
-                },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
-            }
+            LoopLimitCard(
+                loopLimit = loopLimit,
+                onChange = viewModel::updateLoopLimit,
+            )
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -221,10 +199,9 @@ fun SkillsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            BettboxListGroup {
             when (selectedTab) {
-                0 -> {
-                    presetSkills.forEach { skill ->
+                0 -> BettboxListGroup {
+                    presetSkills.forEachIndexed { index, skill ->
                         SkillItem(
                             skill = skill,
                             icon = skillIcons[skill.id] ?: Icons.Rounded.Code,
@@ -233,7 +210,7 @@ fun SkillsScreen(
                                 { showSearchConfig = skill.id }
                             } else null
                         )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        if (index < presetSkills.lastIndex) SkillRowDivider()
                     }
                 }
                 1 -> {
@@ -262,60 +239,50 @@ fun SkillsScreen(
 
                     if (userSkills.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(24.dp))
-                        Text(
-                            stringResource(R.string.agent_skills_legacy_header),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                        SectionCaption(
+                            title = stringResource(R.string.agent_skills_legacy_header),
+                            description = stringResource(R.string.sheet_tool_custom_unsandboxed),
                         )
-                        Text(
-                            stringResource(R.string.sheet_tool_custom_unsandboxed),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 8.dp),
-                        )
-                        userSkills.forEach { skill ->
-                            UserSkillItem(
-                                id = skill.id,
-                                name = skill.name,
-                                description = skill.description,
-                                enabled = skill.enabled,
-                                icon = Icons.Rounded.Code,
-                                onToggle = { viewModel.toggleSkill(skill.id) },
-                                onEdit = {
-                                    selectedSkillForEdit = skill.id
-                                    showCreateSkill = true
-                                },
-                                onDelete = { viewModel.deleteCustomSkill(skill.id) }
-                            )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        BettboxListGroup {
+                            userSkills.forEachIndexed { index, skill ->
+                                UserSkillItem(
+                                    id = skill.id,
+                                    name = skill.name,
+                                    description = skill.description,
+                                    enabled = skill.enabled,
+                                    icon = Icons.Rounded.Code,
+                                    onToggle = { viewModel.toggleSkill(skill.id) },
+                                    onEdit = {
+                                        selectedSkillForEdit = skill.id
+                                        showCreateSkill = true
+                                    },
+                                    onDelete = { viewModel.deleteCustomSkill(skill.id) }
+                                )
+                                if (index < userSkills.lastIndex) SkillRowDivider()
+                            }
                         }
                     }
                 }
                 2 -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = { showAddMcp = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Rounded.Add, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(stringResource(R.string.skills_add_mcp))
-                        }
+                    Button(
+                        onClick = { showAddMcp = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.skills_add_mcp))
+                    }
 
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    BettboxListGroup {
                         if (mcpServers.isEmpty()) {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    stringResource(R.string.skills_mcp_empty),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            SkillsEmptyState(
+                                icon = Icons.Rounded.Hub,
+                                message = stringResource(R.string.skills_mcp_empty),
+                            )
                         }
-
-                        mcpServers.forEach { server ->
+                        mcpServers.forEachIndexed { index, server ->
                             McpServerItem(
                                 server = server,
                                 isExpanded = expandedServerId == server.id,
@@ -324,14 +291,18 @@ fun SkillsScreen(
                                 onDelete = { viewModel.deleteMcpServer(server.id) },
                                 onSync = { viewModel.syncMcpServer(server.id) },
                             )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            if (index < mcpServers.lastIndex) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                )
+                            }
                         }
                     }
                 }
             }
-            }
 
-            Spacer(modifier = Modifier.height(120.dp))
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 
@@ -517,6 +488,124 @@ fun SkillsScreen(
     }
 }
 
+/** 执行循环限制：标题与步进器同行，说明独占整行，避免被右侧控件挤成窄列。 */
+@Composable
+private fun LoopLimitCard(
+    loopLimit: Int,
+    onChange: (Int) -> Unit,
+) {
+    BettboxListGroup {
+        Column(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.skills_loop_limit),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(
+                    onClick = { onChange((loopLimit - 1).coerceAtLeast(1)) },
+                    enabled = loopLimit > 1,
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(Icons.Rounded.Remove, contentDescription = stringResource(R.string.common_cd_decrease))
+                }
+                Text(
+                    text = "$loopLimit",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.widthIn(min = 40.dp),
+                )
+                IconButton(
+                    onClick = { onChange((loopLimit + 1).coerceAtMost(100)) },
+                    enabled = loopLimit < 100,
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_cd_increase))
+                }
+            }
+            Text(
+                stringResource(R.string.skills_loop_limit_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 8.dp),
+            )
+        }
+    }
+}
+
+/** 列表内分隔线：从正文起点开始，与图标列对齐。 */
+@Composable
+internal fun SkillRowDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = SkillTextStart, end = 16.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+    )
+}
+
+/** 列表上方的小节标题与说明，放在卡片外，避免说明文字贴着卡片边缘。 */
+@Composable
+internal fun SectionCaption(title: String?, description: String?) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (title != null) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        if (description != null) {
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** 卡片内的空态：图标加居中说明。 */
+@Composable
+internal fun SkillsEmptyState(icon: ImageVector, message: String) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+        }
+        Text(
+            message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/** 工具图标底座。 */
+@Composable
+internal fun SkillIconTile(icon: ImageVector) {
+    Box(
+        modifier = Modifier
+            .size(SkillIconSize)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(12.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** 图标 40dp + 左边距 16dp + 间距 14dp：正文与分隔线的起点。 */
+private val SkillIconSize = 40.dp
+internal val SkillTextStart = 70.dp
+
+/**
+ * 预设工具行：右侧只放开关，说明获得完整宽度；可配置的工具在说明下方给出“配置”入口。
+ * 整行可点击切换开关。
+ */
 @Composable
 private fun SkillItem(
     skill: SkillInfo,
@@ -526,55 +615,56 @@ private fun SkillItem(
 ) {
     var enabled by remember { mutableStateOf(skill.enabled) }
 
-    ListItem(
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        leadingContent = {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = enabled,
+                role = Role.Switch,
+                onValueChange = { enabled = it; onToggle() },
+            )
+            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = if (onConfig != null) 6.dp else 14.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        SkillIconTile(icon)
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(skill.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                skill.description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            // 工具 ID 与“配置”入口同处一行，避免入口单独占一行留出空白。
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = if (onConfig != null) 40.dp else 0.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-            }
-        },
-        headlineContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(skill.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 Text(
                     text = skill.id,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.outline,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(top = 4.dp),
                 )
-            }
-        },
-        supportingContent = {
-            Text(skill.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        },
-        trailingContent = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
                 if (onConfig != null) {
-                    IconButton(onClick = onConfig, modifier = Modifier.size(48.dp)) {
-                        Icon(
-                            imageVector = Icons.Rounded.Settings,
-                            contentDescription = stringResource(R.string.common_cd_config),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                    TextButton(
+                        onClick = onConfig,
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) {
+                        Icon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(stringResource(R.string.common_cd_config), style = MaterialTheme.typography.labelLarge)
                     }
                 }
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = { enabled = it; onToggle() }
-                )
             }
         }
-    )
+        Spacer(modifier = Modifier.width(12.dp))
+        Switch(checked = enabled, onCheckedChange = null)
+    }
 }
 
 @Composable
@@ -591,36 +681,37 @@ private fun UserSkillItem(
     var isEnabled by remember { mutableStateOf(enabled) }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        ListItem(
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            leadingContent = {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                }
-            },
-            headlineContent = {
-                Text(name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-            },
-            supportingContent = {
-                Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            },
-            trailingContent = {
-                Switch(
-                    checked = isEnabled,
-                    onCheckedChange = { isEnabled = it; onToggle() }
-                )
-            }
-        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.End,
+                .toggleable(
+                    value = isEnabled,
+                    role = Role.Switch,
+                    onValueChange = { isEnabled = it; onToggle() },
+                )
+                .padding(start = 16.dp, end = 16.dp, top = 14.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            SkillIconTile(icon)
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                if (description.isNotBlank()) {
+                    Text(
+                        description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(checked = isEnabled, onCheckedChange = null)
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = SkillTextStart - 12.dp, end = 8.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             TextButton(onClick = onEdit) {
@@ -628,7 +719,6 @@ private fun UserSkillItem(
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(stringResource(R.string.skills_configure))
             }
-            Spacer(modifier = Modifier.width(8.dp))
             TextButton(
                 onClick = onDelete,
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
@@ -641,6 +731,7 @@ private fun UserSkillItem(
     }
 }
 
+/** MCP 服务器：状态点、名称、地址与连接状态；开关在右侧，同步与删除在下方操作行。 */
 @Composable
 private fun McpServerItem(
     server: McpServerUiModel,
@@ -650,95 +741,100 @@ private fun McpServerItem(
     onDelete: () -> Unit,
     onSync: () -> Unit,
 ) {
+    val enabledLabel = stringResource(R.string.skills_mcp_enabled)
     Column(modifier = Modifier.fillMaxWidth()) {
-        ListItem(
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            leadingContent = {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 14.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Box(
+                modifier = Modifier.size(SkillIconSize),
+                contentAlignment = Alignment.Center,
+            ) {
                 Box(
                     modifier = Modifier
-                        .size(12.dp)
+                        .size(10.dp)
                         .background(
                             if (server.isConnected) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.error,
                             CircleShape
                         )
                 )
-            },
-            headlineContent = {
-                Text(server.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-            },
-            supportingContent = {
-                Column {
-                    Text(server.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = when {
-                            !server.isSupported -> stringResource(R.string.skills_mcp_legacy_unsupported)
-                            server.syncError != null -> stringResource(R.string.skills_mcp_sync_error, server.syncError)
-                            else -> stringResource(R.string.skills_mcp_modern_transport)
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (server.isSupported && server.syncError == null) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        }
-                    )
-                }
-            },
-            trailingContent = {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onSync, enabled = server.isSupported && server.isEnabled) {
-                        Icon(Icons.Rounded.Sync, contentDescription = stringResource(R.string.common_cd_sync))
-                    }
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_cd_delete), tint = MaterialTheme.colorScheme.error)
-                    }
-                }
             }
-        )
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    server.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                NexaraIdentifierText(
+                    text = server.url,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = when {
+                        !server.isSupported -> stringResource(R.string.skills_mcp_legacy_unsupported)
+                        server.syncError != null -> stringResource(R.string.skills_mcp_sync_error, server.syncError)
+                        else -> stringResource(R.string.skills_mcp_modern_transport)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (server.isSupported && server.syncError == null) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    }
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(
+                checked = server.isEnabled,
+                onCheckedChange = onToggleEnabled,
+                modifier = Modifier.semantics { contentDescription = "${server.name}: $enabledLabel" },
+            )
+        }
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
+                .padding(start = SkillTextStart - 12.dp, end = 8.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Switch(
-                checked = server.isEnabled,
-                onCheckedChange = onToggleEnabled
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(stringResource(R.string.skills_mcp_enabled), style = MaterialTheme.typography.bodyMedium)
-
+            if (server.tools.isNotEmpty()) {
+                TextButton(onClick = onToggleExpand) {
+                    Text(
+                        text = stringResource(R.string.skills_mcp_tools, server.tools.size),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            IconButton(onClick = onSync, enabled = server.isSupported && server.isEnabled) {
+                Icon(Icons.Rounded.Sync, contentDescription = stringResource(R.string.common_cd_sync))
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_cd_delete), tint = MaterialTheme.colorScheme.error)
+            }
         }
 
         if (server.tools.isNotEmpty()) {
-            ListItem(
-                modifier = Modifier.clickable { onToggleExpand() },
-                headlineContent = {
-                    Text(
-                        text = stringResource(R.string.skills_mcp_tools, server.tools.size),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingContent = {
-                    Icon(
-                        imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.ChevronRight,
-                        contentDescription = null
-                    )
-                },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-            )
             AnimatedVisibility(visible = isExpanded) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 32.dp, end = 16.dp, bottom = 8.dp)
+                        .padding(start = SkillTextStart, end = 16.dp, bottom = 12.dp)
                 ) {
                     server.tools.forEach { tool ->
                         Row(

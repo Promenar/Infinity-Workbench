@@ -40,7 +40,7 @@ import com.promenar.nexara.data.agent.PresetAgentDisplay
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.ui.common.toModelSelectionUiModel
-import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.domain.model.Agent
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.ui.settings.SettingsViewModel
@@ -167,8 +167,8 @@ private fun AddAgentDialog(
         factory = SettingsViewModel.factory(context.applicationContext as android.app.Application)
     )
     val allModels by settingsViewModel.providerModels.collectAsState()
-    val resolver = remember { ModelMetadataResolver() }
-    val modelItems = remember(allModels) {
+    val resolver = ModelCatalogRuntime.resolver
+    val modelItems = remember(allModels, resolver) {
         allModels.filter { it.enabled }.map { it.toModelSelectionUiModel(resolver) }
     }
 

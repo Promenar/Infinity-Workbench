@@ -2,7 +2,11 @@ package com.promenar.nexara.ui.chat
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.ModelInfo
+import com.promenar.nexara.data.model.catalog.MetadataSource
 import com.promenar.nexara.data.model.catalog.ModelCapability
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
+import com.promenar.nexara.data.model.catalog.ModelMetadataOverride
+import com.promenar.nexara.data.model.catalog.ModelMetadataRecord
 import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
 import com.promenar.nexara.data.model.catalog.ModelWorkload
 import com.promenar.nexara.data.model.catalog.SupportState
@@ -145,6 +149,40 @@ class SessionSettingsModelFilterTest {
         assertThat(projected).hasSize(1)
         assertThat(projected[0].capabilityStates[ModelCapability.REASONING])
             .isEqualTo(SupportState.SUPPORTED)
+    }
+
+    @Test
+    fun `网关同步的模型按运行时目录判定可对话并显示目录名称`() {
+        // OpenAI 兼容同步为每个模型保存一份通常为空的供应商元数据；工作负载只能来自已加载的模型目录。
+        val record = ModelMetadataRecord(
+            canonicalModelId = "grok-4.5",
+            exactAliases = setOf("grok-4.5"),
+            displayName = "Grok 4.5",
+            familyName = "Grok",
+            workload = ModelWorkload.GENERATIVE_TEXT,
+            capabilities = mapOf(ModelCapability.REASONING to SupportState.SUPPORTED),
+            contextTokens = 256_000,
+            inputTokens = null,
+            outputTokens = null,
+            knowledgeCutoff = null,
+            source = MetadataSource.MODELS_DEV,
+        )
+        val synced = model(id = "cloud::grok-4.5", providerId = "cloud", type = "reasoning")
+            .copy(providerMetadata = ModelMetadataOverride())
+
+        val visible = ModelCatalogRuntime.withTestResolver(ModelMetadataResolver(listOf(record))) {
+            sessionSelectableModels(listOf(synced), selectedModelId = "")
+        }
+
+        assertThat(visible.map { it.selectionId }).containsExactly("cloud::grok-4.5")
+        assertThat(visible.single().displayName).isEqualTo("Grok 4.5")
+    }
+
+    @Test
+    fun `会话可选列表只含已启用模型`() {
+        val disabled = model(id = "cloud::custom-chat", providerId = "cloud", type = "chat").copy(enabled = false)
+
+        assertThat(sessionSelectableModels(listOf(disabled), selectedModelId = "")).isEmpty()
     }
 
     private fun model(

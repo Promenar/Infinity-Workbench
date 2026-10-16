@@ -51,7 +51,6 @@ import com.promenar.nexara.ui.common.NexaraTabItem
 import com.promenar.nexara.ui.common.ModelSelectionUiModel
 import com.promenar.nexara.ui.common.toModelSelectionUiModel
 import com.promenar.nexara.ui.common.ModelSelectionListItem
-import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -260,16 +259,8 @@ internal fun ModelPanel(
     allModels: List<ModelInfo>,
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    val resolver = remember { ModelMetadataResolver() }
-
-    val projectedModels = remember(allModels) {
-        allModels.filter { it.enabled }.map { it.toModelSelectionUiModel(resolver) }
-    }
-    val modelItems = remember(projectedModels, selectedModelId) {
-        filterSessionSelectionModels(
-            models = projectedModels,
-            selectedModelId = selectedModelId,
-        )
+    val modelItems = remember(allModels, selectedModelId) {
+        sessionSelectableModels(allModels, selectedModelId)
     }
 
     Column(
@@ -312,6 +303,15 @@ internal fun ModelPanel(
         }
     }
 }
+
+/** 会话可选模型：已启用、可走对话接口，或是当前已选模型。 */
+internal fun sessionSelectableModels(
+    models: List<ModelInfo>,
+    selectedModelId: String,
+): List<ModelSelectionUiModel> = filterSessionSelectionModels(
+    models = models.filter { it.enabled }.map { it.toModelSelectionUiModel() },
+    selectedModelId = selectedModelId,
+)
 
 internal fun filterSessionSelectionModels(
     models: List<ModelSelectionUiModel>,

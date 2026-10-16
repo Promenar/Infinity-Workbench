@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.settings
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
+import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.data.skills.InstalledAgentSkill
 import com.promenar.nexara.data.skills.SkillMarkdownParser
 import com.promenar.nexara.ui.theme.forInput
@@ -64,30 +67,21 @@ fun AgentSkillsSection(
 ) {
     var pendingDelete by remember { mutableStateOf<String?>(null) }
     Column {
-        Text(
-            stringResource(R.string.agent_skills_intro),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 12.dp),
-        )
-        skills.forEach { skill ->
-            AgentSkillItem(
-                skill = skill,
-                onToggle = { onToggle(skill.metadata.name, it) },
-                onOpen = { onOpen(skill.metadata.name) },
-                onDelete = { pendingDelete = skill.metadata.name },
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        }
-        if (skills.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    stringResource(R.string.agent_skills_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        SectionCaption(title = null, description = stringResource(R.string.agent_skills_intro))
+        BettboxListGroup {
+            skills.forEachIndexed { index, skill ->
+                AgentSkillItem(
+                    skill = skill,
+                    onToggle = { onToggle(skill.metadata.name, it) },
+                    onOpen = { onOpen(skill.metadata.name) },
+                    onDelete = { pendingDelete = skill.metadata.name },
+                )
+                if (index < skills.lastIndex) SkillRowDivider()
+            }
+            if (skills.isEmpty()) {
+                SkillsEmptyState(
+                    icon = Icons.Rounded.AutoAwesome,
+                    message = stringResource(R.string.agent_skills_empty),
                 )
             }
         }
@@ -123,6 +117,7 @@ fun AgentSkillsSection(
     }
 }
 
+/** 技能包行：右侧只放开关，说明获得完整宽度；附带文件数与删除放在说明下方。点击行打开编辑。 */
 @Composable
 private fun AgentSkillItem(
     skill: InstalledAgentSkill,
@@ -130,44 +125,49 @@ private fun AgentSkillItem(
     onOpen: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    ListItem(
-        modifier = Modifier.clickable(onClick = onOpen),
-        leadingContent = { Icon(Icons.Rounded.AutoAwesome, contentDescription = null) },
-        headlineContent = {
-            Text(skill.metadata.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-        },
-        supportingContent = {
-            Column {
+    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            SkillIconTile(Icons.Rounded.AutoAwesome)
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(skill.metadata.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 Text(
                     skill.metadata.description,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
                 )
-                if (skill.files.isNotEmpty()) {
-                    Text(
-                        pluralStringResource(R.plurals.agent_skills_files_count, skill.files.size, skill.files.size),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
-        },
-        trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Rounded.Delete,
-                        contentDescription = stringResource(R.string.common_cd_delete),
-                        tint = MaterialTheme.colorScheme.error,
-                    )
-                }
-                Switch(checked = skill.enabled, onCheckedChange = onToggle)
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(checked = skill.enabled, onCheckedChange = onToggle)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = SkillTextStart, end = 8.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (skill.files.isNotEmpty()) {
+                Text(
+                    pluralStringResource(R.plurals.agent_skills_files_count, skill.files.size, skill.files.size),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                )
             }
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-    )
+            Spacer(modifier = Modifier.weight(1f))
+            TextButton(
+                onClick = onDelete,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) {
+                Icon(Icons.Rounded.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(stringResource(R.string.shared_btn_delete))
+            }
+        }
+    }
 }
 
 /** 新建或编辑技能；名称校验与 SKILL.md 规则一致。 */

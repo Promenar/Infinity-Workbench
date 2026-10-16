@@ -15,7 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.data.model.catalog.ModelMetadataResolver
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.ui.common.ModelPicker
 import com.promenar.nexara.ui.common.ModelSelectionUiModel
 import com.promenar.nexara.ui.common.NexaraSettingsItem
@@ -49,7 +49,7 @@ fun DefaultModelsScreen(
 
     var activePickerRole by remember { mutableStateOf<DefaultModelRole?>(null) }
 
-    val resolver = remember { ModelMetadataResolver() }
+    val resolver = ModelCatalogRuntime.resolver
     val resolvedModels = remember(allModels, resolver) {
         allModels.map { model -> model.toModelSelectionUiModel(resolver) }
     }

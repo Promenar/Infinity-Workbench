@@ -42,7 +42,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
@@ -283,22 +282,27 @@ internal fun BackupSettingsScreen(
                     )
 
                     AnimatedVisibility(visible = contentExpanded) {
+                        // 开关行自带 16dp 水平内边距，与上方说明左缘对齐，不再外套一层内边距。
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                .padding(bottom = 8.dp),
                         ) {
-                            Text(
-                                text = stringResource(R.string.backup_core_content_fixed),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            NexaraMetaLine(
-                                segments = coreContentLabels,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Column(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.backup_core_content_fixed),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                NexaraMetaLine(
+                                    segments = coreContentLabels,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                             SettingsToggle(
                                 title = stringResource(R.string.backup_content_keys),
                                 checked = uiState.keysChecked,
@@ -312,7 +316,6 @@ internal fun BackupSettingsScreen(
                             )
                         }
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
 
@@ -336,7 +339,6 @@ internal fun BackupSettingsScreen(
                         enabled = uiState.canExecute,
                         onClick = onImportClick,
                     )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
 
@@ -470,19 +472,18 @@ internal fun BackupSettingsScreen(
                         }
                     }
 
-                    Button(
+                    // 按钮与卡片边缘保持内边距，不贴边。
+                    FilledTonalButton(
                         onClick = { showWebdavSheet = true },
                         enabled = uiState.canExecute,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp)
+                            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)
                     ) {
                         Icon(Icons.Rounded.Link, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(stringResource(R.string.backup_config_webdav))
                     }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 12.dp))
                 }
             }
 
