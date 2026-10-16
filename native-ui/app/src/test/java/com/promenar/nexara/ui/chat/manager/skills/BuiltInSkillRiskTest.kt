@@ -19,7 +19,8 @@ class BuiltInSkillRiskTest {
         val definitions = listOf(
             FileWriteSkill(mockk<IFileOperationRepository>()) to ToolRisk.FILE_WRITE,
             FilePatchSkill(mockk<IFileOperationRepository>()) to ToolRisk.PATCH,
-            ExecJsSkill(mockk<Context>()) to ToolRisk.SCRIPT,
+            ExecJsSkill(mockk<com.promenar.nexara.data.script.ScriptToolRunner>()) to ToolRisk.SCRIPT,
+            RunScriptSkill(mockk<com.promenar.nexara.data.script.ScriptToolRunner>()) to ToolRisk.SCRIPT,
             DropPlanSkill(mockk<ITaskRepository>()) to ToolRisk.SESSION_STATE,
             ImageGenerationSkill(mockk<Context>(), mockk<ProviderManager>()) to ToolRisk.EXTERNAL_WRITE,
             InitializePlanSkill(mockk<ITaskRepository>()) to ToolRisk.SESSION_STATE,

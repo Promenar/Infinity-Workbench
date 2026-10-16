@@ -232,7 +232,9 @@ class DeleteFileSkill(
         }
         if (target.uuid == context.workspaceRootUuid) return workspaceToolError(id, "不能删除工作区根目录")
         val (_, error) = mutationFailure(id) {
-            workspaceRepo.moveToRecycleBin(context.workspaceRootUuid, target.uuid)
+            val expected = args.stringArgument("expectedHash") ?: args.stringArgument("expected_sha256")
+            if (expected == null) workspaceRepo.moveToRecycleBin(context.workspaceRootUuid, target.uuid)
+            else workspaceRepo.moveToRecycleBinIfHash(context.workspaceRootUuid, target.uuid, expected)
         }
         if (error != null) return error
         return ToolResult("delete_file_${System.currentTimeMillis()}", "已移入回收站：${target.materializedPath}")

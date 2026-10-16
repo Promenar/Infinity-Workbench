@@ -8,6 +8,14 @@ import java.nio.file.Path
 
 class BackupPreferenceInventoryTest {
     @Test
+    fun `脚本局域网和写入授权策略不得随备份迁移`() {
+        for (key in listOf("script_lan_hosts", "script_approve_writes")) {
+            assertThat(BackupPreferencePolicy.isKnown("nexara_settings", key)).isTrue()
+            assertThat(BackupPreferencePolicy.isAllowed("nexara_settings", key)).isFalse()
+        }
+    }
+
+    @Test
     fun `all literal production preference keys are explicitly allowed or denied`() {
         val sourceRoot = Path.of("app/src/main/java/com/promenar/nexara")
         val files = Files.walk(sourceRoot).use { stream ->
@@ -30,6 +38,7 @@ class BackupPreferenceInventoryTest {
             "ui/settings/BackupViewModel.kt#prefs" to "nexara_backup_settings",
             "ui/settings/SettingsViewModel.kt#prefs" to "nexara_settings",
             "ui/theme/ThemePreferenceStore.kt#preferences" to "nexara_settings",
+            "data/script/ScriptSettings.kt#preferences" to "nexara_settings",
             "ui/settings/LocalModelsViewModel.kt#prefs" to "nexara_settings",
             "ui/settings/SearchConfigViewModel.kt#prefs" to "nexara_search",
             "ui/rag/RagViewModel.kt#prefs" to "rag_settings",

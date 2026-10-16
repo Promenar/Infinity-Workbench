@@ -144,6 +144,7 @@ fun SkillsScreen(
             "file_diff" to Icons.Rounded.Sync,
             "file_patch" to Icons.Rounded.Build,
             "exec_js" to Icons.Rounded.Code,
+            "run_script" to Icons.Rounded.Code,
             "initialize_plan" to Icons.Rounded.AccountTree,
             "update_plan" to Icons.Rounded.Edit,
             "get_plan" to Icons.Rounded.Visibility,

@@ -375,6 +375,20 @@ class SettingsViewModel(
     val toolContextRatio = MutableStateFlow(prefs.getInt("tool_context_ratio_percent", 70))
     val toolContextKeepRounds = MutableStateFlow(prefs.getInt("tool_context_keep_rounds", 3))
     val toolLoopRepeatLimit = MutableStateFlow(prefs.getInt("tool_loop_repeat_limit", 3))
+    private val scriptSettings = com.promenar.nexara.data.script.ScriptSettings(prefs)
+    val scriptLanHosts = MutableStateFlow(scriptSettings.lanHostsText)
+    val scriptApproveFileWrites = MutableStateFlow(scriptSettings.approveFileWrites)
+
+    fun updateScriptLanHosts(value: String): String? = try {
+        scriptSettings.lanHostsText = value
+        scriptLanHosts.value = scriptSettings.lanHostsText
+        null
+    } catch (failure: com.promenar.nexara.domain.script.ScriptFailure) { failure.message }
+
+    fun updateScriptApproveFileWrites(value: Boolean) {
+        scriptSettings.approveFileWrites = value
+        scriptApproveFileWrites.value = value
+    }
 
     fun updateTaskTokenLimit(value: Int) = updateRuntimeInt("task_token_limit", value.coerceIn(0, 10_000_000), taskTokenLimit)
     fun updateToolContextRatio(value: Int) = updateRuntimeInt("tool_context_ratio_percent", value.coerceIn(10, 90), toolContextRatio)
@@ -634,7 +648,7 @@ class SettingsViewModel(
             "web_search", "web_fetch", "search_tavily", "search_searxng",
             "calculator", "image_generation",
             "file_read", "file_write", "file_list", "file_search", "file_diff", "file_patch",
-            "exec_js", "initialize_plan", "update_plan", "get_plan", "drop_plan"
+            "exec_js", "run_script", "initialize_plan", "update_plan", "get_plan", "drop_plan"
         )
         if (!prefs.getBoolean("preset_skills_migrated_v3", false)) {
             prefs.edit()
@@ -658,6 +672,7 @@ class SettingsViewModel(
             SkillInfo("file_diff", app.getString(R.string.skill_file_diff), app.getString(R.string.skill_file_diff_desc), enabledSet?.contains("file_diff") ?: true),
             SkillInfo("file_patch", app.getString(R.string.skill_file_patch), app.getString(R.string.skill_file_patch_desc), enabledSet?.contains("file_patch") ?: true),
             SkillInfo("exec_js", app.getString(R.string.skill_exec_js), app.getString(R.string.skill_exec_js_desc), enabledSet?.contains("exec_js") ?: true),
+            SkillInfo("run_script", app.getString(R.string.skill_run_script), app.getString(R.string.skill_run_script_desc), BuiltinToolPreferences.isEnabled(prefs, "run_script")),
             SkillInfo("initialize_plan", app.getString(R.string.skill_initialize_plan), app.getString(R.string.skill_initialize_plan_desc), enabledSet?.contains("initialize_plan") ?: true),
             SkillInfo("update_plan", app.getString(R.string.skill_update_plan), app.getString(R.string.skill_update_plan_desc), enabledSet?.contains("update_plan") ?: true),
             SkillInfo("get_plan", app.getString(R.string.skill_get_plan), app.getString(R.string.skill_get_plan_desc), enabledSet?.contains("get_plan") ?: true),

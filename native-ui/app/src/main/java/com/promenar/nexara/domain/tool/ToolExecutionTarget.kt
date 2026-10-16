@@ -49,7 +49,7 @@ object ToolExecutionTargets {
             return tuple("process", host.lowercase(Locale.ROOT), command)
         }
         val target = when (tool.function.name) {
-            "read_file", "write_file", "patch_file", "diff_file", "delete_file" ->
+            "read_file", "write_file", "patch_file", "diff_file", "delete_file", "run_script" ->
                 entryPath(args, resolvedPaths)?.let { tuple("path", it) }
             "create_file", "create_directory" -> {
                 val name = validName(args.string("name")) ?: return null

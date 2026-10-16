@@ -134,6 +134,7 @@ open class MainActivity : ComponentActivity() {
         setContent {
             val themePreferences by app.themePreferenceStore.state.collectAsStateWithLifecycle()
             NexaraTheme(preferences = themePreferences) {
+                com.promenar.nexara.ui.chat.ScriptFileApprovalDialog(app.scriptFileApprovals) { app.chatStore.getSession(it)?.title }
                 val startupState by app.startupState.collectAsStateWithLifecycle()
                 StartupGate(
                     state = startupState,

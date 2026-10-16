@@ -38,6 +38,7 @@ internal fun AgentRuntimeSettingsCard(viewModel: SettingsViewModel) {
         TextButton(onClick = viewModel::resetUnlimitedAutoConsent, modifier = Modifier.heightIn(min = 48.dp)) {
             Text(stringResource(R.string.p0_reset_consent))
         }
+        ScriptRuntimeSettingsCard(viewModel)
     }
 }
 

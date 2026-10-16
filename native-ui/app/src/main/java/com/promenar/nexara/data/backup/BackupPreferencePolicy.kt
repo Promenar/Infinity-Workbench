@@ -71,7 +71,7 @@ internal object BackupPreferencePolicy {
         "provider" to setOf("last_local_model"),
         "settings" to setOf(
             "local_models_enabled", "local_auto_load", "last_local_model", "unlimited_auto_confirmed",
-            "termux_integration_enabled", "mcp_allow_loopback_http",
+            "termux_integration_enabled", "mcp_allow_loopback_http", "script_lan_hosts", "script_approve_writes",
         ),
         "generation_notification_permission" to setOf("post_notifications_asked"),
         "onboarding" to setOf(
