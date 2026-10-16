@@ -977,12 +977,15 @@ class MessageManager(
                 }
                 val isError = status == "error"
                 val clearUnconfirmedTools = status != "success"
+                val completedIds = store.getSession(sessionId)?.messages.orEmpty()
+                    .filter { it.role == MessageRole.TOOL && it.parentMessageId == messageId }
+                    .mapNotNull { it.toolCallId }.toSet()
                 val terminal = merged.copy(
                     content = content,
                     status = status,
                     isError = isError,
                     errorMessage = errorMessage,
-                    toolCalls = if (clearUnconfirmedTools) emptyList() else merged.toolCalls,
+                    toolCalls = if (clearUnconfirmedTools) merged.toolCalls.orEmpty().filter { it.id in completedIds } else merged.toolCalls,
                 )
                 val updates = mutableMapOf<String, Any?>()
                 pendingDb?.updates?.let(updates::putAll)
@@ -996,7 +999,7 @@ class MessageManager(
                         "errorMessage" to errorMessage,
                     ),
                 )
-                if (clearUnconfirmedTools) updates["toolCalls"] = emptyList<ToolCall>()
+                if (clearUnconfirmedTools) updates["toolCalls"] = terminal.toolCalls.orEmpty()
                 try {
                     messageRepository.updatePartial(messageId, updates)
                     store.updateMessageInSession(sessionId, messageId) { terminal }

@@ -72,6 +72,7 @@ class GenerationPresentationStore {
     suspend fun accept(sessionId: String, taskId: String, event: GenerationEvent) {
         update(sessionId, taskId) { current ->
             when (event) {
+                is GenerationEvent.ProgressChanged -> current
                 is GenerationEvent.PhaseChanged -> current.copy(
                     phase = event.phase,
                     promptAccepted = current.promptAccepted ||

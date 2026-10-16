@@ -1,0 +1,174 @@
+package com.promenar.nexara.domain.tool
+
+import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.data.remote.protocol.ProtocolTool
+import com.promenar.nexara.data.remote.protocol.ProtocolToolFunction
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import org.junit.Test
+
+class ToolExecutionTargetTest {
+    @Test
+    fun `文件工具使用规范路径且不会合并大小写不同目标`() {
+        listOf("read_file", "write_file", "patch_file", "diff_file", "delete_file").forEach { name ->
+            assertThat(extract(name, """{"path":" docs\\\\a.md// "}"""))
+                .isEqualTo("""["path","/docs/a.md"]""")
+        }
+        assertThat(extract("write_file", """{"path":"/Docs/a.md"}"""))
+            .isNotEqualTo(extract("write_file", """{"path":"/docs/a.md"}"""))
+    }
+
+    @Test
+    fun `uuid 优先按已解析路径定位且未知 uuid 不能降级到 path`() {
+        val args = """{"uuid":"entry-1","path":"/unrelated.md"}"""
+        assertThat(ToolExecutionTargets.extract(tool("write_file"), args, mapOf("entry-1" to "/docs/current.md")))
+            .isEqualTo("""["path","/docs/current.md"]""")
+        assertThat(extract("write_file", args)).isNull()
+        assertThat(extract("write_file", """{"uuid":"entry-1"}""")).isNull()
+    }
+
+    @Test
+    fun `创建目标包含父目录与文件名且默认父目录是根`() {
+        assertThat(extract("create_file", """{"name":" a.md ","parentPath":"//docs/"}"""))
+            .isEqualTo("""["path","/docs/a.md"]""")
+        assertThat(extract("create_directory", """{"name":"docs"}"""))
+            .isEqualTo("""["path","/docs"]""")
+        assertThat(ToolExecutionTargets.extract(
+            tool("create_file"),
+            """{"name":"a.md","parentUuid":"folder","parentPath":"/wrong"}""",
+            mapOf("folder" to "/resolved"),
+        )).isEqualTo("""["path","/resolved/a.md"]""")
+        assertThat(extract("create_file", """{"name":"a.md","parentUuid":"missing"}""")).isNull()
+    }
+
+    @Test
+    fun `移动目标同时绑定来源路径和完整目的路径`() {
+        assertThat(extract("move_file", """{"path":"/docs/a.md","newParentPath":"/archive","newName":"b.md"}"""))
+            .isEqualTo("""["move","/docs/a.md","/archive/b.md"]""")
+        assertThat(extract("move_file", """{"path":"/docs/a.md","newParentPath":"/archive"}"""))
+            .isEqualTo("""["move","/docs/a.md","/archive/a.md"]""")
+        assertThat(extract("move_file", """{"path":"/docs/a.md","newName":"b.md"}"""))
+            .isEqualTo("""["move","/docs/a.md","/docs/b.md"]""")
+        assertThat(ToolExecutionTargets.extract(
+            tool("move_file"),
+            """{"uuid":"file","newParentUuid":"folder"}""",
+            mapOf("file" to "/docs/a.md", "folder" to "/archive"),
+        )).isEqualTo("""["move","/docs/a.md","/archive/a.md"]""")
+    }
+
+    @Test
+    fun `列表与搜索明确绑定工作区根或指定目录`() {
+        assertThat(extract("list_files", "{}" )).isEqualTo("""["path","/"]""")
+        assertThat(extract("list_files", """{"path":"/docs"}"""))
+            .isEqualTo("""["path","/docs"]""")
+        assertThat(ToolExecutionTargets.extract(tool("list_files"), """{"parentUuid":"folder"}""", mapOf("folder" to "/docs")))
+            .isEqualTo("""["path","/docs"]""")
+        assertThat(extract("search_files", """{"query":"report"}"""))
+            .isEqualTo("""["path","/"]""")
+    }
+
+    @Test
+    fun `非法与保留路径及不完整移动不能产生授权目标`() {
+        listOf("/docs/../a", "/./a", "/.nexara-hidden/a", "/.recycle_bin/a", "C:\\temp\\a", "\\\\host\\a").forEach { path ->
+            assertThat(extract("write_file", args("path" to path))).isNull()
+        }
+        listOf(
+            """{"name":"../a"}""",
+            """{"name":".nexara-private"}""",
+            """{"name":"a","parentPath":3}""",
+        ).forEach { raw -> assertThat(extract("create_file", raw)).isNull() }
+        assertThat(extract("move_file", """{"path":"/a"}""")).isNull()
+        assertThat(extract("move_file", """{"path":"/a","newParentUuid":"unknown"}""")).isNull()
+        assertThat(extract("move_file", """{"path":"/","newName":"a"}""")).isNull()
+    }
+
+    @Test
+    fun `web fetch 绑定规范主机且拒绝非 http 地址与无主机地址`() {
+        assertThat(extract("web_fetch", """{"url":"https://EXAMPLE.com:8443/a?q=b#c"}"""))
+            .isEqualTo("""["host","example.com"]""")
+        assertThat(extract("web_fetch", """{"url":"example.com/a"}"""))
+            .isEqualTo("""["host","example.com"]""")
+        listOf("file:///tmp/a", "https:///a", "javascript:alert(1)", "https://", "https://exa mple.com").forEach { url ->
+            assertThat(extract("web_fetch", args("url" to url))).isNull()
+        }
+    }
+
+    @Test
+    fun `MCP 绑定真实服务器与远端工具名而非供应商别名`() {
+        val first = tool("mcp_alias", runtimeId = "mcp:server-a:remote:tool", serverId = "server-a")
+        assertThat(ToolExecutionTargets.extract(first, "{}"))
+            .isEqualTo("""["mcp","server-a","remote:tool"]""")
+        val withColon = tool("same_alias", runtimeId = "mcp:server-a:remote:tool", serverId = "server-a:remote")
+        assertThat(ToolExecutionTargets.extract(withColon, "{}"))
+            .isEqualTo("""["mcp","server-a:remote","tool"]""")
+        assertThat(ToolExecutionTargets.extract(first, "{}"))
+            .isNotEqualTo(ToolExecutionTargets.extract(withColon, "{}"))
+        assertThat(ToolExecutionTargets.extract(first.copy(runtimeToolId = "mcp:other:remote"), "{}")).isNull()
+        assertThat(ToolExecutionTargets.extract(first.copy(runtimeToolId = "mcp:server-a:"), "{}")).isNull()
+    }
+
+    @Test
+    fun `exec js 目标是工具自身而 process 必须绑定主机和完整命令`() {
+        assertThat(extract("exec_js", """{"code":"result=1"}"""))
+            .isEqualTo("""["tool","exec_js"]""")
+        val process = tool("run_command", risk = ToolRisk.PROCESS)
+        assertThat(ToolExecutionTargets.extract(process, """{"host":" EXAMPLE.com ","command":"echo a:b"}"""))
+            .isEqualTo("""["process","example.com","echo a:b"]""")
+        assertThat(ToolExecutionTargets.extract(process, """{"host":"example.com","command":" echo a:b"}"""))
+            .isNotEqualTo(ToolExecutionTargets.extract(process, """{"host":"example.com","command":"echo a:b"}"""))
+        assertThat(ToolExecutionTargets.extract(process, """{"host":"example.com"}""")).isNull()
+        assertThat(ToolExecutionTargets.extract(process, """{"command":"echo a"}""")).isNull()
+        assertThat(ToolExecutionTargets.extract(process, """{"host":4,"command":"echo a"}""")).isNull()
+    }
+
+    @Test
+    fun `未知工具与无效 JSON 参数不产生通用授权键`() {
+        assertThat(extract("unknown", """{"path":"/a","host":"example.com"}""")).isNull()
+        listOf("not json", "[]", "null", "42", "{\"path\":1}", "{\"path\":null}", "{}").forEach { raw ->
+            assertThat(extract("write_file", raw)).isNull()
+        }
+        assertThat(extract("exec_js", "[]")).isNull()
+        assertThat(extract("exec_js", "{}")).isNull()
+    }
+
+    @Test
+    fun `超长目标保留完整授权内容而显示安全截断`() {
+        val prefix = "/" + "a".repeat(1000)
+        val first = extract("write_file", args("path" to "${prefix}x"))!!
+        val second = extract("write_file", args("path" to "${prefix}y"))!!
+        assertThat(first).contains("${prefix}x")
+        assertThat(first).isNotEqualTo(second)
+        assertThat(ToolExecutionTargets.display(first)).hasLength(240)
+        assertThat(ToolExecutionTargets.display(first)).endsWith("…")
+    }
+
+    @Test
+    fun `显示剥离实际控制和双向字符且不会截断代理对`() {
+        val target = extract("write_file", args("path" to "/a\n\u0007\u202E\u2066b"))!!
+        assertThat(ToolExecutionTargets.display(target)).isEqualTo("/ab")
+        assertThat(ToolExecutionTargets.display("😀😀😀", maxChars = 3)).isEqualTo("😀…")
+        assertThat(ToolExecutionTargets.display("abc", maxChars = 1)).isEqualTo("…")
+        assertThat(ToolExecutionTargets.display("abc", maxChars = 0)).isEmpty()
+        assertThat(ToolExecutionTargets.display("""["move","/a","/b"]"""))
+            .isEqualTo("/a → /b")
+    }
+
+    private fun extract(name: String, arguments: String): String? =
+        ToolExecutionTargets.extract(tool(name), arguments)
+
+    private fun tool(
+        name: String,
+        runtimeId: String = name,
+        serverId: String? = null,
+        risk: ToolRisk = ToolRisk.UNKNOWN,
+    ) = ProtocolTool(
+        function = ProtocolToolFunction(name = name, description = "测试工具", parameters = "{}"),
+        runtimeToolId = runtimeId,
+        mcpServerId = serverId,
+        sourceId = if (serverId == null) "builtin" else "mcp",
+        risk = risk,
+    )
+
+    private fun args(vararg fields: Pair<String, String>): String =
+        JsonObject(fields.associate { (key, value) -> key to JsonPrimitive(value) }).toString()
+}

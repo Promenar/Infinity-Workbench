@@ -197,6 +197,21 @@ class SettingsViewModelTest {
         assertThat(vm.loopLimit.value).isEqualTo(50)
     }
 
+    @Test
+    fun `不限哨兵和长任务设置使用既有整型偏好并限制非法值`() = runTest {
+        val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+        val editor = prefs.edit()
+        vm.updateLoopLimit(0)
+        assertThat(vm.loopLimit.value).isEqualTo(0)
+        verify { editor.putInt("loop_limit", 0) }
+        vm.updateTaskTokenLimit(20_000)
+        vm.updateToolContextRatio(500)
+        vm.updateToolLoopRepeatLimit(1)
+        assertThat(vm.taskTokenLimit.value).isEqualTo(20_000)
+        assertThat(vm.toolContextRatio.value).isEqualTo(90)
+        assertThat(vm.toolLoopRepeatLimit.value).isEqualTo(2)
+    }
+
 
 
     @Test

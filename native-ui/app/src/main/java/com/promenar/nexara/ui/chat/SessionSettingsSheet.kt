@@ -5,6 +5,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -56,8 +59,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -642,6 +647,8 @@ private fun ToolsPanel(
     chatViewModel: ChatViewModel,
     session: com.promenar.nexara.data.model.Session?
 ) {
+    val grants by chatViewModel.currentSessionGrants.collectAsStateWithLifecycle()
+    LaunchedEffect(session?.id) { chatViewModel.refreshSessionGrants() }
     val options = session?.options ?: com.promenar.nexara.data.model.SessionOptions()
     
     var timeInjection by remember(options.enableTimeInjection) { mutableStateOf(options.enableTimeInjection) }
@@ -659,10 +666,22 @@ private fun ToolsPanel(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp)
             .padding(top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        Text(stringResource(R.string.p0_grants_title), style = MaterialTheme.typography.titleSmall)
+        if (grants.isEmpty()) Text(stringResource(R.string.p0_grants_empty), style = MaterialTheme.typography.bodySmall)
+        grants.forEach { grant ->
+            TextButton(
+                onClick = { chatViewModel.revokeSessionGrant(grant) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Text(stringResource(R.string.p0_revoke_target,
+                    grant.toolName + ": " + com.promenar.nexara.domain.tool.ToolExecutionTargets.display(grant.target)))
+            }
+        }
         ToolToggleRow(stringResource(R.string.sheet_tool_time_injection), Icons.Rounded.Timer, timeInjection) { 
             timeInjection = it
             onToggle("timeInjection", it)

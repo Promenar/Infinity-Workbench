@@ -1066,19 +1066,23 @@ class DefaultChatGenerationRuntimeTest {
         )
 
         assertThat(consumedToolUsageInTurn(messages, request))
-            .isEqualTo(com.promenar.nexara.domain.generation.GenerationToolUsage(rounds = 2, calls = 3))
+            .isEqualTo(com.promenar.nexara.domain.generation.GenerationToolUsage(rounds = 2, calls = 3, tokens = 6, tokensEstimated = true))
         assertThat(consumedToolUsageInTurn(messages, request.copy(userMessageId = null)))
             .isEqualTo(com.promenar.nexara.domain.generation.GenerationToolUsage())
     }
 
     private suspend fun kotlinx.coroutines.test.TestScope.runThreeRoundToolScenario(
         loopLimit: Int? = null,
+        resultContent: String? = null,
+        outputStore: com.promenar.nexara.data.repository.ToolOutputStore? = null,
+        onCompleted: (ChatStore) -> Unit = {},
     ): Triple<List<PromptRequest>, Int, List<List<ProtocolTool>>> {
         val settings = mockk<SharedPreferences>()
         every { settings.getInt(any(), any()) } answers { secondArg() }
         loopLimit?.let { every { settings.getInt("loop_limit", any()) } returns it }
         every { settings.getStringSet(any(), any()) } returns setOf("search", "read_file")
         every { settings.getString(any(), any()) } returns ""
+        every { settings.getBoolean(any(), any()) } returns true
         every { settings.getFloat(any(), any()) } answers { secondArg() }
         val user = Message("u1", MessageRole.USER, "question")
         val initialAssistant = Message("a0", MessageRole.ASSISTANT, "")
@@ -1171,7 +1175,7 @@ class DefaultChatGenerationRuntimeTest {
                     Message(
                         id = "tool-${call.id}",
                         role = MessageRole.TOOL,
-                        content = "result-${call.id}",
+                        content = resultContent ?: "result-${call.id}",
                         toolCallId = call.id,
                         name = call.name,
                     ),
@@ -1213,12 +1217,14 @@ class DefaultChatGenerationRuntimeTest {
             sessionManager = SessionManager(store, sessionRepository),
             contentStrategy = DefaultChatGenerationContentStrategy(settings, skillRegistry),
             ui = mockk(relaxed = true),
+            outputStore = outputStore,
         )
         val request = GenerationRequest(
             "s1", "a0", "u1", "question", emptyList(), GenerationRuntimePolicy.BACKGROUND_ALLOWED,
         )
 
         ChatGenerationRunner(runtime).run(request) {}
+        onCompleted(store)
         return Triple(prompts, searches, executorPreparedSnapshots)
     }
 }

@@ -62,7 +62,7 @@ private const val BACKGROUND_SERVICE_STOPPED_MESSAGE = "background service stopp
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
-@Config(application = TestNexaraApplication::class)
+@Config(application = TestNexaraApplication::class, sdk = [33])
 class ChatViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
 

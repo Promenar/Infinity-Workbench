@@ -46,7 +46,12 @@ data class Agent(
 data class TokenUsage(
     val input: Int = 0,
     val output: Int = 0,
-    val total: Int = 0
+    val total: Int = 0,
+    val estimated: Boolean = false,
+    val summaryInput: Int = 0,
+    val summaryOutput: Int = 0,
+    val summaryTotal: Int = 0,
+    val summaryEstimated: Boolean = false,
 )
 
 @Serializable
@@ -304,6 +309,7 @@ data class ApprovalCallIdentity(
     val requiresApproval: Boolean,
     val argumentsSummary: String,
     val risk: String,
+    val executionTarget: String? = null,
 )
 
 @Serializable

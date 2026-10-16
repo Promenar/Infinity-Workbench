@@ -33,6 +33,7 @@ interface ChatGenerationRuntime {
     suspend fun normalize(request: GenerationRequest, snapshot: GenerationSnapshot): GenerationSnapshot = snapshot
     suspend fun finalizeStream(request: GenerationRequest, snapshot: GenerationSnapshot): GenerationSnapshot = snapshot
     suspend fun persist(request: GenerationRequest, snapshot: GenerationSnapshot)
+    suspend fun recordTaskUsage(request: GenerationRequest, snapshot: GenerationSnapshot) = Unit
     /** 本轮 Prompt 中实际发送给 Provider 的不可变工具名快照。 */
     fun knownToolNames(request: GenerationRequest): Set<String> = emptySet()
     suspend fun handleTools(
@@ -42,6 +43,10 @@ interface ChatGenerationRuntime {
     suspend fun prepareContinuation(request: GenerationRequest): String? = null
     /** 本次生成的工具轮次与调用预算。 */
     fun toolBudget(request: GenerationRequest): GenerationToolBudget = GenerationToolBudget()
+    fun estimatedInputTokens(request: GenerationRequest): Int = 0
+    fun additionalTokenUsage(request: GenerationRequest): GenerationToolUsage = GenerationToolUsage()
+    fun loopDetectionThreshold(request: GenerationRequest): Int = 3
+    suspend fun confirmLoopContinuation(request: GenerationRequest): Boolean = false
 
     /** 本轮对话在此次生成之前已消耗的工具轮次与调用数（例如审批前的轮次），用于跨审批续算预算。 */
     suspend fun consumedToolUsage(request: GenerationRequest): GenerationToolUsage = GenerationToolUsage()
@@ -71,6 +76,7 @@ class ChatGenerationRunner(
         var snapshot = GenerationSnapshot()
         var flushed = false
         var primaryFailure: Throwable? = null
+        var resultsCommitted = false
         suspend fun safeEmit(event: GenerationEvent, primary: Throwable? = null) {
             try {
                 emit(event)
@@ -104,7 +110,7 @@ class ChatGenerationRunner(
             }
         }
         suspend fun clearUnconfirmedToolCalls(primary: Throwable) {
-            if (snapshot.toolCalls.isEmpty()) return
+            if (snapshot.toolCalls.isEmpty() || resultsCommitted) return
             val cleanSnapshot = snapshot.copy(toolCalls = emptyList())
             snapshot = cleanSnapshot
             try {
@@ -198,15 +204,42 @@ class ChatGenerationRunner(
             val consumed = runtime.consumedToolUsage(request)
             var confirmedToolCallCount = consumed.calls
             var toolRoundCount = consumed.rounds
+            var cumulativeTokens = consumed.tokens
+            var tokensEstimated = consumed.tokensEstimated
+            val loopDetector = ConsecutiveToolLoopDetector(runtime.loopDetectionThreshold(request))
+            suspend fun progress(tokens: Long = cumulativeTokens, estimated: Boolean = tokensEstimated) = safeEmit(
+                GenerationEvent.ProgressChanged(com.promenar.nexara.domain.generation.GenerationProgress(
+                    toolRoundCount, confirmedToolCallCount, tokens, estimated,
+                )),
+            )
+            progress()
             var finalAnswerMode = false
             var finalAnswerIgnoredBudget = false
+            var accountedAdditionalTokens = 0L
             while (true) {
+                val additional = runtime.additionalTokenUsage(request)
+                cumulativeTokens += (additional.tokens - accountedAdditionalTokens).coerceAtLeast(0)
+                accountedAdditionalTokens = additional.tokens
+                tokensEstimated = tokensEstimated || additional.tokensEstimated
+                progress()
+                if (!finalAnswerMode && budget.maxTokens > 0 && cumulativeTokens >= budget.maxTokens) {
+                    finalAnswerMode = true
+                    runtime.enterFinalAnswerMode(request)
+                    val preparation = runtime.buildContext(request)
+                    if (preparation is GenerationPreparationOutcome.Handled) {
+                        safeEmit(GenerationEvent.Rejected(preparation.failure))
+                        flushOnce()
+                        phase(GenerationPhase.FAILED)
+                        return
+                    }
+                }
                 phase(GenerationPhase.CONNECTING)
                 val stream = runtime.stream(request, attempt)
                 phase(GenerationPhase.THINKING)
                 var streamingPhaseEmitted = false
                 val roundTools = linkedMapOf<String, GenerationToolCall>()
                 var completed: GenerationChunk.Completed? = null
+                var reportedUsage: Long? = null
                 stream.transformWhile { chunk ->
                     emit(chunk)
                     chunk !is GenerationChunk.Completed
@@ -238,12 +271,21 @@ class ChatGenerationRunner(
                             snapshot = persist(request, snapshot, emit)
                         }
                         is GenerationChunk.Usage -> {
+                            val inputTokens = maxOf(snapshot.inputTokens, chunk.input.coerceAtLeast(0))
+                            val outputTokens = maxOf(snapshot.outputTokens, chunk.output.coerceAtLeast(0))
+                            val observedUsage = maxOf(
+                                reportedUsage ?: 0,
+                                chunk.total.toLong().coerceAtLeast(0),
+                                inputTokens.toLong() + outputTokens.toLong(),
+                            )
+                            if (observedUsage > 0) reportedUsage = observedUsage
                             snapshot = snapshot.copy(
-                                inputTokens = chunk.input,
-                                outputTokens = chunk.output,
-                                totalTokens = chunk.total,
+                                inputTokens = inputTokens,
+                                outputTokens = outputTokens,
+                                totalTokens = (reportedUsage ?: 0).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                             )
                             snapshot = persist(request, snapshot, emit)
+                            if (reportedUsage != null) progress(cumulativeTokens + requireNotNull(reportedUsage))
                         }
                         is GenerationChunk.Citations -> {
                             snapshot = snapshot.copy(citations = chunk.citations)
@@ -265,6 +307,18 @@ class ChatGenerationRunner(
                 val finalized = runtime.finalizeStream(request, snapshot)
                 if (finalized != snapshot) snapshot = persist(request, finalized, emit)
                 validateCompletedRound(terminal, snapshot.toolCalls)
+                if (reportedUsage == null) {
+                    val input = runtime.estimatedInputTokens(request).coerceAtLeast(0)
+                    val output = ApproximateTokenEstimator.estimate(snapshot.content + snapshot.reasoning) +
+                        snapshot.toolCalls.sumOf { ApproximateTokenEstimator.estimate(it.name + it.arguments) }
+                    snapshot = snapshot.copy(inputTokens = input, outputTokens = output,
+                        totalTokens = (input.toLong() + output).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                        tokensEstimated = true)
+                }
+                runtime.recordTaskUsage(request, snapshot)
+                cumulativeTokens += reportedUsage ?: snapshot.totalTokens.toLong()
+                if (reportedUsage == null) tokensEstimated = true
+                progress()
                 if (terminal.reason == CompletionReason.END_TURN) break
                 val normalizedTools = snapshot.toolCalls.map { it.copy(arguments = normalizeToolArguments(it.arguments)) }
                 if (normalizedTools != snapshot.toolCalls) {
@@ -273,10 +327,14 @@ class ChatGenerationRunner(
                 val effectiveTools = snapshot.toolCalls
                 toolRoundCount++
                 confirmedToolCallCount += effectiveTools.size
-                val exhausted = toolRoundCount > budget.maxRounds || confirmedToolCallCount > budget.maxCalls
+                progress()
+                val exhausted = (budget.maxRounds > 0 && toolRoundCount > budget.maxRounds) ||
+                    (budget.maxCalls > 0 && confirmedToolCallCount > budget.maxCalls) ||
+                    (budget.maxTokens > 0 && cumulativeTokens >= budget.maxTokens)
                 if (finalAnswerMode || exhausted) {
                     // 未知工具名由执行器回写可纠错结果；预算耗尽则拒绝本轮调用并只允许模型收尾。
                     runtime.rejectToolCalls(request, effectiveTools, budgetExhaustedFeedback(budget))
+                    resultsCommitted = true
                     NexaraLogger.diagnostic(
                         "generation.tool_budget_exhausted",
                         mapOf(
@@ -295,9 +353,21 @@ class ChatGenerationRunner(
                 val decision = if (finalAnswerMode) {
                     GenerationToolDecision.CONTINUE
                 } else {
+                    val repeated = effectiveTools.fold(false) { found, call -> loopDetector.record(call) || found }
+                    if (repeated) {
+                        if (!runtime.confirmLoopContinuation(request)) {
+                            runtime.rejectToolCalls(request, effectiveTools, "用户已停止重复工具调用。")
+                            resultsCommitted = true
+                            throw CancellationException("重复工具调用已停止")
+                        }
+                        loopDetector.reset()
+                    }
                     // 自动执行的工具仍属于生成过程；只有真正挂起等待用户决定时才进入 WAITING_APPROVAL。
                     phase(GenerationPhase.EXECUTING_TOOLS)
+                    // 批次可能在后续调用被取消前已有结果提交；终态按实际结果保留配对。
+                    resultsCommitted = true
                     runtime.handleTools(request, effectiveTools).also { result ->
+                        resultsCommitted = true
                         if (result == GenerationToolDecision.WAIT_FOR_APPROVAL) {
                             phase(GenerationPhase.WAITING_APPROVAL)
                         }
@@ -332,6 +402,7 @@ class ChatGenerationRunner(
                             safeEmit(GenerationEvent.TargetChanged(assistantMessageId))
                         }
                         snapshot = GenerationSnapshot()
+                        resultsCommitted = false
                         snapshot = persist(request, snapshot, emit)
                     }
                     GenerationToolDecision.WAIT_FOR_APPROVAL -> {
@@ -429,7 +500,7 @@ class ChatGenerationRunner(
     }
 
     private fun budgetExhaustedFeedback(budget: GenerationToolBudget): String =
-        "工具调用未执行：本次任务已达到工具预算上限（${budget.maxRounds} 轮 / ${budget.maxCalls} 次）。" +
+        "工具调用未执行：本次任务已达到工具或 token 预算上限（轮次=${budget.maxRounds}，调用=${budget.maxCalls}，token=${budget.maxTokens}；0 表示不限）。" +
             "不要再调用工具，请基于已获得的结果总结已完成内容、当前状态与剩余待办，并告知用户可继续发送消息接续。"
 
     private fun validateCompletedRound(

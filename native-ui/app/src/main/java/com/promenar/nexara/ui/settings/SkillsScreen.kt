@@ -184,6 +184,7 @@ fun SkillsScreen(
                 loopLimit = loopLimit,
                 onChange = viewModel::updateLoopLimit,
             )
+            AgentRuntimeSettingsCard(viewModel)
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -495,6 +496,7 @@ private fun LoopLimitCard(
     loopLimit: Int,
     onChange: (Int) -> Unit,
 ) {
+    val unlimitedLabel = stringResource(R.string.p0_unlimited)
     BettboxListGroup {
         Column(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -512,7 +514,7 @@ private fun LoopLimitCard(
                     Icon(Icons.Rounded.Remove, contentDescription = stringResource(R.string.common_cd_decrease))
                 }
                 Text(
-                    text = "$loopLimit",
+                    text = if (loopLimit == 0) stringResource(R.string.p0_unlimited) else "$loopLimit",
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center,
@@ -520,11 +522,25 @@ private fun LoopLimitCard(
                 )
                 IconButton(
                     onClick = { onChange((loopLimit + 1).coerceAtMost(100)) },
-                    enabled = loopLimit < 100,
+                    enabled = loopLimit in 1..99,
                     modifier = Modifier.size(48.dp),
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_cd_increase))
                 }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
+                    value = loopLimit == 0,
+                    role = Role.Switch,
+                    onValueChange = { onChange(if (it) 0 else 50) },
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(unlimitedLabel, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = loopLimit == 0,
+                    onCheckedChange = null,
+                )
             }
             Text(
                 stringResource(R.string.skills_loop_limit_desc),

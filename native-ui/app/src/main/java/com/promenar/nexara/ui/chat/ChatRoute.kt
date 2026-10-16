@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
@@ -192,6 +193,30 @@ fun ChatRoute(
     }
     val chatViewModel: ChatViewModel = viewModel(factory = resolvedDependencies.viewModelFactory)
     val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
+    val interaction by application.generationInteractions.pending.collectAsStateWithLifecycle()
+    val generationProgress by remember(sessionId) {
+        application.generationCoordinator.observe(sessionId)
+    }.collectAsStateWithLifecycle()
+    interaction?.takeIf { it.sessionId == sessionId }?.let { prompt ->
+        val unlimited = prompt.kind == com.promenar.nexara.data.generation.GenerationInteractionKind.UNLIMITED_AUTO
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { application.generationInteractions.respond(prompt.id, false) },
+            title = { Text(stringResource(if (unlimited) R.string.p0_auto_confirm_title else R.string.p0_loop_title)) },
+            text = { Text(stringResource(if (unlimited) R.string.p0_auto_confirm_body else R.string.p0_loop_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = { application.generationInteractions.respond(prompt.id, true) },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) { Text(stringResource(R.string.p0_continue)) }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { application.generationInteractions.respond(prompt.id, false) },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) { Text(stringResource(R.string.generation_notification_stop)) }
+            },
+        )
+    }
     val activeTaskTree by remember(sessionId, resolvedDependencies.taskRepository) {
         resolvedDependencies.taskRepository.observeActiveTree(sessionId)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -227,7 +252,8 @@ fun ChatRoute(
     val selectedImageUris = selectedImageUriStrings.map(Uri::parse)
     var activeOverlayToken by rememberSaveable { mutableStateOf<String?>(null) }
     var queuedOverlayToken by rememberSaveable { mutableStateOf<String?>(null) }
-    val activeOverlay = restoreChatOverlay(activeOverlayToken)
+    val hasGenerationInteraction = interaction?.sessionId == sessionId
+    val activeOverlay = if (hasGenerationInteraction) null else restoreChatOverlay(activeOverlayToken)
     var permissionExplanationTaskId by rememberSaveable { mutableStateOf<String?>(null) }
     var permissionInFlightTaskId by rememberSaveable { mutableStateOf<String?>(null) }
     val pendingNotificationPermission = permissionExplanationTaskId
@@ -235,7 +261,7 @@ fun ChatRoute(
     val scope = rememberCoroutineScope()
     val continueTaskPrompt = stringResource(R.string.chat_task_continue_prompt)
 
-    val hasBlockingOverlay = activeOverlay != null
+    val hasBlockingOverlay = activeOverlay != null || hasGenerationInteraction
     val permissionDialogVisible = shouldShowNotificationPermissionDialog(
         NotificationPermissionOverlayState(
             hasPendingRequest = permissionExplanationTaskId != null,
@@ -273,7 +299,7 @@ fun ChatRoute(
             ),
             requested = requested,
             hasPendingNotificationPermission =
-                permissionExplanationTaskId != null || permissionInFlightTaskId != null,
+                permissionExplanationTaskId != null || permissionInFlightTaskId != null || hasGenerationInteraction,
         )
         activeOverlayToken = saveChatOverlay(next.active)
         queuedOverlayToken = saveChatOverlay(next.queued)
@@ -284,6 +310,7 @@ fun ChatRoute(
         queuedOverlayToken,
         permissionExplanationTaskId,
         permissionInFlightTaskId,
+        hasGenerationInteraction,
     ) {
         val next = advanceChatOverlay(
             state = ChatOverlayQueueState(
@@ -291,7 +318,7 @@ fun ChatRoute(
                 queued = restoreChatOverlay(queuedOverlayToken),
             ),
             hasPendingNotificationPermission =
-                permissionExplanationTaskId != null || permissionInFlightTaskId != null,
+                permissionExplanationTaskId != null || permissionInFlightTaskId != null || hasGenerationInteraction,
         )
         activeOverlayToken = saveChatOverlay(next.active)
         queuedOverlayToken = saveChatOverlay(next.queued)
@@ -447,6 +474,7 @@ fun ChatRoute(
             isImportingDocument = isImportingDocument,
             modelDisplayNames = modelDisplayNames,
             taskPanel = taskPanel,
+            generationProgress = generationProgress?.progress,
         ),
         actions = ChatScreenActions(
             onNavigateBack = onNavigateBack,
@@ -489,6 +517,7 @@ fun ChatRoute(
             },
             onApprove = { request -> chatViewModel.approveRequest(request) },
             onApproveAll = chatViewModel::approveAllRequests,
+            onAlwaysAllowTarget = chatViewModel::alwaysAllowTarget,
             onDecline = chatViewModel::rejectRequest,
             onRemovePostProcessTask = chatViewModel::removePostProcessTask,
             onManualSummary = chatViewModel::summarizeHistory,

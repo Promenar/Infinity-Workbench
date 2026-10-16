@@ -179,7 +179,7 @@ class ChatGenerationRunnerTerminalContractTest {
     @Test
     fun `工具调用预算耗尽时拒绝本轮调用并进入总结轮`() = runTest {
         fun round(prefix: String, count: Int): Flow<GenerationChunk> {
-            val calls = (1..count).map { GenerationChunk.ToolCall("$prefix-$it", "search", "{}") }
+            val calls = (1..count).map { GenerationChunk.ToolCall("$prefix-$it", "search", "{\"query\":\"$it\"}") }
             return flowOf(
                 *(calls + GenerationChunk.Completed(
                     CompletionReason.TOOL_CALLS,

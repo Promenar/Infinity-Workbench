@@ -656,7 +656,7 @@ class ToolExecutionLedgerRepositoryTest {
                 ApprovalCallCandidate(
                     call,
                     com.promenar.nexara.domain.tool.ToolRisk.DELETE,
-                ),
+                ).copy(executionTarget = """["path","/archive/important.txt"]"""),
             ),
             reason = "用户要求删除归档文件",
         )
@@ -675,6 +675,7 @@ class ToolExecutionLedgerRepositoryTest {
         )
         assertThat(restored).isEqualTo(request)
         assertThat(restored.calls.single().risk).isEqualTo("delete")
+        assertThat(restored.calls.single().executionTarget).isEqualTo("""["path","/archive/important.txt"]""")
         assertThat(restored.calls.single().argumentsSummary)
             .isEqualTo("{\"path\":\"archive/important.txt\",\"recursive\":false}")
         assertThat(restored.reason).isEqualTo("用户要求删除归档文件")

@@ -1038,6 +1038,20 @@ class MessageManagerTest {
     }
 
     @Test
+    fun `批次中途停止保留已有结果的调用并移除未执行调用`() = testScope.runTest {
+        val calls = listOf(ToolCall("c1", "read_file", "{}"), ToolCall("c2", "read_file", "{}"))
+        val assistant = Message("m1", MessageRole.ASSISTANT, "partial", toolCalls = calls)
+        store.update { it.copy(sessions = listOf(Session("s1", "agent", messages = listOf(
+            assistant,
+            Message("t1", MessageRole.TOOL, "done", toolCallId = "c1", parentMessageId = "m1"),
+        )))) }
+        persistedMessage = assistant
+        messageManager.markGenerationTerminal("s1", "m1", "partial", "cancelled")
+        assertThat(store.getSession("s1")!!.messages.first().toolCalls?.map { it.id }).containsExactly("c1")
+        assertThat(partialUpdates.last()["toolCalls"]).isEqualTo(listOf(calls.first()))
+    }
+
+    @Test
     fun `终态DB写失败时Store不得提前发布success`() = testScope.runTest {
         seedSession()
         messageManager.addMessage(

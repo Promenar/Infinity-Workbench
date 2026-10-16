@@ -186,6 +186,7 @@ data class ChatScreenState(
     val isImportingDocument: Boolean = false,
     val modelDisplayNames: Map<String, String> = emptyMap(),
     val taskPanel: TaskPanelUiState? = null,
+    val generationProgress: com.promenar.nexara.domain.generation.GenerationProgress? = null,
 )
 
 data class ChatScreenActions(
@@ -203,6 +204,7 @@ data class ChatScreenActions(
     val onBranchMessage: (String) -> Unit = {},
     val onApprove: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onApproveAll: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
+    val onAlwaysAllowTarget: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onDecline: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onRemovePostProcessTask: (String) -> Unit = {},
     val onManualSummary: () -> Unit = {},
@@ -435,6 +437,7 @@ fun ChatScreenContent(
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
+              Column {
                 ChatTopBar(
                     title = sessionTitle,
                     subtitle = if (uiState.isGenerating) stringResource(R.string.chat_status_thinking) else agentName.ifBlank { sessionTitle },
@@ -446,6 +449,15 @@ fun ChatScreenContent(
                     onRename = actions.onOpenRenameDialog,
                     onDeleteSession = actions.onOpenDeleteDialog,
                 )
+                if (uiState.isGenerating) state.generationProgress?.let { p ->
+                    Text(
+                        stringResource(R.string.p0_progress, p.rounds, p.calls, p.tokens,
+                            if (p.estimated) stringResource(R.string.p0_estimated) else ""),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
+              }
             },
             snackbarHost = {
                 Box(modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive }) {
@@ -575,6 +587,8 @@ fun ChatScreenContent(
                                         name = call.toolName,
                                         argumentsSummary = call.argumentsSummary,
                                         riskLabel = approvalRiskLabel(call.risk),
+                                        executionTarget = call.executionTarget,
+                                        highRisk = call.risk in setOf("delete", "process"),
                                         preview = remember(call, request.assistantMessageId, uiState.messages) {
                                             ApprovalPreview.forCall(call, uiState.messages, request.assistantMessageId)
                                         },
@@ -583,6 +597,7 @@ fun ChatScreenContent(
                                 enabled = !uiState.isApprovalSubmitting,
                                 onApprove = { actions.onApprove(request) },
                                 onApproveAll = { actions.onApproveAll(request) },
+                                onAlwaysAllow = { actions.onAlwaysAllowTarget(request) },
                                 onDecline = { actions.onDecline(request) },
                             )
                         }

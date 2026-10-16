@@ -41,12 +41,13 @@ class GenerationNotificationFactory(
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(applicationContext.getString(R.string.generation_notification_title))
             .setContentText(
-                applicationContext.getString(snapshot.phase.notificationTextRes()) + " · " +
-                    applicationContext.getString(
-                        R.string.generation_notification_current_session,
-                        snapshot.generatedChars,
-                    ),
+                applicationContext.getString(
+                    R.string.p0_progress,
+                    snapshot.progress.rounds, snapshot.progress.calls, snapshot.progress.tokens,
+                    if (snapshot.progress.estimated) applicationContext.getString(R.string.p0_estimated) else "",
+                ),
             )
+            .setSubText(applicationContext.getString(snapshot.phase.notificationTextRes()))
             .setContentIntent(openPendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

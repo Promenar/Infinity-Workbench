@@ -984,7 +984,7 @@ fun agentSkillPacksReleasePreview() {
 @Preview(
     name = "Chat approval write preview Chinese",
     widthDp = 412,
-    heightDp = 520,
+    heightDp = 760,
     locale = "zh-rCN",
     uiMode = Configuration.UI_MODE_NIGHT_YES,
 )
@@ -995,11 +995,13 @@ fun chatApprovalWritePreviewReleasePreview() {
             ApprovalCard(
                 toolName = "patch_file",
                 description = "执行模式：半自动",
+                onAlwaysAllow = {},
                 calls = listOf(
                     ApprovalDisplayCall(
                         name = "patch_file",
                         argumentsSummary = "{\"path\":\"/notes/plan.md\"}",
                         riskLabel = "编辑",
+                        executionTarget = "[\"path\",\"/notes/plan.md\"]",
                         preview = ApprovalPreview.Preview(
                             ApprovalPreview.Action.EDIT,
                             "/notes/plan.md",
@@ -1010,6 +1012,8 @@ fun chatApprovalWritePreviewReleasePreview() {
                         name = "delete_file",
                         argumentsSummary = "{\"path\":\"/drafts/old.md\"}",
                         riskLabel = "删除",
+                        executionTarget = "[\"path\",\"/drafts/old.md\"]",
+                        highRisk = true,
                         preview = ApprovalPreview.Preview(ApprovalPreview.Action.DELETE, "/drafts/old.md", null),
                     ),
                 ),
@@ -1050,6 +1054,7 @@ fun chatApprovalTabletReleasePreview() {
                                 requiresApproval = true,
                                 argumentsSummary = "{\"path\":\"RELEASE_NOTES.md\"}",
                                 risk = "file_write",
+                                executionTarget = "[\"path\",\"/RELEASE_NOTES.md\"]",
                             ),
                             ApprovalCallIdentity(
                                 toolCallId = "delete-old-draft",
@@ -1060,6 +1065,7 @@ fun chatApprovalTabletReleasePreview() {
                                 requiresApproval = true,
                                 argumentsSummary = "{\"path\":\"OLD_DRAFT.md\"}",
                                 risk = "delete",
+                                executionTarget = "[\"path\",\"/OLD_DRAFT.md\"]",
                             ),
                         ),
                         reason = "Writing a release artifact requires approval.",

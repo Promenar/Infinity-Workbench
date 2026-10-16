@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_approval_execution_target">执行目标：%1$s</string>
+    <string name="chat_approval_execution_target_unknown">未能确认执行目标。</string>
+    <string name="chat_approval_high_risk_target_warning">删除与进程命令可能更改或移除数据。允许本会话重复执行前，请核对目标。</string>
+    <string name="chat_approval_always_allow_target">本会话始终允许此目标</string>
+    <string name="chat_approval_always_allow_target_a11y">批准 %1$s，并在本会话内始终允许目标 %2$s</string>
+</resources>

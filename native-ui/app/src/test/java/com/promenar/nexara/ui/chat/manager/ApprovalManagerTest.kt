@@ -17,7 +17,9 @@ import com.promenar.nexara.data.repository.ApprovalCallCandidate
 import com.promenar.nexara.data.repository.ExactToolApprovalCompletion
 import com.promenar.nexara.data.repository.ExactToolApprovalDecision
 import com.promenar.nexara.data.repository.ToolApprovalRequestFactory
+import com.promenar.nexara.data.repository.SessionToolGrantStore
 import com.promenar.nexara.data.repository.toInvocationIdentity
+import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import com.promenar.nexara.ui.chat.ChatStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CancellationException
@@ -30,6 +32,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 
 private fun preparedApprovalIdentity(
     call: ToolCall,
@@ -67,6 +71,8 @@ private fun ApprovalCallCandidate(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ApprovalManagerTest {
+    @get:Rule
+    val grantFiles = TemporaryFolder()
     private lateinit var store: ChatStore
     private lateinit var approvalManager: ApprovalManager
     private lateinit var sessionManager: SessionManager
@@ -368,6 +374,7 @@ class ApprovalManagerTest {
 
     private suspend fun seedExactApproval(
         calls: List<ToolCall> = listOf(ToolCall("risk", "write_file", "{}")),
+        executionTarget: String? = null,
     ): ApprovalRequest {
         seedSessionWithAssistant(toolCalls = calls, pendingApprovalToolIds = calls.map { it.id })
         calls.forEach { call ->
@@ -378,8 +385,228 @@ class ApprovalManagerTest {
         }
         return ToolApprovalRequestFactory.create(
             "m1",
-            calls.map { ApprovalCallCandidate(it, com.promenar.nexara.domain.tool.ToolRisk.UNKNOWN) },
+            calls.map {
+                ApprovalCallCandidate(
+                    call = it,
+                    risk = com.promenar.nexara.domain.tool.ToolRisk.UNKNOWN,
+                    identity = preparedApprovalIdentity(it),
+                    executionTarget = executionTarget,
+                )
+            },
         ).also { approvalManager.setApprovalRequest("s1", it) }
+    }
+
+    @Test
+    fun `记住目标只在当前精确调用批准后保存且重启保持`() = testScope.runTest {
+        val root = grantFiles.newFolder("grants")
+        val grants = SessionToolGrantStore(root)
+        approvalManager = ApprovalManager(
+            store, ledger, messageManager, stubSessionRepo,
+            toolGrantStore = grants,
+            resolveExecutionTarget = { _, _, call -> call.executionTarget },
+        )
+        val target = """["path","/docs/a.md"]"""
+        val request = seedExactApproval(
+            listOf(ToolCall("first", "write_file", "{}"), ToolCall("next", "delete_file", "{}")),
+            executionTarget = target,
+        )
+        val executed = mutableListOf<String>()
+        approvalManager.setCallbacks(null) { session, message, ids ->
+            ids.forEach { id ->
+                executed += id
+                ledger.states[ToolExecutionKey(session, message, id)] = ToolLedgerState.SUCCEEDED
+            }
+        }
+
+        approvalManager.resumeGeneration("s1", request, rememberTarget = true)
+
+        assertThat(executed).containsExactly("first")
+        assertThat(SessionToolGrantStore(root).contains("s1", "write_file", target)).isTrue()
+        assertThat(grants.contains("s1", "delete_file", target)).isFalse()
+        assertThat(grants.contains("s2", "write_file", target)).isFalse()
+        assertThat(store.getSession("s1")!!.approvalRequest!!.calls.single().toolCallId).isEqualTo("next")
+    }
+
+    @Test
+    fun `拒绝和过期审批即使传入记住标志也不会产生授权`() = testScope.runTest {
+        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        approvalManager = ApprovalManager(store, ledger, messageManager, stubSessionRepo, toolGrantStore = grants)
+        val target = """["path","/docs/a.md"]"""
+        val request = seedExactApproval(executionTarget = target)
+        approvalManager.setCallbacks(null) { _, _, _ -> error("不应执行") }
+
+        approvalManager.resumeGeneration("s1", request.copy(identityHash = "expired"), rememberTarget = true)
+        assertThat(grants.list("s1")).isEmpty()
+        assertThat(ledger.states[ToolExecutionKey("s1", "m1", "risk")]).isEqualTo(ToolLedgerState.PENDING_APPROVAL)
+
+        approvalManager.resumeGeneration("s1", request, approved = false, rememberTarget = true)
+        assertThat(grants.list("s1")).isEmpty()
+        assertThat(ledger.states[ToolExecutionKey("s1", "m1", "risk")]).isEqualTo(ToolLedgerState.REJECTED)
+    }
+
+    @Test
+    fun `台账已取消的精确审批不能产生目标授权`() = testScope.runTest {
+        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        approvalManager = ApprovalManager(store, ledger, messageManager, stubSessionRepo, toolGrantStore = grants)
+        val request = seedExactApproval(executionTarget = """["path","/docs/a.md"]""")
+        ledger.states[ToolExecutionKey("s1", "m1", "risk")] = ToolLedgerState.CANCELLED
+        approvalManager.setCallbacks(null) { _, _, _ -> error("不应执行") }
+
+        approvalManager.resumeGeneration("s1", request, rememberTarget = true)
+
+        assertThat(grants.list("s1")).isEmpty()
+    }
+
+    @Test
+    fun `授权写入失败会补偿已批准调用且不执行工具`() = testScope.runTest {
+        val invalidRoot = grantFiles.newFile("not-a-directory")
+        val grants = SessionToolGrantStore(invalidRoot)
+        approvalManager = ApprovalManager(store, ledger, messageManager, stubSessionRepo, toolGrantStore = grants)
+        val request = seedExactApproval(executionTarget = """["path","/docs/a.md"]""")
+        var executed = false
+        approvalManager.setCallbacks(null) { _, _, _ -> executed = true }
+
+        approvalManager.resumeGeneration("s1", request, rememberTarget = true)
+
+        assertThat(executed).isFalse()
+        assertThat(ledger.states[ToolExecutionKey("s1", "m1", "risk")]).isEqualTo(ToolLedgerState.FAILED)
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
+        assertThat(store.getSession("s1")!!.messages.filter { it.role == MessageRole.TOOL })
+            .hasSize(1)
+    }
+
+    @Test
+    fun `审批期间 uuid 目标移动时取消调用并暂停且不授予旧目标`() = testScope.runTest {
+        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        approvalManager = ApprovalManager(
+            store, ledger, messageManager, stubSessionRepo,
+            toolGrantStore = grants,
+            resolveExecutionTarget = { session, assistantMessageId, call ->
+                assertThat(session.id).isEqualTo("s1")
+                assertThat(assistantMessageId).isEqualTo("m1")
+                assertThat(call.toolName).isEqualTo("write_file")
+                """["path","/moved/a.md"]"""
+            },
+        )
+        val request = seedExactApproval(executionTarget = """["path","/docs/a.md"]""")
+        var executed = false
+        approvalManager.setCallbacks(null) { _, _, _ -> executed = true }
+
+        approvalManager.resumeGeneration("s1", request, rememberTarget = true)
+
+        assertThat(executed).isFalse()
+        assertThat(grants.list("s1")).isEmpty()
+        assertThat(ledger.states[ToolExecutionKey("s1", "m1", "risk")]).isEqualTo(ToolLedgerState.CANCELLED)
+        assertThat(store.getSession("s1")!!.loopStatus).isEqualTo(LoopStatus.PAUSED)
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
+        assertThat(sessionUpdates).containsAtLeast(
+            mapOf("approvalRequest" to null), mapOf("loopStatus" to LoopStatus.PAUSED),
+        )
+    }
+
+    @Test
+    fun `审批期间 uuid 目标删除不可解析时不能执行或记住授权`() = testScope.runTest {
+        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        approvalManager = ApprovalManager(
+            store, ledger, messageManager, stubSessionRepo,
+            toolGrantStore = grants,
+            resolveExecutionTarget = { _, _, _ -> null },
+        )
+        val request = seedExactApproval(executionTarget = """["path","/docs/a.md"]""")
+        approvalManager.setCallbacks(null) { _, _, _ -> error("不应执行") }
+
+        approvalManager.resumeGeneration("s1", request, rememberTarget = true)
+
+        assertThat(grants.list("s1")).isEmpty()
+        assertThat(ledger.states[ToolExecutionKey("s1", "m1", "risk")]).isEqualTo(ToolLedgerState.CANCELLED)
+        assertThat(store.getSession("s1")!!.loopStatus).isEqualTo(LoopStatus.PAUSED)
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
+    }
+
+    @Test
+    fun `跨助手消息复用调用 id 时旧消息参数不能掩盖当前 uuid 目标变化`() = testScope.runTest {
+        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        approvalManager = ApprovalManager(
+            store, ledger, messageManager, stubSessionRepo,
+            toolGrantStore = grants,
+            resolveExecutionTarget = { session, assistantMessageId, call ->
+                targetForApprovalMessage(session, assistantMessageId, call, mapOf("current-file" to "/moved.md"))
+            },
+        )
+        val currentCall = ToolCall("shared-call", "write_file", """{"uuid":"current-file"}""")
+        val request = seedExactApproval(listOf(currentCall), executionTarget = """["path","/approved.md"]""")
+        val historicalCall = ToolCall("shared-call", "write_file", """{"path":"/approved.md"}""")
+        store.updateSession("s1") { session ->
+            session.copy(messages = listOf(Message(
+                id = "historical-assistant",
+                role = MessageRole.ASSISTANT,
+                content = "历史调用",
+                toolCalls = listOf(historicalCall),
+            )) + session.messages)
+        }
+        var executions = 0
+        approvalManager.setCallbacks(null) { _, _, _ -> executions++ }
+
+        approvalManager.resumeGeneration("s1", request, rememberTarget = true)
+
+        assertThat(executions).isEqualTo(0)
+        assertThat(grants.list("s1")).isEmpty()
+        assertThat(ledger.states[ToolExecutionKey("s1", "m1", "shared-call")]).isEqualTo(ToolLedgerState.CANCELLED)
+        assertThat(store.getSession("s1")!!.loopStatus).isEqualTo(LoopStatus.PAUSED)
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
+        assertThat(store.getSession("s1")!!.messages.first { it.id == "historical-assistant" }.toolCalls)
+            .containsExactly(historicalCall)
+    }
+
+    @Test
+    fun `跨助手消息复用调用 id 时合法当前目标不会被旧消息参数误拒`() = testScope.runTest {
+        val grants = SessionToolGrantStore(grantFiles.newFolder("grants"))
+        approvalManager = ApprovalManager(
+            store, ledger, messageManager, stubSessionRepo,
+            toolGrantStore = grants,
+            resolveExecutionTarget = { session, assistantMessageId, call ->
+                targetForApprovalMessage(session, assistantMessageId, call)
+            },
+        )
+        val target = """["path","/current.md"]"""
+        val currentCall = ToolCall("shared-call", "write_file", """{"path":"/current.md"}""")
+        val request = seedExactApproval(listOf(currentCall), executionTarget = target)
+        store.updateSession("s1") { session ->
+            session.copy(messages = listOf(Message(
+                id = "historical-assistant",
+                role = MessageRole.ASSISTANT,
+                content = "历史调用",
+                toolCalls = listOf(ToolCall("shared-call", "write_file", """{"path":"/old.md"}""")),
+            )) + session.messages)
+        }
+        val executedMessages = mutableListOf<String>()
+        approvalManager.setCallbacks(null) { sessionId, messageId, callIds ->
+            executedMessages += messageId
+            callIds.forEach { id -> ledger.states[ToolExecutionKey(sessionId, messageId, id)] = ToolLedgerState.SUCCEEDED }
+        }
+
+        approvalManager.resumeGeneration("s1", request, rememberTarget = true)
+
+        assertThat(executedMessages).containsExactly("m1")
+        assertThat(grants.contains("s1", "write_file", target)).isTrue()
+        assertThat(grants.contains("s1", "write_file", """["path","/old.md"]""")).isFalse()
+        assertThat(ledger.states[ToolExecutionKey("s1", "m1", "shared-call")]).isEqualTo(ToolLedgerState.SUCCEEDED)
+        assertThat(store.getSession("s1")!!.approvalRequest).isNull()
+    }
+
+    private fun targetForApprovalMessage(
+        session: Session,
+        assistantMessageId: String,
+        identity: ApprovalCallIdentity,
+        resolvedPaths: Map<String, String> = emptyMap(),
+    ): String? {
+        assertThat(assistantMessageId).isEqualTo("m1")
+        val call = session.messages.first { it.id == assistantMessageId && it.role == MessageRole.ASSISTANT }
+            .toolCalls.orEmpty().single { it.id == identity.toolCallId && it.name == identity.toolName }
+        val tool = com.promenar.nexara.data.remote.protocol.ProtocolTool(
+            function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction(call.name, "测试工具", "{}"),
+        )
+        return ToolExecutionTargets.extract(tool, call.arguments, resolvedPaths)
     }
 
     @Test

@@ -52,6 +52,7 @@ import com.promenar.nexara.data.model.RagPhase
 import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.model.RagReference
 import com.promenar.nexara.data.model.RagRetrievalTrace
+import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import com.promenar.nexara.ui.chat.components.RagDetailsSheet
@@ -798,6 +799,8 @@ data class ApprovalDisplayCall(
     val argumentsSummary: String,
     val riskLabel: String,
     val preview: ApprovalPreview.Preview? = null,
+    val executionTarget: String? = null,
+    val highRisk: Boolean = false,
 )
 
 @Composable
@@ -827,12 +830,14 @@ fun ApprovalCard(
     onApprove: () -> Unit = {},
     onDecline: () -> Unit = {},
     onApproveAll: (() -> Unit)? = null,
+    onAlwaysAllow: (() -> Unit)? = null,
 ) {
     val accentColor = if (isExecuted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
     val currentCall = calls.firstOrNull()
     val remainingCount = (calls.size - 1).coerceAtLeast(0)
     val currentName = currentCall?.name ?: toolName
     val currentRisk = currentCall?.riskLabel.orEmpty()
+    val currentTarget = currentCall?.executionTarget
     val approveA11y = stringResource(
         R.string.chat_approval_approve_current_a11y,
         currentName,
@@ -929,8 +934,29 @@ fun ApprovalCard(
                                     Text(
                                         text = call.riskLabel,
                                         style = NexaraTypography.labelSmall,
-                                        color = accentColor,
+                                        color = if (call.highRisk) MaterialTheme.colorScheme.error else accentColor,
                                     )
+                                }
+                                Text(
+                                    text = call.executionTarget?.let { target ->
+                                        stringResource(R.string.chat_approval_execution_target, ToolExecutionTargets.display(target))
+                                    } ?: stringResource(R.string.chat_approval_execution_target_unknown),
+                                    style = NexaraTypography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (call.highRisk) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                )
+                                if (call.highRisk && !isExecuted) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.errorContainer,
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.chat_approval_high_risk_target_warning),
+                                            style = NexaraTypography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.padding(8.dp),
+                                        )
+                                    }
                                 }
                                 val preview = call.preview
                                 if (preview == null) {
@@ -1024,6 +1050,27 @@ fun ApprovalCard(
                             elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
                         ) {
                             Text(stringResource(R.string.chat_approval_approve_current), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        }
+                    }
+                    if (onAlwaysAllow != null && !currentTarget.isNullOrBlank()) {
+                        val alwaysAllowA11y = stringResource(
+                            R.string.chat_approval_always_allow_target_a11y,
+                            currentName,
+                            ToolExecutionTargets.display(currentTarget),
+                        )
+                        TextButton(
+                            onClick = onAlwaysAllow,
+                            enabled = enabled,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                                .semantics { contentDescription = alwaysAllowA11y },
+                        ) {
+                            Text(
+                                text = stringResource(R.string.chat_approval_always_allow_target),
+                                style = NexaraTypography.labelMedium,
+                                color = if (currentCall?.highRisk == true) MaterialTheme.colorScheme.error else accentColor,
+                            )
                         }
                     }
                     if (onApproveAll != null && remainingCount > 0) {

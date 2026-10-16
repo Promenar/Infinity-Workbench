@@ -428,6 +428,114 @@ class ChatGenerationRunnerTest {
         assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.ERROR)
     }
 
+    @Test
+    fun `不限模式允许超过固定轮次与调用上限后执行工具`() = runTest {
+        val runtime = FakeRuntime(listOf(
+            flowOf(
+                GenerationChunk.ToolCall("call-unlimited", "search", "{}"),
+                GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call-unlimited")),
+            ),
+            flowOf(GenerationChunk.Text("done"), GenerationChunk.Completed(CompletionReason.END_TURN)),
+        )).apply {
+            budget = GenerationToolBudget(maxRounds = 0, maxCalls = 0)
+            consumed = GenerationToolUsage(rounds = 1_000, calls = 10_000)
+            toolDecisions += GenerationToolDecision.CONTINUE
+        }
+        ChatGenerationRunner(runtime).run(request()) {}
+        assertThat(runtime.handledToolRounds).isEqualTo(1)
+        assertThat(runtime.rejectedCalls).isEmpty()
+        assertThat(runtime.finalAnswerModeEntered).isFalse()
+    }
+
+    @Test
+    fun `流式用量按轮累计并在token预算达到时拒绝工具进入收尾`() = runTest {
+        val runtime = FakeRuntime(listOf(
+            flowOf(
+                GenerationChunk.Usage(10, 10, 20),
+                GenerationChunk.Usage(50, 50, 100),
+                GenerationChunk.ToolCall("budget-call", "search", "{}"),
+                GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("budget-call")),
+            ),
+            flowOf(GenerationChunk.Text("summary"), GenerationChunk.Completed(CompletionReason.END_TURN)),
+        )).apply { budget = GenerationToolBudget(maxTokens = 100) }
+        val events = mutableListOf<GenerationEvent>()
+        ChatGenerationRunner(runtime).run(request(), events::add)
+        assertThat(runtime.rejectedCalls).containsExactly("budget-call")
+        assertThat(runtime.handledToolRounds).isEqualTo(0)
+        assertThat(runtime.finalAnswerModeEntered).isTrue()
+        val progress = events.filterIsInstance<GenerationEvent.ProgressChanged>()
+        assertThat(progress.any { it.progress.tokens == 100L && !it.progress.estimated }).isTrue()
+    }
+
+    @Test
+    fun `无Usage时估算预算仍进入收尾且显示估算`() = runTest {
+        val runtime = FakeRuntime(listOf(
+            flowOf(
+                GenerationChunk.Text("long".repeat(100)),
+                GenerationChunk.ToolCall("estimated-call", "search", "{}"),
+                GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("estimated-call")),
+            ),
+            flowOf(GenerationChunk.Text("summary"), GenerationChunk.Completed(CompletionReason.END_TURN)),
+        )).apply { budget = GenerationToolBudget(maxTokens = 50) }
+        val events = mutableListOf<GenerationEvent>()
+        ChatGenerationRunner(runtime).run(request(), events::add)
+        assertThat(runtime.finalAnswerModeEntered).isTrue()
+        assertThat(events.filterIsInstance<GenerationEvent.ProgressChanged>().last().progress.estimated).isTrue()
+    }
+
+    @Test
+    fun `重复调用停止时不执行触发调用并保持结果配对的拒绝路径`() = runTest {
+        val streams = (1..3).map { n -> flowOf(
+            GenerationChunk.ToolCall("repeat-$n", "search", "{}"),
+            GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("repeat-$n")),
+        ) }
+        val runtime = FakeRuntime(streams).apply {
+            repeat(3) { toolDecisions += GenerationToolDecision.CONTINUE }
+        }
+        val failure = runCatching { ChatGenerationRunner(runtime).run(request()) {} }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(CancellationException::class.java)
+        assertThat(runtime.handledToolRounds).isEqualTo(2)
+        assertThat(runtime.rejectedCalls).containsExactly("repeat-3")
+        assertThat(runtime.terminals).containsExactly(GenerationTerminalStatus.CANCELLED)
+    }
+
+    @Test
+    fun `继续重复调用后重新计数且累计用量不重复累加同轮Usage`() = runTest {
+        val streams = (1..6).map { n -> flowOf(
+            GenerationChunk.Usage(1, 1, 2), GenerationChunk.Usage(5, 5, 10),
+            GenerationChunk.ToolCall("repeat-$n", "search", "{}"),
+            GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("repeat-$n")),
+        ) } + flowOf(GenerationChunk.Text("done"), GenerationChunk.Completed(CompletionReason.END_TURN))
+        val runtime = FakeRuntime(streams).apply {
+            loopContinue = true
+            repeat(6) { toolDecisions += GenerationToolDecision.CONTINUE }
+        }
+        val events = mutableListOf<GenerationEvent>()
+        ChatGenerationRunner(runtime).run(request(), events::add)
+        assertThat(runtime.loopPrompts).isEqualTo(2)
+        assertThat(runtime.handledToolRounds).isEqualTo(6)
+        assertThat(events.filterIsInstance<GenerationEvent.ProgressChanged>().any {
+            it.progress.tokens == 60L && !it.progress.estimated
+        }).isTrue()
+    }
+
+    @Test
+    fun `后续Usage只报告输出时保留已报告输入并按合计触发预算`() = runTest {
+        val runtime = FakeRuntime(listOf(
+            flowOf(
+                GenerationChunk.Usage(100, 1, 101),
+                GenerationChunk.Usage(0, 5, 0),
+                GenerationChunk.ToolCall("usage-partial", "search", "{}"),
+                GenerationChunk.Completed(CompletionReason.TOOL_CALLS, listOf("usage-partial")),
+            ),
+            flowOf(GenerationChunk.Text("summary"), GenerationChunk.Completed(CompletionReason.END_TURN)),
+        )).apply { budget = GenerationToolBudget(maxTokens = 105) }
+        ChatGenerationRunner(runtime).run(request()) {}
+        assertThat(runtime.rejectedCalls).containsExactly("usage-partial")
+        assertThat(runtime.handledToolRounds).isEqualTo(0)
+        assertThat(runtime.finalAnswerModeEntered).isTrue()
+    }
+
     private fun request() = GenerationRequest(
         sessionId = "session",
         assistantMessageId = "assistant",
@@ -460,6 +568,12 @@ class ChatGenerationRunnerTest {
         val rejectedCalls = mutableListOf<String>()
         var handledToolRounds = 0
         var finalAnswerModeEntered = false
+        var loopContinue = false
+        var loopPrompts = 0
+        override suspend fun confirmLoopContinuation(request: GenerationRequest): Boolean {
+            loopPrompts++
+            return loopContinue
+        }
 
         override fun toolBudget(request: GenerationRequest): GenerationToolBudget = budget
         override suspend fun consumedToolUsage(request: GenerationRequest): GenerationToolUsage = consumed
