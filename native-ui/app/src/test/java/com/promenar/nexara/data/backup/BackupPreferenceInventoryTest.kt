@@ -25,6 +25,7 @@ class BackupPreferenceInventoryTest {
             "domain/usecase/RagConfigPersistence.kt#prefs" to "rag_settings",
             "data/rag/KgAdvancedSettings.kt#preferences" to "rag_settings",
             "data/rag/KgUsageStore.kt#preferences" to "kg_usage",
+            "data/repository/RolledBackSummaryUsageStore.kt#preferences" to "nexara_settings",
             "ui/settings/BackupViewModel.kt#prefs" to "nexara_backup_settings",
             "ui/settings/SettingsViewModel.kt#prefs" to "nexara_settings",
             "ui/theme/ThemePreferenceStore.kt#preferences" to "nexara_settings",
@@ -204,6 +205,12 @@ class BackupPreferenceInventoryTest {
         }
         assertThat(BackupPreferencePolicy.isKnown("kg_usage", "kg_usage_ledger_v1")).isTrue()
         assertThat(BackupPreferencePolicy.isAllowed("kg_usage", "kg_usage_ledger_v1")).isFalse()
+    }
+
+    @Test
+    fun `本机回滚摘要用量已登记且禁止跨设备迁移`() {
+        assertThat(BackupPreferencePolicy.isKnown("nexara_settings", "rolled_back_summary_usage_v1")).isTrue()
+        assertThat(BackupPreferencePolicy.isAllowed("nexara_settings", "rolled_back_summary_usage_v1")).isFalse()
     }
 
     @Test

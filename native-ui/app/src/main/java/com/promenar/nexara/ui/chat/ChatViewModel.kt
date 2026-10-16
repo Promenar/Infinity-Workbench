@@ -147,12 +147,13 @@ internal suspend fun resolveChatApprovalExecutionTarget(
     workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository?,
     sshSessionHost: (String, String) -> String?,
     mounts: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess? = null,
+    sshHostStore: com.promenar.nexara.data.ssh.SshHostStore? = null,
 ): String? {
     val call = session.messages.firstOrNull { it.id == assistantMessageId }?.toolCalls.orEmpty()
         .firstOrNull { it.id == identity.toolCallId && it.name == identity.toolName } ?: return null
     val tool = toolLookup(identity.runtimeToolId) ?: return null
     return com.promenar.nexara.data.generation.resolveSessionToolTarget(
-        session, tool, call.arguments, workspaceRepository, mounts, sshSessionHost,
+        session, tool, call.arguments, workspaceRepository, mounts, sshHostStore, sshSessionHost,
     )
 }
 
@@ -335,6 +336,7 @@ class ChatViewModel(
                 workspaceRepository = (application as NexaraApplication).workspaceRepository,
                 sshSessionHost = (application as NexaraApplication).sshRuntime::sessionHost,
                 mounts = (application as NexaraApplication).externalFolderManager,
+                sshHostStore = (application as NexaraApplication).sshHostStore,
             )
         },
     )

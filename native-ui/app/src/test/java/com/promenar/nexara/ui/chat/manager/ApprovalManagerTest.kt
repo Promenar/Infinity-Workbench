@@ -1,5 +1,8 @@
 package com.promenar.nexara.ui.chat.manager
 
+import io.mockk.coEvery
+import io.mockk.mockk
+
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.data.model.*
 import com.promenar.nexara.data.repository.ISessionRepository
@@ -615,9 +618,10 @@ class ApprovalManagerTest {
         val tool = sshSendTool()
         val call = ToolCall("ssh-send", "ssh_session_send", """{"session_id":"pty-1","input":"echo ok"}""")
         val initialTarget = com.promenar.nexara.data.generation.resolveSessionToolTarget(
-            Session(id = "s1", agentId = "a1"), tool, call.arguments, null,
+            Session(id = "s1", agentId = "a1"), tool, call.arguments, null, sshHostStore = sshHosts,
         ) { owner, id -> leases[owner to id] }
-        assertThat(initialTarget).isEqualTo("""["process","local","echo ok"]""")
+        assertThat(ToolExecutionTargets.display(requireNotNull(initialTarget))).isEqualTo("local · echo ok")
+        assertThat(initialTarget).contains("\"sshHostId\":\"local-id\"")
         val grants = SessionToolGrantStore(grantFiles.newFolder("ssh-grants"))
         approvalManager = sshApprovalManager(tool, leases, grants)
         val request = seedExactApproval(listOf(call), initialTarget)
@@ -650,7 +654,7 @@ class ApprovalManagerTest {
         val tool = sshSendTool()
         val call = ToolCall("ssh-send", "ssh_session_send", """{"session_id":"pty-1","input":"echo ok"}""")
         val initialTarget = com.promenar.nexara.data.generation.resolveSessionToolTarget(
-            Session(id = "s1", agentId = "a1"), tool, call.arguments, null,
+            Session(id = "s1", agentId = "a1"), tool, call.arguments, null, sshHostStore = sshHosts,
         ) { owner, id -> leases[owner to id] }
         val grants = SessionToolGrantStore(grantFiles.newFolder("ssh-rejected-grants"))
         approvalManager = sshApprovalManager(tool, leases, grants)
@@ -676,6 +680,12 @@ class ApprovalManagerTest {
         sourceId = "test",
     )
 
+    private val sshHosts = mockk<com.promenar.nexara.data.ssh.SshHostStore> {
+        coEvery { find("local") } returns com.promenar.nexara.data.ssh.SshHost(
+            id = "local-id", alias = "local", hostname = "192.0.2.1", username = "user",
+        )
+    }
+
     private fun sshApprovalManager(
         tool: com.promenar.nexara.data.remote.protocol.ProtocolTool,
         leases: Map<Pair<String, String>, String>,
@@ -689,6 +699,7 @@ class ApprovalManagerTest {
                 toolLookup = { runtimeId -> tool.takeIf { it.runtimeToolId == runtimeId } },
                 workspaceRepository = null,
                 sshSessionHost = { owner, id -> leases[owner to id] },
+                sshHostStore = sshHosts,
             )
         },
     )

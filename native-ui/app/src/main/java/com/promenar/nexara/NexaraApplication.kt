@@ -282,7 +282,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction(skill.name, skill.description, skill.parametersSchema),
             risk = skill.risk, runtimeToolId = skill.runtimeToolId, sourceId = skill.sourceId, mcpServerId = skill.mcpServerId,
         )
-        return com.promenar.nexara.data.generation.resolveSessionToolTarget(session, tool, args.toString(), workspaceRepository, externalFolderManager, sshRuntime::sessionHost) == target &&
+        return com.promenar.nexara.data.generation.resolveSessionToolTarget(session, tool, args.toString(), workspaceRepository, externalFolderManager, sshHostStore, sshRuntime::sessionHost) == target &&
             sessionToolGrantStore.contains(session.id, skill.name, target)
     }
 
@@ -522,7 +522,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     val tokenStatsRepository: ITokenStatsRepository by lazy {
-        TokenStatsRepository(database.messageDao(), kgUsageStore)
+        TokenStatsRepository(
+            database.messageDao(), kgUsageStore,
+            com.promenar.nexara.data.repository.RolledBackSummaryUsageStore(getSharedPreferences("nexara_settings", MODE_PRIVATE)),
+        )
     }
 
     val workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository by lazy {

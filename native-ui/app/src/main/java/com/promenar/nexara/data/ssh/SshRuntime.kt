@@ -18,6 +18,8 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +39,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 
 // 连接资源归属于生成任务或用户终端，禁止按模型参数创建任意主机连接。
 data class SshExecOutput(val exitCode: Int, val stdout: String, val stderr: String, val truncated: Boolean, val timedOut: Boolean)
@@ -51,6 +54,14 @@ class SshRuntime(
     private val idleTimeoutMs: Long = 600_000,
     private val onPersistentActivity: (Boolean) -> Unit = {},
 ) : AutoCloseable {
+    internal val hostStore: SshHostStore get() = store
+    private class HostSnapshot(val host: SshHost) : AbstractCoroutineContextElement(Key) {
+        companion object Key : CoroutineContext.Key<HostSnapshot>
+    }
+    internal suspend fun hostSnapshot(alias: String): SshHost = host(alias)
+    internal suspend fun sessionSnapshot(owner: String, id: String): SshHost = terminal(owner, id).connection.host
+    internal suspend fun <T> withHostSnapshot(snapshot: SshHost?, operation: suspend () -> T): T =
+        if (snapshot == null) operation() else withContext(HostSnapshot(snapshot)) { operation() }
     private data class PoolKey(val owner: String, val alias: String)
     private class Connection(val key: PoolKey, val host: SshHost, val session: Session, val filter: SshOutputFilter) {
         val lock = Mutex()
@@ -137,6 +148,7 @@ class SshRuntime(
             withTimeoutOrNull(timeoutSeconds * 1000L) {
                 val connection = connection(owner, alias).also(usedConnection::set)
                 connection.lock.withLock {
+                    verifyCurrentConnection(connection)
                     io({ ref.get()?.disconnect() }) {
                         val channel = (connection.session.openChannel("exec") as ChannelExec).also(ref::set)
                         try {
@@ -298,6 +310,7 @@ class SshRuntime(
         size(columns, rows)
         val connection = connection(owner, alias)
         try { gate.withLock {
+            verifyCurrentConnection(connection)
             if (owner == "ui") terminals.values.firstOrNull { it.owner == owner && it.connection === connection && !it.channel.isClosed }?.let {
                 return@withLock SshSessionInfo(it.id, alias)
             }
@@ -359,6 +372,7 @@ class SshRuntime(
         if (input.length > 65_536) throw SshFailure("INPUT_TOO_LARGE")
         val pty = terminal(owner, id)
         pty.sendLock.withLock {
+            verifyCurrentConnection(pty.connection)
             io({ pty.channel.disconnect() }) {
                 pty.input.write(input.toByteArray(Charsets.UTF_8)); pty.input.flush()
                 pty.used = now()
@@ -441,7 +455,11 @@ class SshRuntime(
     private suspend fun host(alias: String): SshHost {
         SshPolicy.alias(alias)
         if (stopped.get()) throw SshFailure("RUNTIME_CLOSED")
-        return try { store.find(alias) ?: throw SshFailure("HOST_NOT_FOUND")
+        return try {
+            val current = store.find(alias) ?: throw SshFailure("HOST_NOT_FOUND")
+            val approved = currentCoroutineContext()[HostSnapshot]?.host
+            if (approved != null && current != approved) throw SshFailure("HOST_CONFIGURATION_CHANGED")
+            current
         } catch (failure: SshFailure) { throw failure
         } catch (_: Exception) { throw SshFailure("HOST_UNAVAILABLE") }
     }
@@ -449,6 +467,7 @@ class SshRuntime(
         val host = host(alias)
         gate.withLock {
             if (stopped.get()) throw SshFailure("RUNTIME_CLOSED")
+            if (host(alias) != host) throw SshFailure("HOST_CONFIGURATION_CHANGED")
             val key = PoolKey(owner, alias)
             connections[key]?.let {
                 if (it.host == host && it.session.isConnected) { it.used = now(); return@withLock it }
@@ -498,6 +517,9 @@ class SshRuntime(
         }
         return pty
     }
+    private suspend fun verifyCurrentConnection(connection: Connection) {
+        if (host(connection.host.alias) != connection.host) throw SshFailure("HOST_CONFIGURATION_CHANGED")
+    }
     private suspend fun <T> sftp(owner: String, alias: String, path: String, block: (ChannelSftp, Connection) -> T): T {
         SshPolicy.path(path)
         val ref = AtomicReference<ChannelSftp?>()
@@ -505,6 +527,7 @@ class SshRuntime(
             withTimeoutOrNull(60_000) {
                 val connection = connection(owner, alias)
                 connection.lock.withLock {
+                    verifyCurrentConnection(connection)
                     io({ ref.get()?.disconnect() }) {
                         val channel = (connection.session.openChannel("sftp") as ChannelSftp).also(ref::set)
                         try { channel.connect(CONNECT_TIMEOUT); block(channel, connection)

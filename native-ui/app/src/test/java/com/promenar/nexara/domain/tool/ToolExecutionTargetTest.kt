@@ -8,16 +8,17 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Test
 
 class ToolExecutionTargetTest {
+    private val sshIdentities = mapOf("termux" to SshExecutionIdentity("host-1", "identity-1"))
     @Test
     fun `SSH路径授权保留远端路径语义且PTY发送绑定解析的主机和原始输入`() {
         assertThat(extract("sftp_write", """{"host":"termux","path":"./A/../data","content":"value"}"""))
-            .isEqualTo("""["remote_path","termux","./A/../data"]""")
+            .isEqualTo("""["remote_path","termux","./A/../data",{"sshHostId":"host-1","sshIdentity":"identity-1"}]""")
         val send = tool("ssh_session_send", risk = ToolRisk.PROCESS)
-        assertThat(ToolExecutionTargets.extract(send, """{"session_id":"pty-1","input":"ls\n"}""", mapOf("ssh_session:pty-1" to "termux")))
-            .isEqualTo("""["process","termux","ls\n"]""")
+        assertThat(ToolExecutionTargets.extract(send, """{"session_id":"pty-1","input":"ls\n"}""", mapOf("ssh_session:pty-1" to "termux"), sshIdentities))
+            .isEqualTo("""["process","termux","ls\n",{"sshHostId":"host-1","sshIdentity":"identity-1"}]""")
         assertThat(ToolExecutionTargets.extract(send, """{"session_id":"unknown","input":"ls"}""")).isNull()
-        assertThat(ToolExecutionTargets.extract(tool("ssh_session_open", risk = ToolRisk.PROCESS), """{"host":"termux"}"""))
-            .isEqualTo("""["process","termux","[PTY]"]""")
+        assertThat(ToolExecutionTargets.extract(tool("ssh_session_open", risk = ToolRisk.PROCESS), """{"host":"termux"}""", sshIdentities = sshIdentities))
+            .isEqualTo("""["process","termux","[PTY]",{"sshHostId":"host-1","sshIdentity":"identity-1"}]""")
         assertThat(ToolExecutionTargets.display("""["remote_path","termux","/home/u/a"]"""))
             .isEqualTo("termux · /home/u/a")
     }
@@ -168,7 +169,7 @@ class ToolExecutionTargetTest {
     }
 
     private fun extract(name: String, arguments: String): String? =
-        ToolExecutionTargets.extract(tool(name), arguments)
+        ToolExecutionTargets.extract(tool(name), arguments, sshIdentities = sshIdentities)
 
     private fun tool(
         name: String,

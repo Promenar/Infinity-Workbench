@@ -1,6 +1,108 @@
 import com.android.compose.screenshot.tasks.PreviewScreenshotUpdateTask
 import com.android.compose.screenshot.tasks.PreviewScreenshotValidationTask
 import com.promenar.nexara.buildlogic.GenerateLauncherIcons
+import groovy.json.JsonSlurper
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+
+abstract class GenerateCurrentRoomSchemaContracts : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val schemaFiles: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val schemas = schemaFiles.files.map { file ->
+            (JsonSlurper().parseText(file.readText()) as Map<*, *>).objectMap("database")
+        }.sortedBy { (it.requiredValue("version") as Number).toInt() }
+        require(schemas.map { (it.requiredValue("version") as Number).toInt() } == (18..21).toList()) {
+            "完整数据库校验必须包含 v18、v19、v20、v21 的导出合同"
+        }
+        val source = buildString {
+            appendLine("package com.promenar.nexara.data.local.db")
+            appendLine()
+            appendLine("// 由导出的 Room schema 构建生成，禁止手工维护字段白名单。")
+            appendLine("internal object GeneratedCurrentRoomSchemas {")
+            appendLine("    val schemas: Map<Int, ExportedRoomSchema> by lazy {")
+            appendLine("        mapOf(${schemas.joinToString { "${it["version"]} to schema${it["version"]}()" }})")
+            appendLine("    }")
+            schemas.forEach { schema ->
+                val version = (schema.requiredValue("version") as Number).toInt()
+                val tables = schema.objectList("entities")
+                appendLine("    private fun schema$version() = ExportedRoomSchema(")
+                appendLine("        ${quote(schema.requiredValue("identityHash") as String)},")
+                appendLine("        ${list(tables.indices.map { "schema${version}Table$it()" })},")
+                appendLine("    )")
+                tables.forEachIndexed { tableIndex, table ->
+                    val name = table.requiredValue("tableName") as String
+                    val primaryKey = table.objectMap("primaryKey").stringList("columnNames")
+                    appendLine("    private fun schema${version}Table$tableIndex() = ExportedRoomTable(")
+                    appendLine("        ${quote(name)},")
+                    appendLine("        ${list(table.objectList("fields").map { field ->
+                        val column = field.requiredValue("columnName") as String
+                        val default = (field["defaultValue"] as? String)?.let(::quote) ?: "null"
+                        "ExportedRoomColumn(${quote(column)}, ${quote(field.requiredValue("affinity") as String)}, " +
+                            "${field["notNull"] == true}, ${primaryKey.indexOf(column) + 1}, $default)"
+                    })},")
+                    appendLine("        ${list(table.objectList("indices").map { index ->
+                        val columns = index.stringList("columnNames")
+                        val orders = index.stringList("orders").ifEmpty { List(columns.size) { "ASC" } }
+                        require(orders.size == columns.size) { "索引排序与列数量不匹配" }
+                        "ExportedRoomIndex(${quote(index.requiredValue("name") as String)}, ${index["unique"] == true}, " +
+                            "${list(columns.map(::quote))}, ${list(orders.map(::quote))}, " +
+                            "${quote((index.requiredValue("createSql") as String).replace("\${TABLE_NAME}", name))})"
+                    })},")
+                    appendLine("        ${list(table.objectList("foreignKeys").map { key ->
+                        "ExportedRoomForeignKey(${quote(key.requiredValue("table") as String)}, " +
+                            "${quote(key.requiredValue("onDelete") as String)}, ${quote(key.requiredValue("onUpdate") as String)}, " +
+                            "${list(key.stringList("columns").map(::quote))}, " +
+                            "${list(key.stringList("referencedColumns").map(::quote))})"
+                    })},")
+                    val ftsSql = if (table.containsKey("ftsVersion")) {
+                        quote((table.requiredValue("createSql") as String).replace("\${TABLE_NAME}", name))
+                    } else "null"
+                    appendLine("        $ftsSql,")
+                    appendLine("    )")
+                }
+            }
+            appendLine("}")
+        }
+        val output = outputDirectory.file(
+            "com/promenar/nexara/data/local/db/GeneratedCurrentRoomSchemas.kt",
+        ).get().asFile
+        output.parentFile.mkdirs()
+        output.writeText(source)
+    }
+
+    private fun Map<*, *>.requiredValue(key: String): Any = requireNotNull(this[key]) { "导出 schema 缺少必填字段：$key" }
+    private fun Map<*, *>.objectMap(key: String) = requiredValue(key) as Map<*, *>
+    private fun Map<*, *>.objectList(key: String) = (get(key) as? List<*>)?.map { it as Map<*, *> }.orEmpty()
+    private fun Map<*, *>.stringList(key: String) = (get(key) as? List<*>)?.map { it as String }.orEmpty()
+    private fun list(values: List<String>) = values.joinToString(", ", "listOf(", ")")
+    private fun quote(value: String): String = buildString {
+        append('"')
+        value.forEach { character ->
+            when (character) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '$' -> { append('\\'); append('$') }
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> append(character)
+            }
+        }
+        append('"')
+    }
+}
 
 val realLlmEnvironmentNames = listOf(
     "NEXARA_TEST_LLM_BASE_URL",
@@ -67,6 +169,14 @@ val launcherIconTask = tasks.register("generateNexaraLauncherIcons") {
     group = "verification"
     description = "验证并生成所有应用变体的折叠 N 图标。"
 }
+val currentRoomSchemaContracts = tasks.register<GenerateCurrentRoomSchemaContracts>("generateCurrentRoomSchemaContracts") {
+    group = "build setup"
+    description = "依据四个导出版本生成完整数据库结构校验合同。"
+    schemaFiles.from((18..21).map { version ->
+        layout.projectDirectory.file("schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json")
+    })
+    outputDirectory.set(layout.buildDirectory.dir("generated/sources/currentRoomSchemaContracts"))
+}
 androidComponents.onVariants { variant ->
     val capitalizedName = variant.name.replaceFirstChar { it.uppercaseChar() }
     val generateIcons = tasks.register<GenerateLauncherIcons>("generate${capitalizedName}NexaraLauncherIcons") {
@@ -77,6 +187,9 @@ androidComponents.onVariants { variant ->
         })
     }
     variant.sources.res?.addGeneratedSourceDirectory(generateIcons, GenerateLauncherIcons::getOutputDirectory)
+    variant.sources.java?.addGeneratedSourceDirectory(
+        currentRoomSchemaContracts, GenerateCurrentRoomSchemaContracts::outputDirectory,
+    )
     launcherIconTask.configure { dependsOn(generateIcons) }
 }
 

@@ -263,35 +263,18 @@ private class MountedFileOperations(
         if (!uuid.startsWith("external:")) return base.patchFile(workspaceRootUuid, uuid, operations, expectedHash)
         val (content, bytes) = text(uuid, WorkspaceTextOperation.PATCH)
         if (Sha256Utils.hash(bytes) != expectedHash) fail("CONFLICT", "expected_sha256 与当前文件不一致")
-        val lines = workspaceTextLines(content).toMutableList()
-        val ranges = mutableListOf<IntRange>()
-        val insertions = mutableSetOf<Int>()
-        operations.forEach { op ->
-            val start = op.startLine ?: -1; val end = op.endLine ?: -1
-            when (op.action) {
-                "replace_lines", "delete_lines" -> {
-                    if (start < 1 || end < start || end > lines.size) fail("INVALID_PATCH", "补丁行号越界")
-                    if (op.expectedContent != null && lines.subList(start - 1, end).joinToString("\n") != op.expectedContent) fail("CONFLICT", "补丁上下文不一致")
-                    val range = start..end
-                    if (ranges.any { it.first <= end && start <= it.last }) fail("INVALID_PATCH", "补丁范围不能重叠")
-                    ranges.add(range)
+        val patched = when (val patch = applyWorkspaceLinePatch(content, operations, uuid)) {
+            is WorkspaceLinePatchResult.Applied -> patch.content
+            is WorkspaceLinePatchResult.Rejected -> {
+                val code = when (patch.error.code) {
+                    "LINE_OUT_OF_RANGE", "INVALID_ACTION" -> "INVALID_PATCH"
+                    "CONTEXT_MISMATCH" -> "CONFLICT"
+                    else -> patch.error.code
                 }
-                "insert_after" -> {
-                    if (op.afterLine == null || op.afterLine !in 0..lines.size) fail("INVALID_PATCH", "插入行号越界")
-                    if (!insertions.add(op.afterLine)) fail("OVERLAPPING_OPERATIONS", "同一坐标存在多个插入操作，已拒绝整批修改")
-                }
-                else -> fail("INVALID_PATCH", "未知补丁操作")
+                fail(code, patch.error.message)
             }
         }
-        operations.sortedByDescending { it.startLine ?: it.afterLine ?: -1 }.forEach { op ->
-            val replacement = if (op.newContent.isNullOrEmpty()) emptyList() else workspaceTextLines(op.newContent)
-            when (op.action) {
-                "replace_lines" -> { lines.subList(op.startLine!! - 1, op.endLine!!).clear(); lines.addAll(op.startLine - 1, replacement) }
-                "delete_lines" -> lines.subList(op.startLine!! - 1, op.endLine!!).clear()
-                "insert_after" -> lines.addAll(op.afterLine!!, replacement)
-            }
-        }
-        val newBytes = lines.joinToString("\n").toByteArray(Charsets.UTF_8)
+        val newBytes = patched.toByteArray(Charsets.UTF_8)
         WorkspaceTextContentPolicy().validate(path(uuid).substringAfterLast('/'), null, newBytes, WorkspaceTextOperation.PATCH)
         val updated = mounts.write(session, path(uuid), newBytes, expectedHash, false)
         completedHash = updated.hash
