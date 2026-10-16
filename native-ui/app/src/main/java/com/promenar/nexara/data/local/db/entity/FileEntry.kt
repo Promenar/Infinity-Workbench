@@ -54,6 +54,10 @@ data class FileEntry(
     @ColumnInfo(name = "kg_extracted_at")
     val kgExtractedAt: Long? = null,
 
+    /** 已确认并完成的建图意图；回收恢复沿用，不读取当前配置扩大抽取。 */
+    @ColumnInfo(name = "kg_strategy")
+    val kgStrategy: String? = null,
+
     @ColumnInfo(name = "kg_version")
     val kgVersion: Int = 1,
 

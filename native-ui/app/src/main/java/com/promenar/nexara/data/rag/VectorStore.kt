@@ -11,7 +11,8 @@ import java.util.UUID
 class VectorStore(
     private val vectorDao: VectorDao,
     private val kgNodeDao: KgNodeDao,
-    private val kgEdgeDao: KgEdgeDao
+    private val kgEdgeDao: KgEdgeDao,
+    private val kgEvidenceDao: com.promenar.nexara.data.local.db.dao.KgEvidenceDao,
 ) {
     private fun toBlob(embedding: FloatArray): ByteArray {
         val buffer = ByteBuffer.allocate(embedding.size * 4)
@@ -211,26 +212,13 @@ class VectorStore(
     }
 
     suspend fun pruneOrphanSessions(activeSessionIds: List<String>) {
-        if (activeSessionIds.isEmpty()) {
-            vectorDao.deleteAllMemoryVectors()
-            kgEdgeDao.deleteAllSessionEdges()
-            kgNodeDao.deleteAllSessionNodes()
-            return
-        }
-        vectorDao.deleteOrphanBySessionIds(activeSessionIds)
-        kgEdgeDao.deleteAllSessionEdges()
-        kgNodeDao.deleteOrphanNodes()
+        if (activeSessionIds.isEmpty()) vectorDao.deleteAllMemoryVectors()
+        else vectorDao.deleteOrphanBySessionIds(activeSessionIds)
+        kgEvidenceDao.pruneSessions(activeSessionIds)
     }
 
-    suspend fun pruneOrphanDocumentKG(activeDocIds: List<String>): Pair<Int, Int> {
-        val edgesDeleted = if (activeDocIds.isEmpty()) {
-            kgEdgeDao.deleteAllDocEdges()
-        } else {
-            kgEdgeDao.deleteEdgesNotInDocIds(activeDocIds)
-        }
-        val nodesDeleted = kgNodeDao.deleteOrphanNodes()
-        return Pair(edgesDeleted, nodesDeleted)
-    }
+    suspend fun pruneOrphanDocumentKG(activeDocIds: List<String>): Pair<Int, Int> =
+        kgEvidenceDao.pruneDocuments(activeDocIds)
 
     // ── P0 诊断方法: 支持 MemoryManager 精准定位 "0 results" 根因 ──
 

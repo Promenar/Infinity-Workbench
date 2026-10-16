@@ -14,6 +14,7 @@ import com.promenar.nexara.data.local.db.dao.FileVersionDao
 import com.promenar.nexara.data.local.db.dao.KgEdgeDao
 import com.promenar.nexara.data.local.db.dao.KgJitCacheDao
 import com.promenar.nexara.data.local.db.dao.KgNodeDao
+import com.promenar.nexara.data.local.db.dao.KgEvidenceDao
 import com.promenar.nexara.data.local.db.dao.MessageDao
 import com.promenar.nexara.data.local.db.dao.SessionDao
 import com.promenar.nexara.data.local.db.dao.SessionDeletionDao
@@ -37,6 +38,8 @@ import com.promenar.nexara.data.local.db.entity.FileVersionEntity
 import com.promenar.nexara.data.local.db.entity.KgEdgeEntity
 import com.promenar.nexara.data.local.db.entity.KgJitCacheEntity
 import com.promenar.nexara.data.local.db.entity.KgNodeEntity
+import com.promenar.nexara.data.local.db.entity.KgEvidenceEntity
+import com.promenar.nexara.data.local.db.entity.KgJitCacheSourceEntity
 import com.promenar.nexara.data.local.db.entity.McpServerEntity
 import com.promenar.nexara.data.local.db.entity.McpToolSnapshotEntity
 import com.promenar.nexara.data.local.db.entity.MessageEntity
@@ -64,6 +67,8 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
         KgNodeEntity::class,
         KgEdgeEntity::class,
         KgJitCacheEntity::class,
+        KgEvidenceEntity::class,
+        KgJitCacheSourceEntity::class,
         VectorizationTaskEntity::class,
         AuditLogEntity::class,
         ArtifactEntity::class,
@@ -77,7 +82,7 @@ import com.promenar.nexara.data.local.db.entity.WorkspaceMutationEntity
         FileVersionEntity::class,
         WorkspaceMutationEntity::class,
     ],
-    version = 18,
+    version = 19,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -94,6 +99,7 @@ abstract class NexaraDatabase : RoomDatabase() {
     abstract fun kgNodeDao(): KgNodeDao
     abstract fun kgEdgeDao(): KgEdgeDao
     abstract fun kgJitCacheDao(): KgJitCacheDao
+    abstract fun kgEvidenceDao(): KgEvidenceDao
     abstract fun vectorizationTaskDao(): VectorizationTaskDao
     abstract fun auditLogDao(): AuditLogDao
     abstract fun artifactDao(): ArtifactDao

@@ -1601,4 +1601,5 @@
     <string name="chat_tool_failed">失败</string>
     <string name="chat_rag_source_web">联网检索</string>
     <string name="chat_tool_duration_seconds">%1$s 秒</string>
+    <string name="rag_details_kg_sources">来源文档：%1$s</string>
 </resources>

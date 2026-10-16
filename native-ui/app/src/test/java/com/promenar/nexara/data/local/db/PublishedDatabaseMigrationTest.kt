@@ -59,14 +59,14 @@ class PublishedDatabaseMigrationTest {
                 })
             }
             val room = Room.databaseBuilder(context, NexaraDatabase::class.java, name)
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19)
                 .allowMainThreadQueries()
                 .build()
             try {
                 val database = room.openHelper.writableDatabase
                 database.query("PRAGMA user_version").use { cursor ->
                     check(cursor.moveToFirst())
-                    assertThat(cursor.getInt(0)).isEqualTo(18)
+                    assertThat(cursor.getInt(0)).isEqualTo(19)
                 }
                 database.query("SELECT content,session_id,legacy_attachments FROM messages WHERE id='published-message'").use { cursor ->
                     check(cursor.moveToFirst())

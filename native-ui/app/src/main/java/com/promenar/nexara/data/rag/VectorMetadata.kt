@@ -12,12 +12,14 @@ internal fun documentVectorMetadata(
     fileUuid: String,
     chunkIndex: Int,
     documentTitle: String,
+    contentHash: String? = null,
 ): String = buildJsonObject {
     // VectorDao 的跨 SQLite type 查询依赖根字段 type 位于紧凑 JSON 首位。
     put("type", "document")
     put("fileUuid", fileUuid)
     put("chunkIndex", chunkIndex)
     put("docTitle", documentTitle)
+    contentHash?.let { put("contentHash", it) }
 }.toString()
 
 internal fun vectorMetadataType(metadata: String?): String? =
@@ -38,3 +40,6 @@ private fun vectorMetadataObject(metadata: String?) = try {
 } catch (_: Exception) {
     null
 }
+
+internal fun documentContentHashFromVectorMetadata(metadata: String?): String? =
+    vectorMetadataObject(metadata)?.get("contentHash")?.jsonPrimitive?.content?.takeIf(String::isNotBlank)

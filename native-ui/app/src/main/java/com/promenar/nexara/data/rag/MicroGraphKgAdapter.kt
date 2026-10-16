@@ -20,6 +20,8 @@ class MicroGraphKgAdapter(
         val searchResults = topKResults.map { ref ->
             SearchResult(
                 id = ref.id,
+                docId = ref.documentId,
+                documentContentHash = ref.documentContentHash,
                 content = ref.content,
                 similarity = ref.score,
                 createdAt = UNKNOWN_CREATED_AT_SENTINEL
@@ -87,7 +89,8 @@ class MicroGraphKgAdapter(
                 queryKeywords = queryKeywords,
                 nodes = nodeIds.mapNotNull { nodeByName[it] }.sortedWith(NODE_COMPARATOR),
                 edges = dedupedEdges.filter { it.sourceId in nodeIds }.sortedWith(EDGE_COMPARATOR),
-                reasoning = null
+                reasoning = null,
+                sourceDocumentIds = sourceDocumentIds,
             )
         }
     }

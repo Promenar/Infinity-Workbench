@@ -1,288 +1,231 @@
 package com.promenar.nexara.data.rag
 
-import com.promenar.nexara.data.local.db.dao.KgEdgeDao
-import com.promenar.nexara.data.local.db.dao.KgNodeDao
-import com.promenar.nexara.data.local.db.entity.KgEdgeEntity
-import com.promenar.nexara.data.local.db.entity.KgNodeEntity
-import com.promenar.nexara.utils.NexaraLogger
-import kotlinx.serialization.json.Json
+import androidx.room.withTransaction
+import com.promenar.nexara.data.local.db.KgIdentity
+import com.promenar.nexara.data.local.db.NexaraDatabase
+import com.promenar.nexara.data.local.db.entity.*
+import kotlinx.serialization.json.*
 import java.util.UUID
 
-class GraphStore(
-    private val kgNodeDao: KgNodeDao,
-    private val kgEdgeDao: KgEdgeDao
-) {
-    private val json = Json { ignoreUnknownKeys = true }
+/** 实体全局共享，所有来源归属均由证据表达；业务唯一约束与 Room 事务共同保证并发幂等。 */
+class GraphStore(private val database: NexaraDatabase) {
+    private val nodes get() = database.kgNodeDao()
+    private val edges get() = database.kgEdgeDao()
+    private val evidence get() = database.kgEvidenceDao()
 
-    suspend fun upsertNode(
-        name: String,
-        type: String = "concept",
-        metadata: String? = null,
-        scope: KgScope? = null,
-        sourceType: String = "full"
-    ): String {
+    suspend fun upsertNode(name: String, type: String = "concept", metadata: String? = null,
+        scope: KgScope? = null, sourceType: String = "full"): String = database.withTransaction {
+        putNode(name, type, metadata, source(scope, null, sourceType))
+    }
+
+    private suspend fun putNode(name: String, type: String, metadata: String?, source: KgSource): String {
+        val normalized = KgIdentity.normalize(name)
+        val normalizedType = KgIdentity.normalize(type).ifBlank { "concept" }
+        require(normalized.isNotBlank() && normalized.length <= 512 && normalizedType.length <= 512) { "实体身份无效" }
         val now = System.currentTimeMillis()
-        val id = UUID.randomUUID().toString()
+        nodes.insert(KgNodeEntity(UUID.randomUUID().toString(), KgIdentity.display(name), normalizedType, metadata,
+            now, now, normalized))
+        val stored = requireNotNull(nodes.findIdentity(normalized, normalizedType))
+        nodes.update(stored.copy(metadata = mergeMetadata(stored.metadata, metadata), updatedAt = now))
+        addEvidence(source, nodeId = stored.id)
+        return stored.id
+    }
 
-        val existing = kgNodeDao.getByName(name)
-        if (existing != null) {
-            val mergedMetadata = mergeMetadata(existing.metadata, metadata)
-            val updatedType = resolveType(existing.type, type)
-            val finalSourceType = resolveSourceType(existing.sourceType, sourceType)
+    suspend fun createEdge(sourceId: String, targetId: String, relation: String, docId: String? = null,
+        weight: Double = 1.0, scope: KgScope? = null, sourceType: String = "full"): String = database.withTransaction {
+        putEdge(sourceId, targetId, relation, weight, source(scope, docId, sourceType))
+    }
 
-            kgNodeDao.updateTypeMetadata(
-                id = existing.id,
-                type = updatedType,
-                metadata = mergedMetadata,
-                updatedAt = now,
-                sourceType = finalSourceType
-            )
-            return existing.id
-        }
+    private suspend fun putEdge(sourceId: String, targetId: String, relation: String, weight: Double, source: KgSource): String {
+        require(nodes.getRawById(sourceId) != null && nodes.getRawById(targetId) != null) { "关系端点不存在" }
+        val normalized = KgIdentity.normalize(relation)
+        require(normalized.isNotBlank() && normalized.length <= 512 && weight.isFinite() && weight in 0.0..1.0) { "关系或权重无效" }
+        edges.insert(KgEdgeEntity(UUID.randomUUID().toString(), sourceId, targetId, KgIdentity.display(relation), weight,
+            System.currentTimeMillis(), normalized))
+        val stored = requireNotNull(edges.findIdentity(sourceId, targetId, normalized))
+        if (weight > stored.weight) edges.update(stored.copy(weight = weight))
+        addEvidence(source, edgeId = stored.id, weight = weight)
+        // 关系本身也证明两个端点存在，不能沿用其它来源的单一节点归属。
+        addEvidence(source, nodeId = sourceId)
+        addEvidence(source, nodeId = targetId)
+        return stored.id
+    }
 
-        val entity = KgNodeEntity(
-            id = id,
-            name = name,
-            type = type,
-            metadata = metadata ?: "{}",
-            sessionId = scope?.sessionId,
-            agentId = scope?.agentId,
-            sourceType = sourceType,
-            createdAt = now,
-            updatedAt = now
-        )
-
-        val insertResult = kgNodeDao.insert(entity)
-        return if (insertResult > 0) {
-            id
-        } else {
-            val retryExisting = kgNodeDao.getByName(name)
-            retryExisting?.id ?: id
+    /** 调用方必须持有候选提交的 hash/epoch 与活动任务准入；内部仍保证整图原子写入。 */
+    suspend fun commitCandidate(candidate: DocumentIndexCandidate, source: KgSource) = database.withTransaction {
+        val mapping = candidate.nodes.associate { it.id to putNode(it.name, it.type, it.metadata, source) }
+        candidate.edges.forEach { edge ->
+            putEdge(requireNotNull(mapping[edge.sourceId]) { "候选关系缺少源节点" },
+                requireNotNull(mapping[edge.targetId]) { "候选关系缺少目标节点" }, edge.relation, edge.weight, source)
         }
     }
 
-    suspend fun updateNode(id: String, updates: KgNodeUpdate) {
-        val existing = kgNodeDao.getById(id) ?: return
-        val updated = existing.copy(
-            name = updates.name ?: existing.name,
-            type = updates.type ?: existing.type,
-            updatedAt = System.currentTimeMillis()
-        )
-        kgNodeDao.update(updated)
-    }
-
-    suspend fun deleteNode(id: String) {
-        kgNodeDao.deleteById(id)
-    }
-
-    suspend fun mergeNodes(sourceId: String, targetName: String) {
-        val target = kgNodeDao.getByName(targetName) ?: throw IllegalArgumentException("Target node '$targetName' not found")
-        val targetId = target.id
-
-        if (sourceId == targetId) return
-
-        kgEdgeDao.updateSourceId(sourceId, targetId)
-        kgEdgeDao.updateTargetId(sourceId, targetId)
-        kgEdgeDao.deleteSelfLoops(targetId)
-
-        val source = kgNodeDao.getById(sourceId)
-        if (source != null) {
-            val mergedMeta = mergeMetadata(target.metadata, source.metadata)
-            kgNodeDao.updateTypeMetadata(
-                id = targetId,
-                type = target.type,
-                metadata = mergedMeta,
-                updatedAt = System.currentTimeMillis(),
-                sourceType = target.sourceType
-            )
-        }
-
-        kgNodeDao.deleteById(sourceId)
-    }
-
-    suspend fun createEdge(
-        sourceId: String,
-        targetId: String,
-        relation: String,
-        docId: String? = null,
-        weight: Double = 1.0,
-        scope: KgScope? = null,
-        sourceType: String = "full"
-    ): String {
-        val sessionId = scope?.sessionId
-        val existing = kgEdgeDao.findEdge(sourceId, targetId, relation, docId, sessionId)
-
-        if (existing != null) {
-            val newWeight = maxOf(existing.weight.takeIf { it.isFinite() } ?: 0.0, weight).coerceIn(0.0, 1.0)
-            val finalSourceType = resolveSourceType(existing.sourceType, sourceType)
-            kgEdgeDao.updateWeight(existing.id, newWeight, System.currentTimeMillis(), finalSourceType)
-            return existing.id
-        }
-
-        val id = UUID.randomUUID().toString()
-        val entity = KgEdgeEntity(
-            id = id,
-            sourceId = sourceId,
-            targetId = targetId,
-            relation = relation,
-            weight = weight,
-            docId = docId,
-            sessionId = sessionId,
-            agentId = scope?.agentId,
-            sourceType = sourceType,
-            createdAt = System.currentTimeMillis()
-        )
-        kgEdgeDao.insert(entity)
-        return id
-    }
-
-    suspend fun updateEdge(id: String, updates: KgEdgeUpdate) {
-        val existing = kgEdgeDao.getById(id) ?: return
-        val updated = existing.copy(
-            relation = updates.relation ?: existing.relation,
-            weight = updates.weight ?: existing.weight
-        )
-        kgEdgeDao.insert(updated)
-    }
-
-    /**
-     * 清除指定文档的边和由这些边引用的孤立节点，不影响其它抽取任务。
-     */
-    suspend fun clearGraphForDoc(docId: String) {
-        val nodeIds = kgEdgeDao.getByDocIdForLifecycleCleanup(docId).flatMap { listOf(it.sourceId, it.targetId) }.distinct()
-        val deletedEdges = kgEdgeDao.deleteByDocId(docId)
-        val deletedOrphans = if (nodeIds.isEmpty()) 0 else kgNodeDao.deleteOrphansByIds(nodeIds)
-        NexaraLogger.log("[RAG][GraphStore] clearGraphForDoc: docId=$docId, deletedEdges=$deletedEdges, orphanNodes=$deletedOrphans")
-    }
-
-    suspend fun deleteEdge(id: String) {
-        kgEdgeDao.deleteById(id)
-    }
-
-    suspend fun getAllNodes(): List<KgNode> {
-        return kgNodeDao.getAll().map { it.toModel() }
-    }
-
-    suspend fun getEdgesForNode(nodeId: String): List<KgEdge> {
-        return kgEdgeDao.getByNodeId(nodeId).map { it.toModel() }
-    }
-
-    suspend fun getGraphData(
-        docIds: List<String>? = null,
-        sessionId: String? = null,
-        agentId: String? = null
-    ): GraphData {
-        val edges = when {
-            docIds != null && docIds.isNotEmpty() -> kgEdgeDao.getByDocIds(docIds)
-            sessionId != null -> kgEdgeDao.getBySessionId(sessionId)
-            else -> kgEdgeDao.getAll() // GLOBAL: 获取全部边
-        }
-
-        val nodeIds = edges.flatMap { listOf(it.sourceId, it.targetId) }.toSet()
-        // GLOBAL 模式：返回所有节点（包括无边的孤立节点）
-        val nodes = if (docIds == null && sessionId == null) {
-            kgNodeDao.getAll().map { it.toModel() }
-        } else if (nodeIds.isNotEmpty()) {
-            kgNodeDao.getByIds(nodeIds.toList()).map { it.toModel() }
-        } else {
-            emptyList()
-        }
-
-        return GraphData(
-            nodes = nodes,
-            edges = edges.map { it.toModel() }
-        )
-    }
-
-    suspend fun getDocumentOptions(): List<KgDocumentOption> =
-        kgEdgeDao.getActiveDocumentOptions().map { row ->
-            KgDocumentOption(docId = row.docId, title = row.title)
-        }
-
-    private fun mergeMetadata(existingMeta: String?, newMeta: String?): String {
-        val existing = try {
-            existingMeta?.let { Json.decodeFromString<MutableMap<String, kotlinx.serialization.json.JsonElement>>(it) } ?: mutableMapOf()
-        } catch (e: Exception) {
-            mutableMapOf()
-        }
-
-        if (newMeta == null) return Json.encodeToString(kotlinx.serialization.serializer<Map<String, kotlinx.serialization.json.JsonElement>>(), existing)
-
-        val newMap = try {
-            Json.decodeFromString<Map<String, kotlinx.serialization.json.JsonElement>>(newMeta)
-        } catch (e: Exception) {
-            return Json.encodeToString(kotlinx.serialization.serializer<Map<String, kotlinx.serialization.json.JsonElement>>(), existing)
-        }
-
-        for ((key, value) in newMap) {
-            existing[key] = value
-        }
-
-        return Json.encodeToString(kotlinx.serialization.serializer<Map<String, kotlinx.serialization.json.JsonElement>>(), existing)
-    }
-
-    private fun resolveType(existingType: String, newType: String): String {
-        val knownTypes = setOf("concept", "person", "org", "location", "event", "product")
-        val existingIsKnown = knownTypes.contains(existingType.lowercase())
-        val newIsKnown = knownTypes.contains(newType.lowercase())
-
-        return when {
-            existingIsKnown && !newIsKnown -> newType
-            !existingIsKnown && newIsKnown -> existingType
-            else -> newType
+    suspend fun captureJitSources(results: List<SearchResult>): List<KgJitSource> = database.withTransaction {
+        results.groupBy { it.docId }.map { (docId, chunks) ->
+            if (docId == null) KgJitSource(null, kgSha256(chunks.joinToString("\u0000") { it.content }), null)
+            else {
+                val file = database.fileEntryDao().findActiveByUuid(docId)?.takeUnless { it.inRecycleBin || it.isDirectory }
+                // 无法核验文档版本时只返回即时结果，不把未知来源写成会话知识。
+                val matches = file != null && chunks.all { chunk ->
+                    val expected = chunk.documentContentHash ?: documentContentHashFromVectorMetadata(chunk.metadata)
+                    if (expected != null) expected == file.hash else {
+                        val vector = database.vectorDao().getById(chunk.id)
+                        vector?.docId == docId && vector.content == chunk.content &&
+                            (vector.updatedAt ?: vector.createdAt) >= file.updatedAt
+                    }
+                }
+                KgJitSource(docId, file?.hash.orEmpty(), file?.updatedAt?.takeIf { matches })
+            }
         }
     }
 
-    private fun resolveSourceType(existing: String, new: String): String {
-        val priority = mapOf("full" to 2, "summary" to 1, "jit" to 0)
-        val existingPriority = priority[existing] ?: 0
-        val newPriority = priority[new] ?: 0
-        return if (newPriority >= existingPriority) new else existing
+    /** 缓存与证据在同一事务内提交，删除、回收或版本变化后的后台结果不得重新落库。 */
+    suspend fun persistJit(result: MicroGraphResult, sources: List<KgJitSource>, sessionId: String,
+        cache: KgJitCacheEntity): Boolean = database.withTransaction {
+        if (sources.isEmpty()) return@withTransaction false
+        for (source in sources) {
+            val docId = source.docId ?: continue
+            val file = database.fileEntryDao().findActiveByUuid(docId)
+            if (source.epoch == null || file == null || file.inRecycleBin || file.hash != source.contentHash || file.updatedAt != source.epoch) {
+                return@withTransaction false
+            }
+        }
+        database.kgJitCacheDao().deleteExpired(System.currentTimeMillis())
+        database.kgJitCacheDao().insert(cache)
+        evidence.insertCacheSources(sources.mapNotNull { source ->
+            source.docId?.let { KgJitCacheSourceEntity(cache.cacheKey, it, source.contentHash) }
+        })
+        sources.forEach { input ->
+            val source = KgSource("jit", input.docId, sessionId, input.contentHash, cache.cacheKey, input.docId != null)
+            val graph = ValidatedGraph.from(result.nodes, result.edges)
+            val ids = graph.nodes.associate { it.name to putNode(it.name, it.type, it.metadata, source) }
+            graph.edges.forEach { putEdge(ids.getValue(it.source), ids.getValue(it.target), it.relation, it.weight, source) }
+        }
+        true
     }
 
-    private fun KgNodeEntity.toModel() = KgNode(
-        id = id,
-        name = name,
-        type = type,
-        metadata = metadata,
-        sourceType = sourceType,
-        createdAt = createdAt
-    )
+    suspend fun updateNode(id: String, updates: KgNodeUpdate) = database.withTransaction {
+        val current = nodes.getById(id) ?: return@withTransaction
+        val name = KgIdentity.display(updates.name ?: current.name)
+        val type = KgIdentity.normalize(updates.type ?: current.type)
+        require(name.isNotBlank() && name.length <= 512 && type.isNotBlank() && type.length <= 512)
+        val target = nodes.findIdentity(KgIdentity.normalize(name), type)
+        if (target != null && target.id != id) mergeInto(id, target)
+        else nodes.update(current.copy(name = name, type = type, normalizedName = KgIdentity.normalize(name), updatedAt = System.currentTimeMillis()))
+    }
 
-    private fun KgEdgeEntity.toModel() = KgEdge(
-        id = id,
-        sourceId = sourceId,
-        targetId = targetId,
-        relation = relation,
-        weight = weight,
-        docId = docId,
-        sourceType = sourceType,
-        createdAt = createdAt
-    )
+    suspend fun mergeNodes(sourceId: String, targetName: String) = database.withTransaction {
+        val source = nodes.getById(sourceId) ?: return@withTransaction
+        val target = nodes.findIdentity(KgIdentity.normalize(targetName), source.type)
+            ?: throw IllegalArgumentException("目标实体不存在或类型不一致")
+        if (sourceId != target.id) mergeInto(sourceId, target)
+    }
+
+    private suspend fun mergeInto(sourceId: String, target: KgNodeEntity) {
+        evidence.getForNode(sourceId).forEach { copyEvidence(it, nodeId = target.id) }
+        edges.getRawByNodeId(sourceId).forEach { edge ->
+            val source = if (edge.sourceId == sourceId) target.id else edge.sourceId
+            val destination = if (edge.targetId == sourceId) target.id else edge.targetId
+            val existing = edges.findIdentity(source, destination, edge.normalizedRelation)
+            if (existing == null || existing.id == edge.id) edges.update(edge.copy(sourceId = source, targetId = destination))
+            else {
+                evidence.getForEdges(listOf(edge.id)).forEach { copyEvidence(it, edgeId = existing.id) }
+                edges.update(existing.copy(weight = maxOf(existing.weight, edge.weight)))
+                edges.deleteById(edge.id)
+            }
+        }
+        val original = nodes.getRawById(sourceId)
+        nodes.update(target.copy(metadata = mergeMetadata(target.metadata, original?.metadata), updatedAt = System.currentTimeMillis()))
+        nodes.deleteById(sourceId)
+    }
+
+    private suspend fun copyEvidence(row: KgEvidenceEntity, nodeId: String? = null, edgeId: String? = null) {
+        addEvidence(KgSource(row.sourceType, row.docId, row.sessionId, row.contentHash, row.taskId, row.workspaceDocument), nodeId, edgeId, row.createdAt, row.weight)
+    }
+
+    suspend fun deleteNode(id: String) = database.withTransaction {
+        edges.getRawByNodeId(id).forEach { edges.deleteById(it.id) }
+        nodes.deleteById(id)
+        evidence.collectNodes()
+    }
+
+    suspend fun updateEdge(id: String, updates: KgEdgeUpdate) = database.withTransaction {
+        val current = edges.getById(id) ?: return@withTransaction
+        val relation = KgIdentity.display(updates.relation ?: current.relation)
+        val weight = updates.weight ?: current.weight
+        require(relation.isNotBlank() && relation.length <= 512 && weight.isFinite() && weight in 0.0..1.0)
+        // 手动编辑作用于这条关系当前全部来源；重新归一关系时逐条保留来源置信度。
+        if (updates.weight != null) evidence.setEdgeWeights(id, weight)
+        val target = edges.findIdentity(current.sourceId, current.targetId, KgIdentity.normalize(relation))
+        if (target != null && target.id != id) {
+            evidence.getForEdges(listOf(id)).forEach { copyEvidence(it, edgeId = target.id) }
+            edges.update(target.copy(weight = maxOf(target.weight, weight)))
+            edges.deleteById(id)
+        } else edges.update(current.copy(relation = relation, normalizedRelation = KgIdentity.normalize(relation), weight = weight))
+    }
+
+    suspend fun clearGraphForDoc(docId: String) { evidence.clearDocument(docId) }
+    suspend fun deleteEdge(id: String) = database.withTransaction { edges.deleteById(id); evidence.collectNodes(); Unit }
+    suspend fun getAllNodes(): List<KgNode> = nodes.getAll().map { it.toModel() }
+    suspend fun getEdgesForNode(nodeId: String): List<KgEdge> = database.withTransaction { modelEdges(edges.getByNodeId(nodeId)) }
+
+    suspend fun getGraphData(docIds: List<String>? = null, sessionId: String? = null): GraphData = database.withTransaction {
+        val selectedEdges = when {
+            docIds != null -> edges.getByDocIds(docIds)
+            sessionId != null -> edges.getBySessionId(sessionId)
+            else -> edges.getAll()
+        }
+        val selectedNodes = when {
+            docIds != null -> nodes.getByDocIds(docIds)
+            sessionId != null -> nodes.getBySessionId(sessionId)
+            else -> nodes.getAll()
+        }
+        GraphData(selectedNodes.map { it.toModel() }, modelEdges(selectedEdges, docIds, sessionId))
+    }
+
+    suspend fun getDocumentOptions(): List<KgDocumentOption> = edges.getActiveDocumentOptions().map { KgDocumentOption(it.docId, it.title) }
+
+    private suspend fun modelEdges(rows: List<KgEdgeEntity>, docIds: List<String>? = null, sessionId: String? = null): List<KgEdge> {
+        val sources = rows.chunked(400).flatMap { evidence.getActiveForEdges(it.map { edge -> edge.id }) }.groupBy { it.edgeId }
+        return rows.map { edge ->
+            val selected = sources[edge.id].orEmpty().filter { (docIds == null || it.docId in docIds) && (sessionId == null || it.sessionId == sessionId) }
+            KgEdge(edge.id, edge.sourceId, edge.targetId, edge.relation, selected.mapNotNull { it.weight }.maxOrNull() ?: edge.weight,
+                selected.mapNotNull { it.docId }.distinct().singleOrNull(),
+                if (selected.any { it.sourceType == "document" }) "full" else selected.firstOrNull()?.sourceType ?: "legacy", edge.createdAt,
+                selected.mapNotNull { it.docId }.distinct().sorted())
+        }
+    }
+
+    private suspend fun addEvidence(source: KgSource, nodeId: String? = null, edgeId: String? = null, createdAt: Long = System.currentTimeMillis(), weight: Double? = null) {
+        require((nodeId == null) != (edgeId == null))
+        val key = Json.encodeToString(ListSerializer(), listOf(nodeId.orEmpty(), edgeId.orEmpty(), source.type,
+            source.docId.orEmpty(), source.sessionId.orEmpty(), source.contentHash, source.taskId))
+        evidence.insert(KgEvidenceEntity(kgSha256(key), nodeId, edgeId, source.type, source.docId, source.sessionId,
+            source.contentHash, source.taskId, createdAt, source.workspaceDocument, weight))
+        if (weight != null) evidence.increaseWeight(kgSha256(key), weight)
+    }
+
+    private fun source(scope: KgScope?, docId: String?, type: String): KgSource {
+        val document = docId ?: scope?.docId
+        return KgSource(when { type == "jit" -> "jit"; document != null -> "document"; scope?.sessionId != null -> "session"; else -> "legacy" },
+            document, scope?.sessionId, scope?.contentHash.orEmpty(), scope?.taskId.orEmpty(), scope?.workspaceDocument ?: false)
+    }
+
+    private fun mergeMetadata(old: String?, added: String?): String {
+        fun parse(value: String?) = runCatching { Json.parseToJsonElement(value.orEmpty()).jsonObject }.getOrDefault(JsonObject(emptyMap()))
+        return JsonObject(parse(old) + parse(added)).toString()
+    }
+
+    private fun KgNodeEntity.toModel() = KgNode(id, name, type, metadata, "full", createdAt)
+    private fun ListSerializer() = kotlinx.serialization.builtins.ListSerializer(kotlinx.serialization.serializer<String>())
 }
 
-data class KgDocumentOption(
-    val docId: String,
-    val title: String,
-)
-
-data class KgScope(
-    val sessionId: String? = null,
-    val agentId: String? = null,
-    val messageId: String? = null
-)
-
-data class KgNodeUpdate(
-    val name: String? = null,
-    val type: String? = null
-)
-
-data class KgEdgeUpdate(
-    val relation: String? = null,
-    val weight: Double? = null
-)
-
-data class GraphData(
-    val nodes: List<KgNode>,
-    val edges: List<KgEdge>
-)
+data class KgDocumentOption(val docId: String, val title: String)
+data class KgSource(val type: String, val docId: String? = null, val sessionId: String? = null,
+    val contentHash: String = "", val taskId: String = "", val workspaceDocument: Boolean = false)
+data class KgJitSource(val docId: String?, val contentHash: String, val epoch: Long?)
+data class KgScope(val sessionId: String? = null, val agentId: String? = null, val messageId: String? = null,
+    val docId: String? = null, val contentHash: String = "", val taskId: String = "", val workspaceDocument: Boolean = false)
+data class KgNodeUpdate(val name: String? = null, val type: String? = null)
+data class KgEdgeUpdate(val relation: String? = null, val weight: Double? = null)
+data class GraphData(val nodes: List<KgNode>, val edges: List<KgEdge>)

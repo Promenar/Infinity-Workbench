@@ -37,7 +37,7 @@ internal object LegacyDatabasePromoter {
         val currentMain = databaseDirectory.resolve(CURRENT_NAME)
         if (Files.exists(currentMain) && Files.exists(legacyMain)) {
             val currentVersion = validateCurrentDatabase(currentMain)
-            if (currentVersion == 18) {
+            if (currentVersion in setOf(18, 19)) {
                 return LegacyDatabasePromotionResult.CurrentDatabaseExists
             }
             validatePublishedV17WithoutSourceWrites(legacyMain)
@@ -146,6 +146,9 @@ internal object LegacyDatabasePromoter {
                     !sqlite.hasColumn("messages", "legacy_attachments")
                 18 -> identity == CURRENT_V18_IDENTITY_HASH && commonContract &&
                     sqlite.hasColumn("messages", "legacy_attachments")
+                19 -> identity == com.promenar.nexara.data.local.db.recovery.CURRENT_V19_IDENTITY && commonContract &&
+                    sqlite.hasColumn("messages", "legacy_attachments") && sqlite.hasColumn("kg_nodes", "normalized_name") &&
+                    sqlite.hasColumn("kg_evidence", "content_hash")
                 else -> false
             }
             if (!exactContract) {

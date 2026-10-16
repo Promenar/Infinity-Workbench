@@ -68,16 +68,10 @@ class KnowledgeGraphRepositoryTest {
     }
 
     @Test
-    fun `clear deletes edges then nodes`() = runTest {
-        coEvery { kgEdgeDao.clearAll() } returns Unit
-        coEvery { kgNodeDao.clearAll() } returns Unit
-
+    fun `clear调用原子清理事务`() = runTest {
+        coEvery { kgEdgeDao.clearGraph() } returns Unit
         repo.clear()
-
-        coVerify(ordering = io.mockk.Ordering.ORDERED) {
-            kgEdgeDao.clearAll()
-            kgNodeDao.clearAll()
-        }
+        coVerify(exactly = 1) { kgEdgeDao.clearGraph() }
     }
 
     @Test

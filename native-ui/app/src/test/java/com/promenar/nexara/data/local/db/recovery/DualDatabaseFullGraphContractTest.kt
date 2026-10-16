@@ -1,5 +1,8 @@
 package com.promenar.nexara.data.local.db.recovery
 
+import com.promenar.nexara.data.local.db.seedKgNode
+import com.promenar.nexara.data.local.db.seedKgEdge
+
 import android.app.Application
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
@@ -402,39 +405,26 @@ class DualDatabaseFullGraphContractTest {
         )
         database.tagDao().insert(TagEntity(TAG_ID, "tag-$label", createdAt = now))
         database.documentTagDao().insert(DocumentTagEntity(FILE_ID, TAG_ID, now))
-        database.kgNodeDao().insert(
+        database.seedKgNode(
             KgNodeEntity(
                 id = KG_NODE_A_ID,
                 name = "node-a-$label",
-                sessionId = SESSION_ID,
-                agentId = AGENT_ID,
-                fileUuid = FILE_ID,
                 createdAt = now,
-            ),
-        )
-        database.kgNodeDao().insert(
+            ), sessionId = SESSION_ID, docId = FILE_ID, workspaceDocument = true)
+        database.seedKgNode(
             KgNodeEntity(
                 id = KG_NODE_B_ID,
                 name = "node-b-$label",
-                sessionId = SESSION_ID,
-                agentId = AGENT_ID,
-                fileUuid = FILE_ID,
                 createdAt = now,
-            ),
-        )
-        database.kgEdgeDao().insert(
+            ), sessionId = SESSION_ID, docId = FILE_ID, workspaceDocument = true)
+        database.seedKgEdge(
             KgEdgeEntity(
                 id = KG_EDGE_ID,
                 sourceId = KG_NODE_A_ID,
                 targetId = KG_NODE_B_ID,
                 relation = "references",
-                docId = FILE_ID,
-                sessionId = SESSION_ID,
-                agentId = AGENT_ID,
                 createdAt = now,
-                fileUuid = FILE_ID,
-            ),
-        )
+            ), sessionId = SESSION_ID, docId = FILE_ID, workspaceDocument = true)
         database.taskNodeDao().upsert(
             TaskNodeEntity(
                 id = TASK_NODE_ID,

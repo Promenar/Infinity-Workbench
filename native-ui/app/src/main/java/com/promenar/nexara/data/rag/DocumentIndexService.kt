@@ -98,7 +98,7 @@ class WorkspaceDocumentIndexCandidateBuilder(
                     docId = event.fileUuid,
                     content = content,
                     embedding = embedding[index].toBlob(),
-                    metadata = documentVectorMetadata(event.fileUuid, index, entry.name),
+                    metadata = documentVectorMetadata(event.fileUuid, index, entry.name, event.contentHash),
                     startMessageId = event.fileUuid,
                     endMessageId = event.fileUuid,
                     createdAt = timestamp,
@@ -116,7 +116,6 @@ class WorkspaceDocumentIndexCandidateBuilder(
                         metadata = node.metadata,
                         createdAt = timestamp,
                         updatedAt = timestamp,
-                        fileUuid = event.fileUuid,
                     )
                 }
             },
@@ -129,9 +128,7 @@ class WorkspaceDocumentIndexCandidateBuilder(
                     targetId = targetId,
                     relation = edge.relation,
                     weight = edge.weight,
-                    docId = event.fileUuid,
                     createdAt = timestamp,
-                    fileUuid = event.fileUuid,
                 )
             },
         )
@@ -199,12 +196,15 @@ class RoomDocumentIndexService(
                 }
                 artifacts.clear(event.workspaceRootUuid, event.fileUuid, deleteTags = false, clearVectors = !event.skipVectorization)
                 if (candidate.vectors.isNotEmpty()) database.vectorDao().insertAll(candidate.vectors)
-                candidate.nodes.forEach { database.kgNodeDao().insert(it) }
-                candidate.edges.forEach { database.kgEdgeDao().insert(it) }
+                GraphStore(database).commitCandidate(candidate, KgSource(
+                    type = "document", docId = event.fileUuid, contentHash = event.contentHash,
+                    taskId = activeTaskId, workspaceDocument = true,
+                ))
                 val timestamp = maxOf(now(), event.targetEpoch)
                 database.fileEntryDao().update(current.copy(
                     vectorizedAt = if (event.skipVectorization) current.vectorizedAt else timestamp,
                     kgExtractedAt = timestamp.takeIf { candidate.graphExtracted || event.kgStrategy != null },
+                    kgStrategy = if (candidate.graphExtracted) event.kgStrategy ?: current.kgStrategy ?: "full" else current.kgStrategy,
                 ))
                 DocumentIndexResult.Rebuilt(event.fileUuid, candidate.contentTruncated)
                 }
@@ -277,13 +277,8 @@ class RoomDocumentArtifacts(
     private val database: NexaraDatabase,
 ) {
     suspend fun clear(workspaceRootUuid: String, fileUuid: String, deleteTags: Boolean, clearVectors: Boolean = true) {
-        val legacyNodeIds = database.kgEdgeDao().getByDocIdForLifecycleCleanup(fileUuid)
-            .flatMap { listOf(it.sourceId, it.targetId) }
-            .distinct()
         if (clearVectors) database.vectorDao().deleteByDocId(fileUuid)
-        database.kgEdgeDao().deleteByDocId(fileUuid)
-        database.kgNodeDao().deleteByFileUuid(fileUuid)
-        if (legacyNodeIds.isNotEmpty()) database.kgNodeDao().deleteOrphansByIds(legacyNodeIds)
+        database.kgEvidenceDao().clearDocument(fileUuid)
         if (deleteTags) database.documentTagDao().deleteByDocId(fileUuid)
     }
 }

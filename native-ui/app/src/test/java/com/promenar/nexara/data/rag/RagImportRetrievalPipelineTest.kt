@@ -136,9 +136,10 @@ class RagImportRetrievalPipelineTest {
                 database.vectorDao(),
                 database.kgNodeDao(),
                 database.kgEdgeDao(),
+                database.kgEvidenceDao(),
             ),
             keywordSearcher = KeywordSearcher(database.vectorDao()),
-            graphStore = GraphStore(database.kgNodeDao(), database.kgEdgeDao()),
+            graphStore = GraphStore(database),
             embeddingClient = embedding,
             ragConfig = config,
         )
