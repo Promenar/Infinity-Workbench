@@ -131,3 +131,55 @@
 -dontwarn org.osgi.framework.FrameworkUtil
 -dontwarn org.osgi.framework.ServiceReference
 -dontwarn org.slf4j.impl.StaticLoggerBinder
+
+# JSch 2.28.8 固定算法表的反射保留规则。
+# 只涵盖 Ed25519 生成与 OpenSSH v1 导入，不宣称支持 PEM、PKCS8、PuTTY。
+# 使用前须固定 server_host_key、PubkeyAcceptedAlgorithms、CheckSignatures 为裸 Ed25519/ECDSA/RSA-SHA2。
+# 同时固定网络 KEX/cipher/MAC/auth/compression，禁用证书、GSS、压缩、agent。
+# 私钥导入须显式验证 cipher 为下列 AES-CTR/GCM，kdf 为 bcrypt 或明文 none。
+# 类名与构造通过 JSch 配置字符串反射解析；不对全包保留，不抑制 missing-class 警告。
+
+# KEX：curve25519-sha256、ecdh-sha2-nistp256、diffie-hellman-group14-sha256。
+-keep class com.jcraft.jsch.DH25519 { *; }
+-keep class com.jcraft.jsch.DHEC256 { *; }
+-keep class com.jcraft.jsch.DHG14256 { *; }
+-keep class com.jcraft.jsch.bc.XDH { *; }
+-keep class com.jcraft.jsch.jce.ECDHN { *; }
+-keep class com.jcraft.jsch.jce.DH { *; }
+
+# 主机和用户签名，RSA 只使用 SHA2，ECDSA 的摘要由标准 JCA 内部选择。
+-keep class com.jcraft.jsch.bc.SignatureEd25519 { *; }
+-keep class com.jcraft.jsch.jce.SignatureECDSA256 { *; }
+-keep class com.jcraft.jsch.jce.SignatureECDSA384 { *; }
+-keep class com.jcraft.jsch.jce.SignatureECDSA521 { *; }
+-keep class com.jcraft.jsch.jce.SignatureRSASHA256 { *; }
+-keep class com.jcraft.jsch.jce.SignatureRSASHA512 { *; }
+
+# 密钥生成、指纹、KEX 摘要及加盐随机源。
+-keep class com.jcraft.jsch.bc.KeyPairGenEdDSA { *; }
+-keep class com.jcraft.jsch.jce.SHA256 { *; }
+-keep class com.jcraft.jsch.jce.Random { *; }
+
+# 网络及 OpenSSH v1 私钥的 AES-CTR/GCM；AES192CTR 仅用于私钥导入。
+-keep class com.jcraft.jsch.jce.AES128CTR { *; }
+-keep class com.jcraft.jsch.jce.AES192CTR { *; }
+-keep class com.jcraft.jsch.jce.AES256CTR { *; }
+-keep class com.jcraft.jsch.jce.AES128GCM { *; }
+-keep class com.jcraft.jsch.jce.AES256GCM { *; }
+
+# 网络 MAC。
+-keep class com.jcraft.jsch.jce.HMACSHA256 { *; }
+-keep class com.jcraft.jsch.jce.HMACSHA512 { *; }
+-keep class com.jcraft.jsch.jce.HMACSHA256ETM { *; }
+-keep class com.jcraft.jsch.jce.HMACSHA512ETM { *; }
+
+# OpenSSH v1 加密私钥的 bcrypt KDF；它不是 PKCS8 的 PBKDF2。
+-keep class com.jcraft.jsch.jbcrypt.JBCrypt { *; }
+
+# JSch 总会先反射创建 UserAuthNone，随后才进入固定的 publickey/password。
+-keep class com.jcraft.jsch.UserAuthNone { *; }
+-keep class com.jcraft.jsch.UserAuthPublicKey { *; }
+-keep class com.jcraft.jsch.UserAuthPassword { *; }
+
+
+-keep class com.jcraft.jsch.bc.ChaCha20Poly1305 { *; }

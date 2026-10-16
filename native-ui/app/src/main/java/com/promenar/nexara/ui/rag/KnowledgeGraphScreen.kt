@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -38,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,14 +64,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.promenar.nexara.R
 import com.promenar.nexara.data.rag.KgDocumentOption
+import com.promenar.nexara.data.rag.MAX_GRAPH_NODE_LIMIT
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.rag.canvas.GraphPhysicsSimulator
 import com.promenar.nexara.ui.rag.canvas.InteractiveGraphCanvas
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.NexaraSpacing
+import com.promenar.nexara.ui.theme.forInput
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,8 +94,15 @@ fun KnowledgeGraphScreen(
     val documentOptionsError by viewModel.documentOptionsError.collectAsState()
     val loadError by viewModel.loadError.collectAsState()
     val graphState by viewModel.graphState.collectAsState()
+    val totalNodeCount by viewModel.totalNodeCount.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
+    val searchFailed by viewModel.searchFailed.collectAsState()
     var showDocumentSelector by remember { mutableStateOf(false) }
     var showAccessibilityList by remember { mutableStateOf(false) }
+    var resetKey by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     // 维持 Native 图谱物理仿真器的协程生命周期
     val scope = rememberCoroutineScope()
@@ -98,9 +113,16 @@ fun KnowledgeGraphScreen(
         simulator.setData(nodes, edges)
     }
 
-    // 页面销毁时自动注销并清空协程循环以防内存泄漏
-    DisposableEffect(simulator) {
+    // 导航离开或应用退到后台时立即暂停布局与动画。
+    DisposableEffect(simulator, lifecycleOwner) {
+        val lifecycle = lifecycleOwner.lifecycle
+        val observer = LifecycleEventObserver { _, _ ->
+            simulator.setPageVisible(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+        }
+        lifecycle.addObserver(observer)
+        simulator.setPageVisible(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
         onDispose {
+            lifecycle.removeObserver(observer)
             simulator.clear()
         }
     }
@@ -118,7 +140,7 @@ fun KnowledgeGraphScreen(
         ) {
             NexaraMetaLine(
                 segments = listOf(
-                    stringResource(R.string.kg_stats_nodes, nodes.size),
+                    stringResource(R.string.kg_graph_displayed_count, nodes.size, totalNodeCount),
                     stringResource(R.string.kg_stats_edges, edges.size),
                 ),
                 style = MaterialTheme.typography.bodySmall,
@@ -174,6 +196,38 @@ fun KnowledgeGraphScreen(
                     }
                 }
             }
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = viewModel::searchEntities,
+                textStyle = MaterialTheme.typography.bodyLarge.forInput(),
+                label = { Text(stringResource(R.string.kg_graph_search_entities)) },
+                singleLine = true,
+                enabled = !documentSelectionRequired,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            )
+            if (searchQuery.isNotBlank()) {
+                when {
+                    isSearching -> Text(stringResource(R.string.kg_graph_searching), style = MaterialTheme.typography.bodySmall)
+                    searchFailed -> Text(stringResource(R.string.kg_graph_search_failed), color = MaterialTheme.colorScheme.error)
+                    searchResults.isEmpty() -> Text(stringResource(R.string.kg_graph_search_empty), style = MaterialTheme.typography.bodySmall)
+                    else -> LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp)) {
+                        items(searchResults, key = { it.id }) { entity ->
+                            ListItem(
+                                headlineContent = { Text(entity.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                supportingContent = { Text(entity.type) },
+                                trailingContent = {
+                                    TextButton(onClick = { viewModel.expandNode(entity.id) }, enabled = !isLoading && nodes.size < MAX_GRAPH_NODE_LIMIT) {
+                                        Text(stringResource(R.string.kg_graph_expand_neighbors))
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            if (nodes.size >= MAX_GRAPH_NODE_LIMIT) {
+                Text(stringResource(R.string.kg_graph_display_limit), style = MaterialTheme.typography.bodySmall)
+            }
             loadError?.let {
                 Row(
                     modifier = Modifier
@@ -199,26 +253,31 @@ fun KnowledgeGraphScreen(
                 }
             }
             if (nodes.isNotEmpty()) {
-                FilledTonalButton(
-                    onClick = { showAccessibilityList = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                        .height(36.dp)
-                        .testTag(UiTags.KG_LIST_ENTRY),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.List,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        stringResource(R.string.kg_open_accessibility_list),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(
+                        onClick = { showAccessibilityList = true },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(bottom = 8.dp)
+                            .heightIn(min = 48.dp)
+                            .testTag(UiTags.KG_LIST_ENTRY),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.List,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            stringResource(R.string.kg_open_accessibility_list),
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                    TextButton(onClick = { resetKey++ }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(stringResource(R.string.kg_graph_reset_view))
+                    }
                 }
             }
             Box(
@@ -242,6 +301,7 @@ fun KnowledgeGraphScreen(
                             stringResource(R.string.kg_canvas_gestures),
                         ),
                         modifier = Modifier.fillMaxSize(),
+                        resetKey = resetKey,
                     )
                 } else if (isLoading) {
                     androidx.compose.material3.CircularProgressIndicator(
@@ -297,6 +357,9 @@ fun KnowledgeGraphScreen(
             nodes = nodes,
             edges = edges,
             onDismiss = { showAccessibilityList = false },
+            totalNodeCount = totalNodeCount,
+            canExpand = !isLoading && nodes.size < MAX_GRAPH_NODE_LIMIT,
+            onExpandNode = viewModel::expandNode,
         )
     }
 }

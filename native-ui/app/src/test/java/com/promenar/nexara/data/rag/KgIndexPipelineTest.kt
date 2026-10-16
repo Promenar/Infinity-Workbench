@@ -21,6 +21,7 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import io.mockk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
+import kotlinx.coroutines.flow.first
 import org.apache.poi.xwpf.usermodel.XWPFDocument
 import org.junit.After
 import org.junit.Before
@@ -103,11 +104,109 @@ class KgIndexPipelineTest {
         val (queue, _) = pipeline(GraphExtractorKnowledgeGraphCandidateBuilder(graph))
         enqueue(queue, file, skipVectorization = false)
         advanceUntilIdle()
+        queue.awaitSettled()
 
         assertThat(database.vectorizationTaskDao().getByDocId(file.uuid)).isEmpty()
         assertThat(database.vectorDao().getByDocId(file.uuid).single().content).isEqualTo("no relations")
         assertThat(database.kgEdgeDao().getByDocId(file.uuid)).isEmpty()
         assertThat(resolveKgStatus(database.fileEntryDao().getByUuid("root", file.uuid)!!, emptyMap())).isEqualTo(KgStatus.COMPLETED)
+        queue.shutdown()
+    }
+
+    @Test
+    fun `自动大文档先完成向量索引且不绕过KG确认或清空旧图`() = runTest {
+        val file = register("auto-large.txt", "text/plain", "a".repeat(14_000).toByteArray())
+        seedOld(file)
+        var graphCalls = 0
+        val (queue, _) = pipeline { _, _, _ ->
+            graphCalls++
+            ExtractionResult(emptyList(), emptyList())
+        }
+        enqueue(queue, file, skipVectorization = false)
+        advanceUntilIdle()
+        queue.awaitSettled()
+
+        assertThat(graphCalls).isEqualTo(0)
+        assertThat(database.vectorDao().getByDocId(file.uuid)).isNotEmpty()
+        assertThat(database.kgEdgeDao().getByDocId(file.uuid).single().id).isEqualTo("edge-${file.uuid}")
+        val task = database.vectorizationTaskDao().getByDocId(file.uuid).single()
+        assertThat(task.status).isEqualTo("partial")
+        assertThat(task.lastChunkIndex).isEqualTo(0)
+        assertThat(task.totalChunks).isEqualTo(20)
+        assertThat(task.subStatus).contains("已处理 0 / 20 分块")
+        assertThat(database.fileEntryDao().getByUuid("root", file.uuid)!!.kgExtractedAt).isEqualTo(1)
+        queue.shutdown()
+    }
+
+    @Test
+    fun `预算部分候选提交有效图并持久保留进度且文档新版本不冒充部分完成`() = runTest {
+        val file = register("partial.txt", "text/plain", "Alpha knows Beta".toByteArray())
+        seedOld(file)
+        val (queue, _) = pipeline { _, _, _ ->
+            ExtractionResult(
+                listOf(ExtractedNode("Alpha", "person"), ExtractedNode("Beta", "person")),
+                listOf(ExtractedEdge("Alpha", "Beta", "knows")),
+                status = KgExtractionStatus.PARTIAL,
+                progress = KgExtractionProgress(2, 5, KgExtractionStopReason.CALLS, calls = 2),
+            )
+        }
+        enqueue(queue, file)
+        advanceUntilIdle()
+        queue.awaitSettled()
+
+        val task = database.vectorizationTaskDao().getByDocId(file.uuid).single()
+        assertThat(task.status).isEqualTo("partial")
+        assertThat(task.lastChunkIndex).isEqualTo(2)
+        assertThat(task.totalChunks).isEqualTo(5)
+        assertThat(task.progress).isEqualTo(40.0)
+        assertThat(database.kgEdgeDao().getByDocId(file.uuid)).hasSize(1)
+        assertThat(database.vectorDao().getByDocId(file.uuid).single().id).isEqualTo("old-${file.uuid}")
+        val persisted = database.fileEntryDao().getByUuid("root", file.uuid)!!
+        assertThat(persisted.kgExtractedAt).isNull()
+        assertThat(resolveKgStatus(persisted, emptyMap())).isEqualTo(KgStatus.PARTIAL)
+        assertThat(resolveKgStatus(persisted.copy(updatedAt = persisted.updatedAt + 1), emptyMap())).isEqualTo(KgStatus.NOT_STARTED)
+        queue.shutdown()
+    }
+
+    @Test
+    fun `完整候选事务回滚后重试复用分块且不重复消费文档预算`() = runTest {
+        val file = register("rollback-budget.txt", "text/plain", "a".repeat(25).toByteArray())
+        seedOld(file)
+        val protocol = mockk<LlmProtocol>()
+        var requests = 0
+        coEvery { protocol.sendPromptSync(any()) } answers {
+            requests++
+            PromptResponse("""{"nodes":[{"name":"Alpha","type":"person"},{"name":"Beta","type":"person"}],"edges":[{"source":"Alpha","target":"Beta","relation":"knows"}]}""",
+                usage = com.promenar.nexara.data.remote.protocol.ProtocolUsage(5, 2))
+        }
+        val extractor = GraphExtractor(testKgClient(protocol), GraphStore(database), "owner::model",
+            chunkSize = 10, chunkOverlap = 0, checkpointRoot = File(root, "rollback-checkpoints"),
+            dispatcher = StandardTestDispatcher(testScheduler), budget = KgExtractionBudget(maxCalls = 3),
+            nowMs = { testScheduler.currentTime })
+        val builder = WorkspaceDocumentIndexCandidateBuilder(database.fileEntryDao(), embedding, RagConfiguration(),
+            dispatcher = StandardTestDispatcher(testScheduler), graphCandidateBuilder = GraphExtractorKnowledgeGraphCandidateBuilder(extractor))
+        var failCommit = true
+        val service = RoomDocumentIndexService(database) { event ->
+            builder.build(event).let { candidate ->
+                if (failCommit) candidate.copy(edges = listOf(KgEdgeEntity("bad", "missing", "missing2", "knows", createdAt = 1)))
+                else candidate
+            }
+        }
+        val queue = queue(service)
+        enqueue(queue, file)
+        advanceUntilIdle()
+        queue.awaitSettled()
+        assertThat(database.vectorizationTaskDao().getByDocId(file.uuid).single().status).isEqualTo("failed")
+        assertThat(requests).isEqualTo(3)
+
+        failCommit = false
+        assertThat(queue.retryDocumentReference("root", file.uuid)).isTrue()
+        advanceUntilIdle()
+        queue.awaitSettled()
+
+        assertThat(requests).isEqualTo(3)
+        assertThat(database.kgEdgeDao().getByDocId(file.uuid)).hasSize(1)
+        assertThat(database.vectorizationTaskDao().getByDocId(file.uuid)).isEmpty()
         queue.shutdown()
     }
 
@@ -138,8 +237,9 @@ class KgIndexPipelineTest {
             register("read.docx", DocumentReferenceExtractor.DOCX_MIME, docx.readBytes()),
             register("large.txt", "text/plain", ("a".repeat(300 * 1024) + "END").toByteArray()),
         )
-        for (file in files) { seedOld(file); enqueue(queue, file) }
+        for (file in files) { seedOld(file); enqueue(queue, file, confirmed = true) }
         advanceUntilIdle()
+        queue.awaitSettled()
 
         assertThat(received["read.pdf"]).contains("PDF Alpha knows Beta")
         assertThat(received["read.docx"]).contains("DOCX Alpha knows Beta")
@@ -178,6 +278,7 @@ class KgIndexPipelineTest {
         assertThat(deletion.isCompleted).isFalse()
         release.complete(Unit)
         advanceUntilIdle()
+        queue.awaitSettled()
         deletion.await()
 
         assertThat(database.kgEvidenceDao().affectedByDocument(file.uuid)).isEmpty()
@@ -207,6 +308,7 @@ class KgIndexPipelineTest {
         val newId = enqueue(queue, file)
         assertThat(newId).isNotEqualTo(oldId)
         advanceUntilIdle()
+        queue.awaitSettled()
         assertThat(graphCalls).isEqualTo(1)
         assertThat(database.vectorDao().getByDocId(file.uuid)).hasSize(1)
         assertThat(database.kgEdgeDao().getByDocId(file.uuid)).hasSize(1)
@@ -232,6 +334,7 @@ class KgIndexPipelineTest {
         val newId = enqueue(queue, file)
         assertThat(newId).isNotEqualTo(oldId)
         advanceUntilIdle()
+        queue.awaitSettled()
         assertThat(calls).isEqualTo(2)
         assertThat(database.vectorizationTaskDao().getByDocId(file.uuid)).isEmpty()
         assertThat(database.fileEntryDao().getByUuid("root", file.uuid)!!.kgExtractedAt).isNotNull()
@@ -250,6 +353,7 @@ class KgIndexPipelineTest {
         val queue = queue(service)
         enqueue(queue, file)
         advanceUntilIdle()
+        queue.awaitSettled()
 
         assertThat(database.vectorizationTaskDao().getByDocId(file.uuid).single().status).isEqualTo("failed")
         assertThat(database.kgEdgeDao().getByDocId(file.uuid).single().id).isEqualTo("edge-${file.uuid}")
@@ -278,6 +382,7 @@ class KgIndexPipelineTest {
         }
         queue.resumeInterruptedTasks().getOrThrow()
         advanceUntilIdle()
+        queue.awaitSettled()
         assertThat(calls).isEqualTo(1)
         assertThat(database.kgEdgeDao().getByDocId(file.uuid)).hasSize(1)
         assertThat(database.fileEntryDao().getByUuid("root", file.uuid)!!.kgStrategy).isEqualTo("full")
@@ -298,8 +403,16 @@ class KgIndexPipelineTest {
         fileEntryDao = database.fileEntryDao(), documentIndexService = service,
     )
 
-    private suspend fun enqueue(queue: VectorizationQueue, file: FileEntry, skipVectorization: Boolean = true) =
-        queue.enqueueDocumentReference("root", file.uuid, file.name, file.mimeType!!, file.hash, file.updatedAt, "full", skipVectorization)
+    /** 排空虚拟调度器后还须等待真实 IO 清理与队列收尾。 */
+    private suspend fun VectorizationQueue.awaitSettled() {
+        state.first { snapshot ->
+            !snapshot.isProcessing && snapshot.queue.all { it.status in setOf("completed", "partial", "failed", "interrupted") }
+        }
+    }
+
+    private suspend fun enqueue(queue: VectorizationQueue, file: FileEntry, skipVectorization: Boolean = true, confirmed: Boolean = false) =
+        queue.enqueueDocumentReference("root", file.uuid, file.name, file.mimeType!!, file.hash, file.updatedAt,
+            if (confirmed) KgExtractionBudget.CONFIRMED_STRATEGY else "full", skipVectorization)
 
     private suspend fun register(name: String, mime: String, bytes: ByteArray): FileEntry {
         File(root, name).writeBytes(bytes)

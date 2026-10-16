@@ -112,7 +112,8 @@ private data class AgentSkillEditorState(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SkillsScreen(
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onOpenSsh: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(context.applicationContext as android.app.Application))
@@ -186,6 +187,13 @@ fun SkillsScreen(
                 onChange = viewModel::updateLoopLimit,
             )
             AgentRuntimeSettingsCard(viewModel)
+
+            androidx.compose.material3.TextButton(
+                onClick = onOpenSsh,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Text(stringResource(R.string.ssh_settings_entry), modifier = Modifier.fillMaxWidth())
+            }
 
             Spacer(modifier = Modifier.height(20.dp))
 

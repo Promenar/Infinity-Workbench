@@ -44,6 +44,7 @@ internal class DefaultChatGenerationRunnerFactory(
     private val outputStore: com.promenar.nexara.data.repository.ToolOutputStore? = null,
     private val interactionStore: GenerationInteractionStore? = null,
     private val externalFolders: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess? = null,
+    private val sshRuntime: com.promenar.nexara.data.ssh.SshRuntime? = null,
 ) : GenerationRunnerFactory {
     override fun create(request: GenerationRequest, taskId: String): GenerationRunner {
         val contentStrategy = DefaultChatGenerationContentStrategy(settings, skillRegistry, toolResolver)
@@ -72,6 +73,7 @@ internal class DefaultChatGenerationRunnerFactory(
             outputStore = outputStore,
             interactionStore = interactionStore,
             externalFolders = externalFolders,
+            sshRuntime = sshRuntime,
         )
         return ChatGenerationRunner(runtime)
     }

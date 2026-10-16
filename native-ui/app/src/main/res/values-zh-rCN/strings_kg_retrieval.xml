@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="kg_retrieval_section">知识图谱检索</string>
+    <string name="kg_jit_fallback_title">持久图优先，必要时 JIT</string>
+    <string name="kg_jit_fallback_desc">仅在持久图覆盖不足时，对可见命中片段即时抽取</string>
+    <string name="kg_retrieval_hops">关系扩展跳数</string>
+    <string name="kg_seed_limit">种子实体上限</string>
+    <string name="kg_node_limit">检索实体上限</string>
+    <string name="kg_path_limit">检索路径上限</string>
+    <string name="kg_context_budget">图谱上下文 token 上限（保守估算）</string>
+    <string name="kg_jit_seed_threshold">触发 JIT 的种子阈值</string>
+    <string name="kg_extraction_budget_section">文档抽取预算</string>
+    <string name="kg_budget_calls">每个文档版本调用上限</string>
+    <string name="kg_budget_output">文档输出 token 上限</string>
+    <string name="kg_budget_request_output">单次请求输出 token 上限</string>
+    <string name="kg_budget_duration">抽取总时长上限（秒）</string>
+    <string name="kg_budget_confirm_threshold">预计调用超过此数需确认</string>
+    <string name="kg_budget_partial_hint">达到预算后保留已处理分块并标记部分完成；用量估算会单独标记。</string>
+    <string name="kg_source_persistent">持久图</string>
+    <string name="kg_source_jit">即时抽取</string>
+    <string name="kg_hit_summary">%1$d 个实体 · %2$d 条路径</string>
+    <string name="kg_trimmed_summary">已按预算裁剪 %1$d 条低分路径</string>
+</resources>

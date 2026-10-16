@@ -30,9 +30,28 @@ class AndroidDualDatabaseSourceContractTest {
     }
 
     @Test
+    fun `精确v21身份不进入旧双库合并`() {
+        assertThat(requiresDualDatabaseRecovery(source(21, CURRENT_V21_IDENTITY))).isFalse()
+    }
+
+    @Test
+    fun `v18到v21拒绝任意交叉版本身份和未知身份`() {
+        val identities = mapOf(18 to CURRENT_V18_IDENTITY, 19 to CURRENT_V19_IDENTITY,
+            20 to CURRENT_V20_IDENTITY, 21 to CURRENT_V21_IDENTITY)
+        identities.forEach { (version, identity) ->
+            assertThat(requiresDualDatabaseRecovery(source(version, identity))).isFalse()
+            identities.filterKeys { it != version }.values.forEach { other ->
+                assertThat(requiresDualDatabaseRecovery(source(version, other))).isTrue()
+            }
+            assertThat(requiresDualDatabaseRecovery(source(version, "unknown"))).isTrue()
+        }
+    }
+
+    @Test
     fun `public v2 and internal v5 still require explicit merge`() {
         assertThat(requiresDualDatabaseRecovery(source(2, PUBLIC_V2_IDENTITY))).isTrue()
         assertThat(requiresDualDatabaseRecovery(source(5, INTERNAL_V5_IDENTITY))).isTrue()
+        assertThat(requiresDualDatabaseRecovery(source(20, "unknown"))).isTrue()
     }
 
     private fun source(version: Int, identity: String): RecoveryDatabaseSource {

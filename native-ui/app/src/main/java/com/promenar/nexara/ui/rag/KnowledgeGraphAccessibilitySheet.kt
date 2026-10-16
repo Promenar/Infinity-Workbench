@@ -11,7 +11,9 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -27,8 +29,11 @@ internal fun KnowledgeGraphAccessibilitySheet(
     nodes: List<GraphNode>,
     edges: List<GraphEdge>,
     onDismiss: () -> Unit,
+    totalNodeCount: Int = nodes.size,
+    canExpand: Boolean = true,
+    onExpandNode: ((String) -> Unit)? = null,
 ) {
-    val nodesById = nodes.associateBy { it.id }
+    val nodesById = remember(nodes) { nodes.associateBy { it.id } }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag(UiTags.KG_ACCESSIBILITY_LIST),
@@ -44,6 +49,9 @@ internal fun KnowledgeGraphAccessibilitySheet(
                 ),
         )
         LazyColumn(modifier = Modifier.fillMaxWidth()) {
+            item {
+                Text(stringResource(R.string.kg_graph_displayed_count, nodes.size, totalNodeCount), modifier = Modifier.padding(horizontal = NexaraSpacing.ScreenHorizontal))
+            }
             item {
                 Text(
                     text = stringResource(R.string.kg_nodes_section),
@@ -62,6 +70,16 @@ internal fun KnowledgeGraphAccessibilitySheet(
                         .semantics { contentDescription = "${node.label}, ${node.type}" },
                     headlineContent = { Text(node.label) },
                     supportingContent = { Text(node.type) },
+                    trailingContent = if (onExpandNode == null) null else {
+                        {
+                            val description = stringResource(R.string.kg_graph_expand_entity, node.label)
+                            TextButton(
+                                onClick = { onExpandNode(node.id) },
+                                enabled = canExpand,
+                                modifier = Modifier.semantics { contentDescription = description },
+                            ) { Text(stringResource(R.string.kg_graph_expand_neighbors)) }
+                        }
+                    },
                 )
             }
             item {

@@ -1,0 +1,7 @@
+<resources>
+    <string name="ssh_settings_entry">SSH hosts and terminal</string>
+    <string name="ssh_connections_title">SSH connections</string>
+    <string name="ssh_connections_body">A terminal or local forward is active. Tap Stop to disconnect.</string>
+    <string name="ssh_connections_stop">Stop</string>
+    <string name="ssh_cleanup_warning">An interrupted upload left a temporary file that could not be removed. Reconnect with the same host settings to retry cleanup, or inspect the target directory on the server.</string>
+</resources>

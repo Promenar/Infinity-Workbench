@@ -140,6 +140,7 @@ internal class DefaultChatGenerationRuntime(
     private val outputStore: com.promenar.nexara.data.repository.ToolOutputStore? = null,
     private val interactionStore: GenerationInteractionStore? = null,
     private val externalFolders: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess? = null,
+    private val sshRuntime: com.promenar.nexara.data.ssh.SshRuntime? = null,
 ) : ChatGenerationRuntime {
     private val inFlightCompressor = InFlightToolContextCompressor()
     private var activeToolBudget: GenerationToolBudget? = null
@@ -159,6 +160,7 @@ internal class DefaultChatGenerationRuntime(
     private var cachedRetrieval: com.promenar.nexara.ui.chat.manager.ContextRetrieval? = null
 
     override suspend fun prepare(request: GenerationRequest) {
+        sshRuntime?.resumeOwner("agent:${request.sessionId}")
         val session = requireNotNull(store.getSession(request.sessionId)) { "生成会话不存在" }
         currentAssistantMessageId = request.assistantMessageId
         rollbackBaselineMessageIds = session.messages.mapTo(mutableSetOf()) { it.id }.apply {
@@ -515,7 +517,7 @@ internal class DefaultChatGenerationRuntime(
         val preparedByName = preparedTools.groupBy { it.function.name }
         val targets = calls.associate { call ->
             val tool = preparedByName[call.name]?.singleOrNull()
-            call.id to tool?.let { resolveSessionToolTarget(session, it, call.arguments, workspaceRepository, externalFolders) }
+            call.id to tool?.let { resolveSessionToolTarget(session, it, call.arguments, workspaceRepository, externalFolders, sshRuntime?.let { runtime -> runtime::sessionHost }) }
         }
         val requestedPendingIds = policyPendingIds.filterTo(mutableSetOf()) { id ->
             val call = calls.first { it.id == id }
@@ -757,6 +759,11 @@ internal class DefaultChatGenerationRuntime(
 
     override suspend fun flush(request: GenerationRequest) =
         messageManager.flushGenerationTerminal(request.sessionId, assistantMessageId(request))
+
+    override suspend fun releaseToolResources(request: GenerationRequest, awaitingApproval: Boolean) {
+        val owner = "agent:${request.sessionId}"
+        if (awaitingApproval) sshRuntime?.pauseOwner(owner) else sshRuntime?.closeOwner(owner)
+    }
 
     override fun cancelProvider() = provider.cancel()
 

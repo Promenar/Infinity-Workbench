@@ -29,6 +29,7 @@ class KgCorrectnessRegressionTest {
         cache = Files.createTempDirectory("kg-correctness").toFile()
         val app = mockk<NexaraApplication>()
         every { app.cacheDir } returns cache
+        every { app.filesDir } returns File(cache, "durable").apply { mkdirs() }
         NexaraApplication::class.java.getDeclaredField("instance").apply {
             isAccessible = true
             set(null, app)

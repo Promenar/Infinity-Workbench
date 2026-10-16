@@ -59,6 +59,7 @@ import com.promenar.nexara.ui.chat.components.RagDetailsSheet
 import com.promenar.nexara.ui.common.NexaraMetaLine
 import com.promenar.nexara.ui.chat.components.RagOutcomeTone
 import com.promenar.nexara.ui.chat.components.ragCardSummary
+import com.promenar.nexara.ui.chat.components.kgSummarySegments
 import com.promenar.nexara.ui.chat.components.ragOutcomeTone
 import com.promenar.nexara.ui.common.MarkdownText
 import com.promenar.nexara.ui.testing.UiTags
@@ -336,6 +337,7 @@ fun RagProgressCard(
             else -> add(stringResource(R.string.chat_rag_preparing))
         }
         if (ready && !citations.isNullOrEmpty()) add(stringResource(R.string.chat_rag_summary_web, citations.size))
+        if (ready) addAll(kgSummarySegments(kgPaths.orEmpty()))
         if (!ready) add("${(progress * 100).toInt()}%")
     }
     val tone = trace?.let(::ragOutcomeTone) ?: RagOutcomeTone.HIT

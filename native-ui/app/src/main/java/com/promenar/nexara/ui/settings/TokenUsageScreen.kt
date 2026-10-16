@@ -128,6 +128,31 @@ fun TokenUsageScreen(
         } else {
             GlobalStatsCard(state)
 
+            if (state.categoryBreakdown.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(20.dp))
+                SettingsSectionHeader(stringResource(R.string.token_usage_categories))
+                Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
+                    state.categoryBreakdown.forEach { category ->
+                        ListItem(
+                            headlineContent = {
+                                Text(stringResource(if (category.category == "kg") R.string.token_usage_kg else R.string.token_usage_chat))
+                            },
+                            supportingContent = {
+                                Column {
+                                    Text(stringResource(R.string.token_category_counts,
+                                        formatTokenCount(category.usage.inputTokens), formatTokenCount(category.usage.outputTokens)))
+                                    if (category.usage.estimated) Text(stringResource(R.string.kg_usage_estimated))
+                                }
+                            },
+                            trailingContent = {
+                                if (category.category == "kg") Text(stringResource(R.string.kg_usage_calls, category.calls))
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(20.dp))
 
             if (state.topSessions.isNotEmpty()) {
@@ -153,7 +178,9 @@ fun TokenUsageScreen(
                 state.modelBreakdown.forEach { model ->
                     NexaraCollapsibleSection(
                         title = buildString {
-                            append(model.name)
+                            append(if (model.modelId == com.promenar.nexara.data.rag.KgUsageStore.OTHER_MODEL_ID) {
+                                stringResource(R.string.kg_usage_other_models)
+                            } else model.name)
                             append(" \u2014 ")
                             append(formatTokenCount(model.inputTokens + model.outputTokens))
                             append(" ")
@@ -496,7 +523,9 @@ private fun ModelBreakdownRow(model: ModelCostInfo) {
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         headlineContent = {
             Text(
-                text = model.name,
+                text = if (model.modelId == com.promenar.nexara.data.rag.KgUsageStore.OTHER_MODEL_ID) {
+                    stringResource(R.string.kg_usage_other_models)
+                } else model.name,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )

@@ -26,6 +26,22 @@ object ToolExecutionTargets {
             val remoteName = tool.runtimeToolId.removePrefix(prefix).takeIf(String::isNotBlank) ?: return null
             return tuple("mcp", serverId, remoteName)
         }
+        if (tool.function.name == "ssh_session_send") {
+            val id = args.string("session_id") ?: return null
+            val host = resolvedPaths["ssh_session:$id"]?.takeIf { SSH_ALIAS.matches(it) } ?: return null
+            val input = args.string("input") ?: return null
+            return tuple("process", host, input)
+        }
+        if (tool.function.name == "ssh_session_open") {
+            val host = args.string("host")?.takeIf { SSH_ALIAS.matches(it) } ?: return null
+            return tuple("process", host, "[PTY]")
+        }
+        if (tool.function.name in setOf("sftp_list", "sftp_read", "sftp_write")) {
+            val host = args.string("host")?.takeIf { SSH_ALIAS.matches(it) } ?: return null
+            val path = args.string("path")?.takeIf { it.isNotBlank() && it.length <= 4096 && it.none(Character::isISOControl) } ?: return null
+            // 远端相对路径和符号链接的语义由服务器决定，授权键保留原始路径。
+            return tuple("remote_path", host, path)
+        }
         if (tool.risk == ToolRisk.PROCESS) {
             val host = args.string("host")?.trim()?.takeIf(String::isNotBlank) ?: return null
             val command = args.string("command")?.takeIf(String::isNotBlank) ?: return null
@@ -70,7 +86,7 @@ object ToolExecutionTargets {
             "path", "host", "tool" -> parts.getOrNull(1)?.takeIf { parts.size == 2 }
             "move" -> parts.takeIf { it.size == 3 }?.let { "${it[1]} → ${it[2]}" }
             "mcp" -> parts.takeIf { it.size == 3 }?.let { "${it[1]} / ${it[2]}" }
-            "process" -> parts.takeIf { it.size == 3 }?.let { "${it[1]} · ${it[2]}" }
+            "process", "remote_path" -> parts.takeIf { it.size == 3 }?.let { "${it[1]} · ${it[2]}" }
             else -> null
         } ?: target
         val safe = buildString {
@@ -159,4 +175,5 @@ object ToolExecutionTargets {
         (get(key) as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content
 
     private fun tuple(vararg parts: String): String = JsonArray(parts.map(::JsonPrimitive)).toString()
+    private val SSH_ALIAS = Regex("[a-z][a-z0-9_-]{0,47}")
 }

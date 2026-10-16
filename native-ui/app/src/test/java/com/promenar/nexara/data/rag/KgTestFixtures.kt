@@ -8,7 +8,10 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 
 internal fun TestScope.testKgClient(protocol: LlmProtocol): KgRequestClient {
-    val router = object : ProviderRequestRouter {
+    return KgRequestClient(testKgRouter(), { protocol }, StandardTestDispatcher(testScheduler))
+}
+
+internal fun testKgRouter(): ProviderRequestRouter = object : ProviderRequestRouter {
         override fun resolve(modelId: String): ProviderResolution {
             val owner = modelId.substringBefore("::")
             val remote = modelId.substringAfter("::")
@@ -18,8 +21,13 @@ internal fun TestScope.testKgClient(protocol: LlmProtocol): KgRequestClient {
             ))
         }
         override fun createClient(resolved: ResolvedProviderModel): UnifiedLlmClient = error("不使用流式客户端")
-    }
-    return KgRequestClient(router, { protocol }, StandardTestDispatcher(testScheduler))
+}
+
+internal class TestKgUsageStore : KgUsageStore {
+    val records = mutableListOf<KgUsageRecord>()
+    override suspend fun record(record: KgUsageRecord) { records += record }
+    override suspend fun snapshot() = KgUsageSnapshot(records)
+    override suspend fun clear() { records.clear() }
 }
 
 internal fun TestScope.testGraphExtractor(

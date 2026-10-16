@@ -218,12 +218,13 @@ class VectorizationQueue(
         // 更换活动标识，阻止旧候选提交，也让失败展示期间的立即重试拥有独立执行实例。
         val restarting = active.status in setOf("failed", "partial", "interrupted", "completed")
         if (restarting || (kgStrategy != null && active.kgStrategy == null) ||
+            (kgStrategy == KgExtractionBudget.CONFIRMED_STRATEGY && active.kgStrategy != kgStrategy) ||
             (!skipVectorization && active.skipVectorization)
         ) {
             val replacement = active.copy(
                 id = "$id-${UUID.randomUUID()}",
                 status = "pending", progress = 0.0, error = null,
-                kgStrategy = if (restarting) kgStrategy else active.kgStrategy ?: kgStrategy,
+                kgStrategy = if (restarting || kgStrategy == KgExtractionBudget.CONFIRMED_STRATEGY) kgStrategy else active.kgStrategy ?: kgStrategy,
                 skipVectorization = if (restarting) skipVectorization else active.skipVectorization && skipVectorization,
                 sourceMimeType = sourceMimeType,
                 contentTruncated = false, lastChunkIndex = 0, totalChunks = null,
@@ -299,7 +300,10 @@ class VectorizationQueue(
             sourceMimeType = entry.mimeType ?: return false,
             targetContentHash = entry.hash,
             targetEpoch = entry.updatedAt,
-            kgStrategy = existing.kgStrategy,
+            kgStrategy = existing.kgStrategy?.takeUnless {
+                it == KgExtractionBudget.CONFIRMED_STRATEGY &&
+                    (existing.targetContentHash != entry.hash || existing.targetEpoch != entry.updatedAt)
+            } ?: "full".takeIf { existing.kgStrategy != null },
             skipVectorization = existing.skipVectorization,
         )
         return true
@@ -323,14 +327,17 @@ class VectorizationQueue(
                 TYPE_DOCUMENT_REFERENCE -> processDocumentReferenceTask(task)
             }
 
-            task.status = if (task.contentTruncated) "partial" else "completed"
+            val graphPartial = task.status == "partial"
+            task.status = if (task.contentTruncated || graphPartial) "partial" else "completed"
             retryCountMap.remove(retryKey)
-            task.progress = 100.0
-            task.subStatus = if (task.contentTruncated) "已完成安全前缀索引（内容截断）" else "处理完成"
+            if (!graphPartial) {
+                task.progress = 100.0
+                task.subStatus = if (task.contentTruncated) "已完成安全前缀索引（内容截断）" else "处理完成"
+            }
             saveTaskToDb(task)
             NexaraLogger.log("[VectorQueue] 任务完成 type=${task.type} docTitle=${task.docTitle ?: "N/A"}")
             notifyStateChange()
-            if (!task.contentTruncated) removeTaskFromDb(task)
+            if (task.status != "partial") removeTaskFromDb(task)
         } catch (_: TargetSuperseded) {
             superseded = true
             retryCountMap.remove(retryKey)
@@ -536,8 +543,36 @@ class VectorizationQueue(
             kgStrategy = task.kgStrategy,
             useConfiguredKgStrategy = false,
             activeTaskId = task.id,
+            onKgProgress = { progress ->
+                currentCoroutineContext().ensureActive()
+                task.status = "extracting"
+                task.totalChunks = progress.totalChunks
+                task.lastChunkIndex = progress.processedChunks
+                task.progress = if (progress.totalChunks == 0) 100.0 else 100.0 * progress.processedChunks / progress.totalChunks
+                task.subStatus = progress.description
+                saveTaskToDb(task)
+                notifyStateChange()
+            },
         ))) {
-            is DocumentIndexResult.Rebuilt -> { task.contentTruncated = result.contentTruncated; return }
+            is DocumentIndexResult.Rebuilt -> {
+                task.contentTruncated = result.contentTruncated
+                result.kgProgress?.let { progress ->
+                    task.totalChunks = progress.totalChunks
+                    task.lastChunkIndex = progress.processedChunks
+                    if (progress.isPartial) {
+                        task.status = "partial"
+                        task.progress = if (progress.totalChunks == 0) 0.0 else 100.0 * progress.processedChunks / progress.totalChunks
+                        task.error = when (progress.reason) {
+                            KgExtractionStopReason.CONFIRMATION_REQUIRED -> KG_CONFIRMATION_REQUIRED
+                            KgExtractionStopReason.CALLS -> "kg.budget.calls"
+                            KgExtractionStopReason.OUTPUT_TOKENS -> "kg.budget.output_tokens"
+                            else -> "kg.budget.duration"
+                        }
+                        task.subStatus = progress.description
+                    }
+                }
+                return
+            }
             is DocumentIndexResult.HashChanged -> throw java.util.ConcurrentModificationException(
                 "索引期间文件目标已变化: ${result.currentHash ?: "deleted"}",
             )
@@ -1362,6 +1397,7 @@ class VectorizationQueue(
     )
 
     companion object {
+        const val KG_CONFIRMATION_REQUIRED = "kg.confirmation_required"
         private const val MAX_RETRIES = 3
         const val TYPE_DOCUMENT_REFERENCE = "document_reference"
         private const val LEGACY_DOCUMENT_TASK_TYPE = "document"

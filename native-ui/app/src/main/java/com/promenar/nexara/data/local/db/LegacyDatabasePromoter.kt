@@ -2,8 +2,7 @@ package com.promenar.nexara.data.local.db
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import com.promenar.nexara.data.local.db.recovery.CURRENT_V19_IDENTITY
-import com.promenar.nexara.data.local.db.recovery.CURRENT_V20_IDENTITY
+import com.promenar.nexara.data.local.db.recovery.isTrustedCurrentRoomSchema
 import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.AtomicMoveNotSupportedException
@@ -39,7 +38,7 @@ internal object LegacyDatabasePromoter {
         val currentMain = databaseDirectory.resolve(CURRENT_NAME)
         if (Files.exists(currentMain) && Files.exists(legacyMain)) {
             val currentVersion = validateCurrentDatabase(currentMain)
-            if (currentVersion in setOf(18, 19, 20)) {
+            if (currentVersion in setOf(18, 19, 20, 21)) {
                 return LegacyDatabasePromotionResult.CurrentDatabaseExists
             }
             validatePublishedV17WithoutSourceWrites(legacyMain)
@@ -148,12 +147,13 @@ internal object LegacyDatabasePromoter {
                     !sqlite.hasColumn("messages", "legacy_attachments")
                 18 -> identity == CURRENT_V18_IDENTITY_HASH && commonContract &&
                     sqlite.hasColumn("messages", "legacy_attachments")
-                19, 20 -> identity == (if (version == 19) CURRENT_V19_IDENTITY else CURRENT_V20_IDENTITY) &&
+                19, 20, 21 -> identity != null && isTrustedCurrentRoomSchema(version, identity) &&
                     commonContract && sqlite.hasColumn("messages", "legacy_attachments") &&
                     sqlite.hasColumn("kg_nodes", "normalized_name") && sqlite.hasColumn("kg_evidence", "content_hash") &&
                     sqlite.hasColumn("kg_jit_cache_sources", "cache_key") && sqlite.hasColumn("workspace_files", "kg_strategy") &&
                     (version == 19 || (sqlite.hasColumn("external_mounts", "scope_key") &&
-                        sqlite.hasColumn("external_snapshots", "mount_id")))
+                        sqlite.hasColumn("external_snapshots", "mount_id"))) &&
+                    (version < 21 || sqlite.hasSshHostContract())
                 else -> false
             }
             if (!exactContract) {

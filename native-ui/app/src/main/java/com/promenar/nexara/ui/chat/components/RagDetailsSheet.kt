@@ -548,9 +548,9 @@ private fun WebCitationRow(citation: Citation, index: Int, onOpen: (String) -> U
 @Composable
 private fun KnowledgeGraphList(kgPaths: List<KgPath>, references: List<RagReference>) {
     val keyedPaths = remember(kgPaths) {
-        stableKeyedItems(kgPaths, ::kgPathStableKey)
+        stableKeyedItems(kgPaths.filter { it.edges.isNotEmpty() }, ::kgPathStableKey)
     }
-    if (keyedPaths.isEmpty()) {
+    if (kgPaths.isEmpty()) {
         EmptyDetailsState()
         return
     }
@@ -560,6 +560,13 @@ private fun KnowledgeGraphList(kgPaths: List<KgPath>, references: List<RagRefere
             .testTag(UiTags.RAG_DETAILS_LIST),
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
+        item(key = "kg-summary") {
+            Column(modifier = Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                kgSummarySegments(kgPaths).forEach { text ->
+                    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
         keyedPaths.forEachIndexed { pathIndex, keyedPath ->
             val pathKey = keyedPath.key
             val path = keyedPath.value
@@ -614,6 +621,8 @@ private fun KnowledgeGraphList(kgPaths: List<KgPath>, references: List<RagRefere
 
 @Composable
 private fun KgPathHeader(path: KgPath, pathIndex: Int, references: List<RagReference>) {
+    val persistentLabel = stringResource(R.string.kg_source_persistent)
+    val jitLabel = stringResource(R.string.kg_source_jit)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -630,6 +639,12 @@ private fun KgPathHeader(path: KgPath, pathIndex: Int, references: List<RagRefer
                 text = stringResource(R.string.rag_details_path_label, pathIndex + 1),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = path.origins.joinToString(" + ") { origin ->
+                    if (origin == "persistent") persistentLabel else jitLabel
+                },
+                style = MaterialTheme.typography.labelMedium,
             )
         }
         if (path.sourceDocumentIds.isNotEmpty()) {

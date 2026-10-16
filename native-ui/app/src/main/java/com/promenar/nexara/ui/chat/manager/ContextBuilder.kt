@@ -92,9 +92,18 @@ data class KgContextResult(
     val paths: List<com.promenar.nexara.data.model.KgPath> = emptyList(),
     val status: com.promenar.nexara.data.rag.KgExtractionStatus = com.promenar.nexara.data.rag.KgExtractionStatus.SUCCESS,
     val error: String? = null,
+    val canonicalPaths: Boolean = false,
+    val maxContextTokens: Int = 2048,
 )
 
 interface KgProvider {
+    suspend fun retrieveContext(
+        query: String,
+        sessionId: String,
+        topKResults: List<RagReference>,
+        options: com.promenar.nexara.data.model.RagOptions,
+    ): KgContextResult? = extractContext(query, sessionId, topKResults)
+
     suspend fun extractContext(
         query: String,
         sessionId: String,
@@ -157,16 +166,20 @@ class ContextBuilder(
 
         // KG 启用判定与 RAG 共享 effective 配置：agent enableKnowledgeGraph=false 可覆盖 session true
         val kgEnabled = effectiveRagOptions.enableKnowledgeGraph == true
-        val (kgContext, kgPaths) = if (kgProvider != null && ragResult.references.isNotEmpty() && kgEnabled) {
+        val (kgContext, kgPaths) = if (kgProvider != null && kgEnabled) {
             try {
                 params.onRagProgress?.invoke("KG retrieval", 95, null)
-                val kgResult = kgProvider.extractContext(params.content, params.sessionId, ragResult.references)
+                val kgResult = kgProvider.retrieveContext(params.content, params.sessionId, ragResult.references, effectiveRagOptions)
                 if (kgResult == null || kgResult.status != com.promenar.nexara.data.rag.KgExtractionStatus.SUCCESS || kgResult.error != null) {
                     params.onRagProgress?.invoke("KG failed", 95, kgResult?.status?.name ?: "PROVIDER_ERROR")
                     "" to emptyList<com.promenar.nexara.data.model.KgPath>()
                 } else {
                     params.onRagProgress?.invoke("Context ready", 100, null)
-                    kgResult.context to snapshotKgPaths(kgResult.paths)
+                    val paths = snapshotKgPaths(kgResult.paths)
+                    if (kgResult.canonicalPaths) {
+                        val fitted = com.promenar.nexara.data.rag.KgContextBudget.fit(paths, kgResult.maxContextTokens)
+                        fitted.context to fitted.paths
+                    } else kgResult.context to paths
                 }
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e
@@ -203,7 +216,7 @@ class ContextBuilder(
             enableDocs = tempRagOptions.enableDocs && sessionRagOptions.enableDocs,
             activeDocIds = tempRagOptions.activeDocIds.ifEmpty { sessionRagOptions.activeDocIds },
             activeFolderIds = tempRagOptions.activeFolderIds.ifEmpty { sessionRagOptions.activeFolderIds },
-            isGlobal = tempRagOptions.isGlobal,
+            isGlobal = params.ragOptions?.isGlobal ?: sessionRagOptions.isGlobal,
             enableRerank = if (params.session.ragOptions == null) tempRagOptions.enableRerank else sessionRagOptions.enableRerank,
             enableKnowledgeGraph = if (params.session.ragOptions == null) tempRagOptions.enableKnowledgeGraph else sessionRagOptions.enableKnowledgeGraph
         )
@@ -257,7 +270,14 @@ class ContextBuilder(
             }
             accepted += candidate
         }
-        return accepted
+        val omitted = paths.size - accepted.size
+        return when {
+            omitted == 0 -> accepted
+            accepted.isEmpty() -> listOf(com.promenar.nexara.data.model.KgPath(
+                origins = emptyList(), truncated = true, omittedPathCount = omitted,
+            ))
+            else -> accepted.map { path -> path.copy(truncated = true, omittedPathCount = path.omittedPathCount + omitted) }
+        }
     }
 
     private fun String.bounded(maxChars: Int): String {

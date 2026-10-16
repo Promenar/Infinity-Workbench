@@ -38,9 +38,18 @@ class LegacyDatabasePromoterInstrumentedTest {
     }
 
     @Test
-    fun exactV20WithFtsAndRetainedV17UsesCurrentDatabaseWithoutSourceWrites() {
+    fun exactV18WithFtsAndRetainedV17UsesCurrentDatabaseWithoutSourceWrites() {
+        verifyCurrentDatabaseWithoutSourceWrites(NexaraV18RecoveryDatabase::class.java)
+    }
+
+    @Test
+    fun `正式v21与保留v17并存时精确验证且源文件字节不变`() {
+        verifyCurrentDatabaseWithoutSourceWrites(NexaraDatabase::class.java)
+    }
+
+    private fun <T : androidx.room.RoomDatabase> verifyCurrentDatabaseWithoutSourceWrites(type: Class<T>) {
         createPublishedV17Database()
-        Room.databaseBuilder(context, NexaraDatabase::class.java, CURRENT_NAME)
+        Room.databaseBuilder(context, type, CURRENT_NAME)
             .allowMainThreadQueries()
             .build()
             .also { it.openHelper.writableDatabase }

@@ -31,6 +31,8 @@ class BackupPreferenceInventoryTest {
         val injectedNamespaces = mapOf(
             "domain/usecase/AgentConfigResolver.kt#globalPrefs" to "nexara_settings",
             "domain/usecase/RagConfigPersistence.kt#prefs" to "rag_settings",
+            "data/rag/KgAdvancedSettings.kt#preferences" to "rag_settings",
+            "data/rag/KgUsageStore.kt#preferences" to "kg_usage",
             "ui/settings/BackupViewModel.kt#prefs" to "nexara_backup_settings",
             "ui/settings/SettingsViewModel.kt#prefs" to "nexara_settings",
             "ui/theme/ThemePreferenceStore.kt#preferences" to "nexara_settings",
@@ -198,6 +200,19 @@ class BackupPreferenceInventoryTest {
         ).forEach { key ->
             assertWithMessage(key).that(BackupPreferencePolicy.isAllowed("settings", key)).isFalse()
         }
+    }
+
+    @Test fun `KG数字预算可备份且本机用量与认证令牌不可迁移`() {
+        listOf("kg_retrieval_hops", "kg_max_seeds", "kg_max_nodes", "kg_max_edges", "kg_context_max_tokens",
+            "kg_jit_fallback", "kg_jit_min_seeds", "kg_max_calls", "kg_max_output_tokens", "kg_request_max_output_tokens",
+            "kg_max_duration_seconds", "kg_large_document_confirm_calls").forEach { key ->
+            assertWithMessage(key).that(BackupPreferencePolicy.isAllowed("rag", key)).isTrue()
+        }
+        listOf("kg_token", "kg_api_key", "kg_access_token").forEach { key ->
+            assertThat(BackupPreferencePolicy.isAllowed("rag", key)).isFalse()
+        }
+        assertThat(BackupPreferencePolicy.isKnown("kg_usage", "kg_usage_ledger_v1")).isTrue()
+        assertThat(BackupPreferencePolicy.isAllowed("kg_usage", "kg_usage_ledger_v1")).isFalse()
     }
 
     @Test

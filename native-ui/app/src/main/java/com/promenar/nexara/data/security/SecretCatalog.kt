@@ -16,6 +16,8 @@ object SecretCatalog {
     val webDavAuthRecord = SecretId("webdav_auth_record_v1")
     val automaticBackupPassword = SecretId("automatic_backup_password")
 
+    fun sshCredential(hostId: String): SecretId = SecretId("ssh_credential_v1:${providerHash(hostId)}")
+
     fun backupEligible(providerIds: Collection<String>): Set<SecretId> = buildSet {
         add(tavilyApiKey)
         add(keenableApiKey)

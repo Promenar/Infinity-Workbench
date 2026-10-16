@@ -71,6 +71,20 @@ import org.junit.Test
 
 class DefaultChatGenerationRuntimeTest {
     @Test
+    fun `准备恢复SSH所有者且审批暂停与终态关闭使用同一会话所有者`() = runTest {
+        val sshRuntime = mockk<com.promenar.nexara.data.ssh.SshRuntime>(relaxed = true)
+        val fixture = postProcessFixture(sshRuntime = sshRuntime)
+
+        fixture.runtime.prepare(fixture.request)
+        fixture.runtime.releaseToolResources(fixture.request, awaitingApproval = true)
+        fixture.runtime.releaseToolResources(fixture.request, awaitingApproval = false)
+
+        coVerify(exactly = 1) { sshRuntime.resumeOwner("agent:session") }
+        coVerify(exactly = 1) { sshRuntime.pauseOwner("agent:session") }
+        coVerify(exactly = 1) { sshRuntime.closeOwner("agent:session") }
+    }
+
+    @Test
     fun `初始完整文档最终门禁失败回滚本轮消息且不进入Provider`() = runTest {
         val fixture = documentBudgetFixture(toolRounds = 0)
         val request = fixture.request.copy(rollbackUserOnPreparationFailure = true)
@@ -463,6 +477,7 @@ class DefaultChatGenerationRuntimeTest {
         inferenceParams: InferenceParams? = null,
         messageCount: Int = 1,
         memoryManager: MemoryManager? = null,
+        sshRuntime: com.promenar.nexara.data.ssh.SshRuntime? = null,
     ): PostProcessFixture {
         val messages = (0 until messageCount).map { index ->
             Message(
@@ -515,6 +530,7 @@ class DefaultChatGenerationRuntimeTest {
             sessionManager = mockk(relaxed = true),
             contentStrategy = contentStrategy,
             ui = ui,
+            sshRuntime = sshRuntime,
         )
         DefaultChatGenerationRuntime::class.java.getDeclaredField("preparedContext").apply {
             isAccessible = true

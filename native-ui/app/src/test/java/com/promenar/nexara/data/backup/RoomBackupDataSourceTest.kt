@@ -57,6 +57,22 @@ import kotlinx.serialization.json.jsonPrimitive
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
 class RoomBackupDataSourceTest {
+    @Test
+    fun `SSH主机配置和认证材料不进入备份`() = runBlocking {
+        seedCompleteGraph()
+        db.sshHostDao().insert(com.promenar.nexara.data.local.db.entity.SshHostEntity(
+            id = "ssh-backup", alias = "termux", hostname = "private-ssh.invalid", username = "ssh-user",
+            trustedKeyType = "ssh-ed25519", trustedFingerprint = "SHA256:synthetic-trust",
+        ))
+        secrets.put(SecretCatalog.sshCredential("ssh-backup"), "synthetic-ssh-secret".toByteArray())
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        assertThat(snapshot.database.toString(Charsets.UTF_8)).doesNotContain("ssh_hosts")
+        assertThat(snapshot.database.toString(Charsets.UTF_8)).doesNotContain("private-ssh.invalid")
+        assertThat(snapshot.database.toString(Charsets.UTF_8)).doesNotContain("SHA256:synthetic-trust")
+        assertThat(snapshot.secrets.keys.map { it.value }).doesNotContain(SecretCatalog.sshCredential("ssh-backup").value)
+        snapshot.wipe()
+    }
+
     private lateinit var db: NexaraDatabase
     private lateinit var sourceRoot: Path
     private lateinit var sourceBase: Path

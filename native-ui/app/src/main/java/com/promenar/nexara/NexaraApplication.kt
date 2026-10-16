@@ -20,6 +20,7 @@ import com.promenar.nexara.data.local.db.MIGRATION_4_5
 import com.promenar.nexara.data.local.db.MIGRATION_5_18
 import com.promenar.nexara.data.local.db.MIGRATION_18_19
 import com.promenar.nexara.data.local.db.MIGRATION_19_20
+import com.promenar.nexara.data.local.db.MIGRATION_20_21
 import com.promenar.nexara.data.local.db.MIGRATION_17_18
 import com.promenar.nexara.data.local.db.LegacyDatabasePromoter
 import com.promenar.nexara.data.backup.BackupRuntime
@@ -148,6 +149,14 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     }
 
     open val secretStore: SecretStore by lazy { AndroidKeystoreSecretStore(this) }
+    val sshHostStore: com.promenar.nexara.data.ssh.SshHostStore by lazy {
+        com.promenar.nexara.data.ssh.RoomSshHostStore(database.sshHostDao(), secretStore)
+    }
+    val sshRuntime: com.promenar.nexara.data.ssh.SshRuntime by lazy {
+        com.promenar.nexara.data.ssh.SshRuntime(sshHostStore, onPersistentActivity = { active ->
+            com.promenar.nexara.background.ssh.SshConnectionService.update(this, active)
+        })
+    }
     val themePreferenceStore: ThemePreferenceStore by lazy { ThemePreferenceStore(this) }
 
     /** 生产默认依赖保持不变；instrumentation 可通过 Application 子类注入可验证端口。 */
@@ -199,7 +208,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val database: NexaraDatabase by lazy {
         LegacyDatabasePromoter.promote(this)
         Room.databaseBuilder(this, NexaraDatabase::class.java, "nexara_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->
                     if (com.promenar.nexara.BuildConfig.DEBUG) {
@@ -286,7 +295,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction(skill.name, skill.description, skill.parametersSchema),
             risk = skill.risk, runtimeToolId = skill.runtimeToolId, sourceId = skill.sourceId, mcpServerId = skill.mcpServerId,
         )
-        return com.promenar.nexara.data.generation.resolveSessionToolTarget(session, tool, args.toString(), workspaceRepository, externalFolderManager) == target &&
+        return com.promenar.nexara.data.generation.resolveSessionToolTarget(session, tool, args.toString(), workspaceRepository, externalFolderManager, sshRuntime::sessionHost) == target &&
             sessionToolGrantStore.contains(session.id, skill.name, target)
     }
 
@@ -363,6 +372,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             cancelAndJoinGeneration = { sessionId ->
                 generationCoordinator.cancelAndJoinSession(sessionId)
                 generationCoordinator.release(sessionId, discardTerminal = true)
+                sshRuntime.closeOwner("agent:$sessionId")
             },
             recoverFileMutations = { target ->
                 workspaceFileMutationRecoveryCoordinator.recoverRootOrThrow(target.workspaceRootUuid)
@@ -502,6 +512,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             outputStore = toolOutputStore,
             externalFolders = externalFolderManager,
             interactionStore = generationInteractions,
+            sshRuntime = sshRuntime,
         )
         com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
             applicationScope = generationScope,
@@ -519,8 +530,12 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         com.promenar.nexara.data.repository.SkillRepository(database.skillDao())
     }
 
+    val kgUsageStore: com.promenar.nexara.data.rag.KgUsageStore by lazy {
+        com.promenar.nexara.data.rag.PreferencesKgUsageStore(getSharedPreferences("kg_usage", MODE_PRIVATE))
+    }
+
     val tokenStatsRepository: ITokenStatsRepository by lazy {
-        TokenStatsRepository(database.messageDao())
+        TokenStatsRepository(database.messageDao(), kgUsageStore)
     }
 
     val workspaceRepository: com.promenar.nexara.domain.repository.IWorkspaceRepository by lazy {
@@ -615,6 +630,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             fun mounted(skill: com.promenar.nexara.ui.chat.manager.registry.SkillDefinition) =
                 com.promenar.nexara.ui.chat.manager.skills.MountedWorkspaceSkill(skill, externalFolderManager, workspaceRepository, fileOperationRepository, pendingDocumentIndexCoordinator)
             register(CalculatorSkill())
+            com.promenar.nexara.ui.chat.manager.skills.sshTools(sshRuntime).forEach(::register)
             register(WebSearchSkill(this@NexaraApplication, httpClient, secretStore))
             register(WebSearchTavilySkill(this@NexaraApplication, httpClient, secretStore))
             register(WebSearchSearXNGSkill(this@NexaraApplication, httpClient))
@@ -1219,6 +1235,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     private fun createKgRequestClient() = com.promenar.nexara.data.rag.KgRequestClient(
         router = providerRequestRouter,
+        usageStore = kgUsageStore,
+        defaultMaxOutputTokens = ragConfigPersistence.loadFullConfig().kgRequestMaxOutputTokens.coerceIn(128, 16384),
         protocolFactory = { resolved ->
             val config = resolved.config
             com.promenar.nexara.data.remote.protocol.ProtocolFactory.create(
@@ -1253,7 +1271,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     private var _kgProvider: KgProvider? = null
     val kgProvider: KgProvider
         get() = synchronized(kgExtractorLock) {
-            _kgProvider ?: MicroGraphKgAdapter { microGraphExtractor }.also { _kgProvider = it }
+            _kgProvider ?: com.promenar.nexara.data.rag.PersistentGraphKgProvider(
+                graphStore, MicroGraphKgAdapter { microGraphExtractor },
+            ) { ragConfigPersistence.loadFullConfig() }.also { _kgProvider = it }
         }
 
     val webSearchContextProvider: WebSearchProvider by lazy {
@@ -1274,6 +1294,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                     chunkSize = config.docChunkSize.coerceAtLeast(400),
                     chunkOverlap = config.chunkOverlap.coerceAtMost(200),
                     timeoutMs = config.kgExtractionTimeoutSeconds.coerceIn(5, 300) * 1000L,
+                    budget = com.promenar.nexara.data.rag.KgExtractionBudget.from(config),
                 ).also { _graphExtractor = it }
             }
         }

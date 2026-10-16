@@ -10,10 +10,8 @@ import com.promenar.nexara.data.local.db.MIGRATION_2_3
 import com.promenar.nexara.data.local.db.MIGRATION_3_4
 import com.promenar.nexara.data.local.db.MIGRATION_4_5
 import com.promenar.nexara.data.local.db.MIGRATION_5_18
-import com.promenar.nexara.data.local.db.MIGRATION_18_19
-import com.promenar.nexara.data.local.db.MIGRATION_19_20
 import com.promenar.nexara.data.local.db.MIGRATION_17_18
-import com.promenar.nexara.data.local.db.NexaraDatabase
+import com.promenar.nexara.data.local.db.NexaraV18RecoveryDatabase
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -380,12 +378,12 @@ internal class AndroidDualDatabaseRecoveryExecutor(
         val isolatedContext = object : ContextWrapper(appContext) {
             override fun getDatabasePath(name: String): java.io.File = path.toFile()
         }
-        val database = Room.databaseBuilder(isolatedContext, NexaraDatabase::class.java, path.fileName.toString())
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+        val database = Room.databaseBuilder(isolatedContext, NexaraV18RecoveryDatabase::class.java, path.fileName.toString())
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18)
             .build()
         try {
                 database.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
-                    check(cursor.moveToFirst() && cursor.getInt(0) == 20) { "working数据库迁移未达到v20" }
+                    check(cursor.moveToFirst() && cursor.getInt(0) == 18) { "working数据库迁移未达到v18" }
                 }
                 database.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
                     check(cursor.moveToFirst() && cursor.getInt(0) == 0) { "working数据库WAL无法checkpoint" }

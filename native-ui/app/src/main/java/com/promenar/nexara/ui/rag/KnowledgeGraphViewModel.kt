@@ -12,7 +12,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.nexara.data.rag.GraphData
 import com.promenar.nexara.data.rag.GraphStore
+import com.promenar.nexara.data.rag.GraphSubgraphRequest
+import com.promenar.nexara.data.rag.GraphEntitySearchRequest
+import com.promenar.nexara.data.rag.DEFAULT_GRAPH_EDGE_LIMIT
+import com.promenar.nexara.data.rag.GRAPH_EXPANSION_BATCH_SIZE
+import com.promenar.nexara.data.rag.MAX_GRAPH_NODE_LIMIT
+import com.promenar.nexara.data.rag.MAX_GRAPH_EDGE_LIMIT
 import com.promenar.nexara.data.rag.KgDocumentOption
+import com.promenar.nexara.data.rag.KgNode
 import com.promenar.nexara.data.repository.KnowledgeGraphRepository
 import com.promenar.nexara.domain.repository.IKnowledgeGraphRepository
 import com.promenar.nexara.NexaraApplication
@@ -22,12 +29,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 import com.promenar.nexara.utils.NexaraLogger
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlin.random.Random
 
 enum class KgViewMode { GLOBAL, DOCUMENT, CONCEPT }
 
@@ -80,6 +84,18 @@ class KnowledgeGraphViewModel(
     private val _edges = MutableStateFlow<List<GraphEdge>>(emptyList())
     val edges: StateFlow<List<GraphEdge>> = _edges.asStateFlow()
 
+    private val _totalNodeCount = MutableStateFlow(0)
+    val totalNodeCount: StateFlow<Int> = _totalNodeCount.asStateFlow()
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    private val _searchResults = MutableStateFlow<List<KgNode>>(emptyList())
+    val searchResults: StateFlow<List<KgNode>> = _searchResults.asStateFlow()
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+    private val _searchFailed = MutableStateFlow(false)
+    val searchFailed: StateFlow<Boolean> = _searchFailed.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -110,6 +126,8 @@ class KnowledgeGraphViewModel(
     private var lastSuccessfulScopeKey: String? = null
     private var documentOptionsJob: Job? = null
     private var documentOptionsGeneration = 0L
+    private var searchJob: Job? = null
+    private var searchGeneration = 0L
 
     init {
         loadDocumentOptions()
@@ -142,6 +160,7 @@ class KnowledgeGraphViewModel(
     fun retryDocumentOptions() = loadDocumentOptions()
 
     fun setViewMode(mode: KgViewMode) {
+        clearSearch()
         _viewMode.value = mode
         _loadError.value = null
         when (mode) {
@@ -156,6 +175,7 @@ class KnowledgeGraphViewModel(
                     cancelPendingLoad()
                     _nodes.value = emptyList()
                     _edges.value = emptyList()
+                    _totalNodeCount.value = 0
                     lastSuccessfulScopeKey = null
                     _graphState.value = KgGraphState()
                 } else {
@@ -170,6 +190,7 @@ class KnowledgeGraphViewModel(
     }
 
     fun loadGraph() {
+        clearSearch()
         _viewMode.value = KgViewMode.GLOBAL
         _documentSelectionRequired.value = false
         loadGraphInternal(
@@ -177,11 +198,11 @@ class KnowledgeGraphViewModel(
             mode = KgViewMode.GLOBAL,
             preserveSameScope = false,
         )
-        NexaraLogger.log("[KG] loadGraph triggered, will query graphStore.getGraphData()")
     }
 
     fun loadGraphByDoc(docId: String) {
         require(docId.isNotBlank()) { "文档标识不能为空" }
+        clearSearch()
         _viewMode.value = KgViewMode.DOCUMENT
         _selectedDocumentId.value = docId
         _documentSelectionRequired.value = false
@@ -199,6 +220,67 @@ class KnowledgeGraphViewModel(
 
     fun refreshCurrentScope() {
         reloadCurrentScope(preserveSameScope = true)
+    }
+
+    fun searchEntities(query: String) {
+        val generation = ++searchGeneration
+        searchJob?.cancel()
+        _searchQuery.value = query.take(512)
+        _searchFailed.value = false
+        _searchResults.value = emptyList()
+        if (query.isBlank() || _documentSelectionRequired.value) {
+            _isSearching.value = false
+            return
+        }
+        val expectedScope = _graphState.value.scopeKey
+        val request = GraphEntitySearchRequest(
+            query = _searchQuery.value,
+            docId = if (_viewMode.value == KgViewMode.DOCUMENT) _selectedDocumentId.value else null,
+            conceptOnly = _viewMode.value == KgViewMode.CONCEPT,
+        )
+        _isSearching.value = true
+        searchJob = viewModelScope.launch {
+            try {
+                delay(200)
+                val found = graphStore.searchGraphEntities(request)
+                if (generation == searchGeneration && expectedScope == _graphState.value.scopeKey) _searchResults.value = found
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (generation == searchGeneration) _searchFailed.value = true
+                NexaraLogger.logError("[KG] 实体搜索失败", failure)
+            } finally {
+                if (generation == searchGeneration) _isSearching.value = false
+            }
+        }
+    }
+
+    fun expandNode(nodeId: String) {
+        if (_isLoading.value || _documentSelectionRequired.value || _nodes.value.size >= MAX_GRAPH_NODE_LIMIT) return
+        val mode = _viewMode.value
+        val docId = if (mode == KgViewMode.DOCUMENT) _selectedDocumentId.value else null
+        loadGraphInternal(
+            docId = docId,
+            mode = mode,
+            preserveSameScope = true,
+            request = GraphSubgraphRequest(
+                docId = docId,
+                conceptOnly = mode == KgViewMode.CONCEPT,
+                nodeLimit = (_nodes.value.size + GRAPH_EXPANSION_BATCH_SIZE + 1).coerceAtMost(MAX_GRAPH_NODE_LIMIT),
+                edgeLimit = maxOf(DEFAULT_GRAPH_EDGE_LIMIT, (_nodes.value.size + GRAPH_EXPANSION_BATCH_SIZE) * 4).coerceAtMost(MAX_GRAPH_EDGE_LIMIT),
+                retainedNodeIds = _nodes.value.map { it.id },
+                expandNodeId = nodeId,
+            ),
+        )
+    }
+
+    private fun clearSearch() {
+        searchGeneration++
+        searchJob?.cancel()
+        _searchQuery.value = ""
+        _searchResults.value = emptyList()
+        _isSearching.value = false
+        _searchFailed.value = false
     }
 
     private fun reloadCurrentScope(preserveSameScope: Boolean) {
@@ -219,6 +301,7 @@ class KnowledgeGraphViewModel(
         docId: String?,
         mode: KgViewMode,
         preserveSameScope: Boolean,
+        request: GraphSubgraphRequest? = null,
     ) {
         val scopeKey = scopeKey(mode, docId)
         val preserveLastGood = preserveSameScope &&
@@ -229,6 +312,7 @@ class KnowledgeGraphViewModel(
         if (!preserveLastGood) {
             _nodes.value = emptyList()
             _edges.value = emptyList()
+            _totalNodeCount.value = 0
             lastSuccessfulScopeKey = null
         }
         _loadError.value = null
@@ -240,11 +324,8 @@ class KnowledgeGraphViewModel(
         )
         loadJob = viewModelScope.launch {
             try {
-                val data = if (docId == null) {
-                    graphStore.getGraphData()
-                } else {
-                    graphStore.getGraphData(docIds = listOf(docId))
-                }
+                val result = graphStore.getGraphSubgraph(request ?: GraphSubgraphRequest(docId = docId, conceptOnly = mode == KgViewMode.CONCEPT))
+                val data = result.data
                 if (generation != loadGeneration) return@launch
                 NexaraLogger.log("[KG] graphStore returned: ${data.nodes.size} nodes, ${data.edges.size} edges (docId=$docId)")
                 if (data.nodes.isEmpty() && data.edges.isEmpty()) {
@@ -254,7 +335,8 @@ class KnowledgeGraphViewModel(
                     NexaraLogger.log("[KG] INFO: ${data.nodes.size} orphan nodes found (no edges) — these will be displayed as isolated points")
                 }
                 _loadError.value = null
-                render(data, mode)
+                render(data)
+                _totalNodeCount.value = result.totalNodeCount
                 lastSuccessfulScopeKey = scopeKey
                 _graphState.value = KgGraphState(scopeKey = scopeKey)
             } catch (cancelled: CancellationException) {
@@ -297,23 +379,9 @@ class KnowledgeGraphViewModel(
         _graphState.value = _graphState.value.copy(isLoading = false)
     }
 
-    private fun render(data: GraphData, mode: KgViewMode) {
-        val filteredData = when (mode) {
-            KgViewMode.GLOBAL -> data
-            KgViewMode.DOCUMENT -> data
-            KgViewMode.CONCEPT -> {
-                val conceptNodes = data.nodes.filter { it.type == "concept" }
-                val conceptIds = conceptNodes.map { it.id }.toSet()
-                val filteredEdges = data.edges.filter {
-                    it.sourceId in conceptIds || it.targetId in conceptIds
-                }
-                val connectedIds = filteredEdges.flatMap { listOf(it.sourceId, it.targetId) }.toSet()
-                GraphData(data.nodes.filter { it.id in connectedIds }, filteredEdges)
-            }
-        }
-
+    private fun render(data: GraphData) {
         // GraphStore 已按存活证据筛选；同名不同类型必须保留独立实体 ID。
-        val mappedNodes = filteredData.nodes.distinctBy { it.id }.map { node ->
+        val mappedNodes = data.nodes.distinctBy { it.id }.map { node ->
             GraphNode(
                 id = node.id,
                 label = node.name,
@@ -328,7 +396,8 @@ class KnowledgeGraphViewModel(
                 }
             )
         }
-        val mappedEdges = filteredData.edges.map { edge ->
+        val ids = mappedNodes.map { it.id }.toSet()
+        val mappedEdges = data.edges.filter { it.sourceId in ids && it.targetId in ids }.map { edge ->
             GraphEdge(
                 sourceId = edge.sourceId,
                 targetId = edge.targetId,

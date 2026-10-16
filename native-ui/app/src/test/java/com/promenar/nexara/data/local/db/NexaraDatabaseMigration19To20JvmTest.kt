@@ -52,7 +52,7 @@ class NexaraDatabaseMigration19To20JvmTest {
         val room = openMigratedDatabase()
         try {
             val database = room.openHelper.writableDatabase
-            assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(20L)
+            assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(21L)
             assertThat(database.stringQuery("SELECT name FROM agents WHERE id='existing-agent'"))
                 .isEqualTo("已有助手")
             assertThat(database.stringQuery("SELECT title FROM sessions WHERE id='existing-session'"))
@@ -87,7 +87,7 @@ class NexaraDatabaseMigration19To20JvmTest {
         val room = openMigratedDatabase()
         try {
             val database = room.openHelper.writableDatabase
-            assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(20L)
+            assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(21L)
             assertThat(database.stringQuery("SELECT normalized_name FROM kg_nodes WHERE id='node'"))
                 .isEqualTo("实体")
             assertThat(database.stringQuery("SELECT content_hash FROM kg_evidence WHERE id='evidence'"))
@@ -108,7 +108,7 @@ class NexaraDatabaseMigration19To20JvmTest {
             override fun migrate(db: SupportSQLiteDatabase) = Unit
         }
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, MIGRATED_DATABASE)
-            .addMigrations(emptyMigration)
+            .addMigrations(emptyMigration, MIGRATION_20_21)
             .allowMainThreadQueries()
             .build()
         try {
@@ -257,7 +257,7 @@ class NexaraDatabaseMigration19To20JvmTest {
 
     private fun openMigratedDatabase(): NexaraDatabase =
         Room.databaseBuilder(context, NexaraDatabase::class.java, MIGRATED_DATABASE)
-            .addMigrations(MIGRATION_18_19, MIGRATION_19_20)
+            .addMigrations(MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
             .allowMainThreadQueries()
             .build()
 

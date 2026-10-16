@@ -94,6 +94,18 @@ data class RagConfiguration(
     val kgDomainHint: String? = null,
     /** 每个 chunk 的 KG 抽取超时（秒），默认 120 秒 */
     val kgExtractionTimeoutSeconds: Int = 120,
+    val kgRetrievalHops: Int = 1,
+    val kgMaxSeeds: Int = 12,
+    val kgMaxNodes: Int = 64,
+    val kgMaxEdges: Int = 24,
+    val kgContextMaxTokens: Int = 2048,
+    val kgJitFallbackEnabled: Boolean = true,
+    val kgJitMinSeeds: Int = 2,
+    val kgMaxCalls: Int = 32,
+    val kgMaxOutputTokens: Int = 32768,
+    val kgRequestMaxOutputTokens: Int = 2048,
+    val kgMaxDurationSeconds: Int = 180,
+    val kgLargeDocumentConfirmCalls: Int = 16,
     val costStrategy: String = "on-demand",
     val trackRetrievalMetrics: Boolean = false,
     val showRetrievalProgress: Boolean = true,
@@ -162,7 +174,7 @@ data class KgEdge(
 )
 
 @Serializable
-enum class KgExtractionStatus { SUCCESS, PARSE_FAILURE, TIMEOUT, CANCELLED, PROVIDER_ERROR }
+enum class KgExtractionStatus { SUCCESS, PARTIAL, PARSE_FAILURE, TIMEOUT, CANCELLED, PROVIDER_ERROR }
 
 @Serializable
 data class ExtractionResult(
@@ -170,8 +182,10 @@ data class ExtractionResult(
     val edges: List<ExtractedEdge>,
     val error: String? = null,
     val status: KgExtractionStatus = if (error == null) KgExtractionStatus.SUCCESS else KgExtractionStatus.PROVIDER_ERROR,
+    val progress: KgExtractionProgress? = null,
+    val usage: KgTokenUsage = KgTokenUsage(),
 ) {
-    val isSuccess: Boolean get() = status == KgExtractionStatus.SUCCESS && error == null
+    val isSuccess: Boolean get() = status in setOf(KgExtractionStatus.SUCCESS, KgExtractionStatus.PARTIAL) && error == null
 
     companion object {
         fun failure(status: KgExtractionStatus, message: String) =

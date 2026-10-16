@@ -38,12 +38,12 @@ class NexaraDatabaseMigration17To18JvmTest {
         createPublishedV17Database()
 
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
             .allowMainThreadQueries()
             .build()
         try {
             val database = room.openHelper.writableDatabase
-            assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(20L)
+            assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(21L)
             assertThat(database.stringQuery("SELECT name FROM agents WHERE id='legacy-agent'"))
                 .isEqualTo("Legacy Agent")
             assertThat(database.longQuery("SELECT name_customized FROM agents WHERE id='legacy-agent'"))
@@ -132,7 +132,7 @@ class NexaraDatabaseMigration17To18JvmTest {
         }
 
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
             .allowMainThreadQueries()
             .build()
         try {
@@ -165,7 +165,7 @@ class NexaraDatabaseMigration17To18JvmTest {
         }
 
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
             .allowMainThreadQueries()
             .build()
         try {
@@ -209,7 +209,7 @@ class NexaraDatabaseMigration17To18JvmTest {
             )
         }
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
             .allowMainThreadQueries()
             .build()
         try {
@@ -250,7 +250,7 @@ class NexaraDatabaseMigration17To18JvmTest {
             )
         }
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
             .allowMainThreadQueries()
             .build()
 
@@ -272,7 +272,7 @@ class NexaraDatabaseMigration17To18JvmTest {
     }
 
     private fun createPublishedV17Database() {
-        Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
+        Room.databaseBuilder(context, NexaraV18RecoveryDatabase::class.java, DATABASE_NAME)
             .allowMainThreadQueries()
             .build()
             .also { it.openHelper.writableDatabase }

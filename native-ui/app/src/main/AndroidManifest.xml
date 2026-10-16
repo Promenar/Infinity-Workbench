@@ -62,6 +62,11 @@
             android:process=":script_runtime" />
 
         <service
+            android:name=".background.ssh.SshConnectionService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
             android:name=".background.generation.GenerationForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
