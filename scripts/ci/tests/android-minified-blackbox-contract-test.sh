@@ -141,7 +141,7 @@ sheet_resource_id_line="$(grep -nF '.semantics { testTagsAsResourceId = true }' 
     fail "ModalBottomSheet 必须在同一 modifier 链上先标记 sheet 再启用 resource-id"
 
 for smoke_contract in \
-    ':app:assembleMinifiedTest' \
+    ':app:assembleSideloadMinifiedTest' \
     ':blackbox-fixture:assembleDebug' \
     'NEXARA_MINIFIED_TARGET_APK' \
     'NEXARA_MINIFIED_TARGET_PACKAGE' \

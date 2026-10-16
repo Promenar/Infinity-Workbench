@@ -165,7 +165,7 @@ def main() -> None:
     parser.add_argument(
         "--apk",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "app/build/outputs/apk/debug/app-debug.apk",
+        default=Path(__file__).resolve().parents[1] / "app/build/outputs/apk/sideload/debug/app-sideload-debug.apk",
     )
     args = parser.parse_args()
     StartupGateDeviceTest(args.serial, args.apk).run()

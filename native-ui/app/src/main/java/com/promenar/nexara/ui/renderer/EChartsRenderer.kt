@@ -9,7 +9,6 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,7 +30,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,26 +62,26 @@ fun EChartsBlock(
     val context = LocalContext.current
     val palette = rememberRichContentPalette()
     var showFullScreen by remember { mutableStateOf(false) }
-    val webView = remember { RichContentWebViewPool.acquire(context) }
     var webViewHeight by remember { mutableIntStateOf(200) }
+    val webView = remember {
+        RichContentWebViewPool.acquire(context).apply {
+            webViewClient = object : RichContentWebViewClient(context) {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    view?.evaluateJavascript(
+                        "(function() { return document.body.scrollHeight; })()"
+                    ) { heightStr ->
+                        val h = heightStr?.toIntOrNull() ?: 200
+                        webViewHeight = h.coerceIn(200, 500)
+                    }
+                }
+            }
+        }
+    }
     val html = remember(optionJson, fontSize, palette) {
         buildEChartsHtml(optionJson, fullScreen = false, fontSize = fontSize, palette = palette)
     }
     val fullScreenHtml = remember(optionJson, fontSize, palette) {
         buildEChartsHtml(optionJson, fullScreen = true, fontSize = fontSize, palette = palette)
-    }
-
-    LaunchedEffect(webView) {
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                view?.evaluateJavascript(
-                    "(function() { return document.body.scrollHeight; })()"
-                ) { heightStr ->
-                    val h = heightStr?.toIntOrNull() ?: 200
-                    webViewHeight = h.coerceIn(200, 500)
-                }
-            }
-        }
     }
 
     DisposableEffect(webView) {
@@ -95,13 +93,7 @@ fun EChartsBlock(
             factory = { webView },
             update = { wv ->
                 wv.settings.defaultFontSize = fontSize
-                wv.loadDataWithBaseURL(
-                    "file:///android_asset/",
-                    html,
-                    "text/html",
-                    "UTF-8",
-                    null
-                )
+                wv.loadRichContent(html)
             },
             modifier = Modifier
                 .fillMaxWidth()

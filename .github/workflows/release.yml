@@ -366,12 +366,16 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace --no-build-cache clean
           ./gradlew --no-daemon --stacktrace --no-build-cache \
-            :app:validateDebugScreenshotTest
+            :app:validateSideloadDebugScreenshotTest
           ./gradlew --no-daemon --stacktrace --no-build-cache \
-            :app:testDebugUnitTest \
-            :app:lintDebug \
-            :app:assembleDebug \
-            :app:assembleRelease
+            :app:testSideloadDebugUnitTest \
+            :app:lintSideloadDebug \
+            :app:assembleSideloadDebug \
+            :app:assemblePlayDebug \
+            :app:testPlayDebugUnitTest \
+            :app:assembleSideloadRelease \
+            :app:assemblePlayRelease
+          python3 ../scripts/ci/check-distribution-manifests.py --build-type release
 
       - name: 删除临时 keystore
         if: always()
@@ -384,13 +388,15 @@ jobs:
         with:
           name: release-gate-reports-${{ github.run_attempt }}
           path: |
-            native-ui/app/build/reports/tests/testDebugUnitTest/
-            native-ui/app/build/test-results/testDebugUnitTest/
-            native-ui/app/build/reports/lint-results-debug.html
-            native-ui/app/build/reports/lint-results-debug.xml
-            native-ui/app/build/reports/lint-results-debug.txt
-            native-ui/app/build/reports/screenshotTest/preview/debug/
-            native-ui/app/build/outputs/screenshotTest-results/preview/debug/
+            native-ui/app/build/reports/tests/testSideloadDebugUnitTest/
+            native-ui/app/build/test-results/testSideloadDebugUnitTest/
+            native-ui/app/build/reports/tests/testPlayDebugUnitTest/
+            native-ui/app/build/test-results/testPlayDebugUnitTest/
+            native-ui/app/build/reports/lint-results-sideloadDebug.html
+            native-ui/app/build/reports/lint-results-sideloadDebug.xml
+            native-ui/app/build/reports/lint-results-sideloadDebug.txt
+            native-ui/app/build/reports/screenshotTest/preview/debug/sideload/
+            native-ui/app/build/outputs/screenshotTest-results/preview/debug/sideload/
           if-no-files-found: ignore
           retention-days: 14
 
@@ -401,28 +407,34 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp native-ui/app/build/outputs/apk/release/app-release.apk dist/nexara-v0.2.2-beta.apk
-          python3 scripts/verify-release-apk.py \
-            dist/nexara-v0.2.2-beta.apk \
-            --expected-package com.promenar.nexara.native \
-            --expected-version-code 4 \
-            --expected-version-name 0.2.2-beta \
-            --expected-cert-sha256 "${NEXARA_SIGNING_CERT_SHA256}" \
-            --checksum-output dist/nexara-v0.2.2-beta.apk.sha256
-          r8_output_dir="native-ui/app/build/outputs/mapping/release"
-          mapping_path="native-ui/app/build/outputs/mapping/release/mapping.txt"
-          test -s native-ui/app/build/outputs/mapping/release/mapping.txt || {
-            echo "::error::R8 mapping.txt 缺失或为空，拒绝发布无法审计的混淆制品。"
-            exit 1
-          }
-          mkdir -p dist/r8
-          cp "${mapping_path}" dist/r8/mapping.txt
-          for r8_evidence in seeds.txt usage.txt configuration.txt; do
-            if [[ -f "${r8_output_dir}/${r8_evidence}" ]]; then
-              cp "${r8_output_dir}/${r8_evidence}" "dist/r8/${r8_evidence}"
-            else
-              echo "::notice::AGP 未生成可选 R8 证据 ${r8_evidence}。"
-            fi
+          cp native-ui/app/build/outputs/apk/sideload/release/app-sideload-release.apk dist/nexara-v0.2.2-beta.apk
+          cp native-ui/app/build/outputs/apk/play/release/app-play-release.apk dist/nexara-v0.2.2-beta-play.apk
+          for distribution in sideload play; do
+            suffix=""
+            if [[ "${distribution}" == "play" ]]; then suffix="-play"; fi
+            apk="dist/nexara-v0.2.2-beta${suffix}.apk"
+            python3 scripts/verify-release-apk.py \
+              "${apk}" \
+              --expected-package com.promenar.nexara.native \
+              --expected-version-code 4 \
+              --expected-version-name 0.2.2-beta \
+              --expected-cert-sha256 "${NEXARA_SIGNING_CERT_SHA256}" \
+              --checksum-output "${apk}.sha256"
+            r8_output_dir="native-ui/app/build/outputs/mapping/${distribution}Release"
+            mapping_path="${r8_output_dir}/mapping.txt"
+            test -s "${mapping_path}" || {
+              echo "::error::${distribution} 的 R8 mapping.txt 缺失或为空。"
+              exit 1
+            }
+            mkdir -p "dist/r8/${distribution}"
+            cp "${mapping_path}" "dist/r8/${distribution}/mapping.txt"
+            for r8_evidence in seeds.txt usage.txt configuration.txt; do
+              if [[ -f "${r8_output_dir}/${r8_evidence}" ]]; then
+                cp "${r8_output_dir}/${r8_evidence}" "dist/r8/${distribution}/${r8_evidence}"
+              else
+                echo "::notice::AGP 未生成可选 R8 证据 ${distribution}/${r8_evidence}。"
+              fi
+            done
           done
 
       - name: 上传已验签发行产物
@@ -435,7 +447,7 @@ jobs:
           retention-days: 3
 
   signed-apk-smoke:
-    name: 签名 R8 APK 无密钥冷安装 smoke（API ${{ matrix.api-level }}）
+    name: 签名 R8 APK 无密钥冷安装 smoke（${{ matrix.distribution }} / API ${{ matrix.api-level }}）
     needs: build-release
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -445,7 +457,17 @@ jobs:
       matrix:
         include:
           - api-level: 35
+            distribution: sideload
+            apk-name: nexara-v0.2.2-beta.apk
           - api-level: 36
+            distribution: sideload
+            apk-name: nexara-v0.2.2-beta.apk
+          - api-level: 35
+            distribution: play
+            apk-name: nexara-v0.2.2-beta-play.apk
+          - api-level: 36
+            distribution: play
+            apk-name: nexara-v0.2.2-beta-play.apk
 
     steps:
       - name: 检出源码
@@ -476,7 +498,7 @@ jobs:
       - name: 下载后先核对发行 APK 哈希
         working-directory: dist
         shell: bash
-        run: sha256sum -c nexara-v0.2.2-beta.apk.sha256
+        run: sha256sum -c '${{ matrix.apk-name }}.sha256'
 
       - name: 启用 KVM
         shell: bash
@@ -490,7 +512,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
         env:
           NEXARA_SIGNING_CERT_SHA256: ${{ vars.NEXARA_SIGNING_CERT_SHA256 }}
-          ANDROID_RELEASE_SMOKE_ARTIFACT_DIR: artifacts/release-smoke-api-${{ matrix.api-level }}
+          ANDROID_RELEASE_SMOKE_ARTIFACT_DIR: artifacts/release-smoke-${{ matrix.distribution }}-api-${{ matrix.api-level }}
         with:
           api-level: ${{ matrix.api-level }}
           target: default
@@ -505,14 +527,14 @@ jobs:
             -camera-back none
           disable-animations: true
           emulator-boot-timeout: 600
-          script: scripts/ci/android-release-apk-smoke.sh dist/nexara-v0.2.2-beta.apk
+          script: scripts/ci/android-release-apk-smoke.sh dist/${{ matrix.apk-name }}
 
       - name: 上传冷安装证据
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: release-signed-apk-smoke-api-${{ matrix.api-level }}-${{ github.run_attempt }}
-          path: artifacts/release-smoke-api-${{ matrix.api-level }}/
+          name: release-signed-apk-smoke-${{ matrix.distribution }}-api-${{ matrix.api-level }}-${{ github.run_attempt }}
+          path: artifacts/release-smoke-${{ matrix.distribution }}-api-${{ matrix.api-level }}/
           if-no-files-found: warn
           retention-days: 14
 
@@ -606,7 +628,7 @@ jobs:
       - name: 发布前再次核对发行 APK 哈希
         working-directory: dist
         shell: bash
-        run: sha256sum -c nexara-v0.2.2-beta.apk.sha256
+        run: sha256sum -c nexara-v0.2.2-beta.apk.sha256 nexara-v0.2.2-beta-play.apk.sha256
 
       - name: 发布前统一校验发布状态（验证账本 + 发布说明）
         shell: bash
@@ -626,6 +648,8 @@ jobs:
           release_assets=(
             dist/nexara-v0.2.2-beta.apk
             dist/nexara-v0.2.2-beta.apk.sha256
+            dist/nexara-v0.2.2-beta-play.apk
+            dist/nexara-v0.2.2-beta-play.apk.sha256
           )
 
           if ! gh release view "${tag}" >/dev/null 2>&1; then

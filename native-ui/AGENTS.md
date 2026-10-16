@@ -224,11 +224,13 @@ val config = Json.decodeFromString<TestConfig>(
 
 ## 编译命令
 ```bash
-.\gradlew.bat compileDebugKotlin
-.\gradlew.bat test
-.\gradlew.bat assembleDebug
-.\gradlew.bat assembleRelease
+.\gradlew.bat :app:compileSideloadDebugKotlin
+.\gradlew.bat :app:testSideloadDebugUnitTest :app:testPlayDebugUnitTest
+.\gradlew.bat :app:assembleSideloadDebug :app:assemblePlayDebug
+.\gradlew.bat :app:assembleSideloadRelease :app:assemblePlayRelease
 ```
+
+签名构建需要已授权的安全签名环境。风味、合并清单权限检查、设备测试与产物路径以根级 [发行渠道构建说明](../docs/distribution-builds.md) 为准。
 
 ## TS 源码参考位置（只读）
 `../src/`

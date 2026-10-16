@@ -73,7 +73,7 @@ GGUF/llama.cpp 不属于 `v0.2.2-beta` 稳定发行范围。Release 构建会关
 
 公开制品只从 [Promenar/Nexara Releases](https://github.com/Promenar/Nexara/releases) 发布。截至 2026-10-01，公开 `v0.2-beta` 为 prerelease（2026-07-29 发布），Latest 仍为 `v0.1-beta`；`v0.2.2-beta` 尚未公开发布。当前 `v0.2.2-beta` 若由维护者直接交付，应同时提供 APK 的绝对路径、SHA-256、版本身份和同签名验真结果；未获授权前不会创建 tag 或 GitHub Release。安装时：
 
-1. 取得维护者交付并验真的 APK 与对应 `.sha256` 文件；发行 workflow 的标准名称为 `nexara-v0.2.2-beta.apk`。
+1. 取得维护者交付并验真的 APK 与对应 `.sha256` 文件；侧载主资产为 `nexara-v0.2.2-beta.apk`，Play 风味资产为 `nexara-v0.2.2-beta-play.apk`。
 2. 校验 APK 的 SHA-256 与发布文件一致。
 3. 在 Android 系统中允许当前文件管理器或浏览器“安装未知应用”。
 4. 新安装直接侧载；从同签名旧版升级时直接覆盖安装，不卸载、不清数据。
@@ -84,10 +84,16 @@ GGUF/llama.cpp 不属于 `v0.2.2-beta` 稳定发行范围。Release 构建会关
 
 ```bash
 cd native-ui
-./gradlew :app:assembleDebug
+./gradlew :app:assembleSideloadDebug :app:assemblePlayDebug
+./gradlew :app:testSideloadDebugUnitTest :app:testPlayDebugUnitTest :app:lintSideloadDebug
+python3 ../scripts/ci/check-distribution-manifests.py
 ```
 
 Debug 构建不需要发行签名变量。Release 构建必须通过进程环境提供 `NEXARA_KEYSTORE_PATH`、`NEXARA_STORE_PASSWORD`、`NEXARA_KEY_ALIAS` 和 `NEXARA_KEY_PASSWORD`；仓库不保存 keystore 或密码。
+
+`distribution` 维度包含 `sideload` 与 `play`，二者共享包名，沿用各构建类型的后缀。仅侧载清单声明所有文件访问权限；`DistributionCapabilities` 提供渠道和能力开关，尚未提供该权限对应的文件管理功能。设置中的“导出诊断”首行包含渠道及版本。Debug APK 位于 `app/build/outputs/apk/<渠道>/debug/`；签名构建、设备测试及完整任务/产物表见[发行渠道构建说明](docs/distribution-builds.md)。
+
+聊天富内容使用受控 HTTPS 本地资源与公网 HTTPS 子资源；拒绝文件、内容提供器、内网地址与页面跳转。KaTeX、Mermaid、ECharts 和知识图谱模板保留本地加载；预览中的链接直接阻止，不会自动打开外部应用。安全策略及设备验收入口见[构建与渲染说明](docs/distribution-builds.md#富内容-webview)。
 
 应用图标采用[折叠 N 矢量母版](assets/branding/nexara-fold-master.svg)，白底黑标为主，夜间资源为黑底白标，并提供 Android 自适应与单色主题图层。各变体通过 Gradle Variant API 自动生成图标，IDE、ADE、命令行和 CI 的正常构建均使用同一母版；无需本机图像工具。制作规格、覆盖防护和验证方法见[图标契约](assets/branding/design-spec.md)。
 

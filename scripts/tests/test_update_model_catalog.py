@@ -2101,7 +2101,7 @@ class Task9CatalogDiffTestCase(unittest.TestCase):
         )
         self.assertIn("python3 scripts/model-catalog/update-model-catalog.py", workflow_text)
         self.assertIn("python3 -m unittest scripts.tests.test_update_model_catalog", workflow_text)
-        self.assertIn("./gradlew :app:testDebugUnitTest --tests 'com.promenar.nexara.data.model.catalog.*'", workflow_text)
+        self.assertIn("./gradlew :app:testSideloadDebugUnitTest --tests 'com.promenar.nexara.data.model.catalog.*'", workflow_text)
         update_step = re.search(
             r"- name: 更新模型快照并写入差异报告（runner temp）\n(?P<body>(?:\s{8}.*\n)+?)\s+- name: Python 离线校验",
             workflow_text,
