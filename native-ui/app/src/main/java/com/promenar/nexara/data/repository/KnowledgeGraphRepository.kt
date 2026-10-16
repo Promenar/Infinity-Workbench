@@ -24,7 +24,6 @@ class KnowledgeGraphRepository(
         kgNodeDao.getCount()
 
     override suspend fun clear() {
-        kgEdgeDao.clearAll()
-        kgNodeDao.clearAll()
+        kgEdgeDao.clearGraph()
     }
 }

@@ -145,6 +145,19 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
+    fun `restore rejects a historical version header even with the current Room identity`() = runBlocking {
+        seedCompleteGraph()
+        val source = newDataSource()
+        val snapshot = source.snapshot(CANONICAL_CONTENT)
+        db.openHelper.writableDatabase.execSQL("PRAGMA user_version = 19")
+
+        assertFails { source.restore(validated(snapshot)) }
+
+        assertThat(db.agentDao().getById("agent-1")).isNotNull()
+        assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+    }
+
+    @Test
     fun `snapshot retries when Provider configuration revision changes across stores`() = runBlocking {
         seedCompleteGraph()
         val reads = java.util.concurrent.atomic.AtomicInteger(0)
@@ -420,8 +433,8 @@ class RoomBackupDataSourceTest {
             val text = snapshot.database.toString(Charsets.UTF_8)
             val payload = Json.parseToJsonElement(text).jsonObject
 
-            assertThat(snapshot.databaseSchemaVersion).isEqualTo(3)
-            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("3")
+            assertThat(snapshot.databaseSchemaVersion).isEqualTo(4)
+            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("4")
 
             listOf(
                 "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",
@@ -429,7 +442,7 @@ class RoomBackupDataSourceTest {
                 "workspace_files", "workspace_seq",
             ).forEach { assertThat(text).contains("\"$it\"") }
             listOf(
-                "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_jit_cache",
+                "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_evidence", "kg_jit_cache", "kg_jit_cache_sources",
                 "vectorization_tasks", "audit_logs", "tool_execution_ledger", "file_versions",
                 "workspace_mutations", "mcp_tool_snapshots",
             ).forEach { assertThat(text).doesNotContain("\"$it\"") }
@@ -451,6 +464,38 @@ class RoomBackupDataSourceTest {
             assertThat(Path.of(db.artifactDao().getById("artifact-1")!!.workspacePath!!).startsWith(restoreParent))
                 .isTrue()
         }
+    }
+
+    @Test
+    fun `历史备份缺整个必需工作区表时拒绝且保留当前数据`() = runBlocking {
+        val snapshot = emptyWorkspaceBackup()
+        db.agentDao().insert(AgentEntity("sentinel", "当前数据", createdAt = 2))
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        for (version in 1..3) {
+            val malformed = JsonObject(root + mapOf("schemaVersion" to JsonPrimitive(version),
+                "tables" to JsonObject(tables - "workspace_files"))).toString().toByteArray()
+            val failure = runCatching { newDataSource().restore(validated(snapshot, database = malformed)) }.exceptionOrNull()
+            assertThat(failure).isInstanceOf(BackupValidationException::class.java)
+            assertThat(db.agentDao().getById("sentinel")).isNotNull()
+        }
+    }
+
+    @Test
+    fun `恢复真实v3工作区行缺建图意图列时仍保全源数据`() = runBlocking {
+        seedCompleteGraph()
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        val oldFiles = JsonArray(tables.getValue("workspace_files").jsonArray.map { JsonObject(it.jsonObject - "kg_strategy") })
+        val oldDatabase = JsonObject(root + mapOf("schemaVersion" to JsonPrimitive(3),
+            "tables" to JsonObject(tables + ("workspace_files" to oldFiles)))).toString().toByteArray()
+        db.clearAllTables()
+        newDataSource().restore(validated(snapshot, database = oldDatabase))
+        assertThat(db.messageDao().getById("message-1")).isNotNull()
+        val file = db.fileEntryDao().getByUuid("root-1", "file-1")!!
+        assertThat(file.kgStrategy).isNull()
+        assertThat(file.kgExtractedAt).isNull()
     }
 
     @Test
@@ -565,7 +610,7 @@ class RoomBackupDataSourceTest {
             newDataSource().restore(validated(backup))
 
             listOf(
-                "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_jit_cache",
+                "vectors", "vectors_fts", "kg_nodes", "kg_edges", "kg_evidence", "kg_jit_cache", "kg_jit_cache_sources",
                 "vectorization_tasks", "tool_execution_ledger", "file_versions", "workspace_mutations",
                 "mcp_tool_snapshots",
             ).forEach { table -> assertThat(rowCount(table)).isEqualTo(0) }
@@ -1424,21 +1469,24 @@ class RoomBackupDataSourceTest {
         )
         sqlite.execSQL("INSERT INTO vectors_fts(rowid, content) VALUES(?,?)", arrayOf<Any?>(99, "derived fts"))
         sqlite.execSQL(
-            "INSERT INTO kg_nodes(id,name,type,source_type,created_at,stale) VALUES(?,?,?,?,?,?)",
-            arrayOf<Any?>("node-1", "Node 1", "concept", "full", 100L, 0),
+            "INSERT INTO kg_nodes(id,name,type,normalized_name,created_at) VALUES(?,?,?,?,?)",
+            arrayOf<Any?>("node-1", "Node 1", "concept", "node 1", 100L),
         )
         sqlite.execSQL(
-            "INSERT INTO kg_nodes(id,name,type,source_type,created_at,stale) VALUES(?,?,?,?,?,?)",
-            arrayOf<Any?>("node-2", "Node 2", "concept", "full", 100L, 0),
+            "INSERT INTO kg_nodes(id,name,type,normalized_name,created_at) VALUES(?,?,?,?,?)",
+            arrayOf<Any?>("node-2", "Node 2", "concept", "node 2", 100L),
         )
         sqlite.execSQL(
-            "INSERT INTO kg_edges(id,source_id,target_id,relation,weight,source_type,created_at,stale) VALUES(?,?,?,?,?,?,?,?)",
-            arrayOf<Any?>("edge-1", "node-1", "node-2", "rel", 1.0, "full", 100L, 0),
+            "INSERT INTO kg_edges(id,source_id,target_id,relation,weight,normalized_relation,created_at) VALUES(?,?,?,?,?,?,?)",
+            arrayOf<Any?>("edge-1", "node-1", "node-2", "rel", 1.0, "rel", 100L),
         )
         sqlite.execSQL(
             "INSERT INTO kg_jit_cache(cache_key,query_hash,chunk_ids_hash,result_json,created_at,expires_at) VALUES(?,?,?,?,?,?)",
             arrayOf<Any?>("cache-1", "q", "c", "{}", 100L, 200L),
         )
+        sqlite.execSQL("INSERT INTO kg_evidence(id,node_id,source_type,content_hash,task_id,created_at,workspace_document) VALUES('p-node','node-1','legacy','','fixture',100,0)")
+        sqlite.execSQL("INSERT INTO kg_evidence(id,edge_id,source_type,content_hash,task_id,created_at,workspace_document) VALUES('p-edge','edge-1','legacy','','fixture',100,0)")
+        sqlite.execSQL("INSERT INTO kg_jit_cache_sources(cache_key,doc_id,content_hash) VALUES('cache-1','file-1','fixture-hash')")
         sqlite.execSQL(
             """INSERT INTO vectorization_tasks(
                id,type,status,last_chunk_index,progress,skip_vectorization,content_truncated,created_at,updated_at

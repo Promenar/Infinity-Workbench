@@ -183,7 +183,7 @@ val MIGRATION_17_18 = object : Migration(17, 18) {
     }
 }
 
-val MIGRATION_18_19 = object : Migration(18, 19) {
+val MIGRATION_19_20 = object : Migration(19, 20) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE IF NOT EXISTS external_mounts (

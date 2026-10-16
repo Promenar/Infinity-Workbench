@@ -1,7 +1,7 @@
 package com.promenar.nexara.data.rag
 
 import kotlinx.serialization.json.*
-import java.util.Locale
+import com.promenar.nexara.data.local.db.KgIdentity
 
 /** 入库、提示词与展示路径共享的已校验图，端点统一使用规范节点的显示名。 */
 class ValidatedGraph private constructor(val nodes: List<ExtractedNode>, val edges: List<ExtractedEdge>) {
@@ -30,8 +30,8 @@ class ValidatedGraph private constructor(val nodes: List<ExtractedNode>, val edg
             return ValidatedGraph(canonical.values.filter { it.name in connected }, validEdges)
         }
 
-        fun identity(name: String): String = clean(name).lowercase(Locale.ROOT)
-        private fun clean(value: String) = value.trim().replace(Regex("\\s+"), " ")
+        fun identity(name: String): String = KgIdentity.normalize(name)
+        private fun clean(value: String) = KgIdentity.display(value)
     }
 }
 

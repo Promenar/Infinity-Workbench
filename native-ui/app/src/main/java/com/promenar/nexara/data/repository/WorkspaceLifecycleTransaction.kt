@@ -25,7 +25,6 @@ class WorkspaceLifecycleTransaction(
                 artifacts.clear(workspaceRootUuid, fileUuid, deleteTags = false)
             }
             database.vectorizationTaskDao().deleteByWorkspaceFiles(workspaceRootUuid, fileUuids)
-            database.kgJitCacheDao().deleteAll()
             database.fileEntryDao().updateAll(updates)
         }
     }
@@ -52,6 +51,7 @@ class WorkspaceLifecycleTransaction(
                         sourceMimeType = entry.mimeType,
                         targetContentHash = target.targetHash,
                         targetEpoch = target.targetEpoch,
+                        kgStrategy = entry.kgStrategy ?: "full".takeIf { entry.kgExtractedAt != null },
                         createdAt = now(),
                         updatedAt = now(),
                     ),

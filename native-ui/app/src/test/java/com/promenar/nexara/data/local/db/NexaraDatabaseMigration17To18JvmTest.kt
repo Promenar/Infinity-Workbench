@@ -38,12 +38,12 @@ class NexaraDatabaseMigration17To18JvmTest {
         createPublishedV17Database()
 
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_17_18, MIGRATION_18_19)
+            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
             .allowMainThreadQueries()
             .build()
         try {
             val database = room.openHelper.writableDatabase
-            assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(19L)
+            assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(20L)
             assertThat(database.stringQuery("SELECT name FROM agents WHERE id='legacy-agent'"))
                 .isEqualTo("Legacy Agent")
             assertThat(database.longQuery("SELECT name_customized FROM agents WHERE id='legacy-agent'"))
@@ -132,7 +132,7 @@ class NexaraDatabaseMigration17To18JvmTest {
         }
 
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_17_18, MIGRATION_18_19)
+            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
             .allowMainThreadQueries()
             .build()
         try {
@@ -165,7 +165,7 @@ class NexaraDatabaseMigration17To18JvmTest {
         }
 
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_17_18, MIGRATION_18_19)
+            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
             .allowMainThreadQueries()
             .build()
         try {
@@ -209,7 +209,7 @@ class NexaraDatabaseMigration17To18JvmTest {
             )
         }
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_17_18, MIGRATION_18_19)
+            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
             .allowMainThreadQueries()
             .build()
         try {
@@ -250,7 +250,7 @@ class NexaraDatabaseMigration17To18JvmTest {
             )
         }
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_17_18, MIGRATION_18_19)
+            .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
             .allowMainThreadQueries()
             .build()
 
@@ -284,6 +284,7 @@ class NexaraDatabaseMigration17To18JvmTest {
             SQLiteDatabase.OPEN_READWRITE,
         ).use { sqlite ->
             sqlite.execSQL("PRAGMA foreign_keys=OFF")
+            replaceKgTablesWithV18(sqlite)
             listOf(
                 "mcp_tool_snapshots",
                 "tool_execution_ledger",

@@ -47,6 +47,11 @@ internal class DualDatabaseGraphMerger(
                     unresolved += "preserved-derived-cache:kg_jit_cache"
                 }
                 COPY_ORDER.forEach { table -> copyTable(target, table, mappings, unresolved) }
+                if (columns(target, "main", "kg_evidence").isNotEmpty()) {
+                    target.execSQL("DELETE FROM kg_edges WHERE NOT EXISTS (SELECT 1 FROM kg_evidence p WHERE p.edge_id=kg_edges.id)")
+                    target.execSQL("DELETE FROM kg_nodes WHERE NOT EXISTS (SELECT 1 FROM kg_evidence p WHERE p.node_id=kg_nodes.id) AND NOT EXISTS (SELECT 1 FROM kg_edges e WHERE e.source_id=kg_nodes.id OR e.target_id=kg_nodes.id)")
+                    target.execSQL("DELETE FROM kg_jit_cache_sources")
+                }
                 mergeWorkspaceSequence(target)
                 rebuildVectorFts(target)
                 target.execSQL("DELETE FROM kg_jit_cache")
@@ -90,7 +95,7 @@ internal class DualDatabaseGraphMerger(
                 db.rawQuery("SELECT `${escape(column)}` FROM legacy.`${escape(table)}`", null).use { cursor ->
                     while (cursor.moveToNext()) {
                         if (!cursor.isNull(0)) cursor.getString(0)?.let { old ->
-                            values[old] = if (
+                            values[old] = existingKgIdentity(db, table, old, result) ?: if (
                                 table == "sessions" && column == "id" &&
                                 old == RAG_WORKSPACE_SESSION_ID && !currentHasFixedRagSession
                             ) old else RecoveryStableId.map(table, column, old)
@@ -196,6 +201,14 @@ internal class DualDatabaseGraphMerger(
                     if (!cursor.isNull(index) && cursor.getType(index) == Cursor.FIELD_TYPE_STRING) column to cursor.getString(index)
                     else null
                 }.toMap()
+                // KG 属于派生数据；非工作区历史文档不能按文件外键要求阻断用户源数据恢复。
+                if (table in setOf("kg_edges", "kg_evidence")) {
+                    val doc = stringRow["doc_id"]
+                    if (doc != null && doc !in mappings[ColumnKey("workspace_files", "uuid")].orEmpty()) {
+                        unresolved += "discarded-derived:$table:non-workspace-document"
+                        continue
+                    }
+                }
                 sourceColumns.forEachIndexed { index, column ->
                     val raw = cursorValue(cursor, index)
                     val transformed = if (raw is String) {
@@ -203,9 +216,32 @@ internal class DualDatabaseGraphMerger(
                     } else raw
                     put(values, column, transformed)
                 }
-                if (db.insertOrThrow(table, null, values) < 0) throw IllegalStateException("合并${table}失败")
+                if (table in setOf("kg_nodes", "kg_edges")) {
+                    db.insertWithOnConflict(table, null, values, SQLiteDatabase.CONFLICT_IGNORE)
+                    if (table == "kg_edges" && values.containsKey("weight")) {
+                        db.execSQL("UPDATE kg_edges SET weight=MAX(weight,?) WHERE id=?", arrayOf(values.getAsDouble("weight"), values.getAsString("id")))
+                    }
+                } else if (db.insertOrThrow(table, null, values) < 0) throw IllegalStateException("合并${table}失败")
             }
         }
+    }
+
+    private fun existingKgIdentity(db: SQLiteDatabase, table: String, old: String,
+        mappings: Map<ColumnKey, Map<String, String>>): String? {
+        val identityColumn = when (table) { "kg_nodes" -> "normalized_name"; "kg_edges" -> "normalized_relation"; else -> return null }
+        if (identityColumn !in columns(db, "legacy", table)) return null
+        val sql = if (table == "kg_nodes") {
+            "SELECT n.id FROM kg_nodes n JOIN legacy.kg_nodes l ON n.normalized_name=l.normalized_name AND n.type=l.type WHERE l.id=?"
+        } else {
+            val source = db.rawQuery("SELECT source_id,target_id,normalized_relation FROM legacy.kg_edges WHERE id=?", arrayOf(old)).use {
+                if (!it.moveToFirst()) return null
+                Triple(it.getString(0), it.getString(1), it.getString(2))
+            }
+            return db.rawQuery("SELECT id FROM kg_edges WHERE source_id=? AND target_id=? AND normalized_relation=?", arrayOf(
+                mappings[ColumnKey("kg_nodes", "id")]?.get(source.first), mappings[ColumnKey("kg_nodes", "id")]?.get(source.second), source.third,
+            )).use { if (it.moveToFirst()) it.getString(0) else null }
+        }
+        return db.rawQuery(sql, arrayOf(old)).use { if (it.moveToFirst()) it.getString(0) else null }
     }
 
     private fun transformString(
@@ -218,6 +254,10 @@ internal class DualDatabaseGraphMerger(
         unresolved: MutableList<String>,
     ): String {
         if (value.isBlank()) return value
+        if (table == "kg_evidence" && column == "task_id") {
+            return mappings[ColumnKey("vectorization_tasks", "id")]?.get(value)
+                ?: RecoveryStableId.map("kg_extraction_tasks", "id", value)
+        }
         if (table == "sessions" && column == "agent_id" && value == RAG_SYSTEM_AGENT_ID) return value
         if (table == "attachments" && column == "uri" && value.startsWith("content://") &&
             row["local_uri"].isNullOrBlank()) {
@@ -464,7 +504,7 @@ internal class DualDatabaseGraphMerger(
     private companion object {
         val COPY_ORDER = listOf(
             "agents", "custom_skills", "mcp_servers", "mcp_tool_snapshots", "sessions", "messages",
-            "attachments", "vectors", "context_summaries", "tags", "document_tags", "kg_nodes", "kg_edges",
+            "attachments", "vectors", "context_summaries", "tags", "document_tags", "kg_nodes", "kg_edges", "kg_evidence",
             "audit_logs", "artifacts", "workspace_files", "task_nodes", "tool_execution_ledger",
             "file_versions", "vectorization_tasks",
         )
@@ -492,6 +532,10 @@ internal class DualDatabaseGraphMerger(
             ColumnKey("kg_edges", "session_id") to ColumnKey("sessions", "id"),
             ColumnKey("kg_edges", "agent_id") to ColumnKey("agents", "id"),
             ColumnKey("kg_edges", "file_uuid") to ColumnKey("workspace_files", "uuid"),
+            ColumnKey("kg_evidence", "node_id") to ColumnKey("kg_nodes", "id"),
+            ColumnKey("kg_evidence", "edge_id") to ColumnKey("kg_edges", "id"),
+            ColumnKey("kg_evidence", "doc_id") to ColumnKey("workspace_files", "uuid"),
+            ColumnKey("kg_evidence", "session_id") to ColumnKey("sessions", "id"),
             ColumnKey("vectorization_tasks", "user_message_id") to ColumnKey("messages", "id"),
             ColumnKey("vectorization_tasks", "assistant_message_id") to ColumnKey("messages", "id"),
             ColumnKey("vectorization_tasks", "session_id") to ColumnKey("sessions", "id"),

@@ -11,6 +11,33 @@ import java.nio.file.Files
 @RunWith(RobolectricTestRunner::class)
 class DualDatabaseGraphMergerTest {
     @Test
+    fun `历史非工作区KG文档不阻断源数据恢复`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val current = context.getDatabasePath("kg-current-${System.nanoTime()}.db").toPath()
+        val legacy = context.getDatabasePath("kg-legacy-${System.nanoTime()}.db").toPath()
+        createSchema(current)
+        createSchema(legacy)
+        listOf(current, legacy).forEach { path ->
+            SQLiteDatabase.openDatabase(path.toString(), null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+                db.execSQL("CREATE TABLE kg_nodes(id TEXT PRIMARY KEY, name TEXT)")
+                db.execSQL("CREATE TABLE kg_edges(id TEXT PRIMARY KEY, source_id TEXT, target_id TEXT, doc_id TEXT)")
+            }
+        }
+        SQLiteDatabase.openDatabase(legacy.toString(), null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+            seed(db, "legacy")
+            db.execSQL("INSERT INTO kg_nodes VALUES('a','Alice'),('b','Bob')")
+            db.execSQL("INSERT INTO kg_edges VALUES('e','a','b','historical-external-document')")
+        }
+        val result = DualDatabaseGraphMerger(RecoveryPathRewriter { _, _, value -> value })
+            .merge(current, legacy, "kg-external-document")
+        SQLiteDatabase.openDatabase(current.toString(), null, SQLiteDatabase.OPEN_READONLY).use { db ->
+            assertThat(count(db, "messages")).isEqualTo(2)
+            assertThat(count(db, "kg_edges")).isEqualTo(0)
+        }
+        assertThat(result.unresolvedReferences.any { it.startsWith("discarded-derived:kg") }).isTrue()
+    }
+
+    @Test
     fun `same ids remain distinct and all known graph references follow legacy mapping`() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val current = context.getDatabasePath("merge-current-${System.nanoTime()}.db").toPath()

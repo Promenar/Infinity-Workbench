@@ -91,7 +91,7 @@ class LegacyDatabasePromoterAndroidJvmTest {
     }
 
     @Test
-    fun productionPromotionAcceptsExactCurrentV19DatabaseWhenHistoricalSourceAlsoExists() {
+    fun productionPromotionAcceptsExactCurrentV20DatabaseWhenHistoricalSourceAlsoExists() {
         createValidPublishedLegacyDatabase()
         Room.databaseBuilder(context, NexaraDatabase::class.java, "nexara_v2.db")
             .allowMainThreadQueries()
@@ -107,27 +107,43 @@ class LegacyDatabasePromoterAndroidJvmTest {
     @Test
     fun productionPromotionAcceptsExactV18DatabaseBeforeRoomUpgrade() {
         createValidPublishedLegacyDatabase()
-        val schema = Json.parseToJsonElement(
-            File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/18.json").readText(),
-        ).jsonObject.getValue("database").jsonObject
-        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath("nexara_v2.db"), null).use { sqlite ->
-            schema.getValue("entities").jsonArray.forEach { element ->
-                val entity = element.jsonObject
-                val table = entity.getValue("tableName").jsonPrimitive.content
-                sqlite.execSQL(entity.getValue("createSql").jsonPrimitive.content.replace("\${TABLE_NAME}", table))
-                entity["indices"]?.jsonArray?.forEach { index ->
-                    sqlite.execSQL(index.jsonObject.getValue("createSql").jsonPrimitive.content.replace("\${TABLE_NAME}", table))
-                }
-                entity["contentSyncTriggers"]?.jsonArray?.forEach { sqlite.execSQL(it.jsonPrimitive.content) }
-            }
-            schema.getValue("setupQueries").jsonArray.forEach { sqlite.execSQL(it.jsonPrimitive.content) }
-            sqlite.version = 18
-        }
+        createCurrentDatabase(18)
 
         assertThat(LegacyDatabasePromoter.promote(context))
             .isEqualTo(LegacyDatabasePromotionResult.CurrentDatabaseExists)
         SQLiteDatabase.openDatabase(context.getDatabasePath("nexara_v2.db").path, null, SQLiteDatabase.OPEN_READONLY)
             .use { sqlite -> assertThat(sqlite.version).isEqualTo(18) }
+    }
+
+    @Test
+    fun productionPromotionAcceptsExactV19DatabaseBeforeRoomUpgrade() {
+        createValidPublishedLegacyDatabase()
+        createCurrentDatabase(19)
+
+        assertThat(LegacyDatabasePromoter.promote(context))
+            .isEqualTo(LegacyDatabasePromotionResult.CurrentDatabaseExists)
+        SQLiteDatabase.openDatabase(context.getDatabasePath("nexara_v2.db").path, null, SQLiteDatabase.OPEN_READONLY)
+            .use { sqlite -> assertThat(sqlite.version).isEqualTo(19) }
+    }
+
+    @Test
+    fun productionPromotionRejectsV19IdentityWithV20Header() {
+        createValidPublishedLegacyDatabase()
+        createCurrentDatabase(19)
+        SQLiteDatabase.openDatabase(context.getDatabasePath("nexara_v2.db").path, null, SQLiteDatabase.OPEN_READWRITE)
+            .use { sqlite -> sqlite.version = 20 }
+
+        assertThrows(java.io.IOException::class.java) { LegacyDatabasePromoter.promote(context) }
+    }
+
+    @Test
+    fun productionPromotionRejectsV20MissingExternalSnapshotTableDespiteMatchingIdentity() {
+        createValidPublishedLegacyDatabase()
+        createCurrentDatabase(20)
+        SQLiteDatabase.openDatabase(context.getDatabasePath("nexara_v2.db").path, null, SQLiteDatabase.OPEN_READWRITE)
+            .use { sqlite -> sqlite.execSQL("DROP TABLE external_snapshots") }
+
+        assertThrows(java.io.IOException::class.java) { LegacyDatabasePromoter.promote(context) }
     }
 
     @Test
@@ -166,6 +182,25 @@ class LegacyDatabasePromoterAndroidJvmTest {
 
         assertThat(readSentinel("nexara.db")).isEqualTo("legacy-sentinel")
         assertThat(readSentinel("nexara_v2.db")).isEqualTo("current-sentinel")
+    }
+
+    private fun createCurrentDatabase(version: Int) {
+        val schema = Json.parseToJsonElement(
+            File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json").readText(),
+        ).jsonObject.getValue("database").jsonObject
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath("nexara_v2.db"), null).use { sqlite ->
+            schema.getValue("entities").jsonArray.forEach { element ->
+                val entity = element.jsonObject
+                val table = entity.getValue("tableName").jsonPrimitive.content
+                sqlite.execSQL(entity.getValue("createSql").jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                entity["indices"]?.jsonArray?.forEach { index ->
+                    sqlite.execSQL(index.jsonObject.getValue("createSql").jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                }
+                entity["contentSyncTriggers"]?.jsonArray?.forEach { sqlite.execSQL(it.jsonPrimitive.content) }
+            }
+            schema.getValue("setupQueries").jsonArray.forEach { sqlite.execSQL(it.jsonPrimitive.content) }
+            sqlite.version = version
+        }
     }
 
     private fun createValidPublishedLegacyDatabase(sentinel: String? = null) {

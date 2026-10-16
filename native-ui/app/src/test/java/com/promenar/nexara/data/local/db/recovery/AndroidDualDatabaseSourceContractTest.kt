@@ -15,9 +15,18 @@ class AndroidDualDatabaseSourceContractTest {
     }
 
     @Test
+    fun `retained public v17 beside verified current v20 is normal post promotion state`() {
+        assertThat(requiresDualDatabaseRecovery(source(20, CURRENT_V20_IDENTITY))).isFalse()
+    }
+
+    @Test
     fun `untrusted identities do not bypass recovery based on the version alone`() {
         assertThat(requiresDualDatabaseRecovery(source(18, "untrusted-room-identity"))).isTrue()
         assertThat(requiresDualDatabaseRecovery(source(19, CURRENT_V18_IDENTITY))).isTrue()
+        assertThat(requiresDualDatabaseRecovery(source(20, CURRENT_V19_IDENTITY))).isTrue()
+        assertThat(requiresDualDatabaseRecovery(source(19, CURRENT_V20_IDENTITY))).isTrue()
+        assertThat(requiresDualDatabaseRecovery(source(19, "5aa1bdf81ceefffeebbbbb1088436b05"))).isTrue()
+        assertThat(requiresDualDatabaseRecovery(source(21, CURRENT_V20_IDENTITY))).isTrue()
     }
 
     @Test

@@ -1602,4 +1602,5 @@
     <string name="chat_tool_failed">Failed</string>
     <string name="chat_rag_source_web">Web search</string>
     <string name="chat_tool_duration_seconds">%1$s s</string>
+    <string name="rag_details_kg_sources">Sources: %1$s</string>
 </resources>

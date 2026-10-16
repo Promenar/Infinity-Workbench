@@ -1,5 +1,8 @@
 package com.promenar.nexara.data.rag
 
+import com.promenar.nexara.data.local.db.seedKgNode
+import com.promenar.nexara.data.local.db.seedKgEdge
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -74,8 +77,8 @@ class KgIndexPipelineTest {
     fun `文档清理不删除其它任务尚未连边的节点`() = runTest {
         val file = register("cleanup.txt", "text/plain", "text".toByteArray())
         seedOld(file)
-        database.kgNodeDao().insert(KgNodeEntity("pending-other", "Other task", createdAt = 1))
-        GraphStore(database.kgNodeDao(), database.kgEdgeDao()).clearGraphForDoc(file.uuid)
+        database.seedKgNode(KgNodeEntity("pending-other", "Other task", createdAt = 1))
+        GraphStore(database).clearGraphForDoc(file.uuid)
         assertThat(database.kgNodeDao().getById("pending-other")).isNotNull()
         assertThat(database.kgEdgeDao().getByDocId(file.uuid)).isEmpty()
     }
@@ -85,8 +88,8 @@ class KgIndexPipelineTest {
         val file = register("weight.txt", "text/plain", "text".toByteArray())
         seedOld(file)
         val edge = database.kgEdgeDao().getByDocId(file.uuid).single()
-        database.kgEdgeDao().insert(edge.copy(weight = 0.9))
-        GraphStore(database.kgNodeDao(), database.kgEdgeDao()).createEdge(edge.sourceId, edge.targetId, edge.relation, file.uuid, 0.8)
+        GraphStore(database).createEdge(edge.sourceId, edge.targetId, edge.relation, file.uuid, 0.9)
+        GraphStore(database).createEdge(edge.sourceId, edge.targetId, edge.relation, file.uuid, 0.8)
         assertThat(database.kgEdgeDao().getByDocId(file.uuid).single().weight).isEqualTo(0.9)
     }
 
@@ -96,7 +99,7 @@ class KgIndexPipelineTest {
         seedOld(file)
         val protocol = mockk<LlmProtocol>()
         coEvery { protocol.sendPromptSync(any()) } returns PromptResponse("""{"nodes":[],"edges":[]}""")
-        val graph = testGraphExtractor(protocol, GraphStore(database.kgNodeDao(), database.kgEdgeDao()), checkpointRoot = File(root, "checkpoints"))
+        val graph = testGraphExtractor(protocol, GraphStore(database), checkpointRoot = File(root, "checkpoints"))
         val (queue, _) = pipeline(GraphExtractorKnowledgeGraphCandidateBuilder(graph))
         enqueue(queue, file, skipVectorization = false)
         advanceUntilIdle()
@@ -177,7 +180,7 @@ class KgIndexPipelineTest {
         advanceUntilIdle()
         deletion.await()
 
-        assertThat(database.kgEdgeDao().getByDocIdForLifecycleCleanup(file.uuid)).isEmpty()
+        assertThat(database.kgEvidenceDao().affectedByDocument(file.uuid)).isEmpty()
         assertThat(database.vectorDao().getByDocId(file.uuid)).isEmpty()
         assertThat(database.kgNodeDao().getAll()).isEmpty()
         assertThat(database.vectorizationTaskDao().getByDocId(file.uuid)).isEmpty()
@@ -242,7 +245,7 @@ class KgIndexPipelineTest {
         val builder = WorkspaceDocumentIndexCandidateBuilder(database.fileEntryDao(), embedding, RagConfiguration(),
             dispatcher = StandardTestDispatcher(testScheduler), graphCandidateBuilder = { _, _, _ -> ExtractionResult(emptyList(), emptyList()) })
         val service = RoomDocumentIndexService(database) { event ->
-            builder.build(event).copy(edges = listOf(KgEdgeEntity("bad", "missing", "missing2", "knows", docId = file.uuid, fileUuid = file.uuid, createdAt = 1)))
+            builder.build(event).copy(edges = listOf(KgEdgeEntity("bad", "missing", "missing2", "knows", weight = 0.7, createdAt = 1)))
         }
         val queue = queue(service)
         enqueue(queue, file)
@@ -254,6 +257,34 @@ class KgIndexPipelineTest {
         queue.shutdown()
     }
 
+    @Test
+    fun `回收恢复已建图文件通过持久队列真正重建KG且不依赖当前配置`() = runTest {
+        val file = register("restore.txt", "text/plain", "Alpha knows Beta".toByteArray())
+        val built = file.copy(kgExtractedAt = 1, kgStrategy = "full")
+        database.fileEntryDao().update(built)
+        seedOld(built)
+        val lifecycle = com.promenar.nexara.data.repository.WorkspaceLifecycleTransaction(database)
+        lifecycle.recycle("root", listOf(built.copy(inRecycleBin = true)), listOf(file.uuid))
+        assertThat(database.kgEdgeDao().getByDocId(file.uuid)).isEmpty()
+        val restored = built.copy(inRecycleBin = false, updatedAt = 3, vectorizedAt = null)
+        lifecycle.restore("root", listOf(restored), listOf(
+            com.promenar.nexara.domain.repository.RenameIndexTarget(file.uuid, file.hash, 3),
+        ))
+        var calls = 0
+        val (queue, _) = pipeline { _, _, _ ->
+            calls++
+            ExtractionResult(listOf(ExtractedNode("Alpha", "person"), ExtractedNode("Beta", "person")),
+                listOf(ExtractedEdge("Alpha", "Beta", "knows")))
+        }
+        queue.resumeInterruptedTasks().getOrThrow()
+        advanceUntilIdle()
+        assertThat(calls).isEqualTo(1)
+        assertThat(database.kgEdgeDao().getByDocId(file.uuid)).hasSize(1)
+        assertThat(database.fileEntryDao().getByUuid("root", file.uuid)!!.kgStrategy).isEqualTo("full")
+        assertThat(resolveKgStatus(database.fileEntryDao().getByUuid("root", file.uuid)!!, emptyMap())).isEqualTo(KgStatus.COMPLETED)
+        queue.shutdown()
+    }
+
     private fun TestScope.pipeline(graph: KnowledgeGraphCandidateBuilder): Pair<VectorizationQueue, DocumentIndexService> {
         val builder = WorkspaceDocumentIndexCandidateBuilder(database.fileEntryDao(), embedding, RagConfiguration(docChunkSize = 800, chunkOverlap = 100),
             dispatcher = StandardTestDispatcher(testScheduler), graphCandidateBuilder = graph)
@@ -262,7 +293,7 @@ class KgIndexPipelineTest {
     }
 
     private fun TestScope.queue(service: DocumentIndexService) = VectorizationQueue(
-        VectorStore(database.vectorDao(), database.kgNodeDao(), database.kgEdgeDao()), embedding, null,
+        VectorStore(database.vectorDao(), database.kgNodeDao(), database.kgEdgeDao(), database.kgEvidenceDao()), embedding, null,
         database.vectorDao(), database.vectorizationTaskDao(), dispatcher = StandardTestDispatcher(testScheduler),
         fileEntryDao = database.fileEntryDao(), documentIndexService = service,
     )
@@ -281,9 +312,9 @@ class KgIndexPipelineTest {
 
     private suspend fun seedOld(file: FileEntry) {
         database.vectorDao().insert(VectorEntity(id = "old-${file.uuid}", docId = file.uuid, content = "old", embedding = ByteArray(8), createdAt = 1, fileUuid = file.uuid))
-        database.kgNodeDao().insert(KgNodeEntity("a-${file.uuid}", "Old Alpha", createdAt = 1, fileUuid = file.uuid))
-        database.kgNodeDao().insert(KgNodeEntity("b-${file.uuid}", "Old Beta", createdAt = 1, fileUuid = file.uuid))
-        database.kgEdgeDao().insert(KgEdgeEntity("edge-${file.uuid}", "a-${file.uuid}", "b-${file.uuid}", "knows", docId = file.uuid, fileUuid = file.uuid, createdAt = 1))
+        database.seedKgNode(KgNodeEntity("a-${file.uuid}", "Old Alpha ${file.uuid}", createdAt = 1) , docId = file.uuid, workspaceDocument = true)
+        database.seedKgNode(KgNodeEntity("b-${file.uuid}", "Old Beta ${file.uuid}", createdAt = 1) , docId = file.uuid, workspaceDocument = true)
+        database.seedKgEdge(KgEdgeEntity("edge-${file.uuid}", "a-${file.uuid}", "b-${file.uuid}", "knows", weight = 0.7, createdAt = 1) , docId = file.uuid, workspaceDocument = true)
         database.fileEntryDao().update(file.copy(vectorizedAt = 1, kgExtractedAt = 1))
     }
 }

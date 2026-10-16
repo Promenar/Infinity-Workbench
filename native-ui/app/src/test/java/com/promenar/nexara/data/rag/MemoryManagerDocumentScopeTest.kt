@@ -37,6 +37,7 @@ class MemoryManagerDocumentScopeTest {
             database.vectorDao(),
             database.kgNodeDao(),
             database.kgEdgeDao(),
+            database.kgEvidenceDao(),
         )
         vectorStore.addVectorRecords(
             listOf(
@@ -76,7 +77,7 @@ class MemoryManagerDocumentScopeTest {
     private fun createManager(enableHybridSearch: Boolean) = MemoryManager(
             vectorStore = vectorStore,
             keywordSearcher = KeywordSearcher(database.vectorDao()),
-            graphStore = GraphStore(database.kgNodeDao(), database.kgEdgeDao()),
+            graphStore = GraphStore(database),
             embeddingClient = embedding,
             ragConfig = RagConfiguration(
                 enableQueryRewrite = false,

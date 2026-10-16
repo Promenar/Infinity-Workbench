@@ -25,8 +25,7 @@ class MicroGraphExtractor(
         for (pending in pendingMerges) {
             try {
                 val merge: suspend () -> Unit = {
-                    saveToCache(pending.key, pending.result)
-                    merge(pending.result, pending.sessionId)
+                    graphStore.persistJit(pending.result, pending.sources, pending.sessionId, cacheEntry(pending.key, pending.result))
                 }
                 val gate = executionGate
                 if (gate == null) merge() else gate.withSessionAdmission(pending.sessionId, merge)
@@ -52,19 +51,26 @@ class MicroGraphExtractor(
         require(timeout > 0 && maxChars > 0) { "JIT 超时和文本预算必须大于 0" }
         if (!scope.isActive) return MicroGraphResult.failure(KgExtractionStatus.CANCELLED, "JIT 抽取器已关闭", query)
         return withContext(dispatcher) { withTimeoutOrNull(timeout) {
-            val text = prepareInputText(topKResults, maxChars)
-            val key = kgSha256(listOf(sessionId, query, text, modelId.orEmpty(), systemPrompt,
-                topKResults.joinToString(",") { it.id }, maxChars.toString(), "validation-v1").joinToString("\u0000"))
-            getFromCache(key)?.let { return@withTimeoutOrNull it }
+            val input = prepareInput(topKResults, maxChars)
+            val sources = graphStore.captureJitSources(input.sources)
+            val text = input.text
+            val key = kgSha256(listOf(query, text, modelId.orEmpty(), kgSha256(systemPrompt),
+                Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(kotlinx.serialization.serializer<String>()),
+                    topKResults.map { Json.encodeToString(SearchResult.serializer(), it.copy(embedding = FloatArray(0))) }),
+                sources.joinToString("\u0000") { "${it.docId}:${it.contentHash}:${it.epoch}" }, maxChars.toString(), "validation-v2").joinToString("\u0000"))
+            getFromCache(key)?.let { cached ->
+                pendingMerges.send(PendingMerge(key, cached, sessionId, sources))
+                return@withTimeoutOrNull cached
+            }
             val extracted = if (text.isBlank()) ExtractionResult(emptyList(), emptyList())
             else requestClient.extract(modelId, systemPrompt, "检索问题：$query\n\n请从以下文本片段提取关系：\n$text", timeout)
             if (!extracted.isSuccess) return@withTimeoutOrNull MicroGraphResult.failure(extracted.status, extracted.error.orEmpty(), query)
             val graph = ValidatedGraph.from(extracted.nodes, extracted.edges)
-            val result = MicroGraphResult(graph.nodes, graph.edges, graph.context, topKResults.map { it.id }, query, System.currentTimeMillis())
+            val result = MicroGraphResult(graph.nodes, graph.edges, graph.context, input.sources.map { it.id }, query, System.currentTimeMillis(), sourceDocumentIds = sources.mapNotNull { it.docId }.distinct().sorted())
             currentCoroutineContext().ensureActive()
             if (!scope.isActive) return@withTimeoutOrNull MicroGraphResult.failure(KgExtractionStatus.CANCELLED, "JIT 抽取器已关闭", query)
             // 单个消费者与固定容量限制后台工作；队列繁忙时保留当前请求结果，跳过可选持久化。
-            pendingMerges.trySend(PendingMerge(key, result, sessionId))
+            pendingMerges.trySend(PendingMerge(key, result, sessionId, sources))
             result
         } ?: MicroGraphResult.failure(KgExtractionStatus.TIMEOUT, "知识图谱 JIT 抽取超时", query) }
     }
@@ -82,52 +88,38 @@ class MicroGraphExtractor(
         throw cancelled
     } catch (_: Exception) { null }
 
-    private suspend fun saveToCache(key: String, result: MicroGraphResult) {
-        try {
-            val now = System.currentTimeMillis()
-            jitCacheDao.deleteExpired(now)
-            jitCacheDao.insert(KgJitCacheEntity(
-                cacheKey = key,
-                queryHash = kgSha256(result.query),
-                chunkIdsHash = kgSha256(result.sourceChunkIds.joinToString(",")),
-                resultJson = Json.encodeToString(MicroGraphResult.serializer(), result),
-                createdAt = now,
-                expiresAt = now + cacheTtlSeconds * 1000,
-            ))
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            NexaraLogger.log("[KG] JIT 缓存写入失败")
-        }
+    private fun cacheEntry(key: String, result: MicroGraphResult): KgJitCacheEntity {
+        val now = System.currentTimeMillis()
+        return KgJitCacheEntity(
+            cacheKey = key,
+            queryHash = kgSha256(result.query),
+            chunkIdsHash = kgSha256(result.sourceChunkIds.joinToString(",")),
+            resultJson = Json.encodeToString(MicroGraphResult.serializer(), result),
+            createdAt = now,
+            expiresAt = now + cacheTtlSeconds * 1000,
+        )
     }
 
-    private suspend fun merge(result: MicroGraphResult, sessionId: String) {
-        val nodeIds = mutableMapOf<String, String>()
-        for (node in result.nodes) {
-            currentCoroutineContext().ensureActive()
-            nodeIds[node.name] = graphStore.upsertNode(node.name, node.type, node.metadata, KgScope(sessionId = sessionId), "jit")
+    private fun prepareInput(results: List<SearchResult>, maxChars: Int): PreparedInput {
+        val sources = mutableListOf<SearchResult>()
+        val text = buildString {
+            for (result in results) {
+                if (length >= maxChars) break
+                if (isNotEmpty()) append("\n---\n".take(maxChars - length))
+                val content = result.content.take(maxChars - length)
+                if (content.isNotEmpty()) sources += result
+                append(content)
+            }
         }
-        for (edge in result.edges) {
-            currentCoroutineContext().ensureActive()
-            graphStore.createEdge(
-                sourceId = nodeIds.getValue(edge.source), targetId = nodeIds.getValue(edge.target),
-                relation = edge.relation, weight = edge.weight, scope = KgScope(sessionId = sessionId), sourceType = "jit",
-            )
-        }
+        return PreparedInput(text, sources)
     }
 
-    private fun prepareInputText(results: List<SearchResult>, maxChars: Int): String = buildString {
-        for (result in results) {
-            if (length >= maxChars) break
-            if (isNotEmpty()) append("\n---\n".take(maxChars - length))
-            append(result.content.take(maxChars - length))
-        }
-    }
+    private data class PreparedInput(val text: String, val sources: List<SearchResult>)
 
     override fun close() {
         pendingMerges.close()
         scope.cancel()
     }
 
-    private data class PendingMerge(val key: String, val result: MicroGraphResult, val sessionId: String)
+    private data class PendingMerge(val key: String, val result: MicroGraphResult, val sessionId: String, val sources: List<KgJitSource>)
 }

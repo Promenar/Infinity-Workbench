@@ -78,7 +78,7 @@ class AndroidDualDatabaseRecoveryDeviceTest {
             assertThat(digest(snapshot.resolve(CURRENT_DATABASE_NAME))).isEqualTo(currentHash)
 
             SQLiteDatabase.openDatabase(current.path, null, SQLiteDatabase.OPEN_READWRITE).use { database ->
-                assertThat(database.version).isEqualTo(19)
+                assertThat(database.version).isEqualTo(20)
                 database.rawQuery("SELECT m.content FROM messages m JOIN sessions s ON s.id=m.session_id JOIN agents a ON a.id=s.agent_id ORDER BY m.content", null).use { cursor ->
                     val content = buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
                     assertThat(content).containsExactly("旧侧中文😀", "新侧中文😀")

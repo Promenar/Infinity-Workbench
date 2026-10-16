@@ -42,7 +42,8 @@ data class SearchResult(
     val endMessageId: String? = null,
     val createdAt: Long,
     val similarity: Float,
-    val originalSimilarity: Float? = null
+    val originalSimilarity: Float? = null,
+    val documentContentHash: String? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -156,7 +157,8 @@ data class KgEdge(
     val weight: Double = 1.0,
     val docId: String? = null,
     val sourceType: String = "full",
-    val createdAt: Long
+    val createdAt: Long,
+    val documentIds: List<String> = emptyList(),
 )
 
 @Serializable
@@ -202,6 +204,7 @@ data class MicroGraphResult(
     val extractedAt: Long,
     val status: KgExtractionStatus = KgExtractionStatus.SUCCESS,
     val error: String? = null,
+    val sourceDocumentIds: List<String> = emptyList(),
 ) {
     val isSuccess: Boolean get() = status == KgExtractionStatus.SUCCESS && error == null
 

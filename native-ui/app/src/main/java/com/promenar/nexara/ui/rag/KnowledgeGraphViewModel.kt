@@ -181,7 +181,7 @@ class KnowledgeGraphViewModel(
     }
 
     fun loadGraphByDoc(docId: String) {
-        require(docId.isNotBlank()) { "docId must not be blank" }
+        require(docId.isNotBlank()) { "文档标识不能为空" }
         _viewMode.value = KgViewMode.DOCUMENT
         _selectedDocumentId.value = docId
         _documentSelectionRequired.value = false
@@ -312,7 +312,8 @@ class KnowledgeGraphViewModel(
             }
         }
 
-        val mappedNodes = filteredData.nodes.map { node ->
+        // GraphStore 已按存活证据筛选；同名不同类型必须保留独立实体 ID。
+        val mappedNodes = filteredData.nodes.distinctBy { it.id }.map { node ->
             GraphNode(
                 id = node.id,
                 label = node.name,

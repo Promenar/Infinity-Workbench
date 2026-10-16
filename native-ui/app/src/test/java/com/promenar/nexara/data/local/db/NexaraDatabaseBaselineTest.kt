@@ -30,10 +30,14 @@ class NexaraDatabaseBaselineTest {
     fun backupSchemaGateMatchesExportedRoomIdentityHash() {
         val schema = exportedSchema()
 
+        assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V20_IDENTITY_HASH)
+            .isEqualTo(schema.identityHash)
+        assertThat(com.promenar.nexara.data.local.db.recovery.CURRENT_V20_IDENTITY)
+            .isEqualTo(schema.identityHash)
         assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V19_IDENTITY_HASH)
-            .isEqualTo(schema.identityHash)
+            .isEqualTo(exportedSchema(19).identityHash)
         assertThat(com.promenar.nexara.data.local.db.recovery.CURRENT_V19_IDENTITY)
-            .isEqualTo(schema.identityHash)
+            .isEqualTo(exportedSchema(19).identityHash)
         assertThat(com.promenar.nexara.data.backup.ROOM_SCHEMA_V18_IDENTITY_HASH)
             .isEqualTo(exportedSchema(18).identityHash)
         assertThat(com.promenar.nexara.data.local.db.recovery.CURRENT_V18_IDENTITY)
@@ -85,6 +89,16 @@ class NexaraDatabaseBaselineTest {
 
         assertThat(sha256).isEqualTo("ea5d3fbbef90f92ecabb8128e35c0fda747efe124fd41d000a5679e3f101c661")
     }
+    @Test
+    fun exportedSchemaV19SnapshotRemainsByteFrozen() {
+        val file = File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/19.json")
+        val sha256 = MessageDigest.getInstance("SHA-256")
+            .digest(file.readBytes())
+            .joinToString("") { byte -> "%02x".format(byte) }
+
+        assertThat(sha256).isEqualTo("b6cde4fa63bc2f4fd31805f4675b5916a6a4841e7ef9f89c12b631cd86d8da0a")
+    }
+
     private lateinit var context: Context
     private val databaseName = "nexara-v2-baseline-test.db"
 
@@ -126,7 +140,7 @@ class NexaraDatabaseBaselineTest {
             .substringBefore(")").split(',').map { it.trim().substringAfterLast('.') }
         assertThat(migrations).containsAtLeast(
             "MIGRATION_1_2", "MIGRATION_2_3", "MIGRATION_3_4", "MIGRATION_4_5",
-            "MIGRATION_5_18", "MIGRATION_17_18", "MIGRATION_18_19",
+            "MIGRATION_5_18", "MIGRATION_17_18", "MIGRATION_18_19", "MIGRATION_19_20",
         )
         assertThat(source).doesNotContain(".fallbackToDestructiveMigration")
     }
@@ -136,7 +150,7 @@ class NexaraDatabaseBaselineTest {
             .allowMainThreadQueries()
             .build()
 
-    private fun exportedSchema(version: Int = 19): ExportedSchema {
+    private fun exportedSchema(version: Int = 20): ExportedSchema {
         val file = File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json")
         assertThat(file.isFile).isTrue()
         val database = Json.parseToJsonElement(file.readText()).jsonObject
@@ -179,8 +193,8 @@ class NexaraDatabaseBaselineTest {
         database: SupportSQLiteDatabase,
         schema: ExportedSchema,
     ) {
-        assertThat(schema.version).isEqualTo(19)
-        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(19L)
+        assertThat(schema.version).isEqualTo(20)
+        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(20L)
         assertThat(database.longQuery("PRAGMA foreign_keys")).isEqualTo(1L)
 
         val runtimeTables = database.stringColumnQuery(

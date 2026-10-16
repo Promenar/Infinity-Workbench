@@ -29,7 +29,7 @@ import org.robolectric.annotation.Config
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
-class NexaraDatabaseMigration18To19JvmTest {
+class NexaraDatabaseMigration19To20JvmTest {
     private lateinit var context: Context
 
     @Before
@@ -46,13 +46,13 @@ class NexaraDatabaseMigration18To19JvmTest {
     }
 
     @Test
-    fun migrationPreservesV18RowsAndCreatesExternalMountTables() {
-        createV18Database()
+    fun migrationPreservesV18RowsThroughKgV19AndExternalMountV20() {
+        createHistoricalDatabase(18)
 
         val room = openMigratedDatabase()
         try {
             val database = room.openHelper.writableDatabase
-            assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(19L)
+            assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(20L)
             assertThat(database.stringQuery("SELECT name FROM agents WHERE id='existing-agent'"))
                 .isEqualTo("已有助手")
             assertThat(database.stringQuery("SELECT title FROM sessions WHERE id='existing-session'"))
@@ -76,9 +76,35 @@ class NexaraDatabaseMigration18To19JvmTest {
     }
 
     @Test
-    fun emptyMigrationFailsRoomSchemaValidationAndRollsBackV18Rows() {
-        createV18Database()
-        val emptyMigration = object : Migration(18, 19) {
+    fun migrationFromV19PreservesKgEvidenceAndWorkspaceIntent() {
+        createHistoricalDatabase()
+        SQLiteDatabase.openDatabase(
+            context.getDatabasePath(MIGRATED_DATABASE).path, null, SQLiteDatabase.OPEN_READWRITE,
+        ).use { database ->
+            database.execSQL("INSERT INTO kg_nodes(id,name,normalized_name,type,created_at) VALUES('node','实体','实体','concept',1)")
+            database.execSQL("INSERT INTO kg_evidence(id,node_id,source_type,session_id,content_hash,task_id,created_at,workspace_document) VALUES('evidence','node','session','existing-session','hash','task',2,0)")
+        }
+        val room = openMigratedDatabase()
+        try {
+            val database = room.openHelper.writableDatabase
+            assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(20L)
+            assertThat(database.stringQuery("SELECT normalized_name FROM kg_nodes WHERE id='node'"))
+                .isEqualTo("实体")
+            assertThat(database.stringQuery("SELECT content_hash FROM kg_evidence WHERE id='evidence'"))
+                .isEqualTo("hash")
+            assertThat(database.stringQuery("SELECT kg_strategy FROM workspace_files WHERE uuid='existing-file'"))
+                .isEqualTo("full")
+            assertThat(database.longQuery("SELECT COUNT(*) FROM external_mounts")).isEqualTo(0L)
+            assertThat(database.longQuery("SELECT COUNT(*) FROM external_snapshots")).isEqualTo(0L)
+        } finally {
+            room.close()
+        }
+    }
+
+    @Test
+    fun emptyMigrationFailsRoomSchemaValidationAndRollsBackV19Rows() {
+        createHistoricalDatabase()
+        val emptyMigration = object : Migration(19, 20) {
             override fun migrate(db: SupportSQLiteDatabase) = Unit
         }
         val room = Room.databaseBuilder(context, NexaraDatabase::class.java, MIGRATED_DATABASE)
@@ -99,7 +125,7 @@ class NexaraDatabaseMigration18To19JvmTest {
             null,
             SQLiteDatabase.OPEN_READONLY,
         ).use { database ->
-            assertThat(database.version).isEqualTo(18)
+            assertThat(database.version).isEqualTo(19)
             database.rawQuery("SELECT content FROM messages WHERE id='existing-message'", null).use { cursor ->
                 assertThat(cursor.moveToFirst()).isTrue()
                 assertThat(cursor.getString(0)).isEqualTo("中文消息与😀")
@@ -114,7 +140,7 @@ class NexaraDatabaseMigration18To19JvmTest {
 
     @Test
     fun migrationEnforcesScopedAliasAndSnapshotForeignKeyConstraints() {
-        createV18Database()
+        createHistoricalDatabase()
 
         val room = openMigratedDatabase()
         try {
@@ -145,7 +171,7 @@ class NexaraDatabaseMigration18To19JvmTest {
 
     @Test
     fun migratedDatabaseSchemaMatchesFreshRoomDatabase() {
-        createV18Database()
+        createHistoricalDatabase()
 
         val migrated = openMigratedDatabase()
         val fresh = Room.databaseBuilder(context, NexaraDatabase::class.java, FRESH_DATABASE)
@@ -171,7 +197,7 @@ class NexaraDatabaseMigration18To19JvmTest {
 
     @Test
     fun daoVisibilityIncludesGlobalAndOwnSessionWithoutLeakingOtherSessions() = runBlocking<Unit> {
-        createV18Database()
+        createHistoricalDatabase()
         val room = openMigratedDatabase()
         try {
             val dao = room.externalMountDao()
@@ -197,7 +223,7 @@ class NexaraDatabaseMigration18To19JvmTest {
 
     @Test
     fun daoSnapshotsAreScopedToWorkspaceAndCascadeOnlyWhenMountIsDeleted() = runBlocking<Unit> {
-        createV18Database()
+        createHistoricalDatabase()
         val room = openMigratedDatabase()
         try {
             val dao = room.externalMountDao()
@@ -231,12 +257,12 @@ class NexaraDatabaseMigration18To19JvmTest {
 
     private fun openMigratedDatabase(): NexaraDatabase =
         Room.databaseBuilder(context, NexaraDatabase::class.java, MIGRATED_DATABASE)
-            .addMigrations(MIGRATION_18_19)
+            .addMigrations(MIGRATION_18_19, MIGRATION_19_20)
             .allowMainThreadQueries()
             .build()
 
-    private fun createV18Database() {
-        val file = File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/18.json")
+    private fun createHistoricalDatabase(version: Int = 19) {
+        val file = File("app/schemas/com.promenar.nexara.data.local.db.NexaraDatabase/$version.json")
         val schema = Json.parseToJsonElement(file.readText()).jsonObject.getValue("database").jsonObject
         val path = context.getDatabasePath(MIGRATED_DATABASE)
         path.parentFile!!.mkdirs()
@@ -253,7 +279,7 @@ class NexaraDatabaseMigration18To19JvmTest {
                 }
             }
             schema.getValue("setupQueries").jsonArray.forEach { database.execSQL(it.jsonPrimitive.content) }
-            database.version = 18
+            database.version = version
             database.execSQL(
                 """INSERT INTO agents(id,name,description,name_customized,description_customized,
                     system_prompt,model,icon,color,is_pinned,created_at,use_inherited_config)
@@ -268,6 +294,15 @@ class NexaraDatabaseMigration18To19JvmTest {
                     is_archived,is_error,legacy_attachments,created_at)
                     VALUES('existing-message','existing-session','user','中文消息与😀',0,0,0,'[]',3)""".trimIndent(),
             )
+            if (version >= 19) {
+                database.execSQL(
+                    """INSERT INTO workspace_files(uuid,workspace_root_uuid,parent_uuid,physical_root_path,
+                        materialized_path,is_directory,name,hash,size_bytes,created_at,updated_at,
+                        vector_version,kg_version,in_recycle_bin,kg_strategy)
+                        VALUES('existing-file','existing-root',NULL,'/private/root','/文档.txt',0,'文档.txt',
+                        'hash',1,1,1,1,1,0,'full')""".trimIndent(),
+                )
+            }
             database.execSQL(
                 """INSERT INTO workspace_mutations(operation_id,workspace_root_uuid,operation_type,
                     payload_version,payload,payload_digest,state,created_at,updated_at)
@@ -309,7 +344,7 @@ class NexaraDatabaseMigration18To19JvmTest {
     private fun JsonObject.string(key: String): String = getValue(key).jsonPrimitive.content
 
     private companion object {
-        const val MIGRATED_DATABASE = "migration-18-19.db"
-        const val FRESH_DATABASE = "migration-19-fresh.db"
+        const val MIGRATED_DATABASE = "migration-19-20.db"
+        const val FRESH_DATABASE = "migration-20-fresh.db"
     }
 }
