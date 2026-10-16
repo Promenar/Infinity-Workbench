@@ -23,13 +23,14 @@ import kotlinx.serialization.json.put
 
 fun sshTools(runtime: SshRuntime): List<SkillDefinition> = SshOperation.entries.map { SshSkill(runtime, it) }
 
+// 数值边界由运行时强制校验；工具定义仅使用公共 schema 门禁支持的关键字。
 private enum class SshOperation(val tool: String, val risk: ToolRisk, val summary: String, val fields: String, val required: String) {
     EXEC("ssh_exec", ToolRisk.PROCESS, "在已配置的主机别名上执行非交互命令；默认60秒，最多600秒，输出有上限。",
-        """"host":{"type":"string"},"command":{"type":"string"},"timeout_seconds":{"type":"integer","minimum":1,"maximum":600},"max_output_chars":{"type":"integer","minimum":1,"maximum":256000}""", "\"host\",\"command\""),
+        """"host":{"type":"string"},"command":{"type":"string"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"max_output_chars":{"type":"integer","description":"1–256000 个字符，默认 32000"}""", "\"host\",\"command\""),
     LIST("sftp_list", ToolRisk.SAFE_READ, "列出远端目录，最多512项，返回截断标记。",
         """"host":{"type":"string"},"path":{"type":"string"}""", "\"host\",\"path\""),
     READ("sftp_read", ToolRisk.SAFE_READ, "分段读取UTF-8文本；offset和limit使用UTF-16单元，二进制及超过16MiB的文件拒绝。",
-        """"host":{"type":"string"},"path":{"type":"string"},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":2,"maximum":65536}""", "\"host\",\"path\""),
+        """"host":{"type":"string"},"path":{"type":"string"},"offset":{"type":"integer","description":"非负 UTF-16 偏移，默认 0"},"limit":{"type":"integer","description":"2–65536 个 UTF-16 单元，默认 16384"}""", "\"host\",\"path\""),
     WRITE("sftp_write", ToolRisk.EXTERNAL_WRITE, "写入远端UTF-8文件；expected_sha256存在时校验原文件，不一致拒绝。SFTP不提供跨客户端原子比较写入。",
         """"host":{"type":"string"},"path":{"type":"string"},"content":{"type":"string"},"expected_sha256":{"type":"string"}""", "\"host\",\"path\",\"content\""),
     OPEN("ssh_session_open", ToolRisk.PROCESS, "为当前聊天生成任务打开常驻PTY；任务结束即释放，空闲10分钟关闭。",
@@ -37,7 +38,7 @@ private enum class SshOperation(val tool: String, val risk: ToolRisk, val summar
     SEND("ssh_session_send", ToolRisk.PROCESS, "向当前聊天所属PTY发送原始输入；执行回车需在input中明确包含换行。审批绑定真实主机别名及完整输入。",
         """"session_id":{"type":"string"},"input":{"type":"string"}""", "\"session_id\",\"input\""),
     READ_SESSION("ssh_session_read", ToolRisk.SESSION_STATE, "读取当前聊天所属PTY的有界输出缓冲；wait_ms最多5000毫秒。",
-        """"session_id":{"type":"string"},"wait_ms":{"type":"integer","minimum":0,"maximum":5000}""", "\"session_id\""),
+        """"session_id":{"type":"string"},"wait_ms":{"type":"integer","description":"0–5000 毫秒，默认 0"}""", "\"session_id\""),
     CLOSE("ssh_session_close", ToolRisk.SESSION_STATE, "关闭当前聊天所属PTY并释放其连接。",
         """"session_id":{"type":"string"}""", "\"session_id\""),
 }

@@ -9,13 +9,14 @@ import com.promenar.nexara.ui.chat.manager.registry.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.*
 
+// 数值边界由 scriptRequest 与 ScriptPolicy 在运行时强制校验；工具定义仅使用公共 schema 门禁支持的关键字。
 class ExecJsSkill(private val runner: ScriptToolRunner) : SkillDefinition {
     override val id = "exec_js"
     override val name = id
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SCRIPT
     override val description = "在隔离进程执行 JavaScript，返回 result 变量（可为 Promise），未定义时返回最后表达式。支持 console、fs 工作区能力和 fetch；联网必须显式 allow_network=true。默认 30 秒，上限 300 秒。"
-    override val parametersSchema = """{"type":"object","properties":{"code":{"type":"string","description":"JavaScript 代码，返回 result 变量或最后表达式"},"allow_network":{"type":"boolean","default":false},"timeout_seconds":{"type":"integer","minimum":1,"maximum":300,"default":30}},"required":["code"]}"""
+    override val parametersSchema = """{"type":"object","properties":{"code":{"type":"string","description":"JavaScript 代码，返回 result 变量或最后表达式"},"allow_network":{"type":"boolean","default":false},"timeout_seconds":{"type":"integer","default":30,"description":"超时秒数，1–300，默认 30"}},"required":["code"]}"""
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = scriptToolResult(id) {
         val code = args.stringArgument("code") ?: throw ScriptFailure("INVALID_ARGUMENT", "缺少必填参数 code")
@@ -30,7 +31,7 @@ class RunScriptSkill(private val runner: ScriptToolRunner) : SkillDefinition {
     override val mcpServerId: String? = null
     override val risk = ToolRisk.SCRIPT
     override val description = "执行工作区或 /mnt/<别名>/ 中的 .js/.mjs 文件。args 为参数数组；相对模块只允许在入口文件所在目录内导入。模块通过 result 变量返回值。fs.read 返回 content/sha256，覆盖写入需 expected_sha256。联网默认关闭。"
-    override val parametersSchema = """{"type":"object","properties":{"path":{"type":"string"},"args":{"type":"array"},"allow_network":{"type":"boolean","default":false},"timeout_seconds":{"type":"integer","minimum":1,"maximum":300,"default":30}},"required":["path"]}"""
+    override val parametersSchema = """{"type":"object","properties":{"path":{"type":"string"},"args":{"type":"array"},"allow_network":{"type":"boolean","default":false},"timeout_seconds":{"type":"integer","default":30,"description":"超时秒数，1–300，默认 30"}},"required":["path"]}"""
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = scriptToolResult(id) {
         val path = args.stringArgument("path")?.takeIf(String::isNotBlank) ?: throw ScriptFailure("INVALID_ARGUMENT", "缺少必填参数 path")

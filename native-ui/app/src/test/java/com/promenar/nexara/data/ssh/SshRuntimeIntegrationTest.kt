@@ -1,9 +1,15 @@
 package com.promenar.nexara.data.ssh
 
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import com.promenar.nexara.data.security.SshCredential
+import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.ui.chat.manager.skills.sshTools
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
@@ -12,6 +18,9 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.server.Environment
 import org.apache.sshd.server.ExitCallback
@@ -29,6 +38,7 @@ import org.junit.Test
 class SshRuntimeIntegrationTest {
     private val root = Files.createTempDirectory("nexara-ssh-test")
     private val commands = AtomicInteger()
+    private val authentications = AtomicInteger()
     private lateinit var server: SshServer
     private lateinit var runtime: SshRuntime
     private val hostStore = MemorySshHosts()
@@ -38,7 +48,9 @@ class SshRuntimeIntegrationTest {
             host = "127.0.0.1"
             port = 0
             keyPairProvider = SimpleGeneratorHostKeyProvider(root.resolve("server.key")).apply { algorithm = "EC" }
-            passwordAuthenticator = org.apache.sshd.server.auth.password.PasswordAuthenticator { _, password, _ -> password == hostStore.password }
+            passwordAuthenticator = org.apache.sshd.server.auth.password.PasswordAuthenticator { _, password, _ ->
+                (password == hostStore.password).also { if (it) authentications.incrementAndGet() }
+            }
             publickeyAuthenticator = org.apache.sshd.server.auth.pubkey.PublickeyAuthenticator { _, _, _ -> true }
             subsystemFactories = listOf(SftpSubsystemFactory.Builder().build())
             fileSystemFactory = VirtualFileSystemFactory(root)
@@ -76,6 +88,71 @@ class SshRuntimeIntegrationTest {
         }
     }
 
+    @Test fun `信任变更在通知延迟时也禁止旧连接承载新操作并按新固定值握手`() = runBlocking {
+        withoutHostNotifications()
+        trust()
+        val trusted = hostStore.host
+        runtime.exec("chat", "termux", "hello")
+        assertThat(authentications.get()).isEqualTo(1)
+        hostStore.host = trusted.copy(trustedFingerprint = "SHA256:" + "A".repeat(43))
+        val operations: List<suspend () -> Any?> = listOf(
+            { runtime.exec("chat", "termux", "hello") },
+            { runtime.list("chat", "termux", "/") },
+            { runtime.read("chat", "termux", "/note.txt") },
+            { runtime.write("chat", "termux", "/note.txt", "禁止写入") },
+            { runtime.openSession("chat", "termux") },
+        )
+        operations.forEach { operation ->
+            val failure = runCatching { operation() }.exceptionOrNull()
+            assertThat(failure).isInstanceOf(SshFailure::class.java)
+            assertThat((failure as SshFailure).code).isEqualTo("HOST_KEY_CHANGED")
+        }
+        assertThat(Files.exists(root.resolve("note.txt"))).isFalse()
+        assertThat(authentications.get()).isEqualTo(1)
+        hostStore.host = trusted
+        assertThat(runtime.exec("chat", "termux", "hello").exitCode).isEqualTo(7)
+        assertThat(authentications.get()).isEqualTo(2)
+    }
+
+    @Test fun `连接身份变化在通知延迟时仍须重新认证`() = runBlocking {
+        withoutHostNotifications()
+        trust()
+        runtime.exec("chat", "termux", "hello")
+        assertThat(authentications.get()).isEqualTo(1)
+        hostStore.host = hostStore.host.copy(username = "replacement-user")
+        assertThat(runtime.exec("chat", "termux", "hello").exitCode).isEqualTo(7)
+        assertThat(authentications.get()).isEqualTo(2)
+        hostStore.host = hostStore.host.copy(id = "replacement-host")
+        assertThat(runtime.exec("chat", "termux", "hello").exitCode).isEqualTo(7)
+        assertThat(authentications.get()).isEqualTo(3)
+    }
+
+    @Test fun `信任变更后的既有PTY即使尚未收到通知也不能发送新输入`() = runBlocking {
+        withoutHostNotifications()
+        trust()
+        val opened = runtime.openSession("chat", "termux")
+        hostStore.host = hostStore.host.copy(trustedFingerprint = "SHA256:" + "A".repeat(43))
+        val failure = runCatching { runtime.sendSession("chat", opened.sessionId, "禁止执行\n") }.exceptionOrNull()
+        assertThat((failure as SshFailure).code).isEqualTo("HOST_CONFIGURATION_CHANGED")
+        assertThat(runtime.sessionHost("chat", opened.sessionId)).isNull()
+    }
+
+    @Test fun `信任变化通知回收既有PTY和端口转发`() = runBlocking {
+        val localPort = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }
+        hostStore.host = hostStore.host.copy(localForwardPort = localPort, forwardPort = server.port)
+        trust()
+        val opened = runtime.openSession("ui", "termux")
+        runtime.startForward("termux")
+        assertThat(runtime.hasPersistentResources).isTrue()
+        hostStore.host = hostStore.host.copy(trustedFingerprint = "SHA256:" + "A".repeat(43))
+        val deadline = System.nanoTime() + 5_000_000_000L
+        while (runtime.hasPersistentResources && System.nanoTime() < deadline) delay(10)
+        assertThat(runtime.hasPersistentResources).isFalse()
+        assertThat(runtime.sessionHost("ui", opened.sessionId)).isNull()
+        assertThat(runtime.forwardStates.value).isEmpty()
+        assertThat(runCatching { Socket("127.0.0.1", localPort).close() }.isSuccess).isFalse()
+    }
+
     @Test fun `输出采集有界超时关闭命令且用户取消及时关闭通道`() = runBlocking {
         trust()
         val result = runtime.exec("chat", "termux", "large", maxOutputChars = 100)
@@ -105,6 +182,30 @@ class SshRuntimeIntegrationTest {
         assertThat(runtime.read("chat", "termux", "/note.txt").content).isEqualTo("replaced")
         Files.write(root.resolve("binary.bin"), byteArrayOf(1, 0, 2, -1))
         assertThat((runCatching { runtime.read("chat", "termux", "/binary.bin") }.exceptionOrNull() as SshFailure).code).isEqualTo("BINARY_FILE")
+    }
+
+    @Test fun `SFTP工具条件覆盖后可以读取且冲突不会改写文件`() = runBlocking {
+        trust()
+        val tools = sshTools(runtime).associateBy { it.name }
+        val context = object : SkillExecutionContext {
+            override val sessionId = "chat"
+            override val agentId = "agent"
+            override val workspacePath: String? = null
+            override val workspaceRootUuid = "root"
+        }
+        suspend fun call(name: String, arguments: String) = tools.getValue(name).execute(Json.parseToJsonElement(arguments).jsonObject, context)
+        val initial = call("sftp_write", """{"host":"termux","path":"/tool.txt","content":"设备初始😀"}""")
+        assertWithMessage(initial.content).that(initial.status).isEqualTo("success")
+        val hash = Json.parseToJsonElement(initial.content).jsonObject.getValue("sha256").jsonPrimitive.content
+        val written = call("sftp_write", """{"host":"termux","path":"/tool.txt","content":"条件写入成功","expected_sha256":"$hash"}""")
+        assertWithMessage(written.content).that(written.status).isEqualTo("success")
+        val conflict = call("sftp_write", """{"host":"termux","path":"/tool.txt","content":"不得覆盖","expected_sha256":"$hash"}""")
+        assertThat(conflict.status).isEqualTo("error")
+        assertThat(conflict.content).contains("SHA256_CONFLICT")
+        val read = call("sftp_read", """{"host":"termux","path":"/tool.txt"}""")
+        assertWithMessage(read.content).that(read.status).isEqualTo("success")
+        assertThat(Json.parseToJsonElement(read.content).jsonObject.getValue("content").jsonPrimitive.content).isEqualTo("条件写入成功")
+        assertThat(Files.readAllBytes(root.resolve("tool.txt")).toString(Charsets.UTF_8)).isEqualTo("条件写入成功")
     }
 
     @Test fun `PTY往返调整窗口按owner隔离并在生成结束关闭`() = runBlocking {
@@ -216,6 +317,13 @@ class SshRuntimeIntegrationTest {
     private suspend fun trust() {
         val key = runtime.probe("termux")
         hostStore.host = hostStore.host.copy(trustedKeyType = key.type, trustedFingerprint = key.fingerprint)
+    }
+
+    private fun withoutHostNotifications() {
+        runtime.close()
+        runtime = SshRuntime(object : SshHostStore by hostStore {
+            override fun observeHosts() = kotlinx.coroutines.flow.emptyFlow<List<SshHost>>()
+        })
     }
 
     @Test fun `旧格式SSH批准目标在执行入口被拒绝`() = runBlocking {
