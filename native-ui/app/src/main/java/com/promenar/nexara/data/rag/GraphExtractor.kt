@@ -1,373 +1,80 @@
 package com.promenar.nexara.data.rag
 
-import com.promenar.nexara.data.remote.protocol.LlmProtocol
-import com.promenar.nexara.data.remote.protocol.PromptRequest
-import com.promenar.nexara.data.remote.protocol.ProtocolMessage
+import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.utils.NexaraLogger
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.*
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import java.io.File
 
+/** 只构建候选图；文件图谱只能由文档索引事务提交。 */
 class GraphExtractor(
-    private val protocol: LlmProtocol,
+    private val requestClient: KgRequestClient,
     private val graphStore: GraphStore,
     private val modelId: String? = null,
     private val systemPrompt: String = DEFAULT_KG_PROMPT,
     private val chunkSize: Int = 1200,
     private val chunkOverlap: Int = 200,
-    /** 每个 chunk 抽取超时（毫秒），默认 120 秒 */
-    private val timeoutMs: Long = 120_000L
+    private val timeoutMs: Long = 120_000L,
+    private val checkpointRoot: File? = null,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    private fun splitText(text: String): List<String> {
-        if (text.length <= chunkSize) {
-            return listOf(text)
-        }
-        val chunks = mutableListOf<String>()
-        var start = 0
-        val step = chunkSize - chunkOverlap
-        while (start < text.length) {
-            val end = (start + chunkSize).coerceAtMost(text.length)
-            chunks.add(text.substring(start, end))
-            if (end == text.length) break
-            start += step
-        }
-        return chunks
+    init {
+        require(chunkSize > 0 && chunkOverlap in 0 until chunkSize) { "知识图谱切块参数无效" }
+        require(timeoutMs > 0) { "知识图谱超时必须大于 0" }
     }
 
-    private val checkpointJson = Json {
-        ignoreUnknownKeys = true
-        prettyPrint = true
-    }
+    private val checkpoints: GraphExtractionCheckpoints
+        get() = GraphExtractionCheckpoints(checkpointRoot ?: File(NexaraApplication.instance.cacheDir, "kg_extraction_checkpoint"))
 
-    suspend fun extractAndSave(
-        text: String,
-        docId: String? = null,
-        scope: KgScope? = null
-    ): ExtractionResult = extract(text, docId, scope, persist = true)
+    suspend fun extractCandidate(text: String, docId: String? = null, contentHash: String = kgSha256(text)): ExtractionResult =
+        withContext(dispatcher) {
+            val identity = GraphCheckpointIdentity(contentHash, kgSha256(text), modelId, kgSha256(systemPrompt), chunkSize, chunkOverlap)
+            val store = docId?.let { checkpoints }
+            if (docId != null) store?.prepare(docId, identity)
+            val nodes = mutableListOf<ExtractedNode>()
+            val edges = mutableListOf<ExtractedEdge>()
+            for ((index, chunk) in splitText(text).withIndex()) {
+                currentCoroutineContext().ensureActive()
+                val cached = docId?.let { store?.load(it, identity, index, chunk) }
+                val result = cached ?: requestClient.extract(modelId, systemPrompt, chunk, timeoutMs)
+                currentCoroutineContext().ensureActive()
+                if (!result.isSuccess) return@withContext result
+                if (cached == null && docId != null) {
+                    try {
+                        store?.save(docId, identity, index, chunk, result)
+                    } catch (_: Exception) {
+                        // 断点是可丢弃缓存，失败不改变候选结果或旧图谱。
+                        NexaraLogger.log("[KG] 断点写入失败")
+                    }
+                }
+                nodes += result.nodes.take((KgGraphValidation.MAX_RAW_NODES - nodes.size).coerceAtLeast(0))
+                edges += result.edges.take((KgGraphValidation.MAX_RAW_EDGES - edges.size).coerceAtLeast(0))
+            }
+            currentCoroutineContext().ensureActive()
+            val graph = ValidatedGraph.from(nodes, edges)
+            if (docId != null) store?.clear(docId)
+            graph.toExtractionResult()
+        }
 
-    /** 仅构建候选图谱，不触碰现有图谱；由上层与向量索引在同一事务内切换。 */
-    suspend fun extractCandidate(text: String, docId: String? = null): ExtractionResult =
-        extract(text, docId, scope = null, persist = false)
+    fun clearCheckpoints(docId: String) { checkpoints.clear(docId) }
 
+    /** 遗留任务生命周期清理只作用于该文档，不执行全局清孤儿。 */
     suspend fun clearPersistedGraphForDoc(docId: String) {
         graphStore.clearGraphForDoc(docId)
+        clearCheckpoints(docId)
     }
 
-    private suspend fun extract(
-        text: String,
-        docId: String?,
-        scope: KgScope?,
-        persist: Boolean,
-    ): ExtractionResult {
-        return try {
-            val chunks = splitText(text)
-            NexaraLogger.log("[RAG][GraphExtractor] Splitting text into ${chunks.size} chunks (chunkSize=$chunkSize, overlap=$chunkOverlap) for KG extraction.")
-
-            val checkpointDir = if (docId != null) {
-                val dir = java.io.File(com.promenar.nexara.NexaraApplication.instance.cacheDir, "kg_extraction_checkpoint/$docId")
-                if (!dir.exists()) {
-                    dir.mkdirs()
-                }
-                dir
-            } else null
-
-            val results = mutableListOf<ExtractionResult>()
-            var failCount = 0
-            var successCount = 0
-
-            for ((index, chunk) in chunks.withIndex()) {
-                try {
-                    var chunkRes: ExtractionResult? = null
-                    val checkpointFile = checkpointDir?.let { java.io.File(it, "chunk_$index.json") }
-
-                    if (checkpointFile != null && checkpointFile.exists()) {
-                        try {
-                            val jsonStr = checkpointFile.readText()
-                            chunkRes = checkpointJson.decodeFromString<ExtractionResult>(jsonStr)
-                            NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} loaded from checkpoint cache.")
-                        } catch (e: Exception) {
-                            NexaraLogger.logError("[RAG][GraphExtractor] Failed to read checkpoint for chunk $index", e)
-                        }
-                    }
-
-                    if (chunkRes == null) {
-                        NexaraLogger.log("[RAG][GraphExtractor] Extracting chunk ${index + 1}/${chunks.size} (${chunk.length} chars)")
-                        chunkRes = extractSingleChunk(chunk)
-
-                        if (chunkRes.error == null && checkpointFile != null) {
-                            try {
-                                val jsonStr = checkpointJson.encodeToString(ExtractionResult.serializer(), chunkRes)
-                                checkpointFile.writeText(jsonStr)
-                                NexaraLogger.log("[RAG][GraphExtractor] Saved checkpoint cache for chunk $index.")
-                            } catch (e: Exception) {
-                                NexaraLogger.logError("[RAG][GraphExtractor] Failed to save checkpoint for chunk $index", e)
-                            }
-                        }
-                    }
-
-                    results.add(chunkRes)
-                    if (chunkRes.error != null) {
-                        failCount++
-                        NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} returned an extraction error")
-                    } else {
-                        successCount++
-                        NexaraLogger.log("[RAG][GraphExtractor] Chunk ${index + 1}/${chunks.size} OK: ${chunkRes.nodes.size} nodes, ${chunkRes.edges.size} edges")
-                    }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (e: Exception) {
-                    failCount++
-                    NexaraLogger.logError("[RAG][GraphExtractor] chunk ${index + 1}/${chunks.size}", e)
-                }
-            }
-
-            NexaraLogger.log("[RAG][GraphExtractor] Chunk summary: total=${chunks.size}, success=$successCount, failed=$failCount")
-
-            if (failCount > 0) {
-                return ExtractionResult(
-                    nodes = emptyList(),
-                    edges = emptyList(),
-                    error = "Extraction interrupted: $failCount/${chunks.size} chunks failed. Progressive checkpoint saved. Please retry to resume."
-                )
-            }
-
-            if (results.isEmpty()) {
-                return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "All chunks failed extraction")
-            }
-
-            // 合并与不区分大小写去重
-            val mergedNodes = mutableListOf<ExtractedNode>()
-            val mergedEdges = mutableListOf<ExtractedEdge>()
-            val nodeKeys = mutableSetOf<String>()
-            val edgeKeys = mutableSetOf<String>()
-
-            for (res in results) {
-                for (node in res.nodes) {
-                    val key = node.name.trim().lowercase()
-                    if (key.isNotEmpty() && !nodeKeys.contains(key)) {
-                        nodeKeys.add(key)
-                        mergedNodes.add(node)
-                    }
-                }
-                for (edge in res.edges) {
-                    val sKey = edge.source.trim().lowercase()
-                    val tKey = edge.target.trim().lowercase()
-                    val rKey = edge.relation.trim().lowercase()
-                    val key = "$sKey|$tKey|$rKey"
-                    if (sKey.isNotEmpty() && tKey.isNotEmpty() && !edgeKeys.contains(key)) {
-                        edgeKeys.add(key)
-                        mergedEdges.add(edge)
-                    }
-                }
-            }
-
-            // 后处理剪枝：过滤低质量节点和边
-            val beforePrune = "${mergedNodes.size} nodes, ${mergedEdges.size} edges"
-            pruneLowQuality(mergedNodes, mergedEdges)
-            NexaraLogger.log("[RAG][GraphExtractor] Pruned: $beforePrune → ${mergedNodes.size} nodes, ${mergedEdges.size} edges")
-
-            if (mergedNodes.isEmpty() && mergedEdges.isEmpty()) {
-                checkpointDir?.let { dir ->
-                    try {
-                        dir.listFiles()?.forEach { it.delete() }
-                        dir.delete()
-                    } catch (_: Exception) {}
-                }
-                return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "No nodes or edges extracted")
-            }
-
-            if (persist) {
-                // 兼容旧调用路径；候选路径严禁在事务切换前清除旧图谱。
-                if (docId != null) {
-                    graphStore.clearGraphForDoc(docId)
-                }
-
-                val nameToIdMap = mutableMapOf<String, String>()
-                for (node in mergedNodes) {
-                    try {
-                        val id = graphStore.upsertNode(node.name, node.type, node.metadata, scope)
-                        nameToIdMap[node.name] = id
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (e: Exception) {
-                        NexaraLogger.logError("[RAG][GraphExtractor] Node upsert failed", e)
-                    }
-                }
-
-                for (edge in mergedEdges) {
-                    val sourceId = nameToIdMap[edge.source]
-                    val targetId = nameToIdMap[edge.target]
-                    if (sourceId != null && targetId != null) {
-                        try {
-                            graphStore.createEdge(sourceId, targetId, edge.relation, docId, edge.weight, scope)
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (e: Exception) {
-                            NexaraLogger.logError("[RAG][GraphExtractor] Edge create failed", e)
-                        }
-                    }
-                }
-            }
-
-            // 提取彻底完成后清理该 docId 的 checkpoint 目录
-            checkpointDir?.let { dir ->
-                try {
-                    dir.listFiles()?.forEach { it.delete() }
-                    dir.delete()
-                    NexaraLogger.log("[RAG][GraphExtractor] Cleaned up extraction checkpoints")
-                } catch (e: Exception) {
-                    NexaraLogger.logError("[RAG][GraphExtractor] Failed to clean up checkpoints", e)
-                }
-            }
-
-            ExtractionResult(nodes = mergedNodes, edges = mergedEdges)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (e: Exception) {
-            NexaraLogger.logError("GraphExtractor.extractAndSave", e)
-            ExtractionResult(nodes = emptyList(), edges = emptyList(), error = e.message?.take(80))
-        }
-    }
-
-    private suspend fun extractSingleChunk(chunkText: String): ExtractionResult {
-        val effectiveModelId = modelId ?: "default"
-        val request = PromptRequest(
-            messages = listOf(
-                ProtocolMessage(role = "system", content = systemPrompt),
-                ProtocolMessage(role = "user", content = chunkText)
-            ),
-            model = effectiveModelId,
-            temperature = 0.0,
-            stream = false
-        )
-
-        val response = withTimeoutOrNull(timeoutMs) {
-            protocol.sendPromptSync(request)
-        }
-        if (response == null) {
-            NexaraLogger.log("[RAG][GraphExtractor] TIMEOUT after ${timeoutMs}ms for model=$effectiveModelId chunk=${chunkText.length}chars")
-            return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "Timeout after ${timeoutMs / 1000}s")
-        }
-        val content = response.content
-
-        if (content.isBlank()) {
-            NexaraLogger.log("[RAG][GraphExtractor] EMPTY response from model=$effectiveModelId")
-            return ExtractionResult(nodes = emptyList(), edges = emptyList(), error = "Empty response")
-        }
-
-        NexaraLogger.log("[RAG][GraphExtractor] LLM response received: ${content.length} chars")
-        val result = parseExtractionResult(content)
-        if (result == null || (result.nodes.isEmpty() && result.edges.isEmpty())) {
-            val reason = if (result == null) "Failed to parse JSON" else "No entities extracted"
-            NexaraLogger.log("[RAG][GraphExtractor] Parse result: $reason")
-            return ExtractionResult(
-                nodes = emptyList(),
-                edges = emptyList(),
-                error = if (result == null) "Failed to parse JSON" else null
-            )
-        }
-        return result
-    }
-
-    private fun parseExtractionResult(content: String): ExtractionResult? {
-        var jsonString = content.trim()
-
-        val jsonBlockRegex = Regex("""```json\s*([\s\S]*?)\s*```""", RegexOption.IGNORE_CASE)
-        val genericBlockRegex = Regex("""```\s*([\s\S]*?)\s*```""")
-
-        val jsonMatch = jsonBlockRegex.find(jsonString)
-        val genericMatch = genericBlockRegex.find(jsonString)
-
-        jsonString = when {
-            jsonMatch != null -> jsonMatch.groupValues[1].trim()
-            genericMatch != null -> {
-                val potential = genericMatch.groupValues[1].trim()
-                if (potential.startsWith("{")) potential else jsonString
-            }
-            else -> {
-                val first = jsonString.indexOf('{')
-                val last = jsonString.lastIndexOf('}')
-                if (first != -1 && last != -1 && last > first) {
-                    jsonString.substring(first, last + 1)
-                } else jsonString
-            }
-        }
-
-        return try {
-            val json = Json { ignoreUnknownKeys = true }
-            json.decodeFromString<ExtractionResult>(jsonString)
-        } catch (e: Exception) {
-            try {
-                val json = Json { ignoreUnknownKeys = true }
-                val jsonObj = kotlinx.serialization.json.Json.parseToJsonElement(jsonString).jsonObject
-                val nodes = jsonObj["nodes"]?.jsonArray?.map { nodeEl ->
-                    val obj = nodeEl.jsonObject
-                    ExtractedNode(
-                        name = obj["name"]?.jsonPrimitive?.content ?: "",
-                        type = obj["type"]?.jsonPrimitive?.content ?: "concept",
-                        metadata = obj["metadata"]?.toString()
-                    )
-                } ?: emptyList()
-
-                val edges = jsonObj["edges"]?.jsonArray?.map { edgeEl ->
-                    val obj = edgeEl.jsonObject
-                    ExtractedEdge(
-                        source = obj["source"]?.jsonPrimitive?.content ?: "",
-                        target = obj["target"]?.jsonPrimitive?.content ?: "",
-                        relation = obj["relation"]?.jsonPrimitive?.content ?: "",
-                        weight = obj["weight"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: 1.0
-                    )
-                } ?: emptyList()
-
-                ExtractionResult(nodes = nodes, edges = edges)
-            } catch (e2: Exception) {
-                NexaraLogger.logError("[RAG][GraphExtractor] JSON fallback parse error", e2)
-                null
-            }
-        }
-    }
-
-    /**
-     * 后处理剪枝：过滤低质量节点和边，保留高价值图谱结构。
-     * 策略：
-     * 1. 过滤名称过短（≤1 字符）或为纯数字的节点
-     * 2. 过滤 weight < 0.3 的低置信度边
-     * 3. 验证边的 source/target 必须指向现有节点，移除悬空边
-     * 4. 移除无连接的孤立节点（没有任何边引用它）
-     */
-    private fun pruneLowQuality(
-        nodes: MutableList<ExtractedNode>,
-        edges: MutableList<ExtractedEdge>
-    ) {
-        // Step 1: 过滤低质量节点（名称过短或纯数字）
-        nodes.removeAll { node ->
-            val name = node.name.trim()
-            name.length <= 1 || name.toDoubleOrNull() != null
-        }
-
-        // Step 2: 过滤低置信度边
-        edges.removeAll { it.weight < 0.3 }
-
-        // Step 3: 验证边的端点存在，移除悬空边
-        val nodeNames = nodes.map { it.name.trim().lowercase() }.toSet()
-        edges.removeAll { edge ->
-            val s = edge.source.trim().lowercase()
-            val t = edge.target.trim().lowercase()
-            s !in nodeNames || t !in nodeNames
-        }
-
-        // Step 4: 移除孤立节点（无任何边连接）
-        val connectedNodes = mutableSetOf<String>()
-        for (edge in edges) {
-            connectedNodes.add(edge.source.trim().lowercase())
-            connectedNodes.add(edge.target.trim().lowercase())
-        }
-        val beforeIsolatedPrune = nodes.size
-        nodes.removeAll { node ->
-            node.name.trim().lowercase() !in connectedNodes
-        }
-        if (beforeIsolatedPrune != nodes.size) {
-            NexaraLogger.log("[RAG][GraphExtractor] Removed ${beforeIsolatedPrune - nodes.size} isolated nodes")
+    private fun splitText(text: String): Sequence<String> = sequence {
+        if (text.isBlank()) return@sequence
+        var start = 0
+        while (start < text.length) {
+            val end = (start + chunkSize).coerceAtMost(text.length)
+            yield(text.substring(start, end))
+            if (end == text.length) break
+            start += chunkSize - chunkOverlap
         }
     }
 

@@ -1145,18 +1145,55 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         RecursiveCharacterTextSplitter(chunkSize = 800, chunkOverlap = 100)
     }
 
+    private val kgExtractorLock = Any()
+
+    private fun kgExtractionSettings(
+        config: com.promenar.nexara.data.rag.RagConfiguration = ragConfigPersistence.loadFullConfig(),
+    ) = com.promenar.nexara.data.rag.KgExtractionSettings.resolve(
+        config = config,
+        summaryModel = getSharedPreferences("nexara_settings", MODE_PRIVATE).getString("preset_summary_model", null),
+        mainModel = getSavedProviderConfig()?.model?.takeIf { it.isNotBlank() }
+            ?.let { com.promenar.nexara.data.remote.stableModelId("default", it) },
+    )
+
+    private fun createKgRequestClient() = com.promenar.nexara.data.rag.KgRequestClient(
+        router = providerRequestRouter,
+        protocolFactory = { resolved ->
+            val config = resolved.config
+            com.promenar.nexara.data.remote.protocol.ProtocolFactory.create(
+                type = config.protocolType,
+                baseUrl = config.baseUrl,
+                apiKey = config.apiKey,
+                model = resolved.remoteModelId,
+                serviceAccountJson = config.serviceAccountJson,
+                projectId = config.projectId,
+                location = config.location,
+                localEngine = if (config.protocolType is com.promenar.nexara.data.remote.protocol.ProtocolType.Local) localInferenceEngine else null,
+            )
+        },
+    )
+
     private var _microGraphExtractor: MicroGraphExtractor? = null
     val microGraphExtractor: MicroGraphExtractor
-        get() = _microGraphExtractor ?: MicroGraphExtractor(
-            protocol = llmProvider.protocol,
-            graphStore = graphStore,
-            jitCacheDao = database.kgJitCacheDao(),
-            modelId = getSavedProviderConfig()?.model
-        ).also { _microGraphExtractor = it }
+        get() = synchronized(kgExtractorLock) {
+            _microGraphExtractor ?: run {
+                val settings = kgExtractionSettings()
+                MicroGraphExtractor(
+                    requestClient = createKgRequestClient(),
+                    graphStore = graphStore,
+                    jitCacheDao = database.kgJitCacheDao(),
+                    modelId = settings.modelId,
+                    systemPrompt = settings.systemPrompt,
+                    executionGate = sessionExecutionGate,
+                ).also { _microGraphExtractor = it }
+            }
+        }
 
     private var _kgProvider: KgProvider? = null
     val kgProvider: KgProvider
-        get() = _kgProvider ?: MicroGraphKgAdapter(microGraphExtractor).also { _kgProvider = it }
+        get() = synchronized(kgExtractorLock) {
+            _kgProvider ?: MicroGraphKgAdapter { microGraphExtractor }.also { _kgProvider = it }
+        }
 
     val webSearchContextProvider: WebSearchProvider by lazy {
         WebSearchContextProvider(this, httpClient, secretStore)
@@ -1164,30 +1201,29 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
 
     private var _graphExtractor: com.promenar.nexara.data.rag.GraphExtractor? = null
     val graphExtractor: com.promenar.nexara.data.rag.GraphExtractor
-        get() = _graphExtractor ?: run {
-            val config = ragConfigPersistence.loadFullConfig()
-            // P1: kgExtractionModel 优先 → 降级 summary model → 降级主 LLM 模型
-            val effectiveModel = config.kgExtractionModel?.takeIf { it.isNotBlank() }
-                ?: getSharedPreferences("nexara_settings", MODE_PRIVATE)
-                    .getString("preset_summary_model", "")?.takeIf { it.isNotBlank() }
-                ?: getSavedProviderConfig()?.model
-            // P1: kgExtractionPrompt 优先 → 降级 DEFAULT_KG_PROMPT
-            val effectivePrompt = config.kgExtractionPrompt?.takeIf { it.isNotBlank() }
-                ?: com.promenar.nexara.data.rag.GraphExtractor.DEFAULT_KG_PROMPT
-
-            com.promenar.nexara.data.rag.GraphExtractor(
-                protocol = llmProvider.protocol,
-                graphStore = graphStore,
-                modelId = effectiveModel,
-                systemPrompt = effectivePrompt,
-                chunkSize = config.docChunkSize.coerceAtLeast(400),
-                chunkOverlap = config.chunkOverlap.coerceAtMost(200),
-                timeoutMs = (config.kgExtractionTimeoutSeconds.coerceIn(5, 300) * 1000L)
-            ).also { _graphExtractor = it }
+        get() = synchronized(kgExtractorLock) {
+            _graphExtractor ?: run {
+                val config = ragConfigPersistence.loadFullConfig()
+                val settings = kgExtractionSettings(config)
+                com.promenar.nexara.data.rag.GraphExtractor(
+                    requestClient = createKgRequestClient(),
+                    graphStore = graphStore,
+                    modelId = settings.modelId,
+                    systemPrompt = settings.systemPrompt,
+                    chunkSize = config.docChunkSize.coerceAtLeast(400),
+                    chunkOverlap = config.chunkOverlap.coerceAtMost(200),
+                    timeoutMs = config.kgExtractionTimeoutSeconds.coerceIn(5, 300) * 1000L,
+                ).also { _graphExtractor = it }
+            }
         }
 
     fun rebuildGraphExtractor() {
-        _graphExtractor = null
+        synchronized(kgExtractorLock) {
+            _graphExtractor = null
+            _microGraphExtractor?.close()
+            _microGraphExtractor = null
+            _kgProvider = null
+        }
         resetVectorizationQueue()
     }
 
@@ -1219,6 +1255,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
         com.promenar.nexara.data.rag.RoomDocumentIndexService(
             database = database,
             executionGate = sessionExecutionGate,
+            onDeleted = graphExtractor::clearCheckpoints,
             candidateBuilder = com.promenar.nexara.data.rag.WorkspaceDocumentIndexCandidateBuilder(
                 fileEntryDao = database.fileEntryDao(),
                 embeddingClient = embeddingClient,

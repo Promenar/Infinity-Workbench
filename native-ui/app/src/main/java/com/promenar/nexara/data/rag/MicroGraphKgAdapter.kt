@@ -8,8 +8,10 @@ import com.promenar.nexara.ui.chat.manager.KgContextResult
 import com.promenar.nexara.ui.chat.manager.KgProvider
 
 class MicroGraphKgAdapter(
-    private val microGraphExtractor: MicroGraphExtractor
+    private val extractorProvider: () -> MicroGraphExtractor,
 ) : KgProvider {
+    constructor(microGraphExtractor: MicroGraphExtractor) : this({ microGraphExtractor })
+
     override suspend fun extractContext(
         query: String,
         sessionId: String,
@@ -23,14 +25,17 @@ class MicroGraphKgAdapter(
                 createdAt = UNKNOWN_CREATED_AT_SENTINEL
             )
         }
-        val result = microGraphExtractor.extract(
+        val result = extractorProvider().extract(
             topKResults = searchResults,
             query = query,
             sessionId = sessionId
-        ) ?: return null
+        )
+        if (!result.isSuccess) return KgContextResult(context = "", status = result.status, error = result.error)
+        val graph = ValidatedGraph.from(result.nodes, result.edges)
+        val validated = result.copy(nodes = graph.nodes, edges = graph.edges, context = graph.context)
         return KgContextResult(
-            context = result.context,
-            paths = result.toKgPaths()
+            context = validated.context,
+            paths = validated.toKgPaths()
         )
     }
 

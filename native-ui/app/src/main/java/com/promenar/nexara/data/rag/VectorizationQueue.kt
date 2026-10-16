@@ -215,28 +215,25 @@ class VectorizationQueue(
         var active = checkNotNull(vectorizationTaskDao.getById(upsert.activeTaskId)) {
             "upsert 后 active target 不存在: ${upsert.activeTaskId}"
         }
-        if (active.status in setOf("failed", "partial", "interrupted")) {
-            val retried = active.copy(
-                status = "pending",
-                progress = 0.0,
-                error = null,
-                subStatus = "等待重新索引",
-                kgStrategy = kgStrategy,
-                skipVectorization = skipVectorization,
+        // 更换活动标识，阻止旧候选提交，也让失败展示期间的立即重试拥有独立执行实例。
+        val restarting = active.status in setOf("failed", "partial", "interrupted", "completed")
+        if (restarting || (kgStrategy != null && active.kgStrategy == null) ||
+            (!skipVectorization && active.skipVectorization)
+        ) {
+            val replacement = active.copy(
+                id = "$id-${UUID.randomUUID()}",
+                status = "pending", progress = 0.0, error = null,
+                kgStrategy = if (restarting) kgStrategy else active.kgStrategy ?: kgStrategy,
+                skipVectorization = if (restarting) skipVectorization else active.skipVectorization && skipVectorization,
                 sourceMimeType = sourceMimeType,
-                contentTruncated = false,
+                contentTruncated = false, lastChunkIndex = 0, totalChunks = null,
+                subStatus = "等待重新索引",
                 updatedAt = System.currentTimeMillis(),
             )
-            if (vectorizationTaskDao.updateForTarget(retried) != 1) {
-                active = checkNotNull(
-                    vectorizationTaskDao.getByWorkspaceFile(
-                        workspaceRootUuid,
-                        docId,
-                        TYPE_DOCUMENT_REFERENCE,
-                    ),
-                ) { "reset CAS 失败后 active target 不存在" }
-            } else {
-                active = retried
+            active = if (vectorizationTaskDao.replaceTargetIfExpected(active, replacement) == 1) replacement
+            else checkNotNull(vectorizationTaskDao.getByWorkspaceFile(workspaceRootUuid, docId, TYPE_DOCUMENT_REFERENCE))
+            check(active.status !in setOf("failed", "partial", "interrupted", "completed")) {
+                "索引重试目标已并发变化，请重试"
             }
         }
         val task = active.toTask()
@@ -490,6 +487,14 @@ class VectorizationQueue(
     }
 
     private suspend fun processDocumentTask(task: VectorizationTask) {
+        if (task.kgStrategy != null) {
+            val replacement = migrateLegacyEntityToReference(task.toEntity())
+                ?: error("旧知识图谱任务缺少安全文件引用，必须重新索引")
+            synchronized(queueLock) {
+                if (queue.none { it.targetKey() == replacement.targetKey() }) queue.add(replacement.toTask())
+            }
+            throw TargetSuperseded(task.targetKey())
+        }
         val content = task.userContent
             ?: throw IllegalStateException("Document task missing content")
         task.status = "chunking"
@@ -501,7 +506,7 @@ class VectorizationQueue(
             chunkOverlap = ragConfig.chunkOverlap
         )
         val chunks = splitter.splitText(content)
-        processDocumentChunks(task, chunks, content)
+        processDocumentChunks(task, chunks)
     }
 
     private suspend fun processDocumentReferenceTask(task: VectorizationTask) {
@@ -532,7 +537,7 @@ class VectorizationQueue(
             useConfiguredKgStrategy = false,
             activeTaskId = task.id,
         ))) {
-            is DocumentIndexResult.Rebuilt -> return
+            is DocumentIndexResult.Rebuilt -> { task.contentTruncated = result.contentTruncated; return }
             is DocumentIndexResult.HashChanged -> throw java.util.ConcurrentModificationException(
                 "索引期间文件目标已变化: ${result.currentHash ?: "deleted"}",
             )
@@ -544,7 +549,6 @@ class VectorizationQueue(
     private suspend fun processDocumentChunks(
         task: VectorizationTask,
         chunks: List<String>,
-        graphText: String,
     ) {
         val docId = task.docId ?: throw IllegalStateException("Document task missing docId")
         val docTitle = task.docTitle ?: "Untitled"
@@ -616,24 +620,6 @@ class VectorizationQueue(
             System.currentTimeMillis(),
         )
 
-        // 可选：知识图谱提取
-        if (graphExtractor != null && task.kgStrategy != null) {
-            task.status = "extracting"
-            task.progress = 98.0
-            task.subStatus = "正在构建知识图谱节点..."
-            notifyStateChange()
-            NexaraLogger.log("[VectorQueue] KG extraction starting for doc=$docTitle")
-            try {
-                graphExtractor.extractAndSave(graphText, docId)
-                NexaraLogger.log("[VectorQueue] KG extraction completed for doc=$docTitle")
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (e: Exception) {
-                NexaraLogger.logError("VectorQueue.KGExtraction", e)
-                task.subStatus = "知识图谱提取跳过（非致命）"
-                saveTaskToDb(task)
-            }
-        }
     }
 
     /** 更新 FileEntry 的 vectorizedAt 时间戳 */
@@ -1194,6 +1180,10 @@ class VectorizationQueue(
 
         override suspend fun commit() {
             if (!finished.compareAndSet(false, true)) return
+            targets.forEach { target ->
+                runCatching { graphExtractor?.clearCheckpoints(target.docId) }
+                    .onFailure { NexaraLogger.log("[KG] 删除后的断点清理失败") }
+            }
             synchronized(queueLock) {
                 fencedTargets.removeAll(targets)
                 fencedSessions.removeAll(sessions)

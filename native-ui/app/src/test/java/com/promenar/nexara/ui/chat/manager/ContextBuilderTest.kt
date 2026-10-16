@@ -29,6 +29,34 @@ class ContextBuilderTest {
     private val testScope = TestScope()
 
     @Test
+    fun `KG失败保留RAG上下文且不发布成功状态`() = testScope.runTest {
+        for (status in listOf(com.promenar.nexara.data.rag.KgExtractionStatus.PARSE_FAILURE,
+            com.promenar.nexara.data.rag.KgExtractionStatus.TIMEOUT,
+            com.promenar.nexara.data.rag.KgExtractionStatus.PROVIDER_ERROR)) {
+            val kg = object : KgProvider {
+                override suspend fun extractContext(query: String, sessionId: String, topKResults: List<RagReference>) =
+                    KgContextResult("INVALID_KG_CONTEXT", status = status)
+            }
+            val rag = object : RagProvider {
+                override suspend fun retrieveContext(query: String, sessionId: String, options: RagOptions,
+                    onProgress: ((String, Int, String?) -> Unit)?) =
+                    RagRetrievalResult("VALID_RAG_CONTEXT", listOf(RagReference("r", "ref", "doc")), null)
+            }
+            val stages = mutableListOf<String>()
+            val result = ContextBuilder(ragProvider = rag, kgProvider = kg).buildContext(ContextBuilderParams(
+                sessionId = "s", content = "query", assistantMsgId = "m",
+                session = Session(id = "s", agentId = "a", ragOptions = RagOptions(enableMemory = true, enableKnowledgeGraph = true)),
+                onRagProgress = { stage, _, _ -> stages += stage },
+            ))
+            assertThat(result.finalSystemPrompt).contains("VALID_RAG_CONTEXT")
+            assertThat(result.finalSystemPrompt).doesNotContain("INVALID_KG_CONTEXT")
+            assertThat(result.kgPaths).isEmpty()
+            assertThat(stages).contains("KG failed")
+            assertThat(stages).doesNotContain("Context ready")
+        }
+    }
+
+    @Test
     fun snapshotKgPathsAppliesStableStructuralLimitsWithoutDanglingEdges() {
         val builder = ContextBuilder()
         val paths = (0 until 40).map { pathIndex ->

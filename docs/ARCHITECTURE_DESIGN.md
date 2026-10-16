@@ -330,25 +330,26 @@ sealed class ContextBuildProgress {
 
 ### 2.4.1 KG 抽取的双模式策略
 
-知识图谱抽取分为两种模式，服务不同场景，不混用：
+知识图谱抽取分为文档候选图与会话 JIT 微图，两者共用模型解析、结果状态与图校验：
 
 | 模式 | 触发者 | 输入 | 存储标记 | 生命周期 | 用途 |
 |------|--------|------|---------|---------|------|
-| **会话 JIT 微图** | ContextBuilder 自动 | RAG topK + 用户查询 | `sourceType="jit"` | JIT 缓存 1h → 后台归并到持久层 | 为当前对话提供关系上下文 |
-| **文档全量抽取** | 用户手动（知识库文档长按菜单） | 整篇文档（分块→GraphExtractor） | `sourceType="full"` | GraphStore 持久 | 构建用户的知识模型 |
+| **会话 JIT 微图** | ContextBuilder 按有效 KG 设置触发 | RAG topK + 用户查询 | `sourceType="jit"` | 返回已校验上下文；容量 8 的队列串行缓存与归并，缓存 1h | 为当前对话提供关系上下文 |
+| **文档全量抽取** | 手动菜单或启用 KG 的索引配置 | PDF / DOCX / 文本等文件引用，经统一解析与分块 | `sourceType="full"` | DocumentIndexService 候选事务提交 | 构建文档知识模型 |
 
 **设计原则**：
-- 全量 KG 抽取成本高（LLM 调用 × 分块数），噪声大，**不应作为文档导入的副作用自动触发**
-- 用户的知识图谱是显式知识建模，由用户控制何时对哪些文档建图
-- `GraphStore.resolveSourceType()` 有优先级设计（`full > summary > jit`），保证持久抽取不被即时缓存覆盖
-- 支持两种抽取策略：**全量抽取**（遍历所有分块）和 **摘要优先**（采样首/中/尾三块），用户可根据文档大小选择
+- 模型选择依次使用 KG 设置、摘要预设和主模型；所选稳定 ID 必须通过 `ProviderRequestRouter.resolve()`，解析失败返回明确错误，不发送文档到其它提供商。请求只携带所属提供商的远端模型 ID。
+- 抽取状态区分成功、解析失败、超时、取消和提供商错误；协程取消向上传播。空图属于成功，可清除旧关系并完成向量索引。
+- 手动抽取仅替换 KG，保留向量与向量完成时间；索引事务同时检查文件 hash、epoch 和活动任务标识，原子切换节点、边与 `kgExtractedAt`。失败保留旧数据，删除屏障阻止迟到候选写回。
+- `ValidatedGraph` 统一名称身份与端点，过滤空关系和不在 `[0,1]` 内的非有限或越界权重，最多保留 256 个节点与 512 条边；入库、提示词与路径均由校验结果派生。
+- 文档解析使用统一 16 MiB UTF-8 文本预算并保留截断状态；源文件、格式与路径边界由 `DocumentReferenceExtractor` 检查。断点身份包含源文件 hash、提取文本 hash、模型稳定 ID、提示词摘要和切块参数。
+- JIT 默认超时 5 秒；失败时 RAG 上下文正常返回，进度不发布 KG 成功。抽取器关闭或设置重建会取消其后台作用域。
 
 ```kotlin
-// 触发入口：RagHomeScreen 文档长按 → DropdownMenu → 选择抽取策略
-// RagViewModel.extractKnowledgeGraph(docId, kgStrategy)
-//   → VectorizationQueue.enqueueDocument(docId, ..., kgStrategy, skipVectorization=true)
-//     → GraphExtractor.extractAndSave(chunk, docId) per chunk
-//       → GraphStore.upsertNode() / createEdge() with sourceType="full"
+// 文档菜单 → RagViewModel.extractKG(fileUuid)
+//   → VectorizationQueue.enqueueDocumentReference(..., kgStrategy="full", skipVectorization=true)
+//     → DocumentReferenceExtractor → GraphExtractor.extractCandidate → ValidatedGraph
+//       → RoomDocumentIndexService 候选事务 → 图谱与 kgExtractedAt
 ```
 
 ### 2.5 Agent 引擎架构

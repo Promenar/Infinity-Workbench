@@ -436,7 +436,7 @@ class DocumentIndexServiceTest {
             val embedding = mockk<EmbeddingClient>()
             coEvery { embedding.embedDocuments(any()) } returns EmbeddingResult(listOf(floatArrayOf(1f, 0f)))
             val graphBuilder = mockk<KnowledgeGraphCandidateBuilder>()
-            coEvery { graphBuilder.build(any(), FILE) } returns ExtractionResult(
+            coEvery { graphBuilder.build(any(), FILE, any()) } returns ExtractionResult(
                 nodes = listOf(ExtractedNode("Alice", "person"), ExtractedNode("Bob", "person")),
                 edges = listOf(ExtractedEdge("Alice", "Bob", "knows")),
             )
@@ -449,7 +449,7 @@ class DocumentIndexServiceTest {
 
             val candidate = builder.build(FileIndexEvent.Changed(ROOT, FILE, hash, current.updatedAt))
 
-            coVerify(exactly = 1) { graphBuilder.build("Alice knows Bob", FILE) }
+            coVerify(exactly = 1) { graphBuilder.build("Alice knows Bob", FILE, hash) }
             assertThat(candidate.nodes.map { it.name }).containsExactly("Alice", "Bob")
             assertThat(candidate.edges.single().docId).isEqualTo(FILE)
             assertThat(candidate.edges.single().fileUuid).isEqualTo(FILE)
@@ -486,7 +486,7 @@ class DocumentIndexServiceTest {
             assertThat(candidate.vectors).isEmpty()
             assertThat(candidate.nodes).isEmpty()
             coVerify(exactly = 0) { embedding.embedDocuments(any()) }
-            coVerify(exactly = 0) { graphBuilder.build(any(), any()) }
+            coVerify(exactly = 0) { graphBuilder.build(any(), any(), any()) }
         } finally {
             file.delete()
         }
@@ -513,6 +513,36 @@ class DocumentIndexServiceTest {
         val recoverable = database.fileEntryDao().getUnvectorizedSupportedFiles(listOf("text/plain"))
 
         assertThat(recoverable.map { it.uuid }).contains(FILE)
+    }
+
+    @Test
+    fun `配置启用KG的候选提交持久完成标记且页面重建后仍可读取`() = runTest {
+        seedFileAndOldArtifacts()
+        val service = RoomDocumentIndexService(database, now = { EPOCH }) {
+            DocumentIndexCandidate(listOf(vector(NEW_VECTOR, "new")), graphExtracted = true)
+        }
+        assertThat(service.rebuild(changed())).isInstanceOf(DocumentIndexResult.Rebuilt::class.java)
+        val reloaded = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+        assertThat(reloaded.kgExtractedAt).isEqualTo(EPOCH)
+        assertThat(com.promenar.nexara.ui.chat.components.resolveKgStatus(reloaded, emptyMap()))
+            .isEqualTo(com.promenar.nexara.ui.common.KgStatus.COMPLETED)
+    }
+
+    @Test
+    fun `手动KG空图事务保留向量和向量完成标记并清理旧关系`() = runTest {
+        seedFileAndOldArtifacts()
+        val current = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+        database.fileEntryDao().update(current.copy(vectorizedAt = 123))
+        val service = RoomDocumentIndexService(database, now = { EPOCH }) {
+            DocumentIndexCandidate(emptyList(), graphExtracted = true)
+        }
+        val result = service.rebuild(changed().copy(skipVectorization = true, kgStrategy = "full"))
+        assertThat(result).isInstanceOf(DocumentIndexResult.Rebuilt::class.java)
+        assertThat(database.vectorDao().getByDocId(FILE).single().id).isEqualTo(OLD_VECTOR)
+        assertThat(database.kgEdgeDao().getByDocId(FILE)).isEmpty()
+        val after = database.fileEntryDao().getByUuid(ROOT, FILE)!!
+        assertThat(after.vectorizedAt).isEqualTo(123)
+        assertThat(after.kgExtractedAt).isEqualTo(EPOCH)
     }
 
     private suspend fun seedFileAndOldArtifacts() {

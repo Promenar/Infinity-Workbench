@@ -280,9 +280,14 @@ class VectorizationQueueReferenceTest {
 
             val id = queue.enqueueDocumentReference(ROOT, DOC, "note.txt", "text/plain", HASH, EPOCH)
 
-            assertThat(id).isEqualTo("doc-ref-$status")
+            assertThat(id).isNotEqualTo("doc-ref-$status")
             assertThat(queue.getQueueLength()).isEqualTo(1)
-            coVerify(exactly = 1) { taskDao.updateForTarget(match { it.id == id && it.status == "pending" }) }
+            coVerify(exactly = 1) {
+                taskDao.replaceTargetIfExpected(match { it.id == "doc-ref-$status" }, match {
+                    it.id == id && it.status == "pending" && it.targetContentHash == HASH && it.targetEpoch == EPOCH
+                })
+            }
+            queue.shutdown()
         }
     }
 
@@ -564,6 +569,12 @@ class VectorizationQueueReferenceTest {
         coEvery {
             taskDao.getByWorkspaceFile(ROOT, DOC, VectorizationQueue.TYPE_DOCUMENT_REFERENCE)
         } answers { active }
+        coEvery { taskDao.replaceTargetIfExpected(any(), any()) } answers {
+            if (active == firstArg<VectorizationTaskEntity>()) {
+                active = secondArg()
+                1
+            } else 0
+        }
         coEvery { taskDao.updateForTarget(any()) } answers {
             active = firstArg()
             1

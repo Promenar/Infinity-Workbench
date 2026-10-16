@@ -267,5 +267,12 @@ class DocumentReferenceExtractor(
         const val HTML_MIME = "text/html"
         val TEXT_MIME_TYPES = setOf("text/plain", "text/markdown", "text/csv", "application/json")
         val SUPPORTED_MIME_TYPES = TEXT_MIME_TYPES + setOf("application/pdf", DOCX_MIME, HTML_MIME)
+
+        fun supports(entry: FileEntry): Boolean = !entry.isDirectory && entry.mimeType in SUPPORTED_MIME_TYPES &&
+            entry.sizeBytes <= when (entry.mimeType) {
+                DOCX_MIME -> MAX_DOCX_SOURCE_BYTES
+                HTML_MIME -> MAX_HTML_SOURCE_BYTES
+                else -> MAX_SOURCE_BYTES
+            }
     }
 }

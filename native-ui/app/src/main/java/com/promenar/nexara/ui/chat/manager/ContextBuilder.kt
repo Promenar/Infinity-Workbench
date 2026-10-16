@@ -89,7 +89,9 @@ interface RagProvider {
 
 data class KgContextResult(
     val context: String,
-    val paths: List<com.promenar.nexara.data.model.KgPath> = emptyList()
+    val paths: List<com.promenar.nexara.data.model.KgPath> = emptyList(),
+    val status: com.promenar.nexara.data.rag.KgExtractionStatus = com.promenar.nexara.data.rag.KgExtractionStatus.SUCCESS,
+    val error: String? = null,
 )
 
 interface KgProvider {
@@ -159,12 +161,18 @@ class ContextBuilder(
             try {
                 params.onRagProgress?.invoke("KG retrieval", 95, null)
                 val kgResult = kgProvider.extractContext(params.content, params.sessionId, ragResult.references)
-                params.onRagProgress?.invoke("Context ready", 100, null)
-                (kgResult?.context ?: "") to snapshotKgPaths(kgResult?.paths)
+                if (kgResult == null || kgResult.status != com.promenar.nexara.data.rag.KgExtractionStatus.SUCCESS || kgResult.error != null) {
+                    params.onRagProgress?.invoke("KG failed", 95, kgResult?.status?.name ?: "PROVIDER_ERROR")
+                    "" to emptyList<com.promenar.nexara.data.model.KgPath>()
+                } else {
+                    params.onRagProgress?.invoke("Context ready", 100, null)
+                    kgResult.context to snapshotKgPaths(kgResult.paths)
+                }
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
                 throw e
             } catch (e: Exception) {
                 NexaraLogger.logError("ContextBuilder.KGExtract", e)
+                params.onRagProgress?.invoke("KG failed", 95, "PROVIDER_ERROR")
                 "" to emptyList<com.promenar.nexara.data.model.KgPath>()
             }
         } else "" to emptyList<com.promenar.nexara.data.model.KgPath>()

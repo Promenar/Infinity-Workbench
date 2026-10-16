@@ -43,12 +43,14 @@ class MicroGraphKgAdapterTest {
     )
 
     @Test
-    fun `returns null when extractor returns null`() = runTest {
-        coEvery { extractor.extract(any(), any(), any()) } returns null
+    fun `传递失败状态且不产生上下文或路径`() = runTest {
+        coEvery { extractor.extract(any(), any(), any()) } returns MicroGraphResult.failure(KgExtractionStatus.PROVIDER_ERROR, "请求失败", "q")
 
         val result = adapter.extractContext("q", "s1", listOf(ragRef("r1")))
 
-        assertThat(result).isNull()
+        assertThat(result!!.status).isEqualTo(KgExtractionStatus.PROVIDER_ERROR)
+        assertThat(result.context).isEmpty()
+        assertThat(result.paths).isEmpty()
         coVerify(exactly = 1) { extractor.extract(any(), any(), any()) }
     }
 
@@ -64,7 +66,7 @@ class MicroGraphKgAdapterTest {
         val result = adapter.extractContext("q", "s1", listOf(ragRef("r1")))
 
         assertThat(result).isNotNull()
-        assertThat(result!!.context).isEqualTo("- A --[related_to]--> B")
+        assertThat(result!!.context).isEqualTo("- A --[related_to]--> B\n- B --[part_of]--> C")
         assertThat(result.paths).hasSize(1)
         val path = result.paths.first()
         assertThat(path.edges).containsExactly(
@@ -430,7 +432,7 @@ class MicroGraphKgAdapterTest {
                 query = capture(querySlot),
                 sessionId = capture(sessionSlot)
             )
-        } returns null
+        } returns MicroGraphResult.failure(KgExtractionStatus.PROVIDER_ERROR, "请求失败", "q")
 
         adapter.extractContext("my-query", "session-42", listOf(
             RagReference(id = "r1", content = "alpha", source = "doc1", score = 0.8f),

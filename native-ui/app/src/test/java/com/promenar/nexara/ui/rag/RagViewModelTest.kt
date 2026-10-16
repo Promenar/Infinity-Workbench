@@ -29,6 +29,7 @@ import com.promenar.nexara.share.core.ShareImportStatus
 import com.promenar.nexara.share.core.ShareRejectReason
 import com.promenar.nexara.share.core.SharedFileImporter
 import com.promenar.nexara.ui.common.status.NoticeSeverity
+import com.promenar.nexara.ui.common.KgStatus
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -116,6 +117,63 @@ class RagViewModelTest {
     fun teardown() {
         Dispatchers.resetMain()
         filesDir.deleteRecursively()
+    }
+
+    @Test
+    fun `手动PDF与DOCX抽取使用文件引用队列且不经过文本工具`() = runTest {
+        val vm = createViewModel()
+        advanceUntilIdle()
+        listOf("application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document").forEachIndexed { i, mime ->
+            val file = fileEntry("kg-$i", "kg-$i", materializedPath = "/kg-$i").copy(mimeType = mime)
+            coEvery { workspaceRepository.getByUuid("rag-root", file.uuid) } returns file
+            vm.extractKG(file.uuid)
+            advanceUntilIdle()
+            coVerify(exactly = 1) {
+                vectorizationQueue.enqueueDocumentReference("rag-root", file.uuid, file.name, mime, file.hash, file.updatedAt, "full", true)
+            }
+            assertThat(vm.kgExtractionStates.value[file.uuid]).isEqualTo(KgStatus.IN_PROGRESS)
+        }
+        coVerify(exactly = 0) { fileOperationRepository.readFileRange(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `保存KG设置使缓存抽取器失效`() = runTest {
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.updateConfig { it.copy(kgExtractionModel = "owner::model", kgExtractionPrompt = "提取实体") }
+        verify(exactly = 1) { app.rebuildGraphExtractor() }
+    }
+
+    @Test
+    fun `手动KG队列失败在UI显示失败且ViewModel重建不丢失持久完成态`() = runTest {
+        var listener: ((List<com.promenar.nexara.data.rag.VectorizationTask>, com.promenar.nexara.data.rag.VectorizationTask?) -> Unit)? = null
+        every { vectorizationQueue.setOnStateChange(any()) } answers {
+            listener = firstArg()
+            AutoCloseable { }
+        }
+        val file = fileEntry("kg", "kg.txt", materializedPath = "/kg.txt").copy(mimeType = "text/plain")
+        coEvery { workspaceRepository.getByUuid("rag-root", "kg") } returns file
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.extractKG("kg")
+        advanceUntilIdle()
+        val task = com.promenar.nexara.data.rag.VectorizationTask("t", "document_reference", docId = "kg",
+            workspaceRootUuid = "rag-root", kgStrategy = "full", status = "failed", error = "transaction failed")
+        listener!!.invoke(listOf(task), task)
+        assertThat(vm.kgExtractionStates.value["kg"]).isEqualTo(KgStatus.FAILED)
+        assertThat(vm.indexingNotice.value?.severity).isEqualTo(NoticeSeverity.Error)
+
+        val recreated = createViewModel()
+        advanceUntilIdle()
+        val persisted = file.copy(kgExtractedAt = file.updatedAt)
+        assertThat(com.promenar.nexara.ui.chat.components.resolveKgStatus(persisted, recreated.kgExtractionStates.value))
+            .isEqualTo(KgStatus.COMPLETED)
+        assertThat(com.promenar.nexara.ui.chat.components.resolveKgStatus(persisted.copy(updatedAt = persisted.updatedAt + 1), emptyMap()))
+            .isEqualTo(KgStatus.NOT_STARTED)
+        assertThat(com.promenar.nexara.ui.chat.components.resolveKgStatus(file.copy(kgExtractedAt = null), mapOf("kg" to KgStatus.COMPLETED)))
+            .isEqualTo(KgStatus.NOT_STARTED)
+        assertThat(com.promenar.nexara.ui.chat.components.resolveKgStatus(persisted.copy(updatedAt = persisted.updatedAt + 1), mapOf("kg" to KgStatus.COMPLETED)))
+            .isEqualTo(KgStatus.NOT_STARTED)
     }
 
     @Test

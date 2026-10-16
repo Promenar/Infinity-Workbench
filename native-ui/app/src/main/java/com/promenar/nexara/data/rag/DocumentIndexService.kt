@@ -11,6 +11,9 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.UUID
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 interface DocumentIndexService {
     suspend fun rebuild(event: FileIndexEvent): DocumentIndexResult
@@ -23,7 +26,7 @@ interface DocumentIndexService {
 }
 
 sealed interface DocumentIndexResult {
-    data class Rebuilt(val fileUuid: String) : DocumentIndexResult
+    data class Rebuilt(val fileUuid: String, val contentTruncated: Boolean = false) : DocumentIndexResult
     data class Deleted(val fileUuid: String) : DocumentIndexResult
     data class HashChanged(val currentHash: String?) : DocumentIndexResult
     data class Failed(val failure: Throwable) : DocumentIndexResult
@@ -33,6 +36,8 @@ data class DocumentIndexCandidate(
     val vectors: List<VectorEntity>,
     val nodes: List<KgNodeEntity> = emptyList(),
     val edges: List<KgEdgeEntity> = emptyList(),
+    val graphExtracted: Boolean = false,
+    val contentTruncated: Boolean = false,
 )
 
 fun interface DocumentIndexCandidateBuilder {
@@ -40,14 +45,14 @@ fun interface DocumentIndexCandidateBuilder {
 }
 
 fun interface KnowledgeGraphCandidateBuilder {
-    suspend fun build(text: String, fileUuid: String): ExtractionResult
+    suspend fun build(text: String, fileUuid: String, contentHash: String): ExtractionResult
 }
 
 class GraphExtractorKnowledgeGraphCandidateBuilder(
     private val graphExtractor: GraphExtractor,
 ) : KnowledgeGraphCandidateBuilder {
-    override suspend fun build(text: String, fileUuid: String): ExtractionResult =
-        graphExtractor.extractCandidate(text, fileUuid)
+    override suspend fun build(text: String, fileUuid: String, contentHash: String): ExtractionResult =
+        graphExtractor.extractCandidate(text, fileUuid, contentHash)
 }
 
 class WorkspaceDocumentIndexCandidateBuilder(
@@ -55,9 +60,10 @@ class WorkspaceDocumentIndexCandidateBuilder(
     private val embeddingClient: EmbeddingClient,
     private val ragConfig: RagConfiguration,
     private val now: () -> Long = System::currentTimeMillis,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val graphCandidateBuilder: KnowledgeGraphCandidateBuilder? = null,
 ) : DocumentIndexCandidateBuilder {
-    override suspend fun build(event: FileIndexEvent.Changed): DocumentIndexCandidate {
+    override suspend fun build(event: FileIndexEvent.Changed): DocumentIndexCandidate = withContext(dispatcher) {
         val entry = fileEntryDao.getActiveByUuid(event.workspaceRootUuid, event.fileUuid)
             ?: throw java.io.FileNotFoundException("索引文件不存在")
         require(entry.hash == event.contentHash) { "索引事件 hash 已过期" }
@@ -76,14 +82,16 @@ class WorkspaceDocumentIndexCandidateBuilder(
             (event.useConfiguredKgStrategy && ragConfig.enableKnowledgeGraph)
         val graph = if (shouldExtractGraph) {
             val builder = requireNotNull(graphCandidateBuilder) { "启用知识图谱后必须配置候选构建器" }
-            builder.build(extraction.graphText, event.fileUuid).also {
-                require(it.error == null) { "知识图谱候选构建失败: ${it.error}" }
-            }
+            val result = builder.build(extraction.graphText, event.fileUuid, event.contentHash)
+            check(result.isSuccess) { "知识图谱候选构建失败（${result.status}）：${result.error}" }
+            ValidatedGraph.from(result.nodes, result.edges).toExtractionResult()
         } else null
         require(file.sha256() == event.contentHash) { "候选构建期间文件内容已变化" }
         val timestamp = now()
-        val nodeIds = graph?.nodes.orEmpty().associate { it.name.trim().lowercase() to UUID.randomUUID().toString() }
-        return DocumentIndexCandidate(
+        val nodeIds = graph?.nodes.orEmpty().associate { ValidatedGraph.identity(it.name) to UUID.randomUUID().toString() }
+        DocumentIndexCandidate(
+            graphExtracted = shouldExtractGraph,
+            contentTruncated = extraction.truncated,
             vectors = if (event.skipVectorization) emptyList() else extraction.chunks.mapIndexed { index, content ->
                 VectorEntity(
                     id = UUID.randomUUID().toString(),
@@ -100,7 +108,7 @@ class WorkspaceDocumentIndexCandidateBuilder(
                 )
             },
             nodes = graph?.nodes.orEmpty().mapNotNull { node ->
-                nodeIds[node.name.trim().lowercase()]?.let { id ->
+                nodeIds[ValidatedGraph.identity(node.name)]?.let { id ->
                     KgNodeEntity(
                         id = id,
                         name = node.name,
@@ -113,8 +121,8 @@ class WorkspaceDocumentIndexCandidateBuilder(
                 }
             },
             edges = graph?.edges.orEmpty().mapNotNull { edge ->
-                val sourceId = nodeIds[edge.source.trim().lowercase()]
-                val targetId = nodeIds[edge.target.trim().lowercase()]
+                val sourceId = nodeIds[ValidatedGraph.identity(edge.source)]
+                val targetId = nodeIds[ValidatedGraph.identity(edge.target)]
                 if (sourceId == null || targetId == null) null else KgEdgeEntity(
                     id = UUID.randomUUID().toString(),
                     sourceId = sourceId,
@@ -151,6 +159,7 @@ class RoomDocumentIndexService(
     private val database: NexaraDatabase,
     private val now: () -> Long = System::currentTimeMillis,
     private val executionGate: SessionExecutionGate? = null,
+    private val onDeleted: (String) -> Unit = {},
     private val candidateBuilder: DocumentIndexCandidateBuilder,
 ) : DocumentIndexService {
     private val artifacts = RoomDocumentArtifacts(database)
@@ -188,16 +197,16 @@ class RoomDocumentIndexService(
                 ) {
                     return@withTransaction DocumentIndexResult.HashChanged(current.hash)
                 }
-                artifacts.clear(event.workspaceRootUuid, event.fileUuid, deleteTags = false)
+                artifacts.clear(event.workspaceRootUuid, event.fileUuid, deleteTags = false, clearVectors = !event.skipVectorization)
                 if (candidate.vectors.isNotEmpty()) database.vectorDao().insertAll(candidate.vectors)
                 candidate.nodes.forEach { database.kgNodeDao().insert(it) }
                 candidate.edges.forEach { database.kgEdgeDao().insert(it) }
                 val timestamp = maxOf(now(), event.targetEpoch)
                 database.fileEntryDao().update(current.copy(
-                    vectorizedAt = timestamp,
-                    kgExtractedAt = timestamp.takeIf { event.kgStrategy != null },
+                    vectorizedAt = if (event.skipVectorization) current.vectorizedAt else timestamp,
+                    kgExtractedAt = timestamp.takeIf { candidate.graphExtracted || event.kgStrategy != null },
                 ))
-                DocumentIndexResult.Rebuilt(event.fileUuid)
+                DocumentIndexResult.Rebuilt(event.fileUuid, candidate.contentTruncated)
                 }
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -209,11 +218,13 @@ class RoomDocumentIndexService(
 
     override suspend fun delete(workspaceRootUuid: String, fileUuid: String): DocumentIndexResult = try {
         withWorkspaceAdmission(workspaceRootUuid) {
-            database.withTransaction {
+            val result = database.withTransaction {
             artifacts.clear(workspaceRootUuid, fileUuid, deleteTags = true)
             database.vectorizationTaskDao().deleteByWorkspaceFile(workspaceRootUuid, fileUuid)
             DocumentIndexResult.Deleted(fileUuid)
             }
+            onDeleted(fileUuid)
+            result
         }
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
         throw cancelled
@@ -265,11 +276,11 @@ private const val DOCUMENT_REFERENCE_TYPE = "document_reference"
 class RoomDocumentArtifacts(
     private val database: NexaraDatabase,
 ) {
-    suspend fun clear(workspaceRootUuid: String, fileUuid: String, deleteTags: Boolean) {
+    suspend fun clear(workspaceRootUuid: String, fileUuid: String, deleteTags: Boolean, clearVectors: Boolean = true) {
         val legacyNodeIds = database.kgEdgeDao().getByDocIdForLifecycleCleanup(fileUuid)
             .flatMap { listOf(it.sourceId, it.targetId) }
             .distinct()
-        database.vectorDao().deleteByDocId(fileUuid)
+        if (clearVectors) database.vectorDao().deleteByDocId(fileUuid)
         database.kgEdgeDao().deleteByDocId(fileUuid)
         database.kgNodeDao().deleteByFileUuid(fileUuid)
         if (legacyNodeIds.isNotEmpty()) database.kgNodeDao().deleteOrphansByIds(legacyNodeIds)

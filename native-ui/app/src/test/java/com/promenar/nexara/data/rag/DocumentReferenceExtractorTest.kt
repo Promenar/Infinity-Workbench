@@ -10,6 +10,17 @@ class DocumentReferenceExtractorTest {
     @get:Rule val temporary = TemporaryFolder()
 
     @Test
+    fun `菜单抽取资格只接受解析器支持的文件类型与体积`() {
+        val file = entry("/tmp", "doc", "application/pdf").copy(sizeBytes = 300 * 1024)
+        assertThat(DocumentReferenceExtractor.supports(file)).isTrue()
+        assertThat(DocumentReferenceExtractor.supports(file.copy(mimeType = DocumentReferenceExtractor.DOCX_MIME))).isTrue()
+        assertThat(DocumentReferenceExtractor.supports(file.copy(mimeType = "text/plain"))).isTrue()
+        assertThat(DocumentReferenceExtractor.supports(file.copy(mimeType = "image/png"))).isFalse()
+        assertThat(DocumentReferenceExtractor.supports(file.copy(isDirectory = true))).isFalse()
+        assertThat(DocumentReferenceExtractor.supports(file.copy(mimeType = DocumentReferenceExtractor.DOCX_MIME, sizeBytes = 50L * 1024 * 1024 + 1))).isFalse()
+    }
+
+    @Test
     fun `UTF8文本按增量切块并保持重叠`() {
         val root = temporary.newFolder("root")
         root.resolve("note.txt").writeText("abcdefghijklmnop")

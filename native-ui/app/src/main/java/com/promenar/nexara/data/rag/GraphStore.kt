@@ -113,7 +113,7 @@ class GraphStore(
         val existing = kgEdgeDao.findEdge(sourceId, targetId, relation, docId, sessionId)
 
         if (existing != null) {
-            val newWeight = existing.weight + weight
+            val newWeight = maxOf(existing.weight.takeIf { it.isFinite() } ?: 0.0, weight).coerceIn(0.0, 1.0)
             val finalSourceType = resolveSourceType(existing.sourceType, sourceType)
             kgEdgeDao.updateWeight(existing.id, newWeight, System.currentTimeMillis(), finalSourceType)
             return existing.id
@@ -146,12 +146,12 @@ class GraphStore(
     }
 
     /**
-     * 清除指定文档关联的图谱数据（边 + 孤立节点）。
-     * 用于重新抽取时先清理旧数据，避免 weight 累加和重复边。
+     * 清除指定文档的边和由这些边引用的孤立节点，不影响其它抽取任务。
      */
     suspend fun clearGraphForDoc(docId: String) {
+        val nodeIds = kgEdgeDao.getByDocIdForLifecycleCleanup(docId).flatMap { listOf(it.sourceId, it.targetId) }.distinct()
         val deletedEdges = kgEdgeDao.deleteByDocId(docId)
-        val deletedOrphans = kgNodeDao.deleteOrphanNodes()
+        val deletedOrphans = if (nodeIds.isEmpty()) 0 else kgNodeDao.deleteOrphansByIds(nodeIds)
         NexaraLogger.log("[RAG][GraphStore] clearGraphForDoc: docId=$docId, deletedEdges=$deletedEdges, orphanNodes=$deletedOrphans")
     }
 
