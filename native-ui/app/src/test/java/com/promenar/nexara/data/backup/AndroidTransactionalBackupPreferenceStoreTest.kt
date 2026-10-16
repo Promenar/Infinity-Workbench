@@ -68,6 +68,23 @@ class AndroidTransactionalBackupPreferenceStoreTest {
     }
 
     @Test
+    fun `备份恢复设置时不导出或覆盖本机回滚摘要费用`() = runBlocking {
+        val prefs = context.getSharedPreferences("nexara_settings", 0)
+        prefs.edit().putInt("loop_limit", 9)
+            .putString("rolled_back_summary_usage_v1", "local-summary-usage").commit()
+        val snapshot = store().snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
+        assertThat(snapshot.entries.none { it.key == "rolled_back_summary_usage_v1" }).isTrue()
+        prefs.edit().putInt("loop_limit", 5).commit()
+        val before = store().snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
+
+        store().prepare("tx-summary-usage", before, snapshot)
+        store().commitPrepared("tx-summary-usage")
+
+        assertThat(prefs.getInt("loop_limit", -1)).isEqualTo(9)
+        assertThat(prefs.getString("rolled_back_summary_usage_v1", null)).isEqualTo("local-summary-usage")
+    }
+
+    @Test
     fun `不限轮次与任务预算可备份恢复且不迁移自动执行同意`() = runBlocking {
         val prefs = context.getSharedPreferences("nexara_settings", 0)
         prefs.edit().putInt("loop_limit", 0).putInt("task_token_limit", 20_000)

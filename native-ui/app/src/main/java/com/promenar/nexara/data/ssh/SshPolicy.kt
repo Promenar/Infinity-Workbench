@@ -171,12 +171,16 @@ internal class SshOutputFilter(credential: SshCredential) : AutoCloseable {
                 table[index] = matched
             }
         }
-        fun suffix(value: String): Int {
+        fun scan(value: String, ranges: IntArray): Int {
             var matched = 0
-            value.forEach { char ->
+            value.forEachIndexed { index, char ->
                 while (matched > 0 && char != text[matched]) matched = prefix[matched - 1]
                 if (char == text[matched]) matched++
-                if (matched == text.length) matched = prefix[matched - 1]
+                if (matched == text.length) {
+                    ranges[index + 1 - matched]++
+                    ranges[index + 1]--
+                    matched = prefix[matched - 1]
+                }
             }
             return matched
         }
@@ -189,31 +193,46 @@ internal class SshOutputFilter(credential: SshCredential) : AutoCloseable {
     }.distinct().filter(String::isNotEmpty).sortedByDescending(String::length).map(::Pattern)
     fun stream() = Stream(this)
     fun whole(value: String): String = stream().feed(value, end = true)
-    @Synchronized private fun scrub(value: String): String? {
-        if (closed) return null
-        var result = value
-        patterns.forEach { result = result.replace(it.text, "█".repeat(it.text.length)) }
-        return result
+    private data class Scan(val masked: BooleanArray, val hold: Int, val privateStart: Int?)
+    @Synchronized private fun scan(value: String, retainedMask: BooleanArray): Scan {
+        if (closed) return Scan(BooleanArray(value.length) { true }, 0, null)
+        val masked = retainedMask.copyOf(value.length)
+        val ranges = IntArray(value.length + 1)
+        val hold = patterns.maxOfOrNull { it.scan(value, ranges) } ?: 0
+        // 差分区间一次合并；密集重叠的长凭据也不逐个重复填充正文。
+        var coverage = 0
+        for (index in value.indices) {
+            coverage += ranges[index]
+            if (coverage > 0) masked[index] = true
+        }
+        val privateStart = PRIVATE_MARKERS.map(value::indexOf).filter { it >= 0 }.minOrNull()
+        return Scan(masked, hold, privateStart)
     }
-    @Synchronized private fun suffix(value: String): Int = if (closed) 0 else patterns.maxOfOrNull { it.suffix(value) } ?: 0
     override fun close() = synchronized(this) { closed = true; patterns.forEach { it.prefix.fill(0) }; patterns = emptyList() }
 
     class Stream internal constructor(private val parent: SshOutputFilter) {
         private var pending = ""
+        private var pendingMask = BooleanArray(0)
         private var privateBlock = false
         @Synchronized fun feed(value: String, end: Boolean = false): String {
             val input = pending + value
             pending = ""
-            val privateIndex = PRIVATE_MARKERS.map(input::indexOf).filter { it >= 0 }.minOrNull()
-            val source = if (privateBlock) "█".repeat(input.length) else if (privateIndex != null) {
+            if (privateBlock) return "█".repeat(input.length)
+            val scan = parent.scan(input, pendingMask)
+            pendingMask = BooleanArray(0)
+            if (scan.privateStart != null) {
                 privateBlock = true
-                input.take(privateIndex) + "█".repeat(input.length - privateIndex)
-            } else input
-            val safe = parent.scrub(source) ?: return "█".repeat(source.length)
-            val hold = if (privateBlock) 0 else parent.suffix(safe)
-            pending = safe.takeLast(hold)
-            val output = safe.dropLast(hold)
-            return if (end) (output + "█".repeat(pending.length)).also { pending = "" } else output
+                // 标记之前尚未完成的凭据前缀也不能因进入私钥区而提前发布。
+                scan.masked.fill(true, minOf(scan.privateStart, input.length - scan.hold))
+            }
+            val hold = if (privateBlock || end) 0 else scan.hold
+            val emitted = input.length - hold
+            if (end && scan.hold > 0) scan.masked.fill(true, input.length - scan.hold)
+            pending = input.substring(emitted)
+            pendingMask = scan.masked.copyOfRange(emitted, input.length)
+            return buildString(emitted) {
+                for (index in 0 until emitted) append(if (scan.masked[index]) '█' else input[index])
+            }
         }
     }
     private companion object {

@@ -217,6 +217,72 @@ class SshRuntimeIntegrationTest {
         val key = runtime.probe("termux")
         hostStore.host = hostStore.host.copy(trustedKeyType = key.type, trustedFingerprint = key.fingerprint)
     }
+
+    @Test fun `旧格式SSH批准目标在执行入口被拒绝`() = runBlocking {
+        trust()
+        val result = executeApproved("""["process","termux","[PTY]"]""")
+        assertThat(result.status).isEqualTo("error")
+        assertThat(result.content).contains("HOST_AUTHORIZATION_CHANGED")
+        assertThat(server.activeSessions).isEmpty()
+    }
+
+    @Test fun `身份保持不变的SSH批准目标可以打开PTY`() = runBlocking {
+        trust()
+        val result = executeApproved(requireNotNull(approvalTarget()))
+        assertThat(result.status).isEqualTo("success")
+        assertThat(result.content).contains("session_id")
+    }
+
+    @Test fun `审批后同名主机身份变化不能执行到新用户名`() = runBlocking {
+        trust()
+        val target = requireNotNull(approvalTarget())
+        hostStore.host = hostStore.host.copy(username = "different-user")
+        val result = executeApproved(target)
+        assertThat(result.status).isEqualTo("error")
+        assertThat(result.content).contains("HOST_AUTHORIZATION_CHANGED")
+        assertThat(server.activeSessions).isEmpty()
+    }
+
+    @Test fun `身份复核与连接间配置变化拒绝远端PTY`() = runBlocking {
+        trust()
+        val target = requireNotNull(approvalTarget())
+        val original = hostStore.host
+        runtime.close()
+        val reads = AtomicInteger()
+        runtime = SshRuntime(object : SshHostStore by hostStore {
+            override fun observeHosts() = kotlinx.coroutines.flow.emptyFlow<List<SshHost>>()
+            override suspend fun find(alias: String): SshHost = if (reads.incrementAndGet() >= 3) {
+                original.copy(username = "changed-during-connect")
+            } else original
+        })
+        val result = executeApproved(target)
+        assertThat(result.status).isEqualTo("error")
+        assertThat(result.content).contains("HOST_CONFIGURATION_CHANGED")
+    }
+
+    private suspend fun approvalTarget(): String? = com.promenar.nexara.data.generation.resolveSessionToolTarget(
+        com.promenar.nexara.data.model.Session(id = "chat", agentId = "agent"),
+        com.promenar.nexara.data.remote.protocol.ProtocolTool(
+            function = com.promenar.nexara.data.remote.protocol.ProtocolToolFunction("ssh_session_open", "测试", "{}"),
+            risk = com.promenar.nexara.domain.tool.ToolRisk.PROCESS,
+        ),
+        """{"host":"termux"}""", null, sshHostStore = hostStore,
+    )
+
+    private suspend fun executeApproved(target: String): com.promenar.nexara.data.model.ToolResult {
+        val context = object : com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext {
+            override val sessionId = "chat"
+            override val agentId = "agent"
+            override val workspacePath: String? = null
+            override val workspaceRootUuid = "root"
+            override val approvedExecutionTarget = target
+            override val isApprovalBoundExecution = true
+        }
+        return com.promenar.nexara.ui.chat.manager.skills.sshTools(runtime).single { it.name == "ssh_session_open" }.execute(
+            kotlinx.serialization.json.Json.parseToJsonElement("""{"host":"termux"}""") as kotlinx.serialization.json.JsonObject,
+            context,
+        )
+    }
 }
 
 internal class MemorySshHosts : SshHostStore {

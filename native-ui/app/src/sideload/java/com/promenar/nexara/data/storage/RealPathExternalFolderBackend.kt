@@ -490,7 +490,8 @@ internal object AndroidRealPathFileSystem : RealPathFileSystem {
         override fun createDirectory(name: String) = Os.mkdir(child(name), 448)
         override fun atomicReplace(source: String, target: String) = Os.rename(child(source), child(target))
         override fun linkNew(source: String, target: String): Boolean = try { Os.link(child(source), child(target)); true } catch (exception: ErrnoException) {
-            if (exception.errno in setOf(OsConstants.EPERM, OsConstants.EOPNOTSUPP, OsConstants.ENOSYS, OsConstants.EXDEV)) false else throw exception
+            // Android 的 SELinux 策略禁止应用创建硬链接，返回 EACCES；与其它“不支持硬链接”的错误一样回退到独占新建。
+            if (exception.errno in setOf(OsConstants.EACCES, OsConstants.EPERM, OsConstants.EOPNOTSUPP, OsConstants.ENOSYS, OsConstants.EXDEV)) false else throw exception
         }
         override fun deleteFile(name: String) = Os.remove(child(name))
         override fun deleteDirectory(name: String) = Os.remove(child(name))

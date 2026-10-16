@@ -13,6 +13,23 @@ import org.junit.Before
 import org.junit.Test
 
 class DefaultSessionToolResolverTest {
+    @Test
+    fun `Termux工具默认隐藏且关闭集成立即撤销暴露`() {
+        val termux = ProtocolTool(
+            function = ProtocolToolFunction(name = "termux_exec", description = "本机终端", parameters = "{}"),
+            sourceId = "builtin", runtimeToolId = "termux_exec", risk = ToolRisk.PROCESS,
+        )
+        every { skillRegistry.getAllTools(null) } returns listOf(safeReadTool, termux)
+        every { settings.getStringSet("enabled_skills", null) } returns null
+        val resolver = DefaultSessionToolResolver(settings, skillRegistry)
+        val session = Session(id = "termux", agentId = "a")
+        assertThat(resolver.resolve(session).map { it.runtimeToolId }).containsExactly("calculator")
+        every { settings.getBoolean("termux_integration_enabled", false) } returns true
+        assertThat(resolver.resolve(session).map { it.runtimeToolId }).containsExactly("calculator", "termux_exec")
+        every { settings.getBoolean("termux_integration_enabled", false) } returns false
+        assertThat(resolver.resolve(session).map { it.runtimeToolId }).containsExactly("calculator")
+    }
+
 
     private val settings = mockk<SharedPreferences>(relaxed = true).also {
         every { it.getStringSet(BuiltinToolPreferences.KNOWN_KEY, null) } returns null

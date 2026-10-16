@@ -15,6 +15,7 @@ object ToolExecutionTargets {
         tool: ProtocolTool,
         arguments: String,
         resolvedPaths: Map<String, String> = emptyMap(),
+        sshIdentities: Map<String, SshExecutionIdentity> = emptyMap(),
     ): String? {
         val args = runCatching { Json.parseToJsonElement(arguments) as? JsonObject }.getOrNull()
             ?: return null
@@ -30,21 +31,26 @@ object ToolExecutionTargets {
             val id = args.string("session_id") ?: return null
             val host = resolvedPaths["ssh_session:$id"]?.takeIf { SSH_ALIAS.matches(it) } ?: return null
             val input = args.string("input") ?: return null
-            return tuple("process", host, input)
+            return sshTarget("process", host, input, sshIdentities)
         }
         if (tool.function.name == "ssh_session_open") {
             val host = args.string("host")?.takeIf { SSH_ALIAS.matches(it) } ?: return null
-            return tuple("process", host, "[PTY]")
+            return sshTarget("process", host, "[PTY]", sshIdentities)
         }
         if (tool.function.name in setOf("sftp_list", "sftp_read", "sftp_write")) {
             val host = args.string("host")?.takeIf { SSH_ALIAS.matches(it) } ?: return null
             val path = args.string("path")?.takeIf { it.isNotBlank() && it.length <= 4096 && it.none(Character::isISOControl) } ?: return null
             // 远端相对路径和符号链接的语义由服务器决定，授权键保留原始路径。
-            return tuple("remote_path", host, path)
+            return sshTarget("remote_path", host, path, sshIdentities)
         }
         if (tool.risk == ToolRisk.PROCESS) {
-            val host = args.string("host")?.trim()?.takeIf(String::isNotBlank) ?: return null
+            val host = if (tool.function.name == "termux_exec") "termux"
+                else args.string("host")?.trim()?.takeIf(String::isNotBlank) ?: return null
             val command = args.string("command")?.takeIf(String::isNotBlank) ?: return null
+            if (tool.function.name == "ssh_exec") {
+                if (!SSH_ALIAS.matches(host)) return null
+                return sshTarget("process", host, command, sshIdentities)
+            }
             return tuple("process", host.lowercase(Locale.ROOT), command)
         }
         val target = when (tool.function.name) {
@@ -175,5 +181,13 @@ object ToolExecutionTargets {
         (get(key) as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content
 
     private fun tuple(vararg parts: String): String = JsonArray(parts.map(::JsonPrimitive)).toString()
+    private fun sshTarget(kind: String, host: String, value: String, identities: Map<String, SshExecutionIdentity>): String? {
+        val identity = identities[host] ?: return null
+        if (identity.hostId.isBlank() || identity.digest.isBlank()) return null
+        return JsonArray(listOf(JsonPrimitive(kind), JsonPrimitive(host), JsonPrimitive(value), JsonObject(mapOf(
+            "sshHostId" to JsonPrimitive(identity.hostId),
+            "sshIdentity" to JsonPrimitive(identity.digest),
+        )))).toString()
+    }
     private val SSH_ALIAS = Regex("[a-z][a-z0-9_-]{0,47}")
 }

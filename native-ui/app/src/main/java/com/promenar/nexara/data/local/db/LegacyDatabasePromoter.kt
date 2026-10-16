@@ -2,7 +2,6 @@ package com.promenar.nexara.data.local.db
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import com.promenar.nexara.data.local.db.recovery.isTrustedCurrentRoomSchema
 import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.file.AtomicMoveNotSupportedException
@@ -27,7 +26,6 @@ internal object LegacyDatabasePromoter {
     private const val CURRENT_NAME = "nexara_v2.db"
     private const val PUBLISHED_V17_IDENTITY_HASH = "3311ec5f07e8df42c02fd09163c49f6e"
     private const val CURRENT_V5_IDENTITY_HASH = "3c6ffe1572c71bac7e866a33388a5a3b"
-    private const val CURRENT_V18_IDENTITY_HASH = "c32f59706ea482fd5697681569c6fdb5"
     private const val VALIDATION_DIRECTORY_PREFIX = ".nexara-db-validation-"
     private val currentSidecarSuffixes = listOf("-wal", "-shm", "-journal")
     private val validationCopyLock = Any()
@@ -145,15 +143,7 @@ internal object LegacyDatabasePromoter {
             val exactContract = when (version) {
                 5 -> identity == CURRENT_V5_IDENTITY_HASH && commonContract &&
                     !sqlite.hasColumn("messages", "legacy_attachments")
-                18 -> identity == CURRENT_V18_IDENTITY_HASH && commonContract &&
-                    sqlite.hasColumn("messages", "legacy_attachments")
-                19, 20, 21 -> identity != null && isTrustedCurrentRoomSchema(version, identity) &&
-                    commonContract && sqlite.hasColumn("messages", "legacy_attachments") &&
-                    sqlite.hasColumn("kg_nodes", "normalized_name") && sqlite.hasColumn("kg_evidence", "content_hash") &&
-                    sqlite.hasColumn("kg_jit_cache_sources", "cache_key") && sqlite.hasColumn("workspace_files", "kg_strategy") &&
-                    (version == 19 || (sqlite.hasColumn("external_mounts", "scope_key") &&
-                        sqlite.hasColumn("external_snapshots", "mount_id"))) &&
-                    (version < 21 || sqlite.hasSshHostContract())
+                18, 19, 20, 21 -> sqlite.hasCompleteCurrentRoomSchema(version, identity)
                 else -> false
             }
             if (!exactContract) {

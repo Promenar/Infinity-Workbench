@@ -13,6 +13,9 @@ import com.promenar.nexara.data.backup.BackupPreferenceSnapshot
 import com.promenar.nexara.data.backup.RoomBackupDataSource
 import com.promenar.nexara.data.backup.TransactionalBackupPreferenceStore
 import com.promenar.nexara.data.backup.TransactionalBackupSecretStore
+import com.promenar.nexara.data.local.db.MIGRATION_18_19
+import com.promenar.nexara.data.local.db.MIGRATION_19_20
+import com.promenar.nexara.data.local.db.MIGRATION_20_21
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.repository.WorkspaceRepository
 import com.promenar.nexara.data.security.SecretId
@@ -81,6 +84,8 @@ class AndroidDualDatabaseWorkspaceRecoveryTest {
                 assertThat(digest(archivedLegacy)).isEqualTo(legacySourceHash)
 
                 val database = Room.databaseBuilder(context, NexaraDatabase::class.java, CURRENT_DATABASE_NAME)
+                    // 恢复候选冻结为 v18，打开当前库需经前进迁移。
+                    .addMigrations(MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                     .allowMainThreadQueries()
                     .build()
                 room = database
@@ -140,6 +145,8 @@ class AndroidDualDatabaseWorkspaceRecoveryTest {
                     .isInstanceOf(DualDatabaseBootstrapResult.Completed::class.java)
 
                 val database = Room.databaseBuilder(context, NexaraDatabase::class.java, CURRENT_DATABASE_NAME)
+                    // 恢复候选冻结为 v18，打开当前库需经前进迁移。
+                    .addMigrations(MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                     .allowMainThreadQueries()
                     .build()
                 room = database
@@ -247,6 +254,8 @@ class AndroidDualDatabaseWorkspaceRecoveryTest {
                     .isInstanceOf(DualDatabaseBootstrapResult.Completed::class.java)
 
                 val database = Room.databaseBuilder(context, NexaraDatabase::class.java, CURRENT_DATABASE_NAME)
+                    // 恢复候选冻结为 v18，打开当前库需经前进迁移。
+                    .addMigrations(MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                     .allowMainThreadQueries()
                     .build()
                 room = database
@@ -312,6 +321,8 @@ class AndroidDualDatabaseWorkspaceRecoveryTest {
                     .isInstanceOf(DualDatabaseBootstrapResult.Completed::class.java)
 
                 val database = Room.databaseBuilder(context, NexaraDatabase::class.java, CURRENT_DATABASE_NAME)
+                    // 恢复候选冻结为 v18，打开当前库需经前进迁移。
+                    .addMigrations(MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                     .allowMainThreadQueries()
                     .build()
                 room = database
@@ -388,6 +399,8 @@ class AndroidDualDatabaseWorkspaceRecoveryTest {
                 .isInstanceOf(DualDatabaseBootstrapResult.Completed::class.java)
 
             val database = Room.databaseBuilder(context, NexaraDatabase::class.java, CURRENT_DATABASE_NAME)
+                // 恢复候选冻结为 v18，打开当前库需经前进迁移。
+                .addMigrations(MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                 .allowMainThreadQueries()
                 .build()
             room = database

@@ -32,6 +32,14 @@ data class SshHost(
     val forwardHost: String = "127.0.0.1",
     val forwardPort: Int? = null,
 ) {
+    fun executionIdentity(): com.promenar.nexara.domain.tool.SshExecutionIdentity {
+        val parts = listOf(hostname, port.toString(), username, authType.name, trustedKeyType.orEmpty(), trustedFingerprint.orEmpty())
+        val encoded = kotlinx.serialization.json.JsonArray(parts.map { kotlinx.serialization.json.JsonPrimitive(it) }).toString()
+        val digest = MessageDigest.getInstance("SHA-256").digest(encoded.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 255) }
+        return com.promenar.nexara.domain.tool.SshExecutionIdentity(id, digest)
+    }
+
     init {
         requireAlias(alias)
         requireCleanText(id, "SSH 主机标识无效")

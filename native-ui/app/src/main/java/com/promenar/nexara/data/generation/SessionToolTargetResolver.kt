@@ -16,6 +16,7 @@ suspend fun resolveSessionToolTarget(
     arguments: String,
     repository: IWorkspaceRepository?,
     mounts: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess? = null,
+    sshHostStore: com.promenar.nexara.data.ssh.SshHostStore? = null,
     sshSessionHost: ((String, String) -> String?)? = null,
 ): String? {
     val args = (ToolArgumentsValidator().validate(arguments) as? ToolArgumentsValidation.Valid)?.arguments ?: return null
@@ -36,7 +37,18 @@ suspend fun resolveSessionToolTarget(
                 }
             }
         }
-        val target = ToolExecutionTargets.extract(tool, arguments, paths) ?: return null
+        val sshIdentities = if (tool.mcpServerId == null && tool.sourceId != "mcp" && !tool.runtimeToolId.startsWith("mcp:") &&
+            tool.function.name in setOf("ssh_exec", "ssh_session_open", "ssh_session_send", "sftp_list", "sftp_read", "sftp_write")
+        ) {
+            val alias = if (tool.function.name == "ssh_session_send") {
+                val id = (args["session_id"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
+                paths["ssh_session:$id"]
+            } else (args["host"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (alias == null) return null
+            val host = sshHostStore?.find(alias) ?: return null
+            mapOf(alias to host.executionIdentity())
+        } else emptyMap()
+        val target = ToolExecutionTargets.extract(tool, arguments, paths, sshIdentities) ?: return null
         if (mounts == null) return target
         val parts = kotlinx.serialization.json.Json.parseToJsonElement(target) as? kotlinx.serialization.json.JsonArray ?: return null
         val metadata = parts.lastOrNull() as? kotlinx.serialization.json.JsonObject

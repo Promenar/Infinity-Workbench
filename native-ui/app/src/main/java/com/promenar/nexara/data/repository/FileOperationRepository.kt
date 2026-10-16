@@ -162,31 +162,10 @@ class FileOperationRepository(
             } catch (failure: WorkspaceTextPolicyException) {
                 return@withBoundRoot policyFailure(failure, uuid)
             }
-            val lines = workspaceTextLines(currentContent).toMutableList()
-            val originalTotal = lines.size
-            validatePatchOperations(operations, lines, uuid)?.let { return@withBoundRoot it }
-            operations.withIndex().sortedByDescending { (_, operation) ->
-                operation.startLine ?: operation.afterLine ?: -1
-            }.forEach { (_, operation) ->
-                when (operation.action) {
-                    "replace_lines" -> {
-                        val start = requireNotNull(operation.startLine)
-                        val end = requireNotNull(operation.endLine)
-                        lines.subList(start - 1, end).clear()
-                        lines.addAll(start - 1, contentLines(operation.newContent.orEmpty()))
-                    }
-                    "insert_after" -> lines.addAll(
-                        requireNotNull(operation.afterLine),
-                        contentLines(operation.newContent.orEmpty()),
-                    )
-                    "delete_lines" -> lines.subList(
-                        requireNotNull(operation.startLine) - 1,
-                        requireNotNull(operation.endLine),
-                    ).clear()
-                }
+            val newContent = when (val patch = applyWorkspaceLinePatch(currentContent, operations, uuid)) {
+                is WorkspaceLinePatchResult.Applied -> patch.content
+                is WorkspaceLinePatchResult.Rejected -> return@withBoundRoot PatchResult.Failure(patch.error)
             }
-
-            val newContent = lines.joinToString("\n")
             try {
                 textPolicy.validate(
                     entry.name,
@@ -428,16 +407,6 @@ class FileOperationRepository(
     private fun fileFailure(code: String, message: String, uuid: String) =
         PatchResult.Failure(PatchError(code, message, -1, uuid))
 
-    private fun rangeFailure(operation: PatchOperation, index: Int, uuid: String, total: Int) =
-        PatchResult.Failure(PatchError(
-            code = "LINE_OUT_OF_RANGE",
-            message = "操作 ${operation.action} 超出文件行数（共 $total 行）。",
-            operationIndex = index,
-            fileUuid = uuid,
-            totalLines = total,
-            suggestion = "请先读取当前文件内容后重试。",
-        ))
-
     private fun policyFailure(failure: WorkspaceTextPolicyException, uuid: String) =
         PatchResult.Failure(PatchError(
             code = failure.code.name,
@@ -446,76 +415,5 @@ class FileOperationRepository(
             fileUuid = uuid,
             suggestion = "请改用受支持的文本文件，并缩小操作范围。",
         ))
-
-    private fun validatePatchOperations(
-        operations: List<PatchOperation>,
-        lines: List<String>,
-        uuid: String,
-    ): PatchResult.Failure? {
-        data class ClaimedRange(val start: Int, val end: Int)
-        val claimed = mutableListOf<ClaimedRange>()
-        val insertions = mutableSetOf<Int>()
-        operations.forEachIndexed { index, operation ->
-            when (operation.action) {
-                "replace_lines", "delete_lines" -> {
-                    val start = operation.startLine
-                    val end = operation.endLine
-                    if (start == null || end == null || start < 1 || end < start || end > lines.size) {
-                        return rangeFailure(operation, index, uuid, lines.size)
-                    }
-                    val range = ClaimedRange(start, end)
-                    if (claimed.any { range.start <= it.end && it.start <= range.end }) {
-                        return PatchResult.Failure(PatchError(
-                            "OVERLAPPING_OPERATIONS",
-                            "patch 操作坐标重叠，已拒绝整批修改。",
-                            index,
-                            uuid,
-                            lines.size,
-                            "请合并重叠操作并基于同一原始文件坐标重试。",
-                        ))
-                    }
-                    claimed += range
-                    operation.expectedContent?.let { expected ->
-                        val actual = lines.subList(start - 1, end).joinToString("\n")
-                        if (actual != expected) {
-                            return PatchResult.Failure(PatchError(
-                                "CONTEXT_MISMATCH",
-                                "patch 上下文与当前文件不一致，已拒绝修改。",
-                                index,
-                                uuid,
-                                lines.size,
-                                "请重新读取文件后生成补丁。",
-                            ))
-                        }
-                    }
-                }
-                "insert_after" -> {
-                    val after = operation.afterLine
-                    if (after == null || after < 0 || after > lines.size) {
-                        return rangeFailure(operation, index, uuid, lines.size)
-                    }
-                    if (!insertions.add(after)) {
-                        return PatchResult.Failure(PatchError(
-                            "OVERLAPPING_OPERATIONS",
-                            "同一坐标存在多个插入操作，已拒绝整批修改。",
-                            index,
-                            uuid,
-                            lines.size,
-                        ))
-                    }
-                }
-                else -> return PatchResult.Failure(PatchError(
-                    code = "INVALID_ACTION",
-                    message = "未知的 patch 操作类型: ${operation.action}",
-                    operationIndex = index,
-                    fileUuid = uuid,
-                ))
-            }
-        }
-        return null
-    }
-
-    private fun contentLines(content: String): List<String> =
-        workspaceTextLines(content)
 
 }

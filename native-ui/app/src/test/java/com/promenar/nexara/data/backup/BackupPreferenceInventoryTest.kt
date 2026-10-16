@@ -29,10 +29,13 @@ class BackupPreferenceInventoryTest {
                 "\\(\\s*\"([^\"]+)\""
         )
         val injectedNamespaces = mapOf(
+            "data/remote/mcp/McpConnectionSettings.kt#preferences" to "nexara_settings",
+            "data/termux/TermuxRuntime.kt#settings" to "nexara_settings",
             "domain/usecase/AgentConfigResolver.kt#globalPrefs" to "nexara_settings",
             "domain/usecase/RagConfigPersistence.kt#prefs" to "rag_settings",
             "data/rag/KgAdvancedSettings.kt#preferences" to "rag_settings",
             "data/rag/KgUsageStore.kt#preferences" to "kg_usage",
+            "data/repository/RolledBackSummaryUsageStore.kt#preferences" to "nexara_settings",
             "ui/settings/BackupViewModel.kt#prefs" to "nexara_backup_settings",
             "ui/settings/SettingsViewModel.kt#prefs" to "nexara_settings",
             "ui/theme/ThemePreferenceStore.kt#preferences" to "nexara_settings",
@@ -213,6 +216,22 @@ class BackupPreferenceInventoryTest {
         }
         assertThat(BackupPreferencePolicy.isKnown("kg_usage", "kg_usage_ledger_v1")).isTrue()
         assertThat(BackupPreferencePolicy.isAllowed("kg_usage", "kg_usage_ledger_v1")).isFalse()
+    }
+
+    @Test
+    fun `本机回滚摘要用量已登记且禁止跨设备迁移`() {
+        assertThat(BackupPreferencePolicy.isKnown("nexara_settings", "rolled_back_summary_usage_v1")).isTrue()
+        assertThat(BackupPreferencePolicy.isAllowed("nexara_settings", "rolled_back_summary_usage_v1")).isFalse()
+    }
+
+    @Test
+    fun `Termux与本机MCP启用授权属于当前设备且不得跨备份恢复`() {
+        listOf("termux_integration_enabled", "mcp_allow_loopback_http").forEach { key ->
+            assertWithMessage("设备授权开关应被显式识别: $key")
+                .that(BackupPreferencePolicy.isKnown("nexara_settings", key)).isTrue()
+            assertWithMessage("设备授权开关不得跨备份恢复: $key")
+                .that(BackupPreferencePolicy.isAllowed("nexara_settings", key)).isFalse()
+        }
     }
 
     @Test

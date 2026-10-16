@@ -9,6 +9,8 @@ import com.promenar.nexara.domain.tool.ToolSchemaValidation
 import com.promenar.nexara.domain.tool.ToolSchemaValidator
 import com.promenar.nexara.ui.chat.manager.registry.SkillDefinition
 import com.promenar.nexara.ui.chat.manager.registry.SkillExecutionContext
+import com.promenar.nexara.ui.chat.manager.registry.toProtocolTool
+import com.promenar.nexara.domain.tool.ToolExecutionTargets
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
@@ -54,7 +56,19 @@ private class SshSkill(private val runtime: SshRuntime, private val operation: S
         val owner = "agent:${context.sessionId}"
         return try {
             if ("host" in args) SshPolicy.alias(args.text("host"))
-            val result = when (operation) {
+            val snapshot = when (operation) {
+                SshOperation.EXEC, SshOperation.LIST, SshOperation.READ, SshOperation.WRITE, SshOperation.OPEN ->
+                    runtime.hostSnapshot(args.text("host"))
+                SshOperation.SEND -> runtime.sessionSnapshot(owner, args.text("session_id"))
+                else -> null
+            }
+            if (snapshot != null && (context.isApprovalBoundExecution || context.approvedExecutionTarget != null)) {
+                val resolved = if (operation == SshOperation.SEND) mapOf("ssh_session:${args.text("session_id")}" to snapshot.alias) else emptyMap()
+                val target = ToolExecutionTargets.extract(toProtocolTool(), args.toString(), resolved, mapOf(snapshot.alias to snapshot.executionIdentity()))
+                if (target == null || target != context.approvedExecutionTarget) throw SshFailure("HOST_AUTHORIZATION_CHANGED")
+            }
+            // 协程局部快照贯穿连接获取与实际操作，禁止按别名换源或跨等待窗口复用旧连接。
+            val result = runtime.withHostSnapshot(snapshot) { when (operation) {
                 SshOperation.EXEC -> {
                     val value = runtime.exec(owner, args.text("host"), args.text("command"), args.integer("timeout_seconds", 60), args.integer("max_output_chars", 32_000))
                     buildJsonObject { put("exit_code", value.exitCode); put("stdout", value.stdout); put("stderr", value.stderr); put("truncated", value.truncated); put("timed_out", value.timedOut) }
@@ -83,7 +97,7 @@ private class SshSkill(private val runtime: SshRuntime, private val operation: S
                     buildJsonObject { put("output", value.output); put("closed", value.closed); put("truncated", value.truncated) }
                 }
                 SshOperation.CLOSE -> { runtime.closeSession(owner, args.text("session_id")); buildJsonObject { put("closed", true) } }
-            }
+            } }
             ToolResult(id = "ssh_${UUID.randomUUID()}", content = result.toString())
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (failure: SshFailure) { failure(failure.code)

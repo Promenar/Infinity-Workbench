@@ -6,7 +6,7 @@ import android.os.ParcelFileDescriptor
 import android.system.Os
 import android.system.OsConstants
 import androidx.core.content.ContextCompat
-import com.promenar.nexara.data.local.db.hasSshHostContract
+import com.promenar.nexara.data.local.db.hasCompleteCurrentRoomSchema
 import java.io.Closeable
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -204,18 +204,8 @@ internal class AndroidDualDatabaseSourceProbe(
                     !has("messages", "attachments") && !has("messages", "legacy_attachments") &&
                         has("agents", "name_customized") && has("workspace_files", "workspace_root_uuid") &&
                         has("vectorization_tasks", "workspace_root_uuid")
-                role == "current" && version == 18 ->
-                    !has("messages", "attachments") && has("messages", "legacy_attachments") &&
-                        has("agents", "name_customized") && has("workspace_files", "workspace_root_uuid") &&
-                        has("vectorization_tasks", "workspace_root_uuid")
-                role == "current" && version in setOf(19, 20, 21) ->
-                    !has("messages", "attachments") && has("messages", "legacy_attachments") &&
-                        has("agents", "name_customized") && has("workspace_files", "workspace_root_uuid") &&
-                        has("vectorization_tasks", "workspace_root_uuid") && has("kg_nodes", "normalized_name") &&
-                        has("kg_evidence", "content_hash") && has("kg_jit_cache_sources", "cache_key") &&
-                        has("workspace_files", "kg_strategy") &&
-                        (version == 19 || (has("external_mounts", "scope_key") && has("external_snapshots", "mount_id"))) &&
-                        (version < 21 || sqlite.hasSshHostContract())
+                role == "current" && version in setOf(18, 19, 20, 21) ->
+                    sqlite.hasCompleteCurrentRoomSchema(version, sqlite.roomIdentity())
                 else -> false
             }
             if (!valid) throw IOException("${role}数据库结构与已验证发布合同不一致")

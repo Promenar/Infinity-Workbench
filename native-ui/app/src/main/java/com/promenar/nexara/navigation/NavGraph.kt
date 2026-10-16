@@ -78,6 +78,7 @@ object NavDestinations {
     const val TOKEN_USAGE = "token_usage"
     const val SKILLS_CONFIG = "skills_config"
     const val SSH_CONFIG = "ssh_config"
+    const val TERMUX_CONFIG = "termux_config"
     const val SSH_TERMINAL = "ssh_terminal/{alias}"
     const val THEME_CONFIG = "theme_config"
     const val BACKUP_SETTINGS = "backup_settings"
@@ -583,6 +584,14 @@ fun NexaraNavGraph(
         composable(NavDestinations.SKILLS_CONFIG) {
             SkillsScreen(
                 onNavigateBack = { navController.popBackStack() },
+                onOpenSsh = { navController.navigate(NavDestinations.SSH_CONFIG) },
+                onOpenTermux = { navController.navigate(NavDestinations.TERMUX_CONFIG) },
+            )
+        }
+
+        composable(NavDestinations.TERMUX_CONFIG) {
+            com.promenar.nexara.ui.settings.TermuxSettingsScreen(
+                onBack = { navController.popBackStack() },
                 onOpenSsh = { navController.navigate(NavDestinations.SSH_CONFIG) },
             )
         }

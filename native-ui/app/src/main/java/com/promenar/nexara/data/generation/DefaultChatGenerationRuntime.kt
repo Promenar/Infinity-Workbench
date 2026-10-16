@@ -29,6 +29,8 @@ import com.promenar.nexara.data.remote.protocol.ProtocolToolChoice
 import com.promenar.nexara.data.remote.protocol.StreamChunk
 import com.promenar.nexara.data.remote.provider.LlmProvider
 import com.promenar.nexara.data.repository.ToolApprovalCreation
+import com.promenar.nexara.data.repository.RolledBackSummaryUsageRecord
+import com.promenar.nexara.data.repository.RolledBackSummaryUsageStore
 import com.promenar.nexara.data.repository.ApprovalCallCandidate
 import com.promenar.nexara.data.repository.ToolApprovalRequestFactory
 import com.promenar.nexara.data.repository.ToolExecutionLedger
@@ -517,7 +519,7 @@ internal class DefaultChatGenerationRuntime(
         val preparedByName = preparedTools.groupBy { it.function.name }
         val targets = calls.associate { call ->
             val tool = preparedByName[call.name]?.singleOrNull()
-            call.id to tool?.let { resolveSessionToolTarget(session, it, call.arguments, workspaceRepository, externalFolders, sshRuntime?.let { runtime -> runtime::sessionHost }) }
+            call.id to tool?.let { resolveSessionToolTarget(session, it, call.arguments, workspaceRepository, externalFolders, sshRuntime?.hostStore, sshRuntime?.let { runtime -> runtime::sessionHost }) }
         }
         val requestedPendingIds = policyPendingIds.filterTo(mutableSetOf()) { id ->
             val call = calls.first { it.id == id }
@@ -749,8 +751,8 @@ internal class DefaultChatGenerationRuntime(
             if (status == GenerationTerminalStatus.SUCCESS) {
                 commitReplacement(request)
             } else if (!replacementCommitted) {
-                messageManager.discardPreparedMessages(
-                    request.sessionId,
+                discardPreparedMessagesPreservingSummaryUsage(
+                    request,
                     messagesCreatedSincePrepare(request),
                 )
             }
@@ -806,8 +808,8 @@ internal class DefaultChatGenerationRuntime(
         ui.setGenerating(false)
         ui.onHandledFailure()
         if (request.messageIdsToReplace.isNotEmpty()) {
-            messageManager.discardPreparedMessages(
-                request.sessionId,
+            discardPreparedMessagesPreservingSummaryUsage(
+                request,
                 messagesCreatedSincePrepare(request),
             )
         } else {
@@ -831,8 +833,8 @@ internal class DefaultChatGenerationRuntime(
         ui.setGenerating(false)
         ui.onHandledFailure()
         if (request.messageIdsToReplace.isNotEmpty()) {
-            messageManager.discardPreparedMessages(
-                request.sessionId,
+            discardPreparedMessagesPreservingSummaryUsage(
+                request,
                 messagesCreatedSincePrepare(request),
             )
         } else if (toolRounds == 0) {
@@ -840,7 +842,31 @@ internal class DefaultChatGenerationRuntime(
                 assistantMessageId(request),
                 request.userMessageId.takeIf { request.rollbackUserOnPreparationFailure },
             )
-            messageManager.discardPreparedMessages(request.sessionId, preparedIds)
+            discardPreparedMessagesPreservingSummaryUsage(request, preparedIds)
+        }
+    }
+
+    private suspend fun discardPreparedMessagesPreservingSummaryUsage(request: GenerationRequest, messageIds: List<String>) {
+        val session = store.getSession(request.sessionId)
+        val ids = messageIds.toSet()
+        val usageRecords = session?.messages.orEmpty().filter { it.id in ids }.mapNotNull { message ->
+            val tokens = message.tokens ?: return@mapNotNull null
+            if (tokens.summaryInput <= 0 && tokens.summaryOutput <= 0 && tokens.summaryTotal <= 0) return@mapNotNull null
+            RolledBackSummaryUsageRecord(
+                messageId = message.id,
+                sessionId = request.sessionId,
+                modelId = message.modelId ?: session?.modelId ?: "unknown",
+                usage = TokenUsage(tokens.summaryInput, tokens.summaryOutput, tokens.summaryTotal, tokens.summaryEstimated),
+                createdAt = message.createdAt,
+            )
+        }
+        // 无摘要费用时保留原调度；已有费用的补偿重试仍须与统计读取串行。
+        if (usageRecords.isEmpty() && summarySpentTokens == 0L) {
+            messageManager.discardPreparedMessages(request.sessionId, messageIds)
+            return
+        }
+        RolledBackSummaryUsageStore(settings).preserveBeforeDiscard(usageRecords) {
+            messageManager.discardPreparedMessages(request.sessionId, messageIds)
         }
     }
 
