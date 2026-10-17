@@ -140,7 +140,7 @@ class ChatGenerationContentStrategyTest {
     }
 
     @Test
-    fun `当前轮长工具循环完整保留且窗口只截断此前历史`() {
+    fun `当前轮长工具循环完整保留且已摘要历史不重复发送`() {
         val messages = buildList {
             repeat(4) { index ->
                 add(Message("old-u-$index", MessageRole.USER, "old-question-$index", isArchived = true))
@@ -167,12 +167,12 @@ class ChatGenerationContentStrategyTest {
         val prompt = strategy().buildProtocolMessages(session, "system", "current")
 
         assertThat(prompt.map { it.content }).containsAtLeast("do the task", "result-0", "result-5").inOrder()
-        assertThat(prompt.map { it.content }).containsAtLeast("old-question-3", "old-answer-3")
+        assertThat(prompt.map { it.content }).doesNotContain("old-question-3")
         assertThat(prompt.map { it.content }).doesNotContain("old-question-2")
     }
 
     @Test
-    fun `尚未摘要归档的溢出消息在批量摘要前仍保留在上下文中`() {
+    fun `未摘要历史全部发送而不按消息条数截断`() {
         val messages = buildList {
             repeat(3) { add(Message("archived-$it", MessageRole.USER, "archived-$it", isArchived = true)) }
             repeat(3) { add(Message("pending-$it", MessageRole.USER, "pending-$it")) }
@@ -189,7 +189,7 @@ class ChatGenerationContentStrategyTest {
         val contents = strategy().buildProtocolMessages(session, "system").map { it.content }
 
         assertThat(contents).containsAtLeast("pending-1", "pending-2", "latest-q", "latest-a").inOrder()
-        assertThat(contents).doesNotContain("pending-0")
+        assertThat(contents).contains("pending-0")
         assertThat(contents).doesNotContain("archived-2")
     }
 
@@ -217,6 +217,48 @@ class ChatGenerationContentStrategyTest {
             .containsExactly("system", "question")
             .inOrder()
         assertThat(prompt.map { it.content }).doesNotContain("old answer")
+    }
+
+    @Test
+    fun `重新生成已摘要历史时固定用户正文和完整文档但排除待替换回复`() {
+        val document = MessageDocumentAttachment(
+            "doc", "reference.txt", "text/plain", "当前文档完整正文", 27, "current-doc", 9,
+        )
+        val session = Session("s1", "agent", messages = listOf(
+            Message("older", MessageRole.USER, "其它已摘要历史", isArchived = true),
+            Message("current", MessageRole.USER, "重新回答此问题", userDocuments = listOf(document), isArchived = true),
+            Message("replaced", MessageRole.ASSISTANT, "待替换的旧回复", isArchived = true),
+            Message("new", MessageRole.ASSISTANT, ""),
+        ))
+
+        val prompt = strategy().buildProtocolMessages(session, "system", "current", setOf("replaced"))
+
+        assertThat(prompt.map { it.role }).containsExactly("system", "user").inOrder()
+        assertThat(prompt.last().content).contains("重新回答此问题")
+        assertThat(prompt.last().content).contains(document.content)
+        assertThat(prompt.last().content).contains("<<<NEXARA_DOCUMENT_BEGIN current-doc>>>")
+        assertThat(prompt.joinToString { it.content }).doesNotContain("其它已摘要历史")
+        assertThat(prompt.joinToString { it.content }).doesNotContain("待替换的旧回复")
+        assertThat(session.messages.first { it.id == "current" }.isArchived).isTrue()
+    }
+
+    @Test
+    fun `固定轮次的归档豁免止于下一用户轮且保持工具配对`() {
+        val session = Session("s1", "agent", messages = listOf(
+            Message("current", MessageRole.USER, "当前问题", isArchived = true),
+            Message("call", MessageRole.ASSISTANT, "先读文件", toolCalls = listOf(read), isArchived = true),
+            Message("result", MessageRole.TOOL, "当前轮完整结果", toolCallId = read.id, isArchived = true),
+            Message("next", MessageRole.USER, "下一归档轮", isArchived = true),
+            Message("next-answer", MessageRole.ASSISTANT, "下一归档回复", isArchived = true),
+        ))
+
+        val prompt = strategy().buildProtocolMessages(session, "system", "current")
+
+        assertThat(prompt.map { it.role }).containsExactly("system", "user", "assistant", "tool").inOrder()
+        assertThat(prompt.last().content).isEqualTo("当前轮完整结果")
+        assertThat(prompt.last().toolCallId).isEqualTo(prompt[2].toolCalls!!.single().id)
+        assertThat(strategy().buildProtocolMessages(session, "system").map { it.role }).containsExactly("system")
+        assertThat(session.messages.all { it.isArchived }).isTrue()
     }
 
     @Test

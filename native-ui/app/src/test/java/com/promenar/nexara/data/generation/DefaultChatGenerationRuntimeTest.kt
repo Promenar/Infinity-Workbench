@@ -183,6 +183,7 @@ class DefaultChatGenerationRuntimeTest {
             ragUsage = null,
             finalSystemPrompt = "system",
         )
+        val sessionManager = mockk<SessionManager>(relaxed = true)
         val contentStrategy = mockk<ChatGenerationContentStrategy>()
         every { contentStrategy.buildTools(any()) } returns emptyList()
         every { contentStrategy.buildProtocolMessages(any(), any(), any(), any()) } returns listOf(
@@ -208,7 +209,7 @@ class DefaultChatGenerationRuntimeTest {
             postProcessor = mockk(relaxed = true),
             memoryManager = null,
             summaryManager = mockk(relaxed = true),
-            sessionManager = mockk(relaxed = true),
+            sessionManager = sessionManager,
             contentStrategy = contentStrategy,
             ui = mockk(relaxed = true),
         )
@@ -266,7 +267,7 @@ class DefaultChatGenerationRuntimeTest {
     fun `postProcess archiveMessagesToRag取消必须传播`() = runTest {
         val fixture = postProcessFixture(
             ragOptions = RagOptions(enableMemory = true, enableDocs = false),
-            inferenceParams = InferenceParams(activeContextWindow = 1),
+            inferenceParams = InferenceParams(keepRecentTurns = 1, autoSummaryThreshold = 0.0),
             messageCount = 6,
         )
         val cancellation = CancellationException("archive-cancel")
@@ -289,7 +290,7 @@ class DefaultChatGenerationRuntimeTest {
     fun `postProcess summarize取消必须传播`() = runTest {
         val fixture = postProcessFixture(
             ragOptions = RagOptions(enableMemory = false, enableDocs = false),
-            inferenceParams = InferenceParams(activeContextWindow = 1, autoSummaryThreshold = 0.0),
+            inferenceParams = InferenceParams(keepRecentTurns = 1, autoSummaryThreshold = 0.0),
             messageCount = 3,
         )
         val cancellation = CancellationException("summary-cancel")
@@ -310,10 +311,10 @@ class DefaultChatGenerationRuntimeTest {
     }
 
     @Test
-    fun `窗口溢出未达批量时不摘要也不归档`() = runTest {
+    fun `低于阈值时即使存在旧轮也不摘要或归档`() = runTest {
         val fixture = postProcessFixture(
             ragOptions = RagOptions(enableMemory = false, enableDocs = false),
-            inferenceParams = InferenceParams(activeContextWindow = 1),
+            inferenceParams = InferenceParams(keepRecentTurns = 1, autoSummaryThreshold = 0.8),
             messageCount = 3,
         )
         coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
@@ -325,10 +326,10 @@ class DefaultChatGenerationRuntimeTest {
     }
 
     @Test
-    fun `窗口溢出达到批量时先摘要再归档`() = runTest {
+    fun `超过阈值只总结完整旧轮并保留当前轮`() = runTest {
         val fixture = postProcessFixture(
             ragOptions = RagOptions(enableMemory = false, enableDocs = false),
-            inferenceParams = InferenceParams(activeContextWindow = 1),
+            inferenceParams = InferenceParams(keepRecentTurns = 1, autoSummaryThreshold = 0.0),
             messageCount = 6,
         )
         coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
@@ -340,9 +341,12 @@ class DefaultChatGenerationRuntimeTest {
         fixture.runtime.postProcess(fixture.request, GenerationSnapshot(content = "answer"))
 
         assertThat(overflow.captured.map { it.id })
-            .containsExactly("message-0", "message-1", "message-2", "message-3", "message-4")
-        coVerify(exactly = 5) {
-            fixture.messageManager.updateMessage("session", any(), match { it.isArchived })
+            .containsExactly("message-0", "message-1", "message-2", "message-3")
+        coVerify(exactly = 1) {
+            fixture.sessionManager.commitContextCompaction(
+                "session", "summary", listOf("message-0", "message-1", "message-2", "message-3"),
+                match { it.previousSummary == null && it.messages == overflow.captured },
+            )
         }
     }
 
@@ -350,7 +354,7 @@ class DefaultChatGenerationRuntimeTest {
     fun `摘要失败时溢出消息保持未归档以便下次重试`() = runTest {
         val fixture = postProcessFixture(
             ragOptions = RagOptions(enableMemory = false, enableDocs = false),
-            inferenceParams = InferenceParams(activeContextWindow = 1),
+            inferenceParams = InferenceParams(keepRecentTurns = 1, autoSummaryThreshold = 0.0),
             messageCount = 6,
         )
         coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
@@ -365,7 +369,7 @@ class DefaultChatGenerationRuntimeTest {
     fun `postProcess普通归档失败不得把异常原文写入任务detail`() = runTest {
         val fixture = postProcessFixture(
             ragOptions = RagOptions(enableMemory = true, enableDocs = false),
-            inferenceParams = InferenceParams(activeContextWindow = 1),
+            inferenceParams = InferenceParams(keepRecentTurns = 1, autoSummaryThreshold = 0.0),
             messageCount = 6,
         )
         coEvery { fixture.postProcessor.updateStats(any()) } returns Unit
@@ -470,6 +474,7 @@ class DefaultChatGenerationRuntimeTest {
         val store: ChatStore,
         val messageManager: MessageManager,
         val contentStrategy: ChatGenerationContentStrategy,
+        val sessionManager: SessionManager,
     )
 
     private fun postProcessFixture(
@@ -507,9 +512,13 @@ class DefaultChatGenerationRuntimeTest {
         val ui = mockk<GenerationUiPort>(relaxed = true)
         val messageManager = mockk<MessageManager>(relaxed = true)
         every { ui.addPostProcessTask(any(), any()) } returns "task"
+        val sessionManager = mockk<SessionManager>(relaxed = true)
         val contentStrategy = mockk<ChatGenerationContentStrategy>()
-        every { contentStrategy.safeActiveWindow(any(), any()) } answers {
-            firstArg<List<Message>>().takeLast(secondArg())
+        every { contentStrategy.buildProtocolMessages(any(), any(), any(), any()) } answers {
+            listOf(com.promenar.nexara.data.remote.protocol.ProtocolMessage("system", secondArg())) +
+                firstArg<Session>().messages.filterNot { it.isArchived }.map {
+                    com.promenar.nexara.data.remote.protocol.ProtocolMessage(it.role.name.lowercase(), it.content)
+                }
         }
         val runtime = DefaultChatGenerationRuntime(
             settings = mockk(relaxed = true),
@@ -527,7 +536,7 @@ class DefaultChatGenerationRuntimeTest {
             postProcessor = postProcessor,
             memoryManager = memoryManager,
             summaryManager = summaryManager,
-            sessionManager = mockk(relaxed = true),
+            sessionManager = sessionManager,
             contentStrategy = contentStrategy,
             ui = ui,
             sshRuntime = sshRuntime,
@@ -558,6 +567,7 @@ class DefaultChatGenerationRuntimeTest {
             store,
             messageManager,
             contentStrategy,
+            sessionManager,
         )
     }
     @Test

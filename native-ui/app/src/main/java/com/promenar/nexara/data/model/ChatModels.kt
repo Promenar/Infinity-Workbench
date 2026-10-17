@@ -81,7 +81,11 @@ data class InferenceParams(
     val thinkingLevel: String? = null,
     val streamTimeout: Int? = 120,
     val autoSummaryThreshold: Double = 0.8,
-    val activeContextWindow: Int = 15
+    val keepRecentTurns: Int? = null,
+    /** 仅用于读取旧会话中的消息窗口，保留轮数由领域层统一解析。 */
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val activeContextWindow: Int? = null
 )
 
 @Serializable

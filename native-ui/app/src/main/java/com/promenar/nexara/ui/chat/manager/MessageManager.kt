@@ -9,6 +9,7 @@ import com.promenar.nexara.data.model.MessageRole
 import com.promenar.nexara.data.model.RagMetadata
 import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.model.RagReference
+import com.promenar.nexara.data.model.Session
 import com.promenar.nexara.data.model.SessionStats
 import com.promenar.nexara.data.model.TaskState
 import com.promenar.nexara.data.model.TokenMetric
@@ -292,6 +293,37 @@ class MessageManager(
             } catch (_: Exception) {}
             
             store.updateMessageInSession(sessionId, messageId) { message }
+        }
+    }
+
+    /** 用户主动编辑正文；流式更新仍使用 updateMessageContent。 */
+    suspend fun editMessageContent(sessionId: String, messageId: String, content: String) = withContextMutation(sessionId) {
+        val purgeKeys = setOf("$sessionId:$messageId")
+        try {
+            purgeMessageState(sessionId, listOf(messageId))
+            messageRepository.editContentInSession(sessionId, messageId, content)
+            val persisted = checkNotNull(sessionRepository.getById(sessionId)) { "正文编辑后所属会话不存在" }
+            val byId = persisted.messages.associateBy(Message::id)
+            checkNotNull(byId[messageId]) { "正文编辑后消息不存在" }
+            store.update { state ->
+                state.copy(
+                    sessions = state.sessions.map { current ->
+                        if (current.id != sessionId) current else current.copy(
+                            summary = persisted.summary,
+                            messages = current.messages.map { message ->
+                                val saved = byId[message.id]
+                                when {
+                                    saved == null -> message
+                                    message.id == messageId -> message.copy(content = saved.content, isArchived = saved.isArchived)
+                                    else -> message.copy(isArchived = saved.isArchived)
+                                }
+                            },
+                        )
+                    },
+                )
+            }
+        } finally {
+            finishPurge(purgeKeys)
         }
     }
 
@@ -665,6 +697,41 @@ class MessageManager(
         synchronized(stateLock) { purgingKeys.removeAll(keys) }
     }
 
+    private fun cascadeRemovalIds(messages: List<Message>, rootIds: Collection<String>): Set<String> {
+        val removed = rootIds.toMutableSet()
+        do {
+            val previousSize = removed.size
+            messages.forEach { message ->
+                if (message.parentMessageId in removed) removed += message.id
+            }
+        } while (removed.size != previousSize)
+        return removed
+    }
+
+    private fun mirrorDeletedMessages(
+        sessionId: String,
+        removedIds: Set<String>,
+        persistedSnapshot: Session?,
+        clearAll: Boolean = false,
+    ) {
+        val archivedById = persistedSnapshot?.messages.orEmpty().associate { it.id to it.isArchived }
+        store.update { state ->
+            state.copy(
+                sessions = state.sessions.map { current ->
+                    if (current.id != sessionId) current else current.copy(
+                        summary = if (persistedSnapshot != null) persistedSnapshot.summary else current.summary,
+                        messages = if (clearAll) emptyList() else current.messages
+                            .filterNot { it.id in removedIds }
+                            .map { message ->
+                                archivedById[message.id]?.let { message.copy(isArchived = it) } ?: message
+                            },
+                        lastMessage = if (clearAll) null else current.lastMessage,
+                    )
+                },
+            )
+        }
+    }
+
     suspend fun deleteMessage(
         sessionId: String,
         messageId: String,
@@ -678,51 +745,48 @@ class MessageManager(
         onAbortGeneration: ((String) -> Unit)? = null
     ) {
         if (messageIds.isEmpty()) return
-        val storeMessages = store.getSession(sessionId)?.messages.orEmpty()
-        val persistedMessages = messageRepository.getBySession(sessionId)
-        val allMessages = (storeMessages + persistedMessages).distinctBy { it.id }
-        val removalIds = messageIds.flatMapTo(linkedSetOf()) { messageRemovalIds(allMessages, it) }.toList()
-        val state = store.get()
-        if (
-            state.currentGeneratingSessionId == sessionId &&
-            store.getSession(sessionId)?.messages?.lastOrNull()?.id in removalIds
-        ) {
-            onAbortGeneration?.invoke(sessionId)
-        }
-
-        val purgeKeys = purgeMessageState(sessionId, removalIds)
-        try {
-            check(messageRepository.deleteManyInSession(sessionId, removalIds) > 0) {
-                "消息不存在或不属于当前会话"
+        withContextMutation(sessionId) {
+            val storeMessages = store.getSession(sessionId)?.messages.orEmpty()
+            val persistedMessages = messageRepository.getBySession(sessionId)
+            val allMessages = (storeMessages + persistedMessages).distinctBy { it.id }
+            val removalIds = messageIds.flatMapTo(linkedSetOf()) { messageRemovalIds(allMessages, it) }.toList()
+            val state = store.get()
+            if (
+                state.currentGeneratingSessionId == sessionId &&
+                store.getSession(sessionId)?.messages?.lastOrNull()?.id in removalIds
+            ) {
+                onAbortGeneration?.invoke(sessionId)
             }
 
-            store.update { state ->
-                state.copy(
-                    sessions = state.sessions.map { s ->
-                        if (s.id == sessionId) {
-                            s.copy(messages = s.messages.filterNot { it.id in removalIds })
-                        } else s
-                    }
-                )
+            val purgeKeys = purgeMessageState(sessionId, removalIds)
+            try {
+                check(messageRepository.deleteManyInSession(sessionId, removalIds) > 0) {
+                    "消息不存在或不属于当前会话"
+                }
+                val persistedSnapshot = sessionRepository.getById(sessionId)
+                mirrorDeletedMessages(sessionId, removalIds.toSet(), persistedSnapshot)
+            } finally {
+                finishPurge(purgeKeys)
             }
-        } finally {
-            finishPurge(purgeKeys)
         }
     }
 
     /** 撤销删除：重新写入消息，并按创建时间把它们放回原位置。 */
     suspend fun restoreMessages(sessionId: String, messages: List<Message>) {
         if (messages.isEmpty()) return
-        messages.forEach { messageRepository.insert(it, sessionId) }
-        val restoredIds = messages.mapTo(hashSetOf()) { it.id }
-        store.update { state ->
-            state.copy(
-                sessions = state.sessions.map { s ->
-                    if (s.id == sessionId) {
-                        s.copy(messages = (s.messages.filterNot { it.id in restoredIds } + messages).sortedBy { it.createdAt })
-                    } else s
-                }
-            )
+        withContextMutation(sessionId) {
+            val restoredMessages = messages.map { it.copy(isArchived = false) }
+            restoredMessages.forEach { messageRepository.insert(it, sessionId) }
+            val restoredIds = restoredMessages.mapTo(hashSetOf()) { it.id }
+            store.update { state ->
+                state.copy(
+                    sessions = state.sessions.map { s ->
+                        if (s.id == sessionId) {
+                            s.copy(messages = (s.messages.filterNot { it.id in restoredIds } + restoredMessages).sortedBy { it.createdAt })
+                        } else s
+                    }
+                )
+            }
         }
     }
 
@@ -732,33 +796,34 @@ class MessageManager(
 
     /** 同一发送回合的组级补偿；调用方按 assistant→user 传入，Store 只做一次原子过滤。 */
     suspend fun discardPreparedMessages(sessionId: String, messageIds: List<String>) {
-        val orderedIds = messageIds.distinct()
-        val purgeKeys = purgeMessageState(sessionId, orderedIds)
-        var failure: Throwable? = null
-        try {
-            orderedIds.forEach { messageId ->
-                try {
-                    messageRepository.deleteInSession(sessionId, messageId)
-                } catch (error: Throwable) {
-                    if (failure == null) failure = error else failure?.addSuppressed(error)
+        withContextMutation(sessionId) {
+            val orderedIds = messageIds.distinct()
+            val removalIds = cascadeRemovalIds(store.getSession(sessionId)?.messages.orEmpty(), orderedIds)
+            val purgeKeys = purgeMessageState(sessionId, removalIds)
+            var failure: Throwable? = null
+            var hasDeleted = false
+            try {
+                orderedIds.forEach { messageId ->
+                    try {
+                        hasDeleted = messageRepository.deleteInSession(sessionId, messageId) || hasDeleted
+                    } catch (error: Throwable) {
+                        if (failure == null) failure = error else failure?.addSuppressed(error)
+                    }
                 }
+                val persistedSnapshot = if (hasDeleted) {
+                    try {
+                        sessionRepository.getById(sessionId)
+                    } catch (error: Throwable) {
+                        if (failure == null) failure = error else failure?.addSuppressed(error)
+                        null
+                    }
+                } else null
+                mirrorDeletedMessages(sessionId, removalIds, persistedSnapshot)
+            } finally {
+                finishPurge(purgeKeys)
             }
-            val idSet = orderedIds.toSet()
-            store.update { state ->
-                state.copy(
-                    sessions = state.sessions.map { session ->
-                        if (session.id == sessionId) {
-                            session.copy(messages = session.messages.filterNot { it.id in idSet })
-                        } else {
-                            session
-                        }
-                    },
-                )
-            }
-        } finally {
-            finishPurge(purgeKeys)
+            failure?.let { throw it }
         }
-        failure?.let { throw it }
     }
 
     suspend fun deleteMessagesAfter(
@@ -766,30 +831,28 @@ class MessageManager(
         timestamp: Long,
         onAbortGeneration: ((String) -> Unit)? = null
     ) {
-        val state = store.get()
-        if (state.currentGeneratingSessionId == sessionId) {
-            onAbortGeneration?.invoke(sessionId)
-        }
-
-        val targetIds = store.getSession(sessionId)?.messages.orEmpty()
-            .filter { it.createdAt >= timestamp }
-            .map { it.id }
-        val purgeKeys = purgeMessageState(sessionId, targetIds)
-        try {
-            // 数据库删除失败必须向上抛出，避免 Store 已删而数据库仍保留、重启后旧消息回流。
-            messageRepository.deleteMessagesAfter(sessionId, timestamp)
-
-            store.update { state ->
-                state.copy(
-                    sessions = state.sessions.map { s ->
-                        if (s.id == sessionId) {
-                            s.copy(messages = s.messages.filter { it.createdAt < timestamp })
-                        } else s
-                    }
-                )
+        withContextMutation(sessionId) {
+            val state = store.get()
+            if (state.currentGeneratingSessionId == sessionId) {
+                onAbortGeneration?.invoke(sessionId)
             }
-        } finally {
-            finishPurge(purgeKeys)
+
+            val storeMessages = store.getSession(sessionId)?.messages.orEmpty()
+            val persistedMessages = messageRepository.getBySession(sessionId)
+            val allMessages = (storeMessages + persistedMessages).distinctBy { it.id }
+            val targetIds = cascadeRemovalIds(
+                allMessages,
+                allMessages.filter { it.createdAt >= timestamp }.map { it.id },
+            )
+            val purgeKeys = purgeMessageState(sessionId, targetIds)
+            try {
+                // 数据库删除失败必须向上抛出，避免 Store 已删而数据库仍保留、重启后旧消息回流。
+                messageRepository.deleteMessagesAfter(sessionId, timestamp)
+                val persistedSnapshot = sessionRepository.getById(sessionId)
+                mirrorDeletedMessages(sessionId, targetIds, persistedSnapshot)
+            } finally {
+                finishPurge(purgeKeys)
+            }
         }
     }
 
@@ -830,13 +893,11 @@ class MessageManager(
         }
     }
 
-    suspend fun setVectorizationStatus(sessionId: String, messageIds: List<String>, status: String) {
+    suspend fun setVectorizationStatus(sessionId: String, messageIds: List<String>, status: String) = withContextMutation(sessionId) {
         for (msgId in messageIds) {
             try {
-                messageRepository.updateVectorizationStatus(
-                    msgId, status,
-                    isArchived = if (status == "success") true else null
-                )
+                // 向量化状态独立于摘要归档；isArchived 只由摘要成功提交设置。
+                messageRepository.updatePartial(msgId, mapOf("vectorizationStatus" to status))
             } catch (_: Exception) {
             }
         }
@@ -849,10 +910,7 @@ class MessageManager(
                         s.copy(
                             messages = s.messages.map { m ->
                                 if (idSet.contains(m.id)) {
-                                    m.copy(
-                                        vectorizationStatus = status,
-                                        isArchived = if (status == "success") true else m.isArchived
-                                    )
+                                    m.copy(vectorizationStatus = status)
                                 } else m
                             }
                         )
@@ -863,34 +921,29 @@ class MessageManager(
     }
 
     suspend fun clearMessages(sessionId: String) {
-        val prefix = "$sessionId:"
-        val coordinatedIds = synchronized(stateLock) {
-            (lanes.keys + pendingUpdates.keys + inFlightUiUpdates.keys + throttleJobs.keys +
-                dbPendingUpdates.keys + dbDebounceJobs.keys)
-                .asSequence()
-                .filter { it.startsWith(prefix) }
-                .map { it.removePrefix(prefix) }
-                .toSet()
-        }
-        val targetIds = store.getSession(sessionId)?.messages.orEmpty().mapTo(coordinatedIds.toMutableSet()) { it.id }
-        val purgeKeys = purgeMessageState(sessionId, targetIds)
-        try {
+        withContextMutation(sessionId) {
+            val prefix = "$sessionId:"
+            val coordinatedIds = synchronized(stateLock) {
+                (lanes.keys + pendingUpdates.keys + inFlightUiUpdates.keys + throttleJobs.keys +
+                    dbPendingUpdates.keys + dbDebounceJobs.keys)
+                    .asSequence()
+                    .filter { it.startsWith(prefix) }
+                    .map { it.removePrefix(prefix) }
+                    .toSet()
+            }
+            val targetIds = store.getSession(sessionId)?.messages.orEmpty().mapTo(coordinatedIds.toMutableSet()) { it.id }
+            val purgeKeys = purgeMessageState(sessionId, targetIds)
             try {
-                messageRepository.deleteBySessionId(sessionId)
-            } catch (_: Exception) {
+                var persistedSnapshot: Session? = null
+                try {
+                    messageRepository.deleteBySessionId(sessionId)
+                    persistedSnapshot = sessionRepository.getById(sessionId)
+                } catch (_: Exception) {
+                }
+                mirrorDeletedMessages(sessionId, targetIds, persistedSnapshot, clearAll = true)
+            } finally {
+                finishPurge(purgeKeys)
             }
-
-            store.update { state ->
-                state.copy(
-                    sessions = state.sessions.map { s ->
-                        if (s.id == sessionId) {
-                            s.copy(messages = emptyList(), lastMessage = null)
-                        } else s
-                    }
-                )
-            }
-        } finally {
-            finishPurge(purgeKeys)
         }
     }
 

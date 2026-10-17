@@ -520,7 +520,8 @@ fun ChatRoute(
             onAlwaysAllowTarget = chatViewModel::alwaysAllowTarget,
             onDecline = chatViewModel::rejectRequest,
             onRemovePostProcessTask = chatViewModel::removePostProcessTask,
-            onManualSummary = chatViewModel::summarizeHistory,
+            onManualSummary = chatViewModel::compactNow,
+            onDismissCompressionResult = chatViewModel::dismissCompressionResult,
             onTextChange = chatViewModel::updateInputText,
             onSend = { text, images ->
                 chatViewModel.sendMessage(text, images)

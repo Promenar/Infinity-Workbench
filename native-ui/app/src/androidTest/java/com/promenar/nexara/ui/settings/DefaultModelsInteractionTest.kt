@@ -17,6 +17,7 @@ import androidx.test.espresso.Espresso.pressBack
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.promenar.nexara.MainActivity
+import com.promenar.nexara.R
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.model.catalog.SupportState
@@ -43,7 +44,7 @@ class DefaultModelsInteractionTest {
     private val fixtureProviderId = "task8-fixture-${UUID.randomUUID()}"
 
     private val fixtures = listOf(
-        ModelFixture(fixtureProviderId, "summary", "task8-test-summary", "Task 8 Summary Model", "chat", listOf("chat")),
+        ModelFixture(fixtureProviderId, "summary", "task8-test-summary", "Task 8 Quick Model", "chat", listOf("chat")),
         ModelFixture(fixtureProviderId, "image", "task8-test-image", "Task 8 Image Model", "image", listOf("image")),
         ModelFixture(fixtureProviderId, "embedding", "task8-test-embedding", "Task 8 Embedding Model", "embedding", listOf("embedding")),
         ModelFixture(fixtureProviderId, "rerank", "task8-test-rerank", "Task 8 Rerank Model", "rerank", listOf("rerank")),
@@ -91,6 +92,9 @@ class DefaultModelsInteractionTest {
     @Test
     fun fourRolesPersistImmediatelyAndBackDoesNotWriteAgain() {
         openDefaultModels()
+        rule.onNodeWithText(context.getString(R.string.settings_model_summary)).assertExists()
+        rule.onNodeWithTag("default_model_quick_description").assertExists()
+        rule.onNodeWithText(context.getString(R.string.settings_model_quick_description)).assertExists()
 
         fixtures.forEach { fixture ->
             rule.onNodeWithTag("default_model_role:${fixture.role}")

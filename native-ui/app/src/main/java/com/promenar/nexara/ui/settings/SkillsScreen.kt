@@ -178,8 +178,6 @@ fun SkillsScreen(
     val mcpServers by viewModel.mcpServers.collectAsState()
     val loopLimit by viewModel.loopLimit.collectAsState()
     val tokenLimit by viewModel.taskTokenLimit.collectAsState()
-    val contextRatio by viewModel.toolContextRatio.collectAsState()
-    val keepRounds by viewModel.toolContextKeepRounds.collectAsState()
     val repeatLimit by viewModel.toolLoopRepeatLimit.collectAsState()
     val scriptHosts by viewModel.scriptLanHosts.collectAsState()
     val approveWrites by viewModel.scriptApproveFileWrites.collectAsState()
@@ -230,15 +228,13 @@ fun SkillsScreen(
 
                 SkillsSettingsHeaderContent(
                     state = SkillsSettingsVisualState(
-                        loopLimit, tokenLimit, contextRatio, keepRounds, repeatLimit, scriptHosts, approveWrites,
+                        loopLimit, tokenLimit, repeatLimit, scriptHosts, approveWrites,
                         sshHostCount = sshHosts.size,
                         termuxAvailability = termuxAvailability,
                     ),
                     actions = SkillsSettingsVisualActions(
                         onLoopLimitChange = viewModel::updateLoopLimit,
                         onTokenLimitChange = viewModel::updateTaskTokenLimit,
-                        onContextRatioChange = viewModel::updateToolContextRatio,
-                        onKeepRoundsChange = viewModel::updateToolContextKeepRounds,
                         onRepeatLimitChange = viewModel::updateToolLoopRepeatLimit,
                         onResetConsent = {
                             viewModel.resetUnlimitedAutoConsent()

@@ -78,7 +78,7 @@ class ChatRenderStateContractTest {
         ).readText()
         val tokenIndicator = source
             .substringAfter("private fun TokenIndicator(")
-            .substringBefore("private fun TokenDetailRow(")
+            .substringBefore("internal fun ContextUsagePanel(")
 
         assertThat(tokenIndicator).contains("DropdownMenu(")
         assertThat(tokenIndicator).doesNotContain("shapes.copy(extraSmall")
@@ -89,7 +89,7 @@ class ChatRenderStateContractTest {
             "containerColor = MaterialTheme.colorScheme.surfaceContainer",
         )
         assertThat(tokenIndicator).contains("tonalElevation = NexaraElevation.Level2")
-        assertThat(tokenIndicator).contains("Modifier.padding(NexaraSpacing.Large)")
+        assertThat(tokenIndicator).contains("ContextUsagePanel(")
     }
 
     @Test

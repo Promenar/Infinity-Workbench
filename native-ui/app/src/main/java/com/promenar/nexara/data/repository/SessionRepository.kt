@@ -2,8 +2,10 @@ package com.promenar.nexara.data.repository
 
 import com.promenar.nexara.data.local.db.dao.MessageDao
 import com.promenar.nexara.data.local.db.dao.SessionDao
+import com.promenar.nexara.data.local.db.dao.SessionContextSnapshot
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.model.ApprovalRequest
+import com.promenar.nexara.data.model.ContextCompactionSource
 import com.promenar.nexara.data.model.InferenceParams
 import com.promenar.nexara.data.model.LoopStatus
 import com.promenar.nexara.data.model.RagOptions
@@ -45,7 +47,22 @@ open class SessionRepository(
         val now = System.currentTimeMillis()
         val existing = sessionDao.getById(id) ?: return
         val updated = applyPartialUpdates(existing.copy(updatedAt = now), updates)
-        sessionDao.update(updated)
+        if (updates.containsKey("summary")) {
+            val summary = updates["summary"]
+            require(summary == null || summary is String) { "上下文摘要类型无效" }
+            sessionDao.updateWithContextSummary(updated, summary as? String)
+        } else {
+            sessionDao.update(updated)
+        }
+    }
+
+    override suspend fun commitContextCompaction(
+        sessionId: String,
+        summary: String,
+        messageIds: List<String>,
+        source: ContextCompactionSource,
+    ) {
+        sessionDao.commitContextCompaction(sessionId, summary, messageIds, source)
     }
 
     override suspend fun delete(id: String) {
@@ -54,16 +71,13 @@ open class SessionRepository(
     }
 
     override suspend fun getById(id: String): Session? {
-        val entity = sessionDao.getById(id) ?: return null
-        val messages = messageDao.getBySession(id).map { it.toDomain() }
-        return entity.toDomain().copy(messages = messages)
+        return sessionDao.getContextSnapshot(id)?.toSession()
     }
 
     override suspend fun getAll(): List<Session> {
         return sessionDao.getAll().mapNotNull { entity ->
             try {
-                val messages = messageDao.getBySession(entity.id).map { it.toDomain() }
-                entity.toDomain().copy(messages = messages)
+                sessionDao.getContextSnapshot(entity.id)?.toSession()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -73,6 +87,11 @@ open class SessionRepository(
             }
         }
     }
+
+    private fun SessionContextSnapshot.toSession(): Session = session.toDomain().copy(
+        messages = messages.map { it.toDomain() },
+        summary = summary?.summaryContent?.takeIf(String::isNotBlank),
+    )
 
     private fun applyPartialUpdates(
         entity: SessionEntity,

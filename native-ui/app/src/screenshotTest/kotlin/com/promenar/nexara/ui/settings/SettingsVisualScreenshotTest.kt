@@ -157,8 +157,6 @@ private fun ToolsHeaderPreview(dark: Boolean) = SettingsVisualTheme(dark) {
                 state = SkillsSettingsVisualState(
                     loopLimit = if (dark) 0 else 50,
                     tokenLimit = if (dark) 10_000_000 else 0,
-                    contextRatio = 70,
-                    keepRounds = 3,
                     repeatLimit = 3,
                     scriptHosts = if (dark) "nas.local\n192.168.1.2" else "",
                     approveScriptWrites = true,
@@ -243,9 +241,9 @@ private fun StepperVisualPreview(dark: Boolean) = SettingsVisualTheme(dark) {
                 canIncrease = false, onDecrease = {}, onIncrease = {},
             )
             NexaraStepperSetting(
-                title = stringResource(R.string.p0_context_ratio),
-                description = stringResource(R.string.settings_context_ratio_description),
-                value = stringResource(R.string.settings_percent_value, 90),
+                title = stringResource(R.string.p0_repeat_limit),
+                description = stringResource(R.string.settings_repeat_limit_description),
+                value = "20",
                 canIncrease = false, onDecrease = {}, onIncrease = {},
             )
         }

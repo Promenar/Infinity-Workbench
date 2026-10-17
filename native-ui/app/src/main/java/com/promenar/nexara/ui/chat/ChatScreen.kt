@@ -208,6 +208,7 @@ data class ChatScreenActions(
     val onDecline: (com.promenar.nexara.data.model.ApprovalRequest) -> Unit = {},
     val onRemovePostProcessTask: (String) -> Unit = {},
     val onManualSummary: () -> Unit = {},
+    val onDismissCompressionResult: () -> Unit = {},
     val onTextChange: (String) -> Unit = {},
     val onSend: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
     val onStop: () -> Unit = {},
@@ -364,9 +365,15 @@ fun ChatScreenContent(
     // 新的审批请求排在消息之后，自动跟随只对齐最后一条消息时它会落在输入栏与键盘下方；
     // 出现时把审批卡滚到输入栏上方，确保批准与拒绝按钮可见可点。
     val approvalIdentity = uiState.approvalRequest?.let { it.identityHash ?: it.hashCode().toString() }
-    val approvalItemIndex = pipelineGroups.size +
-        (if (state.taskPanel != null) 1 else 0) +
-        (if (compressionState.isCompressing || compressionState.result != null) 1 else 0)
+    val showCompressionFeedback = compressionState.isCompressing ||
+        compressionState.result != null || compressionState.detail.isNotBlank()
+    val compressionItemIndex = pipelineGroups.size + (if (state.taskPanel != null) 1 else 0)
+    val approvalItemIndex = compressionItemIndex + (if (showCompressionFeedback) 1 else 0)
+    LaunchedEffect(showCompressionFeedback, compressionState.isCompressing, compressionState.result) {
+        if (!showCompressionFeedback) return@LaunchedEffect
+        withFrameNanos { }
+        scrollItemAboveComposer(compressionItemIndex)
+    }
     LaunchedEffect(approvalIdentity) {
         if (approvalIdentity == null) return@LaunchedEffect
         withFrameNanos { }
@@ -559,13 +566,11 @@ fun ChatScreenContent(
                     }
                 }
 
-                if (compressionState.isCompressing || compressionState.result != null) {
+                if (showCompressionFeedback) {
                     item(key = "summary_card") {
-                        SummaryCard(
-                            isCompressing = compressionState.isCompressing,
-                            progress = compressionState.progress,
-                            detail = compressionState.detail,
-                            result = compressionState.result
+                        ContextCompactionFeedback(
+                            state = compressionState,
+                            onDismiss = actions.onDismissCompressionResult,
                         )
                     }
                 }
@@ -651,7 +656,8 @@ fun ChatScreenContent(
                     ChatInputTopBar(
                         modelName = modelDisplayName,
                         modelId = uiState.session?.modelId,
-                        tokenState = tokenState,
+                        tokenState = tokenState.copy(isGenerating = tokenState.isGenerating || uiState.isGenerating),
+                        isCompressing = compressionState.isCompressing,
                         taskPanel = state.taskPanel,
                         postProcessTasks = state.postProcessTasks,
                         onRemovePostProcessTask = actions.onRemovePostProcessTask,
@@ -920,6 +926,7 @@ private fun ChatInputTopBar(
     modelName: String,
     modelId: String?,
     tokenState: ChatViewModel.TokenIndicatorState,
+    isCompressing: Boolean,
     taskPanel: TaskPanelUiState?,
     postProcessTasks: List<PostProcessTask>,
     onRemovePostProcessTask: (String) -> Unit,
@@ -971,7 +978,7 @@ private fun ChatInputTopBar(
         )
 
         // Token Indicator
-        TokenIndicator(state = tokenState, onManualSummary = onManualSummary)
+        TokenIndicator(state = tokenState, onManualSummary = onManualSummary, isCompressing = isCompressing)
 
         taskPanel?.takeUnless { it.isCompleted }?.let { panel ->
             val isGenerating = panel.capsuleMode == TaskCapsuleMode.GENERATING
@@ -1039,7 +1046,8 @@ private fun ChatInputTopBar(
 @Composable
 private fun TokenIndicator(
     state: ChatViewModel.TokenIndicatorState,
-    onManualSummary: () -> Unit
+    onManualSummary: () -> Unit,
+    isCompressing: Boolean,
 ) {
     var showTooltip by remember { mutableStateOf(false) }
 
@@ -1047,7 +1055,7 @@ private fun TokenIndicator(
         AssistChip(
             onClick = { showTooltip = !showTooltip },
             modifier = Modifier
-                .heightIn(min = 36.dp)
+                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                 .testTag(UiTags.CHAT_TOKEN_INDICATOR),
             shape = CircleShape,
             colors = AssistChipDefaults.assistChipColors(
@@ -1063,7 +1071,11 @@ private fun TokenIndicator(
             ),
             label = {
                 Text(
-                    text = "${ChatViewModel.formatTokenCount(state.used)} / ${ChatViewModel.formatTokenCount(state.max)}",
+                    text = stringResource(
+                        R.string.chat_context_usage_fraction,
+                        ChatViewModel.formatTokenCount(state.used),
+                        ChatViewModel.formatTokenCount(state.max),
+                    ),
                     style = NexaraTypography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -1071,8 +1083,8 @@ private fun TokenIndicator(
             },
             leadingIcon = {
                 ContextCircularIndicator(
-                    progress = (state.used.toFloat() / state.max.toFloat()).coerceIn(0f, 1f),
-                    color = if (state.used > state.max * 0.8) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                    progress = (state.used.toFloat() / state.max.coerceAtLeast(1)).coerceIn(0f, 1f),
+                    color = if (state.used > state.max * state.autoCompactionThreshold) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(12.dp)
                 )
             },
@@ -1083,34 +1095,167 @@ private fun TokenIndicator(
                 expanded = showTooltip,
                 onDismissRequest = { showTooltip = false },
                 offset = DpOffset(x = (-60).dp, y = (-8).dp),
-                modifier = Modifier.width(220.dp),
+                modifier = Modifier.width(300.dp),
                 shape = MaterialTheme.shapes.large,
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 tonalElevation = NexaraElevation.Level2,
             ) {
-                Column(modifier = Modifier.padding(NexaraSpacing.Large)) {
-                    Text(
-                        stringResource(R.string.chat_context_usage_title),
-                        style = NexaraTypography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(modifier = Modifier.height(NexaraSpacing.Medium))
-                    TokenDetailRow(stringResource(R.string.chat_context_label_system), state.systemTokens)
-                    TokenDetailRow(stringResource(R.string.chat_context_label_summary), state.summaryTokens)
-                    TokenDetailRow(stringResource(R.string.chat_context_label_active), state.activeTokens)
-                    TokenDetailRow(stringResource(R.string.chat_context_label_rag), state.ragTokens)
-                    HorizontalDivider(modifier = Modifier.padding(vertical = NexaraSpacing.Medium))
+                ContextUsagePanel(
+                    state = state,
+                    isCompressing = isCompressing,
+                    onManualSummary = {
+                        onManualSummary()
+                        showTooltip = false
+                    },
+                )
+            }
+        }
+    }
+}
 
-                    Button(
-                        onClick = {
-                            onManualSummary()
-                            showTooltip = false
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.chat_context_btn_compress))
-                    }
-                }
+@Composable
+internal fun ContextUsagePanel(
+    state: ChatViewModel.TokenIndicatorState,
+    onManualSummary: () -> Unit,
+    modifier: Modifier = Modifier,
+    isCompressing: Boolean = false,
+) {
+    val progress = (state.used.toFloat() / state.max.coerceAtLeast(1)).coerceIn(0f, 1f)
+    val threshold = state.autoCompactionThreshold.toFloat().coerceIn(0.5f, 0.95f)
+    val thresholdLabel = stringResource(R.string.chat_context_threshold, (threshold * 100).toInt())
+    val usageLabel = stringResource(R.string.chat_context_usage_percent, (progress * 100).toInt())
+    val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    val progressColor = if (progress > threshold) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+    val markerColor = MaterialTheme.colorScheme.onSurface
+    val compressionUnavailableReason = when {
+        isCompressing -> stringResource(R.string.chat_context_compress_unavailable_running)
+        state.isGenerating -> stringResource(R.string.chat_context_compress_unavailable_generating)
+        else -> null
+    }
+    Column(
+        modifier = modifier.padding(NexaraSpacing.Large).testTag("context_usage_panel"),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+    ) {
+        Text(
+            stringResource(R.string.chat_context_usage_title),
+            style = NexaraTypography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = stringResource(
+                R.string.chat_context_usage_total,
+                ChatViewModel.formatTokenCount(state.used),
+                ChatViewModel.formatTokenCount(state.max),
+            ),
+            style = NexaraTypography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Canvas(
+            modifier = Modifier.fillMaxWidth().height(NexaraSpacing.Large).semantics {
+                contentDescription = thresholdLabel
+                stateDescription = usageLabel
+            },
+        ) {
+            val inset = NexaraSpacing.XSmall.toPx()
+            val trackWidth = (size.width - inset * 2).coerceAtLeast(0f)
+            val trackY = size.height / 2
+            val strokeWidth = NexaraSpacing.Small.toPx()
+            drawLine(
+                color = trackColor,
+                start = Offset(inset, trackY),
+                end = Offset(inset + trackWidth, trackY),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round,
+            )
+            if (progress > 0f) {
+                drawLine(
+                    color = progressColor,
+                    start = Offset(inset, trackY),
+                    end = Offset(inset + trackWidth * progress, trackY),
+                    strokeWidth = strokeWidth,
+                    cap = StrokeCap.Round,
+                )
+            }
+            val thresholdX = inset + trackWidth * threshold
+            drawLine(
+                color = markerColor,
+                start = Offset(thresholdX, 0f),
+                end = Offset(thresholdX, size.height),
+                strokeWidth = 2.dp.toPx(),
+            )
+        }
+        Text(
+            text = thresholdLabel,
+            style = NexaraTypography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TokenDetailRow(stringResource(R.string.chat_context_label_system), state.systemTokens)
+        TokenDetailRow(stringResource(R.string.chat_context_label_summary), state.summaryTokens)
+        TokenDetailRow(stringResource(R.string.chat_context_label_active), state.activeTokens)
+        TokenDetailRow(stringResource(R.string.chat_context_label_rag), state.ragTokens)
+        HorizontalDivider(modifier = Modifier.padding(vertical = NexaraSpacing.XSmall))
+        TokenDetailRow(stringResource(R.string.chat_context_label_folded_tools), state.foldedToolResults)
+        Button(
+            onClick = onManualSummary,
+            enabled = compressionUnavailableReason == null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                .testTag("context_usage_compact_now"),
+        ) {
+            Text(stringResource(R.string.chat_context_btn_compress))
+        }
+        if (compressionUnavailableReason != null) {
+            Text(
+                text = compressionUnavailableReason,
+                style = NexaraTypography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun ContextCompactionFeedback(
+    state: ChatViewModel.CompressionState,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth().testTag("context_compaction_feedback").semantics {
+            liveRegion = LiveRegionMode.Polite
+        },
+    ) {
+        if (state.isCompressing || state.result != null) {
+            SummaryCard(
+                isCompressing = state.isCompressing,
+                progress = state.progress,
+                detail = state.detail,
+                result = state.result,
+            )
+        } else if (state.detail.isNotBlank()) {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                Text(
+                    text = state.detail,
+                    style = NexaraTypography.bodyMedium,
+                    color = if (state.progress < 1f) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Large),
+                )
+            }
+        }
+        if (!state.isCompressing) {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                    .testTag("context_compaction_dismiss"),
+            ) {
+                Text(stringResource(R.string.common_dismiss))
             }
         }
     }
@@ -1119,10 +1264,10 @@ private fun TokenIndicator(
 @Composable
 private fun TokenDetailRow(label: String, value: Int) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
-        Text(label, style = NexaraTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, modifier = Modifier.weight(1f), style = NexaraTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("$value", style = NexaraTypography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace), color = MaterialTheme.colorScheme.onSurface)
     }
 }

@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="settings_execution_budget">Execution rounds and budget</string>
-    <string name="settings_tool_context">Tool result context</string>
     <string name="settings_local_remote">Local and remote</string>
     <string name="settings_repeat_limit_description">Pause when the same tool and arguments repeat consecutively.</string>
-    <string name="settings_context_ratio_description">The threshold for compressing tool result context.</string>
-    <string name="settings_keep_rounds_description">Keep the complete tool results from these recent rounds.</string>
     <string name="settings_reset_consent_description">Ask for confirmation the next time unlimited automatic execution is enabled.</string>
     <string name="settings_consent_reset">Unlimited automatic execution confirmation reset</string>
     <string name="settings_percent_value">%1$d%%</string>

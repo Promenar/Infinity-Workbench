@@ -13,6 +13,45 @@ import java.nio.file.Paths
 
 class SessionDeletionCoordinatorTest {
     @Test
+    fun `无工作区删除等待手动压缩准入结束并拒绝新写入`() = runTest {
+        val gate = SessionExecutionGate()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val events = mutableListOf<String>()
+        val compaction = launch {
+            gate.withNewSessionAdmission("session-1") {
+                entered.complete(Unit)
+                release.await()
+                events += "fold-persisted"
+            }
+        }
+        entered.await()
+        val coordinator = SessionDeletionCoordinator(
+            gate = gate, resolveTarget = { null }, isDatabaseOnlySession = { true },
+            deleteDatabaseOnly = { events += "database"; true },
+            cancelAndJoinGeneration = {}, closePendingExecution = {},
+            acquireVectorBarrier = { error("无工作区不需要向量屏障") },
+            journal = object : SessionWorkspaceMutationJournal {
+                override suspend fun stage(target: SessionDeletionTarget) = error("无工作区不需要journal")
+                override suspend fun rollback(staged: StagedSessionWorkspaceMutation) = Unit
+                override suspend fun complete(staged: StagedSessionWorkspaceMutation) = Unit
+            },
+            deleteDatabase = { _, _ -> error("无工作区不需要物理事务") },
+            cleanupSessionData = { events += "cache-cleaned" },
+        )
+        val deletion = async { coordinator.delete("session-1") }
+        yield()
+        assertThat(gate.isDeleting("session-1")).isTrue()
+        assertThat(events).isEmpty()
+        assertThat(runCatching { gate.withNewSessionAdmission("session-1") {} }.exceptionOrNull())
+            .isInstanceOf(SessionDeletingException::class.java)
+        release.complete(Unit)
+        compaction.join()
+        assertThat(deletion.await()).isEqualTo(SessionDeletionResult.Deleted)
+        assertThat(events).containsExactly("fold-persisted", "database", "cache-cleaned").inOrder()
+    }
+
+    @Test
     fun `无工作区会话跳过物理journal并完成数据库删除`() = runTest {
         val events = mutableListOf<String>()
         val coordinator = SessionDeletionCoordinator(

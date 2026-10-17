@@ -45,10 +45,15 @@ internal class DefaultChatGenerationRunnerFactory(
     private val interactionStore: GenerationInteractionStore? = null,
     private val externalFolders: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess? = null,
     private val sshRuntime: com.promenar.nexara.data.ssh.SshRuntime? = null,
+    private val compactionPipeline: ContextCompactionPipeline = ContextCompactionPipeline(),
+    private val compactionService: ContextCompactionService? = null,
 ) : GenerationRunnerFactory {
-    override fun create(request: GenerationRequest, taskId: String): GenerationRunner {
+    override fun create(request: GenerationRequest, taskId: String): GenerationRunner =
+        ChatGenerationRunner(createRuntime(request.sessionId, taskId))
+
+    fun createRuntime(sessionId: String, taskId: String): DefaultChatGenerationRuntime {
         val contentStrategy = DefaultChatGenerationContentStrategy(settings, skillRegistry, toolResolver)
-        val runtime = DefaultChatGenerationRuntime(
+        return DefaultChatGenerationRuntime(
             settings = settings,
             applicationScope = applicationScope,
             store = store,
@@ -66,7 +71,7 @@ internal class DefaultChatGenerationRunnerFactory(
             summaryManager = summaryManager,
             sessionManager = sessionManager,
             contentStrategy = contentStrategy,
-            ui = presentationStore.port(request.sessionId, taskId),
+            ui = presentationStore.port(sessionId, taskId),
             skillCatalog = skillCatalog,
             toolGrantStore = toolGrantStore,
             workspaceRepository = workspaceRepository,
@@ -74,7 +79,8 @@ internal class DefaultChatGenerationRunnerFactory(
             interactionStore = interactionStore,
             externalFolders = externalFolders,
             sshRuntime = sshRuntime,
+            compactionPipeline = compactionPipeline,
+            compactionService = compactionService,
         )
-        return ChatGenerationRunner(runtime)
     }
 }

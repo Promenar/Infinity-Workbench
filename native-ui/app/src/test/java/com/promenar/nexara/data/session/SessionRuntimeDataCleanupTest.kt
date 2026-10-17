@@ -7,6 +7,21 @@ import java.io.IOException
 
 class SessionRuntimeDataCleanupTest {
     @Test
+    fun `会话删除即使其它缓存清理失败仍清理折叠缓存`() = runTest {
+        val attempted = mutableListOf<String>()
+        val failure = runCatching {
+            cleanupSessionRuntimeData(
+                deleteGrants = { attempted += "grants"; throw IOException("grants failed") },
+                deleteOutputs = { attempted += "outputs" },
+                deleteMounts = { attempted += "mounts" },
+                deleteFolds = { attempted += "folds" },
+            )
+        }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(IOException::class.java)
+        assertThat(attempted).containsExactly("grants", "outputs", "mounts", "folds").inOrder()
+    }
+
+    @Test
     fun `前序清理失败不能跳过会话挂载授权释放`() = runTest {
         var mountsCleaned = false
         val failure = runCatching {

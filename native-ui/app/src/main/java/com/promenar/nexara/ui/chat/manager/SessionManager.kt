@@ -1,6 +1,7 @@
 package com.promenar.nexara.ui.chat.manager
 
 import com.promenar.nexara.data.model.InferenceParams
+import com.promenar.nexara.data.model.ContextCompactionSource
 import com.promenar.nexara.data.model.LoopStatus
 import com.promenar.nexara.data.model.RagOptions
 import com.promenar.nexara.data.model.Session
@@ -8,6 +9,7 @@ import com.promenar.nexara.data.model.SessionOptions
 import com.promenar.nexara.data.repository.ISessionRepository
 import com.promenar.nexara.data.session.SessionDeletionResult
 import com.promenar.nexara.domain.model.ExecutionModeCodec
+import com.promenar.nexara.domain.usecase.withResolvedContextTurns
 import com.promenar.nexara.ui.chat.ChatStore
 
 class SessionManager(
@@ -27,10 +29,39 @@ class SessionManager(
     }
 
     suspend fun updateSession(id: String, updates: Map<String, Any?>) {
+        if ("summary" in updates) {
+            withContextMutation(id) { persistSessionUpdates(id, updates) }
+        } else {
+            persistSessionUpdates(id, updates)
+        }
+    }
+
+    private suspend fun persistSessionUpdates(id: String, updates: Map<String, Any?>) {
         sessionRepository.updatePartial(id, updates)
 
         store.updateSession(id) { s -> applyUpdatesToSession(s, updates) }
     }
+
+    suspend fun commitContextCompaction(
+        sessionId: String,
+        summary: String,
+        messageIds: List<String>,
+        source: ContextCompactionSource,
+    ) =
+        withContextMutation(sessionId) {
+            val ids = messageIds.toList()
+            sessionRepository.commitContextCompaction(sessionId, summary, ids, source)
+
+            val archivedIds = ids.toSet()
+            store.updateSession(sessionId) { session ->
+                session.copy(
+                    summary = summary,
+                    messages = session.messages.map { message ->
+                        if (message.id in archivedIds) message.copy(isArchived = true) else message
+                    },
+                )
+            }
+        }
 
     suspend fun deleteSession(id: String) {
         when (val result = coordinatedDelete?.invoke(id)) {
@@ -58,7 +89,7 @@ class SessionManager(
     }
 
     suspend fun updateSessionInferenceParams(id: String, params: InferenceParams) {
-        updateSession(id, mapOf("inferenceParams" to params))
+        updateSession(id, mapOf("inferenceParams" to params.withResolvedContextTurns()))
     }
 
     suspend fun updateSessionTitle(id: String, title: String) {
@@ -139,6 +170,7 @@ class SessionManager(
         var result = session
         updates.forEach { (key, value) ->
             result = when (key) {
+                "summary" -> result.copy(summary = value as? String)
                 "title" -> result.copy(title = value as? String ?: result.title)
                 "lastMessage" -> result.copy(lastMessage = value as? String)
                 "draft" -> result.copy(draft = value as? String)

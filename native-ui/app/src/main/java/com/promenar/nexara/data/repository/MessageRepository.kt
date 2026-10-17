@@ -47,22 +47,28 @@ open class MessageRepository(
         checkUpdated(messageId, messageDao.update(updated))
     }
 
+    override suspend fun editContentInSession(sessionId: String, messageId: String, content: String) {
+        if (!messageDao.editContentInSessionWithContextSummary(sessionId, messageId, content)) {
+            throw MessagePersistenceException("消息不存在或不属于当前会话，无法保存正文编辑：$messageId")
+        }
+    }
+
     override suspend fun delete(messageId: String) {
-        messageDao.deleteById(messageId)
+        messageDao.deleteByIdWithContextSummary(messageId)
     }
 
     override suspend fun deleteInSession(sessionId: String, messageId: String): Boolean =
-        messageDao.deleteByIdInSession(sessionId, messageId) == 1
+        messageDao.deleteByIdsInSessionWithContextSummary(sessionId, listOf(messageId)) == 1
 
     override suspend fun deleteManyInSession(sessionId: String, messageIds: List<String>): Int =
-        if (messageIds.isEmpty()) 0 else messageDao.deleteByIdsInSession(sessionId, messageIds)
+        if (messageIds.isEmpty()) 0 else messageDao.deleteByIdsInSessionWithContextSummary(sessionId, messageIds)
 
     override suspend fun deleteBySessionId(sessionId: String) {
-        messageDao.deleteBySessionId(sessionId)
+        messageDao.deleteBySessionIdWithContextSummary(sessionId)
     }
 
     override suspend fun deleteMessagesAfter(sessionId: String, timestamp: Long) {
-        messageDao.deleteBySessionIdAndTimestampAfter(sessionId, timestamp)
+        messageDao.deleteBySessionIdAndTimestampAfterWithContextSummary(sessionId, timestamp)
     }
 
     override suspend fun getById(messageId: String): Message? {

@@ -573,8 +573,8 @@ class MessageManagerTest {
         advanceUntilIdle()
 
         val session2 = store.getSession("s1")!!
-        assertThat(session2.messages[0].isArchived).isTrue()
-        assertThat(session2.messages[1].isArchived).isTrue()
+        assertThat(session2.messages[0].isArchived).isFalse()
+        assertThat(session2.messages[1].isArchived).isFalse()
     }
 
     @Test

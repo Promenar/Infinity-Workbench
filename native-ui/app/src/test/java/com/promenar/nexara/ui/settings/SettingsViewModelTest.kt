@@ -257,6 +257,14 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `工具设置不读取已移除的上下文偏好`() = runTest {
+        SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
+
+        verify(exactly = 0) { prefs.getInt("tool_context_ratio_percent", any()) }
+        verify(exactly = 0) { prefs.getInt("tool_context_keep_rounds", any()) }
+    }
+
+    @Test
     fun `不限哨兵和长任务设置使用既有整型偏好并限制非法值`() = runTest {
         val vm = SettingsViewModel(mockApp, vectorRepo, tokenStatsRepo)
         val editor = prefs.edit()
@@ -264,10 +272,8 @@ class SettingsViewModelTest {
         assertThat(vm.loopLimit.value).isEqualTo(0)
         verify { editor.putInt("loop_limit", 0) }
         vm.updateTaskTokenLimit(20_000)
-        vm.updateToolContextRatio(500)
         vm.updateToolLoopRepeatLimit(1)
         assertThat(vm.taskTokenLimit.value).isEqualTo(20_000)
-        assertThat(vm.toolContextRatio.value).isEqualTo(90)
         assertThat(vm.toolLoopRepeatLimit.value).isEqualTo(2)
     }
 

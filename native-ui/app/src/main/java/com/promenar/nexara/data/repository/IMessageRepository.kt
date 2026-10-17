@@ -8,6 +8,9 @@ class MessagePersistenceException(message: String, cause: Throwable? = null) :
 interface IMessageRepository {
     suspend fun insert(message: Message, sessionId: String)
     suspend fun updatePartial(messageId: String, updates: Map<String, Any?>)
+    suspend fun editContentInSession(sessionId: String, messageId: String, content: String) {
+        throw MessagePersistenceException("消息仓库不支持事务化正文编辑")
+    }
     suspend fun delete(messageId: String)
     suspend fun deleteInSession(sessionId: String, messageId: String): Boolean {
         delete(messageId)

@@ -34,6 +34,7 @@ class DefaultGenerationCoordinator(
     private val clock: () -> Long = System::currentTimeMillis,
     private val terminalRetentionLimit: Int = 32,
     private val executionGate: com.promenar.nexara.data.session.SessionExecutionGate? = null,
+    private val compactionService: ContextCompactionService? = null,
 ) : GenerationCoordinator {
     private data class RunningTask(
         val taskId: String,
@@ -58,6 +59,12 @@ class DefaultGenerationCoordinator(
         sessionStates.getOrPut(sessionId) { MutableStateFlow(null) }
 
     override suspend fun start(request: GenerationRequest): StartGenerationResult {
+        val service = compactionService
+        return if (service == null) startGuarded(request)
+            else service.withGenerationStart(request.sessionId) { startGuarded(request) }
+    }
+
+    private suspend fun startGuarded(request: GenerationRequest): StartGenerationResult {
         return try {
             val gate = executionGate
             if (gate == null) startAdmitted(request)
