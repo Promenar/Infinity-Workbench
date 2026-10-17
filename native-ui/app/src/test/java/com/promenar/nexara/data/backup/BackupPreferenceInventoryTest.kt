@@ -8,6 +8,16 @@ import java.nio.file.Path
 
 class BackupPreferenceInventoryTest {
     @Test
+    fun `工具上下文旧偏好只读识别且快速模型偏好继续参与备份`() {
+        for (key in listOf("tool_context_ratio_percent", "tool_context_keep_rounds")) {
+            assertWithMessage(key).that(BackupPreferencePolicy.isKnown("nexara_settings", key)).isTrue()
+            assertWithMessage(key).that(BackupPreferencePolicy.isRetired("nexara_settings", key)).isTrue()
+            assertWithMessage(key).that(BackupPreferencePolicy.isAllowed("nexara_settings", key)).isFalse()
+        }
+        assertThat(BackupPreferencePolicy.isAllowed("nexara_settings", "preset_summary_model")).isTrue()
+    }
+
+    @Test
     fun `脚本局域网和写入授权策略不得随备份迁移`() {
         for (key in listOf("script_lan_hosts", "script_approve_writes")) {
             assertThat(BackupPreferencePolicy.isKnown("nexara_settings", key)).isTrue()

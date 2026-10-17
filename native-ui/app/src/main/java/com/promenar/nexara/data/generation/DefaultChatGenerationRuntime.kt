@@ -4,7 +4,7 @@ import android.content.SharedPreferences
 import com.promenar.nexara.data.manager.ProviderManager
 import com.promenar.nexara.data.document.ContextBudgetDecision
 import com.promenar.nexara.data.model.ApprovalRequest
-import com.promenar.nexara.domain.usecase.DEFAULT_ACTIVE_CONTEXT_WINDOW
+import com.promenar.nexara.domain.usecase.resolvedKeepRecentTurns
 import com.promenar.nexara.domain.usecase.inferenceDefaults
 import com.promenar.nexara.domain.usecase.withDefaults
 import com.promenar.nexara.data.model.MessageRole
@@ -17,7 +17,6 @@ import com.promenar.nexara.data.model.RagProgress
 import com.promenar.nexara.data.model.TokenUsage
 import com.promenar.nexara.data.model.ToolCall
 import com.promenar.nexara.data.model.UpdateMessageOptions
-import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.data.rag.MemoryManager
 import com.promenar.nexara.data.remote.ProviderResolution
 import com.promenar.nexara.data.remote.ProviderResolutionError
@@ -143,8 +142,10 @@ internal class DefaultChatGenerationRuntime(
     private val interactionStore: GenerationInteractionStore? = null,
     private val externalFolders: com.promenar.nexara.domain.storage.ExternalWorkspaceAccess? = null,
     private val sshRuntime: com.promenar.nexara.data.ssh.SshRuntime? = null,
+    private val compactionPipeline: ContextCompactionPipeline = ContextCompactionPipeline(),
+    private val compactionService: ContextCompactionService? = null,
 ) : ChatGenerationRuntime {
-    private val inFlightCompressor = InFlightToolContextCompressor()
+    private val compactionTurnState = ContextCompactionTurnState()
     private var activeToolBudget: GenerationToolBudget? = null
     private var baselineTokens = 0L
     private var mainSpentTokens = 0L
@@ -152,6 +153,7 @@ internal class DefaultChatGenerationRuntime(
     private var summaryUsageEstimated = false
     private var preparedRoute: ChatProviderRoute? = null
     private var preparedContext: ContextBuilderResult? = null
+    private var preparedContextSummary: String? = null
     private var preparedPrompt: PromptRequest? = null
     private var preparedTools: List<ProtocolTool> = emptyList()
     private var toolRounds = 0
@@ -159,7 +161,188 @@ internal class DefaultChatGenerationRuntime(
     private var currentAssistantMessageId: String? = null
     private var rollbackBaselineMessageIds: Set<String> = emptySet()
     private var replacementCommitted = false
+    private var manualCompaction = false
     private var cachedRetrieval: com.promenar.nexara.ui.chat.manager.ContextRetrieval? = null
+
+    private suspend fun compactContext(
+        request: GenerationRequest,
+        session: com.promenar.nexara.data.model.Session,
+        prompt: PromptRequest,
+        systemPrompt: String,
+        manual: Boolean = false,
+        currentTurnId: String? = request.userMessageId,
+        onProgress: (ContextCompactionStage) -> Unit = {},
+    ): ContextCompactionResult {
+        val operation: suspend () -> ContextCompactionResult = {
+            val eligible = session.copy(messages = session.messages.filterNot { it.id in request.messageIdsToReplace })
+            compactionPipeline.compact(
+                ContextCompactionInput(
+                    session = eligible,
+                    currentTurnId = currentTurnId,
+                    keepRecentTurns = session.inferenceParams.resolvedKeepRecentTurns,
+                    threshold = session.inferenceParams?.autoSummaryThreshold ?: 0.8,
+                    window = PreparedPromptBudgetGate.resolveWindow(session, prompt, settings, preparedRoute?.modelId),
+                    manual = manual,
+                    turnState = compactionTurnState,
+                ),
+                buildPrompt = { updated ->
+                    val updatedSystem = replaceHistorySummary(systemPrompt, updated.summary, preparedContextSummary)
+                    prompt.copy(messages = offloadToolResults(
+                        request.sessionId,
+                        contentStrategy.buildProtocolMessages(updated, updatedSystem, currentTurnId, request.messageIdsToReplace),
+                    ))
+                },
+                summarizeTool = { text -> summarizeToolResult(request, prompt, text) },
+                summarizeHistory = { previous, messages ->
+                    val estimatedInput = 128L + ApproximateTokenEstimator.estimate(previous.summary.orEmpty()) +
+                        messages.sumOf { ApproximateTokenEstimator.estimate(it.content.take(2000)).toLong() + 8 }
+                    if (!canSpendOnSummary(request, estimatedInput + 1024)) null else {
+                        if (session.ragOptions?.enableMemory == true) {
+                            archiveMessages(request, preparedRoute?.modelId ?: prompt.model, messages)
+                        }
+                        if (!summarize(request, previous, messages)) null else {
+                            store.getSession(request.sessionId)?.let { updated ->
+                                updated.copy(messages = updated.messages.filterNot { it.id in request.messageIdsToReplace })
+                            }
+                        }
+                    }
+                },
+                onProgress = onProgress,
+            )
+        }
+        return if (manual || compactionService == null) operation()
+            else compactionService.compactAutomatically(request.sessionId, operation)
+    }
+
+    private fun canSpendOnSummary(request: GenerationRequest, estimatedTokens: Long): Boolean {
+        val limit = toolBudget(request).maxTokens
+        return !finalAnswerMode && (limit <= 0 ||
+            baselineTokens + mainSpentTokens + summarySpentTokens + estimatedTokens <= limit)
+    }
+
+    private suspend fun summarizeToolResult(request: GenerationRequest, prompt: PromptRequest, text: String): String? {
+        if (!canSpendOnSummary(request, ApproximateTokenEstimator.estimate(text).toLong() + 384)) return null
+        var reported: TokenUsage? = null
+        var result: RoutedToolSummary? = null
+        try {
+            result = kotlinx.coroutines.withTimeoutOrNull(12_000) {
+                RoutedToolResultSummarizer(routeGate, localProviderFactory).summarizeWithUsage(
+                    text, preparedRoute?.modelId ?: prompt.model, onUsage = { reported = it },
+                )
+            }
+            return result?.content
+        } finally {
+            val usage = result?.usage ?: reported ?: TokenUsage(
+                input = ApproximateTokenEstimator.estimate(text) + 128,
+                output = 256,
+                total = ApproximateTokenEstimator.estimate(text) + 384,
+                estimated = true,
+            )
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { recordSummaryUsage(request, usage) }
+        }
+    }
+
+    private suspend fun offloadToolResults(
+        sessionId: String,
+        messages: List<com.promenar.nexara.data.remote.protocol.ProtocolMessage>,
+    ) = messages.map { message ->
+        if (message.role != "tool" || outputStore == null) message else {
+            val content = try {
+                outputStore.offload(sessionId, message.content)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: java.io.IOException) {
+                ContextCompactionPipeline.headTail(message.content, 2000)
+            }
+            message.copy(content = content)
+        }
+    }
+
+    /** 手动压缩只重建系统与现有历史，不触发新的联网或知识库检索。 */
+    private suspend fun prepareStoredContext(sessionId: String): StoredContext {
+        val session = requireNotNull(store.getSession(sessionId)) { "压缩会话不存在" }
+        val agent = agentRepository.getById(session.agentId)
+        val config = configResolver.resolve(agent)
+        val model = session.modelId?.takeIf(String::isNotBlank)
+            ?: config.modelId.takeIf(String::isNotBlank)
+            ?: ProviderManager.getInstance().getMainConfiguredModelId().orEmpty()
+        val lastUser = session.messages.lastOrNull { it.role == MessageRole.USER }
+        val request = GenerationRequest(
+            sessionId = sessionId,
+            assistantMessageId = "manual-compaction-${java.util.UUID.randomUUID()}",
+            userMessageId = lastUser?.id,
+            userContent = lastUser?.content.orEmpty(),
+            imageDataUrls = emptyList(),
+            runtimePolicy = com.promenar.nexara.domain.generation.GenerationRuntimePolicy.FOREGROUND_ONLY,
+        )
+        currentAssistantMessageId = request.assistantMessageId
+        activeToolBudget = readToolBudget()
+        preparedRoute = when (val result = routeGate.prepare(model) { Unit }) {
+            is ChatRoutePreparation.Success -> result.route
+            is ChatRoutePreparation.Failure -> ChatProviderRoute(
+                null, model, result.failure, modelId = model, supportsToolCalls = false,
+            )
+        }
+        val tools = if (preparedRoute?.supportsToolCalls == true) contentStrategy.buildTools(session) else emptyList()
+        val context = contextBuilder.buildContext(ContextBuilderParams(
+            sessionId = sessionId,
+            content = lastUser?.content.orEmpty(),
+            assistantMsgId = request.assistantMessageId,
+            session = session,
+            ragOptions = session.ragOptions,
+            agentSystemPrompt = config.systemPrompt.takeIf(String::isNotBlank)
+                ?: com.promenar.nexara.data.agent.PresetAgentPrompts.forAgentId(session.agentId),
+            sessionCustomPrompt = session.customPrompt,
+            agentRetrievalConfig = config.retrievalConfig,
+            availableToolNames = tools.mapTo(linkedSetOf()) { it.function.name },
+            availableSkills = if (tools.any { it.function.name == ACTIVATE_SKILL_TOOL }) skillCatalog() else emptyList(),
+            cachedRetrieval = com.promenar.nexara.ui.chat.manager.ContextRetrieval("", emptyList(), "", emptyList(), null, "", emptyList()),
+        ))
+        preparedContext = context
+        preparedContextSummary = session.summary
+        val prompt = PromptRequest(
+            model = preparedRoute?.remoteModelId ?: model,
+            messages = emptyList(),
+            tools = tools.ifEmpty { null },
+            maxTokens = session.inferenceParams.withDefaults(config.inferenceDefaults()).maxTokens,
+        )
+        preparedPrompt = prompt
+        return StoredContext(session, request, prompt, replaceHistorySummary(context.finalSystemPrompt, session.summary, session.summary))
+    }
+
+    private data class StoredContext(
+        val session: com.promenar.nexara.data.model.Session,
+        val request: GenerationRequest,
+        val prompt: PromptRequest,
+        val systemPrompt: String,
+    )
+
+    internal suspend fun compactNow(sessionId: String, onProgress: (ContextCompactionStage) -> Unit): ContextCompactionResult {
+        manualCompaction = true
+        val context = prepareStoredContext(sessionId)
+        return compactContext(context.request, context.session, context.prompt, context.systemPrompt, manual = true, onProgress = onProgress)
+    }
+
+    internal suspend fun estimateContext(sessionId: String): ContextUsageEstimate {
+        val context = prepareStoredContext(sessionId)
+        val messages = contentStrategy.buildProtocolMessages(context.session, context.systemPrompt).map { message ->
+            if (message.role != "tool" || outputStore == null) message else message.copy(content = try {
+                outputStore.previewForContext(sessionId, message.content)
+            } catch (_: java.io.IOException) { ContextCompactionPipeline.headTail(message.content, 2000) })
+        }
+        val preview = compactionPipeline.preview(context.session, context.prompt.copy(messages = messages))
+        val system = ApproximateTokenEstimator.estimate(
+            context.prompt.copy(messages = listOf(com.promenar.nexara.data.remote.protocol.ProtocolMessage(
+                "system", replaceHistorySummary(context.systemPrompt, null, context.session.summary),
+            ))),
+        )
+        val summary = (ApproximateTokenEstimator.estimate(context.systemPrompt) -
+            ApproximateTokenEstimator.estimate(replaceHistorySummary(context.systemPrompt, null, context.session.summary))).coerceAtLeast(0)
+        val conversation = preview.prompt.messages.drop(if (preview.prompt.messages.firstOrNull()?.role == "system") 1 else 0).sumOf(ApproximateTokenEstimator::estimate)
+        val rag = context.session.stats?.billing?.ragSystem?.count ?: 0
+        val window = PreparedPromptBudgetGate.resolveWindow(context.session, context.prompt, settings, preparedRoute?.modelId)
+        return ContextUsageEstimate(system, summary, conversation, rag, preview.foldedToolResults, window.modelContextTokens ?: 128000)
+    }
 
     override suspend fun prepare(request: GenerationRequest) {
         sshRuntime?.resumeOwner("agent:${request.sessionId}")
@@ -267,6 +450,7 @@ internal class DefaultChatGenerationRuntime(
         val inference = session.inferenceParams.withDefaults(agentConfig.inferenceDefaults())
         preparedRoute = route
         preparedContext = context
+        preparedContextSummary = session.summary
         preparedTools = tools
         val systemPrompt = if (finalAnswerMode) {
             context.finalSystemPrompt + FINAL_ANSWER_INSTRUCTION
@@ -296,55 +480,7 @@ internal class DefaultChatGenerationRuntime(
             stream = true,
             streamTimeout = (inference.streamTimeout ?: 120).toLong() * 1000,
         )
-        val offloaded = prompt.messages.map { message ->
-            if (message.role != "tool" || outputStore == null) message else {
-                val content = try {
-                    outputStore.offload(request.sessionId, message.content)
-                } catch (cancelled: CancellationException) { throw cancelled
-                } catch (_: java.io.IOException) {
-                    InFlightToolContextCompressor.headTail(message.content, 2000) +
-                        "\n[Output storage unavailable; full content remains in conversation history.]"
-                }
-                message.copy(content = content)
-            }
-        }
-        val window = PreparedPromptBudgetGate.resolveWindow(session, prompt, settings, route.modelId)
-        val contextTokens = window.modelContextTokens
-        val requestMessages = if (contextTokens != null) {
-            val ratio = settings.getInt("tool_context_ratio_percent", 70).coerceIn(10, 90) / 100.0
-            val target = minOf((contextTokens * ratio).toInt(), contextTokens - window.outputReserveTokens)
-            val toolTokens = prompt.tools.orEmpty().sumOf {
-                ApproximateTokenEstimator.estimate(it.function.name + it.function.description + it.function.parameters)
-            }
-            inFlightCompressor.compact(
-                offloaded,
-                target.coerceAtLeast(1),
-                extraTokens = toolTokens,
-                keepRecentRounds = settings.getInt("tool_context_keep_rounds", 3).coerceIn(1, 10),
-            ) { text ->
-                val limit = toolBudget(request).maxTokens
-                if (finalAnswerMode || (limit > 0 && baselineTokens + mainSpentTokens + summarySpentTokens >= limit)) {
-                    null
-                } else {
-                    var reportedSummaryUsage: TokenUsage? = null
-                    val summarized = kotlinx.coroutines.withTimeoutOrNull(12_000) {
-                        RoutedToolResultSummarizer(routeGate, localProviderFactory).summarizeWithUsage(
-                            text, settings.getString("preset_summary_model", ""), route.modelId ?: prompt.model,
-                            onUsage = { reportedSummaryUsage = it },
-                        )
-                    }
-                    val usage = summarized?.usage ?: reportedSummaryUsage ?: TokenUsage(
-                        input = ApproximateTokenEstimator.estimate(text) + 128,
-                        output = 256,
-                        total = ApproximateTokenEstimator.estimate(text) + 384,
-                        estimated = true,
-                    )
-                    recordSummaryUsage(request, usage)
-                    summarized?.content
-                }
-            }
-        } else offloaded
-        val budgetedPrompt = prompt.copy(messages = requestMessages)
+        val budgetedPrompt = compactContext(request, session, prompt, systemPrompt).prompt
         val hasFullContextDocuments = request.userMessageId
             ?.let { id -> session.messages.firstOrNull { it.id == id } }
             ?.userDocuments
@@ -489,7 +625,19 @@ internal class DefaultChatGenerationRuntime(
     private suspend fun recordSummaryUsage(request: GenerationRequest, usage: TokenUsage) {
         summarySpentTokens += usage.total
         summaryUsageEstimated = summaryUsageEstimated || usage.estimated
-        val message = store.getSession(request.sessionId)?.messages?.firstOrNull { it.id == assistantMessageId(request) } ?: return
+        val message = if (manualCompaction) null else store.getSession(request.sessionId)?.messages?.firstOrNull { it.id == assistantMessageId(request) }
+        if (message == null) {
+            // 没有助手消息的手动任务将费用写入既有摘要账本，不创建会话占位消息。
+            val record = RolledBackSummaryUsageRecord(
+                messageId = "manual-summary-${java.util.UUID.randomUUID()}",
+                sessionId = request.sessionId,
+                modelId = preparedRoute?.modelId ?: preparedPrompt?.model.orEmpty(),
+                usage = usage,
+                createdAt = System.currentTimeMillis(),
+            )
+            RolledBackSummaryUsageStore(settings).preserveBeforeDiscard(listOf(record)) {}
+            return
+        }
         val existing = message.tokens ?: TokenUsage()
         fun add(a: Int, b: Int) = (a.toLong() + b).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val combined = existing.copy(
@@ -701,22 +849,9 @@ internal class DefaultChatGenerationRuntime(
                     NexaraLogger.logError("[GenerationRuntime] addTurnToMemory failed", error)
                 }
             }
-            val windowSize = session.inferenceParams?.activeContextWindow ?: DEFAULT_ACTIVE_CONTEXT_WINDOW
-            if (session.messages.size <= windowSize) return
-            val activeIds = contentStrategy.safeActiveWindow(session.messages, windowSize).map { it.id }.toSet()
-            val overflow = session.messages.filter { it.id !in activeIds && !it.isArchived }
-            if (overflow.isEmpty()) return
-            val threshold = session.inferenceParams?.autoSummaryThreshold ?: 0.8
-            val maxTokens = findModelSpec(session.modelId.orEmpty())?.contextLength ?: 128000
-            val nearContextLimit = snapshot.totalTokens > maxTokens * threshold
-            // 溢出消息离开活动窗口后不再发送给模型，必须进入摘要；按批处理以摊薄摘要调用。
-            if (!nearContextLimit && overflow.size < overflowBatchSize(windowSize)) return
-            if (rag?.enableMemory == true) archiveMessages(request, session.modelId.orEmpty(), overflow)
-            val summarized = summarize(request, session, overflow)
-            if (!summarized) return
-            overflow.forEach { message ->
-                messageManager.updateMessage(request.sessionId, message.id, message.copy(isArchived = true))
-            }
+            // 轮后按下一次请求实际发送的未摘要历史估算，不使用累计账单 token 触发摘要。
+            val nextPrompt = (preparedPrompt ?: PromptRequest(model = session.modelId.orEmpty(), messages = emptyList()))
+            compactContext(request, store.getSession(request.sessionId) ?: session, nextPrompt, context.finalSystemPrompt)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -875,10 +1010,10 @@ internal class DefaultChatGenerationRuntime(
         modelId: String,
         messages: List<com.promenar.nexara.data.model.Message>,
     ) {
-        val taskId = ui.addPostProcessTask(PostProcessType.ARCHIVE_TO_RAG, "Archiving ${messages.size} messages")
+        val taskId = ui.addPostProcessTask(PostProcessType.ARCHIVE_TO_RAG, "")
         try {
             postProcessor.archiveMessagesToRag(request.sessionId, messages, modelId) { progress, detail ->
-                ui.updatePostProcessTask(taskId, progress = progress, detail = detail)
+                ui.updatePostProcessTask(taskId, progress = progress)
             }
             ui.updatePostProcessTask(taskId, PostProcessStatus.DONE, 1f)
             applicationScope.launch {
@@ -897,19 +1032,28 @@ internal class DefaultChatGenerationRuntime(
         session: com.promenar.nexara.data.model.Session,
         messages: List<com.promenar.nexara.data.model.Message>,
     ): Boolean {
-        val taskId = ui.addPostProcessTask(PostProcessType.AUTO_SUMMARY, "Summarizing conversation")
+        val taskId = ui.addPostProcessTask(PostProcessType.AUTO_SUMMARY, "")
         return try {
-            val summary = summaryManager.summarizeOrNull(
-                session.summary,
-                messages,
-                settings.getString("preset_summary_model", ""),
-                session.modelId.orEmpty(),
-            ) { ui.updatePostProcessTask(taskId, detail = it) }
+            var usage: TokenUsage? = null
+            val summary = try {
+                summaryManager.summarizeOrNull(
+                    session.summary,
+                    messages,
+                    preparedRoute?.modelId ?: preparedPrompt?.model ?: session.modelId.orEmpty(),
+                    onProgress = { ui.updatePostProcessTask(taskId, progress = 0.5f) },
+                    onUsage = { usage = it },
+                )
+            } finally {
+                usage?.let { kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { recordSummaryUsage(request, it) } }
+            }
             if (summary.isNullOrBlank()) {
                 ui.updatePostProcessTask(taskId, PostProcessStatus.ERROR, detail = null)
                 return false
             }
-            if (summary != session.summary) sessionManager.updateSession(request.sessionId, mapOf("summary" to summary))
+            sessionManager.commitContextCompaction(
+                request.sessionId, summary, messages.map { it.id },
+                com.promenar.nexara.data.model.ContextCompactionSource(session.summary, messages.toList()),
+            )
             ui.updatePostProcessTask(taskId, PostProcessStatus.DONE, 1f)
             applicationScope.launch {
                 kotlinx.coroutines.delay(3000)
@@ -923,8 +1067,6 @@ internal class DefaultChatGenerationRuntime(
             false
         }
     }
-
-    private fun overflowBatchSize(windowSize: Int): Int = maxOf(MIN_OVERFLOW_BATCH, windowSize / 2)
 
     private fun toGenerationChunk(chunk: StreamChunk): GenerationChunk? = when (chunk) {
         is StreamChunk.TextDelta -> GenerationChunk.Text(chunk.content, chunk.reasoning)
@@ -1028,7 +1170,6 @@ internal class DefaultChatGenerationRuntime(
     private companion object {
         const val LOOP_LIMIT_KEY = "loop_limit"
         const val ACTIVATE_SKILL_TOOL = "activate_skill"
-        const val MIN_OVERFLOW_BATCH = 4
         const val FINAL_ANSWER_INSTRUCTION = "\n\n## Tool Budget Exhausted\n" +
             "The tool budget for this request is used up. Do NOT call any tool. " +
             "Using only the results already obtained, summarize what was completed, the current state, " +

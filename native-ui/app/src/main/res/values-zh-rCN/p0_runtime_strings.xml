@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="chat_message_edit_failed">消息未能保存，请重试。</string>
     <string name="p0_unlimited">不限</string>
     <string name="p0_disabled">关闭</string>
     <string name="p0_runtime_limits">长任务控制</string>
     <string name="p0_token_limit">单任务 token 上限</string>
-    <string name="p0_context_ratio">上下文压缩触发比例</string>
-    <string name="p0_keep_rounds">保留完整内容的最近轮数</string>
     <string name="p0_repeat_limit">连续重复调用暂停次数</string>
     <string name="p0_runtime_limits_desc">Token 上限累计任务中各次请求的输入与输出；提供商未报告用量时使用估算。收尾请求可能超出上限。大输出保存在应用私有存储，可用 read_tool_output 分段读取。</string>
     <string name="p0_reset_consent">重置不限轮次全自动执行确认</string>

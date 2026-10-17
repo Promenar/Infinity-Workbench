@@ -89,10 +89,14 @@ class AndroidTransactionalBackupPreferenceStoreTest {
         val prefs = context.getSharedPreferences("nexara_settings", 0)
         prefs.edit().putInt("loop_limit", 0).putInt("task_token_limit", 20_000)
             .putInt("tool_context_ratio_percent", 70).putInt("tool_context_keep_rounds", 3)
+            .putString("preset_summary_model", "quick-model")
             .putInt("tool_loop_repeat_limit", 3).putBoolean("unlimited_auto_confirmed", true).commit()
         val snapshot = store().snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
         assertThat(snapshot.entries.first { it.key == "loop_limit" }.value).isEqualTo("0")
         assertThat(snapshot.entries.first { it.key == "task_token_limit" }.value).isEqualTo("20000")
+        assertThat(snapshot.entries.map { it.key })
+            .containsNoneOf("tool_context_ratio_percent", "tool_context_keep_rounds")
+        assertThat(snapshot.entries.first { it.key == "preset_summary_model" }.value).isEqualTo("quick-model")
         assertThat(snapshot.entries.none { it.key == "unlimited_auto_confirmed" }).isTrue()
         prefs.edit().clear().commit()
         val before = store().snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
@@ -100,7 +104,35 @@ class AndroidTransactionalBackupPreferenceStoreTest {
         store().commitPrepared("tx-p0-runtime")
         assertThat(prefs.getInt("loop_limit", -1)).isEqualTo(0)
         assertThat(prefs.getInt("task_token_limit", -1)).isEqualTo(20_000)
+        assertThat(prefs.getString("preset_summary_model", null)).isEqualTo("quick-model")
+        assertThat(prefs.contains("tool_context_ratio_percent")).isFalse()
+        assertThat(prefs.contains("tool_context_keep_rounds")).isFalse()
         assertThat(prefs.getBoolean("unlimited_auto_confirmed", false)).isFalse()
+    }
+
+    @Test
+    fun `含工具上下文旧偏好的备份可恢复且忽略旧键`() = runBlocking {
+        val adapter = store()
+        val before = BackupPreferenceSnapshot(emptyList(), setOf("default"))
+        val legacyBackup = BackupPreferenceSnapshot(
+            entries = listOf(
+                entry("settings", "tool_context_ratio_percent", PreferenceValueType.INT, "70"),
+                entry("settings", "tool_context_keep_rounds", PreferenceValueType.INT, "3"),
+                entry("settings", "preset_summary_model", PreferenceValueType.STRING, "quick-model"),
+                entry("settings", "language", PreferenceValueType.STRING, "zh"),
+            ),
+            providerIds = setOf("default"),
+        )
+
+        adapter.preflightRestore("tx-legacy-tool-context", before, legacyBackup)
+        adapter.prepare("tx-legacy-tool-context", before, legacyBackup)
+        store().commitPrepared("tx-legacy-tool-context")
+
+        val prefs = context.getSharedPreferences("nexara_settings", 0)
+        assertThat(prefs.contains("tool_context_ratio_percent")).isFalse()
+        assertThat(prefs.contains("tool_context_keep_rounds")).isFalse()
+        assertThat(prefs.getString("preset_summary_model", null)).isEqualTo("quick-model")
+        assertThat(prefs.getString("language", null)).isEqualTo("zh")
     }
 
     @Test

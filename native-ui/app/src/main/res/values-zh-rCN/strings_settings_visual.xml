@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="settings_execution_budget">执行轮次与预算</string>
-    <string name="settings_tool_context">工具结果上下文</string>
     <string name="settings_local_remote">本机与远端</string>
     <string name="settings_repeat_limit_description">相同工具和参数连续重复调用达到阈值时暂停。</string>
-    <string name="settings_context_ratio_description">工具结果上下文压缩的触发比例。</string>
-    <string name="settings_keep_rounds_description">保留最近这些轮次的完整工具结果。</string>
     <string name="settings_reset_consent_description">下次开启不限轮次全自动执行时需要确认。</string>
     <string name="settings_consent_reset">已重置不限轮次全自动执行确认</string>
     <string name="settings_percent_value">%1$d%%</string>

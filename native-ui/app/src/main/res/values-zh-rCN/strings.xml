@@ -362,7 +362,8 @@
     <string name="settings_theme_color_desc">自定义强调色</string>
     <string name="settings_haptic">触觉反馈</string>
     <string name="settings_section_model_presets">模型预设</string>
-    <string name="settings_model_summary">摘要模型</string>
+    <string name="settings_model_summary">快速模型</string>
+    <string name="settings_model_quick_description">用于生成会话标题、新会话与新 Agent 的默认模型、知识图谱抽取的默认模型；上下文压缩始终使用当前会话模型</string>
     <string name="settings_model_image">图像模型</string>
     <string name="settings_model_embedding">嵌入模型</string>
     <string name="settings_model_rerank">重排模型</string>
@@ -479,19 +480,32 @@
     <string name="chat_context_usage_title">上下文用量</string>
     <string name="chat_context_label_system">系统指令</string>
     <string name="chat_context_label_summary">历史摘要</string>
-    <string name="chat_context_label_active">活跃对话</string>
+    <string name="chat_context_label_active">对话</string>
     <string name="chat_context_label_rag">知识增强</string>
-    <string name="chat_context_btn_compress">压缩历史</string>
+    <string name="chat_context_label_folded_tools">已折叠工具结果</string>
+    <string name="chat_context_btn_compress">立即压缩</string>
+    <string name="chat_context_usage_fraction">%1$s / %2$s</string>
+    <string name="chat_context_usage_total">%1$s / %2$s token</string>
+    <string name="chat_context_usage_percent">已使用模型上下文的 %1$d%%</string>
+    <string name="chat_context_threshold">自动压缩阈值：%1$d%%</string>
+    <string name="chat_context_compress_unavailable_generating">正在生成回复，完成后可立即压缩</string>
+    <string name="chat_context_compress_unavailable_running">正在压缩上下文，请稍候</string>
+    <string name="chat_context_nothing_to_compress">暂无可压缩内容，最近 %1$d 轮始终保留</string>
+    <string name="chat_context_compaction_result">已折叠 %1$d 条工具结果，总结 %2$d 轮；估算上下文 %3$d → %4$d token</string>
+    <string name="chat_context_compaction_failed">上下文压缩失败，完整记录已保留</string>
+    <string name="chat_context_folding">正在折叠较早的工具结果</string>
+    <string name="chat_context_summarizing">正在总结历史对话</string>
+    <string name="chat_context_archive">正在归档历史对话</string>
 
     <!-- Summary Card -->
-    <string name="chat_summary_card_title">上下文摘要</string>
+    <string name="chat_summary_card_title">上下文压缩</string>
     <string name="chat_summary_card_compressing">压缩中</string>
     <string name="chat_summary_card_done">完成</string>
-    <string name="chat_summary_card_expand">查看摘要</string>
+    <string name="chat_summary_card_expand">查看结果</string>
     <string name="chat_summary_card_collapse">收起</string>
-    <string name="chat_summary_card_progress_preparing">正在准备摘要请求…</string>
+    <string name="chat_summary_card_progress_preparing">正在准备上下文压缩…</string>
     <string name="chat_summary_card_progress_calling">正在调用模型…</string>
-    <string name="chat_summary_card_progress_done">摘要已生成</string>
+    <string name="chat_summary_card_progress_done">上下文压缩完成</string>
 
     <!-- Chat Inline Components -->
     <string name="chat_rag_knowledge_retrieval">知识检索</string>
@@ -547,8 +561,6 @@
     <string name="session_settings_max_tokens">最大 Token 数</string>
     <string name="session_settings_stream_timeout">请求超时</string>
     <string name="session_settings_unit_seconds">%1$d 秒</string>
-    <string name="session_settings_summary_threshold">自动摘要阈值</string>
-    <string name="session_settings_active_window">活动上下文窗口</string>
     <string name="session_settings_label_focused">聚焦</string>
     <string name="session_settings_label_diverse">多样</string>
     <string name="session_settings_label_short">短</string>
@@ -612,11 +624,13 @@
     <string name="sheet_tool_github_server">GitHub 服务器</string>
     <string name="sheet_tool_rerank">检索重排序</string>
     <string name="sheet_settings_section_inference">生成参数</string>
-    <string name="sheet_settings_section_vectorization">上下文管理</string>
+    <string name="sheet_settings_section_context">上下文管理</string>
     <string name="sheet_settings_section_retrieval">长期记忆</string>
     <string name="sheet_settings_summary_threshold">自动压缩阈值</string>
-    <string name="sheet_settings_active_window">活跃上下文窗口</string>
-    <string name="sheet_settings_active_window_unit">%1$d 条消息</string>
+    <string name="sheet_settings_keep_recent_turns">压缩后保留最近轮数</string>
+    <string name="sheet_settings_turns_value">%1$d 轮</string>
+    <string name="sheet_settings_compact_now_description">折叠较早的工具结果并总结历史，保留最近 %1$d 轮。</string>
+    <string name="sheet_settings_context_description">达到阈值后先折叠较早的工具结果，仍不足时将最近 %1$d 轮之前的对话总结为摘要；完整记录仍保留在会话中。</string>
     <string name="sheet_settings_stream_timeout">请求超时</string>
     <string name="sheet_settings_top_p">Top P</string>
     <string name="sheet_settings_max_tokens">最大 Token 数</string>

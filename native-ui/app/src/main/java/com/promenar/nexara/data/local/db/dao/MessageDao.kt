@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.promenar.nexara.data.local.db.entity.MessageEntity
 import kotlinx.coroutines.flow.Flow
@@ -23,6 +24,21 @@ interface MessageDao {
     @Delete
     suspend fun delete(message: MessageEntity)
 
+    @Query("UPDATE messages SET content = :content WHERE session_id = :sessionId AND id = :messageId")
+    suspend fun updateEditedContentInSession(sessionId: String, messageId: String, content: String): Int
+
+    /** 编辑已摘要消息时，正文与摘要失效必须在同一个事务中生效。 */
+    @Transaction
+    suspend fun editContentInSessionWithContextSummary(sessionId: String, messageId: String, content: String): Boolean {
+        val original = getById(messageId)?.takeIf { it.sessionId == sessionId } ?: return false
+        check(updateEditedContentInSession(sessionId, messageId, content) == 1) { "正文编辑目标已变化" }
+        if (original.isArchived != 0) {
+            clearContextSummaries(sessionId)
+            restoreArchivedContextMessages(sessionId)
+        }
+        return true
+    }
+
     @Query("DELETE FROM messages WHERE id = :messageId")
     suspend fun deleteById(messageId: String)
 
@@ -34,6 +50,71 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE session_id = :sessionId")
     suspend fun deleteBySessionId(sessionId: String)
+
+    @Query("SELECT COUNT(*) FROM messages WHERE session_id = :sessionId AND is_archived != 0")
+    suspend fun countArchivedBySession(sessionId: String): Int
+
+    @Query(
+        """SELECT EXISTS (
+             SELECT 1 FROM context_summaries AS summary
+             WHERE summary.session_id = :sessionId
+               AND (NOT EXISTS (
+                      SELECT 1 FROM messages
+                      WHERE session_id = summary.session_id AND id = summary.start_message_id
+                    ) OR NOT EXISTS (
+                      SELECT 1 FROM messages
+                      WHERE session_id = summary.session_id AND id = summary.end_message_id
+                    ))
+           )""",
+    )
+    suspend fun hasDanglingContextSummary(sessionId: String): Boolean
+
+    @Query("DELETE FROM context_summaries WHERE session_id = :sessionId")
+    suspend fun clearContextSummaries(sessionId: String)
+
+    @Query("UPDATE messages SET is_archived = 0 WHERE session_id = :sessionId AND is_archived != 0")
+    suspend fun restoreArchivedContextMessages(sessionId: String)
+
+    @Transaction
+    suspend fun deleteByIdWithContextSummary(messageId: String) {
+        val message = getById(messageId) ?: return
+        deleteByIdsInSessionWithContextSummary(message.sessionId, listOf(messageId))
+    }
+
+    @Transaction
+    suspend fun deleteByIdsInSessionWithContextSummary(sessionId: String, messageIds: List<String>): Int {
+        if (messageIds.isEmpty()) return 0
+        val archivedBefore = countArchivedBySession(sessionId)
+        val deleted = messageIds.distinct().chunked(900).sumOf { ids ->
+            deleteByIdsInSession(sessionId, ids)
+        }
+        // 比较实际删除后的归档数量，覆盖数据库 CASCADE 删除的全部后裔。
+        if (countArchivedBySession(sessionId) < archivedBefore || hasDanglingContextSummary(sessionId)) {
+            clearContextSummaries(sessionId)
+            restoreArchivedContextMessages(sessionId)
+        }
+        return deleted
+    }
+
+    @Transaction
+    suspend fun deleteBySessionIdWithContextSummary(sessionId: String) {
+        val archivedBefore = countArchivedBySession(sessionId)
+        deleteBySessionId(sessionId)
+        if (countArchivedBySession(sessionId) < archivedBefore || hasDanglingContextSummary(sessionId)) {
+            clearContextSummaries(sessionId)
+            restoreArchivedContextMessages(sessionId)
+        }
+    }
+
+    @Transaction
+    suspend fun deleteBySessionIdAndTimestampAfterWithContextSummary(sessionId: String, timestamp: Long) {
+        val archivedBefore = countArchivedBySession(sessionId)
+        deleteBySessionIdAndTimestampAfter(sessionId, timestamp)
+        if (countArchivedBySession(sessionId) < archivedBefore || hasDanglingContextSummary(sessionId)) {
+            clearContextSummaries(sessionId)
+            restoreArchivedContextMessages(sessionId)
+        }
+    }
 
     @Query("SELECT * FROM messages WHERE id = :messageId")
     suspend fun getById(messageId: String): MessageEntity?

@@ -277,6 +277,37 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
     val toolOutputStore by lazy {
         com.promenar.nexara.data.repository.ToolOutputStore(java.io.File(noBackupFilesDir, "tool-outputs"))
     }
+    val contextFoldStore by lazy {
+        com.promenar.nexara.data.repository.ContextFoldStore(java.io.File(noBackupFilesDir, "context-folds"))
+    }
+    private val contextCompactionPipeline by lazy {
+        com.promenar.nexara.data.generation.ContextCompactionPipeline(contextFoldStore)
+    }
+    val contextCompactionService: com.promenar.nexara.data.generation.ContextCompactionService by lazy {
+        com.promenar.nexara.data.generation.ContextCompactionService(
+            isGenerating = { sessionId ->
+                generationCoordinator.active.value?.sessionId == sessionId
+            },
+            manualCompaction = { sessionId, progress ->
+                val taskId = "compaction-${java.util.UUID.randomUUID()}"
+                generationPresentationStore.begin(sessionId, taskId)
+                try {
+                    generationRunnerFactory.createRuntime(sessionId, taskId).compactNow(sessionId, progress)
+                } finally {
+                    generationScope.launch {
+                        kotlinx.coroutines.delay(3000)
+                        generationPresentationStore.finish(sessionId, taskId)
+                    }
+                }
+            },
+            admission = { sessionId, block -> sessionExecutionGate.withNewSessionAdmission(sessionId, block) },
+            applicationScope = generationScope,
+        )
+    }
+    suspend fun estimateContextUsage(sessionId: String): com.promenar.nexara.data.generation.ContextUsageEstimate =
+        sessionExecutionGate.withNewSessionAdmission(sessionId) {
+            generationRunnerFactory.createRuntime(sessionId, "context-estimate").estimateContext(sessionId)
+        }
     val scriptSettings by lazy {
         com.promenar.nexara.data.script.ScriptSettings(getSharedPreferences("nexara_settings", MODE_PRIVATE))
     }
@@ -415,7 +446,8 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 com.promenar.nexara.data.session.cleanupSessionRuntimeData(
                     { sessionToolGrantStore.deleteSession(sessionId) },
                     { toolOutputStore.deleteSession(sessionId) },
-                    { externalFolderManager.deleteSessionMounts(sessionId) },
+                    deleteMounts = { externalFolderManager.deleteSessionMounts(sessionId) },
+                    deleteFolds = { contextFoldStore.deleteSession(sessionId) },
                 )
             },
         )
@@ -490,10 +522,10 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             }
         }
     }
-    val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
+    private val generationRunnerFactory: com.promenar.nexara.data.generation.DefaultChatGenerationRunnerFactory by lazy {
         val settings = getSharedPreferences("nexara_settings", MODE_PRIVATE)
         val provider = llmProvider
-        val runnerFactory = com.promenar.nexara.data.generation.DefaultChatGenerationRunnerFactory(
+        com.promenar.nexara.data.generation.DefaultChatGenerationRunnerFactory(
             settings = settings,
             applicationScope = generationScope,
             store = chatStore,
@@ -508,7 +540,9 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             toolExecutor = generationToolExecutor,
             postProcessor = generationPostProcessor,
             memoryManager = memoryManager,
-            summaryManager = com.promenar.nexara.ui.chat.manager.SummaryManager(provider),
+            summaryManager = com.promenar.nexara.data.generation.RoutedToolResultSummarizer(
+                com.promenar.nexara.data.generation.ChatProviderRouteGate(providerRequestRouter),
+            ) { modelId -> LlmProvider.local(localInferenceEngine, modelId) }.historySummaryManager(provider),
             sessionManager = generationSessionManager,
             skillRegistry = skillRegistry,
             toolResolver = sessionToolResolver,
@@ -520,12 +554,17 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             externalFolders = externalFolderManager,
             interactionStore = generationInteractions,
             sshRuntime = sshRuntime,
+            compactionPipeline = contextCompactionPipeline,
+            compactionService = contextCompactionService,
         )
+    }
+    val generationCoordinator: com.promenar.nexara.domain.generation.GenerationCoordinator by lazy {
         com.promenar.nexara.data.generation.DefaultGenerationCoordinator(
             applicationScope = generationScope,
-            runnerFactory = runnerFactory,
+            runnerFactory = generationRunnerFactory,
             presentationStore = generationPresentationStore,
             executionGate = sessionExecutionGate,
+            compactionService = contextCompactionService,
         )
     }
 

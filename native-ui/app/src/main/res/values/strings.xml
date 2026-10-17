@@ -356,7 +356,8 @@
     <string name="settings_theme_color_desc">Custom accent color</string>
     <string name="settings_haptic">Haptic Feedback</string>
     <string name="settings_section_model_presets">Model Presets</string>
-    <string name="settings_model_summary">Summary Model</string>
+    <string name="settings_model_summary">Quick Model</string>
+    <string name="settings_model_quick_description">Used for session titles, the default model for new sessions and Agents, and the default model for knowledge graph extraction; context compaction always uses the current session model.</string>
     <string name="settings_model_image">Image Model</string>
     <string name="settings_model_embedding">Embedding Model</string>
     <string name="settings_model_rerank">Rerank Model</string>
@@ -472,21 +473,34 @@
     <string name="chat_btn_undo">Undo</string>
 
     <string name="chat_context_usage_title">Context Usage</string>
-    <string name="chat_context_label_system">System</string>
-    <string name="chat_context_label_summary">Summary</string>
-    <string name="chat_context_label_active">Active</string>
-    <string name="chat_context_label_rag">Memory RAG</string>
-    <string name="chat_context_btn_compress">Compress History</string>
+    <string name="chat_context_label_system">System instructions</string>
+    <string name="chat_context_label_summary">History summary</string>
+    <string name="chat_context_label_active">Conversation</string>
+    <string name="chat_context_label_rag">Knowledge augmentation</string>
+    <string name="chat_context_label_folded_tools">Folded tool results</string>
+    <string name="chat_context_btn_compress">Compact Now</string>
+    <string name="chat_context_usage_fraction">%1$s / %2$s</string>
+    <string name="chat_context_usage_total">%1$s / %2$s tokens</string>
+    <string name="chat_context_usage_percent">%1$d%% of model context used</string>
+    <string name="chat_context_threshold">Auto-compaction threshold: %1$d%%</string>
+    <string name="chat_context_compress_unavailable_generating">A response is being generated. Compact context after it finishes.</string>
+    <string name="chat_context_compress_unavailable_running">Context is being compacted. Please wait.</string>
+    <string name="chat_context_nothing_to_compress">Nothing to compact. The most recent %1$d turns are always retained.</string>
+    <string name="chat_context_compaction_result">Folded %1$d tool results and summarized %2$d turns; estimated context: %3$d → %4$d tokens</string>
+    <string name="chat_context_compaction_failed">Context compaction failed. The complete conversation has been retained.</string>
+    <string name="chat_context_folding">Folding earlier tool results…</string>
+    <string name="chat_context_summarizing">Summarizing conversation history…</string>
+    <string name="chat_context_archive">Archiving conversation history…</string>
 
     <!-- Summary Card -->
-    <string name="chat_summary_card_title">Context Summary</string>
+    <string name="chat_summary_card_title">Context Compaction</string>
     <string name="chat_summary_card_compressing">Compressing</string>
     <string name="chat_summary_card_done">Done</string>
-    <string name="chat_summary_card_expand">View Summary</string>
+    <string name="chat_summary_card_expand">View Result</string>
     <string name="chat_summary_card_collapse">Collapse</string>
-    <string name="chat_summary_card_progress_preparing">Preparing summary request…</string>
+    <string name="chat_summary_card_progress_preparing">Preparing context compaction…</string>
     <string name="chat_summary_card_progress_calling">Calling model…</string>
-    <string name="chat_summary_card_progress_done">Summary generated</string>
+    <string name="chat_summary_card_progress_done">Context compacted</string>
 
     <!-- Chat Inline Components -->
     <string name="chat_rag_knowledge_retrieval">Knowledge Retrieval</string>
@@ -542,8 +556,6 @@
     <string name="session_settings_max_tokens">Max Tokens</string>
     <string name="session_settings_stream_timeout">Request Timeout</string>
     <string name="session_settings_unit_seconds">%1$d seconds</string>
-    <string name="session_settings_summary_threshold">Auto-Summary Threshold</string>
-    <string name="session_settings_active_window">Active Context Window</string>
     <string name="session_settings_label_focused">Focused</string>
     <string name="session_settings_label_diverse">Diverse</string>
     <string name="session_settings_label_short">Short</string>
@@ -613,9 +625,11 @@
     <string name="sheet_tool_rerank">Retrieval Reranking</string>
     <string name="sheet_settings_summary_threshold">Auto Compression Threshold</string>
     <string name="sheet_settings_section_inference">Generation Parameters</string>
-    <string name="sheet_settings_section_vectorization">Context Management</string>
-    <string name="sheet_settings_active_window">Active Context Window</string>
-    <string name="sheet_settings_active_window_unit">%1$d Messages</string>
+    <string name="sheet_settings_section_context">Context Management</string>
+    <string name="sheet_settings_keep_recent_turns">Recent turns to retain after compaction</string>
+    <string name="sheet_settings_turns_value">%1$d turns</string>
+    <string name="sheet_settings_compact_now_description">Fold earlier tool results and summarize history while retaining the most recent %1$d turns.</string>
+    <string name="sheet_settings_context_description">At the threshold, earlier tool results are folded first. If more space is needed, conversations before the most recent %1$d turns are summarized. The complete record stays in the session.</string>
     <string name="sheet_settings_stream_timeout">Request Timeout</string>
     <string name="sheet_settings_top_p">Top P</string>
     <string name="sheet_settings_max_tokens">Max Tokens</string>

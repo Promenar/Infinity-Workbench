@@ -201,13 +201,16 @@ class SessionDeletionCoordinator(
     }
 
     private suspend fun deleteDatabaseOnlySession(sessionId: String): SessionDeletionResult = try {
-        cancelAndJoinGeneration(sessionId)
-        closePendingExecution(sessionId)
-        val deleted = deleteDatabaseOnly(sessionId)
-        val cleanupFailure = cleanupPrivateDataFailure(sessionId)
-        if (cleanupFailure != null) failed(SessionDeletionErrorCode.WORKSPACE, cleanupFailure)
-        else if (deleted) SessionDeletionResult.Deleted
-        else SessionDeletionResult.AlreadyDeleted
+        gate.withDeletion(sessionId, workspaceRootUuid = null, beforeAdmissionsDrained = {
+            cancelAndJoinGeneration(sessionId)
+        }) {
+            closePendingExecution(sessionId)
+            val deleted = deleteDatabaseOnly(sessionId)
+            val cleanupFailure = cleanupPrivateDataFailure(sessionId)
+            if (cleanupFailure != null) failed(SessionDeletionErrorCode.WORKSPACE, cleanupFailure)
+            else if (deleted) SessionDeletionResult.Deleted
+            else SessionDeletionResult.AlreadyDeleted
+        }
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (failure: Throwable) {

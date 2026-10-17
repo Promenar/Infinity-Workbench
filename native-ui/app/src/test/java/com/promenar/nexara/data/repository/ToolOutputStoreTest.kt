@@ -18,6 +18,97 @@ class ToolOutputStoreTest {
     private val root: File get() = temporaryDirectory.resolve("private-output").toFile()
 
     @Test
+    fun `超过16000字符的只读预览不创建目录且与真实卸载内容完全一致`() = runTest {
+        val content = "HEAD-" + "界😀0123456789\n".repeat(1_500) + "-TAIL"
+        val store = ToolOutputStore(root)
+
+        val preview = store.previewForContext("session", content)
+
+        assertThat(content.length).isGreaterThan(16_000)
+        assertThat(root.exists()).isFalse()
+        assertThat(preview).contains("HEAD-")
+        assertThat(preview).contains("-TAIL")
+        assertThat(preview).isEqualTo(store.offload("session", content))
+        assertThat(storedFiles()).hasSize(1)
+    }
+
+    @Test
+    fun `只读预览与卸载按UTF16单元一致处理16000字符阈值`() = runTest {
+        val cases = listOf(
+            "a".repeat(15_999) to false,
+            "a".repeat(16_000) to false,
+            "😀".repeat(7_999) + "ab" to false,
+            "a".repeat(16_001) to true,
+            "😀".repeat(8_000) + "x" to true,
+        )
+        cases.forEachIndexed { index, (content, offloaded) ->
+            val caseRoot = temporaryDirectory.resolve("threshold-$index").toFile()
+            val store = ToolOutputStore(caseRoot)
+
+            val preview = store.previewForContext("session", content)
+
+            assertThat(caseRoot.exists()).isFalse()
+            if (offloaded) {
+                assertThat(preview).contains("output_id=out_")
+                assertThat(preview).contains("total_chars=16001 (UTF-16 code units)")
+            } else {
+                assertThat(preview).isEqualTo(content)
+            }
+            assertThat(store.offload("session", content)).isEqualTo(preview)
+            assertThat(caseRoot.exists()).isEqualTo(offloaded)
+        }
+    }
+
+    @Test
+    fun `只读预览与卸载在头尾边界完整跳过代理对`() = runTest {
+        val content = "H".repeat(1_999) + "😀" + "M".repeat(12_000) + "😀" + "T".repeat(1_999)
+        val store = ToolOutputStore(root)
+
+        val preview = store.previewForContext("session", content)
+
+        assertThat(root.exists()).isFalse()
+        assertThat(preview).contains("total_chars=16002 (UTF-16 code units)")
+        assertThat(preview).contains("--- HEAD ---\n" + "H".repeat(1_999) + "\n--- 12004 UTF-16 code units omitted ---")
+        assertThat(preview).contains("\n" + "T".repeat(1_999) + "\n--- TAIL ---")
+        assertThat(preview.none(Char::isSurrogate)).isTrue()
+        assertThat(store.offload("session", content)).isEqualTo(preview)
+        assertThat(store.read("session", outputId(preview), 1_999, 2)).isEqualTo("😀")
+    }
+
+    @Test
+    fun `只读预览不会写入新输出淘汰旧输出或改变保留时间`() = runTest {
+        val store = ToolOutputStore(root, maxBytes = 32, thresholdChars = 1)
+        val existing = outputId(store.offload("session", "k".repeat(32)))
+        val filesBefore = storedFiles().associate {
+            it.relativeTo(root).path to (it.lastModified() to it.readText())
+        }
+
+        val preview = store.previewForContext("session", "n".repeat(32))
+
+        assertThat(storedFiles().associate {
+            it.relativeTo(root).path to (it.lastModified() to it.readText())
+        }).isEqualTo(filesBefore)
+        assertThat(store.read("session", existing, 0, 100)).isEqualTo("k".repeat(32))
+        assertThat(runCatching { store.read("session", outputId(preview), 0, 100) }.exceptionOrNull())
+            .isInstanceOf(IOException::class.java)
+    }
+
+    @Test
+    fun `只读预览与卸载均拒绝无法无损存储或超过字节容量的内容`() = runTest {
+        listOf("invalid-\uD800-surrogate", "界".repeat(10)).forEachIndexed { index, content ->
+            val caseRoot = temporaryDirectory.resolve("invalid-$index").toFile()
+            val store = ToolOutputStore(caseRoot, maxBytes = 24, thresholdChars = 1)
+
+            assertThat(runCatching { store.previewForContext("session", content) }.exceptionOrNull())
+                .isInstanceOf(IOException::class.java)
+            assertThat(caseRoot.exists()).isFalse()
+            assertThat(runCatching { store.offload("session", content) }.exceptionOrNull())
+                .isInstanceOf(IOException::class.java)
+            assertThat(caseRoot.exists()).isFalse()
+        }
+    }
+
+    @Test
     fun `小结果和阈值边界原样返回且不创建存储`() = runTest {
         val store = ToolOutputStore(root, thresholdChars = 8)
 

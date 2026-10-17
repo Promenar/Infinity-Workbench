@@ -34,6 +34,7 @@ import com.promenar.nexara.data.model.findModelSpec
 import com.promenar.nexara.domain.usecase.AgentConfigResolver
 import com.promenar.nexara.domain.usecase.ExportSessionUseCase
 import com.promenar.nexara.domain.usecase.IdGenerator
+import com.promenar.nexara.domain.usecase.resolvedKeepRecentTurns
 import com.promenar.nexara.data.rag.EmbeddingClient
 import com.promenar.nexara.data.rag.MemoryManager
 import com.promenar.nexara.data.rag.MemoryManagerRagAdapter
@@ -64,7 +65,6 @@ import com.promenar.nexara.ui.chat.manager.MessageManager
 import com.promenar.nexara.ui.chat.manager.messageRemovalIds
 import com.promenar.nexara.ui.chat.manager.PostProcessor
 import com.promenar.nexara.ui.chat.manager.SessionManager
-import com.promenar.nexara.ui.chat.manager.SummaryManager
 import com.promenar.nexara.ui.chat.manager.ToolExecutor
 import com.promenar.nexara.ui.common.status.UiStatusNotice
 import kotlinx.coroutines.CancellationException
@@ -280,6 +280,10 @@ class ChatViewModel(
         (application as NexaraApplication).sshRuntime.resumeOwner(owner)
     },
     private val sshCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val contextCompactionService: com.promenar.nexara.data.generation.ContextCompactionService =
+        (application as NexaraApplication).contextCompactionService,
+    private val contextUsageEstimator: suspend (String) -> com.promenar.nexara.data.generation.ContextUsageEstimate =
+        { sessionId -> (application as NexaraApplication).estimateContextUsage(sessionId) },
 ) : ViewModel() {
 
     private val store = (application as NexaraApplication).chatStore
@@ -321,7 +325,6 @@ class ChatViewModel(
         grantVerifier = (application as NexaraApplication)::verifyTargetGrant,
     )
     private val taskPlanActions = TaskPlanActions((application as NexaraApplication).taskRepository)
-    private val summaryManager = SummaryManager(llmProvider)
     private val approvalManager = ApprovalManager(
         store,
         toolLedger,
@@ -401,7 +404,11 @@ class ChatViewModel(
         val systemTokens: Int = 0,
         val summaryTokens: Int = 0,
         val activeTokens: Int = 0,
-        val ragTokens: Int = 0
+        val ragTokens: Int = 0,
+        val foldedToolResults: Int = 0,
+        val autoCompactionThreshold: Double = 0.8,
+        val isGenerating: Boolean = false,
+        val keepRecentTurns: Int = 5,
     )
     private val _tokenIndicatorState = MutableStateFlow(TokenIndicatorState())
     val tokenIndicatorState: StateFlow<TokenIndicatorState> = _tokenIndicatorState
@@ -493,7 +500,9 @@ class ChatViewModel(
 
         val session = state.sessions.find { it.id == sessionId }
         if (session != null) {
-            updateTokenIndicator(session)
+            updateTokenIndicator(session, isGenerating)
+        } else {
+            tokenEstimateJob?.cancel()
         }
         ChatUiState(
             session = session,
@@ -515,6 +524,18 @@ class ChatViewModel(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ChatUiState())
 
     init {
+        viewModelScope.launch {
+            _currentSessionId.collectLatest { sessionId ->
+                _compressionState.value = CompressionState()
+                if (sessionId != null) contextCompactionService.observe(sessionId).collect { progress ->
+                    _compressionState.value = projectCompressionProgress(sessionId, progress)
+                    if (!progress.isRunning && progress.result != null) {
+                        store.getSession(sessionId)?.let { updateTokenIndicator(it) }
+                    }
+                }
+            }
+        }
+
         viewModelScope.launch {
             _currentSessionId.collectLatest { sessionId ->
                 if (sessionId == null) return@collectLatest
@@ -1369,8 +1390,7 @@ class ChatViewModel(
             try {
                 val session = sessionRepository.getById(sessionId)
                 if (session != null) {
-                    val messages = messageRepository.getBySession(sessionId)
-                    var hydrated = session.copy(messages = messages)
+                    var hydrated = session
                     if (hydrated.ragOptions == null) {
                         val defaultOptions = getDefaultRagOptions()
                         hydrated = hydrated.copy(ragOptions = defaultOptions)
@@ -1673,88 +1693,60 @@ class ChatViewModel(
         }
     }
 
-    fun summarizeHistory() {
+    fun compactNow() {
         val sessionId = _currentSessionId.value ?: return
-        val session = store.getSession(sessionId) ?: return
-        
+        if (_compressionState.value.isCompressing) return
         viewModelScope.launch {
             try {
-                _isGenerating.update { true }
-                val messages = session.messages.filter { !it.isArchived }
-                val settingsPrefs = application.getSharedPreferences("nexara_settings", 0)
-                val summaryModelId = settingsPrefs.getString("preset_summary_model", "")
-                
-                val newSummary = summaryManager.summarize(
-                    oldSummary = session.summary,
-                    overflowMessages = messages,
-                    summaryModelId = summaryModelId,
-                    currentModelId = session.modelId ?: ""
+                contextCompactionService.compactNow(sessionId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: com.promenar.nexara.data.generation.ContextCompactionBusyException) {
+                if (_currentSessionId.value == sessionId) _compressionState.value = CompressionState(
+                    detail = stringResourceResolver(R.string.chat_context_compress_unavailable_generating),
                 )
-                
-                sessionManager.updateSession(sessionId, mapOf("summary" to newSummary))
-                
-                // Mark these as archived
-                messages.forEach { msg ->
-                    messageManager.updateMessage(sessionId, msg.id, msg.copy(isArchived = true))
-                }
-            } catch (e: Exception) {
-                _error.update { "Manual summary failed: ${e.message}" }
-            } finally {
-                _isGenerating.update { false }
+            } catch (_: Exception) {
+                if (_currentSessionId.value == sessionId) _compressionState.value = CompressionState(
+                    detail = stringResourceResolver(R.string.chat_context_compaction_failed),
+                )
             }
         }
     }
 
-    fun compressContext() {
-        val sessionId = _currentSessionId.value ?: return
-        val session = store.getSession(sessionId) ?: return
-
-        viewModelScope.launch {
-            try {
-                _compressionState.update { CompressionState(isCompressing = true, progress = 0.1f, detail = application.getString(R.string.chat_summary_card_progress_preparing)) }
-                _isGenerating.update { true }
-
-                val messages = session.messages.filter { !it.isArchived }
-                if (messages.isEmpty()) {
-                    _compressionState.update { CompressionState(isCompressing = false, detail = "No messages to compress") }
-                    return@launch
-                }
-
-                val settingsPrefs = application.getSharedPreferences("nexara_settings", 0)
-                val summaryModelId = settingsPrefs.getString("preset_summary_model", "")
-
-                _compressionState.update { it.copy(progress = 0.3f, detail = application.getString(R.string.chat_summary_card_progress_calling)) }
-
-                val newSummary = summaryManager.summarize(
-                    oldSummary = session.summary,
-                    overflowMessages = messages,
-                    summaryModelId = summaryModelId,
-                    currentModelId = session.modelId ?: "",
-                    onProgress = { detail ->
-                        _compressionState.update { it.copy(progress = (it.progress + 0.15f).coerceAtMost(0.9f), detail = detail) }
-                    }
-                )
-
-                _compressionState.update { it.copy(progress = 0.95f, detail = application.getString(R.string.chat_summary_card_progress_done)) }
-
-                sessionManager.updateSession(sessionId, mapOf("summary" to newSummary))
-
-                messages.forEach { msg ->
-                    messageManager.updateMessage(sessionId, msg.id, msg.copy(isArchived = true))
-                }
-
-                _compressionState.update { CompressionState(isCompressing = false, progress = 1f, result = newSummary) }
-            } catch (e: Exception) {
-                _compressionState.update { CompressionState(isCompressing = false, detail = e.message ?: "Compression failed") }
-                _error.update { "Context compression failed: ${e.message}" }
-            } finally {
-                _isGenerating.update { false }
+    private fun projectCompressionProgress(
+        sessionId: String,
+        progress: com.promenar.nexara.data.generation.ContextCompactionProgress,
+    ): CompressionState {
+        if (progress.isRunning) {
+            val (fraction, resource) = when (progress.stage) {
+                com.promenar.nexara.data.generation.ContextCompactionStage.FOLDING -> 0.3f to R.string.chat_context_folding
+                com.promenar.nexara.data.generation.ContextCompactionStage.SUMMARIZING -> 0.7f to R.string.chat_context_summarizing
+                else -> 0.1f to R.string.chat_summary_card_progress_preparing
             }
+            return CompressionState(true, fraction, stringResourceResolver(resource))
         }
+        if (progress.failed) return CompressionState(detail = stringResourceResolver(R.string.chat_context_compaction_failed))
+        val result = progress.result ?: return CompressionState()
+        val session = store.getSession(sessionId)
+        val keep = com.promenar.nexara.domain.usecase.resolveKeepRecentTurns(
+            session?.inferenceParams?.keepRecentTurns, session?.inferenceParams?.activeContextWindow,
+        )
+        return if (result.newlyFoldedToolResults == 0 && result.summarizedTurns == 0) {
+            CompressionState(progress = 1f, detail = String.format(
+                java.util.Locale.getDefault(), stringResourceResolver(R.string.chat_context_nothing_to_compress), keep,
+            ))
+        } else CompressionState(
+            progress = 1f,
+            result = String.format(
+                java.util.Locale.getDefault(), stringResourceResolver(R.string.chat_context_compaction_result),
+                result.newlyFoldedToolResults, result.summarizedTurns, result.beforeTokens, result.afterTokens,
+            ) + session?.summary?.takeIf { result.summarizedTurns > 0 }?.let { "\n\n$it" }.orEmpty(),
+        )
     }
 
     fun dismissCompressionResult() {
-        _compressionState.update { CompressionState() }
+        _currentSessionId.value?.let(contextCompactionService::dismiss)
+        _compressionState.value = CompressionState()
     }
 
     fun toggleTool(toolName: String, enabled: Boolean) {
@@ -1861,22 +1853,7 @@ class ChatViewModel(
     }
 
 
-    private fun getSafeActiveWindow(messages: List<Message>, windowSize: Int): List<Message> {
-        if (messages.size <= windowSize) return messages
-        
-        var startIdx = messages.size - windowSize
-        
-        // Ensure we don't break tool pairs
-        // If we start at a TOOL message, we must include its parent ASSISTANT message
-        while (startIdx > 0 && messages[startIdx].role == MessageRole.TOOL) {
-            startIdx--
-        }
-        
-        // If we start AFTER an ASSISTANT message that has tool calls, we must check if any of its tools are later
-        // But tool results always come after. So the main risk is starting at a TOOL message.
-        
-        return messages.drop(startIdx)
-    }
+
 
     private val lastDeletedMessages = mutableListOf<Pair<String, Message>>()
 
@@ -2003,7 +1980,17 @@ class ChatViewModel(
 
     fun updateMessageContentOnly(messageId: String, newContent: String) {
         val sessionId = _currentSessionId.value ?: return
-        messageManager.updateMessageContent(sessionId, messageId, newContent)
+        viewModelScope.launch {
+            try {
+                messageManager.editMessageContent(sessionId, messageId, newContent)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (_currentSessionId.value == sessionId) {
+                    _error.value = stringResourceResolver(R.string.chat_message_edit_failed)
+                }
+            }
+        }
     }
 
     /**
@@ -2212,72 +2199,38 @@ class ChatViewModel(
                 (failure.providerId?.let { "（$it）" } ?: "")
         }
 
-    private fun updateTokenIndicator(session: Session) {
-        viewModelScope.launch {
-            val agent = session.agentId?.let { agentRepository.getById(it) }
-            
-            // Reconstruct system prompt parts for accurate estimation (matching ContextBuilder)
-            val agentPrompt = agent?.systemPrompt ?: ""
-            val sessionPrompt = session.customPrompt ?: ""
-            
-            // Metadata overhead (Time, Tools instructions, Active Task)
-            var metadataText = ""
-            if (session.options.enableTimeInjection) {
-                metadataText += "[System Time: 2024-01-01 12:00:00 Monday]\n\n"
-            }
-            if (session.options.toolsEnabled) {
-                metadataText += "[You have access to function calling tools. Use them when needed to provide accurate and up-to-date responses.]\n\n"
-            }
-            val activePlan = try {
-                (application as NexaraApplication).taskRepository.getPlan(session.id)
+    private var tokenEstimateJob: Job? = null
+
+    private fun updateTokenIndicator(session: Session, isGenerating: Boolean = _isGenerating.value) {
+        _tokenIndicatorState.update { previous ->
+            previous.copy(
+                isGenerating = isGenerating,
+                autoCompactionThreshold = session.inferenceParams?.autoSummaryThreshold ?: 0.8,
+                keepRecentTurns = session.inferenceParams.resolvedKeepRecentTurns,
+            )
+        }
+        tokenEstimateJob?.cancel()
+        tokenEstimateJob = viewModelScope.launch {
+            try {
+                val estimate = contextUsageEstimator(session.id)
+                if (_currentSessionId.value != session.id) return@launch
+                _tokenIndicatorState.value = TokenIndicatorState(
+                    used = estimate.totalTokens, max = estimate.modelContextTokens,
+                    systemTokens = estimate.systemTokens, summaryTokens = estimate.summaryTokens,
+                    activeTokens = estimate.conversationTokens, ragTokens = estimate.ragTokens,
+                    foldedToolResults = estimate.foldedToolResults,
+                    autoCompactionThreshold = session.inferenceParams?.autoSummaryThreshold ?: 0.8,
+                    isGenerating = isGenerating,
+                    keepRecentTurns = com.promenar.nexara.domain.usecase.resolveKeepRecentTurns(
+                        session.inferenceParams?.keepRecentTurns, session.inferenceParams?.activeContextWindow,
+                    ),
+                )
             } catch (cancelled: CancellationException) {
                 throw cancelled
+            } catch (_: com.promenar.nexara.data.session.SessionDeletingException) {
+                // 删除屏障关闭后不再为旧会话发布估算。
             } catch (_: Exception) {
-                null
-            }
-            if (activePlan != null && activePlan.status !in setOf("idle", "dropped")) {
-                metadataText += "## Active Task\n- **Current Task**: \"${activePlan.title}\"\n" +
-                    activePlan.steps.joinToString("\n") { "- ${it.title}" } + "\n\n"
-            }
-
-            val fullSystemPrompt = buildString {
-                append(metadataText)
-                if (agentPrompt.isNotBlank()) appendLine(agentPrompt)
-                if (sessionPrompt.isNotBlank()) {
-                    appendLine()
-                    appendLine(sessionPrompt)
-                }
-            }
-            
-            val summary = session.summary ?: ""
-            val activeMsgs = getSafeActiveWindow(session.messages, session.inferenceParams?.activeContextWindow ?: com.promenar.nexara.domain.usecase.DEFAULT_ACTIVE_CONTEXT_WINDOW)
-            
-            val systemTokens = PostProcessor.estimateTokens(fullSystemPrompt)
-            val summaryTokens = PostProcessor.estimateTokens(summary)
-            val activeTokens = activeMsgs.sumOf { PostProcessor.estimateTokens(it.content) }
-            
-            // Fetch real RAG tokens from last stats if available
-            val ragTokens = session.stats?.billing?.ragSystem?.count ?: 0
-            
-            val used = systemTokens + summaryTokens + activeTokens + ragTokens
-            
-            // Robust way to get context length: check local settings first, then fallback to model spec
-            val modelId = session.modelId ?: ""
-            val prefs = application.getSharedPreferences("nexara_settings", 0)
-            val savedContext = prefs.getInt("model_info_${modelId}_context", 0)
-            
-            val max = if (savedContext > 0) savedContext
-                     else findModelSpec(modelId)?.contextLength?.takeIf { it > 0 } ?: 128000
-            
-            _tokenIndicatorState.update { 
-                it.copy(
-                    used = used,
-                    max = max,
-                    systemTokens = systemTokens,
-                    summaryTokens = summaryTokens,
-                    activeTokens = activeTokens,
-                    ragTokens = ragTokens
-                )
+                // 无法重建上下文时保留最近一次完整估算。
             }
         }
     }

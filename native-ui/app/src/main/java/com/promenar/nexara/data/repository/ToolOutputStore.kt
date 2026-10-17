@@ -37,6 +37,17 @@ class ToolOutputStore(
     // 同一存储根的多个实例共享锁，避免重建实例或并发请求破坏容量约束。
     private val mutex = rootLocks.getOrPut(root.absoluteFile.normalize().path) { Mutex() }
 
+    /** 用量估算只计算发送预览，不创建目录、转存正文或淘汰已有输出。 */
+    fun previewForContext(sessionId: String, content: String): String {
+        requireSession(sessionId)
+        if (content.length <= thresholdChars) return content
+        val digest = MessageDigest.getInstance("SHA-256").apply {
+            update(sessionKey(sessionId).toByteArray(Charsets.US_ASCII))
+            update(0.toByte())
+        }
+        return preview("out_" + hex(digest.digest(encodeLosslessly(content))), content)
+    }
+
     suspend fun offload(sessionId: String, content: String): String = withContext(Dispatchers.IO) {
         requireSession(sessionId)
         if (content.length <= thresholdChars) return@withContext content

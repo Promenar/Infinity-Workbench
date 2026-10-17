@@ -17,8 +17,6 @@ import com.promenar.nexara.ui.common.NexaraStepperSetting
 internal data class SkillsSettingsVisualState(
     val loopLimit: Int,
     val tokenLimit: Int,
-    val contextRatio: Int,
-    val keepRounds: Int,
     val repeatLimit: Int,
     val scriptHosts: String,
     val approveScriptWrites: Boolean,
@@ -29,8 +27,6 @@ internal data class SkillsSettingsVisualState(
 internal data class SkillsSettingsVisualActions(
     val onLoopLimitChange: (Int) -> Unit = {},
     val onTokenLimitChange: (Int) -> Unit = {},
-    val onContextRatioChange: (Int) -> Unit = {},
-    val onKeepRoundsChange: (Int) -> Unit = {},
     val onRepeatLimitChange: (Int) -> Unit = {},
     val onResetConsent: () -> Unit = {},
     val onApproveScriptWritesChange: (Boolean) -> Unit = {},
@@ -112,26 +108,6 @@ internal fun AgentRuntimeSettingsCard(
             title = stringResource(R.string.p0_reset_consent),
             subtitle = stringResource(R.string.settings_reset_consent_description),
             onClick = actions.onResetConsent,
-        )
-    }
-    NexaraSettingsSection(stringResource(R.string.settings_tool_context)) {
-        NexaraStepperSetting(
-            title = stringResource(R.string.p0_context_ratio),
-            description = stringResource(R.string.settings_context_ratio_description),
-            value = stringResource(R.string.settings_percent_value, state.contextRatio),
-            canDecrease = state.contextRatio > 10,
-            canIncrease = state.contextRatio < 90,
-            onDecrease = { actions.onContextRatioChange(state.contextRatio - 10) },
-            onIncrease = { actions.onContextRatioChange(state.contextRatio + 10) },
-        )
-        NexaraStepperSetting(
-            title = stringResource(R.string.p0_keep_rounds),
-            description = stringResource(R.string.settings_keep_rounds_description),
-            value = state.keepRounds.toString(),
-            canDecrease = state.keepRounds > 1,
-            canIncrease = state.keepRounds < 10,
-            onDecrease = { actions.onKeepRoundsChange(state.keepRounds - 1) },
-            onIncrease = { actions.onKeepRoundsChange(state.keepRounds + 1) },
         )
     }
 }

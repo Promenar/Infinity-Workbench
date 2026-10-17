@@ -243,16 +243,15 @@ class SummaryBudgetRollbackIntegrationTest {
         return Fixture(this, context, database, failPreparedDeletion).also { fixture ->
             fixture.preferences.edit()
                 .putInt("model_info_local::summary-budget-model_context", 2048)
-                .putInt("tool_context_keep_rounds", 1)
                 .putString("preset_summary_model", "local::summary-budget-model")
                 .commit()
             fixture.sessions.addSession(Session(
                 id = "session", agentId = "agent", modelId = "local::summary-budget-model",
                 ragOptions = RagOptions(enableMemory = false, enableDocs = false),
-                inferenceParams = InferenceParams(maxTokens = 64, activeContextWindow = 100),
+                inferenceParams = InferenceParams(maxTokens = 64, keepRecentTurns = 20),
             ))
             fixture.messages.addMessage("session", Message("old-user", MessageRole.USER, "历史任务"))
-            listOf("较早的工具结果".repeat(2000), "最近的工具结果").forEachIndexed { index, content ->
+            listOf("较早的工具结果".repeat(2000), "最近的工具结果一", "最近的工具结果二", "最近的工具结果三").forEachIndexed { index, content ->
                 fixture.messages.addMessage("session", Message(
                     id = "old-assistant-$index", role = MessageRole.ASSISTANT, content = "历史工具调用",
                     toolCalls = listOf(ToolCall("old-call-$index", "read_file", "{}")),
@@ -295,7 +294,7 @@ class SummaryBudgetRollbackIntegrationTest {
         val presentation = GenerationPresentationStore().apply { begin("session", "task") }
         val summaryPrompts = mutableListOf<PromptRequest>()
         val mainPrompts = mutableListOf<PromptRequest>()
-        val historicalMessageIds = listOf("old-user", "old-assistant-0", "old-tool-0", "old-assistant-1", "old-tool-1")
+        val historicalMessageIds = listOf("old-user") + (0..3).flatMap { listOf("old-assistant-$it", "old-tool-$it") }
         val request = GenerationRequest(
             "session", "prepared-assistant", "current-user", "新任务", emptyList(),
             GenerationRuntimePolicy.BACKGROUND_ALLOWED, rollbackUserOnPreparationFailure = true,

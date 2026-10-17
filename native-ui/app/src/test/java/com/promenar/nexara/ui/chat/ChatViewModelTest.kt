@@ -72,6 +72,11 @@ class ChatViewModelTest {
 
     private lateinit var viewModel: ChatViewModel
     private lateinit var generationScope: CoroutineScope
+    private lateinit var compactionService: com.promenar.nexara.data.generation.ContextCompactionService
+    private var contextEstimateFails = false
+    private var compactionOperation: suspend (String) -> com.promenar.nexara.data.generation.ContextCompactionResult = {
+        com.promenar.nexara.data.generation.ContextCompactionResult(PromptRequest(model = "model", messages = emptyList()), 0, 0, 0, 0)
+    }
     private val foregroundTrackedTasks = mutableListOf<
         com.promenar.nexara.domain.generation.GenerationTaskSnapshot
     >()
@@ -447,6 +452,12 @@ class ChatViewModelTest {
     @Before
     fun setUp() {
         kotlinx.coroutines.Dispatchers.setMain(testDispatcher)
+        compactionOperation = {
+            com.promenar.nexara.data.generation.ContextCompactionResult(PromptRequest(model = "model", messages = emptyList()), 0, 0, 0, 0)
+        }
+        compactionService = com.promenar.nexara.data.generation.ContextCompactionService(
+            isGenerating = { false }, manualCompaction = { sessionId, _ -> compactionOperation(sessionId) },
+        )
         val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
         
         try {
@@ -589,6 +600,14 @@ class ChatViewModelTest {
                     com.promenar.nexara.R.string.chat_document_error_invalid_estimate -> "invalid estimate"
                     com.promenar.nexara.R.string.chat_document_error_over_capacity ->
                         "requires %1\$d tokens, %2\$d available"
+                    com.promenar.nexara.R.string.chat_summary_card_progress_preparing -> "preparing"
+                    com.promenar.nexara.R.string.chat_context_folding -> "folding"
+                    com.promenar.nexara.R.string.chat_context_summarizing -> "summarizing"
+                    com.promenar.nexara.R.string.chat_context_compaction_result -> "folded %1\$d, turns %2\$d, %3\$d -> %4\$d"
+                    com.promenar.nexara.R.string.chat_context_nothing_to_compress -> "retain %1\$d turns"
+                    com.promenar.nexara.R.string.chat_context_compaction_failed -> "compaction failed"
+                    com.promenar.nexara.R.string.chat_context_compress_unavailable_generating -> "generating"
+                    com.promenar.nexara.R.string.chat_message_edit_failed -> "message edit failed"
                     else -> error("unexpected string resource: $resourceId")
                 }
             },
@@ -597,11 +616,34 @@ class ChatViewModelTest {
             sshOwnerPauser = { owner -> if (owner in sshLeases) pausedSshOwners.add(owner); Unit },
             sshOwnerResumer = { owner -> pausedSshOwners.remove(owner); Unit },
             sshCleanupDispatcher = testDispatcher,
+            contextCompactionService = compactionService,
+            contextUsageEstimator = {
+                if (contextEstimateFails) throw java.io.IOException("估算不可用")
+                com.promenar.nexara.data.generation.ContextUsageEstimate(100, 0, 0, 0, 0, 128000)
+            },
         )
         this.documentReader = documentReader
     }
 
     private lateinit var documentReader: FullContextDocumentReader
+
+    @Test
+    fun `生成结束后的估算失败不会使立即压缩持续禁用`() = runTest {
+        seedSession()
+        advanceUntilIdle()
+        holdStreamOpen = true
+        viewModel.sendMessage("生成一段回复")
+        advanceUntilIdle()
+        assertThat(viewModel.tokenIndicatorState.value.isGenerating).isTrue()
+
+        contextEstimateFails = true
+        viewModel.stopGeneration()
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.isGenerating).isFalse()
+        assertThat(viewModel.tokenIndicatorState.value.isGenerating).isFalse()
+        assertThat(viewModel.tokenIndicatorState.value.used).isEqualTo(100)
+    }
 
     @After
     fun tearDown() {
@@ -614,6 +656,47 @@ class ChatViewModelTest {
             viewModelJob.join()
         }
         kotlinx.coroutines.Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `手动压缩进度按会话投影且切换后可再次压缩`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val calls = mutableListOf<String>()
+        compactionOperation = { sessionId ->
+            calls += sessionId
+            if (sessionId == "s1") release.await()
+            com.promenar.nexara.data.generation.ContextCompactionResult(
+                PromptRequest(model = "model", messages = emptyList()), 1, 0, 1000, 500,
+                newlyFoldedToolResults = 1,
+            )
+        }
+        seedSession("s1")
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.session?.id).isEqualTo("s1")
+        viewModel.compactNow()
+        runCurrent()
+        assertThat(calls).containsExactly("s1")
+        assertThat(compactionService.observe("s1").value.isRunning).isTrue()
+        assertThat(viewModel.compressionState.value.isCompressing).isTrue()
+        seedSession("s2")
+        runCurrent()
+        assertThat(viewModel.compressionState.value.isCompressing).isFalse()
+        viewModel.compactNow()
+        runCurrent()
+        assertThat(calls).containsExactly("s1", "s2").inOrder()
+        assertThat(viewModel.compressionState.value.result).isNotNull()
+        release.complete(Unit)
+        runCurrent()
+        viewModel.loadSession("s1")
+        runCurrent()
+        assertThat(viewModel.compressionState.value.isCompressing).isFalse()
+        assertThat(viewModel.compressionState.value.result).isNotNull()
+        viewModel.dismissCompressionResult()
+        assertThat(viewModel.compressionState.value.result).isNull()
+        viewModel.compactNow()
+        runCurrent()
+        assertThat(calls).containsExactly("s1", "s2", "s1").inOrder()
+        assertThat(viewModel.compressionState.value.isCompressing).isFalse()
     }
 
     private fun seedSession(

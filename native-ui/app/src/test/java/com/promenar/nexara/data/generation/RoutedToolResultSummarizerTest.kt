@@ -32,21 +32,39 @@ import org.junit.jupiter.api.Test
 class RoutedToolResultSummarizerTest {
     @Test
     fun `失败摘要仍通过用量回调保留提供商实报值`() = runTest {
-        val protocol = RecordingProtocol(flow {
-            emit(StreamChunk.Usage(ProtocolUsage(4000, 1000, 5000)))
-            emit(StreamChunk.Completed(CompletionReason.END_TURN))
-        })
-        var reported: com.promenar.nexara.data.model.TokenUsage? = null
-        val result = summarizer(protocol).summarizeWithUsage("data", "summary::remote", "current::remote") { reported = it }
-        assertThat(result).isNull()
-        assertThat(reported?.total).isEqualTo(5000)
-        assertThat(reported?.estimated).isFalse()
+        val outputs = listOf(
+            flowOf(
+                StreamChunk.Usage(ProtocolUsage(4000, 1000, 5000)),
+                StreamChunk.Completed(CompletionReason.END_TURN),
+            ),
+            flowOf(
+                StreamChunk.TextDelta("未完成摘要"),
+                StreamChunk.Usage(ProtocolUsage(4000, 1000, 5000)),
+            ),
+            flowOf(
+                StreamChunk.TextDelta("失败摘要"),
+                StreamChunk.Usage(ProtocolUsage(4000, 1000, 5000)),
+                StreamChunk.Error(GenerationFailureCode.SERVER),
+                StreamChunk.Completed(CompletionReason.END_TURN),
+            ),
+        )
+        outputs.forEach { output ->
+            val protocol = RecordingProtocol(output)
+            var reported: com.promenar.nexara.data.model.TokenUsage? = null
+
+            val result = summarizer(protocol).summarizeWithUsage("data", "current::remote") { reported = it }
+
+            assertThat(result).isNull()
+            assertThat(reported?.total).isEqualTo(5000)
+            assertThat(reported?.estimated).isFalse()
+            assertThat(protocol.requests).hasSize(1)
+        }
     }
 
     @Test
-    fun `摘要模型按所属provider路由并向远端模型ID发出禁用工具搜索的请求`() = runTest {
-        val summaryProtocol = RecordingProtocol(successfulStream("摘要", "正文"))
-        val currentProtocol = RecordingProtocol(successfulStream("错误的当前模型"))
+    fun `工具摘要仅按会话provider路由且不调用快速模型或默认模型`() = runTest {
+        val summaryProtocol = RecordingProtocol(successfulStream("错误的快速模型"))
+        val currentProtocol = RecordingProtocol(successfulStream("摘要", "正文"))
         val defaultProtocol = RecordingProtocol(successfulStream("错误的默认模型"))
         val router = RecordingRouter(
             mapOf(
@@ -62,13 +80,13 @@ class RoutedToolResultSummarizerTest {
         }
         val input = "工具结果正文：成功读取 7 个文件。"
 
-        val result = summarizer.summarize(input, "summary-provider::summary-remote", "current-provider::current-remote")
+        val result = summarizer.summarize(input, "current-provider::current-remote")
 
         assertThat(result).isEqualTo("摘要正文")
-        assertThat(router.resolvedIds).containsExactly("summary-provider::summary-remote")
-        assertThat(summaryProtocol.requests).hasSize(1)
-        val request = summaryProtocol.requests.single()
-        assertThat(request.model).isEqualTo("summary-remote")
+        assertThat(router.resolvedIds).containsExactly("current-provider::current-remote")
+        assertThat(currentProtocol.requests).hasSize(1)
+        val request = currentProtocol.requests.single()
+        assertThat(request.model).isEqualTo("current-remote")
         assertThat(request.maxTokens).isEqualTo(256)
         assertThat(request.stream).isTrue()
         assertThat(request.toolChoice).isEqualTo(ProtocolToolChoice.NONE)
@@ -77,35 +95,39 @@ class RoutedToolResultSummarizerTest {
         assertThat(request.enableGeminiSearch).isFalse()
         assertThat(request.messages.single { it.role == "user" }.content).isEqualTo(input)
         assertThat(request.messages.map { it.role }).containsExactly("system", "user").inOrder()
-        assertThat(summaryProtocol.requestDispatchers).containsExactly(Dispatchers.IO)
-        assertThat(currentProtocol.requests).isEmpty()
+        assertThat(currentProtocol.requestDispatchers).containsExactly(Dispatchers.IO)
+        assertThat(summaryProtocol.requests).isEmpty()
         assertThat(defaultProtocol.requests).isEmpty()
         assertThat(localModels).isEmpty()
     }
 
     @Test
-    fun `未指定或空白摘要模型时精确使用当前稳定模型ID`() = runTest {
-        listOf<String?>(null, "", "  ").forEach { summaryModel ->
-            val protocol = RecordingProtocol(successfulStream("当前模型摘要"))
+    fun `空白会话模型失败关闭且不解析其它模型`() = runTest {
+        listOf("", "  ").forEach { currentModel ->
+            val protocol = RecordingProtocol(successfulStream("不应发送"))
             val router = RecordingRouter(mapOf("current::remote" to endpoint("current", "remote", protocol)))
             val summarizer = RoutedToolResultSummarizer(ChatProviderRouteGate(router)) { error("不应使用本地提供商") }
 
-            assertThat(summarizer.summarize("待摘要数据", summaryModel, "current::remote"))
-                .isEqualTo("当前模型摘要")
-            assertThat(router.resolvedIds).containsExactly("current::remote")
-            assertThat(protocol.requests.single().model).isEqualTo("remote")
+            assertThat(summarizer.summarize("待摘要数据", currentModel)).isNull()
+            assertThat(router.resolvedIds).isEmpty()
+            assertThat(protocol.requests).isEmpty()
         }
     }
 
     @Test
-    fun `摘要模型路由失败时返回空值且不向当前或默认provider发送数据`() = runTest {
-        val currentProtocol = RecordingProtocol(successfulStream("不应发送"))
-        val router = RecordingRouter(mapOf("current::remote" to endpoint("current", "remote", currentProtocol)))
+    fun `会话模型路由失败时返回空值且不向快速模型或默认provider发送数据`() = runTest {
+        val quickProtocol = RecordingProtocol(successfulStream("不应发送"))
+        val defaultProtocol = RecordingProtocol(successfulStream("不应发送"))
+        val router = RecordingRouter(mapOf(
+            "quick::remote" to endpoint("quick", "remote", quickProtocol),
+            "default::remote" to endpoint("default", "remote", defaultProtocol),
+        ))
         val summarizer = RoutedToolResultSummarizer(ChatProviderRouteGate(router)) { error("不应使用默认本地提供商") }
 
-        assertThat(summarizer.summarize("私有工具数据", "disabled::summary", "current::remote")).isNull()
-        assertThat(router.resolvedIds).containsExactly("disabled::summary")
-        assertThat(currentProtocol.requests).isEmpty()
+        assertThat(summarizer.summarize("私有工具数据", "disabled::current")).isNull()
+        assertThat(router.resolvedIds).containsExactly("disabled::current")
+        assertThat(quickProtocol.requests).isEmpty()
+        assertThat(defaultProtocol.requests).isEmpty()
     }
 
     @Test
@@ -120,7 +142,7 @@ class RoutedToolResultSummarizerTest {
         }
 
         val result = RoutedToolResultSummarizer(ChatProviderRouteGate(router)) { error("不应使用默认提供商") }
-            .summarize("数据", "summary::remote", "current::remote")
+            .summarize("数据", "current::remote")
 
         assertThat(result).isNull()
         assertThat(clientCreated).isFalse()
@@ -129,7 +151,7 @@ class RoutedToolResultSummarizerTest {
     @Test
     fun `provider配置为空时返回空值且不调用协议工厂`() = runTest {
         var protocolCreated = false
-        val resolved = endpoint("summary", "remote", RecordingProtocol(successfulStream("不应发送"))).resolved
+        val resolved = endpoint("current", "remote", RecordingProtocol(successfulStream("不应发送"))).resolved
         val router = object : ProviderRequestRouter {
             override fun resolve(modelId: String) = ProviderResolution.Success(resolved)
             override fun createClient(resolved: ResolvedProviderModel) = UnifiedLlmClient(
@@ -142,7 +164,7 @@ class RoutedToolResultSummarizerTest {
         }
 
         val result = RoutedToolResultSummarizer(ChatProviderRouteGate(router)) { error("不应使用默认提供商") }
-            .summarize("数据", "summary::remote", "current::remote")
+            .summarize("数据", "current::remote")
 
         assertThat(result).isNull()
         assertThat(protocolCreated).isFalse()
@@ -151,10 +173,10 @@ class RoutedToolResultSummarizerTest {
     @Test
     fun `缺失远端模型ID的路由不发送请求`() = runTest {
         val protocol = RecordingProtocol(successfulStream("不应发送"))
-        val router = RecordingRouter(mapOf("summary::" to endpoint("summary", "", protocol)))
+        val router = RecordingRouter(mapOf("current::" to endpoint("current", "", protocol)))
 
         val result = RoutedToolResultSummarizer(ChatProviderRouteGate(router)) { error("不应使用本地提供商") }
-            .summarize("数据", "summary::", "current::remote")
+            .summarize("数据", "current::")
 
         assertThat(result).isNull()
         assertThat(protocol.requests).isEmpty()
@@ -164,7 +186,7 @@ class RoutedToolResultSummarizerTest {
     fun `EOF缺少显式完成事件时丢弃部分摘要`() = runTest {
         val protocol = RecordingProtocol(flowOf(StreamChunk.TextDelta("不完整摘要")))
 
-        assertThat(summarizer(protocol).summarize("数据", "summary::remote", "current::remote")).isNull()
+        assertThat(summarizer(protocol).summarize("数据", "current::remote")).isNull()
     }
 
     @Test
@@ -175,7 +197,27 @@ class RoutedToolResultSummarizerTest {
             StreamChunk.Completed(CompletionReason.END_TURN),
         ))
 
-        assertThat(summarizer(protocol).summarize("数据", "summary::remote", "current::remote")).isNull()
+        assertThat(summarizer(protocol).summarize("数据", "current::remote")).isNull()
+    }
+
+    @Test
+    fun `完成后追加文本或重复完成事件不能冒充有效摘要`() = runTest {
+        val outputs = listOf(
+            flowOf(
+                StreamChunk.TextDelta("摘要"),
+                StreamChunk.Completed(CompletionReason.END_TURN),
+                StreamChunk.TextDelta("完成后追加内容"),
+            ),
+            flowOf(
+                StreamChunk.TextDelta("摘要"),
+                StreamChunk.Completed(CompletionReason.END_TURN),
+                StreamChunk.Completed(CompletionReason.END_TURN),
+            ),
+        )
+
+        outputs.forEach { output ->
+            assertThat(summarizer(RecordingProtocol(output)).summarize("数据", "current::remote")).isNull()
+        }
     }
 
     @Test
@@ -186,14 +228,14 @@ class RoutedToolResultSummarizerTest {
             StreamChunk.Completed(CompletionReason.TOOL_CALLS, listOf("call")),
         ))
 
-        assertThat(summarizer(protocol).summarize("数据", "summary::remote", "current::remote")).isNull()
+        assertThat(summarizer(protocol).summarize("数据", "current::remote")).isNull()
     }
 
     @Test
     fun `只有结束事件或空白输出时不返回空摘要`() = runTest {
         val protocol = RecordingProtocol(successfulStream(" \n "))
 
-        assertThat(summarizer(protocol).summarize("数据", "summary::remote", "current::remote")).isNull()
+        assertThat(summarizer(protocol).summarize("数据", "current::remote")).isNull()
     }
 
     @Test
@@ -202,10 +244,27 @@ class RoutedToolResultSummarizerTest {
         val protocol = RecordingProtocol(flow { throw cancelled })
 
         val failure = runCatching {
-            summarizer(protocol).summarize("数据", "summary::remote", "current::remote")
+            summarizer(protocol).summarize("数据", "current::remote")
         }.exceptionOrNull()
 
         assertThat(failure).isInstanceOf(CancellationException::class.java)
+    }
+
+    @Test
+    fun `流取消前的实报用量仍通过回调保留`() = runTest {
+        val protocol = RecordingProtocol(flow {
+            emit(StreamChunk.Usage(ProtocolUsage(4000, 1000, 5000)))
+            throw CancellationException("summary cancelled")
+        })
+        var reported: com.promenar.nexara.data.model.TokenUsage? = null
+
+        val failure = runCatching {
+            summarizer(protocol).summarizeWithUsage("数据", "current::remote") { reported = it }
+        }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(CancellationException::class.java)
+        assertThat(reported).isEqualTo(com.promenar.nexara.data.model.TokenUsage(4000, 1000, 5000))
+        assertThat(protocol.requests).hasSize(1)
     }
 
     @Test
@@ -218,7 +277,7 @@ class RoutedToolResultSummarizerTest {
 
         val failure = runCatching {
             RoutedToolResultSummarizer(ChatProviderRouteGate(router)) { error("不应使用默认提供商") }
-                .summarize("数据", "summary::remote", "current::remote")
+                .summarize("数据", "current::remote")
         }.exceptionOrNull()
 
         assertThat(failure).isInstanceOf(CancellationException::class.java)
@@ -234,7 +293,7 @@ class RoutedToolResultSummarizerTest {
             LlmProvider(localProtocol)
         }
 
-        assertThat(summarizer.summarize("数据", "local::gguf-model", "current::remote")).isEqualTo("本地摘要")
+        assertThat(summarizer.summarize("数据", "local::gguf-model")).isEqualTo("本地摘要")
         assertThat(localModels).containsExactly("gguf-model")
         assertThat(router.createdClients).isEmpty()
         assertThat(localProtocol.requests).isEmpty()
@@ -258,7 +317,7 @@ class RoutedToolResultSummarizerTest {
         val router = RecordingRouter(mapOf("local::model" to endpoint("local", "model", protocol, local = true)))
 
         val result = RoutedToolResultSummarizer(ChatProviderRouteGate(router)) { LlmProvider(protocol) }
-            .summarize("数据", "local::model", "current::remote")
+            .summarize("数据", "local::model")
 
         assertThat(result).isNull()
     }
@@ -273,7 +332,7 @@ class RoutedToolResultSummarizerTest {
 
         val failure = runCatching {
             RoutedToolResultSummarizer(ChatProviderRouteGate(router)) { LlmProvider(protocol) }
-                .summarize("数据", "local::model", "current::remote")
+                .summarize("数据", "local::model")
         }.exceptionOrNull()
 
         assertThat(failure).isInstanceOf(CancellationException::class.java)
@@ -292,7 +351,7 @@ class RoutedToolResultSummarizerTest {
                 emit(StreamChunk.Completed(CompletionReason.END_TURN))
             })
 
-            val result = summarizer(protocol).summarizeWithUsage("工具数据", "summary::remote", "current::remote")
+            val result = summarizer(protocol).summarizeWithUsage("工具数据", "current::remote")
 
             assertThat(result?.content).isEqualTo("完整摘要")
             assertThat(result?.usage?.input).isEqualTo(10)
@@ -307,7 +366,7 @@ class RoutedToolResultSummarizerTest {
     fun `无Usage时计入完整提示和输出估算且不额外发送请求`() = runTest {
         val protocol = RecordingProtocol(successfulStream("摘要"))
 
-        val result = summarizer(protocol).summarizeWithUsage("abcdefgh", "summary::remote", "current::remote")
+        val result = summarizer(protocol).summarizeWithUsage("abcdefgh", "current::remote")
 
         assertThat(result?.content).isEqualTo("摘要")
         val usage = checkNotNull(result).usage
@@ -327,7 +386,7 @@ class RoutedToolResultSummarizerTest {
         val router = RecordingRouter(mapOf("local::model" to endpoint("local", "model", protocol, local = true)))
 
         val result = RoutedToolResultSummarizer(ChatProviderRouteGate(router)) { LlmProvider(protocol) }
-            .summarizeWithUsage("工具数据", "local::model", "current::remote")
+            .summarizeWithUsage("工具数据", "local::model")
 
         val usage = checkNotNull(result).usage
         assertThat(result.content).isEqualTo("本地摘要")
@@ -345,7 +404,7 @@ class RoutedToolResultSummarizerTest {
         val router = RecordingRouter(mapOf("local::model" to endpoint("local", "model", protocol, local = true)))
 
         val result = RoutedToolResultSummarizer(ChatProviderRouteGate(router)) { LlmProvider(protocol) }
-            .summarizeWithUsage("abcdefgh", "local::model", "current::remote")
+            .summarizeWithUsage("abcdefgh", "local::model")
 
         val usage = checkNotNull(result).usage
         assertThat(usage.estimated).isTrue()
@@ -363,7 +422,7 @@ class RoutedToolResultSummarizerTest {
             StreamChunk.Completed(CompletionReason.END_TURN),
         ))
 
-        val result = summarizer(protocol).summarizeWithUsage("工具数据", "summary::remote", "current::remote")
+        val result = summarizer(protocol).summarizeWithUsage("工具数据", "current::remote")
 
         assertThat(result?.usage?.input).isEqualTo(1_500_000_000)
         assertThat(result?.usage?.output).isEqualTo(1_000_000_000)
@@ -372,7 +431,7 @@ class RoutedToolResultSummarizerTest {
     }
 
     private fun summarizer(protocol: RecordingProtocol): RoutedToolResultSummarizer {
-        val router = RecordingRouter(mapOf("summary::remote" to endpoint("summary", "remote", protocol)))
+        val router = RecordingRouter(mapOf("current::remote" to endpoint("current", "remote", protocol)))
         return RoutedToolResultSummarizer(ChatProviderRouteGate(router)) { error("不应使用本地提供商") }
     }
 

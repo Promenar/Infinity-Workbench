@@ -15,7 +15,6 @@ import com.promenar.nexara.data.remote.protocol.ProtocolToolCall
 import com.promenar.nexara.ui.chat.manager.registry.SkillRegistry
 import com.promenar.nexara.domain.model.ExecutionMode
 import com.promenar.nexara.domain.model.ExecutionModeCodec
-import com.promenar.nexara.domain.usecase.DEFAULT_ACTIVE_CONTEXT_WINDOW
 import com.promenar.nexara.domain.tool.ToolArgumentApprovalRules
 import com.promenar.nexara.domain.tool.ToolExecutionPolicy
 import com.promenar.nexara.domain.tool.ToolRisk
@@ -89,7 +88,6 @@ interface ChatGenerationContentStrategy {
         excludedMessageIds: Set<String> = emptySet(),
     ): List<ProtocolMessage>
     fun buildTools(session: Session): List<ProtocolTool>
-    fun safeActiveWindow(messages: List<Message>, windowSize: Int): List<Message>
     fun normalize(content: String, toolCalls: List<ToolCall>): GenerationContentNormalization
     fun extractFallbackToolCalls(content: String): List<ToolCall>
     fun stripToolCallMarkup(content: String): String
@@ -116,26 +114,17 @@ class DefaultChatGenerationContentStrategy(
         excludedMessageIds: Set<String>,
     ): List<ProtocolMessage> = buildList {
         if (systemPrompt.isNotBlank()) add(ProtocolMessage(role = "system", content = systemPrompt))
-        val windowSize = session.inferenceParams?.activeContextWindow ?: DEFAULT_ACTIVE_CONTEXT_WINDOW
-        val eligibleMessages = session.messages.filterNot { it.id in excludedMessageIds }
-        val pinnedIndex = pinnedUserMessageId?.let { id ->
-            eligibleMessages.indexOfFirst { it.id == id && it.role == MessageRole.USER }
-        } ?: -1
-        val isCurrentTurn = pinnedIndex >= 0 &&
-            eligibleMessages.drop(pinnedIndex + 1).none { it.role == MessageRole.USER }
-        val protocolMessages = if (isCurrentTurn) {
-            // 当前轮（固定用户消息及其后的助手/工具消息）完整保留，窗口只截断此前历史，
-            // 避免长工具循环把用户请求与早期工具结果挤出上下文；超长时由 ToolResultCompactor 处理。
-            historyWindow(eligibleMessages.subList(0, pinnedIndex), windowSize) +
-                eligibleMessages.subList(pinnedIndex, eligibleMessages.size)
-        } else {
-            val activeMessages = historyWindow(eligibleMessages, windowSize)
-            val pinnedMessage = eligibleMessages.getOrNull(pinnedIndex)
-            if (pinnedMessage != null && activeMessages.none { it.id == pinnedMessage.id }) {
-                listOf(pinnedMessage) + activeMessages
-            } else {
-                activeMessages
-            }
+        val visibleMessages = session.messages.filterNot { it.id in excludedMessageIds }
+        val currentStart = visibleMessages.indexOfFirst {
+            it.id == pinnedUserMessageId && it.role == MessageRole.USER
+        }
+        val currentEnd = if (currentStart < 0) -1 else {
+            ((currentStart + 1) until visibleMessages.size)
+                .firstOrNull { visibleMessages[it].role == MessageRole.USER } ?: visibleMessages.size
+        }
+        // 重新生成可复用已摘要的用户消息；当前轮始终保留，其它已摘要历史不重复发送。
+        val protocolMessages = visibleMessages.filterIndexed { index, message ->
+            !message.isArchived || (currentStart >= 0 && index in currentStart until currentEnd)
         }
         sanitizeProtocolHistory(protocolMessages).forEach { message ->
             add(
@@ -184,26 +173,6 @@ class DefaultChatGenerationContentStrategy(
         return resolved.also { tools ->
             knownToolRisks = tools.associate { it.function.name to it.risk }
         }
-    }
-
-    /**
-     * 发送给模型的历史窗口：最近 [windowSize] 条，外加紧邻其前、尚未进入摘要（未归档）的消息，
-     * 最多再多保留 [windowSize] 条，避免批量摘要完成前这些消息既不在上下文也不在摘要中。
-     */
-    private fun historyWindow(messages: List<Message>, windowSize: Int): List<Message> {
-        val base = safeActiveWindow(messages, windowSize)
-        var start = messages.size - base.size
-        val floor = (start - windowSize).coerceAtLeast(0)
-        while (start > floor && !messages[start - 1].isArchived) start--
-        while (start > 0 && messages[start].role == MessageRole.TOOL) start--
-        return messages.drop(start)
-    }
-
-    override fun safeActiveWindow(messages: List<Message>, windowSize: Int): List<Message> {
-        if (messages.size <= windowSize) return messages
-        var startIndex = messages.size - windowSize
-        while (startIndex > 0 && messages[startIndex].role == MessageRole.TOOL) startIndex--
-        return messages.drop(startIndex)
     }
 
     override fun normalize(content: String, toolCalls: List<ToolCall>): GenerationContentNormalization {

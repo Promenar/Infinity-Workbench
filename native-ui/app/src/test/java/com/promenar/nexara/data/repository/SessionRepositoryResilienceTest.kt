@@ -79,11 +79,11 @@ class SessionRepositoryResilienceTest {
 
     @Test
     fun `协程取消不作为损坏行跳过`() = runBlocking {
-        val messages = mockk<com.promenar.nexara.data.local.db.dao.MessageDao>()
+        val sessions = mockk<com.promenar.nexara.data.local.db.dao.SessionDao>()
         val cancelled = CancellationException("取消测试")
-        database.sessionDao().insert(session("cancelled", 1))
-        coEvery { messages.getBySession("cancelled") } throws cancelled
-        val result = runCatching { SessionRepository(database.sessionDao(), messages).getAll() }
+        coEvery { sessions.getAll() } returns listOf(session("cancelled", 1))
+        coEvery { sessions.getContextSnapshot("cancelled") } throws cancelled
+        val result = runCatching { SessionRepository(sessions, database.messageDao()).getAll() }
 
         assertThat(result.exceptionOrNull()).isSameInstanceAs(cancelled)
     }

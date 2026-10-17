@@ -10,6 +10,11 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import com.promenar.nexara.data.remote.protocol.PromptRequest
+import com.promenar.nexara.data.remote.protocol.PromptResponse
+import com.promenar.nexara.data.remote.provider.LlmProvider
+import io.mockk.coEvery
+import io.mockk.mockk
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PostProcessorTest {
@@ -148,4 +153,42 @@ class PostProcessorTest {
         assertThat(PostProcessor.cleanTitle("  ### 标题：量子力学浅析！  ")).isEqualTo("量子力学浅析")
         assertThat(PostProcessor.cleanTitle("")).isNull()
     }
+
+    @Test
+    fun `标题优先使用快速模型而非当前会话模型`() = runTest {
+        val calls = mutableListOf<String>()
+        val provider = mockk<LlmProvider>()
+        coEvery { provider.sendPromptSync(any()) } answers {
+            calls += firstArg<PromptRequest>().model
+            PromptResponse("快速标题")
+        }
+
+        val title = PostProcessor.generateTitleWithFallback(titleParams(), "quick::model", provider)
+
+        assertThat(calls).containsExactly("quick::model")
+        assertThat(title).isEqualTo("快速标题")
+    }
+
+    @Test
+    fun `快速模型无标题时沿用会话模型回退`() = runTest {
+        val calls = mutableListOf<String>()
+        val provider = mockk<LlmProvider>()
+        coEvery { provider.sendPromptSync(any()) } answers {
+            val model = firstArg<PromptRequest>().model
+            calls += model
+            PromptResponse(if (model == "quick::model") "" else "天气分析")
+        }
+
+        val title = PostProcessor.generateTitleWithFallback(titleParams(), "quick::model", provider)
+
+        assertThat(calls).containsExactly("quick::model", "current::model").inOrder()
+        assertThat(title).isEqualTo("天气分析")
+    }
+
+    private fun titleParams() = PostProcessorParams(
+        sessionId = "s1", assistantMsgId = "a1", userMsgId = "u1",
+        userContent = "需要一个标题", assistantContent = "完整回答",
+        agent = Agent("agent", "智能体"), session = Session("s1", "agent", modelId = "current::model"),
+        ragEnabled = false, modelId = "current::model",
+    )
 }

@@ -1,5 +1,8 @@
 package com.promenar.nexara.ui.settings
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -13,6 +16,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.MaterialTheme
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
@@ -22,6 +26,7 @@ import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.toModelSelectionUiModel
+import com.promenar.nexara.ui.theme.NexaraSpacing
 
 enum class DefaultModelRole(
     val type: String,
@@ -130,9 +135,6 @@ internal fun DefaultModelsScreenContent(
     state: DefaultModelsScreenState,
     actions: DefaultModelsScreenActions
 ) {
-    val notSet = stringResource(R.string.settings_not_set)
-    val selectModelLabel = stringResource(R.string.common_model_picker_title)
-    val clearLabel = stringResource(R.string.common_cd_clear)
     NexaraSettingsPageLayout(
         title = stringResource(R.string.settings_default_models),
         onBack = actions.onNavigateBack,
@@ -147,31 +149,62 @@ internal fun DefaultModelsScreenContent(
                             DefaultModelRole.EMBEDDING -> state.embeddingModelName
                             DefaultModelRole.RERANK -> state.rerankModelName
                         }
-                        val subtitle = selectedModelName.ifEmpty { notSet }
-
-                        NexaraSettingsItem(
-                            icon = null,
-                            title = stringResource(role.labelRes),
-                            subtitle = subtitle,
-                            subtitleIsIdentifier = selectedModelName.isNotEmpty(),
-                            onClick = { actions.onShowModelPicker(role) },
-                            modifier = Modifier
-                                .testTag("default_model_role:${role.type}"),
-                            onClickLabel = selectModelLabel,
-                            trailingContent = if (selectedModelName.isEmpty()) null else {
-                                {
-                                    TextButton(
-                                        onClick = { actions.onClearModel(role) },
-                                        modifier = Modifier.testTag("default_model_clear:${role.type}"),
-                                    ) {
-                                        Text(clearLabel)
-                                    }
-                                }
-                            },
+                        DefaultModelSettingItem(
+                            role = role,
+                            selectedModelName = selectedModelName,
+                            onSelectModel = { actions.onShowModelPicker(role) },
+                            onClearModel = { actions.onClearModel(role) },
                         )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+internal fun DefaultModelSettingItem(
+    role: DefaultModelRole,
+    selectedModelName: String,
+    onSelectModel: () -> Unit,
+    onClearModel: () -> Unit,
+) {
+    val selectModelLabel = stringResource(R.string.common_model_picker_title)
+    val clearLabel = stringResource(R.string.common_cd_clear)
+    Column {
+        NexaraSettingsItem(
+            icon = null,
+            title = stringResource(role.labelRes),
+            subtitle = selectedModelName.ifEmpty { stringResource(R.string.settings_not_set) },
+            subtitleIsIdentifier = selectedModelName.isNotEmpty(),
+            onClick = onSelectModel,
+            modifier = Modifier
+                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                .testTag("default_model_role:${role.type}"),
+            onClickLabel = selectModelLabel,
+            trailingContent = if (selectedModelName.isEmpty()) null else {
+                {
+                    TextButton(
+                        onClick = onClearModel,
+                        modifier = Modifier
+                            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                            .testTag("default_model_clear:${role.type}"),
+                    ) {
+                        Text(clearLabel)
+                    }
+                }
+            },
+        )
+        if (role == DefaultModelRole.SUMMARY) {
+            Text(
+                text = stringResource(R.string.settings_model_quick_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(horizontal = NexaraSpacing.Large)
+                    .padding(bottom = NexaraSpacing.Large)
+                    .testTag("default_model_quick_description"),
+            )
         }
     }
 }

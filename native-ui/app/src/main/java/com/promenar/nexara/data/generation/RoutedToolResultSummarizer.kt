@@ -22,20 +22,40 @@ internal class RoutedToolResultSummarizer(
     private val routeGate: ChatProviderRouteGate,
     private val localProviderFactory: (String) -> LlmProvider,
 ) {
-    suspend fun summarize(text: String, summaryModelId: String?, currentModelId: String): String? =
-        summarizeWithUsage(text, summaryModelId, currentModelId)?.content
+    fun historySummaryManager(provider: LlmProvider) = com.promenar.nexara.ui.chat.manager.SummaryManager(provider) { prompt, onUsage ->
+        summarizePrompt(prompt, onUsage)?.let { summary ->
+            onUsage?.invoke(summary.usage)
+            com.promenar.nexara.data.remote.protocol.PromptResponse(content = summary.content)
+        }
+    }
+
+    suspend fun summarize(text: String, currentModelId: String): String? =
+        summarizeWithUsage(text, currentModelId)?.content
 
     suspend fun summarizeWithUsage(
         text: String,
-        summaryModelId: String?,
         currentModelId: String,
+        onUsage: ((TokenUsage) -> Unit)? = null,
+    ): RoutedToolSummary? = summarizePrompt(
+        PromptRequest(
+            messages = listOf(ProtocolMessage("system", SUMMARY_INSTRUCTION), ProtocolMessage("user", text)),
+            model = currentModelId,
+            maxTokens = 256,
+            stream = false,
+        ),
+        onUsage,
+    )
+
+    /** 历史摘要与工具折叠共用精确路由；只接收会话模型，禁止默认提供商兜底。 */
+    suspend fun summarizePrompt(
+        prompt: PromptRequest,
         onUsage: ((TokenUsage) -> Unit)? = null,
     ): RoutedToolSummary? = withContext(Dispatchers.IO) {
         try {
-            val modelId = summaryModelId?.takeIf(String::isNotBlank) ?: currentModelId
-            if (modelId.isBlank() || text.isBlank()) return@withContext null
+            val modelId = prompt.model
+            if (modelId.isBlank() || prompt.messages.all { it.content.isBlank() }) return@withContext null
             val prepared = routeGate.prepareWithRoute(modelId) {
-                listOf(ProtocolMessage("system", SUMMARY_INSTRUCTION), ProtocolMessage("user", text))
+                prompt.messages
             }
             if (prepared !is ChatRoutePreparation.Success) return@withContext null
             val route = prepared.route
@@ -47,7 +67,7 @@ internal class RoutedToolResultSummarizer(
                     PromptRequest(
                         messages = messages,
                         model = remoteModelId,
-                        maxTokens = 256,
+                        maxTokens = prompt.maxTokens ?: 1024,
                         tools = null,
                         toolChoice = ProtocolToolChoice.NONE,
                         stream = false,
@@ -67,7 +87,7 @@ internal class RoutedToolResultSummarizer(
                     StreamTextParams(
                         messages = messages,
                         model = remoteModelId,
-                        maxOutputTokens = 256,
+                        maxOutputTokens = prompt.maxTokens ?: 1024,
                         tools = emptyMap(),
                         toolChoice = ProtocolToolChoice.NONE,
                         maxToolCalls = 0,
