@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="termux_title">Termux</string>
+    <string name="termux_integration_section">Integration and status</string>
+    <string name="termux_integration_title">Termux integration</string>
+    <string name="termux_integration_description">Allow the Agent to run commands in the local terminal. Execution follows the tool approval settings for each session.</string>
+    <string name="termux_intro">SSH and home folder mounts can be configured independently. Paste and run the setup commands below in Termux.</string>
+    <string name="termux_installed">Installed</string>
+    <string name="termux_not_installed">Not installed</string>
+    <string name="termux_reading">Checking</string>
+    <string name="termux_permission_granted">Command permission granted</string>
+    <string name="termux_permission_missing">Command permission required</string>
+    <string name="termux_permission_reading">Checking command permission</string>
+    <string name="termux_version">Version: %1$s</string>
+    <string name="termux_not_available">Unavailable</string>
+    <string name="termux_diagnostic_description">This fixed test prints one marker to check command permission, external app access, and result delivery.</string>
+    <string name="termux_run_diagnostic">Run diagnostic test</string>
+    <string name="termux_refresh">Refresh status</string>
+    <string name="termux_diagnostic_requires_enabled">Enable Termux integration to run the diagnostic test.</string>
+    <string name="termux_step_install">1 · Install Termux</string>
+    <string name="termux_step_external_apps">2 · Allow external apps</string>
+    <string name="termux_step_permission">3 · Grant command permission</string>
+    <string name="termux_step_ssh">4 · SSH and public keys</string>
+    <string name="termux_step_mount">5 · Mount the home folder</string>
+    <string name="termux_step_complete">Complete</string>
+    <string name="termux_step_pending">Setup required</string>
+    <string name="termux_step_optional">Optional</string>
+    <string name="termux_step_attention">Needs attention</string>
+    <string name="termux_install_description">Install from F-Droid or GitHub. Result delivery requires version 0.109 or newer. Open Termux after installation and wait for initialization to finish.</string>
+    <string name="termux_fdroid">F-Droid</string>
+    <string name="termux_github">GitHub</string>
+    <string name="termux_external_apps_description">Run this command in Termux to set allow-external-apps=true and reload the configuration.</string>
+    <string name="termux_external_apps_verified">The diagnostic test confirmed external app access and result delivery.</string>
+    <string name="termux_external_apps_unverified">After running the command, use the diagnostic test above to verify this step.</string>
+    <string name="termux_permission_description">Allow Nexara to run commands in the Termux environment. If no system prompt appears, open App info → Permissions → Other permissions. Status refreshes when you return to this page.</string>
+    <string name="termux_request_permission">Request command permission</string>
+    <string name="termux_app_details">Nexara app info</string>
+    <string name="termux_app_details_description">Manage command permission in system settings</string>
+    <string name="termux_ssh_description">Run these commands in Termux. The output of whoami is your SSH username.</string>
+    <string name="termux_ssh_password_description">For password sign-in, run passwd to set a password. For public key sign-in, configure a saved key below.</string>
+    <string name="termux_ssh_host_description">Add an SSH host at 127.0.0.1 on port 8022, enter the username shown by whoami, and choose password or key authentication. Verify the host fingerprint before the first connection.</string>
+    <string name="termux_sshd_description">For connections on this device only, start sshd with this command to listen on the loopback address.</string>
+    <string name="termux_open_ssh">Open SSH host settings</string>
+    <string name="termux_key_missing">To sign in with a public key, first save a key in SSH host settings.</string>
+    <string name="termux_key_available">Saved key available</string>
+    <string name="termux_reuse_key">Reuse a saved SSH key</string>
+    <string name="termux_key_copy_description">Select a key, then copy its public key or the command that adds it to authorized_keys. Paste the result in Termux.</string>
+    <string name="termux_copy_public_key">Copy public key</string>
+    <string name="termux_copy_key_command">Copy authorized_keys command</string>
+    <string name="termux_mount_count">Saved mounts: %1$d</string>
+    <string name="termux_mount_description">Use the system folder picker to grant access to the Termux home folder or a subfolder. All sessions can use /mnt/alias after mounting. All-files access is not required.</string>
+    <string name="termux_mount_alias">Unique mount alias</string>
+    <string name="termux_mount_alias_hint">Do not use paths or the reserved names mnt and .nexara.</string>
+    <string name="termux_mount_read_only">Read-only mount</string>
+    <string name="termux_mount_read_only_description">Turn off to allow Nexara to write to the selected folder.</string>
+    <string name="termux_choose_folder">Choose Termux folder</string>
+    <string name="termux_picker_hint">If the picker does not open in Termux, select Termux in its sidebar. Choose another alias if the name is already in use.</string>
+    <string name="termux_mount_path">/mnt/%1$s (%2$s)</string>
+    <string name="termux_read_only">Read only</string>
+    <string name="termux_read_write">Read and write</string>
+    <string name="termux_background_section">Background execution and child processes</string>
+    <string name="termux_background_description">Android 12 and newer may end app child processes, and Termux may show signal 9. Some Android 14 and newer devices offer “Disable child process restrictions” in Developer options. Its name and availability depend on the system. Turning off Developer options may restore the restriction.</string>
+    <string name="termux_wake_lock_description">For long tasks, run termux-wake-lock to keep the CPU awake and termux-wake-unlock when finished. A wake lock increases battery use and does not remove child process limits or manufacturer background restrictions.</string>
+    <string name="termux_background_hint">If a task stops in the background, check the Termux battery and background settings and keep its notification visible.</string>
+    <string name="termux_diagnostic_success">Diagnostic passed. The command result was delivered.</string>
+    <string name="termux_diagnostic_failure">Diagnostic failed. Check the details below.</string>
+    <string name="termux_exit_code">Exit code: %1$s</string>
+    <string name="termux_not_returned">Not returned</string>
+    <string name="termux_diagnostic_timeout">Result delivery timed out. Check Termux background execution before retrying.</string>
+    <string name="termux_error_code">Error: %1$s</string>
+    <string name="termux_stdout">Standard output</string>
+    <string name="termux_stderr">Error output</string>
+    <string name="termux_diagnostic_expected">Expected output: NEXARA_TERMUX_OK, with exit code 0.</string>
+    <string name="termux_guidance_not_installed">Install Termux from F-Droid or GitHub, then open it once to finish initialization.</string>
+    <string name="termux_guidance_version">Install Termux 0.109 or newer with a recognizable version number to receive command results.</string>
+    <string name="termux_guidance_permission">Grant RUN_COMMAND permission on this page or in the Nexara system app permissions.</string>
+    <string name="termux_guidance_external_apps">Set allow-external-apps=true in ~/.termux/termux.properties, run termux-reload-settings, and retry the diagnostic test.</string>
+    <string name="termux_guidance_internal">Termux did not finish execution. Check initialization, the command path, working directory, and background processes in Termux.</string>
+    <string name="termux_guidance_command_failed">The command returned a nonzero exit code. Check stderr and the command arguments.</string>
+    <string name="termux_guidance_malformed">Termux did not return a valid result package. Update Termux and run the diagnostic command again.</string>
+    <string name="termux_guidance_integration_disabled">Enable Termux integration in Settings → Tools → Termux integration and diagnostics.</string>
+    <string name="termux_guidance_start_failed">The Termux background command could not start. Open Nexara and Termux, confirm initialization and integration are enabled, allow background execution, and retry.</string>
+    <string name="termux_guidance_invalid_arguments">Check the command, absolute working directory, input length, and timeout of 1–600 seconds.</string>
+    <string name="termux_guidance_timeout">The local wait timed out; the command may still be running. RUN_COMMAND has no public interface to stop a single background request. Check and stop the process in Termux, and check external app access and background process limits.</string>
+    <string name="termux_error_status">Could not read Termux status. Refresh again later.</string>
+    <string name="termux_error_clipboard">Clipboard unavailable</string>
+    <string name="termux_error_key">Could not read the SSH public key. Check the key in SSH host settings.</string>
+    <string name="termux_copy_key_command_label">public key installation command</string>
+    <string name="termux_copy_public_key_label">SSH public key</string>
+    <string name="termux_copy_command_label">command</string>
+    <string name="termux_copied">Copied %1$s. Paste it in Termux.</string>
+    <string name="termux_error_permission_denied">Command permission has not been granted. Allow it in Nexara app info → Permissions.</string>
+    <string name="termux_error_picker_empty">The system did not return folder access. Choose the folder again.</string>
+    <string name="termux_error_picker_provider">Choose the Termux home folder or one of its subfolders in the system picker.</string>
+    <string name="termux_error_mount">Could not mount the Termux folder. Select it again and allow the required file access.</string>
+    <string name="termux_mounted_notice">Mounted at /mnt/%1$s (%2$s), available to all sessions.</string>
+    <string name="termux_error_hosts">Could not read SSH hosts. Open SSH settings to check.</string>
+    <string name="termux_error_mounts">Could not read existing mounts. Open folder management to check.</string>
+    <string name="termux_error_save_integration">Could not save Termux integration settings. Try again.</string>
+    <string name="termux_enabled_notice">Termux integration enabled.</string>
+    <string name="termux_disabled_notice">Termux integration disabled.</string>
+    <string name="termux_error_diagnostic">The diagnostic request failed. Check Termux status and try again.</string>
+    <string name="termux_error_fdroid">Could not open F-Droid. Visit its official website in a browser.</string>
+    <string name="termux_error_github">Could not open GitHub. Visit the official Termux repository in a browser.</string>
+    <string name="termux_error_copy">Could not copy. Try again.</string>
+    <string name="termux_error_permission_request">Could not request permission. Open Nexara app info to grant it manually.</string>
+    <string name="termux_error_app_details">Could not open app info. Find Nexara permissions in system settings.</string>
+    <string name="termux_error_alias_control">The alias cannot contain line breaks or control characters.</string>
+    <string name="termux_error_alias_conflict">This mount alias is already in use. Choose another name.</string>
+    <string name="termux_error_alias_invalid">Enter a valid alias without paths or reserved names.</string>
+    <string name="termux_error_picker">Could not open the folder picker. Confirm Termux is installed and has been opened once.</string>
+    <string name="termux_error_key_code">Could not read the SSH public key (%1$s). Check the key in SSH host settings.</string>
+    <string name="termux_error_mount_path">The mount path or alias is invalid. Select the Termux folder again.</string>
+    <string name="termux_error_mount_write_permission">Termux did not grant write access. Choose a read-only mount or grant access again.</string>
+    <string name="termux_error_grant_limit">The persistent folder access limit has been reached. Remove unused mounts first.</string>
+    <string name="termux_error_mount_unavailable">The Termux folder is unavailable. Open Termux and grant access again.</string>
+    <string name="termux_error_system_permission">The system denied the required permission. Check access in app info and try again.</string>
+    <string name="termux_command_diagnostic" translatable="false">printf \'NEXARA_TERMUX_OK\\n\'</string>
+    <string name="termux_command_external_apps" translatable="false">mkdir -p ~/.termux &amp;&amp; touch ~/.termux/termux.properties &amp;&amp; sed -i \'/^[[:space:]]*allow-external-apps[[:space:]]*=/d\' ~/.termux/termux.properties &amp;&amp; printf \'\\nallow-external-apps=true\\n\' &gt;&gt; ~/.termux/termux.properties &amp;&amp; termux-reload-settings</string>
+    <string name="termux_command_ssh_setup" translatable="false">pkg install openssh\nwhoami</string>
+    <string name="termux_command_password" translatable="false">passwd</string>
+    <string name="termux_command_sshd" translatable="false">sshd -o ListenAddress=127.0.0.1</string>
+    <string name="termux_command_wake_lock" translatable="false">termux-wake-lock\ntermux-wake-unlock</string>
+</resources>

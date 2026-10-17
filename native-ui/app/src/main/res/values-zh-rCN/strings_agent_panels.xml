@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_panels_session_options">会话工具</string>
+    <string name="agent_panels_mount_add">添加文件夹</string>
+    <string name="agent_panels_irreversible_warning">不可恢复：文件超过挂载回收区上限或用户明确要求永久删除。</string>
+    <string name="agent_panels_network_allowed">可联网</string>
+    <string name="agent_panels_revoke_permission">撤销授权</string>
+</resources>

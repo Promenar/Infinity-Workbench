@@ -11,6 +11,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -822,6 +823,53 @@ private fun approvalPreviewTitle(preview: ApprovalPreview.Preview): String {
 }
 
 @Composable
+private fun approvalPreviewDetail(preview: ApprovalPreview.Preview, detail: String): String =
+    localizeApprovalPreviewDetail(
+        preview = preview,
+        detail = detail,
+        irreversibleWarning = stringResource(R.string.agent_panels_irreversible_warning),
+        networkAllowed = stringResource(R.string.agent_panels_network_allowed),
+    )
+
+/** 只本地化格式化器生成的完整静态提示，目标与动态预览正文保持原文。 */
+internal fun localizeApprovalPreviewDetail(
+    preview: ApprovalPreview.Preview,
+    detail: String,
+    irreversibleWarning: String,
+    networkAllowed: String,
+): String = when {
+    preview.action == ApprovalPreview.Action.DELETE && detail == ApprovalPreview.IRREVERSIBLE_WARNING ->
+        irreversibleWarning
+    preview.action == ApprovalPreview.Action.SCRIPT && preview.scriptAllowsNetwork && detail == ApprovalPreview.NETWORK_ALLOWED ->
+        networkAllowed
+    preview.action == ApprovalPreview.Action.SCRIPT && preview.scriptAllowsNetwork && detail.startsWith(ApprovalPreview.NETWORK_ALLOWED + "\n") ->
+        networkAllowed + detail.removePrefix(ApprovalPreview.NETWORK_ALLOWED)
+    else -> detail
+}
+
+@Composable
+private fun ApprovalTextBlock(text: String, monospace: Boolean = true) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    ) {
+        SelectionContainer {
+            Text(
+                text = text,
+                style = if (monospace) MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+                    else MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                softWrap = !monospace,
+                modifier = Modifier
+                    .then(if (monospace) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
+                    .padding(NexaraSpacing.Medium),
+            )
+        }
+    }
+}
+
+@Composable
 fun ApprovalCard(
     toolName: String,
     description: String,
@@ -866,21 +914,21 @@ fun ApprovalCard(
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
             Box(
                 modifier = Modifier
-                    .width(4.dp)
+                    .width(NexaraSpacing.XSmall)
                     .fillMaxHeight()
                     .background(accentColor)
             )
             
             Column(
-                modifier = Modifier.padding(16.dp).alpha(if (isExecuted) 0.7f else 1f),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(NexaraSpacing.Large).alpha(if (isExecuted) 0.7f else 1f),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)
             ) {
                 Row(
                     modifier = Modifier.testTag(
                         if (isExecuted) UiTags.CHAT_APPROVAL_EXECUTED else UiTags.CHAT_APPROVAL_REQUIRED
                     ),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)
                 ) {
                     Icon(
                         if (isExecuted) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
@@ -895,7 +943,7 @@ fun ApprovalCard(
                     )
                 }
 
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
                     if (calls.isEmpty()) {
                         Text(
                             text = toolName,
@@ -921,12 +969,12 @@ fun ApprovalCard(
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             }
                             Column(
-                                modifier = Modifier.padding(vertical = 4.dp),
-                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                                modifier = Modifier.padding(vertical = NexaraSpacing.XSmall),
+                                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
                             ) {
-                                Row(
+                                FlowRow(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                                 ) {
                                     Text(
                                         text = call.name,
@@ -949,26 +997,20 @@ fun ApprovalCard(
                                 if (call.highRisk && !isExecuted) {
                                     Surface(
                                         color = MaterialTheme.colorScheme.errorContainer,
-                                        shape = RoundedCornerShape(8.dp),
+                                        shape = MaterialTheme.shapes.small,
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         Text(
                                             text = stringResource(R.string.chat_approval_high_risk_target_warning),
                                             style = NexaraTypography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                                             color = MaterialTheme.colorScheme.onErrorContainer,
-                                            modifier = Modifier.padding(8.dp),
+                                            modifier = Modifier.padding(NexaraSpacing.Small),
                                         )
                                     }
                                 }
                                 val preview = call.preview
                                 if (preview == null) {
-                                    Text(
-                                        text = call.argumentsSummary,
-                                        style = NexaraTypography.bodySmall.copy(
-                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                        ),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                    ApprovalTextBlock(text = call.argumentsSummary)
                                 } else {
                                     Text(
                                         text = approvalPreviewTitle(preview),
@@ -976,20 +1018,24 @@ fun ApprovalCard(
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     preview.detail?.let { detail ->
-                                        Surface(
-                                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                            shape = RoundedCornerShape(8.dp),
-                                            modifier = Modifier.fillMaxWidth(),
-                                        ) {
-                                            Text(
-                                                text = detail,
-                                                style = NexaraTypography.bodySmall.copy(
-                                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                                ),
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 14,
-                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                                modifier = Modifier.padding(8.dp),
+                                        val displayDetail = approvalPreviewDetail(preview, detail)
+                                        if (preview.action == ApprovalPreview.Action.SCRIPT) {
+                                            val hasNetworkLabel = preview.scriptAllowsNetwork
+                                            if (hasNetworkLabel) {
+                                                Text(
+                                                    stringResource(R.string.agent_panels_network_allowed),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            val script = if (hasNetworkLabel) {
+                                                detail.removePrefix(ApprovalPreview.NETWORK_ALLOWED).removePrefix("\n")
+                                            } else detail
+                                            if (script.isNotBlank()) ApprovalTextBlock(text = script)
+                                        } else {
+                                            ApprovalTextBlock(
+                                                text = displayDetail,
+                                                monospace = preview.action != ApprovalPreview.Action.DELETE,
                                             )
                                         }
                                     }
@@ -1016,13 +1062,14 @@ fun ApprovalCard(
                   Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)
                     ) {
                         Button(
                             onClick = onDecline,
                             enabled = enabled,
                             modifier = Modifier
                                 .weight(1f)
+                                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                                 .semantics {
                                     contentDescription = declineA11y
                                 }
@@ -1031,7 +1078,7 @@ fun ApprovalCard(
                                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 contentColor = MaterialTheme.colorScheme.onSurface
                             ),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = MaterialTheme.shapes.medium
                         ) {
                             Text(stringResource(R.string.chat_approval_decline_current), style = NexaraTypography.labelMedium)
                         }
@@ -1040,6 +1087,7 @@ fun ApprovalCard(
                             enabled = enabled,
                             modifier = Modifier
                                 .weight(1f)
+                                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                                 .semantics {
                                     contentDescription = approveA11y
                                 }
@@ -1048,8 +1096,8 @@ fun ApprovalCard(
                                 containerColor = MaterialTheme.colorScheme.tertiary,
                                 contentColor = MaterialTheme.colorScheme.onTertiary
                             ),
-                            shape = RoundedCornerShape(12.dp),
-                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
+                            shape = MaterialTheme.shapes.medium,
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = NexaraElevation.Level2)
                         ) {
                             Text(stringResource(R.string.chat_approval_approve_current), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold))
                         }

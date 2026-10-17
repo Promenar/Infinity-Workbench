@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ssh_visual_manage_section">Host management</string>
+    <string name="ssh_visual_empty_help">Add a host to use the terminal, SSH tools and local port forwarding.</string>
+    <string name="ssh_visual_status_section">Connection status</string>
+    <string name="ssh_visual_working">Processing…</string>
+    <string name="ssh_visual_notes_section">About SSH connections</string>
+    <string name="ssh_visual_host_address">%1$s@%2$s:%3$d</string>
+    <string name="ssh_visual_forward_active">Forwarding active</string>
+    <string name="ssh_visual_connection_section">Connection details</string>
+    <string name="ssh_visual_terminal_section">Terminal session</string>
+    <string name="ssh_visual_terminal_connected">Connected</string>
+</resources>

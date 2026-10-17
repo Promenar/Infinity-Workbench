@@ -1,60 +1,137 @@
 package com.promenar.nexara.ui.settings
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Remove
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
+import com.promenar.nexara.data.termux.TermuxAvailability
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.NexaraStepperSetting
 
-/** 复用现有 Material 3 控件，保护配置标签的完整换行空间。 */
+internal data class SkillsSettingsVisualState(
+    val loopLimit: Int,
+    val tokenLimit: Int,
+    val contextRatio: Int,
+    val keepRounds: Int,
+    val repeatLimit: Int,
+    val scriptHosts: String,
+    val approveScriptWrites: Boolean,
+    val sshHostCount: Int? = null,
+    val termuxAvailability: TermuxAvailability? = null,
+)
+
+internal data class SkillsSettingsVisualActions(
+    val onLoopLimitChange: (Int) -> Unit = {},
+    val onTokenLimitChange: (Int) -> Unit = {},
+    val onContextRatioChange: (Int) -> Unit = {},
+    val onKeepRoundsChange: (Int) -> Unit = {},
+    val onRepeatLimitChange: (Int) -> Unit = {},
+    val onResetConsent: () -> Unit = {},
+    val onApproveScriptWritesChange: (Boolean) -> Unit = {},
+    val onSaveScriptHosts: (String) -> String? = { null },
+    val onScriptHostsSaved: () -> Unit = {},
+    val onOpenSsh: () -> Unit = {},
+    val onOpenTermux: () -> Unit = {},
+)
+
+/** 工具页顶部只消费已有设置值与操作，保持下方标签区和配置契约独立。 */
 @Composable
-internal fun AgentRuntimeSettingsCard(viewModel: SettingsViewModel) {
-    val tokenLimit by viewModel.taskTokenLimit.collectAsState()
-    val ratio by viewModel.toolContextRatio.collectAsState()
-    val keep by viewModel.toolContextKeepRounds.collectAsState()
-    val repeatLimit by viewModel.toolLoopRepeatLimit.collectAsState()
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text(stringResource(R.string.p0_runtime_limits), style = MaterialTheme.typography.titleMedium)
-        RuntimeNumberRow(
-            stringResource(R.string.p0_token_limit),
-            if (tokenLimit == 0) stringResource(R.string.p0_disabled) else tokenLimit.toString(),
-            tokenLimit > 0, tokenLimit < 10_000_000,
-            { viewModel.updateTaskTokenLimit((tokenLimit - 10_000).coerceAtLeast(0)) },
-            { viewModel.updateTaskTokenLimit(tokenLimit + 10_000) },
+internal fun SkillsSettingsHeaderContent(
+    state: SkillsSettingsVisualState,
+    actions: SkillsSettingsVisualActions,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        AgentRuntimeSettingsCard(state, actions)
+        ScriptRuntimeSettingsCard(
+            storedHosts = state.scriptHosts,
+            approveWrites = state.approveScriptWrites,
+            onApproveWritesChange = actions.onApproveScriptWritesChange,
+            onSaveHosts = actions.onSaveScriptHosts,
+            onSaved = actions.onScriptHostsSaved,
         )
-        RuntimeNumberRow(stringResource(R.string.p0_context_ratio), "$ratio%", ratio > 10, ratio < 90,
-            { viewModel.updateToolContextRatio(ratio - 10) }, { viewModel.updateToolContextRatio(ratio + 10) })
-        RuntimeNumberRow(stringResource(R.string.p0_keep_rounds), keep.toString(), keep > 1, keep < 10,
-            { viewModel.updateToolContextKeepRounds(keep - 1) }, { viewModel.updateToolContextKeepRounds(keep + 1) })
-        RuntimeNumberRow(stringResource(R.string.p0_repeat_limit), repeatLimit.toString(), repeatLimit > 2, repeatLimit < 20,
-            { viewModel.updateToolLoopRepeatLimit(repeatLimit - 1) }, { viewModel.updateToolLoopRepeatLimit(repeatLimit + 1) })
-        Text(stringResource(R.string.p0_runtime_limits_desc), style = MaterialTheme.typography.bodySmall)
-        TextButton(onClick = viewModel::resetUnlimitedAutoConsent, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text(stringResource(R.string.p0_reset_consent))
+        NexaraSettingsSection(stringResource(R.string.settings_local_remote)) {
+            NexaraSettingsItem(
+                icon = Icons.Rounded.Terminal,
+                title = stringResource(R.string.ssh_settings_entry),
+                subtitle = state.sshHostCount?.let { stringResource(R.string.settings_ssh_hosts_count, it) }
+                    ?: stringResource(R.string.settings_status_loading),
+                onClick = actions.onOpenSsh,
+                showChevron = true,
+            )
+            NexaraSettingsItem(
+                icon = Icons.Rounded.PhoneAndroid,
+                title = stringResource(R.string.settings_termux_entry),
+                subtitle = stringResource(when (termuxEntryStatus(state.termuxAvailability)) {
+                    TermuxEntryStatus.Loading -> R.string.settings_status_loading
+                    TermuxEntryStatus.NotInstalled -> R.string.settings_termux_not_installed
+                    TermuxEntryStatus.UnsupportedVersion -> R.string.settings_termux_unsupported_version
+                    TermuxEntryStatus.PermissionRequired -> R.string.settings_termux_permission_required
+                    TermuxEntryStatus.Available -> R.string.settings_termux_available
+                }),
+                onClick = actions.onOpenTermux,
+                showChevron = true,
+            )
         }
-        ScriptRuntimeSettingsCard(viewModel)
     }
 }
 
 @Composable
-private fun RuntimeNumberRow(
-    label: String, value: String, canDecrease: Boolean, canIncrease: Boolean,
-    decrease: () -> Unit, increase: () -> Unit,
+internal fun AgentRuntimeSettingsCard(
+    state: SkillsSettingsVisualState,
+    actions: SkillsSettingsVisualActions,
 ) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        IconButton(onClick = decrease, enabled = canDecrease, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.Rounded.Remove, stringResource(R.string.p0_decrease_setting, label))
-        }
-        Text(value, style = MaterialTheme.typography.labelLarge)
-        IconButton(onClick = increase, enabled = canIncrease, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.Rounded.Add, stringResource(R.string.p0_increase_setting, label))
-        }
+    NexaraSettingsSection(stringResource(R.string.settings_execution_budget)) {
+        LoopLimitCard(state.loopLimit, actions.onLoopLimitChange)
+        NexaraStepperSetting(
+            title = stringResource(R.string.p0_token_limit),
+            description = stringResource(R.string.p0_runtime_limits_desc),
+            value = if (state.tokenLimit == 0) stringResource(R.string.p0_disabled) else state.tokenLimit.toString(),
+            canDecrease = state.tokenLimit > 0,
+            canIncrease = state.tokenLimit < 10_000_000,
+            onDecrease = { actions.onTokenLimitChange((state.tokenLimit - 10_000).coerceAtLeast(0)) },
+            onIncrease = { actions.onTokenLimitChange(state.tokenLimit + 10_000) },
+        )
+        NexaraStepperSetting(
+            title = stringResource(R.string.p0_repeat_limit),
+            description = stringResource(R.string.settings_repeat_limit_description),
+            value = state.repeatLimit.toString(),
+            canDecrease = state.repeatLimit > 2,
+            canIncrease = state.repeatLimit < 20,
+            onDecrease = { actions.onRepeatLimitChange(state.repeatLimit - 1) },
+            onIncrease = { actions.onRepeatLimitChange(state.repeatLimit + 1) },
+        )
+        NexaraSettingsItem(
+            icon = Icons.Rounded.RestartAlt,
+            title = stringResource(R.string.p0_reset_consent),
+            subtitle = stringResource(R.string.settings_reset_consent_description),
+            onClick = actions.onResetConsent,
+        )
+    }
+    NexaraSettingsSection(stringResource(R.string.settings_tool_context)) {
+        NexaraStepperSetting(
+            title = stringResource(R.string.p0_context_ratio),
+            description = stringResource(R.string.settings_context_ratio_description),
+            value = stringResource(R.string.settings_percent_value, state.contextRatio),
+            canDecrease = state.contextRatio > 10,
+            canIncrease = state.contextRatio < 90,
+            onDecrease = { actions.onContextRatioChange(state.contextRatio - 10) },
+            onIncrease = { actions.onContextRatioChange(state.contextRatio + 10) },
+        )
+        NexaraStepperSetting(
+            title = stringResource(R.string.p0_keep_rounds),
+            description = stringResource(R.string.settings_keep_rounds_description),
+            value = state.keepRounds.toString(),
+            canDecrease = state.keepRounds > 1,
+            canIncrease = state.keepRounds < 10,
+            onDecrease = { actions.onKeepRoundsChange(state.keepRounds - 1) },
+            onIncrease = { actions.onKeepRoundsChange(state.keepRounds + 1) },
+        )
     }
 }

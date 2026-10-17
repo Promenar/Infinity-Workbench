@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
@@ -30,6 +31,7 @@ fun NexaraSettingsItem(
     titleTextStyle: TextStyle? = null,
     /** 副标题是模型 ID、URL 等标识符时为 true：只在分隔符处折行。 */
     subtitleIsIdentifier: Boolean = false,
+    enabled: Boolean = true,
 ) {
     ListItem(
         headlineContent = {
@@ -38,7 +40,8 @@ fun NexaraSettingsItem(
                 style = titleTextStyle ?: MaterialTheme.typography.bodyLarge,
             )
         },
-        modifier = modifier.clickable(
+        modifier = modifier.alpha(if (enabled) 1f else 0.38f).clickable(
+            enabled = enabled,
             role = Role.Button,
             onClickLabel = onClickLabel,
             onClick = onClick,

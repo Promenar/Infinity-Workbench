@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ssh_visual_manage_section">主机管理</string>
+    <string name="ssh_visual_empty_help">添加主机后，即可使用终端、SSH 工具和本地端口转发。</string>
+    <string name="ssh_visual_status_section">连接状态</string>
+    <string name="ssh_visual_working">正在处理…</string>
+    <string name="ssh_visual_notes_section">连接说明</string>
+    <string name="ssh_visual_host_address">%1$s@%2$s:%3$d</string>
+    <string name="ssh_visual_forward_active">转发运行中</string>
+    <string name="ssh_visual_connection_section">连接信息</string>
+    <string name="ssh_visual_terminal_section">终端会话</string>
+    <string name="ssh_visual_terminal_connected">已连接</string>
+</resources>

@@ -2,10 +2,7 @@ package com.promenar.nexara.ui.rag
 
 import android.app.Application
 import com.promenar.nexara.ui.common.NexaraMetaLine
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -25,10 +22,8 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
-import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,8 +32,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,7 +56,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
@@ -70,6 +64,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.promenar.nexara.R
 import com.promenar.nexara.data.rag.KgDocumentOption
 import com.promenar.nexara.data.rag.MAX_GRAPH_NODE_LIMIT
+import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.rag.canvas.GraphPhysicsSimulator
@@ -136,7 +132,7 @@ fun KnowledgeGraphScreen(
                 .fillMaxSize()
                 .padding(contentPadding)
                 .bettboxListGroup()
-                .padding(16.dp),
+                .padding(NexaraSpacing.Large),
         ) {
             NexaraMetaLine(
                 segments = listOf(
@@ -145,7 +141,7 @@ fun KnowledgeGraphScreen(
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 12.dp),
+                modifier = Modifier.padding(bottom = NexaraSpacing.Medium),
             )
             KnowledgeGraphModeSelector(
                 viewMode = viewMode,
@@ -158,43 +154,16 @@ fun KnowledgeGraphScreen(
                 onRefresh = viewModel::refreshCurrentScope,
             )
             if (viewMode == KgViewMode.DOCUMENT) {
-                Box(
+                NexaraSettingsItem(
+                    icon = Icons.Rounded.Description,
+                    title = documentOptions.firstOrNull { it.docId == selectedDocumentId }?.title
+                        ?: stringResource(R.string.kg_select_document),
+                    onClick = { showDocumentSelector = true },
+                    showChevron = true,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                        .clickable { showDocumentSelector = true }
-                        .testTag(UiTags.KG_DOCUMENT_SELECTOR)
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Description,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = documentOptions.firstOrNull { it.docId == selectedDocumentId }?.title
-                                ?: stringResource(R.string.kg_select_document),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Icon(
-                            imageVector = Icons.Rounded.ArrowDropDown,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                        .padding(bottom = NexaraSpacing.Medium)
+                        .testTag(UiTags.KG_DOCUMENT_SELECTOR),
+                )
             }
             OutlinedTextField(
                 value = searchQuery,
@@ -203,7 +172,7 @@ fun KnowledgeGraphScreen(
                 label = { Text(stringResource(R.string.kg_graph_search_entities)) },
                 singleLine = true,
                 enabled = !documentSelectionRequired,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = NexaraSpacing.Small),
             )
             if (searchQuery.isNotBlank()) {
                 when {
@@ -213,10 +182,14 @@ fun KnowledgeGraphScreen(
                     else -> LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp)) {
                         items(searchResults, key = { it.id }) { entity ->
                             ListItem(
-                                headlineContent = { Text(entity.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                headlineContent = { Text(entity.name) },
                                 supportingContent = { Text(entity.type) },
                                 trailingContent = {
-                                    TextButton(onClick = { viewModel.expandNode(entity.id) }, enabled = !isLoading && nodes.size < MAX_GRAPH_NODE_LIMIT) {
+                                    TextButton(
+                                        onClick = { viewModel.expandNode(entity.id) },
+                                        enabled = !isLoading && nodes.size < MAX_GRAPH_NODE_LIMIT,
+                                        modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
+                                    ) {
                                         Text(stringResource(R.string.kg_graph_expand_neighbors))
                                     }
                                 },
@@ -232,10 +205,10 @@ fun KnowledgeGraphScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 8.dp)
+                        .padding(bottom = NexaraSpacing.Small)
                         .clip(MaterialTheme.shapes.medium)
                         .background(MaterialTheme.colorScheme.errorContainer)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.Small),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -246,36 +219,36 @@ fun KnowledgeGraphScreen(
                     )
                     TextButton(
                         onClick = viewModel::retryLoad,
-                        modifier = Modifier.height(36.dp),
+                        modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
                     ) {
                         Text(stringResource(R.string.shared_btn_retry))
                     }
                 }
             }
             if (nodes.isNotEmpty()) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
                     FilledTonalButton(
                         onClick = { showAccessibilityList = true },
                         modifier = Modifier
                             .weight(1f)
-                            .padding(bottom = 8.dp)
-                            .heightIn(min = 48.dp)
+                            .padding(bottom = NexaraSpacing.Small)
+                            .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                             .testTag(UiTags.KG_LIST_ENTRY),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        shape = MaterialTheme.shapes.small,
+                        contentPadding = PaddingValues(horizontal = NexaraSpacing.Medium),
                     ) {
                         Icon(
                             Icons.AutoMirrored.Rounded.List,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp),
                         )
-                        Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(NexaraSpacing.Small))
                         Text(
                             stringResource(R.string.kg_open_accessibility_list),
                             style = MaterialTheme.typography.labelMedium,
                         )
                     }
-                    TextButton(onClick = { resetKey++ }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    TextButton(onClick = { resetKey++ }, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
                         Text(stringResource(R.string.kg_graph_reset_view))
                     }
                 }
@@ -313,7 +286,7 @@ fun KnowledgeGraphScreen(
                         text = stringResource(R.string.kg_document_required),
                         modifier = Modifier
                             .align(Alignment.Center)
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = NexaraSpacing.Large),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -323,7 +296,7 @@ fun KnowledgeGraphScreen(
                         text = stringResource(R.string.kg_empty_graph),
                         modifier = Modifier
                             .align(Alignment.Center)
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = NexaraSpacing.Large),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -334,12 +307,11 @@ fun KnowledgeGraphScreen(
     }
 
     if (showDocumentSelector) {
-        ModalBottomSheet(onDismissRequest = { showDocumentSelector = false }) {
-            Text(
-                text = stringResource(R.string.kg_select_document),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
+        NexaraBottomSheet(
+            show = true,
+            onDismiss = { showDocumentSelector = false },
+            title = stringResource(R.string.kg_select_document),
+        ) {
             KnowledgeGraphDocumentOptionsContent(
                 options = documentOptions,
                 selectedDocumentId = selectedDocumentId,
@@ -374,63 +346,57 @@ internal fun KnowledgeGraphModeSelector(
     onModeSelected: (KgViewMode) -> Unit,
     onRefresh: () -> Unit,
 ) {
-    Row(
+    FlowRow(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(bottom = NexaraSpacing.Medium)
+            .selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
-        Row(
-            modifier = Modifier
-                .weight(1f, fill = false)
-                .selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            listOf(
-                KgViewMode.GLOBAL to stringResource(R.string.kg_view_global),
-                KgViewMode.DOCUMENT to stringResource(R.string.kg_view_document),
-                KgViewMode.CONCEPT to stringResource(R.string.kg_filter_concepts),
-            ).forEach { (mode, label) ->
-                val isActive = viewMode == mode
-                FilterChip(
-                    selected = isActive,
-                    onClick = { onModeSelected(mode) },
-                    label = {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
-                        )
-                    },
-                    shape = RoundedCornerShape(8.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                    border = null,
-                    modifier = Modifier.testTag(UiTags.kgMode(mode.name)),
-                )
-            }
+        listOf(
+            KgViewMode.GLOBAL to stringResource(R.string.kg_view_global),
+            KgViewMode.DOCUMENT to stringResource(R.string.kg_view_document),
+            KgViewMode.CONCEPT to stringResource(R.string.kg_filter_concepts),
+        ).forEach { (mode, label) ->
+            val isActive = viewMode == mode
+            FilterChip(
+                selected = isActive,
+                onClick = { onModeSelected(mode) },
+                label = {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                },
+                shape = MaterialTheme.shapes.small,
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+                border = null,
+                modifier = Modifier
+                    .heightIn(min = NexaraSpacing.MinimumTouchTarget)
+                    .testTag(UiTags.kgMode(mode.name)),
+            )
         }
-
         FilledTonalButton(
             onClick = onRefresh,
             modifier = Modifier
-                .height(34.dp)
+                .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                 .testTag(UiTags.KG_REFRESH),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.Small),
+            shape = MaterialTheme.shapes.small,
         ) {
             Icon(
                 imageVector = Icons.Rounded.Refresh,
                 contentDescription = null,
-                modifier = Modifier.size(15.dp),
+                modifier = Modifier.size(18.dp),
             )
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(NexaraSpacing.XSmall))
             Text(
                 text = stringResource(R.string.workbench_refresh),
                 style = MaterialTheme.typography.labelMedium,
@@ -450,6 +416,7 @@ internal fun KnowledgeGraphDocumentOptionsContent(
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
+            .bettboxListGroup()
             .selectableGroup(),
     ) {
         when {
@@ -458,7 +425,7 @@ internal fun KnowledgeGraphDocumentOptionsContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(UiTags.KG_DOCUMENT_OPTIONS_ERROR)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Small),
                 ) {
                     Text(
                         text = stringResource(R.string.kg_document_options_load_failed),
@@ -484,7 +451,7 @@ internal fun KnowledgeGraphDocumentOptionsContent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .testTag(UiTags.KG_DOCUMENT_OPTIONS_EMPTY)
-                        .padding(16.dp),
+                        .padding(NexaraSpacing.Large),
                 )
             }
             else -> items(options, key = { it.docId }) { option ->
@@ -498,6 +465,7 @@ internal fun KnowledgeGraphDocumentOptionsContent(
                             onClick = { onSelect(option.docId) },
                         )
                         .testTag(UiTags.kgDocumentOption(option.docId)),
+                    colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                     headlineContent = { Text(option.title) },
                 )
             }

@@ -34,6 +34,7 @@ fun SettingsToggle(
     icon: ImageVector? = null,
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
+    switchModifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
@@ -83,6 +84,7 @@ fun SettingsToggle(
             checked = checked,
             onCheckedChange = null,
             enabled = enabled,
+            modifier = switchModifier,
         )
     }
 }

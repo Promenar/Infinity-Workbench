@@ -23,13 +23,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -37,15 +38,14 @@ import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -85,8 +85,14 @@ import com.promenar.nexara.domain.storage.ExternalFolderEntry
 import com.promenar.nexara.domain.storage.ExternalMount
 import com.promenar.nexara.domain.storage.ExternalRecycleItem
 import com.promenar.nexara.domain.storage.IExternalFolderManager
+import com.promenar.nexara.ui.common.BettboxListGroup
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.SettingsToggle
+import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.common.NexaraIdentifierText
 import com.promenar.nexara.ui.common.NexaraMetaLine
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.theme.forInput
 import java.io.File
@@ -273,6 +279,7 @@ private fun ExternalFoldersPanelContent(
     ListItem(
         modifier = modifier
             .fillMaxWidth()
+            .bettboxListGroup()
             .testTag("external_folders_entry")
             .clickable(role = Role.Button) { managerOpen = true },
         headlineContent = { Text(stringResource(R.string.mount_title)) },
@@ -284,9 +291,10 @@ private fun ExternalFoldersPanelContent(
             )
         },
         leadingContent = { Icon(Icons.Rounded.FolderOpen, contentDescription = null) },
+        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
         trailingContent = {
             if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            else Icon(Icons.Rounded.MoreVert, contentDescription = null)
+            else Icon(Icons.Rounded.ChevronRight, contentDescription = null)
         },
     )
 
@@ -370,7 +378,7 @@ private fun ExternalFoldersPanelContent(
             title = { Text(stringResource(R.string.mount_remove_title)) },
             text = { Text(stringResource(R.string.mount_remove_message)) },
             confirmButton = {
-                TextButton(
+                TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
                     enabled = !busy,
                     onClick = {
                         perform {
@@ -381,7 +389,7 @@ private fun ExternalFoldersPanelContent(
                 ) { Text(stringResource(R.string.mount_remove)) }
             },
             dismissButton = {
-                TextButton(enabled = !busy, onClick = { removeMountId = null }) {
+                TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget), enabled = !busy, onClick = { removeMountId = null }) {
                     Text(stringResource(R.string.common_btn_cancel))
                 }
             },
@@ -434,23 +442,31 @@ private fun ExternalMountManagerDialog(
         title = { Text(stringResource(R.string.mount_title)) },
         text = {
             LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp).testTag("external_mounts_list"),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp).bettboxListGroup().testTag("external_mounts_list"),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
             ) {
                 item {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NexaraSettingsSection(title = stringResource(R.string.agent_panels_mount_add)) {
                         sources.forEach { source ->
-                            TextButton(enabled = !busy, onClick = { onAdd(source) }) {
-                                Text(stringResource(
+                            NexaraSettingsItem(
+                                icon = Icons.Rounded.FolderOpen,
+                                title = stringResource(
                                     if (source == ExternalMountSource.Saf) R.string.mount_add_saf
                                     else R.string.mount_add_real_path,
-                                ))
-                            }
+                                ),
+                                onClick = { onAdd(source) },
+                                enabled = !busy,
+                                showChevron = true,
+                            )
+                        }
+                        Column(
+                            modifier = Modifier.padding(NexaraSpacing.Large),
+                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                        ) {
+                            Text(stringResource(R.string.mount_system_limits), style = NexaraTypography.bodyMedium)
+                            Text(stringResource(R.string.mount_termux_hint), style = NexaraTypography.bodyMedium)
                         }
                     }
-                    Text(stringResource(R.string.mount_system_limits), style = NexaraTypography.bodySmall)
-                    Spacer(Modifier.height(8.dp))
-                    Text(stringResource(R.string.mount_termux_hint), style = NexaraTypography.bodySmall)
                 }
                 if (notice != null) item { MountNotice(notice) }
                 if (loading || busy) item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) }
@@ -459,18 +475,23 @@ private fun ExternalMountManagerDialog(
                     ExternalMountRow(mount, busy, onBrowse, onReauthorize, onRemove, onGrantRealPath)
                 }
                 item {
-                    HorizontalDivider()
-                    TextButton(onClick = onRecycle, enabled = !busy) {
-                        Text(stringResource(R.string.mount_recycle_title))
+                    BettboxListGroup {
+                        NexaraSettingsItem(
+                            icon = Icons.Rounded.DeleteOutline,
+                            title = stringResource(R.string.mount_recycle_title),
+                            onClick = onRecycle,
+                            enabled = !busy,
+                            showChevron = true,
+                        )
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.mount_close)) }
+            TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget), onClick = onDismiss) { Text(stringResource(R.string.mount_close)) }
         },
         dismissButton = {
-            TextButton(onClick = onRefresh, enabled = !busy) { Text(stringResource(R.string.mount_refresh)) }
+            TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget), onClick = onRefresh, enabled = !busy) { Text(stringResource(R.string.mount_refresh)) }
         },
     )
 }
@@ -492,9 +513,10 @@ private fun ExternalMountRow(
             .fillMaxWidth()
             .semantics { if (unavailable) stateDescription = unavailableLabel }
             .clickable(enabled = !busy && !unavailable, role = Role.Button) { onBrowse(mount) },
+        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
         headlineContent = { NexaraIdentifierText(mount.alias) },
         supportingContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
                 NexaraIdentifierText("/mnt/" + mount.alias, style = NexaraTypography.bodySmall)
                 NexaraMetaLine(
                     segments = listOf(
@@ -519,7 +541,7 @@ private fun ExternalMountRow(
         },
         trailingContent = {
             Column {
-                IconButton(onClick = { menuOpen = true }, enabled = !busy) {
+                IconButton(onClick = { menuOpen = true }, enabled = !busy, modifier = Modifier.size(NexaraSpacing.MinimumTouchTarget)) {
                     Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.mount_title))
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -572,7 +594,7 @@ private fun ExternalMountFormDialog(
         text = {
             Column(
                 modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
             ) {
                 Text(stringResource(if (isSaf) R.string.mount_source_saf else R.string.mount_source_real_path))
                 OutlinedTextField(
@@ -598,7 +620,7 @@ private fun ExternalMountFormDialog(
                     Text(stringResource(R.string.mount_real_path_help), style = NexaraTypography.bodySmall)
                     if (!realPathPermission) {
                         Text(stringResource(R.string.mount_permission_missing), color = MaterialTheme.colorScheme.error)
-                        if (onGrantAccess != null) TextButton(onClick = onGrantAccess) {
+                        if (onGrantAccess != null) TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget), onClick = onGrantAccess) {
                             Text(stringResource(R.string.mount_grant_access))
                         }
                     }
@@ -606,20 +628,13 @@ private fun ExternalMountFormDialog(
                     Text(stringResource(R.string.mount_system_limits), style = NexaraTypography.bodySmall)
                     Text(stringResource(R.string.mount_termux_hint), style = NexaraTypography.bodySmall)
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .defaultMinSize(minHeight = 48.dp)
-                        .toggleable(
-                            value = readOnly,
-                            enabled = !busy,
-                            role = Role.Checkbox,
-                            onValueChange = onReadOnlyChanged,
-                        ),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(checked = readOnly, onCheckedChange = null, enabled = !busy)
-                    Text(stringResource(R.string.mount_read_only), modifier = Modifier.padding(start = 8.dp))
+                BettboxListGroup {
+                    SettingsToggle(
+                        title = stringResource(R.string.mount_read_only),
+                        checked = readOnly,
+                        enabled = !busy,
+                        onCheckedChange = onReadOnlyChanged,
+                    )
                 }
                 if (hasCurrentSession) {
                     Column(modifier = Modifier.selectableGroup()) {
@@ -642,13 +657,13 @@ private fun ExternalMountFormDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
                 onClick = onConfirm,
                 enabled = !busy && alias.isNotBlank() && (isSaf || (realPathPermission && sourcePath.isNotBlank())),
             ) { Text(stringResource(if (isSaf) R.string.mount_select_folder else R.string.mount_confirm)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.common_btn_cancel)) }
+            TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget), onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.common_btn_cancel)) }
         },
     )
 }
@@ -656,7 +671,7 @@ private fun ExternalMountFormDialog(
 @Composable
 private fun ExternalMountScopeOption(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp).selectable(
+        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = NexaraSpacing.MinimumTouchTarget).selectable(
             selected = selected,
             enabled = enabled,
             role = Role.RadioButton,
@@ -665,7 +680,7 @@ private fun ExternalMountScopeOption(label: String, selected: Boolean, enabled: 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = null, enabled = enabled)
-        Text(label, modifier = Modifier.padding(start = 8.dp))
+        Text(label, modifier = Modifier.padding(start = NexaraSpacing.Small))
     }
 }
 
@@ -749,18 +764,18 @@ private fun ExternalMountBrowserDialog(
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
             ) {
                 NexaraIdentifierText(selectedFile?.path ?: path, style = NexaraTypography.bodySmall)
                 if (mount.unavailableReason != null) MountNotice(R.string.mount_unavailable)
                 val entry = selectedFile
                 if (entry == null) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (parentPath != null) TextButton(onClick = { path = parentPath }) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
+                        if (parentPath != null) TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget), onClick = { path = parentPath }) {
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
                             Text(stringResource(R.string.mount_back))
                         }
-                        TextButton(onClick = { reload++ }) {
+                        TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget), onClick = { reload++ }) {
                             Icon(Icons.Rounded.Refresh, contentDescription = null)
                             Text(stringResource(R.string.mount_refresh))
                         }
@@ -804,8 +819,8 @@ private fun ExternalMountBrowserDialog(
                         style = NexaraTypography.labelSmall,
                     )
                     if (sourceChanged) MountNotice(R.string.mount_source_changed, error = false)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
+                        TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
                             enabled = !busy && workspaceRootUuid != null && mount.unavailableReason == null,
                             onClick = {
                                 val rootUuid = workspaceRootUuid ?: return@TextButton
@@ -831,7 +846,7 @@ private fun ExternalMountBrowserDialog(
                                 if (sourceChanged) R.string.mount_reimport_to_kb else R.string.mount_import_to_kb,
                             ))
                         }
-                        TextButton(
+                        TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
                             enabled = !busy && mount.unavailableReason == null,
                             onClick = {
                                 if (entry.size > EXTERNAL_OPEN_BYTES) {
@@ -880,10 +895,10 @@ private fun ExternalMountBrowserDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.mount_close)) }
+            TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget), onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.mount_close)) }
         },
         dismissButton = {
-            if (selectedFile != null) TextButton(
+            if (selectedFile != null) TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
                 enabled = !busy,
                 onClick = { selectedFile = null; notice = null },
             ) { Text(stringResource(R.string.mount_back)) }
@@ -922,7 +937,7 @@ private fun ExternalMountRecycleDialog(
         text = {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
             ) {
                 item { Text(stringResource(R.string.mount_recycle_help), style = NexaraTypography.bodySmall) }
                 if (loading || busy) item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) }
@@ -935,7 +950,7 @@ private fun ExternalMountRecycleDialog(
                             Text(Formatter.formatShortFileSize(context, entry.size), style = NexaraTypography.bodySmall)
                         },
                         trailingContent = {
-                            TextButton(
+                            TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
                                 enabled = !busy && !loading,
                                 onClick = {
                                     busy = true
@@ -961,10 +976,10 @@ private fun ExternalMountRecycleDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.mount_close)) }
+            TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget), onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.mount_close)) }
         },
         dismissButton = {
-            TextButton(onClick = { notice = null; reload++ }, enabled = !busy) {
+            TextButton(modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget), onClick = { notice = null; reload++ }, enabled = !busy) {
                 Text(stringResource(R.string.mount_retry))
             }
         },

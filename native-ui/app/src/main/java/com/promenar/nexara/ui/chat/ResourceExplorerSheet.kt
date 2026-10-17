@@ -34,7 +34,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.promenar.nexara.ui.common.NexaraCapsuleTabRow
@@ -59,7 +58,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -72,9 +70,11 @@ import com.promenar.nexara.share.core.ShareImportItem
 import com.promenar.nexara.share.core.ShareImportStatus
 import com.promenar.nexara.share.core.ShareRejectReason
 import com.promenar.nexara.share.core.SharedFileImporter
+import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.testing.UiTags
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -257,11 +257,11 @@ internal fun ResourceExplorerSheetContent(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 6.dp),
-            height = 46.dp,
+                .padding(horizontal = NexaraSpacing.XLarge, vertical = NexaraSpacing.Small),
+            height = NexaraSpacing.MinimumTouchTarget,
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(NexaraSpacing.Small))
 
         HorizontalPager(
             state = pagerState,
@@ -302,7 +302,7 @@ private fun ResourceExplorerFilesPage(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
                 ) {
                     ResourceExplorerSearch(state, actions, Modifier.weight(1f))
                     ResourceExplorerImportAction(state, actions)
@@ -310,7 +310,7 @@ private fun ResourceExplorerFilesPage(
             } else {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
                 ) {
                     ResourceExplorerSearch(state, actions, Modifier.fillMaxWidth())
                     Row(
@@ -324,7 +324,7 @@ private fun ResourceExplorerFilesPage(
         }
 
         if (state.importItems.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(NexaraSpacing.Small))
             ImportStatusList(
                 items = state.importItems,
                 isImporting = state.isImporting,
@@ -333,7 +333,7 @@ private fun ResourceExplorerFilesPage(
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(NexaraSpacing.Small))
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             filesContent()
         }
@@ -363,18 +363,16 @@ private fun ResourceExplorerImportAction(
         onClick = actions.onImportFiles,
         enabled = state.workspaceReady && !state.isImporting,
         modifier = Modifier
-            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .defaultMinSize(minWidth = NexaraSpacing.MinimumTouchTarget, minHeight = NexaraSpacing.MinimumTouchTarget)
             .testTag(UiTags.RESOURCE_EXPLORER_IMPORT),
     ) {
         Icon(Icons.Rounded.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(modifier = Modifier.size(8.dp))
+        Spacer(modifier = Modifier.size(NexaraSpacing.Small))
         Text(
             stringResource(
                 if (state.isImporting) R.string.resource_explorer_importing
                 else R.string.resource_explorer_import_files,
             ),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -396,13 +394,13 @@ private fun ResourceExplorerSessionState(
                 liveRegion = if (isLoading) LiveRegionMode.Polite else LiveRegionMode.Assertive
                 stateDescription = message
             }
-            .padding(32.dp),
+            .padding(NexaraSpacing.XXLarge),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (isLoading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(NexaraSpacing.Medium))
         }
         Text(
             text = message,
@@ -413,7 +411,7 @@ private fun ResourceExplorerSessionState(
             TextButton(
                 onClick = onRetry,
                 modifier = Modifier
-                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                    .defaultMinSize(minWidth = NexaraSpacing.MinimumTouchTarget, minHeight = NexaraSpacing.MinimumTouchTarget)
                     .testTag(UiTags.RESOURCE_EXPLORER_RETRY_LOAD),
             ) {
                 Text(stringResource(R.string.shared_btn_retry))
@@ -429,14 +427,10 @@ private fun ImportStatusList(
     onRetry: (android.net.Uri) -> Unit,
     onClear: () -> Unit,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.medium,
-    ) {
+    BettboxListGroup(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Medium),
+            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -452,13 +446,11 @@ private fun ImportStatusList(
                     onClick = onClear,
                     enabled = !isImporting,
                     modifier = Modifier
-                        .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                        .defaultMinSize(minWidth = NexaraSpacing.MinimumTouchTarget, minHeight = NexaraSpacing.MinimumTouchTarget)
                         .testTag(UiTags.RESOURCE_EXPLORER_CLEAR_RESULTS),
                 ) {
                     Text(
                         stringResource(R.string.resource_explorer_clear_results),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -503,13 +495,13 @@ private fun ImportStatusRow(
         MaterialTheme.colorScheme.onSurfaceVariant
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(vertical = NexaraSpacing.Small)) {
         val stack = maxWidth < 420.dp || LocalDensity.current.fontScale >= 1.5f
         val content: @Composable (Modifier) -> Unit = { modifier ->
             Row(
                 modifier = modifier,
                 verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
             ) {
                 Icon(
                     imageVector = when (item.status) {
@@ -521,13 +513,11 @@ private fun ImportStatusRow(
                     tint = statusColor,
                     modifier = Modifier.size(20.dp),
                 )
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
                     NexaraIdentifierText(
                         text = item.displayName,
                         style = NexaraTypography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = statusText,
@@ -542,7 +532,7 @@ private fun ImportStatusRow(
         }
 
         if (stack) {
-            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall)) {
                 content(Modifier.fillMaxWidth())
                 if (shouldOfferImportRetry(item)) {
                     ImportRetryAction(item, isImporting, onRetry, Modifier.fillMaxWidth())
@@ -552,7 +542,7 @@ private fun ImportStatusRow(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
             ) {
                 content(Modifier.weight(1f))
                 if (shouldOfferImportRetry(item)) {
@@ -573,7 +563,7 @@ private fun ImportRetryAction(
     val actionLabel = stringResource(R.string.resource_explorer_retry_document, item.displayName)
     Box(
         modifier = modifier
-            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .defaultMinSize(minWidth = NexaraSpacing.MinimumTouchTarget, minHeight = NexaraSpacing.MinimumTouchTarget)
             .clickable(
                 enabled = !isImporting,
                 onClickLabel = actionLabel,
@@ -581,7 +571,7 @@ private fun ImportRetryAction(
                 onClick = { onRetry(item.uri) },
             )
             .testTag(UiTags.resourceExplorerImportRetry(item.uri.toString()))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = NexaraSpacing.Medium, vertical = NexaraSpacing.Medium),
         contentAlignment = Alignment.Center,
     ) {
         Text(

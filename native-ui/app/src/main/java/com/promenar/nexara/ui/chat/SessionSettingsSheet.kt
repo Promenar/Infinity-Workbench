@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Info
@@ -59,7 +59,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -91,6 +90,7 @@ import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.ui.common.*
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.settings.SettingsViewModel
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.NexaraTypography
 import com.promenar.nexara.ui.testing.UiTags
 import kotlinx.coroutines.launch
@@ -223,11 +223,11 @@ fun SessionSettingsSheet(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 6.dp),
-                height = 46.dp,
+                    .padding(horizontal = NexaraSpacing.XLarge, vertical = NexaraSpacing.Small),
+                height = NexaraSpacing.MinimumTouchTarget,
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(NexaraSpacing.Small))
 
             HorizontalPager(
                 state = pagerState,
@@ -672,63 +672,73 @@ private fun ToolsPanel(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp)
-            .padding(top = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = NexaraSpacing.XLarge)
+            .padding(top = NexaraSpacing.Large, bottom = NexaraSpacing.XLarge),
     ) {
-        Text(stringResource(R.string.p0_grants_title), style = MaterialTheme.typography.titleSmall)
-        if (grants.isEmpty()) Text(stringResource(R.string.p0_grants_empty), style = MaterialTheme.typography.bodySmall)
-        grants.forEach { grant ->
-            TextButton(
-                onClick = { chatViewModel.revokeSessionGrant(grant) },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) {
-                Text(stringResource(R.string.p0_revoke_target,
-                    grant.toolName + ": " + com.promenar.nexara.domain.tool.ToolExecutionTargets.display(grant.target)))
+        NexaraSettingsSection(title = stringResource(R.string.p0_grants_title)) {
+            if (grants.isEmpty()) {
+                Text(
+                    stringResource(R.string.p0_grants_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(NexaraSpacing.Large),
+                )
+            }
+            grants.forEach { grant ->
+                NexaraSettingsItem(
+                    icon = Icons.Rounded.Block,
+                    title = stringResource(R.string.agent_panels_revoke_permission),
+                    subtitle = grant.toolName + ": " + com.promenar.nexara.domain.tool.ToolExecutionTargets.display(grant.target),
+                    subtitleIsIdentifier = true,
+                    onClickLabel = stringResource(
+                        R.string.p0_revoke_target,
+                        grant.toolName + ": " + com.promenar.nexara.domain.tool.ToolExecutionTargets.display(grant.target),
+                    ),
+                    onClick = { chatViewModel.revokeSessionGrant(grant) },
+                )
             }
         }
-        ToolToggleRow(stringResource(R.string.sheet_tool_time_injection), Icons.Rounded.Timer, timeInjection) { 
-            timeInjection = it
-            onToggle("timeInjection", it)
-        }
+        NexaraSettingsSection(title = stringResource(R.string.agent_panels_session_options)) {
+            SettingsToggle(stringResource(R.string.sheet_tool_time_injection), checked = timeInjection, icon = Icons.Rounded.Timer, onCheckedChange = {
+                timeInjection = it
+                onToggle("timeInjection", it)
+            })
 
-        var economyMode by remember(options.economyMode) { mutableStateOf(options.economyMode) }
-        ToolToggleRow(stringResource(R.string.sheet_tool_economy_mode), Icons.Rounded.Tune, economyMode) {
-            economyMode = it
-            onToggle("economyMode", it)
-        }
+            var economyMode by remember(options.economyMode) { mutableStateOf(options.economyMode) }
+            SettingsToggle(stringResource(R.string.sheet_tool_economy_mode), checked = economyMode, icon = Icons.Rounded.Tune, onCheckedChange = {
+                economyMode = it
+                onToggle("economyMode", it)
+            })
 
-        if (isGeminiModel) {
-            ToolToggleRow(stringResource(R.string.sheet_tool_gemini_grounding), Icons.Rounded.Language, geminiSearchEnabled) {
-                geminiSearchEnabled = it
-                onToggle("enableGeminiSearch", it)
+            if (isGeminiModel) {
+                SettingsToggle(stringResource(R.string.sheet_tool_gemini_grounding), checked = geminiSearchEnabled, icon = Icons.Rounded.Language, onCheckedChange = {
+                    geminiSearchEnabled = it
+                    onToggle("enableGeminiSearch", it)
+                })
             }
-        }
-
-        Text(stringResource(R.string.sheet_tab_tools), style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-        ToolToggleRow(stringResource(R.string.sheet_tool_search_retrieval), Icons.Rounded.Storage, toolsEnabled) { 
-            toolsEnabled = it
-            onToggle("toolsEnabled", it)
+            SettingsToggle(stringResource(R.string.sheet_tool_search_retrieval), checked = toolsEnabled, icon = Icons.Rounded.Storage, onCheckedChange = {
+                toolsEnabled = it
+                onToggle("toolsEnabled", it)
+            })
         }
 
         if (customSkills.isNotEmpty()) {
-            Text(
-                stringResource(R.string.sheet_tool_session_skills),
-                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            customSkills.forEach { skill ->
-                ToolToggleRow(
-                    skill.name,
-                    Icons.Rounded.AutoFixHigh,
-                    skill.id in session?.activeSkillIds.orEmpty(),
-                ) { chatViewModel.toggleSessionSkill(skill.id) }
+            NexaraSettingsSection(title = stringResource(R.string.sheet_tool_session_skills)) {
+                customSkills.forEach { skill ->
+                    SettingsToggle(
+                        title = skill.name,
+                        icon = Icons.Rounded.AutoFixHigh,
+                        checked = skill.id in session?.activeSkillIds.orEmpty(),
+                        onCheckedChange = { chatViewModel.toggleSessionSkill(skill.id) },
+                    )
+                }
+                Text(
+                    stringResource(R.string.sheet_tool_custom_unsandboxed),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = NexaraSpacing.Large, vertical = NexaraSpacing.Medium),
+                )
             }
-            Text(
-                stringResource(R.string.sheet_tool_custom_unsandboxed),
-                style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
 
         val selectableMcpServers = remember(mcpServers, mcpConnectionRevision) {
@@ -738,17 +748,15 @@ private fun ToolsPanel(
             }
         }
         if (selectableMcpServers.isNotEmpty()) {
-            Text(
-                stringResource(R.string.sheet_tool_mcp_servers),
-                style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            selectableMcpServers.forEach { server ->
-                ToolToggleRow(
-                    server.name,
-                    Icons.Rounded.Sync,
-                    server.id in session?.activeMcpServerIds.orEmpty(),
-                ) { chatViewModel.toggleSessionMcpServer(server.id) }
+            NexaraSettingsSection(title = stringResource(R.string.sheet_tool_mcp_servers)) {
+                selectableMcpServers.forEach { server ->
+                    SettingsToggle(
+                        title = server.name,
+                        icon = Icons.Rounded.Sync,
+                        checked = server.id in session?.activeMcpServerIds.orEmpty(),
+                        onCheckedChange = { chatViewModel.toggleSessionMcpServer(server.id) },
+                    )
+                }
             }
         }
 
@@ -763,31 +771,21 @@ private fun ToolsPanel(
             "manual" -> stringResource(R.string.sheet_execution_mode_manual)
             else -> stringResource(R.string.sheet_execution_mode_semi)
         }
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), RoundedCornerShape(10.dp)),
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    stringResource(R.string.sheet_tool_execution_mode),
-                    style = NexaraTypography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(4.dp))
+        NexaraSettingsSection(title = stringResource(R.string.sheet_tool_execution_mode)) {
+            Column(
+                modifier = Modifier.padding(NexaraSpacing.Large),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+            ) {
                 ExecutionModeSelector(
                     selected = selectedExecutionMode,
                     onSelect = { selected ->
                         chatViewModel.updateExecutionMode(selected.name.lowercase())
                     },
                 )
-                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     modeDesc,
-                    style = NexaraTypography.bodyMedium.copy(fontSize = 12.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
