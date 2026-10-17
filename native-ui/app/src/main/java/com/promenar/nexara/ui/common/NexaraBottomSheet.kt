@@ -13,10 +13,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
@@ -31,14 +35,24 @@ fun NexaraBottomSheet(
     onDismiss: () -> Unit,
     title: String? = null,
     modifier: Modifier = Modifier.fillMaxHeight(NEXARA_BOTTOM_SHEET_DEFAULT_HEIGHT_FRACTION),
+    dismissEnabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
     if (!show) return
+    val currentDismissEnabled by rememberUpdatedState(dismissEnabled)
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (currentDismissEnabled) onDismiss() },
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = rememberModalBottomSheetState(
+            skipPartiallyExpanded = true,
+            confirmValueChange = { currentDismissEnabled || it != SheetValue.Hidden },
+        ),
+        sheetGesturesEnabled = dismissEnabled,
+        properties = ModalBottomSheetProperties(
+            shouldDismissOnBackPress = dismissEnabled,
+            shouldDismissOnClickOutside = dismissEnabled,
+        ),
         dragHandle = {
             Box(
                 modifier = Modifier

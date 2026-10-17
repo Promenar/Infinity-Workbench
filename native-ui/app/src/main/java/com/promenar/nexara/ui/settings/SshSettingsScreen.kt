@@ -6,29 +6,51 @@ import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AddCircleOutline
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,12 +61,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -55,13 +81,21 @@ import com.promenar.nexara.data.ssh.SshAuthType
 import com.promenar.nexara.data.ssh.SshHost
 import com.promenar.nexara.data.ssh.SshHostKey
 import com.promenar.nexara.data.ssh.SshKeyGenerator
-import com.promenar.nexara.ui.common.NexaraPageLayout
+import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.NexaraSnackbar
+import com.promenar.nexara.ui.common.NexaraSnackbarData
 import com.promenar.nexara.ui.common.SettingsToggle
-import com.promenar.nexara.ui.ssh.SshInputException
+import com.promenar.nexara.ui.common.SnackbarType
 import com.promenar.nexara.ui.ssh.SshHostDraft
+import com.promenar.nexara.ui.ssh.SshInputException
 import com.promenar.nexara.ui.ssh.SshPrivateKeyInput
 import com.promenar.nexara.ui.ssh.safeSshError
+import com.promenar.nexara.ui.theme.NexaraSpacing
 import com.promenar.nexara.ui.theme.forInput
+import com.promenar.nexara.ui.theme.nexaraDomainColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,12 +113,14 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
     val forwards by runtime.forwardStates.collectAsState()
     val cleanupWarnings by runtime.cleanupWarnings.collectAsState()
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     var editing by remember { mutableStateOf<SshHost?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<SshHost?>(null) }
     var trustPrompt by remember { mutableStateOf<SshTrustPrompt?>(null) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
+    var statusIsError by remember { mutableStateOf(false) }
     val copiedMessage = stringResource(R.string.ssh_public_key_copied)
     val verifiedMessage = stringResource(R.string.ssh_fingerprint_matches)
 
@@ -92,11 +128,13 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
         if (busy) return
         busy = true
         status = null
+        statusIsError = false
         scope.launch {
             try {
                 action()
             } catch (error: Exception) {
                 status = safeSshError(error)
+                statusIsError = true
             } finally {
                 busy = false
             }
@@ -105,7 +143,10 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
 
     suspend fun finishAction(host: SshHost, action: SshPendingAction) {
         when (action) {
-            SshPendingAction.VERIFY -> status = verifiedMessage
+            SshPendingAction.VERIFY -> {
+                status = verifiedMessage
+                statusIsError = false
+            }
             SshPendingAction.TERMINAL -> onOpenTerminal(host.alias)
             SshPendingAction.FORWARD -> withContext(Dispatchers.IO) { runtime.startForward(host.alias) }
         }
@@ -120,72 +161,53 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
         }
     }
 
-    NexaraPageLayout(
-        title = stringResource(R.string.ssh_settings_title),
-        onBack = onBack,
-        scrollable = false,
-    ) {
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item {
-                Text(stringResource(R.string.ssh_settings_description), style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    stringResource(R.string.ssh_backup_notice),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    stringResource(R.string.ssh_termux_notice),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Button(
-                    onClick = { editing = null; showEditor = true },
-                    enabled = !busy,
-                    modifier = Modifier.padding(top = 12.dp).heightIn(min = 48.dp),
-                ) { Text(stringResource(R.string.ssh_add_host)) }
-            }
-            if (busy) item { CircularProgressIndicator() }
-            if (cleanupWarnings.isNotEmpty()) item {
-                Text(stringResource(R.string.ssh_cleanup_warning), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-            }
-            status?.let { message -> item { SelectionContainer { Text(message, style = MaterialTheme.typography.bodyMedium) } } }
-            if (hosts.isEmpty()) item {
-                Text(stringResource(R.string.ssh_no_hosts), style = MaterialTheme.typography.bodyLarge)
-            }
-            items(hosts, key = { it.id }) { host ->
-                SshHostCard(
-                    host = host,
-                    forwardPort = forwards[host.alias],
-                    enabled = !busy,
-                    onTerminal = { verify(host, SshPendingAction.TERMINAL) },
-                    onVerify = { verify(host, SshPendingAction.VERIFY) },
-                    onEdit = { editing = host; showEditor = true },
-                    onDelete = { deleting = host },
-                    onCopyPublicKey = {
-                        perform {
-                            val publicKey = withContext(Dispatchers.IO) {
-                                store.credential(host)?.use { credential ->
-                                    SshKeyGenerator.publicKey(credential.privateKey, credential.passphrase)
-                                } ?: throw SshInputException("SSH_CREDENTIAL_MISSING")
-                            }
-                            copySshPublicKey(context, publicKey)
-                            status = copiedMessage
+    Box(Modifier.fillMaxSize()) {
+        SshSettingsContent(
+            state = SshSettingsVisualState(
+                hosts = hosts,
+                forwards = forwards,
+                busy = busy,
+                cleanupWarning = cleanupWarnings.isNotEmpty(),
+                status = status,
+                statusIsError = statusIsError,
+            ),
+            actions = SshSettingsVisualActions(
+                onBack = onBack,
+                onAddHost = { editing = null; showEditor = true },
+                onTerminal = { verify(it, SshPendingAction.TERMINAL) },
+                onVerify = { verify(it, SshPendingAction.VERIFY) },
+                onEdit = { editing = it; showEditor = true },
+                onDelete = { deleting = it },
+                onCopyPublicKey = { host ->
+                    perform {
+                        val publicKey = withContext(Dispatchers.IO) {
+                            store.credential(host)?.use { credential ->
+                                SshKeyGenerator.publicKey(credential.privateKey, credential.passphrase)
+                            } ?: throw SshInputException("SSH_CREDENTIAL_MISSING")
                         }
-                    },
-                    onToggleForward = {
-                        if (forwards.containsKey(host.alias)) perform {
-                            withContext(Dispatchers.IO) { runtime.stopForward(host.alias) }
-                        } else verify(host, SshPendingAction.FORWARD)
-                    },
-                )
-            }
+                        copySshPublicKey(context, publicKey)
+                        scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
+                        status = copiedMessage
+                        statusIsError = false
+                    }
+                },
+                onToggleForward = { host ->
+                    if (forwards.containsKey(host.alias)) perform {
+                        withContext(Dispatchers.IO) { runtime.stopForward(host.alias) }
+                    } else verify(host, SshPendingAction.FORWARD)
+                },
+            ),
+        )
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
+        ) { data ->
+            NexaraSnackbar(NexaraSnackbarData(data.visuals.message, SnackbarType.SUCCESS))
         }
     }
 
     if (showEditor) {
-        SshHostEditorDialog(
+        SshHostEditorSheet(
             existing = editing,
             onDismiss = { showEditor = false; editing = null },
             onSave = { host, credential, generate ->
@@ -207,7 +229,9 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
                 }
                 if (publicKey != null) {
                     copySshPublicKey(context, publicKey)
+                    scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
                     status = copiedMessage
+                    statusIsError = false
                 }
                 showEditor = false
                 editing = null
@@ -229,12 +253,12 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
                         }
                         deleting = null
                     }
-                }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
+                }, enabled = !busy, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
                     Text(stringResource(R.string.ssh_delete))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deleting = null }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
+                TextButton(onClick = { deleting = null }, enabled = !busy, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
                     Text(stringResource(R.string.ssh_cancel))
                 }
             },
@@ -248,17 +272,17 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
                 Text(stringResource(if (prompt.host.trustedFingerprint == null) R.string.ssh_trust_title else R.string.ssh_changed_title))
             },
             text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)) {
                     Text(stringResource(R.string.ssh_compare_fingerprint))
                     prompt.host.trustedFingerprint?.let { previous ->
                         Text(stringResource(R.string.ssh_previous_fingerprint), style = MaterialTheme.typography.labelLarge)
                         SelectionContainer {
-                            Text("${prompt.host.trustedKeyType.orEmpty()}\n$previous", style = MaterialTheme.typography.bodyMedium)
+                            Text("${prompt.host.trustedKeyType.orEmpty()}\n$previous", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace))
                         }
                     }
                     Text(stringResource(R.string.ssh_presented_fingerprint), style = MaterialTheme.typography.labelLarge)
                     SelectionContainer {
-                        Text("${prompt.key.type}\n${prompt.key.fingerprint}", style = MaterialTheme.typography.bodyMedium)
+                        Text("${prompt.key.type}\n${prompt.key.fingerprint}", style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace))
                     }
                     status?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
                 }
@@ -273,16 +297,135 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
                         trustPrompt = null
                         finishAction(prompt.host, prompt.action)
                     }
-                }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
+                }, enabled = !busy, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
                     Text(stringResource(if (prompt.host.trustedFingerprint == null) R.string.ssh_trust else R.string.ssh_replace_trust))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { trustPrompt = null }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
+                TextButton(onClick = { trustPrompt = null }, enabled = !busy, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
                     Text(stringResource(R.string.ssh_cancel))
                 }
             },
         )
+    }
+}
+
+internal data class SshSettingsVisualState(
+    val hosts: List<SshHost> = emptyList(),
+    val forwards: Map<String, Int> = emptyMap(),
+    val busy: Boolean = false,
+    val cleanupWarning: Boolean = false,
+    val status: String? = null,
+    val statusIsError: Boolean = false,
+)
+
+internal data class SshSettingsVisualActions(
+    val onBack: () -> Unit = {},
+    val onAddHost: () -> Unit = {},
+    val onTerminal: (SshHost) -> Unit = {},
+    val onVerify: (SshHost) -> Unit = {},
+    val onEdit: (SshHost) -> Unit = {},
+    val onDelete: (SshHost) -> Unit = {},
+    val onCopyPublicKey: (SshHost) -> Unit = {},
+    val onToggleForward: (SshHost) -> Unit = {},
+)
+
+@Composable
+internal fun SshSettingsContent(
+    state: SshSettingsVisualState,
+    actions: SshSettingsVisualActions,
+    modifier: Modifier = Modifier,
+) {
+    NexaraSettingsPageLayout(
+        title = stringResource(R.string.ssh_settings_title),
+        onBack = actions.onBack,
+        modifier = modifier,
+    ) { contentPadding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
+        ) {
+            item("manage") {
+                NexaraSettingsSection(title = stringResource(R.string.ssh_visual_manage_section)) {
+                    SshActionItem(
+                        icon = Icons.Rounded.AddCircleOutline,
+                        title = stringResource(R.string.ssh_add_host),
+                        subtitle = stringResource(R.string.ssh_settings_description),
+                        enabled = !state.busy,
+                        onClick = actions.onAddHost,
+                        showChevron = true,
+                    )
+                    if (state.hosts.isEmpty()) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Large),
+                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Terminal,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(NexaraSpacing.XXLarge),
+                            )
+                            Text(stringResource(R.string.ssh_no_hosts), style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                stringResource(R.string.ssh_visual_empty_help),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+            if (state.busy || state.cleanupWarning || state.status != null) {
+                item("status") {
+                    NexaraSettingsSection(title = stringResource(R.string.ssh_visual_status_section)) {
+                        if (state.busy) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Large),
+                                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(NexaraSpacing.XLarge))
+                                Text(stringResource(R.string.ssh_visual_working), style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                        if (state.cleanupWarning) {
+                            SshInformationRow(
+                                icon = Icons.Rounded.WarningAmber,
+                                text = stringResource(R.string.ssh_cleanup_warning),
+                                color = MaterialTheme.nexaraDomainColors.warning,
+                            )
+                        }
+                        state.status?.let { message ->
+                            SshInformationRow(
+                                icon = if (state.statusIsError) Icons.Rounded.ErrorOutline else Icons.Rounded.CheckCircle,
+                                text = message,
+                                color = if (state.statusIsError) MaterialTheme.colorScheme.error else MaterialTheme.nexaraDomainColors.success,
+                            )
+                        }
+                    }
+                }
+            }
+            items(state.hosts, key = { it.id }) { host ->
+                SshHostCard(
+                    host = host,
+                    forwardPort = state.forwards[host.alias],
+                    enabled = !state.busy,
+                    onTerminal = { actions.onTerminal(host) },
+                    onVerify = { actions.onVerify(host) },
+                    onEdit = { actions.onEdit(host) },
+                    onDelete = { actions.onDelete(host) },
+                    onCopyPublicKey = { actions.onCopyPublicKey(host) },
+                    onToggleForward = { actions.onToggleForward(host) },
+                )
+            }
+            item("notes") {
+                NexaraSettingsSection(title = stringResource(R.string.ssh_visual_notes_section)) {
+                    SshInformationRow(icon = Icons.Rounded.Shield, text = stringResource(R.string.ssh_backup_notice))
+                    SshInformationRow(icon = Icons.Rounded.PhoneAndroid, text = stringResource(R.string.ssh_termux_notice))
+                }
+            }
+        }
     }
 }
 
@@ -299,61 +442,150 @@ private fun SshHostCard(
     onCopyPublicKey: () -> Unit,
     onToggleForward: () -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(host.alias, style = MaterialTheme.typography.titleMedium)
+    NexaraSettingsSection(title = host.alias) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Large),
+            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+        ) {
             SelectionContainer {
-                Text("${host.username}@${host.hostname}:${host.port}", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = stringResource(R.string.ssh_visual_host_address, host.username, host.hostname, host.port),
+                    style = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
+                )
             }
-            Text(
-                stringResource(if (host.trustedFingerprint == null) R.string.ssh_untrusted else R.string.ssh_trusted),
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (host.trustedFingerprint == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+            ) {
+                SshStatusTag(
+                    text = stringResource(if (host.trustedFingerprint == null) R.string.ssh_untrusted else R.string.ssh_trusted),
+                    icon = if (host.trustedFingerprint == null) Icons.Rounded.WarningAmber else Icons.Rounded.CheckCircle,
+                    color = if (host.trustedFingerprint == null) MaterialTheme.nexaraDomainColors.warning else MaterialTheme.nexaraDomainColors.success,
+                )
+                SshStatusTag(
+                    text = stringResource(if (host.authType == SshAuthType.KEY) R.string.ssh_auth_key else R.string.ssh_auth_password),
+                    icon = if (host.authType == SshAuthType.KEY) Icons.Rounded.Key else Icons.Rounded.Lock,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Text(
                 stringResource(if (host.keepTerminal) R.string.ssh_keep_enabled else R.string.ssh_close_on_exit),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onTerminal, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.ssh_open_terminal))
-                }
-                OutlinedButton(onClick = onVerify, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.ssh_verify))
-                }
-                if (host.authType == SshAuthType.KEY) {
-                    TextButton(onClick = onCopyPublicKey, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(stringResource(R.string.ssh_copy_public_key))
-                    }
-                }
-                TextButton(onClick = onEdit, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.ssh_edit))
-                }
-                TextButton(onClick = onDelete, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.ssh_delete))
+            Button(
+                onClick = onTerminal,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth().heightIn(min = NexaraSpacing.MinimumTouchTarget),
+            ) {
+                Text(stringResource(R.string.ssh_open_terminal))
+            }
+        }
+        SshActionItem(icon = Icons.Rounded.Security, title = stringResource(R.string.ssh_verify), enabled = enabled, onClick = onVerify)
+        if (host.authType == SshAuthType.KEY) {
+            SshActionItem(icon = Icons.Rounded.ContentCopy, title = stringResource(R.string.ssh_copy_public_key), enabled = enabled, onClick = onCopyPublicKey)
+        }
+        SshActionItem(icon = Icons.Rounded.Edit, title = stringResource(R.string.ssh_edit_host), enabled = enabled, onClick = onEdit, showChevron = true)
+        if (host.localForwardPort != null) {
+            SettingsToggle(
+                title = stringResource(R.string.ssh_forward_configure),
+                description = if (forwardPort == null) stringResource(R.string.ssh_forward_stopped)
+                else stringResource(R.string.ssh_forward_running, forwardPort),
+                checked = forwardPort != null,
+                onCheckedChange = { onToggleForward() },
+                enabled = enabled,
+            )
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = NexaraSpacing.Large).padding(bottom = NexaraSpacing.Medium),
+                verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+            ) {
+                SshStatusTag(
+                    text = stringResource(if (forwardPort == null) R.string.ssh_forward_stopped else R.string.ssh_visual_forward_active),
+                    icon = if (forwardPort == null) Icons.Rounded.Info else Icons.Rounded.CheckCircle,
+                    color = if (forwardPort == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.nexaraDomainColors.success,
+                )
+                SelectionContainer {
+                    Text(
+                        text = stringResource(R.string.ssh_forward_route, host.localForwardPort, host.forwardHost, host.forwardPort ?: 0),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
-            if (host.localForwardPort != null) {
-                Text(
-                    stringResource(R.string.ssh_forward_route, host.localForwardPort, host.forwardHost, host.forwardPort ?: 0),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    if (forwardPort == null) stringResource(R.string.ssh_forward_stopped)
-                    else stringResource(R.string.ssh_forward_running, forwardPort),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                OutlinedButton(onClick = onToggleForward, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(stringResource(if (forwardPort == null) R.string.ssh_forward_start else R.string.ssh_forward_stop))
-                }
-            }
+        }
+        SshActionItem(
+            icon = Icons.Rounded.DeleteOutline,
+            title = stringResource(R.string.ssh_delete),
+            enabled = enabled,
+            onClick = onDelete,
+            destructive = true,
+        )
+    }
+}
+
+@Composable
+private fun SshActionItem(
+    icon: ImageVector,
+    title: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    subtitle: String? = null,
+    showChevron: Boolean = false,
+    destructive: Boolean = false,
+) {
+    NexaraSettingsItem(
+        icon = icon,
+        title = title,
+        subtitle = subtitle,
+        onClick = onClick,
+        enabled = enabled,
+        showChevron = showChevron,
+        titleTextStyle = MaterialTheme.typography.bodyLarge.copy(
+            color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+        ),
+        modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
+    )
+}
+
+@Composable
+private fun SshInformationRow(
+    icon: ImageVector,
+    text: String,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Large),
+        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(NexaraSpacing.XLarge))
+        SelectionContainer {
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
+        }
+    }
+}
+
+@Composable
+private fun SshStatusTag(text: String, icon: ImageVector, color: Color) {
+    Surface(
+        color = color.copy(alpha = 0.1f),
+        contentColor = color,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = NexaraSpacing.Small, vertical = NexaraSpacing.XSmall),
+            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(NexaraSpacing.Large))
+            Text(text, style = MaterialTheme.typography.labelMedium)
         }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SshHostEditorDialog(
+private fun SshHostEditorSheet(
     existing: SshHost?,
     onDismiss: () -> Unit,
     onSave: suspend (SshHost, SshCredential?, Boolean) -> Unit,
@@ -452,84 +684,139 @@ private fun SshHostEditorDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(stringResource(if (existing == null) R.string.ssh_add_host else R.string.ssh_edit_host)) },
-        text = {
+    NexaraBottomSheet(
+        show = true,
+        onDismiss = { if (!busy) onDismiss() },
+        dismissEnabled = !busy,
+        title = stringResource(if (existing == null) R.string.ssh_add_host else R.string.ssh_edit_host),
+        modifier = Modifier.fillMaxHeight(0.95f).imePadding(),
+    ) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight()) {
             Column(
-                Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
             ) {
-                SshEditorField(alias, { alias = it }, R.string.ssh_alias, enabled = !busy && existing == null)
-                Text(stringResource(R.string.ssh_alias_help), style = MaterialTheme.typography.bodySmall)
-                SshEditorField(hostname, { hostname = it }, R.string.ssh_hostname, enabled = !busy)
-                SshEditorField(port, { port = it }, R.string.ssh_port, keyboardType = KeyboardType.Number, enabled = !busy)
-                SshEditorField(username, { username = it }, R.string.ssh_username, enabled = !busy)
-                Text(stringResource(R.string.ssh_authentication), style = MaterialTheme.typography.labelLarge)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SshAuthType.entries.forEach { type ->
-                        FilterChip(
-                            selected = authType == type,
-                            onClick = { authType = type; clearSecrets() },
-                            enabled = !busy,
-                            label = { Text(stringResource(if (type == SshAuthType.KEY) R.string.ssh_auth_key else R.string.ssh_auth_password)) },
-                            modifier = Modifier.heightIn(min = 48.dp),
-                        )
+                NexaraSettingsSection(title = stringResource(R.string.ssh_visual_connection_section)) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Large),
+                        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+                    ) {
+                        SshEditorField(alias, { alias = it }, R.string.ssh_alias, enabled = !busy && existing == null)
+                        Text(stringResource(R.string.ssh_alias_help), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        SshEditorField(hostname, { hostname = it }, R.string.ssh_hostname, enabled = !busy)
+                        SshEditorField(port, { port = it }, R.string.ssh_port, keyboardType = KeyboardType.Number, enabled = !busy)
+                        SshEditorField(username, { username = it }, R.string.ssh_username, enabled = !busy)
                     }
                 }
-                if (authType == SshAuthType.PASSWORD) {
-                    SshEditorField(password, { password = it }, R.string.ssh_password, secret = true, enabled = !busy)
-                } else {
-                    Text(
-                        stringResource(if (privateKey == null) R.string.ssh_key_import_help else R.string.ssh_key_imported),
-                        style = MaterialTheme.typography.bodyMedium,
+                NexaraSettingsSection(title = stringResource(R.string.ssh_authentication)) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Large),
+                        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+                    ) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
+                        ) {
+                            SshAuthType.entries.forEach { type ->
+                                FilterChip(
+                                    selected = authType == type,
+                                    onClick = { authType = type; clearSecrets() },
+                                    enabled = !busy,
+                                    label = { Text(stringResource(if (type == SshAuthType.KEY) R.string.ssh_auth_key else R.string.ssh_auth_password)) },
+                                    modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
+                                )
+                            }
+                        }
+                        if (authType == SshAuthType.PASSWORD) {
+                            SshEditorField(password, { password = it }, R.string.ssh_password, secret = true, enabled = !busy)
+                        } else {
+                            Text(
+                                stringResource(if (privateKey == null) R.string.ssh_key_import_help else R.string.ssh_key_imported),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            OutlinedButton(
+                                onClick = { importKey.launch(arrayOf("*/*")) },
+                                enabled = !busy,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = NexaraSpacing.MinimumTouchTarget),
+                            ) {
+                                Text(stringResource(R.string.ssh_import_key))
+                            }
+                            if (privateKey != null) {
+                                SshEditorField(passphrase, { passphrase = it }, R.string.ssh_passphrase, secret = true, enabled = !busy)
+                            }
+                            Button(
+                                onClick = { save(true) },
+                                enabled = !busy,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = NexaraSpacing.MinimumTouchTarget),
+                            ) {
+                                Text(stringResource(R.string.ssh_generate_save_copy))
+                            }
+                            Text(stringResource(R.string.ssh_generate_help), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (existing != null) {
+                            Text(stringResource(R.string.ssh_keep_credential_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                NexaraSettingsSection(title = stringResource(R.string.ssh_visual_terminal_section)) {
+                    SettingsToggle(
+                        title = stringResource(R.string.ssh_keep_terminal),
+                        description = stringResource(R.string.ssh_keep_terminal_help),
+                        checked = keepTerminal,
+                        onCheckedChange = { keepTerminal = it },
+                        icon = Icons.Rounded.Terminal,
+                        enabled = !busy,
                     )
-                    OutlinedButton(onClick = { importKey.launch(arrayOf("*/*")) }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(stringResource(R.string.ssh_import_key))
-                    }
-                    if (privateKey != null) {
-                        SshEditorField(passphrase, { passphrase = it }, R.string.ssh_passphrase, secret = true, enabled = !busy)
-                    }
-                    Button(onClick = { save(true) }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text(stringResource(R.string.ssh_generate_save_copy))
-                    }
-                    Text(stringResource(R.string.ssh_generate_help), style = MaterialTheme.typography.bodySmall)
                 }
-                if (existing != null) Text(stringResource(R.string.ssh_keep_credential_hint), style = MaterialTheme.typography.bodySmall)
-                SettingsToggle(
-                    title = stringResource(R.string.ssh_keep_terminal),
-                    description = stringResource(R.string.ssh_keep_terminal_help),
-                    checked = keepTerminal,
-                    onCheckedChange = { keepTerminal = it },
-                    enabled = !busy,
-                )
-                SettingsToggle(
-                    title = stringResource(R.string.ssh_forward_configure),
-                    description = stringResource(R.string.ssh_forward_loopback_only),
-                    checked = forwarding,
-                    onCheckedChange = { forwarding = it },
-                    enabled = !busy,
-                )
-                if (forwarding) {
-                    SshEditorField(localPort, { localPort = it }, R.string.ssh_forward_local_port, keyboardType = KeyboardType.Number, enabled = !busy)
-                    SshEditorField(forwardHost, { forwardHost = it }, R.string.ssh_forward_remote_host, enabled = !busy)
-                    SshEditorField(forwardPort, { forwardPort = it }, R.string.ssh_forward_remote_port, keyboardType = KeyboardType.Number, enabled = !busy)
+                NexaraSettingsSection(title = stringResource(R.string.ssh_forward_configure)) {
+                    SettingsToggle(
+                        title = stringResource(R.string.ssh_forward_configure),
+                        description = stringResource(R.string.ssh_forward_loopback_only),
+                        checked = forwarding,
+                        onCheckedChange = { forwarding = it },
+                        enabled = !busy,
+                    )
+                    if (forwarding) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(NexaraSpacing.Large),
+                            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium),
+                        ) {
+                            SshEditorField(localPort, { localPort = it }, R.string.ssh_forward_local_port, keyboardType = KeyboardType.Number, enabled = !busy)
+                            SshEditorField(forwardHost, { forwardHost = it }, R.string.ssh_forward_remote_host, enabled = !busy)
+                            SshEditorField(forwardPort, { forwardPort = it }, R.string.ssh_forward_remote_port, keyboardType = KeyboardType.Number, enabled = !busy)
+                        }
+                    }
                 }
-                errorCode?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
-                if (busy) CircularProgressIndicator()
+                errorCode?.let { message ->
+                    NexaraSettingsSection(title = stringResource(R.string.ssh_visual_status_section)) {
+                        SshInformationRow(icon = Icons.Rounded.ErrorOutline, text = message, color = MaterialTheme.colorScheme.error)
+                    }
+                }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { save(false) }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.ssh_save))
+            if (busy) {
+                CircularProgressIndicator(modifier = Modifier.padding(top = NexaraSpacing.Small).size(NexaraSpacing.XLarge))
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.ssh_cancel))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = NexaraSpacing.Medium),
+                horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f).heightIn(min = NexaraSpacing.MinimumTouchTarget),
+                ) {
+                    Text(stringResource(R.string.ssh_cancel))
+                }
+                Button(
+                    onClick = { save(false) },
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f).heightIn(min = NexaraSpacing.MinimumTouchTarget),
+                ) {
+                    Text(stringResource(R.string.ssh_save))
+                }
             }
-        },
-    )
+        }
+    }
 }
 
 @Composable
@@ -549,6 +836,7 @@ private fun SshEditorField(
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
         textStyle = MaterialTheme.typography.bodyLarge.forInput(),
+        shape = MaterialTheme.shapes.medium,
         visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboardType, autoCorrectEnabled = false),
     )

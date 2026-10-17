@@ -15,13 +15,21 @@ import kotlinx.serialization.json.booleanOrNull
  * 生成目标与内容片段。摘要不一致或无法解析时返回 null，界面回退到参数摘要。
  */
 object ApprovalPreview {
+    internal const val IRREVERSIBLE_WARNING = "不可恢复：文件超过挂载回收区上限或用户明确要求永久删除。"
+    internal const val NETWORK_ALLOWED = "可联网"
+
     private const val MAX_PREVIEW_LINES = 12
     private const val MAX_LINE_CHARS = 120
 
     enum class Action { OVERWRITE, CREATE_FILE, EDIT, MOVE, DELETE, CREATE_DIRECTORY, SCRIPT }
 
     /** 与语言无关的预览数据；动作标题由界面按资源本地化。 */
-    data class Preview(val action: Action, val target: String, val detail: String?)
+    data class Preview(
+        val action: Action,
+        val target: String,
+        val detail: String?,
+        val scriptAllowsNetwork: Boolean = false,
+    )
 
     fun forCall(call: ApprovalCallIdentity, messages: List<Message>, assistantMessageId: String?): Preview? {
         val arguments = messages
@@ -44,11 +52,12 @@ object ApprovalPreview {
             "create_file" -> Preview(Action.CREATE_FILE, newChild, args.string("content")?.let { excerpt(it, "") })
             "create_directory" -> Preview(Action.CREATE_DIRECTORY, newChild, null)
             "delete_file" -> Preview(Action.DELETE, target,
-                if ((args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true) "不可恢复：文件超过挂载回收区上限或用户明确要求永久删除。" else null)
+                if ((args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true) IRREVERSIBLE_WARNING else null)
             "exec_js", "run_script" -> Preview(Action.SCRIPT, if (toolName == "run_script") target else "", buildString {
-                if ((args["allow_network"] as? JsonPrimitive)?.booleanOrNull == true) appendLine("可联网")
+                if ((args["allow_network"] as? JsonPrimitive)?.booleanOrNull == true) appendLine(NETWORK_ALLOWED)
                 args.string("code")?.let { append(excerpt(it, "")) }
-            }.trimEnd().ifEmpty { null })
+            }.trimEnd().ifEmpty { null },
+                scriptAllowsNetwork = (args["allow_network"] as? JsonPrimitive)?.booleanOrNull == true)
             "move_file" -> Preview(
                 Action.MOVE,
                 target,

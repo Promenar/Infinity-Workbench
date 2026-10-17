@@ -101,6 +101,24 @@ import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSlider
 import com.promenar.nexara.ui.theme.forInput
+import com.promenar.nexara.NexaraApplication
+import com.promenar.nexara.data.termux.TermuxAvailability
+import com.promenar.nexara.ui.common.NexaraStepperSetting
+import com.promenar.nexara.ui.common.SettingsToggle
+import com.promenar.nexara.ui.common.NexaraSnackbar
+import com.promenar.nexara.ui.common.NexaraSnackbarData
+import com.promenar.nexara.ui.common.SnackbarType
+import com.promenar.nexara.ui.theme.NexaraSpacing
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 
 /** 技能编辑器的输入；name 为 null 表示新建。 */
 private data class AgentSkillEditorState(
@@ -159,6 +177,31 @@ fun SkillsScreen(
     val userSkills by viewModel.userSkills.collectAsState()
     val mcpServers by viewModel.mcpServers.collectAsState()
     val loopLimit by viewModel.loopLimit.collectAsState()
+    val tokenLimit by viewModel.taskTokenLimit.collectAsState()
+    val contextRatio by viewModel.toolContextRatio.collectAsState()
+    val keepRounds by viewModel.toolContextKeepRounds.collectAsState()
+    val repeatLimit by viewModel.toolLoopRepeatLimit.collectAsState()
+    val scriptHosts by viewModel.scriptLanHosts.collectAsState()
+    val approveWrites by viewModel.scriptApproveFileWrites.collectAsState()
+    val application = context.applicationContext as NexaraApplication
+    val sshHosts by remember(application) {
+        application.sshHostStore.observeHosts().flowOn(Dispatchers.IO)
+    }.collectAsState(initial = emptyList())
+    var termuxAvailability by remember { mutableStateOf<TermuxAvailability?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+    val snackbarHost = remember { SnackbarHostState() }
+    val resetMessage = stringResource(R.string.settings_consent_reset)
+    val hostsSavedMessage = stringResource(R.string.settings_hosts_saved)
+    DisposableEffect(lifecycleOwner, application) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch { termuxAvailability = withContext(Dispatchers.IO) { application.termuxRuntime.availability() } }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf(
@@ -177,152 +220,162 @@ fun SkillsScreen(
         title = stringResource(R.string.skills_title),
         onBack = onNavigateBack,
     ) { contentPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(contentPadding),
-        ) {
-
-            LoopLimitCard(
-                loopLimit = loopLimit,
-                onChange = viewModel::updateLoopLimit,
-            )
-            AgentRuntimeSettingsCard(viewModel)
-
-            androidx.compose.material3.TextButton(
-                onClick = onOpenSsh,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        Box(Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(contentPadding),
             ) {
-                Text(stringResource(R.string.ssh_settings_entry), modifier = Modifier.fillMaxWidth())
-            }
 
-            androidx.compose.material3.TextButton(
-                onClick = onOpenTermux,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) {
-                Text("Termux 接入与诊断", modifier = Modifier.fillMaxWidth())
-            }
+                SkillsSettingsHeaderContent(
+                    state = SkillsSettingsVisualState(
+                        loopLimit, tokenLimit, contextRatio, keepRounds, repeatLimit, scriptHosts, approveWrites,
+                        sshHostCount = sshHosts.size,
+                        termuxAvailability = termuxAvailability,
+                    ),
+                    actions = SkillsSettingsVisualActions(
+                        onLoopLimitChange = viewModel::updateLoopLimit,
+                        onTokenLimitChange = viewModel::updateTaskTokenLimit,
+                        onContextRatioChange = viewModel::updateToolContextRatio,
+                        onKeepRoundsChange = viewModel::updateToolContextKeepRounds,
+                        onRepeatLimitChange = viewModel::updateToolLoopRepeatLimit,
+                        onResetConsent = {
+                            viewModel.resetUnlimitedAutoConsent()
+                            scope.launch { snackbarHost.showSnackbar(resetMessage) }
+                        },
+                        onApproveScriptWritesChange = viewModel::updateScriptApproveFileWrites,
+                        onSaveScriptHosts = viewModel::updateScriptLanHosts,
+                        onScriptHostsSaved = { scope.launch { snackbarHost.showSnackbar(hostsSavedMessage) } },
+                        onOpenSsh = onOpenSsh,
+                        onOpenTermux = onOpenTermux,
+                    ),
+                )
 
-            Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(NexaraSpacing.Large))
 
-            val skillTabs = remember(tabs) {
-                tabs.map { NexaraTabItem(title = it) }
-            }
-            NexaraCapsuleTabRow(
-                tabs = skillTabs,
-                selectedIndex = selectedTab,
-                onTabSelected = { selectedTab = it },
-                modifier = Modifier.fillMaxWidth(),
-                height = 46.dp,
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            when (selectedTab) {
-                0 -> BettboxListGroup {
-                    presetSkills.forEachIndexed { index, skill ->
-                        SkillItem(
-                            skill = skill,
-                            icon = skillIcons[skill.id] ?: Icons.Rounded.Code,
-                            onToggle = { viewModel.toggleSkill(skill.id) },
-                            onConfig = if (skill.id in listOf("web_search", "search_tavily", "search_searxng")) {
-                                { showSearchConfig = skill.id }
-                            } else null
-                        )
-                        if (index < presetSkills.lastIndex) SkillRowDivider()
-                    }
+                val skillTabs = remember(tabs) {
+                    tabs.map { NexaraTabItem(title = it) }
                 }
-                1 -> {
-                    AgentSkillsSection(
-                        skills = agentSkills,
-                        onToggle = { name, enabled -> agentSkillsViewModel.setEnabled(name, enabled) },
-                        onOpen = { name ->
-                            agentSkillScope.launch {
-                                val document = agentSkillsViewModel.loadDocument(name) ?: return@launch
-                                agentSkillEditor = AgentSkillEditorState(
-                                    name = name,
-                                    description = document.metadata.description,
-                                    body = document.body,
-                                    allowedTools = document.metadata.allowedTools,
-                                )
-                            }
-                        },
-                        onDelete = agentSkillsViewModel::delete,
-                        onImport = {
-                            importSkillLauncher.launch(
-                                arrayOf("application/zip", "text/markdown", "text/plain", "application/octet-stream"),
-                            )
-                        },
-                        onCreate = { agentSkillEditor = AgentSkillEditorState(null, "", "", emptyList()) },
-                    )
+                NexaraCapsuleTabRow(
+                    tabs = skillTabs,
+                    selectedIndex = selectedTab,
+                    onTabSelected = { selectedTab = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 46.dp,
+                )
 
-                    if (userSkills.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(24.dp))
-                        SectionCaption(
-                            title = stringResource(R.string.agent_skills_legacy_header),
-                            description = stringResource(R.string.sheet_tool_custom_unsandboxed),
+                Spacer(modifier = Modifier.height(16.dp))
+
+                when (selectedTab) {
+                    0 -> BettboxListGroup {
+                        presetSkills.forEachIndexed { index, skill ->
+                            SkillItem(
+                                skill = skill,
+                                icon = skillIcons[skill.id] ?: Icons.Rounded.Code,
+                                onToggle = { viewModel.toggleSkill(skill.id) },
+                                onConfig = if (skill.id in listOf("web_search", "search_tavily", "search_searxng")) {
+                                    { showSearchConfig = skill.id }
+                                } else null
+                            )
+                            if (index < presetSkills.lastIndex) SkillRowDivider()
+                        }
+                    }
+                    1 -> {
+                        AgentSkillsSection(
+                            skills = agentSkills,
+                            onToggle = { name, enabled -> agentSkillsViewModel.setEnabled(name, enabled) },
+                            onOpen = { name ->
+                                agentSkillScope.launch {
+                                    val document = agentSkillsViewModel.loadDocument(name) ?: return@launch
+                                    agentSkillEditor = AgentSkillEditorState(
+                                        name = name,
+                                        description = document.metadata.description,
+                                        body = document.body,
+                                        allowedTools = document.metadata.allowedTools,
+                                    )
+                                }
+                            },
+                            onDelete = agentSkillsViewModel::delete,
+                            onImport = {
+                                importSkillLauncher.launch(
+                                    arrayOf("application/zip", "text/markdown", "text/plain", "application/octet-stream"),
+                                )
+                            },
+                            onCreate = { agentSkillEditor = AgentSkillEditorState(null, "", "", emptyList()) },
                         )
+
+                        if (userSkills.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(24.dp))
+                            SectionCaption(
+                                title = stringResource(R.string.agent_skills_legacy_header),
+                                description = stringResource(R.string.sheet_tool_custom_unsandboxed),
+                            )
+                            BettboxListGroup {
+                                userSkills.forEachIndexed { index, skill ->
+                                    UserSkillItem(
+                                        id = skill.id,
+                                        name = skill.name,
+                                        description = skill.description,
+                                        enabled = skill.enabled,
+                                        icon = Icons.Rounded.Code,
+                                        onToggle = { viewModel.toggleSkill(skill.id) },
+                                        onEdit = {
+                                            selectedSkillForEdit = skill.id
+                                            showCreateSkill = true
+                                        },
+                                        onDelete = { viewModel.deleteCustomSkill(skill.id) }
+                                    )
+                                    if (index < userSkills.lastIndex) SkillRowDivider()
+                                }
+                            }
+                        }
+                    }
+                    2 -> {
+                        Button(
+                            onClick = { showAddMcp = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Rounded.Add, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.skills_add_mcp))
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
                         BettboxListGroup {
-                            userSkills.forEachIndexed { index, skill ->
-                                UserSkillItem(
-                                    id = skill.id,
-                                    name = skill.name,
-                                    description = skill.description,
-                                    enabled = skill.enabled,
-                                    icon = Icons.Rounded.Code,
-                                    onToggle = { viewModel.toggleSkill(skill.id) },
-                                    onEdit = {
-                                        selectedSkillForEdit = skill.id
-                                        showCreateSkill = true
-                                    },
-                                    onDelete = { viewModel.deleteCustomSkill(skill.id) }
+                            if (mcpServers.isEmpty()) {
+                                SkillsEmptyState(
+                                    icon = Icons.Rounded.Hub,
+                                    message = stringResource(R.string.skills_mcp_empty),
                                 )
-                                if (index < userSkills.lastIndex) SkillRowDivider()
+                            }
+                            mcpServers.forEachIndexed { index, server ->
+                                McpServerItem(
+                                    server = server,
+                                    isExpanded = expandedServerId == server.id,
+                                    onToggleExpand = { expandedServerId = if (expandedServerId == server.id) null else server.id },
+                                    onToggleEnabled = { enabled -> viewModel.toggleMcpServer(server.id, enabled) },
+                                    onDelete = { viewModel.deleteMcpServer(server.id) },
+                                    onSync = { viewModel.syncMcpServer(server.id) },
+                                )
+                                if (index < mcpServers.lastIndex) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 16.dp),
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                    )
+                                }
                             }
                         }
                     }
                 }
-                2 -> {
-                    Button(
-                        onClick = { showAddMcp = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.skills_add_mcp))
-                    }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    BettboxListGroup {
-                        if (mcpServers.isEmpty()) {
-                            SkillsEmptyState(
-                                icon = Icons.Rounded.Hub,
-                                message = stringResource(R.string.skills_mcp_empty),
-                            )
-                        }
-                        mcpServers.forEachIndexed { index, server ->
-                            McpServerItem(
-                                server = server,
-                                isExpanded = expandedServerId == server.id,
-                                onToggleExpand = { expandedServerId = if (expandedServerId == server.id) null else server.id },
-                                onToggleEnabled = { enabled -> viewModel.toggleMcpServer(server.id, enabled) },
-                                onDelete = { viewModel.deleteMcpServer(server.id) },
-                                onSync = { viewModel.syncMcpServer(server.id) },
-                            )
-                            if (index < mcpServers.lastIndex) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                )
-                            }
-                        }
-                    }
-                }
+                Spacer(modifier = Modifier.height(8.dp))
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
+            SnackbarHost(
+                hostState = snackbarHost,
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
+            ) { data -> NexaraSnackbar(NexaraSnackbarData(data.visuals.message, SnackbarType.SUCCESS)) }
         }
     }
 
@@ -578,66 +631,26 @@ fun SkillsScreen(
     }
 }
 
-/** 执行循环限制：标题与步进器同行，说明独占整行，避免被右侧控件挤成窄列。 */
+/** 轮次和不限开关共用设置行标尺，回调保留原有范围与切换值。 */
 @Composable
-private fun LoopLimitCard(
+internal fun LoopLimitCard(
     loopLimit: Int,
     onChange: (Int) -> Unit,
 ) {
-    val unlimitedLabel = stringResource(R.string.p0_unlimited)
-    BettboxListGroup {
-        Column(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(R.string.skills_loop_limit),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(
-                    onClick = { onChange((loopLimit - 1).coerceAtLeast(1)) },
-                    enabled = loopLimit > 1,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(Icons.Rounded.Remove, contentDescription = stringResource(R.string.common_cd_decrease))
-                }
-                Text(
-                    text = if (loopLimit == 0) stringResource(R.string.p0_unlimited) else "$loopLimit",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.widthIn(min = 40.dp),
-                )
-                IconButton(
-                    onClick = { onChange((loopLimit + 1).coerceAtMost(100)) },
-                    enabled = loopLimit in 1..99,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_cd_increase))
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
-                    value = loopLimit == 0,
-                    role = Role.Switch,
-                    onValueChange = { onChange(if (it) 0 else 50) },
-                ),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(unlimitedLabel, modifier = Modifier.weight(1f))
-                Switch(
-                    checked = loopLimit == 0,
-                    onCheckedChange = null,
-                )
-            }
-            Text(
-                stringResource(R.string.skills_loop_limit_desc),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 8.dp),
-            )
-        }
-    }
+    NexaraStepperSetting(
+        title = stringResource(R.string.skills_loop_limit),
+        description = stringResource(R.string.skills_loop_limit_desc),
+        value = if (loopLimit == 0) stringResource(R.string.p0_unlimited) else loopLimit.toString(),
+        canDecrease = loopLimit > 1,
+        canIncrease = loopLimit in 1..99,
+        onDecrease = { onChange((loopLimit - 1).coerceAtLeast(1)) },
+        onIncrease = { onChange((loopLimit + 1).coerceAtMost(100)) },
+    )
+    SettingsToggle(
+        title = stringResource(R.string.p0_unlimited),
+        checked = loopLimit == 0,
+        onCheckedChange = { onChange(if (it) 0 else 50) },
+    )
 }
 
 /** 列表内分隔线：从正文起点开始，与图标列对齐。 */
