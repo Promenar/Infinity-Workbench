@@ -31,6 +31,7 @@ All notable changes to this project will be documented in this file.
 ### 真机反馈修复（2026-10-17）
 
 - `termux_exec` 把空字符串、`~` 与 `$HOME` 形式的 `workdir` 按省略处理（默认 Termux 主目录）；修复前模型为可选参数填空串或主目录简写时整次调用被判为参数无效、未派发到 Termux，表现为“空返回、exit_code 为 null”，而设置页诊断只传固定命令故能通过。参数无效时结果写明具体字段与原因。
+- `termux_exec` 改用前台服务方式启动 Termux `RunCommandService`（Termux 自身在服务内调用 `startForeground`），避免 Termux 不在前台时普通启动被系统后台限制拒绝；启动失败时回传异常类型。结果 JSON 将 `error_code`、`guidance`、`timed_out` 置于开头，失败卡片截取前段时仍可看到根因。
 
 ### 移动端设备验收基础设施（2026-10-17）
 

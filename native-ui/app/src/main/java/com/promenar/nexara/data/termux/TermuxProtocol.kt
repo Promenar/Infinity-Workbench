@@ -39,6 +39,10 @@ data class TermuxCommandResult(
     val stdoutTruncated: Boolean get() = stdoutOriginalLength > stdout.length
     val stderrTruncated: Boolean get() = stderrOriginalLength > stderr.length
     fun toJson(): JsonObject = buildJsonObject {
+        // 错误码与指引置于开头：失败卡片和日志只截取前段时仍可见根因。
+        put("error_code", errorCode?.let(::JsonPrimitive) ?: JsonNull)
+        put("guidance", guidance?.let(::JsonPrimitive) ?: JsonNull)
+        put("timed_out", timedOut)
         put("stdout", stdout)
         put("stderr", stderr)
         put("exit_code", exitCode?.let(::JsonPrimitive) ?: JsonNull)
@@ -54,9 +58,6 @@ data class TermuxCommandResult(
         // 官方协议未提供 errmsg 的原始长度，不能从已截断文本推算。
         put("errmsg_original_length", JsonNull)
         put("errmsg_truncation_possible", (errmsg?.length ?: 0) >= 25_000)
-        put("error_code", errorCode?.let(::JsonPrimitive) ?: JsonNull)
-        put("guidance", guidance?.let(::JsonPrimitive) ?: JsonNull)
-        put("timed_out", timedOut)
     }
 }
 

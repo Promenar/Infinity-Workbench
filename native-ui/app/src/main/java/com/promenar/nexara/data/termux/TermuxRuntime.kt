@@ -60,14 +60,19 @@ class TermuxRuntime(context: Context) {
         try {
             requests.execute(id, request.timeoutSeconds * 1000L, dispatch = {
                 check(TermuxPreferences.isEnabled(preferences)) { "Termux 集成已关闭" }
-                checkNotNull(context.startService(TermuxIntents.command(context, request, callback)))
+                // Termux 未处于前台时 startService 会被后台启动限制拒绝；RunCommandService 自身会调用 startForeground。
+                checkNotNull(context.startForegroundService(TermuxIntents.command(context, request, callback)))
             }, cleanup = callback::cancel)
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (_: SecurityException) {
             TermuxCommandResult(errorCode = "TERMUX_PERMISSION_DENIED", guidance = "Termux 拒绝调用；请在 Nexara 的系统应用权限页授予 RUN_COMMAND 权限。")
         } catch (_: IllegalArgumentException) { invalidArguments()
-        } catch (_: Exception) {
-            TermuxCommandResult(errorCode = "TERMUX_START_FAILED", guidance = "无法启动 Termux 后台命令；请打开 Nexara 和 Termux，确认已初始化、集成开关已开启且系统允许后台运行后重试。")
+        } catch (failure: Exception) {
+            TermuxCommandResult(
+                errorCode = "TERMUX_START_FAILED",
+                guidance = "无法启动 Termux 后台命令；请打开 Nexara 和 Termux，确认已初始化、集成开关已开启且系统允许后台运行后重试。",
+                errmsg = failure.javaClass.simpleName,
+            )
         } finally { callback.cancel() }
     }
 
