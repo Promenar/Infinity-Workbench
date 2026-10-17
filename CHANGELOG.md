@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 真机反馈修复（2026-10-17）
+
+- `termux_exec` 把空字符串、`~` 与 `$HOME` 形式的 `workdir` 按省略处理（默认 Termux 主目录）；修复前模型为可选参数填空串或主目录简写时整次调用被判为参数无效、未派发到 Termux，表现为“空返回、exit_code 为 null”，而设置页诊断只传固定命令故能通过。参数无效时结果写明具体字段与原因。
+
 ### 移动端设备验收基础设施（2026-10-17）
 
 - 增加离线真实 WebView 的公式、流程图、图表、文件/内容与私网请求门禁、导航阻止及池复用设备合同；minimum/full 同时接入 SAF 与隔离脚本全部 8 例。

@@ -50,4 +50,35 @@ class TermuxExecSkillTest {
         assertThat(timeout.status).isEqualTo("error")
         assertThat(timeout.content).contains("TERMUX_TIMEOUT")
     }
+
+    @Test fun `模型常见的空工作目录与波浪号按Termux主目录处理`() = runTest {
+        val captured = mutableListOf<TermuxCommandRequest>()
+        val skill = TermuxExecSkill({ captured += it; TermuxCommandResult(stdout = "ok\n", exitCode = 0, err = -1) }, { true })
+        listOf(
+            """{"command":"echo ok","workdir":""}""",
+            """{"command":"echo ok","workdir":"  "}""",
+            """{"command":"echo ok","workdir":"~"}""",
+            """{"command":"echo ok","workdir":"${'$'}HOME"}""",
+            """{"command":"echo ok","workdir":"","stdin":"","timeout_seconds":60}""",
+        ).forEach { assertThat(skill.execute(args(it), context).status).isEqualTo("success") }
+        assertThat(captured.map { it.workdir }).containsExactly(null, null, null, null, null)
+        assertThat(captured.last().stdin).isEqualTo("")
+        val nested = skill.execute(args("""{"command":"ls","workdir":"~/project"}"""), context)
+        assertThat(nested.status).isEqualTo("success")
+        assertThat(captured.last().workdir).isEqualTo("~/project")
+    }
+
+    @Test fun `参数无效时结果指明具体字段且不派发`() = runTest {
+        var dispatched = 0
+        val skill = TermuxExecSkill({ dispatched++; TermuxCommandResult(exitCode = 0, err = -1) }, { true })
+        val relative = skill.execute(args("""{"command":"ls","workdir":"project"}"""), context)
+        assertThat(relative.status).isEqualTo("error")
+        assertThat(relative.content).contains("TERMUX_INVALID_ARGUMENTS")
+        assertThat(relative.content).contains("工作目录")
+        val timeout = skill.execute(args("""{"command":"ls","timeout_seconds":0}"""), context)
+        assertThat(timeout.content).contains("超时")
+        val blank = skill.execute(args("""{"command":"  "}"""), context)
+        assertThat(blank.content).contains("命令")
+        assertThat(dispatched).isEqualTo(0)
+    }
 }

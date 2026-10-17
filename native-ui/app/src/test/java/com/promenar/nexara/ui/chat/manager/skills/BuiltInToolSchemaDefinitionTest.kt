@@ -38,6 +38,7 @@ class BuiltInToolSchemaDefinitionTest {
         val definitions = sshTools(mockk<SshRuntime>(relaxed = true)) + listOf(
             ExecJsSkill(mockk<ScriptToolRunner>()),
             RunScriptSkill(mockk<ScriptToolRunner>()),
+            TermuxExecSkill({ error("不应派发") }, { true }),
         )
         definitions.forEach { assertValid(it.id, it.parametersSchema) }
     }
