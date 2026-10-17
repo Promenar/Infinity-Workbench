@@ -763,6 +763,9 @@ private fun TermuxDiagnosticResult(result: TermuxCommandResult) {
         if (result.timedOut) Text(stringResource(R.string.termux_diagnostic_timeout), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
         result.errorCode?.let { NexaraIdentifierText(stringResource(R.string.termux_error_code, it), style = MaterialTheme.typography.bodyMedium) }
         termuxGuidance(result.errorCode, result.guidance)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        result.errmsg?.takeIf(String::isNotBlank)?.let {
+            NexaraIdentifierText(stringResource(R.string.termux_error_detail, it), style = MaterialTheme.typography.bodySmall)
+        }
         if (result.stdout.isNotEmpty()) {
             Text(stringResource(R.string.termux_stdout), style = MaterialTheme.typography.labelLarge)
             TermuxOutputText(result.stdout)

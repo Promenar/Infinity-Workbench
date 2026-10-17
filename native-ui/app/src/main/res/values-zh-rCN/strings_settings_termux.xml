@@ -61,13 +61,14 @@
     <string name="termux_background_section">后台运行与子进程限制</string>
     <string name="termux_background_description">Android 12 及以上可能结束应用派生的子进程，终端可能显示 signal 9。Android 14 及以上的部分设备可在“开发者选项”中找到“停用子进程限制”；具体名称和可用性由系统决定。关闭开发者选项可能恢复限制。</string>
     <string name="termux_wake_lock_description">长任务可在 Termux 中运行 termux-wake-lock 保持 CPU 唤醒，任务结束后运行 termux-wake-unlock 释放。唤醒锁会增加耗电，且不能解除子进程限制或厂商的后台管理。</string>
-    <string name="termux_background_hint">如任务在后台中断，可检查 Termux 的电池与后台运行设置，并将它保持在通知栏中。</string>
+    <string name="termux_background_hint">如任务在后台中断或无法启动，可检查 Nexara 与 Termux 的电池与后台运行设置（ColorOS 等系统需设为“完全允许后台行为”），并将 Termux 保持在通知栏中。</string>
     <string name="termux_diagnostic_success">诊断成功，命令结果已回传。</string>
     <string name="termux_diagnostic_failure">诊断未通过，请按下方提示检查配置。</string>
     <string name="termux_exit_code">退出码：%1$s</string>
     <string name="termux_not_returned">未返回</string>
     <string name="termux_diagnostic_timeout">等待结果超时。请检查 Termux 后台运行状态后重试。</string>
     <string name="termux_error_code">错误：%1$s</string>
+    <string name="termux_error_detail">详情：%1$s</string>
     <string name="termux_stdout">标准输出</string>
     <string name="termux_stderr">错误输出</string>
     <string name="termux_diagnostic_expected">预期输出为 NEXARA_TERMUX_OK，且退出码为 0。</string>
@@ -79,7 +80,7 @@
     <string name="termux_guidance_command_failed">命令返回非零退出码；请检查 stderr 和命令参数。</string>
     <string name="termux_guidance_malformed">Termux 未回传有效结果包；请更新 Termux 并重新运行诊断命令。</string>
     <string name="termux_guidance_integration_disabled">请先在设置 → 工具 → Termux 接入与诊断启用 Termux 集成。</string>
-    <string name="termux_guidance_start_failed">无法启动 Termux 后台命令；请打开 Nexara 和 Termux，确认已初始化、集成开关已开启且系统允许后台运行后重试。</string>
+    <string name="termux_guidance_start_failed">无法启动 Termux 后台命令；请确认 Termux 已初始化、集成开关已开启。ColorOS、MIUI 等系统还需在应用耗电管理中把 Nexara 和 Termux 都设为“完全允许后台行为”，重新安装后可能需要再次设置。</string>
     <string name="termux_guidance_invalid_arguments">请检查命令、绝对工作目录、输入长度与 1–600 秒的超时参数。</string>
     <string name="termux_guidance_timeout">本地等待已超时；命令可能仍在运行。RUN_COMMAND 没有按请求停止后台命令的公开接口，请在 Termux 中检查并停止对应进程；也请检查 allow-external-apps 开关和后台进程限制。</string>
     <string name="termux_error_status">无法读取 Termux 状态，请稍后刷新。</string>

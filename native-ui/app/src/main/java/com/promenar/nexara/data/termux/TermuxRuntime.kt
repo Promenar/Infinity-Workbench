@@ -60,8 +60,9 @@ class TermuxRuntime(context: Context) {
         try {
             requests.execute(id, request.timeoutSeconds * 1000L, dispatch = {
                 check(TermuxPreferences.isEnabled(preferences)) { "Termux 集成已关闭" }
-                // Termux 未处于前台时 startService 会被后台启动限制拒绝；RunCommandService 自身会调用 startForeground。
-                checkNotNull(context.startForegroundService(TermuxIntents.command(context, request, callback)))
+                checkNotNull(TermuxIntents.dispatch(context, TermuxIntents.command(context, request, callback))) {
+                    "系统未返回 Termux 服务组件，调用可能被系统的应用关联启动限制拦截"
+                }
             }, cleanup = callback::cancel)
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (_: SecurityException) {
@@ -70,8 +71,8 @@ class TermuxRuntime(context: Context) {
         } catch (failure: Exception) {
             TermuxCommandResult(
                 errorCode = "TERMUX_START_FAILED",
-                guidance = "无法启动 Termux 后台命令；请打开 Nexara 和 Termux，确认已初始化、集成开关已开启且系统允许后台运行后重试。",
-                errmsg = failure.javaClass.simpleName,
+                guidance = "无法启动 Termux 后台命令；请确认 Termux 已初始化、集成开关已开启。ColorOS、MIUI 等系统还需在应用耗电管理中把 Nexara 和 Termux 都设为“完全允许后台行为”，重新安装后可能需要再次设置。",
+                errmsg = listOfNotNull(failure.javaClass.simpleName, failure.message?.take(300)).joinToString(": "),
             )
         } finally { callback.cancel() }
     }
@@ -99,6 +100,16 @@ internal object TermuxIntents {
             require(parcel.dataSize() <= 400 * 1024) { "Intent 内容超过安全上限" }
         } finally { parcel.recycle() }
         return intent
+    }
+
+    /**
+     * 优先普通启动：部分厂商系统（真机 ColorOS 16）会让 startForegroundService 静默返回 null。
+     * 仅当系统因后台启动限制明确拒绝时，才退回前台服务启动；RunCommandService 自身会调用 startForeground。
+     */
+    fun dispatch(context: Context, intent: Intent): android.content.ComponentName? = try {
+        context.startService(intent)
+    } catch (_: IllegalStateException) {
+        context.startForegroundService(intent)
     }
 
     fun callback(context: Context, requestId: String): Intent = Intent(context, TermuxResultReceiver::class.java).apply {

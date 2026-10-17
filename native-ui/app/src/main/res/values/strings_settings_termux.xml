@@ -61,13 +61,14 @@
     <string name="termux_background_section">Background execution and child processes</string>
     <string name="termux_background_description">Android 12 and newer may end app child processes, and Termux may show signal 9. Some Android 14 and newer devices offer “Disable child process restrictions” in Developer options. Its name and availability depend on the system. Turning off Developer options may restore the restriction.</string>
     <string name="termux_wake_lock_description">For long tasks, run termux-wake-lock to keep the CPU awake and termux-wake-unlock when finished. A wake lock increases battery use and does not remove child process limits or manufacturer background restrictions.</string>
-    <string name="termux_background_hint">If a task stops in the background, check the Termux battery and background settings and keep its notification visible.</string>
+    <string name="termux_background_hint">If a task stops in the background or cannot start, check the battery and background settings of both Nexara and Termux (ColorOS and similar systems need full background activity allowed), and keep the Termux notification visible.</string>
     <string name="termux_diagnostic_success">Diagnostic passed. The command result was delivered.</string>
     <string name="termux_diagnostic_failure">Diagnostic failed. Check the details below.</string>
     <string name="termux_exit_code">Exit code: %1$s</string>
     <string name="termux_not_returned">Not returned</string>
     <string name="termux_diagnostic_timeout">Result delivery timed out. Check Termux background execution before retrying.</string>
     <string name="termux_error_code">Error: %1$s</string>
+    <string name="termux_error_detail">Details: %1$s</string>
     <string name="termux_stdout">Standard output</string>
     <string name="termux_stderr">Error output</string>
     <string name="termux_diagnostic_expected">Expected output: NEXARA_TERMUX_OK, with exit code 0.</string>
@@ -79,7 +80,7 @@
     <string name="termux_guidance_command_failed">The command returned a nonzero exit code. Check stderr and the command arguments.</string>
     <string name="termux_guidance_malformed">Termux did not return a valid result package. Update Termux and run the diagnostic command again.</string>
     <string name="termux_guidance_integration_disabled">Enable Termux integration in Settings → Tools → Termux integration and diagnostics.</string>
-    <string name="termux_guidance_start_failed">The Termux background command could not start. Open Nexara and Termux, confirm initialization and integration are enabled, allow background execution, and retry.</string>
+    <string name="termux_guidance_start_failed">The Termux background command could not start. Confirm Termux is initialized and integration is enabled. On ColorOS, MIUI and similar systems, set both Nexara and Termux to allow full background activity in battery management; reinstalling may reset this.</string>
     <string name="termux_guidance_invalid_arguments">Check the command, absolute working directory, input length, and timeout of 1–600 seconds.</string>
     <string name="termux_guidance_timeout">The local wait timed out; the command may still be running. RUN_COMMAND has no public interface to stop a single background request. Check and stop the process in Termux, and check external app access and background process limits.</string>
     <string name="termux_error_status">Could not read Termux status. Refresh again later.</string>

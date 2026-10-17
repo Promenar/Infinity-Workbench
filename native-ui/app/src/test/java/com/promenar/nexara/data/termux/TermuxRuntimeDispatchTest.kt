@@ -24,16 +24,20 @@ class TermuxRuntimeDispatchTest {
     private val app get() = RuntimeEnvironment.getApplication()
 
     /** 记录服务启动方式；applicationContext 指回自身，确保运行时经过该包装。 */
-    private class RecordingContext(base: Context, private val foregroundFailure: RuntimeException? = null) : ContextWrapper(base) {
+    private class RecordingContext(
+        base: Context,
+        private val plainFailure: RuntimeException? = null,
+        private val plainReturnsNull: Boolean = false,
+    ) : ContextWrapper(base) {
         val foregroundStarts = mutableListOf<Intent>()
         val plainStarts = mutableListOf<Intent>()
         override fun getApplicationContext(): Context = this
         override fun startService(service: Intent): ComponentName? {
+            plainFailure?.let { throw it }
             plainStarts += service
-            return service.component
+            return if (plainReturnsNull) null else service.component
         }
         override fun startForegroundService(service: Intent): ComponentName? {
-            foregroundFailure?.let { throw it }
             foregroundStarts += service
             return service.component
         }
@@ -50,22 +54,28 @@ class TermuxRuntimeDispatchTest {
         shadowOf(app).grantPermissions(TermuxRuntime.RUN_COMMAND_PERMISSION)
     }
 
-    @Test fun `会话命令以前台服务方式启动RunCommandService以免Termux在后台时被系统拒绝`() = runBlocking {
+    @Test fun `默认以普通方式启动RunCommandService不调用前台服务启动`() = runBlocking {
         val context = RecordingContext(app)
         val result = TermuxRuntime(context).executeRequest(TermuxCommandRequest("true", timeoutSeconds = 1))
-        assertThat(context.plainStarts).isEmpty()
-        assertThat(context.foregroundStarts).hasSize(1)
-        assertThat(context.foregroundStarts.single().component!!.flattenToString())
+        assertThat(context.foregroundStarts).isEmpty()
+        assertThat(context.plainStarts.single().component!!.flattenToString())
             .isEqualTo("com.termux/com.termux.app.RunCommandService")
         // 无回传时按本地等待超时结束，而非误报启动失败。
         assertThat(result.timedOut).isTrue()
     }
 
-    @Test fun `前台服务启动被拒时返回启动失败与异常类型且错误码位于结果开头`() = runBlocking {
-        val context = RecordingContext(app, IllegalStateException("not allowed"))
+    @Test fun `后台启动限制拒绝普通启动时退回前台服务启动`() = runBlocking {
+        val context = RecordingContext(app, plainFailure = IllegalStateException("Not allowed to start service"))
+        val result = TermuxRuntime(context).executeRequest(TermuxCommandRequest("true", timeoutSeconds = 1))
+        assertThat(context.foregroundStarts).hasSize(1)
+        assertThat(result.timedOut).isTrue()
+    }
+
+    @Test fun `系统静默返回空组件时报告启动失败与拦截说明且错误码位于结果开头`() = runBlocking {
+        val context = RecordingContext(app, plainReturnsNull = true)
         val result = TermuxRuntime(context).executeRequest(TermuxCommandRequest("true", timeoutSeconds = 1))
         assertThat(result.errorCode).isEqualTo("TERMUX_START_FAILED")
-        assertThat(result.errmsg).isEqualTo("IllegalStateException")
+        assertThat(result.errmsg).contains("应用关联启动")
         val keys = result.toJson().jsonObject.keys.toList()
         assertThat(keys.take(3)).containsExactly("error_code", "guidance", "timed_out").inOrder()
     }
