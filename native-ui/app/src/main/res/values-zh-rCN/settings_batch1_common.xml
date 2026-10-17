@@ -1,0 +1,9 @@
+<resources>
+    <string name="numeric_unlimited">不限</string>
+    <string name="numeric_default_value">%1$s（默认）</string>
+    <string name="numeric_custom">自定义…</string>
+    <string name="numeric_done">完成</string>
+    <string name="numeric_range">合法范围：%1$s–%2$s</string>
+    <string name="numeric_restore_default">恢复默认</string>
+    <string name="numeric_color_value">颜色 #%1$s</string>
+</resources>

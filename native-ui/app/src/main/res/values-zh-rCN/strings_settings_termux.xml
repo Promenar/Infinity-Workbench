@@ -26,7 +26,7 @@
     <string name="termux_step_pending">待配置</string>
     <string name="termux_step_optional">可选</string>
     <string name="termux_step_attention">需要检查</string>
-    <string name="termux_install_description">从 F-Droid 或 GitHub 安装，结果回传需要 0.109 及以上版本。安装后先打开 Termux，等待环境初始化完成。</string>
+    <string name="termux_install_description">从 F-Droid 或 GitHub 安装，结果回传需要可识别且不低于 0.109 的版本号。安装后打开 Termux，等待初始化完成。</string>
     <string name="termux_fdroid">F-Droid</string>
     <string name="termux_github">GitHub</string>
     <string name="termux_external_apps_description">在 Termux 中执行以下命令，设置 allow-external-apps=true 并重新加载配置。</string>

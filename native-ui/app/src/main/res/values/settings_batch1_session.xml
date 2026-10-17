@@ -1,0 +1,12 @@
+<resources>
+    <string name="session_thinking_style">Thinking style</string>
+    <string name="session_numeric_seconds">s</string>
+    <string name="session_retrieval_section">Retrieval</string>
+    <string name="session_memory_scope">Memory sources</string>
+    <string name="session_memory_scope_both">Session and global</string>
+    <string name="session_memory_scope_off">Off</string>
+    <string name="session_compaction_running">Compaction in progress</string>
+    <string name="session_compaction_generating">Available after response</string>
+    <string name="session_revoke_tool">Revoke %1$s</string>
+    <string name="session_grant_target">%1$d. %2$s</string>
+</resources>

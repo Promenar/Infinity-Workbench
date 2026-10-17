@@ -26,8 +26,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -51,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.BettboxListGroup
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.data.skills.InstalledAgentSkill
 import com.promenar.nexara.data.skills.SkillMarkdownParser
 import com.promenar.nexara.ui.theme.forInput
@@ -67,8 +67,10 @@ fun AgentSkillsSection(
 ) {
     var pendingDelete by remember { mutableStateOf<String?>(null) }
     Column {
-        SectionCaption(title = null, description = stringResource(R.string.agent_skills_intro))
-        BettboxListGroup {
+        NexaraSettingsSection(
+            title = stringResource(R.string.skills_tab_user),
+            footer = stringResource(R.string.settings_batch1_agent_skills_footer),
+        ) {
             skills.forEachIndexed { index, skill ->
                 AgentSkillItem(
                     skill = skill,
@@ -85,9 +87,8 @@ fun AgentSkillsSection(
                 )
             }
         }
-        Spacer(modifier = Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = onImport, modifier = Modifier.weight(1f)) {
+            TextButton(onClick = onImport, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Rounded.FileOpen, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.agent_skills_import))
@@ -117,7 +118,7 @@ fun AgentSkillsSection(
     }
 }
 
-/** 技能包行：右侧只放开关，说明获得完整宽度；附带文件数与删除放在说明下方。点击行打开编辑。 */
+/** 技能包的启用、打开与删除均保留为同行操作。 */
 @Composable
 private fun AgentSkillItem(
     skill: InstalledAgentSkill,
@@ -125,49 +126,20 @@ private fun AgentSkillItem(
     onOpen: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            SkillIconTile(Icons.Rounded.AutoAwesome)
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(skill.metadata.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                Text(
-                    skill.metadata.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+    NexaraSettingsItem(
+        icon = Icons.Rounded.AutoAwesome,
+        title = skill.metadata.name,
+        subtitle = if (skill.files.isNotEmpty()) pluralStringResource(R.plurals.agent_skills_files_count, skill.files.size, skill.files.size) else null,
+        onClick = onOpen,
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.shared_btn_delete), tint = MaterialTheme.colorScheme.error)
+                }
+                Switch(checked = skill.enabled, onCheckedChange = onToggle)
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Switch(checked = skill.enabled, onCheckedChange = onToggle)
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = SkillTextStart, end = 8.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (skill.files.isNotEmpty()) {
-                Text(
-                    pluralStringResource(R.plurals.agent_skills_files_count, skill.files.size, skill.files.size),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.outline,
-                )
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            TextButton(
-                onClick = onDelete,
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) {
-                Icon(Icons.Rounded.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(stringResource(R.string.shared_btn_delete))
-            }
-        }
-    }
+        },
+    )
 }
 
 /** 新建或编辑技能；名称校验与 SKILL.md 规则一致。 */

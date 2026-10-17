@@ -85,7 +85,7 @@ class SecureSecretUiContractTest {
         assertThat(form).contains("LazyColumn(")
         assertThat(form).contains("ExposedDropdownMenuBox(")
         assertThat(form).contains("OutlinedTextField(")
-        assertThat(form).contains("OutlinedButton(")
+        assertThat(form).contains("TextButton(")
         assertThat(form).contains("Button(")
         assertThat(form).contains("liveRegion = LiveRegionMode.Assertive")
         assertThat(form).doesNotContain("NexaraGlassCard")
@@ -240,8 +240,10 @@ class SecureSecretUiContractTest {
     fun `backup screen provides password gates and real remote selection flow`() {
         val screen = source("ui/settings/BackupSettingsScreen.kt")
 
-        assertThat(screen).contains("viewModel.listRemote()")
-        assertThat(screen).contains("viewModel.selectRemote(remote)")
+        assertThat(screen).contains("onRefreshRemote = viewModel::listRemote")
+        assertThat(screen).contains("onClick = actions.onRefreshRemote")
+        assertThat(screen).contains("onSelectRemote = viewModel::selectRemote")
+        assertThat(screen).contains("actions.onSelectRemote(remote)")
         assertThat(screen).contains("viewModel.restoreSelectedRemote(")
         assertThat(screen).contains("viewModel.upload(")
         assertThat(screen).contains("passwordConfirmation")

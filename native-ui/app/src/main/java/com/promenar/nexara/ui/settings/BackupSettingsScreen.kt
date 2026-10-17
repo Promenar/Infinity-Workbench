@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DeleteForever
@@ -50,8 +51,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -83,6 +82,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.LocalTextStyle
 import com.promenar.nexara.ui.common.SecretField
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsSection
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.forInput
 
@@ -112,7 +115,6 @@ internal fun BackupSettingsScreen(
         }
     }
 
-    var contentExpanded by remember { mutableStateOf(true) }
     var showWebdavSheet by remember { mutableStateOf(false) }
     var showExportPasswordDialog by remember { mutableStateOf(false) }
     var showUploadPasswordDialog by remember { mutableStateOf(false) }
@@ -134,13 +136,6 @@ internal fun BackupSettingsScreen(
         tempWebdavPass = ""
     }
     DisposableEffect(Unit) { onDispose { clearPasswords() } }
-
-    val coreContentLabels = listOf(
-        stringResource(R.string.backup_content_sessions),
-        stringResource(R.string.backup_content_library),
-        stringResource(R.string.backup_content_files),
-        stringResource(R.string.backup_content_settings),
-    )
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -186,321 +181,27 @@ internal fun BackupSettingsScreen(
     }
     val onImportClick = { importLauncher.launch("*/*") }
 
-    NexaraSettingsPageLayout(
-        title = stringResource(R.string.backup_title),
-        onBack = onNavigateBack,
-    ) { paddingValues ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = paddingValues,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            item {
-                Text(
-                    text = stringResource(R.string.backup_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            item {
-                backupOperationText(uiState.operation)?.let { status ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (uiState.operation is BackupOperation.Error || uiState.operation is BackupOperation.Blocked)
-                                MaterialTheme.colorScheme.errorContainer
-                            else
-                                MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = status,
-                                modifier = Modifier.testTag(UiTags.BACKUP_OPERATION_STATUS),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (uiState.operation is BackupOperation.Error || uiState.operation is BackupOperation.Blocked)
-                                    MaterialTheme.colorScheme.onErrorContainer
-                                else
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            if (uiState.operation.isCancellable) {
-                                FilledTonalButton(
-                                    onClick = viewModel::cancelOperation,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.filledTonalButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.error,
-                                        contentColor = MaterialTheme.colorScheme.onError
-                                    )
-                                ) {
-                                    Icon(Icons.Rounded.DeleteForever, contentDescription = null)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(stringResource(R.string.common_btn_cancel))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            item {
-                Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
-                    ListItem(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { contentExpanded = !contentExpanded },
-                        headlineContent = {
-                            Text(
-                                text = stringResource(R.string.backup_content_title),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        },
-                        supportingContent = {
-                            Text(
-                                text = stringResource(R.string.backup_core_content_summary),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        trailingContent = {
-                            Icon(
-                                imageVector = if (contentExpanded) Icons.Rounded.KeyboardArrowUp
-                                else Icons.Rounded.KeyboardArrowDown,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
-
-                    AnimatedVisibility(visible = contentExpanded) {
-                        // 开关行自带 16dp 水平内边距，与上方说明左缘对齐，不再外套一层内边距。
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 8.dp),
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.backup_core_content_fixed),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                NexaraMetaLine(
-                                    segments = coreContentLabels,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            SettingsToggle(
-                                title = stringResource(R.string.backup_content_keys),
-                                checked = uiState.keysChecked,
-                                onCheckedChange = { viewModel.setIncludeKeys(it) }
-                            )
-                            SettingsToggle(
-                                title = stringResource(R.string.backup_encrypt_package),
-                                description = stringResource(R.string.backup_encrypt_package_summary),
-                                checked = uiState.encryptBackup,
-                                onCheckedChange = viewModel::setEncryptBackup,
-                            )
-                        }
-                    }
-                }
-            }
-
-            item { SettingsSectionHeader(stringResource(R.string.backup_section_local)) }
-
-            item {
-                Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
-                    ExportButton(
-                        icon = Icons.Rounded.Download,
-                        title = stringResource(R.string.backup_export_title),
-                        subtitle = if (uiState.isExporting) stringResource(R.string.backup_exporting) else stringResource(R.string.backup_export_subtitle),
-                        modifier = Modifier.fillMaxWidth().testTag(UiTags.BACKUP_EXPORT),
-                        enabled = uiState.canExecute,
-                        onClick = onExportClick,
-                    )
-                    ExportButton(
-                        icon = Icons.Rounded.Upload,
-                        title = stringResource(R.string.backup_import_title),
-                        subtitle = if (uiState.isImporting) stringResource(R.string.backup_importing) else stringResource(R.string.backup_import_subtitle),
-                        modifier = Modifier.fillMaxWidth().testTag(UiTags.BACKUP_IMPORT),
-                        enabled = uiState.canExecute,
-                        onClick = onImportClick,
-                    )
-                }
-            }
-
-            item { SettingsSectionHeader(stringResource(R.string.backup_section_webdav)) }
-
-            item {
-                Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                text = stringResource(R.string.backup_webdav_manual),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        },
-                        supportingContent = {
-                            Text(
-                                text = stringResource(
-                                    when (uiState.webDavReadiness) {
-                                        WebDavReadiness.Disabled -> R.string.backup_webdav_not_configured
-                                        WebDavReadiness.Incomplete -> R.string.backup_webdav_incomplete
-                                        WebDavReadiness.Ready -> R.string.backup_webdav_configured
-                                    },
-                                ),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        trailingContent = {
-                            Switch(
-                                checked = uiState.webdavEnabled,
-                                onCheckedChange = { viewModel.setWebdavEnabled(it) }
-                            )
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
-
-                    AnimatedVisibility(visible = uiState.webdavEnabled) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = {
-                                    if (uiState.encryptBackup || uiState.includeKeys) showUploadPasswordDialog = true
-                                    else viewModel.upload(null, null)
-                                },
-                                enabled = uiState.canExecute && uiState.webDavReadiness == WebDavReadiness.Ready,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Rounded.Upload, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(stringResource(R.string.backup_upload_cloud))
-                            }
-
-                            FilledTonalButton(
-                                onClick = { viewModel.listRemote() },
-                                enabled = uiState.canExecute && uiState.webDavReadiness == WebDavReadiness.Ready,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Rounded.Refresh, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(stringResource(R.string.backup_remote_refresh))
-                            }
-
-                            if (uiState.operation is BackupOperation.ListingRemote) {
-                                Box(
-                                    modifier = Modifier.fillMaxWidth().padding(8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                                }
-                            } else if (uiState.remoteBackups.isEmpty()) {
-                                Text(
-                                    text = stringResource(R.string.backup_remote_empty),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(vertical = 8.dp)
-                                )
-                            }
-
-                            uiState.remoteBackups.forEach { remote ->
-                                val selected = uiState.selectedRemote == remote
-                                ListItem(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable(enabled = uiState.canExecute) { viewModel.selectRemote(remote) }
-                                        .border(
-                                            width = 1.dp,
-                                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                                            shape = RoundedCornerShape(8.dp)
-                                        ),
-                                    headlineContent = {
-                                        Text(remote.fileName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                                    },
-                                    supportingContent = {
-                                        NexaraMetaLine(
-                                            segments = listOf(
-                                                stringResource(R.string.backup_remote_size, remote.sizeBytes),
-                                                remote.lastModifiedEpochMillis.toString(),
-                                            ),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    },
-                                    leadingContent = {
-                                        if (selected) {
-                                            Icon(Icons.Rounded.CheckCircle, contentDescription = stringResource(R.string.common_cd_selected), tint = MaterialTheme.colorScheme.primary)
-                                        }
-                                    },
-                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                                )
-                            }
-
-                            if (uiState.selectedRemote != null) {
-                                Button(
-                                    onClick = {
-                                        restoreRemote = true
-                                        showRestorePasswordDialog = true
-                                    },
-                                    enabled = uiState.canExecute,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Icon(Icons.Rounded.Restore, contentDescription = null)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(stringResource(R.string.backup_restore_cloud))
-                                }
-                            }
-                        }
-                    }
-
-                    // 按钮与卡片边缘保持内边距，不贴边。
-                    FilledTonalButton(
-                        onClick = { showWebdavSheet = true },
-                        enabled = uiState.canExecute,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)
-                    ) {
-                        Icon(Icons.Rounded.Link, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.backup_config_webdav))
-                    }
-                }
-            }
-
-            item {
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            text = stringResource(R.string.backup_info_text),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
-            }
-        }
-    }
+    BackupSettingsScreenContent(
+        uiState = uiState,
+        listState = listState,
+        onNavigateBack = onNavigateBack,
+        actions = BackupScreenActions(
+            onCancelOperation = viewModel::cancelOperation,
+            onIncludeKeysChange = viewModel::setIncludeKeys,
+            onEncryptBackupChange = viewModel::setEncryptBackup,
+            onExport = onExportClick,
+            onImport = onImportClick,
+            onWebDavEnabledChange = viewModel::setWebdavEnabled,
+            onUpload = {
+                if (uiState.encryptBackup || uiState.includeKeys) showUploadPasswordDialog = true
+                else viewModel.upload(null, null)
+            },
+            onRefreshRemote = viewModel::listRemote,
+            onSelectRemote = viewModel::selectRemote,
+            onRestoreRemote = { restoreRemote = true; showRestorePasswordDialog = true },
+            onConfigureWebDav = { showWebdavSheet = true },
+        ),
+    )
 
     if (showWebdavSheet) {
         val sheetState = rememberModalBottomSheetState()
@@ -564,7 +265,7 @@ internal fun BackupSettingsScreen(
                     },
                 )
 
-                Button(
+                TextButton(
                     onClick = {
                         val accepted = viewModel.saveAndTestWebDavConfig(
                             tempWebdavUrl,
@@ -612,21 +313,12 @@ internal fun BackupSettingsScreen(
                 if (blockedCode == BackupErrorCode.CONNECTION_FAILED ||
                     blockedCode == BackupErrorCode.CONFIGURATION_MISSING
                 ) {
-                    Button(
-                        onClick = {
-                            tempWebdavPass = ""
-                            viewModel.resetWebDavAuth()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    ) {
-                        Icon(Icons.Rounded.DeleteForever, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.backup_reset_webdav_security))
-                    }
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.DeleteForever,
+                        title = stringResource(R.string.backup_reset_webdav_security),
+                        titleColor = MaterialTheme.colorScheme.error,
+                        onClick = { tempWebdavPass = ""; viewModel.resetWebDavAuth() },
+                    )
                 }
             }
         }
@@ -705,6 +397,190 @@ internal fun BackupSettingsScreen(
                 clearPasswords()
             },
         )
+    }
+}
+
+internal data class BackupScreenActions(
+    val onCancelOperation: () -> Unit = {},
+    val onIncludeKeysChange: (Boolean) -> Unit = {},
+    val onEncryptBackupChange: (Boolean) -> Unit = {},
+    val onExport: () -> Unit = {},
+    val onImport: () -> Unit = {},
+    val onWebDavEnabledChange: (Boolean) -> Unit = {},
+    val onUpload: () -> Unit = {},
+    val onRefreshRemote: () -> Unit = {},
+    val onSelectRemote: (com.promenar.nexara.data.remote.webdav.RemoteBackup) -> Unit = {},
+    val onRestoreRemote: () -> Unit = {},
+    val onConfigureWebDav: () -> Unit = {},
+)
+
+@Composable
+internal fun BackupSettingsScreenContent(
+    uiState: BackupUiState,
+    actions: BackupScreenActions = BackupScreenActions(),
+    onNavigateBack: () -> Unit = {},
+    listState: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState(),
+) {
+    var contentExpanded by remember { mutableStateOf(true) }
+    val coreContentLabels = listOf(
+        stringResource(R.string.backup_content_sessions),
+        stringResource(R.string.backup_content_library),
+        stringResource(R.string.backup_content_files),
+        stringResource(R.string.backup_content_settings),
+    )
+    NexaraSettingsPageLayout(title = stringResource(R.string.backup_title), onBack = onNavigateBack) { paddingValues ->
+        LazyColumn(state = listState, modifier = Modifier.fillMaxWidth(), contentPadding = paddingValues) {
+            item {
+                Text(
+                    text = stringResource(R.string.backup_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+            item {
+                backupOperationText(uiState.operation)?.let { status ->
+                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                        Text(
+                            text = status,
+                            modifier = Modifier.testTag(UiTags.BACKUP_OPERATION_STATUS),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (uiState.operation is BackupOperation.Error || uiState.operation is BackupOperation.Blocked)
+                                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (uiState.operation.isCancellable) {
+                            TextButton(onClick = actions.onCancelOperation) { Text(stringResource(R.string.common_btn_cancel)) }
+                        }
+                    }
+                }
+            }
+            item {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.settings_batch1_backup_options),
+                    footer = stringResource(R.string.settings_batch1_backup_core_footer, coreContentLabels.joinToString(", ")),
+                ) {
+                    NexaraSettingsItem(
+                        title = stringResource(R.string.backup_content_title),
+                        subtitle = stringResource(R.string.settings_batch1_backup_core_summary),
+                        onClick = { contentExpanded = !contentExpanded },
+                        trailingContent = {
+                            Icon(if (contentExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown, contentDescription = null)
+                        },
+                    )
+                    AnimatedVisibility(visible = contentExpanded) {
+                        Column {
+                            SettingsToggle(
+                                title = stringResource(R.string.backup_content_keys),
+                                checked = uiState.keysChecked,
+                                onCheckedChange = actions.onIncludeKeysChange,
+                            )
+                            SettingsToggle(
+                                title = stringResource(R.string.backup_encrypt_package),
+                                description = stringResource(R.string.settings_batch1_backup_encrypt_summary),
+                                checked = uiState.encryptBackup,
+                                onCheckedChange = actions.onEncryptBackupChange,
+                            )
+                        }
+                    }
+                }
+            }
+            item {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.backup_section_local),
+                    footer = stringResource(R.string.settings_batch1_backup_local_footer),
+                ) {
+                    ExportButton(
+                        icon = Icons.Rounded.Download,
+                        title = stringResource(R.string.backup_export_title),
+                        subtitle = stringResource(if (uiState.isExporting) R.string.backup_exporting else R.string.settings_batch1_backup_export_summary),
+                        modifier = Modifier.fillMaxWidth().testTag(UiTags.BACKUP_EXPORT),
+                        enabled = uiState.canExecute,
+                        onClick = actions.onExport,
+                    )
+                    ExportButton(
+                        icon = Icons.Rounded.Upload,
+                        title = stringResource(R.string.backup_import_title),
+                        subtitle = stringResource(if (uiState.isImporting) R.string.backup_importing else R.string.settings_batch1_backup_import_summary),
+                        modifier = Modifier.fillMaxWidth().testTag(UiTags.BACKUP_IMPORT),
+                        enabled = uiState.canExecute,
+                        onClick = actions.onImport,
+                    )
+                }
+            }
+            item {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.backup_section_webdav),
+                    footer = uiState.selectedRemote?.let { remote ->
+                        listOf(stringResource(R.string.backup_remote_size, remote.sizeBytes), remote.lastModifiedEpochMillis.toString()).joinToString("\n")
+                    },
+                ) {
+                    SettingsToggle(
+                        icon = Icons.Rounded.CloudSync,
+                        title = stringResource(R.string.backup_webdav_manual),
+                        description = stringResource(when (uiState.webDavReadiness) {
+                            WebDavReadiness.Disabled -> R.string.backup_webdav_not_configured
+                            WebDavReadiness.Incomplete -> R.string.backup_webdav_incomplete
+                            WebDavReadiness.Ready -> R.string.backup_webdav_configured
+                        }),
+                        checked = uiState.webdavEnabled,
+                        onCheckedChange = actions.onWebDavEnabledChange,
+                    )
+                    AnimatedVisibility(visible = uiState.webdavEnabled) {
+                        Column {
+                            NexaraSettingsItem(
+                                icon = Icons.Rounded.Upload,
+                                title = stringResource(R.string.backup_upload_cloud),
+                                onClick = actions.onUpload,
+                                enabled = uiState.canExecute && uiState.webDavReadiness == WebDavReadiness.Ready,
+                            )
+                            NexaraSettingsItem(
+                                icon = Icons.Rounded.Refresh,
+                                title = stringResource(R.string.backup_remote_refresh),
+                                onClick = actions.onRefreshRemote,
+                                enabled = uiState.canExecute && uiState.webDavReadiness == WebDavReadiness.Ready,
+                            )
+                            if (uiState.operation is BackupOperation.ListingRemote) {
+                                Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                                }
+                            } else if (uiState.remoteBackups.isEmpty()) {
+                                NexaraSettingsItem(
+                                    icon = Icons.Rounded.CloudOff,
+                                    title = stringResource(R.string.backup_remote_empty),
+                                    onClick = actions.onRefreshRemote,
+                                    enabled = uiState.canExecute && uiState.webDavReadiness == WebDavReadiness.Ready,
+                                )
+                            }
+                            uiState.remoteBackups.forEach { remote ->
+                                val selected = uiState.selectedRemote == remote
+                                NexaraSettingsItem(
+                                    icon = if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.CloudSync,
+                                    title = remote.fileName,
+                                    onClick = { actions.onSelectRemote(remote) },
+                                    enabled = uiState.canExecute,
+                                    modifier = Modifier.semantics { this.selected = selected },
+                                )
+                            }
+                            if (uiState.selectedRemote != null) {
+                                NexaraSettingsItem(
+                                    icon = Icons.Rounded.Restore,
+                                    title = stringResource(R.string.backup_restore_cloud),
+                                    enabled = uiState.canExecute,
+                                    onClick = actions.onRestoreRemote,
+                                )
+                            }
+                        }
+                    }
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Link,
+                        title = stringResource(R.string.backup_config_webdav),
+                        enabled = uiState.canExecute,
+                        onClick = actions.onConfigureWebDav,
+                        showChevron = true,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -822,34 +698,13 @@ private fun ExportButton(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    ListItem(
-        modifier = modifier
-            .alpha(if (enabled) 1f else 0.38f)
-            .clickable(enabled = enabled, onClick = onClick),
-        leadingContent = {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        },
-        headlineContent = { Text(title, style = MaterialTheme.typography.titleMedium) },
-        supportingContent = {
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        },
-        trailingContent = {
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    NexaraSettingsItem(
+        title = title,
+        subtitle = subtitle,
+        icon = icon,
+        modifier = modifier,
+        enabled = enabled,
+        onClick = onClick,
+        showChevron = true,
     )
 }

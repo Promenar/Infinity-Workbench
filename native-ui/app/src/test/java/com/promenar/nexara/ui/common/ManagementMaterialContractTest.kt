@@ -25,10 +25,12 @@ class ManagementMaterialContractTest {
     fun `settings item is a flexible continuous row with button semantics`() {
         val source = source("NexaraSettingsItem")
 
-        assertThat(source).contains("ListItem(")
+        assertThat(source).contains("NexaraSettingsRowLayout(")
+        assertThat(source).doesNotContain("ListItem(")
         assertThat(source).doesNotContain("Surface(")
         assertThat(source).doesNotContain("NexaraGlassCard(")
-        assertThat(source).contains("role = Role.Button")
+        assertThat(source).contains("role: Role = Role.Button")
+        assertThat(source).contains("role = role")
         assertThat(source).contains("MaterialTheme.typography")
         assertThat(source).contains("MaterialTheme.colorScheme")
         assertThat(source).contains("showChevron: Boolean = false")

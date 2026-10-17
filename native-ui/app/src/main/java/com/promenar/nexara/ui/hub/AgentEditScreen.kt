@@ -1,6 +1,5 @@
 package com.promenar.nexara.ui.hub
 
-import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,7 +10,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,7 +27,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.agent.PresetAgents
@@ -43,20 +40,20 @@ import com.promenar.nexara.ui.theme.forInput
 data class AgentIconOption(
     val id: String,
     val icon: ImageVector,
-    val label: String
+    val labelRes: Int
 )
 
 private val presetIcons = listOf(
-    AgentIconOption("✨", Icons.Rounded.AutoAwesome, "Sparkles"),
-    AgentIconOption("💻", Icons.Rounded.Code, "Code"),
-    AgentIconOption("📝", Icons.Rounded.EditNote, "Note"),
-    AgentIconOption("🤖", Icons.Rounded.SmartToy, "Robot"),
-    AgentIconOption("🧠", Icons.Rounded.Psychology, "Brain"),
-    AgentIconOption("⭐", Icons.Rounded.Star, "Star"),
-    AgentIconOption("🔥", Icons.Rounded.LocalFireDepartment, "Fire"),
-    AgentIconOption("💡", Icons.Rounded.Lightbulb, "Light"),
-    AgentIconOption("⚡", Icons.Rounded.Bolt, "Bolt"),
-    AgentIconOption("🎯", Icons.Rounded.TrackChanges, "Target")
+    AgentIconOption("✨", Icons.Rounded.AutoAwesome, R.string.settings_retrieval_icon_sparkles),
+    AgentIconOption("💻", Icons.Rounded.Code, R.string.settings_retrieval_icon_code),
+    AgentIconOption("📝", Icons.Rounded.EditNote, R.string.settings_retrieval_icon_note),
+    AgentIconOption("🤖", Icons.Rounded.SmartToy, R.string.settings_retrieval_icon_robot),
+    AgentIconOption("🧠", Icons.Rounded.Psychology, R.string.settings_retrieval_icon_brain),
+    AgentIconOption("⭐", Icons.Rounded.Star, R.string.settings_retrieval_icon_star),
+    AgentIconOption("🔥", Icons.Rounded.LocalFireDepartment, R.string.settings_retrieval_icon_fire),
+    AgentIconOption("💡", Icons.Rounded.Lightbulb, R.string.settings_retrieval_icon_light),
+    AgentIconOption("⚡", Icons.Rounded.Bolt, R.string.settings_retrieval_icon_bolt),
+    AgentIconOption("🎯", Icons.Rounded.TrackChanges, R.string.settings_retrieval_icon_target)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -109,6 +106,7 @@ fun AgentEditScreen(
     var showSystemPromptEditor by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
+    var showIconPicker by remember { mutableStateOf(false) }
 
     val defaultPrimary = MaterialTheme.colorScheme.primary
     val parsedColor = remember(selectedColor, defaultPrimary) {
@@ -170,6 +168,35 @@ fun AgentEditScreen(
         )
     }
 
+    NexaraBottomSheet(
+        show = showIconPicker,
+        onDismiss = { showIconPicker = false },
+        title = stringResource(R.string.agent_edit_label_icon),
+        modifier = Modifier,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            presetIcons.chunked(4).forEach { rowIcons ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    rowIcons.forEach { option ->
+                        IconSelectionItem(
+                            option = option,
+                            isSelected = selectedIcon == option.id && avatarPath == null,
+                            activeColor = parsedColor,
+                            onClick = {
+                                viewModel.setIcon(option.id)
+                                showIconPicker = false
+                            },
+                        )
+                    }
+                    repeat(4 - rowIcons.size) { Spacer(modifier = Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+
     NexaraSettingsPageLayout(
         title = stringResource(R.string.agent_edit_title),
         onBack = onNavigateBack,
@@ -177,7 +204,7 @@ fun AgentEditScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
-            verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Medium)
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             saveError?.let { error ->
                 item {
@@ -242,24 +269,28 @@ fun AgentEditScreen(
                             onClick = avatarCropLauncher::launch,
                         )
 
-                        // Camera floating badge
-                        Box(
+                        IconButton(
+                            onClick = avatarCropLauncher::launch,
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .offset(x = 2.dp, y = 2.dp)
-                                .size(26.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                .border(1.5.dp, MaterialTheme.colorScheme.background, CircleShape)
-                                .clickable(onClick = avatarCropLauncher::launch),
-                            contentAlignment = Alignment.Center
+                                .size(48.dp),
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.AddAPhoto,
-                                contentDescription = stringResource(R.string.agent_edit_icon_upload),
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(13.dp)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                    .border(1.5.dp, MaterialTheme.colorScheme.background, CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.AddAPhoto,
+                                    contentDescription = stringResource(R.string.agent_edit_icon_upload),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(13.dp),
+                                )
+                            }
                         }
                     }
 
@@ -321,112 +352,23 @@ fun AgentEditScreen(
                 }
             }
 
-            // ─── 3. 视觉与色彩工坊：图标选择 + 调色盘 + 彩虹滑块 ───
+            // 图标选择在弹层中完成，颜色选择盘保留独立编辑区。
             item {
-                var isExpanded by remember { mutableStateOf(false) }
-
-                NexaraSettingsSection(
-                    title = stringResource(R.string.agent_edit_section_appearance)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        // Icon Selection Header
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = stringResource(R.string.agent_edit_label_icon),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-
-                            Row(
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .clickable { isExpanded = !isExpanded }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (isExpanded) stringResource(R.string.agent_edit_icon_toggle_collapse) else stringResource(R.string.agent_edit_icon_toggle_expand),
-                                    style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.primary)
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Icon(
-                                    imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-
-                        // Animated folding icon grid
-                        AnimatedContent(
-                            targetState = isExpanded,
-                            transitionSpec = { fadeIn() togetherWith fadeOut() },
-                            label = "IconSelection"
-                        ) { expanded ->
-                            if (expanded) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    presetIcons.chunked(4).forEach { rowIcons ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                        ) {
-                                            rowIcons.forEach { option ->
-                                                IconSelectionItem(
-                                                    option = option,
-                                                    isSelected = selectedIcon == option.id && avatarPath == null,
-                                                    activeColor = parsedColor,
-                                                    onClick = { viewModel.setIcon(option.id) }
-                                                )
-                                            }
-                                            repeat(4 - rowIcons.size) {
-                                                Spacer(modifier = Modifier.weight(1f))
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    presetIcons.take(4).forEach { option ->
-                                        IconSelectionItem(
-                                            option = option,
-                                            isSelected = selectedIcon == option.id && avatarPath == null,
-                                            activeColor = parsedColor,
-                                            onClick = { viewModel.setIcon(option.id) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 2.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                        )
-
-                        // Color Picker (Presets + Rainbow Slider + Swatch)
+                NexaraSettingsSection(title = stringResource(R.string.agent_edit_section_appearance)) {
+                    NexaraSettingsItem(
+                        title = stringResource(R.string.agent_edit_label_icon),
+                        subtitle = if (avatarPath != null) stringResource(R.string.agent_edit_icon_custom)
+                        else stringResource(presetIcons.find { it.id == selectedIcon }?.labelRes ?: R.string.settings_retrieval_icon_sparkles),
+                        onClick = { showIconPicker = true },
+                        showChevron = true,
+                    )
+                    Column(modifier = Modifier.padding(16.dp)) {
                         ColorPickerPanel(
                             selectedColor = parsedColor,
                             onColorSelected = { color ->
                                 val hex = String.format("#%02X%02X%02X", (color.red * 255).toInt(), (color.green * 255).toInt(), (color.blue * 255).toInt())
                                 viewModel.setColor(hex)
-                            }
+                            },
                         )
                     }
                 }
@@ -435,164 +377,72 @@ fun AgentEditScreen(
             // ─── 4. 模型配置：助手专属默认模型 ───
             item {
                 NexaraSettingsSection(
-                    title = stringResource(R.string.agent_edit_section_model)
+                    title = stringResource(R.string.agent_edit_section_model),
+                    footer = currentModelDisplayName.ifBlank { null },
                 ) {
                     NexaraSettingsItem(
                         icon = Icons.Rounded.SmartToy,
                         title = stringResource(R.string.agent_edit_current_model),
-                        subtitle = if (currentModelDisplayName.isNotBlank()) currentModelDisplayName else stringResource(R.string.settings_not_set),
+                        subtitle = stringResource(
+                            if (currentModelDisplayName.isNotBlank()) R.string.settings_retrieval_agent_model_selected
+                            else R.string.settings_not_set,
+                        ),
                         onClick = { showModelPicker = true },
                         showChevron = true
                     )
                 }
             }
 
-            // ─── 5. 人格与设定：系统提示词卡片 ───
+            // 系统提示词以短状态呈现，完整内容由编辑器承载。
             item {
                 NexaraSettingsSection(
-                    title = stringResource(R.string.agent_edit_section_personality)
+                    title = stringResource(R.string.agent_edit_section_personality),
+                    footer = stringResource(R.string.agent_edit_prompt_hint),
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showSystemPromptEditor = true }
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Category Icon Badge
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Psychology,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(14.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.agent_edit_prompt_label),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-
-                                Box(
-                                    modifier = Modifier
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (systemPrompt.isNotBlank()) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                                            else MaterialTheme.colorScheme.surfaceContainerHigh
-                                        )
-                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (systemPrompt.isNotBlank()) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(6.dp)
-                                                    .clip(CircleShape)
-                                                    .background(MaterialTheme.colorScheme.primary)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                        }
-                                        Text(
-                                            text = if (systemPrompt.isNotBlank()) stringResource(R.string.agent_edit_prompt_configured) else stringResource(R.string.agent_edit_prompt_not_set),
-                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                            color = if (systemPrompt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            Text(
-                                text = systemPrompt.ifBlank { stringResource(R.string.agent_edit_prompt_hint) },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (systemPrompt.isNotBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Psychology,
+                        title = stringResource(R.string.agent_edit_prompt_label),
+                        subtitle = stringResource(
+                            if (systemPrompt.isNotBlank()) R.string.agent_edit_prompt_configured
+                            else R.string.agent_edit_prompt_not_set,
+                        ),
+                        onClick = { showSystemPromptEditor = true },
+                        showChevron = true,
+                    )
                 }
             }
 
             // ─── 6. 知识库与检索配置 ───
             item {
                 NexaraSettingsSection(
-                    title = stringResource(R.string.agent_edit_section_knowledge)
+                    title = stringResource(R.string.agent_edit_section_knowledge),
+                    footer = stringResource(R.string.agent_edit_rag_desc) + "\n" + stringResource(R.string.agent_edit_retrieval_desc),
                 ) {
                     NexaraSettingsItem(
                         icon = Icons.Rounded.Storage,
                         title = stringResource(R.string.agent_edit_rag_config),
-                        subtitle = stringResource(R.string.agent_edit_rag_desc),
-                        onClick = { onNavigateToRagConfig(agentId) }
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                        subtitle = stringResource(R.string.settings_retrieval_agent_rag_short),
+                        onClick = { onNavigateToRagConfig(agentId) },
+                        showChevron = true,
                     )
                     NexaraSettingsItem(
                         icon = Icons.Rounded.Tune,
                         title = stringResource(R.string.agent_edit_advanced_retrieval),
-                        subtitle = stringResource(R.string.agent_edit_retrieval_desc),
-                        onClick = { onNavigateToAdvancedRetrieval(agentId) }
+                        subtitle = stringResource(R.string.settings_retrieval_agent_advanced_short),
+                        onClick = { onNavigateToAdvancedRetrieval(agentId) },
+                        showChevron = true,
                     )
                 }
             }
 
-            // ─── 7. 危险操作：删除助手 ───
             item {
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.12f))
-                        .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.25f), RoundedCornerShape(16.dp))
-                        .clickable { showDeleteConfirm = true }
-                        .padding(vertical = 16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.DeleteOutline,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.agent_edit_delete_btn),
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
+                NexaraSettingsSection(title = stringResource(R.string.settings_retrieval_agent_actions_section)) {
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.DeleteOutline,
+                        title = stringResource(R.string.agent_edit_delete_btn),
+                        titleColor = MaterialTheme.colorScheme.error,
+                        onClick = { showDeleteConfirm = true },
+                    )
                 }
             }
         }
@@ -676,7 +526,7 @@ private fun RowScope.IconSelectionItem(
     ) {
         Icon(
             imageVector = option.icon,
-            contentDescription = option.label,
+            contentDescription = stringResource(option.labelRes),
             tint = if (isSelected) activeColor else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(22.dp)
         )

@@ -66,7 +66,8 @@ class ProviderModelReleaseBlockersTest {
         assertThat(cloudSection).doesNotContain("Surface(")
         assertThat(localSection).doesNotContain("Surface(")
         assertThat(actionsSection).contains("Row(")
-        assertThat(actionsSection).contains("OutlinedButton(")
+        assertThat(actionsSection).contains("TextButton(")
+        assertThat(actionsSection).doesNotContain("OutlinedButton(")
         assertThat(actionsSection).contains("Button(")
         assertThat(actionsSection).doesNotContain("Column(")
     }
@@ -82,7 +83,11 @@ class ProviderModelReleaseBlockersTest {
         assertThat(input).doesNotContain("NexaraColors.")
         assertThat(input).doesNotContain("BasicTextField(")
 
-        assertThat(selector).contains("ListItem(")
+        val protocol = source("ui/settings/ProviderFormScreen.kt").substringAfter("private fun ProviderProtocolSelector(")
+            .substringBefore("private fun ProviderPresetSelector(")
+        assertThat(protocol).contains("NexaraValueRow(")
+        assertThat(protocol).contains("NexaraBottomSheet(")
+        assertThat(protocol).contains("selected = protocol == state.localProtocol")
         assertThat(selector).contains("RadioButton(")
         assertThat(selector).contains("selectable(")
         assertThat(selector).contains("Role.RadioButton")

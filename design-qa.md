@@ -1,3 +1,13 @@
+# 设置页视觉合同（2026-10-18）
+
+当前设置层级以 [设置页重设计规格](docs/superpowers/specs/2026-10-17-nexara-settings-chat-redesign.md) 的批次一为准，详细交付证据与逐图检查见 [.agent/tmp-agent-reports/report-redesign-batch1.md](.agent/tmp-agent-reports/report-redesign-batch1.md)。本页下方有日期的验收段落保留历史证据，不作为当前设置行尺寸合同。
+
+- 标题 16sp/22sp、副标题 13sp/18sp；默认字号以 48dp 单行、56dp 双行为验收目标，副标题限制一行。全局字号变化后的非设置页面沿用自身布局。
+- 设置行、开关、值行及步进器设置行复用同一行布局；前导图标 20dp、间隔 16dp，文字起点 52dp，无图标分组从 16dp 开始。同组所有行统一有或无图标，生产页面不使用空图标占位。
+- 分组为 20dp 圆角 `surfaceContainerLow`，分组间隔 24dp；小标题 12sp/16sp、primary。详情页脚注位于容器下 8dp，使用阅读换行，411dp 默认中文不超过三行，完整安全说明可例外；首页导航无脚注。数值解释位于弹层头部，标题、说明、选项及输入框左缘距弹层边缘 24dp；危险操作为 error 文字行。
+- 值行连接离散/连续底部选择弹层；行内步进器胶囊 36dp、按钮触控 48dp。窄屏长标题与放大字号允许增高；副标题省略、设备触控与读屏等剩余验证边界见交付报告。
+- 验证范围为主机 Compose 渲染、JVM 与构建门禁；Compose 布局和交互断言位于 `androidTest`，仅编译。本任务不启动模拟器或真机，不把截图预览或设备测试 APK 编译作为设备验收。
+
 # Nexara DocEditor Material 3 视觉验收
 
 > 全页面视觉审计（2026-09-23，四层审计：代码 token 扫描 / bounds 度量 / 像素测量 / 视觉批阅，96 张截图）见 [docs/visual-audit-2026-09.md](docs/visual-audit-2026-09.md)。

@@ -47,12 +47,13 @@ class ThemeSettingsInteractionTest {
             )
         }
 
-        // 验证三个模式选项存在，且都具有点击动作，同时触摸目标尺寸至少为 48dp
+        // 模式入口打开单选弹层，各选项保持48dp触控与选择语义。
         listOf(
             TestTags.MODE_SYSTEM to NexaraThemeMode.SYSTEM,
             TestTags.MODE_LIGHT to NexaraThemeMode.LIGHT,
             TestTags.MODE_DARK to NexaraThemeMode.DARK
         ).forEach { (tag, mode) ->
+            composeRule.onNodeWithTag("theme_mode_picker").performClick()
             composeRule.onNodeWithTag(tag)
                 .assertExists()
                 .assert(hasClickAction())
@@ -62,8 +63,10 @@ class ThemeSettingsInteractionTest {
             assertThat(selectedMode.getAndSet(null)).isEqualTo(mode)
         }
 
+        composeRule.onNodeWithTag("theme_mode_picker").performClick()
         composeRule.onNodeWithTag(TestTags.MODE_DARK).assertIsSelected()
         composeRule.onNodeWithTag(TestTags.MODE_SYSTEM).assertIsNotSelected()
+        composeRule.onNodeWithTag(TestTags.MODE_DARK).performClick()
 
         // 验证动态取色开关存在，且可以点击
         composeRule.onNodeWithTag(TestTags.DYNAMIC_COLOR_SWITCH)
@@ -126,9 +129,11 @@ class ThemeSettingsInteractionTest {
         }
 
         // 在 2.0x 字号下，验证主要元素和模式仍然正常显示并且无障碍语义可查询
+        composeRule.onNodeWithTag("theme_mode_picker").performClick()
         composeRule.onNodeWithTag(TestTags.MODE_SYSTEM).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.MODE_LIGHT).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.MODE_DARK).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.MODE_SYSTEM).performClick()
         composeRule.onNodeWithTag(TestTags.DYNAMIC_COLOR_SWITCH).assertIsDisplayed()
     }
 }

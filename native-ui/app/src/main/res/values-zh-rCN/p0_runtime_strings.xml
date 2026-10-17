@@ -4,10 +4,10 @@
     <string name="p0_unlimited">不限</string>
     <string name="p0_disabled">关闭</string>
     <string name="p0_runtime_limits">长任务控制</string>
-    <string name="p0_token_limit">单任务 token 上限</string>
-    <string name="p0_repeat_limit">连续重复调用暂停次数</string>
+    <string name="p0_token_limit">单任务 Token 上限</string>
+    <string name="p0_repeat_limit">重复上限</string>
     <string name="p0_runtime_limits_desc">Token 上限累计任务中各次请求的输入与输出；提供商未报告用量时使用估算。收尾请求可能超出上限。大输出保存在应用私有存储，可用 read_tool_output 分段读取。</string>
-    <string name="p0_reset_consent">重置不限轮次全自动执行确认</string>
+    <string name="p0_reset_consent">重置授权</string>
     <string name="p0_decrease_setting">减少%1$s</string>
     <string name="p0_increase_setting">增加%1$s</string>
     <string name="p0_auto_confirm_title">允许不限轮次全自动执行？</string>
@@ -15,7 +15,7 @@
     <string name="p0_loop_title">检测到重复工具调用</string>
     <string name="p0_loop_body">相同工具与参数已连续重复。选择继续将重置检测并执行当前批次，也可停止任务。</string>
     <string name="p0_continue">继续</string>
-    <string name="p0_progress">第 %1$d 轮，已调用 %2$d 次，共 %3$d token%4$s</string>
+    <string name="p0_progress">第 %1$d 轮，已调用 %2$d 次，共 %3$d Token%4$s</string>
     <string name="p0_estimated">（估算）</string>
     <string name="p0_grants_title">本会话已允许的目标</string>
     <string name="p0_grants_empty">暂无目标授权</string>

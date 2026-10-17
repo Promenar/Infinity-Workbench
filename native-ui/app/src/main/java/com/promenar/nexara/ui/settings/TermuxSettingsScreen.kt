@@ -89,6 +89,7 @@ import com.promenar.nexara.domain.storage.ExternalFolderException
 import com.promenar.nexara.domain.storage.ExternalMount
 import com.promenar.nexara.ui.common.NexaraCommandBlock
 import com.promenar.nexara.ui.common.NexaraIdentifierText
+import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
@@ -412,55 +413,51 @@ internal fun TermuxSettingsContent(
         modifier = modifier.fillMaxSize().testTag("termux_settings_screen"),
         state = listState,
         contentPadding = contentPadding,
-        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
     ) {
         item {
-            NexaraSettingsSection(title = stringResource(R.string.termux_integration_section)) {
+            NexaraSettingsSection(
+                title = stringResource(R.string.termux_integration_section),
+                footer = listOfNotNull(
+                    stringResource(R.string.settings_batch1_termux_intro_footer),
+                    when (state.availability?.errorCode) {
+                        "TERMUX_NOT_INSTALLED", "TERMUX_VERSION_UNSUPPORTED", "TERMUX_PERMISSION_DENIED",
+                        "TERMUX_EXTERNAL_APPS_DISABLED", "TERMUX_INTEGRATION_DISABLED" -> null
+                        else -> termuxGuidance(state.availability?.errorCode, state.availability?.guidance)
+                    },
+                ).joinToString("\n"),
+            ) {
                 SettingsToggle(
                     title = stringResource(R.string.termux_integration_title),
-                    description = stringResource(R.string.termux_integration_description),
-                    icon = Icons.Rounded.Terminal,
+                    description = stringResource(if (state.enabled) R.string.settings_batch1_termux_integration_summary
+                        else R.string.settings_batch1_termux_enable_diagnostic_summary),
                     checked = state.enabled,
                     enabled = state.settingsLoaded && !state.busy && !state.refreshing,
                     modifier = Modifier.testTag("termux_integration_toggle"),
                     onCheckedChange = actions.onEnabledChange,
                 )
+                NexaraSettingsItem(
+                    title = stringResource(when (state.availability?.installed) {
+                        true -> R.string.termux_installed
+                        false -> R.string.termux_not_installed
+                        null -> R.string.termux_reading
+                    }),
+                    subtitle = stringResource(R.string.termux_version, state.availability?.versionName ?: stringResource(R.string.termux_not_available)),
+                    onClick = actions.onRefresh,
+                )
+                NexaraSettingsItem(
+                    title = stringResource(when (state.availability?.permissionGranted) {
+                        true -> R.string.termux_permission_granted
+                        false -> R.string.termux_permission_missing
+                        null -> R.string.termux_permission_reading
+                    }),
+                    onClick = actions.onOpenAppDetails,
+                    showChevron = true,
+                )
                 TermuxSectionBody {
-                    Text(stringResource(R.string.termux_intro), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                        verticalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                    ) {
-                        TermuxStatusChip(
-                            text = stringResource(when (state.availability?.installed) {
-                                true -> R.string.termux_installed
-                                false -> R.string.termux_not_installed
-                                null -> R.string.termux_reading
-                            }),
-                            status = visuals.installation,
-                        )
-                        TermuxStatusChip(
-                            text = stringResource(when (state.availability?.permissionGranted) {
-                                true -> R.string.termux_permission_granted
-                                false -> R.string.termux_permission_missing
-                                null -> R.string.termux_permission_reading
-                            }),
-                            status = visuals.permission,
-                        )
-                    }
-                    NexaraIdentifierText(
-                        stringResource(R.string.termux_version, state.availability?.versionName ?: stringResource(R.string.termux_not_available)),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    termuxGuidance(state.availability?.errorCode, state.availability?.guidance)?.let {
-                        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
                     if (state.busy || state.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
                     state.notice?.let { message ->
                         TermuxInlineNotice(message, if (state.noticeIsError) TermuxStepStatus.Error else TermuxStepStatus.Complete)
                     }
-                    Text(stringResource(R.string.termux_diagnostic_description), style = MaterialTheme.typography.bodyMedium)
                     NexaraCommandBlock(command = stringResource(R.string.termux_command_diagnostic), enabled = !state.busy, onCopy = actions.onCopyCommand)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
                         Button(
@@ -474,93 +471,85 @@ internal fun TermuxSettingsContent(
                             modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
                         ) { Text(stringResource(R.string.termux_refresh)) }
                     }
-                    if (!state.enabled) {
-                        Text(stringResource(R.string.termux_diagnostic_requires_enabled), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
                     state.diagnostic?.let { TermuxDiagnosticResult(it) }
                 }
             }
         }
         item {
-            NexaraSettingsSection(title = stringResource(R.string.termux_step_install)) {
-                TermuxSectionBody {
-                    TermuxStepStatusLabel(visuals.installation)
-                    Text(stringResource(R.string.termux_install_description), style = MaterialTheme.typography.bodyMedium)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
-                        // 已安装时安装入口降为次要操作，未满足的步骤才给出主按钮
-                        if (visuals.installation == TermuxStepStatus.Complete) {
-                            TextButton(onClick = actions.onOpenFdroid, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                                Text(stringResource(R.string.termux_fdroid))
-                            }
-                        } else {
-                            Button(onClick = actions.onOpenFdroid, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                                Text(stringResource(R.string.termux_fdroid))
-                            }
-                        }
-                        TextButton(onClick = actions.onOpenGithub, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                            Text(stringResource(R.string.termux_github))
-                        }
-                    }
-                }
+            NexaraSettingsSection(
+                title = stringResource(R.string.termux_step_install),
+                footer = stringResource(R.string.termux_install_description),
+            ) {
+                NexaraSettingsItem(
+                    title = stringResource(R.string.termux_fdroid),
+                    subtitle = stringResource(if (visuals.installation == TermuxStepStatus.Complete) R.string.termux_step_complete else R.string.termux_step_pending),
+                    onClick = actions.onOpenFdroid,
+                    showChevron = true,
+                )
+                NexaraSettingsItem(title = stringResource(R.string.termux_github), onClick = actions.onOpenGithub, showChevron = true)
             }
         }
         item {
-            NexaraSettingsSection(title = stringResource(R.string.termux_step_external_apps)) {
+            NexaraSettingsSection(
+                title = stringResource(R.string.termux_step_external_apps),
+                footer = listOf(
+                    stringResource(R.string.termux_external_apps_description),
+                    stringResource(if (visuals.externalApps == TermuxStepStatus.Complete) R.string.termux_external_apps_verified else R.string.termux_external_apps_unverified),
+                ).joinToString("\n"),
+            ) {
                 TermuxSectionBody {
-                    TermuxStepStatusLabel(visuals.externalApps)
-                    Text(stringResource(R.string.termux_external_apps_description), style = MaterialTheme.typography.bodyMedium)
                     NexaraCommandBlock(command = stringResource(R.string.termux_command_external_apps), enabled = !state.busy, onCopy = actions.onCopyCommand)
-                    Text(
-                        stringResource(if (visuals.externalApps == TermuxStepStatus.Complete) R.string.termux_external_apps_verified else R.string.termux_external_apps_unverified),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
         }
         item {
-            NexaraSettingsSection(title = stringResource(R.string.termux_step_permission)) {
-                TermuxSectionBody {
-                    TermuxStepStatusLabel(visuals.permission)
-                    Text(stringResource(R.string.termux_permission_description), style = MaterialTheme.typography.bodyMedium)
-                    if (visuals.permission != TermuxStepStatus.Complete) {
-                        Button(
-                            onClick = actions.onRequestPermission,
-                            enabled = state.availability?.installed == true && !state.busy,
-                            modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget),
-                        ) { Text(stringResource(R.string.termux_request_permission)) }
-                    }
+            NexaraSettingsSection(
+                title = stringResource(R.string.termux_step_permission),
+                footer = stringResource(R.string.settings_batch1_termux_permission_footer),
+            ) {
+                if (visuals.permission != TermuxStepStatus.Complete) {
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Settings,
+                        title = stringResource(R.string.termux_request_permission),
+                        onClick = actions.onRequestPermission,
+                        enabled = state.availability?.installed == true && !state.busy,
+                    )
                 }
                 NexaraSettingsItem(
                     icon = Icons.Rounded.Settings,
                     title = stringResource(R.string.termux_app_details),
-                    subtitle = stringResource(R.string.termux_app_details_description),
                     onClick = actions.onOpenAppDetails,
                     showChevron = true,
                 )
             }
         }
         item {
-            NexaraSettingsSection(title = stringResource(R.string.termux_step_ssh)) {
+            NexaraSettingsSection(
+                title = stringResource(R.string.termux_step_ssh),
+                footer = stringResource(R.string.settings_batch1_termux_ssh_setup_footer),
+            ) {
                 TermuxSectionBody {
-                    TermuxStatusChip(
-                        text = stringResource(if (state.keyHosts.isEmpty()) R.string.termux_step_optional else R.string.termux_key_available),
-                        status = if (state.keyHosts.isEmpty()) TermuxStepStatus.Optional else TermuxStepStatus.Complete,
-                    )
-                    Text(stringResource(R.string.termux_ssh_description), style = MaterialTheme.typography.bodyMedium)
                     NexaraCommandBlock(command = stringResource(R.string.termux_command_ssh_setup), enabled = !state.busy, onCopy = actions.onCopyCommand)
-                    Text(stringResource(R.string.termux_ssh_password_description), style = MaterialTheme.typography.bodyMedium)
                     NexaraCommandBlock(command = stringResource(R.string.termux_command_password), enabled = !state.busy, onCopy = actions.onCopyCommand)
-                    Text(stringResource(R.string.termux_ssh_host_description), style = MaterialTheme.typography.bodyMedium)
-                    Text(stringResource(R.string.termux_sshd_description), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     NexaraCommandBlock(command = stringResource(R.string.termux_command_sshd), enabled = !state.busy, onCopy = actions.onCopyCommand)
-                    Button(onClick = actions.onOpenSsh, enabled = !state.busy, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                        Text(stringResource(R.string.termux_open_ssh))
-                    }
-                    if (state.keyHosts.isEmpty()) {
-                        Text(stringResource(R.string.termux_key_missing), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
                 }
+            }
+            NexaraSettingsSection(
+                title = stringResource(R.string.settings_local_remote),
+                footer = stringResource(R.string.settings_batch1_termux_ssh_host_footer),
+            ) {
+                NexaraSettingsItem(
+                    title = stringResource(R.string.termux_open_ssh),
+                    subtitle = stringResource(if (state.keyHosts.isEmpty()) R.string.termux_step_optional else R.string.termux_key_available),
+                    onClick = actions.onOpenSsh,
+                    enabled = !state.busy,
+                    showChevron = true,
+                )
+            }
+            NexaraSettingsSection(
+                title = stringResource(R.string.settings_batch1_termux_key_section),
+                footer = stringResource(if (state.keyHosts.isEmpty()) R.string.termux_key_missing else R.string.termux_key_copy_description),
+            ) {
                 if (state.keyHosts.isNotEmpty()) {
                     Box {
                         NexaraSettingsItem(
@@ -583,34 +572,32 @@ internal fun TermuxSettingsContent(
                             }
                         }
                     }
-                    TermuxSectionBody {
-                        Text(stringResource(R.string.termux_key_copy_description), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small)) {
-                            TextButton(onClick = actions.onCopyPublicKey, enabled = !state.busy, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                                Text(stringResource(R.string.termux_copy_public_key))
-                            }
-                            TextButton(onClick = actions.onCopyPublicKeyCommand, enabled = !state.busy, modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget)) {
-                                Text(stringResource(R.string.termux_copy_key_command))
-                            }
-                        }
-                    }
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Key,
+                        title = stringResource(R.string.termux_copy_public_key),
+                        enabled = !state.busy,
+                        onClick = actions.onCopyPublicKey,
+                    )
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.Key,
+                        title = stringResource(R.string.termux_copy_key_command),
+                        enabled = !state.busy,
+                        onClick = actions.onCopyPublicKeyCommand,
+                    )
                 }
             }
         }
         item {
-            NexaraSettingsSection(title = stringResource(R.string.termux_step_mount)) {
+            NexaraSettingsSection(
+                title = stringResource(R.string.termux_step_mount),
+                footer = stringResource(R.string.settings_batch1_termux_mount_footer),
+            ) {
                 TermuxSectionBody {
-                    TermuxStatusChip(
-                        text = if (state.mounts.isEmpty()) stringResource(R.string.termux_step_optional)
-                            else stringResource(R.string.termux_mount_count, state.mounts.size),
-                        status = if (state.mounts.isEmpty()) TermuxStepStatus.Optional else TermuxStepStatus.Complete,
-                    )
-                    Text(stringResource(R.string.termux_mount_description), style = MaterialTheme.typography.bodyMedium)
                     OutlinedTextField(
                         value = state.mountAlias,
                         onValueChange = actions.onMountAliasChange,
                         label = { Text(stringResource(R.string.termux_mount_alias)) },
-                        supportingText = { Text(stringResource(R.string.termux_mount_alias_hint)) },
+                    supportingText = { Text(stringResource(R.string.termux_mount_alias_hint)) },
                         enabled = !state.busy && !state.pickerActive,
                         singleLine = true,
                         textStyle = MaterialTheme.typography.bodyLarge.forInput(),
@@ -620,44 +607,41 @@ internal fun TermuxSettingsContent(
                 }
                 SettingsToggle(
                     title = stringResource(R.string.termux_mount_read_only),
-                    description = stringResource(R.string.termux_mount_read_only_description),
+                    description = stringResource(R.string.settings_batch1_mount_read_only_summary),
                     icon = Icons.Rounded.FolderOpen,
                     checked = state.readOnly,
                     onCheckedChange = actions.onReadOnlyChange,
                     enabled = !state.busy && !state.pickerActive,
                     modifier = Modifier.testTag("termux_mount_read_only"),
                 )
-                TermuxSectionBody {
-                    Button(
-                        onClick = actions.onChooseHome,
-                        enabled = state.availability?.installed == true && !state.busy && !state.pickerActive,
-                        modifier = Modifier.heightIn(min = NexaraSpacing.MinimumTouchTarget).testTag("termux_choose_home"),
-                    ) { Text(stringResource(R.string.termux_choose_folder)) }
-                    Text(stringResource(R.string.termux_picker_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    state.mounts.forEach { mount ->
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.Small),
-                            verticalAlignment = Alignment.Top,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(NexaraSpacing.XLarge))
-                            NexaraIdentifierText(
-                                stringResource(R.string.termux_mount_path, mount.alias, stringResource(if (mount.readOnly) R.string.termux_read_only else R.string.termux_read_write)),
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
+                NexaraSettingsItem(
+                    icon = Icons.Rounded.FolderOpen,
+                    title = stringResource(R.string.termux_choose_folder),
+                    subtitle = if (state.mounts.isEmpty()) stringResource(R.string.termux_step_optional) else stringResource(R.string.termux_mount_count, state.mounts.size),
+                    onClick = actions.onChooseHome,
+                    enabled = state.availability?.installed == true && !state.busy && !state.pickerActive,
+                    modifier = Modifier.testTag("termux_choose_home"),
+                    showChevron = true,
+                )
+                state.mounts.forEach { mount ->
+                    NexaraSettingsRowLayout(
+                        icon = Icons.Rounded.FolderOpen,
+                        title = stringResource(R.string.termux_mount_path, mount.alias, stringResource(if (mount.readOnly) R.string.termux_read_only else R.string.termux_read_write)),
+                    )
                 }
             }
         }
         item {
-            NexaraSettingsSection(title = stringResource(R.string.termux_background_section)) {
+            NexaraSettingsSection(
+                title = stringResource(R.string.termux_background_section),
+                footer = listOf(
+                    stringResource(R.string.termux_background_description),
+                    stringResource(R.string.termux_wake_lock_description),
+                    stringResource(R.string.termux_background_hint),
+                ).joinToString("\n"),
+            ) {
                 TermuxSectionBody {
-                    Text(stringResource(R.string.termux_background_description), style = MaterialTheme.typography.bodyMedium)
-                    Text(stringResource(R.string.termux_wake_lock_description), style = MaterialTheme.typography.bodyMedium)
                     NexaraCommandBlock(command = stringResource(R.string.termux_command_wake_lock), enabled = !state.busy, onCopy = actions.onCopyCommand)
-                    Text(stringResource(R.string.termux_background_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -674,59 +658,11 @@ private fun TermuxSectionBody(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun TermuxStepStatusLabel(status: TermuxStepStatus) {
-    TermuxStatusChip(
-        text = stringResource(when (status) {
-            TermuxStepStatus.Complete -> R.string.termux_step_complete
-            TermuxStepStatus.Pending -> R.string.termux_step_pending
-            TermuxStepStatus.Optional -> R.string.termux_step_optional
-            TermuxStepStatus.Reading -> R.string.termux_reading
-            TermuxStepStatus.Error -> R.string.termux_step_attention
-        }),
-        status = status,
-    )
-}
-
-@Composable
-private fun TermuxStatusChip(text: String, status: TermuxStepStatus) {
-    val colors = MaterialTheme.colorScheme
-    val color = when (status) {
-        TermuxStepStatus.Complete -> colors.primaryContainer
-        TermuxStepStatus.Pending, TermuxStepStatus.Error -> colors.errorContainer
-        TermuxStepStatus.Optional, TermuxStepStatus.Reading -> colors.surfaceContainerHighest
-    }
-    val contentColor = when (status) {
-        TermuxStepStatus.Complete -> colors.onPrimaryContainer
-        TermuxStepStatus.Pending, TermuxStepStatus.Error -> colors.onErrorContainer
-        TermuxStepStatus.Optional, TermuxStepStatus.Reading -> colors.onSurfaceVariant
-    }
-    Surface(color = color, contentColor = contentColor, shape = MaterialTheme.shapes.small) {
-        Row(
-            modifier = Modifier.padding(horizontal = NexaraSpacing.Small, vertical = NexaraSpacing.XSmall),
-            horizontalArrangement = Arrangement.spacedBy(NexaraSpacing.XSmall),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = when (status) {
-                    TermuxStepStatus.Complete -> Icons.Rounded.CheckCircle
-                    TermuxStepStatus.Pending, TermuxStepStatus.Error -> Icons.Rounded.Error
-                    TermuxStepStatus.Optional -> Icons.Rounded.Info
-                    TermuxStepStatus.Reading -> Icons.Rounded.HourglassEmpty
-                },
-                contentDescription = null,
-                modifier = Modifier.size(NexaraSpacing.Large),
-            )
-            Text(text = text, style = MaterialTheme.typography.labelMedium)
-        }
-    }
-}
-
-@Composable
 private fun TermuxInlineNotice(message: String, status: TermuxStepStatus) {
     val isError = status == TermuxStepStatus.Error
     Surface(
-        color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
-        contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+        color = androidx.compose.ui.graphics.Color.Transparent,
+        contentColor = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         shape = MaterialTheme.shapes.medium,
         modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
     ) {

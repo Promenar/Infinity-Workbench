@@ -5,7 +5,7 @@ import java.io.File
 import org.junit.Test
 
 /**
- * Task 3 红色约束：管理页共享原语与页面骨架在未落地前必须失败，避免实现绕道。
+ * 管理页共享原语与页面骨架的结构合同。
  */
 class Md3ConvergencePrimitivesContractTest {
     private val projectRoot = File(System.getProperty("user.dir") ?: ".").let { root ->
@@ -28,6 +28,9 @@ class Md3ConvergencePrimitivesContractTest {
         val group = sourceFile("BettboxListGroup").readText()
         assertThat(source).contains("SettingsSectionHeader")
         assertThat(source).contains("BettboxListGroup(")
+        assertThat(source).contains("footer: String? = null")
+        assertThat(source).contains("MaterialTheme.typography.labelMedium")
+        assertThat(source).contains("NexaraSpacing.FooterTop")
         assertThat(group).contains("Surface(")
         assertThat(group).contains("surfaceContainerLow")
         assertThat(group).contains("RoundedCornerShape(20.dp)")

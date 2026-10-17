@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -44,6 +45,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -65,6 +67,10 @@ import com.promenar.nexara.data.remote.protocol.ProviderEndpointTarget
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.data.remote.protocol.VERTEX_DEFAULT_LOCATION
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.NexaraValueRow
+import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.SecretField
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.bettboxListGroup
@@ -603,22 +609,18 @@ internal fun ProviderFormContent(
                 modifier = Modifier.weight(1f).fillMaxWidth().testTag(PROVIDER_FORM_LIST_TAG),
                 state = listState,
                 contentPadding = contentPadding,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
-                item {
-                    Text(
-                        text = stringResource(R.string.provider_form_desc),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
                 if (state.unavailableLocalConfiguration) {
                     item {
                         ProviderFormErrorText(stringResource(R.string.local_inference_release_unavailable))
                     }
                 }
                 item {
-                    ProviderPresetSelector(state = state, actions = actions)
+                    NexaraSettingsSection(
+                        title = stringResource(R.string.settings_batch1_connection_template),
+                        footer = stringResource(R.string.provider_form_desc),
+                    ) { ProviderPresetSelector(state = state, actions = actions) }
                 }
                 if (state.legacyMigrationBlocked) {
                     item {
@@ -629,11 +631,7 @@ internal fun ProviderFormContent(
                 }
                 if (state.selectedPreset.name == "Custom") {
                     item {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = stringResource(R.string.provider_form_protocol_type),
-                                style = MaterialTheme.typography.titleMedium,
-                            )
+                        NexaraSettingsSection(title = stringResource(R.string.provider_form_protocol_type)) {
                             ProviderProtocolSelector(state = state, actions = actions)
                         }
                     }
@@ -689,60 +687,36 @@ internal fun ProviderFormContent(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProviderProtocolSelector(state: ProviderFormUiState, actions: ProviderFormActions) {
-    ExposedDropdownMenuBox(
-        expanded = state.protocolMenuExpanded,
-        onExpandedChange = actions.onProtocolMenuExpandedChange,
+    NexaraValueRow(
+        title = stringResource(R.string.provider_form_protocol_type),
+        value = state.localProtocol.displayName,
+        onClick = { actions.onProtocolMenuExpandedChange(true) },
+        modifier = Modifier.testTag("provider_protocol_picker"),
+    )
+    NexaraBottomSheet(
+        show = state.protocolMenuExpanded,
+        scrollContent = true,
+        title = stringResource(R.string.provider_form_protocol_type),
+        onDismiss = { actions.onProtocolMenuExpandedChange(false) },
     ) {
-        OutlinedTextField(
-            textStyle = LocalTextStyle.current.forInput(),
-            value = state.localProtocol.displayName,
-            onValueChange = {},
-            readOnly = true,
-            trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded = state.protocolMenuExpanded)
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-        )
-        ExposedDropdownMenu(
-            expanded = state.protocolMenuExpanded,
-            onDismissRequest = { actions.onProtocolMenuExpandedChange(false) },
-        ) {
-            CUSTOM_PROTOCOL_OPTIONS.forEach { protocol ->
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(protocol.displayName)
-                            if (protocol.defaultPath.isNotEmpty()) {
-                                Text(
-                                    text = protocol.defaultPath,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    },
-                    leadingIcon = {
-                        protocol.iconRes?.let { iconId ->
-                            Icon(
-                                painter = painterResource(iconId),
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    },
-                    trailingIcon = {
-                        if (protocol == state.localProtocol) {
-                            Icon(Icons.Rounded.Check, contentDescription = null)
-                        }
-                    },
-                    onClick = { actions.onProtocolSelected(protocol) },
-                )
-            }
+        CUSTOM_PROTOCOL_OPTIONS.forEach { protocol ->
+            NexaraSettingsItem(
+                horizontalPadding = 0.dp,
+                title = protocol.displayName,
+                subtitle = protocol.defaultPath.takeIf(String::isNotEmpty),
+                subtitleIsIdentifier = true,
+                onClick = {
+                    actions.onProtocolSelected(protocol)
+                    actions.onProtocolMenuExpandedChange(false)
+                },
+                role = Role.RadioButton,
+                selected = protocol == state.localProtocol,
+                trailingContent = {
+                    androidx.compose.material3.RadioButton(selected = protocol == state.localProtocol, onClick = null)
+                },
+            )
         }
     }
 }
@@ -754,21 +728,11 @@ private fun ProviderPresetSelector(state: ProviderFormUiState, actions: Provider
         expanded = state.presetMenuExpanded,
         onExpandedChange = actions.onPresetMenuExpandedChange,
     ) {
-        OutlinedTextField(
-            textStyle = LocalTextStyle.current.forInput(),
+        NexaraValueRow(
+            title = stringResource(R.string.provider_form_preset_title),
             value = state.selectedPreset.name,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(stringResource(R.string.provider_form_preset_title)) },
-            leadingIcon = {
-                ProviderPresetIcon(state.selectedPreset, selected = true)
-            },
-            trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded = state.presetMenuExpanded)
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+            onClick = { actions.onPresetMenuExpandedChange(!state.presetMenuExpanded) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
         )
         ExposedDropdownMenu(
             expanded = state.presetMenuExpanded,
@@ -811,14 +775,14 @@ private fun ProviderPresetIcon(preset: ProviderPreset, selected: Boolean) {
 
 @Composable
 private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFormActions) {
+    NexaraSettingsSection(
+        title = stringResource(R.string.provider_form_config_section),
+        footer = stringResource(R.string.provider_form_secure_storage),
+    ) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .bettboxListGroup()
-            .padding(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        SettingsSectionHeader(stringResource(R.string.provider_form_config_section))
         OutlinedTextField(
             textStyle = LocalTextStyle.current.forInput(),
             value = state.name,
@@ -879,16 +843,11 @@ private fun CloudProviderSection(state: ProviderFormUiState, actions: ProviderFo
                     R.string.provider_form_label_api_key
                 },
             ),
-            supportingText = stringResource(
-                if (state.credentialKindMismatch) {
-                    R.string.provider_form_credential_kind_changed
-                } else {
-                    R.string.provider_form_secure_storage
-                },
-            ),
+            supportingText = if (state.credentialKindMismatch) stringResource(R.string.provider_form_credential_kind_changed) else null,
             isError = state.credentialKindMismatch,
         )
     }
+}
 }
 
 @Composable
@@ -909,7 +868,7 @@ private fun ProviderFormActionsSection(
         modifier = modifier.fillMaxWidth().height(IntrinsicSize.Max),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        OutlinedButton(
+        TextButton(
             onClick = actions.onTestConnection,
             enabled = !testing && !state.isSaving && state.endpointValid &&
                 !state.protocolUnsupported && !state.legacyMigrationBlocked &&
@@ -960,20 +919,16 @@ private fun ProviderFormActionsSection(
 
 @Composable
 private fun LocalProviderSection(state: ProviderFormUiState, actions: ProviderFormActions) {
+    NexaraSettingsSection(
+        title = stringResource(R.string.settings_batch1_local_inference),
+        footer = stringResource(R.string.local_models_desc),
+    ) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .bettboxListGroup()
-            .padding(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = stringResource(R.string.local_models_desc),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         if (state.localConnectionFailed) {
-            OutlinedButton(
+            TextButton(
                 onClick = actions.onLocalPrimaryAction,
                 enabled = !state.isSaving,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
@@ -1005,6 +960,7 @@ private fun LocalProviderSection(state: ProviderFormUiState, actions: ProviderFo
             }
         }
     }
+}
 }
 
 @Composable

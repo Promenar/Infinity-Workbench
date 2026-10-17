@@ -117,18 +117,17 @@ class UserSettingsHomeScreenContractTest {
     }
 
     @Test
-    fun `settings home uses iconless two-line Material list items without chevrons`() {
+    fun `设置首页入口使用统一图标列与紧凑设置行`() {
         val content = screenSource.substringAfter("fun UserSettingsHomeScreenContent(")
             .substringBefore("private fun UserProfileListItem(")
 
         assertThat(content).contains("UserSettingsNavigationItem(")
         assertThat(content).contains("NexaraSettingsItem(")
         assertThat(content).contains("subtitle = subtitle")
-        assertThat(content).contains("padding(horizontal = NexaraSpacing.ScreenHorizontal)")
+        assertThat(content).contains("headerStartPadding = NexaraSpacing.ScreenHorizontal")
         assertThat(content).doesNotContain("Icons.Outlined")
-        assertThat(content).doesNotContain("showChevron")
-        assertThat(content).contains("settings_language_desc")
-        assertThat(content).contains("settings_about_nexara_desc")
+        assertThat(content).contains("showChevron = true")
+        assertThat(content).doesNotContain("footer =")
     }
 
     @Test
@@ -136,8 +135,8 @@ class UserSettingsHomeScreenContractTest {
         val profile = screenSource.substringAfter("private fun UserProfileListItem(")
             .substringBefore("internal fun GitHubProjectFooter(")
         assertThat(profile).contains("Row(")
-        assertThat(profile).contains("minHeight = 88.dp")
-        assertThat(profile).contains("size(56.dp)")
+        assertThat(profile).contains("minHeight = 56.dp")
+        assertThat(profile).contains("size(48.dp)")
         assertThat(profile).contains("MaterialTheme.typography.titleLarge")
         assertThat(profile).doesNotContain("Surface(")
         assertThat(profile).doesNotContain("Icons.Outlined.Edit")
@@ -170,7 +169,8 @@ class UserSettingsHomeScreenContractTest {
 
     @Test
     fun `provider row has one manage target and overflow owns edit and delete`() {
-        assertThat(providerListSource).contains("ListItem(")
+        assertThat(providerListSource).contains("NexaraSettingsItem(")
+        assertThat(providerListSource).doesNotContain("ListItem(")
         assertThat(providerListSource).contains("Icons.Rounded.MoreVert")
         assertThat(providerListSource).contains("DropdownMenu(")
         assertThat(providerListSource).contains("DropdownMenuItem(")
@@ -189,15 +189,19 @@ class UserSettingsHomeScreenContractTest {
         assertThat(providerListSource).contains("style = MaterialTheme.typography.bodyMedium")
         assertThat(providerListSource).doesNotContain("useLargeTextLayout")
         assertThat(providerListSource).doesNotContain("leadingContent = leadingContent")
-        assertThat(providerListSource).contains("TextOverflow.Ellipsis")
+        assertThat(providerListSource).contains("subtitle = localizedTypeName")
         assertThat(providerListSource).doesNotContain("NexaraGlassCard")
     }
 
     @Test
-    fun `provider list is continuous and separates rows without card gaps`() {
+    fun `提供商说明紧邻所属分组且状态信息完整`() {
         assertThat(providerListSource).contains("verticalArrangement = Arrangement.spacedBy(0.dp)")
-        assertThat(providerListSource).contains("ProviderGroupDivider()")
-        assertThat(providerListSource).contains("BettboxListGroup(")
+        assertThat(providerListSource).contains("NexaraSettingsGroup(")
+        assertThat(providerListSource).contains("SettingsSectionHeader(")
+        assertThat(providerListSource).contains("footer = provider.baseUrl")
+        assertThat(providerListSource).contains("R.string.settings_provider_status_summary")
+        assertThat(providerListSource).contains("footer = provider.rawProtocolId")
+        assertThat(providerListSource).doesNotContain("state.providers.map")
     }
 
     @Test

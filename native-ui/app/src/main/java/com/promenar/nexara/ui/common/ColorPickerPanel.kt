@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -40,6 +41,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.theme.NexaraPresetColors
@@ -102,9 +107,12 @@ fun ColorPickerPanel(
                     targetValue = if (isSelected) 1.08f else 1f,
                     label = "colorScale"
                 )
+                val colorDescription = stringResource(R.string.numeric_color_value, "%06X".format(color.toArgb() and 0xFFFFFF))
                 Box(
                     modifier = Modifier
+                        .minimumInteractiveComponentSize()
                         .size(40.dp)
+                        .semantics { contentDescription = colorDescription; selected = isSelected }
                         .graphicsLayer(scaleX = animatedScale, scaleY = animatedScale)
                         .clip(CircleShape)
                         .clickable { onColorSelected(color) },

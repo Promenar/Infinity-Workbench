@@ -27,8 +27,12 @@ class BackupContentUiContractTest {
         listOf("sessions", "library", "files", "settings").forEach { type ->
             assertThat(source).doesNotContain("toggleCheck(\"$type\"")
         }
-        assertThat(source).contains("setIncludeKeys(it)")
-        assertThat(source).contains("backup_core_content_fixed")
+        assertThat(source).contains("onIncludeKeysChange = viewModel::setIncludeKeys")
+        assertThat(source).contains("onCheckedChange = actions.onIncludeKeysChange")
+        listOf("sessions", "library", "files", "settings").forEach { type ->
+            assertThat(source).contains("R.string.backup_content_$type")
+        }
+        assertThat(source).contains("R.string.settings_batch1_backup_core_footer, coreContentLabels.joinToString")
     }
 
     @Test
@@ -41,7 +45,8 @@ class BackupContentUiContractTest {
         assertThat(source).contains("stringResource(R.string.backup_restore_cloud)")
         assertThat(source).contains("showExportPasswordDialog = true")
         assertThat(source).contains("showUploadPasswordDialog = true")
-        assertThat(source).contains("viewModel.listRemote()")
+        assertThat(source).contains("onRefreshRemote = viewModel::listRemote")
+        assertThat(source).contains("onClick = actions.onRefreshRemote")
         assertThat(source).contains("viewModel.restoreSelectedRemote(")
     }
 
@@ -70,7 +75,7 @@ class BackupContentUiContractTest {
         assertThat(source).doesNotContain("\"Importing...\"")
         assertThat(source).doesNotContain(", \"user\")")
         assertThat(source).contains("stringResource(R.string.backup_exporting)")
-        assertThat(source).contains("stringResource(R.string.backup_importing)")
+        assertThat(source).contains("if (uiState.isImporting) R.string.backup_importing")
         assertThat(source).contains("stringResource(R.string.backup_webdav_user_hint)")
     }
 

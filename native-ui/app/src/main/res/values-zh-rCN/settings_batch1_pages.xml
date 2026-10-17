@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_batch1_disabled">关闭</string>
+    <string name="settings_batch1_rounds_50">50</string>
+    <string name="settings_batch1_scale_100">100%</string>
+    <string name="settings_batch1_tokens_100k">100K</string>
+    <string name="settings_batch1_tokens_500k">500K</string>
+    <string name="settings_batch1_tokens_1m">1M</string>
+    <string name="settings_batch1_tokens_5m">5M</string>
+    <string name="settings_batch1_script_write_summary">写入文件前确认</string>
+    <string name="settings_batch1_dynamic_color_summary">使用系统配色</string>
+    <string name="settings_batch1_dynamic_color_unavailable_summary">需要 Android 12 或更高版本</string>
+    <string name="settings_batch1_pure_black_summary">使用纯黑背景</string>
+    <string name="settings_batch1_text_scale_summary">调整界面文字大小</string>
+    <string name="settings_batch1_text_scale_value">文字大小</string>
+    <string name="settings_batch1_termux_integration_summary">通过 Termux 执行命令</string>
+    <string name="settings_batch1_mount_read_only_summary">禁止修改挂载文件</string>
+    <string name="settings_batch1_home_default_models_summary">按任务选择默认模型</string>
+    <string name="settings_batch1_home_skills_summary">Agent 工具与 MCP</string>
+    <string name="settings_batch1_home_token_summary">模型用量与费用</string>
+    <string name="settings_batch1_home_diagnostics_summary">导出脱敏排障日志</string>
+    <string name="settings_batch1_home_about_summary">版本、许可与项目信息</string>
+    <string name="settings_batch1_ssh_summary">保存的 SSH 连接</string>
+    <string name="settings_batch1_ssh_keep_summary">保留终端进程</string>
+    <string name="settings_batch1_ssh_forward_summary">仅监听本机</string>
+    <string name="settings_batch1_backup_core_summary">会话、资料与应用设置</string>
+    <string name="settings_batch1_backup_encrypt_summary">加密导出备份</string>
+    <string name="settings_batch1_backup_export_summary">保存到本机文件</string>
+    <string name="settings_batch1_backup_import_summary">从本机文件恢复</string>
+    <string name="settings_batch1_local_engine_summary">在设备上运行 GGUF 模型</string>
+    <string name="settings_batch1_local_import_summary">导入 GGUF 文件</string>
+    <string name="settings_batch1_local_active_embeddings">嵌入模型就绪</string>
+    <string name="settings_batch1_local_active_reranker">重排模型就绪</string>
+    <string name="settings_batch1_mcp_connected">已连接</string>
+    <string name="settings_batch1_mcp_disconnected">未连接</string>
+    <string name="settings_batch1_mcp_security">连接安全</string>
+    <string name="settings_batch1_home_retrieval_summary">重排、改写与混合搜索</string>
+    <string name="settings_batch1_home_rag_summary">分块与记忆配置</string>
+    <string name="settings_batch1_ssh_untrusted_summary">待确认主机指纹</string>
+    <string name="settings_batch1_ssh_auth_footer">认证方式：%1$s</string>
+    <string name="settings_batch1_ssh_forward_running_summary">监听端口 %1$d</string>
+    <string name="settings_batch1_color_description">颜色 #%1$s</string>
+</resources>

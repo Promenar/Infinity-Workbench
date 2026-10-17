@@ -633,7 +633,8 @@ class ProviderModelsAccessibilityTest {
 
         onModelCard(modelId).performClick()
         rule.onNodeWithTag(editorSheetTag(modelId)).assertExists()
-        rule.onNodeWithTag(UiTags.providerModelsTypeAction(modelId, "reasoning")).performScrollTo().performClick()
+        rule.onNodeWithTag("model_editor_type_picker").performScrollTo().performClick()
+        rule.onNodeWithTag(UiTags.providerModelsTypeAction(modelId, "reasoning")).performClick()
         rule.onNodeWithTag(UiTags.providerModelsCapabilityAction(modelId, "internet")).performClick()
         val contextField = rule.onNode(
             matcher = hasSetTextAction() and

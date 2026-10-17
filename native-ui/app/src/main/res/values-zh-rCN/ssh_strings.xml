@@ -2,7 +2,7 @@
 <resources>
     <!-- SSH 页面简体中文资源。 -->
     <string name="ssh_settings_title">SSH 主机</string>
-    <string name="ssh_settings_description">为终端和 SSH 工具配置主机。工具仅接收主机别名。</string>
+    <string name="ssh_settings_description">为终端和 SSH 工具配置主机，工具仅接收别名。</string>
     <string name="ssh_backup_notice">SSH 主机配置与凭据仅保留在当前设备，不进入导出备份。</string>
     <string name="ssh_termux_notice">使用本机 Termux 终端时，先在 Termux 中运行 sshd，再添加主机 127.0.0.1、端口 8022，并填写 Termux 用户名。</string>
     <string name="ssh_add_host">添加主机</string>

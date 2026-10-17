@@ -4,12 +4,12 @@
     <string name="kg_extraction_partial">预算已用尽 · 已处理 %1$s / %2$s 分块。结果已保留，提高文档预算后可处理剩余分块。</string>
     <string name="kg_extraction_confirmation_needed">等待确认 · 已处理 %1$s / %2$s 分块。请在文档菜单选择「抽取知识图谱」查看估算。</string>
     <string name="kg_extraction_confirm_title">确认大文档全量抽取</string>
-    <string name="kg_extraction_confirm_description">“%1$s”预计需要 %2$d 次请求，输入约 %3$s token，全量输出最多 %4$s token。文档预算为 %5$d 次调用、%6$s 输出 token、%7$d 秒。达到预算时保留已处理结果，提高预算后可处理剩余分块。</string>
+    <string name="kg_extraction_confirm_description">“%1$s”预计需要 %2$d 次请求，输入约 %3$s Token，全量输出最多 %4$s Token。文档预算为 %5$d 次调用、%6$s 输出 Token、%7$d 秒。达到预算时保留已处理结果，提高预算后可处理剩余分块。</string>
     <string name="token_usage_categories">用量分类</string>
     <string name="token_usage_kg">知识图谱抽取</string>
     <string name="token_usage_chat">聊天</string>
     <string name="token_category_counts">输入 %1$s · 输出 %2$s</string>
     <string name="kg_usage_calls">%1$d 次调用</string>
     <string name="kg_usage_other_models">其它历史 KG 模型</string>
-    <string name="kg_usage_estimated">包含估算或提供商未返回 token 用量的请求</string>
+    <string name="kg_usage_estimated">包含估算或提供商未返回 Token 用量的请求</string>
 </resources>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_batch1_connection_template">Connection template</string>
+    <string name="settings_batch1_local_inference">On-device inference</string>
+    <string name="settings_batch1_search_results">Search results</string>
+    <string name="settings_batch1_search_options">Search options</string>
+    <string name="settings_batch1_tool_approval">Tool approval</string>
+    <string name="settings_batch1_display_style">Display style</string>
+    <string name="settings_batch1_model_purpose">Model purpose</string>
+    <string name="settings_batch1_generation_template">Generation template</string>
+    <string name="settings_batch1_memory_generation">Memory generation</string>
+    <string name="settings_batch1_network_forwarding">Network forwarding</string>
+    <string name="settings_batch1_backup_options">Archive options</string>
+    <string name="settings_batch1_runtime_footer">Repeated calls with identical arguments pause at the limit. Unlimited automatic execution asks for confirmation after a reset.</string>
+    <string name="settings_batch1_context_footer">Compaction folds earlier tool results and summarizes history, retaining the latest %1$d turns. The full record stays in the session.</string>
+    <string name="settings_batch1_termux_intro_footer">Configure SSH and mounts independently. Paste commands into Termux; Agent commands follow session approval. Diagnostics check permission and results.</string>
+    <string name="settings_batch1_termux_permission_footer">Allow the permission to run commands in Termux. If no prompt appears, find it under app details → Permissions → Other permissions. Status refreshes on return.</string>
+    <string name="settings_batch1_termux_ssh_setup_footer">Run commands in Termux. whoami prints the username; run passwd for password login. sshd listens locally. Verify its fingerprint before the first connection.</string>
+    <string name="settings_batch1_termux_ssh_host_footer">Add 127.0.0.1:8022 with the username from whoami and password or key authentication.</string>
+    <string name="settings_batch1_termux_key_section">Public key login</string>
+    <string name="settings_batch1_termux_mount_footer">Grant a folder in the picker (Termux is in the sidebar), without all-files access; use /mnt/alias. Disable read-only to allow writes. Rename conflicting aliases.</string>
+    <string name="settings_batch1_backup_core_footer">Always includes %1$s; keys are optional and avatars stay here. Encryption works for local and WebDAV backups and is required with keys.</string>
+    <string name="settings_batch1_backup_local_footer">Data stays on this device; WebDAV provides manual backup and restore. Password encryption is optional unless keys are included.</string>
+    <string name="settings_batch1_local_models_footer">Enable the engine to run imported GGUF models on this device for privacy and low latency.</string>
+    <string name="settings_batch1_agent_skills_footer">Matching tasks load SKILL.md instructions and references. Skill packs themselves do not execute code.</string>
+    <string name="settings_batch1_model_request">Request configuration</string>
+    <string name="settings_batch1_termux_enable_diagnostic_summary">Enable to run diagnostics</string>
+</resources>

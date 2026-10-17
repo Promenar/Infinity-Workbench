@@ -1,6 +1,8 @@
 package com.promenar.nexara.ui.common
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -36,6 +38,7 @@ fun NexaraBottomSheet(
     title: String? = null,
     modifier: Modifier = Modifier.fillMaxHeight(NEXARA_BOTTOM_SHEET_DEFAULT_HEIGHT_FRACTION),
     dismissEnabled: Boolean = true,
+    scrollContent: Boolean = false,
     content: @Composable () -> Unit
 ) {
     if (!show) return
@@ -69,13 +72,14 @@ fun NexaraBottomSheet(
         Column(
             modifier = modifier
                 .fillMaxWidth()
+                .then(if (scrollContent) Modifier.verticalScroll(rememberScrollState()) else Modifier)
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp)
         ) {
             if (title != null) {
                 Text(
                     text = title,
-                    style = NexaraTypography.headlineMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(16.dp))

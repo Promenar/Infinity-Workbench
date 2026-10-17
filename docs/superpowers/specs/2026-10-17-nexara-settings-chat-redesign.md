@@ -1,6 +1,6 @@
 # Nexara 设置页与会话界面重设计规格
 
-> 状态：已批准方向，待实施
+> 状态：批次一（令牌、设置组件与全部设置页）已实施；批次二（会话界面）待实施
 > 日期：2026-10-17
 > 适用范围：全部设置页（含二级、三级页面与底部弹层）、会话设置弹层、会话界面及其外框（顶栏、消息流、步骤行、审批卡片、输入区）
 > 组件底座：Material 3 + 项目自有组件 + mikepenz multiplatform-markdown-renderer 0.41.0；不引入新的 UI 库
@@ -77,29 +77,30 @@
 
 1. 一个设置项只占一行。开关、值、步进器、箭头位于行尾，与标题文字块垂直居中（容差 ±1dp）。
 2. 禁止控件单独占一行。例外仅限：文本输入框、搜索框、多行代码/命令块、颜色选择盘、底部弹层内的滑块。
-3. 副标题最多 1 行，超出时截断并视为文案违规（第 3.3 节）。标题最多 2 行。
-4. 单行行高 48dp，带副标题行高 56dp；除第 9 节点名的例外，设置行不得超过 56dp。
-5. 同一分组内文字起点一致：分组内任一行有前导图标时，所有行都留出图标列（无图标行留 36dp 空位）。
+3. 副标题最多 1 行，超出时截断并视为文案违规（第 3.3 节）。标题默认最多 2 行；设置行宽不足 280dp 或系统字号放大时，标题完整换行并允许行高随内容增长。
+4. 普通默认设置行的单行高度 48dp、带副标题高度 56dp；窄屏长标题与放大字号允许按完整内容增高，控件保持同行居中。
+5. 同一分组内文字起点一致：所有行统一有或无前导图标；多数行无图标时删除少数图标，多数行有图标时为其它行补充语义合适的 Material Rounded 图标。生产页面不使用 `leadingSpacer` 空位。
 6. 每屏（一个视口）最多一个实心或色调强调按钮；其余操作做成设置行、`TextButton` 或行尾图标按钮。
 7. 分组标题 `labelMedium`、`primary`，起点与分组容器外缘内 16dp 对齐；分组之间 24dp。
 
 ### 3.2 组件契约（`ui/common/`）
 
-**NexaraSettingsItem（重写）**：不再使用 M3 `ListItem`（其两行默认 72dp 是分组臃肿的来源），改为自定义 `Row`，按 2.2 节令牌实现。插槽：可选前导图标、标题（`bodyLarge`，最多 2 行）、可选副标题（`bodySmall`，1 行，`TextOverflow.Ellipsis`）、尾部插槽。保留现有参数签名（`showChevron`、`trailingContent`、`subtitleIsIdentifier`、`enabled` 等）以免改动调用方；禁用态整体 38% 透明度。
+**NexaraSettingsItem（重写）**：不再使用 M3 `ListItem`（其两行默认 72dp 是分组臃肿的来源），改为自定义 `Row`，按 2.2 节令牌实现。插槽：可选前导图标、标题（`bodyLarge`，普通状态最多 2 行，窄屏与放大字号按 3.1 节完整换行）、可选副标题（`bodySmall`，1 行，`TextOverflow.Ellipsis`）、尾部插槽。保留现有参数签名（`showChevron`、`trailingContent`、`subtitleIsIdentifier`、`enabled` 等）以免改动调用方；禁用态整体 38% 透明度。
 
 **SettingsToggle（调整）**：与 NexaraSettingsItem 共用同一行布局与高度规则；`description` 同样限 1 行。
 
-**NexaraSettingsSection（扩展）**：新增 `footer: String? = null`。脚注渲染在分组容器下方，`bodySmall`、`onSurfaceVariant`，左右 16dp、上 8dp，可多行但建议不超过 3 行。长说明、注意事项、原理解释一律放脚注。
+**NexaraSettingsSection（扩展）**：新增 `footer: String? = null`。脚注渲染在分组容器下方，`bodySmall`、`onSurfaceVariant`、`NexaraReadingLineBreak`，左右 16dp、上 8dp；411dp 默认中文不超过 3 行，完整安全或风险说明可例外并在验收报告登记。首页导航不使用脚注。数值解释进入其选择弹层头部，其它说明每项一句；列表说明紧邻所属项目，不拼成整组文字墙。`NexaraSettingsGroup` 提供无重复标题的单项分组。
 
 **NexaraValueRow（新增）**：`title`、可选 `subtitle`、`value: String`、`onClick`。尾部为值文本（`bodyMedium`、`onSurfaceVariant`、tnum，最大宽度为行宽 40%，超出截断）加 18dp `ChevronRight`。点击打开 NexaraValuePickerSheet。语义：`Role.Button`，`stateDescription` 为当前值。
 
 **NexaraValuePickerSheet（新增）**：基于现有 `NexaraBottomSheet`。
 
-- 头部：标题 `titleMedium`；可选一行说明 `bodySmall`。
+- 头部：标题与触发行标题完全一致，`titleMedium`；说明 `bodySmall`，窄屏时允许完整换行。标题、说明、预设文字、“自定义…”与输入框左缘均距弹层边缘 24dp。
 - 离散模式：预设项为单选行（48dp，选中项尾部显示 20dp `Check`、`primary`）；点击预设立即生效并关闭弹层。
 - 自定义：列表末行“自定义…”，点击后原地展开数字输入框（`OutlinedTextField`，数字键盘，带单位后缀），超出范围时在输入框下方以 `bodySmall`、`error` 提示合法范围；展开后弹层底部出现唯一主按钮“完成”。
 - 连续模式（小数参数）：顶部大号当前值（`headlineMedium`、tnum、居中），下方 `NexaraSlider` 与两端最小/最大值标签（`labelSmall`），再下方一行预设胶囊（`FilterChip`，高 32dp）与“恢复默认”`TextButton`。拖动时实时更新值，松手提交。
 - 弹层内容不超过屏高 70%，超出时内部滚动。
+- 枚举选择弹层显式启用内容滚动，横屏与放大字号下全部选项可达；通用 `NexaraBottomSheet` 的内容滚动为可选参数，已有滚动表单保持自身容器。
 
 **NumericSettingSpec（新增纯逻辑）**：描述 `min`、`max`、`step`、`presets: List<Preset(value, labelRes?)>`、`unit`、`unlimitedValue: Number?`（如 0 表示“不限”）、`format`、`kind`（离散/连续）。提供 `parseCustom(input): Result`、`clamp`、`format(value)`、`selectedPreset(value)` 等纯函数，并配单元测试（边界、非法输入、不限值、小数精度、步长对齐）。
 
@@ -349,7 +350,7 @@ python3 scripts/ci/check-distribution-manifests.py
 | G2 | 行尾控件与标题文字块垂直居中，偏差 ≤1dp |
 | G3 | 副标题均为 1 行且未截断（中文默认文案） |
 | G4 | 视口内强调按钮不超过 1 个 |
-| G5 | 单行行高 48dp、两行 56dp；无超高设置行 |
+| G5 | 普通默认设置行 48dp/56dp；窄屏长标题与放大字号完整可读且控件同行 |
 | G6 | 同一分组文字起点一致 |
 | G7 | 长说明只出现在脚注或弹层说明中 |
 | G8 | 无行首标点、无末行孤字 |

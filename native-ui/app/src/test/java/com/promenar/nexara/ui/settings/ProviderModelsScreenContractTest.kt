@@ -15,7 +15,8 @@ class ProviderModelsScreenContractTest {
             "@Composable\ninternal fun ProviderModelsModelRow(",
         )
 
-        assertThat(topActions).contains("FilledTonalButton(")
+        assertThat(topActions).contains("TextButton(")
+        assertThat(topActions).doesNotContain("FilledTonalButton(")
         assertThat(topActions).contains("Button(")
         assertThat(topActions).contains("DropdownMenu(")
         assertThat(topActions).contains("UiTags.PROVIDER_MODELS_ACTION_OVERFLOW")
@@ -123,10 +124,12 @@ class ProviderModelsScreenContractTest {
         assertThat(content).contains("it.name.contains(searchQuery, ignoreCase = true)")
         assertThat(content).contains("it.remoteModelId.contains(searchQuery, ignoreCase = true)")
         assertThat(content).contains("it.id.contains(searchQuery, ignoreCase = true)")
-        assertThat(content).contains("verticalArrangement = Arrangement.spacedBy(8.dp)")
+        assertThat(content).contains("verticalArrangement = Arrangement.spacedBy(0.dp)")
         assertThat(content).contains("itemsIndexed(")
         assertThat(content).contains("key = { _, model -> model.id }")
-        assertThat(content).contains("BettboxListGroup {")
+        assertThat(content).contains("ProviderModelsModelRow(")
+        val row = extractBetween(source, "internal fun ProviderModelsModelRow(", "private fun capabilityLabelResource(")
+        assertThat(row).contains("BettboxListGroup {")
     }
 
     @Test

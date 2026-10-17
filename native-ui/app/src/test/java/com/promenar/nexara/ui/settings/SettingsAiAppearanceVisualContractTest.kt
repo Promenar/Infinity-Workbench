@@ -38,13 +38,14 @@ class SettingsAiAppearanceVisualContractTest {
         val models = source("ProviderModelsScreen.kt")
 
         assertThat(list).contains("NexaraSettingsPageLayout(")
-        assertThat(list).contains("ListItemDefaults.colors(containerColor = Color.Transparent)")
+        assertThat(list).contains("NexaraSettingsItem(")
+        assertThat(list).doesNotContain("ListItem(")
         assertThat(list).doesNotContain("leadingContent = leadingContent")
         assertThat(list).doesNotContain("val providerIcon")
         assertThat(list).doesNotContain("iconContainerColor")
         assertThat(list).doesNotContain(".background(iconContainerColor)")
         assertThat(form.substringAfter("fun ProviderFormContent(")).contains("NexaraSettingsPageLayout(")
-        assertThat(form).contains("SettingsSectionHeader(")
+        assertThat(form).contains("NexaraSettingsSection(")
         assertThat(models.substringAfter("fun ProviderModelsScreenContent(")).contains(
             "NexaraSettingsPageLayout(",
         )

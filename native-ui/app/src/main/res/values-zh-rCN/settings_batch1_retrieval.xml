@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_retrieval_management_section">检索管理</string>
+    <string name="settings_retrieval_data_section">数据管理</string>
+    <string name="settings_retrieval_graph_section">知识图谱</string>
+    <string name="settings_retrieval_graph_short">图谱抽取与参数</string>
+    <string name="settings_retrieval_template_default">默认模板</string>
+    <string name="settings_retrieval_template_custom">自定义模板</string>
+    <string name="settings_retrieval_config_source_title">配置来源</string>
+    <string name="settings_retrieval_reset_global_title">恢复全局配置</string>
+    <string name="settings_retrieval_model_unavailable_short">未配置重排模型</string>
+    <string name="settings_retrieval_hybrid_short">融合向量与关键词</string>
+    <string name="settings_retrieval_rewrite_short">改写查询提升召回</string>
+    <string name="settings_retrieval_rerank_managed">启用重排时，记忆与文档的数量和阈值不可编辑。</string>
+    <string name="settings_retrieval_rerank_batch_title">单次重排文档上限</string>
+    <string name="settings_retrieval_jit_short">图谱覆盖不足时补充</string>
+    <string name="settings_retrieval_kg_context_title">上下文 Token 上限</string>
+    <string name="settings_retrieval_kg_context_footer">图谱上下文的 Token 用量采用保守估算。</string>
+    <string name="settings_retrieval_kg_calls_title">文档调用上限</string>
+    <string name="settings_retrieval_kg_output_title">文档输出 Token</string>
+    <string name="settings_retrieval_kg_request_output_title">单次输出 Token</string>
+    <string name="settings_retrieval_kg_duration_title">抽取时长（秒）</string>
+    <string name="settings_retrieval_kg_confirm_title">大文档确认阈值</string>
+    <string name="settings_retrieval_kg_budget_footer">调用与输出上限按每个文档版本计算；预计调用超过确认阈值时，需要先确认。</string>
+    <string name="settings_retrieval_agent_rag_short">分块与记忆配置</string>
+    <string name="settings_retrieval_agent_advanced_short">重排、改写与混合检索</string>
+    <string name="settings_retrieval_agent_model_selected">已选专属模型</string>
+    <string name="settings_retrieval_agent_actions_section">助手管理</string>
+    <string name="settings_retrieval_icon_sparkles">星光</string>
+    <string name="settings_retrieval_icon_code">代码</string>
+    <string name="settings_retrieval_icon_note">笔记</string>
+    <string name="settings_retrieval_icon_robot">机器人</string>
+    <string name="settings_retrieval_icon_brain">大脑</string>
+    <string name="settings_retrieval_icon_star">星星</string>
+    <string name="settings_retrieval_icon_fire">火焰</string>
+    <string name="settings_retrieval_icon_light">灯泡</string>
+    <string name="settings_retrieval_icon_bolt">闪电</string>
+    <string name="settings_retrieval_icon_target">目标</string>
+    <string name="settings_retrieval_default_prompt_footer">默认提示词：%1$s</string>
+</resources>

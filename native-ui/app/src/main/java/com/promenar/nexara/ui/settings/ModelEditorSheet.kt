@@ -60,6 +60,11 @@ import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.data.model.withRecordedUserEdits
 import com.promenar.nexara.domain.generation.GenerationFailureCode
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.NexaraValueRow
+import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.testing.UiTags
 import com.promenar.nexara.ui.theme.forInput
@@ -110,6 +115,7 @@ internal fun ModelEditorSheet(
 ) {
     var showDeleteConfirmation by remember(model.id) { mutableStateOf(false) }
     var selectedType by remember(model.id) { mutableStateOf(model.type) }
+    var showTypePicker by remember(model.id) { mutableStateOf(false) }
     var editName by remember(model.id) { mutableStateOf(model.name) }
     var editRemoteModelId by remember(model.id) { mutableStateOf(model.remoteModelId) }
     var editContext by remember(model.id) { mutableStateOf(model.contextLength.toString()) }
@@ -213,7 +219,7 @@ internal fun ModelEditorSheet(
                 .imePadding()
                 .testTag(UiTags.providerModelsEditorList(model.id)),
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             item("identity") {
                 ModelEditorIdentity(
@@ -223,18 +229,20 @@ internal fun ModelEditorSheet(
                 )
             }
             item("remote-model-id") {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.settings_batch1_model_request),
+                    footer = stringResource(R.string.provider_models_remote_id_supporting_text),
+                ) {
                 OutlinedTextField(
                     textStyle = LocalTextStyle.current.forInput(),
                     value = editRemoteModelId,
                     onValueChange = { editRemoteModelId = it },
                     label = { Text(stringResource(R.string.provider_models_field_model_id)) },
                     placeholder = { Text(stringResource(R.string.provider_models_placeholder_model_id)) },
-                    supportingText = {
-                        Text(stringResource(R.string.provider_models_remote_id_supporting_text))
-                    },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
                 )
+            }
             }
             item("name") {
                 OutlinedTextField(
@@ -244,54 +252,31 @@ internal fun ModelEditorSheet(
                     label = { Text(stringResource(R.string.provider_models_field_display_name)) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag(UiTags.providerModelsNameField(model.id)),
+                        .testTag(UiTags.providerModelsNameField(model.id)).padding(bottom = 24.dp),
                     maxLines = 2,
                 )
             }
             item("type") {
-                SettingsSectionHeader(stringResource(R.string.provider_models_editor_type))
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    EditorModelTypeLabelResources.forEachIndexed { index, labelRes ->
-                        val type = EditorModelTypes[index]
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .defaultMinSize(minHeight = 52.dp)
-                                .clickable(role = Role.RadioButton) {
-                                activeCaps = (activeCaps - EditorAllBaseCapKeys) +
-                                    (EditorTypeToBaseCaps[type] ?: setOf("chat"))
-                                selectedType = type
-                            }
-                                .testTag(UiTags.providerModelsTypeAction(model.id, type)),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(stringResource(labelRes), modifier = Modifier.weight(1f))
-                            RadioButton(
-                                selected = selectedType == type,
-                                onClick = null,
-                            )
-                        }
-                    }
+                NexaraSettingsSection(title = stringResource(R.string.settings_batch1_model_purpose)) {
+                    NexaraValueRow(
+                        title = stringResource(R.string.provider_models_editor_type),
+                        value = EditorModelTypes.indexOf(selectedType).takeIf { it >= 0 }
+                            ?.let { stringResource(EditorModelTypeLabelResources[it]) } ?: selectedType,
+                        onClick = { showTypePicker = true },
+                        modifier = Modifier.testTag("model_editor_type_picker"),
+                    )
                 }
             }
             item("capabilities") {
-                SettingsSectionHeader(stringResource(R.string.provider_models_editor_capabilities))
-                Column(modifier = Modifier.fillMaxWidth()) {
+                NexaraSettingsSection(title = stringResource(R.string.provider_models_editor_capabilities)) {
                     EditorCapabilityTags.forEach { (key, labelRes) ->
                         val selected = key in activeCaps
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .defaultMinSize(minHeight = 52.dp)
-                                .clickable(role = Role.Switch) {
-                                activeCaps = if (selected) activeCaps - key else activeCaps + key
-                            }
-                                .testTag(UiTags.providerModelsCapabilityAction(model.id, key)),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(stringResource(labelRes), modifier = Modifier.weight(1f))
-                            Switch(checked = selected, onCheckedChange = null)
-                        }
+                        SettingsToggle(
+                            title = stringResource(labelRes),
+                            checked = selected,
+                            onCheckedChange = { checked -> activeCaps = if (checked) activeCaps + key else activeCaps - key },
+                            modifier = Modifier.testTag(UiTags.providerModelsCapabilityAction(model.id, key)),
+                        )
                     }
                 }
             }
@@ -308,37 +293,19 @@ internal fun ModelEditorSheet(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag(UiTags.providerModelsContextField(model.id)),
+                        .testTag(UiTags.providerModelsContextField(model.id)).padding(bottom = 24.dp),
                 )
             }
             if (model.inputTokens > 0 || model.maxOutputTokens > 0 || model.knowledgeCutoff != null) {
                 item("limits") {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (model.inputTokens > 0) {
-                            Text(
-                                text = stringResource(R.string.provider_models_input_tokens, formatModelEditorTokens(model.inputTokens)),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        if (model.maxOutputTokens > 0) {
-                            Text(
-                                text = stringResource(
-                                    R.string.provider_models_output_tokens,
-                                    formatModelEditorTokens(model.maxOutputTokens),
-                                ),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        model.knowledgeCutoff?.let { cutoff ->
-                            Text(
-                                text = stringResource(R.string.provider_models_knowledge_cutoff, cutoff),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    NexaraSettingsSection(
+                        title = stringResource(R.string.provider_models_context_label),
+                        footer = listOfNotNull(
+                            if (model.inputTokens > 0) stringResource(R.string.provider_models_input_tokens, formatModelEditorTokens(model.inputTokens)) else null,
+                            if (model.maxOutputTokens > 0) stringResource(R.string.provider_models_output_tokens, formatModelEditorTokens(model.maxOutputTokens)) else null,
+                            model.knowledgeCutoff?.let { stringResource(R.string.provider_models_knowledge_cutoff, it) },
+                        ).joinToString("\n"),
+                    ) {}
                 }
             }
             status?.let { message ->
@@ -376,26 +343,39 @@ internal fun ModelEditorSheet(
                 }
             }
             item("delete") {
-                TextButton(
+                NexaraSettingsItem(
+                    title = stringResource(R.string.shared_btn_delete),
+                    icon = Icons.Rounded.Delete,
+                    titleColor = MaterialTheme.colorScheme.error,
                     onClick = { showDeleteConfirmation = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .sizeIn(minHeight = 48.dp)
-                        .testTag(UiTags.providerModelsEditorDeleteAction(model.id)),
-                ) {
-                    Icon(
-                        Icons.Rounded.Delete,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.shared_btn_delete),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+                    modifier = Modifier.testTag(UiTags.providerModelsEditorDeleteAction(model.id)),
+                )
             }
         }
+        }
+    }
+
+    NexaraBottomSheet(
+        show = showTypePicker,
+        scrollContent = true,
+        title = stringResource(R.string.provider_models_editor_type),
+        onDismiss = { showTypePicker = false },
+    ) {
+        EditorModelTypeLabelResources.forEachIndexed { index, labelRes ->
+            val type = EditorModelTypes[index]
+            NexaraSettingsItem(
+                horizontalPadding = 0.dp,
+                title = stringResource(labelRes),
+                onClick = {
+                    activeCaps = (activeCaps - EditorAllBaseCapKeys) + (EditorTypeToBaseCaps[type] ?: setOf("chat"))
+                    selectedType = type
+                    showTypePicker = false
+                },
+                modifier = Modifier.testTag(UiTags.providerModelsTypeAction(model.id, type)),
+                role = Role.RadioButton,
+                selected = selectedType == type,
+                trailingContent = { RadioButton(selected = selectedType == type, onClick = null) },
+            )
         }
     }
 
@@ -449,7 +429,7 @@ private fun ModelEditorIdentity(
     remoteModelId: String,
     editedFieldLabels: List<String>,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier = Modifier.padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SettingsSectionHeader(stringResource(R.string.provider_models_editor_identity))
         NexaraIdentifierText(
             text = remoteModelId,

@@ -1,5 +1,7 @@
 package com.promenar.nexara.ui.settings
 
+import androidx.compose.foundation.layout.heightIn
+
 import com.promenar.nexara.data.model.ModelInfo
 import com.promenar.nexara.ui.common.NexaraMetaLine
 import androidx.annotation.StringRes
@@ -90,6 +92,7 @@ import com.promenar.nexara.ui.common.ModelBrandTile
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.BettboxListGroup
+import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSearchBar
 import com.promenar.nexara.ui.common.status.NoticeSeverity
 import com.promenar.nexara.ui.common.status.UiStatusNotice
@@ -264,7 +267,7 @@ internal fun ProviderModelsScreenContent(
 
         LazyColumn(
             state = listState,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
             contentPadding = PaddingValues(top = 12.dp, bottom = contentPadding.calculateBottomPadding()),
             modifier = Modifier
                 .weight(1f)
@@ -344,7 +347,6 @@ internal fun ProviderModelsScreenContent(
                     filteredModels,
                     key = { _, model -> model.id },
                 ) { _, model ->
-                    BettboxListGroup {
                         ProviderModelsModelRow(
                             model = model,
                             onRowClick = {
@@ -353,9 +355,7 @@ internal fun ProviderModelsScreenContent(
                                 selectedModelId = model.id
                             },
                             onToggle = { actions.onToggle(model.id) },
-                            modifier = Modifier.padding(horizontal = 16.dp),
                         )
-                    }
                 }
             }
         }
@@ -529,11 +529,11 @@ internal fun ProviderModelsTopActions(
     var overflowExpanded by remember { mutableStateOf(false) }
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FilledTonalButton(
+        TextButton(
             onClick = onRefresh,
             enabled = !isFetching,
             modifier = Modifier
@@ -653,57 +653,31 @@ internal fun ProviderModelsModelRow(
         localizedCapabilities += if (labelResource != null) stringResource(labelResource) else capability
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(role = Role.Button, onClick = onRowClick)
-            .testTag(UiTags.providerModelsModelCard(model.id))
-            .padding(vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            ModelBrandTile(
-                modelId = remoteModelId,
-                size = 32.dp,
-                contentDescription = model.name,
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = model.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = remoteModelId,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .testTag(UiTags.providerModelsRemoteId(model.id))
-                        .semantics { contentDescription = remoteModelId },
-                )
-            }
-            Switch(
-                checked = model.enabled,
-                onCheckedChange = { onToggle() },
-                modifier = Modifier
-                    .minimumInteractiveComponentSize()
-                    .size(48.dp)
-                    .testTag(UiTags.providerModelsToggleAction(model.id)),
+    Column(modifier = modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+        BettboxListGroup {
+            NexaraSettingsItem(
+                title = model.name,
+                subtitle = remoteModelId,
+                subtitleIsIdentifier = true,
+                leadingContent = { ModelBrandTile(modelId = remoteModelId, size = 20.dp, contentDescription = model.name) },
+                onClick = onRowClick,
+                modifier = Modifier.testTag(UiTags.providerModelsModelCard(model.id)),
+                subtitleModifier = Modifier.testTag(UiTags.providerModelsRemoteId(model.id))
+                    .semantics { contentDescription = remoteModelId },
+                trailingContent = {
+                    Switch(
+                        checked = model.enabled,
+                        onCheckedChange = { onToggle() },
+                        modifier = Modifier.heightIn(min = 48.dp).testTag(UiTags.providerModelsToggleAction(model.id)),
+                    )
+                },
             )
         }
         NexaraMetaLine(
             segments = localizedCapabilities,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
         )
     }
 }

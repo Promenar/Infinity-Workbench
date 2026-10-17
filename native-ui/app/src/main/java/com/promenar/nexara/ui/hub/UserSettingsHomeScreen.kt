@@ -22,11 +22,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
@@ -42,6 +39,7 @@ import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Toll
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -61,6 +60,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -72,6 +72,8 @@ import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.NexaraValueRow
 import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.settings.SettingsAsyncErrorCode
 import com.promenar.nexara.ui.testing.UiTags
@@ -170,7 +172,7 @@ fun UserSettingsHomeScreen(
 
     if (showLanguageDialog) {
         val activity = LocalContext.current as? Activity
-        LanguageSelectorDialog(
+        LanguageSelectorSheet(
             currentLanguage = language,
             onSelect = { lang ->
                 viewModel.setLanguage(lang)
@@ -256,10 +258,11 @@ internal fun UserSettingsHomeScreenContent(
                     title = stringResource(R.string.settings_section_general),
                     headerStartPadding = NexaraSpacing.ScreenHorizontal,
                 ) {
-                    UserSettingsNavigationItem(
+                    NexaraValueRow(
                         icon = Icons.Rounded.Language,
                         title = stringResource(R.string.settings_language),
-                        subtitle = stringResource(R.string.settings_language_desc),
+                        value = stringResource(if (LocalConfiguration.current.locales[0].language == "en")
+                            R.string.settings_language_en else R.string.settings_language_zh),
                         onClick = actions.onShowLanguageDialog,
                     )
                     UserSettingsNavigationItem(
@@ -286,7 +289,7 @@ internal fun UserSettingsHomeScreenContent(
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.SmartToy,
                         title = stringResource(R.string.settings_default_models),
-                        subtitle = stringResource(R.string.settings_default_models_desc),
+                        subtitle = stringResource(R.string.settings_batch1_home_default_models_summary),
                         onClick = { actions.onNavigateToSecondary(NavDestinations.DEFAULT_MODELS) },
                         modifier = Modifier.testTag(UiTags.SETTINGS_DEFAULT_MODELS_ENTRY),
                     )
@@ -311,13 +314,13 @@ internal fun UserSettingsHomeScreenContent(
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Psychology,
                         title = stringResource(R.string.settings_rag_config),
-                        subtitle = stringResource(R.string.settings_rag_desc),
+                        subtitle = stringResource(R.string.settings_batch1_home_rag_summary),
                         onClick = { actions.onNavigateToSecondary("rag_global_config") },
                     )
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Search,
                         title = stringResource(R.string.settings_advanced_retrieval),
-                        subtitle = stringResource(R.string.settings_retrieval_desc),
+                        subtitle = stringResource(R.string.settings_batch1_home_retrieval_summary),
                         onClick = { actions.onNavigateToSecondary("rag_advanced") },
                     )
                 }
@@ -331,13 +334,13 @@ internal fun UserSettingsHomeScreenContent(
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Build,
                         title = stringResource(R.string.settings_skills),
-                        subtitle = stringResource(R.string.settings_skills_desc),
+                        subtitle = stringResource(R.string.settings_batch1_home_skills_summary),
                         onClick = { actions.onNavigateToSecondary("skills_config") },
                     )
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Toll,
                         title = stringResource(R.string.settings_token_usage),
-                        subtitle = stringResource(R.string.settings_token_usage_desc),
+                        subtitle = stringResource(R.string.settings_batch1_home_token_summary),
                         onClick = { actions.onNavigateToSecondary("token_usage") },
                     )
                     UserSettingsNavigationItem(
@@ -349,7 +352,7 @@ internal fun UserSettingsHomeScreenContent(
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.BugReport,
                         title = stringResource(R.string.settings_diagnostics_export),
-                        subtitle = stringResource(R.string.settings_diagnostics_export_desc),
+                        subtitle = stringResource(R.string.settings_batch1_home_diagnostics_summary),
                         onClick = actions.onExportDiagnostics,
                     )
                 }
@@ -363,7 +366,7 @@ internal fun UserSettingsHomeScreenContent(
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Info,
                         title = stringResource(R.string.settings_about_nexara),
-                        subtitle = stringResource(R.string.settings_about_nexara_desc),
+                        subtitle = stringResource(R.string.settings_batch1_home_about_summary),
                         onClick = actions.onAboutClick,
                     )
                 }
@@ -392,6 +395,7 @@ private fun UserSettingsNavigationItem(
         subtitle = subtitle,
         onClick = onClick,
         modifier = modifier,
+        showChevron = true,
     )
 }
 
@@ -408,7 +412,7 @@ private fun UserProfileListItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .defaultMinSize(minHeight = 88.dp)
+            .defaultMinSize(minHeight = 56.dp)
             .clickable(
                 role = Role.Button,
                 onClickLabel = editNameDescription,
@@ -416,13 +420,13 @@ private fun UserProfileListItem(
             )
             .padding(
                 horizontal = NexaraSpacing.ScreenHorizontal,
-                vertical = NexaraSpacing.Large,
+                vertical = NexaraSpacing.XSmall,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .size(56.dp)
+                .size(48.dp)
                 .testTag(UiTags.SETTINGS_USER_AVATAR)
                 .clickable(
                     role = Role.Button,
@@ -461,13 +465,11 @@ private fun UserProfileListItem(
         Spacer(modifier = Modifier.width(NexaraSpacing.Large))
         Text(
             text = userName,
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontSize = 22.sp,
-                lineHeight = 28.sp,
-                fontWeight = FontWeight.Medium,
-            ),
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -539,17 +541,17 @@ private fun NameEditDialog(
 }
 
 @Composable
-private fun LanguageSelectorDialog(
+internal fun LanguageSelectorSheet(
     currentLanguage: String,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        title = { Text(stringResource(R.string.settings_language), style = MaterialTheme.typography.titleMedium) },
-        text = {
-            Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+    NexaraBottomSheet(
+        show = true,
+        scrollContent = true,
+        onDismiss = onDismiss,
+        title = stringResource(R.string.settings_language),
+    ) {
                 LanguageOption(
                     label = stringResource(R.string.settings_language_zh),
                     isSelected = currentLanguage == "zh",
@@ -560,10 +562,7 @@ private fun LanguageSelectorDialog(
                     isSelected = currentLanguage == "en",
                     onSelect = { onSelect("en") }
                 )
-            }
-        },
-        confirmButton = {}
-    )
+    }
 }
 
 @Composable
@@ -572,26 +571,14 @@ internal fun LanguageOption(
     isSelected: Boolean,
     onSelect: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .selectable(
-                selected = isSelected,
-                onClick = onSelect,
-                role = Role.RadioButton,
-            )
-            .padding(horizontal = NexaraSpacing.Small, vertical = NexaraSpacing.Medium),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(NexaraSpacing.Small),
-    ) {
-        RadioButton(
-            selected = isSelected,
-            onClick = null,
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
+    NexaraSettingsItem(
+                horizontalPadding = 0.dp,
+        title = label,
+        onClick = onSelect,
+        role = Role.RadioButton,
+        selected = isSelected,
+        trailingContent = {
+            if (isSelected) Icon(Icons.Rounded.Check, null, Modifier.size(20.dp), MaterialTheme.colorScheme.primary)
+        },
+    )
 }

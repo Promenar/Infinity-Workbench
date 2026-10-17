@@ -28,16 +28,22 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -45,7 +51,10 @@ import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.R
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
 import com.promenar.nexara.ui.common.NexaraSettingsSection
-import com.promenar.nexara.ui.common.NexaraSlider
+import com.promenar.nexara.ui.common.NexaraNumericSetting
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraValueRow
+import com.promenar.nexara.ui.common.NexaraBottomSheet
 import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.theme.NexaraColorSource
 import com.promenar.nexara.ui.theme.NexaraPresetColors
@@ -93,7 +102,7 @@ fun ThemeScreenContent(
     ) { contentPadding ->
         LazyColumn(modifier = Modifier.fillMaxWidth(), contentPadding = contentPadding) {
             item("mode") {
-                NexaraSettingsSection(title = stringResource(R.string.theme_mode)) {
+                NexaraSettingsSection(title = stringResource(R.string.settings_batch1_display_style)) {
                     ThemeModeSelector(
                         selectedMode = preferences.mode,
                         onModeSelect = onModeSelect,
@@ -102,7 +111,10 @@ fun ThemeScreenContent(
             }
 
             item("color") {
-                NexaraSettingsSection(title = stringResource(R.string.theme_accent_color)) {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.theme_accent_color),
+                    footer = if (state.dynamicColorAvailable) stringResource(R.string.theme_dynamic_color_desc) else null,
+                ) {
                     ColorPaletteRow(
                         selectedColor = preferences.primaryColor,
                         onColorSelect = onPrimaryColorSelect,
@@ -111,8 +123,8 @@ fun ThemeScreenContent(
                     SettingsToggle(
                         title = stringResource(R.string.theme_dynamic_color),
                         description = stringResource(
-                            if (state.dynamicColorAvailable) R.string.theme_dynamic_color_desc
-                            else R.string.theme_dynamic_color_unavailable,
+                            if (state.dynamicColorAvailable) R.string.settings_batch1_dynamic_color_summary
+                            else R.string.settings_batch1_dynamic_color_unavailable_summary,
                         ),
                         checked = dynamicColorChecked,
                         enabled = state.dynamicColorAvailable,
@@ -128,10 +140,12 @@ fun ThemeScreenContent(
 
             if (preferences.mode == NexaraThemeMode.DARK) {
                 item("pure-black") {
-                    NexaraSettingsSection(title = stringResource(R.string.theme_dark_mode)) {
+                    NexaraSettingsSection(
+                        title = stringResource(R.string.theme_dark_mode),
+                    ) {
                         SettingsToggle(
                             title = stringResource(R.string.theme_pure_black),
-                            description = stringResource(R.string.theme_pure_black_desc),
+                            description = stringResource(R.string.settings_batch1_pure_black_summary),
                             checked = preferences.pureBlack,
                             onCheckedChange = onPureBlackChange,
                         )
@@ -140,32 +154,23 @@ fun ThemeScreenContent(
             }
 
             item("text-scale") {
-                NexaraSettingsSection(title = stringResource(R.string.theme_text)) {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.theme_text),
+                ) {
                     SettingsToggle(
                         title = stringResource(R.string.theme_text_scale),
-                        description = stringResource(R.string.theme_text_scale_desc),
+                        description = stringResource(R.string.settings_batch1_text_scale_summary),
                         checked = preferences.textScaleEnabled,
                         onCheckedChange = onTextScaleEnabledChange,
                     )
                     if (preferences.textScaleEnabled) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth()
-                                .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            NexaraSlider(
-                                value = preferences.textScale,
-                                onValueChange = onTextScaleChange,
-                                valueRange = 0.8f..1.4f,
-                                steps = 5,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                text = "${(preferences.textScale * 100).roundToInt()}%",
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.padding(start = 12.dp),
-                            )
-                        }
+                        NexaraNumericSetting(
+                            title = stringResource(R.string.settings_batch1_text_scale_value),
+                            value = (preferences.textScale * 100).roundToInt(),
+                            spec = InterfaceTextScaleSpec,
+                            description = stringResource(R.string.theme_text_scale_desc),
+                            onValueChange = { onTextScaleChange((it / 100.0).toFloat()) },
+                        )
                     }
                 }
             }
@@ -179,103 +184,45 @@ private fun ThemeModeSelector(
     selectedMode: NexaraThemeMode,
     onModeSelect: (NexaraThemeMode) -> Unit,
 ) {
-    val largeTextLayout = LocalDensity.current.fontScale >= 1.5f
+    var showModes by remember { mutableStateOf(false) }
     val modes = listOf(
         Triple(NexaraThemeMode.SYSTEM, Icons.Rounded.BrightnessAuto, R.string.settings_theme_system),
         Triple(NexaraThemeMode.LIGHT, Icons.Rounded.LightMode, R.string.settings_theme_light),
         Triple(NexaraThemeMode.DARK, Icons.Rounded.DarkMode, R.string.settings_theme_dark),
     )
-    if (largeTextLayout) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            modes.forEach { (mode, icon, titleRes) ->
-                ThemeModeCard(
-                    title = stringResource(titleRes),
-                    icon = icon,
-                    selected = selectedMode == mode,
-                    onClick = { onModeSelect(mode) },
-                    largeTextLayout = true,
-                    modifier = Modifier.fillMaxWidth().testTag("theme_mode_${mode.name.lowercase()}"),
-                )
-            }
-        }
-    } else {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            modes.forEach { (mode, icon, titleRes) ->
-                ThemeModeCard(
-                    title = stringResource(titleRes),
-                    icon = icon,
-                    selected = selectedMode == mode,
-                    onClick = { onModeSelect(mode) },
-                    largeTextLayout = false,
-                    modifier = Modifier.weight(1f).testTag("theme_mode_${mode.name.lowercase()}"),
-                )
-            }
+    NexaraValueRow(
+        title = stringResource(R.string.theme_mode),
+        value = stringResource(modes.first { it.first == selectedMode }.third),
+        modifier = Modifier.testTag("theme_mode_picker"),
+        onClick = { showModes = true },
+    )
+    NexaraBottomSheet(show = showModes, title = stringResource(R.string.theme_mode),
+        onDismiss = { showModes = false }, scrollContent = true) {
+        modes.forEach { (mode, _, titleRes) ->
+            val selected = selectedMode == mode
+            NexaraSettingsItem(
+                title = stringResource(titleRes),
+                horizontalPadding = 0.dp,
+                onClick = { onModeSelect(mode); showModes = false },
+                modifier = Modifier.testTag("theme_mode_${mode.name.lowercase()}"),
+                role = Role.RadioButton,
+                selected = selected,
+                trailingContent = { androidx.compose.material3.RadioButton(selected = selected, onClick = null) },
+            )
         }
     }
 }
 
-@Composable
-private fun ThemeModeCard(
-    title: String,
-    icon: ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit,
-    largeTextLayout: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier.then(
-            if (largeTextLayout) Modifier.height(72.dp) else Modifier.aspectRatio(1.08f),
-        )
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = if (selected) MaterialTheme.colorScheme.secondaryContainer
-        else MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-        border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        if (largeTextLayout) {
-            Row(
-                modifier = Modifier.padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
-                Text(
-                    title,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(start = 16.dp),
-                )
-            }
-        } else {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(title, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-            }
-        }
-    }
-}
-
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun ColorPaletteRow(
     selectedColor: Long?,
     onColorSelect: (Long?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    androidx.compose.foundation.layout.FlowRow(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         ColorChoice(
             color = MaterialTheme.colorScheme.primary,
@@ -294,22 +241,20 @@ private fun ColorPaletteRow(
 
 @Composable
 private fun ColorChoice(color: Color, selected: Boolean, onClick: () -> Unit) {
+    val colorLabel = stringResource(R.string.settings_batch1_color_description, "%06X".format(color.toArgb() and 0xFFFFFF))
     Box(
-        modifier = Modifier.size(34.dp).clip(CircleShape).background(color)
-            .then(
-                if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
-                else Modifier,
-            )
+        modifier = Modifier.size(48.dp).semantics { contentDescription = colorLabel }
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) {
-            Icon(
-                imageVector = Icons.Rounded.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.size(18.dp),
-            )
+        Box(
+            modifier = Modifier.size(34.dp).clip(CircleShape).background(color)
+                .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.surface, modifier = Modifier.size(18.dp))
+            }
         }
     }
 }

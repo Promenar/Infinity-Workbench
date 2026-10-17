@@ -1,57 +1,43 @@
 package com.promenar.nexara.ui.rag
 
 import android.app.Application
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
-import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
 import com.promenar.nexara.data.model.ModelInfo
+import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
 import com.promenar.nexara.data.rag.RagConfiguration
 import com.promenar.nexara.ui.common.ModelPicker
+import com.promenar.nexara.ui.common.NexaraNumericSetting
+import com.promenar.nexara.ui.common.NexaraSettingsItem
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
-import com.promenar.nexara.ui.common.NexaraSlider
-import com.promenar.nexara.ui.common.bettboxListGroup
-import com.promenar.nexara.ui.common.SettingsSectionHeader
+import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.NexaraValueRow
 import com.promenar.nexara.ui.common.UnifiedPromptEditor
-import com.promenar.nexara.ui.settings.SettingsViewModel
 import com.promenar.nexara.ui.common.toModelSelectionUiModel
-import com.promenar.nexara.data.model.catalog.ModelCatalogRuntime
+import com.promenar.nexara.ui.settings.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,122 +94,61 @@ internal fun RagAdvancedScreenContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(contentPadding)
-                .bettboxListGroup()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+                .padding(contentPadding),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-            Text(
-                text = stringResource(R.string.rag_advanced_desc),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            // === 知识图谱提取配置 ===
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            NexaraSettingsSection(
+                title = stringResource(R.string.rag_advanced_extract_config),
             ) {
-                SettingsSectionHeader(stringResource(R.string.rag_advanced_extract_config))
-
-                ListItem(
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    headlineContent = { Text(stringResource(R.string.rag_advanced_extract_model), style = MaterialTheme.typography.titleMedium) },
-                    supportingContent = {
-                        val selectedModelName = allModels.find { it.id == config.kgExtractionModel }?.name
-                        Text(
-                            selectedModelName ?: stringResource(R.string.rag_advanced_select_model_placeholder),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    },
-                    trailingContent = {
-                        Icon(Icons.Rounded.ChevronRight, contentDescription = null)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("rag_advanced_model_row")
-                        .clickable { showModelPicker = true }
+                NexaraValueRow(
+                    title = stringResource(R.string.rag_advanced_extract_model),
+                    value = allModels.find { it.id == config.kgExtractionModel }?.name
+                        ?: stringResource(R.string.rag_advanced_select_model_placeholder),
+                    onClick = { showModelPicker = true },
+                    modifier = Modifier.testTag("rag_advanced_model_row"),
                 )
-
-                ConfigSlider(
-                    label = stringResource(R.string.rag_advanced_kg_timeout),
-                    value = config.kgExtractionTimeoutSeconds.toFloat(),
-                    valueRange = 5f..120f,
-                    onValueChange = { v -> actions.onConfigChanged { copy(kgExtractionTimeoutSeconds = v.toInt()) } },
-                    sliderModifier = Modifier.testTag("rag_advanced_timeout_slider"),
-                )
-                Text(
-                    text = stringResource(R.string.rag_advanced_kg_timeout_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                NexaraNumericSetting(
+                    title = stringResource(R.string.rag_advanced_kg_timeout),
+                    value = config.kgExtractionTimeoutSeconds,
+                    spec = RetrievalSettingSpecs.extractionTimeout,
+                    onValueChange = { value -> actions.onConfigChanged { copy(kgExtractionTimeoutSeconds = value.toInt()) } },
+                    modifier = Modifier.testTag("rag_advanced_timeout_slider"),
+                    description = stringResource(R.string.rag_advanced_kg_timeout_desc),
                 )
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            // === 提示词模板 ===
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            NexaraSettingsSection(
+                title = stringResource(R.string.rag_advanced_prompt_section),
+                footer = stringResource(R.string.settings_retrieval_default_prompt_footer, stringResource(R.string.rag_advanced_default_prompt)),
             ) {
-                SettingsSectionHeader(stringResource(R.string.rag_advanced_prompt_section))
-
-                ListItem(
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showPromptEditor = true },
-                    headlineContent = {
-                        Text(
-                            text = stringResource(R.string.rag_advanced_active_prompt),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = config.kgExtractionPrompt ?: stringResource(R.string.rag_advanced_default_prompt),
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    },
-                    trailingContent = {
-                        Icon(Icons.Rounded.ChevronRight, contentDescription = null)
-                    }
+                NexaraSettingsItem(
+                    title = stringResource(R.string.rag_advanced_active_prompt),
+                    subtitle = stringResource(
+                        if (config.kgExtractionPrompt.isNullOrBlank()) R.string.settings_retrieval_template_default
+                        else R.string.settings_retrieval_template_custom,
+                    ),
+                    onClick = { showPromptEditor = true },
+                    showChevron = true,
                 )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(
-                        onClick = { actions.onConfigChanged { copy(kgExtractionPrompt = null) } },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Text(stringResource(R.string.rag_advanced_reset_default))
-                    }
-                }
+                NexaraSettingsItem(
+                    title = stringResource(R.string.rag_advanced_reset_default),
+                    titleColor = MaterialTheme.colorScheme.error,
+                    onClick = { actions.onConfigChanged { copy(kgExtractionPrompt = null) } },
+                )
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            // === 查看知识图谱 ===
-            ListItem(
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                headlineContent = { Text(stringResource(R.string.rag_advanced_view_graph), style = MaterialTheme.typography.bodyLarge) },
-                leadingContent = {
-                    Icon(Icons.Rounded.AccountTree, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                },
-                trailingContent = {
-                    Icon(Icons.Rounded.ChevronRight, contentDescription = null)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("rag_advanced_graph_row")
-                    .clickable { actions.onNavigateToGraph() }
-            )
+            NexaraSettingsSection(
+                title = stringResource(R.string.settings_retrieval_graph_section),
+                footer = stringResource(R.string.rag_advanced_desc),
+            ) {
+                NexaraSettingsItem(
+                    icon = Icons.Rounded.AccountTree,
+                    title = stringResource(R.string.rag_advanced_view_graph),
+                    onClick = actions.onNavigateToGraph,
+                    showChevron = true,
+                    modifier = Modifier.testTag("rag_advanced_graph_row"),
+                )
+            }
 
             Spacer(modifier = Modifier.height(40.dp))
         }
@@ -258,38 +183,4 @@ internal fun RagAdvancedScreenContent(
         },
         placeholder = stringResource(R.string.rag_advanced_extract_prompt_placeholder)
     )
-}
-
-@Composable
-private fun ConfigSlider(
-    label: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit,
-    sliderModifier: Modifier = Modifier,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "${value.toInt()}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        NexaraSlider(
-            modifier = sliderModifier,
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = valueRange
-        )
-    }
 }

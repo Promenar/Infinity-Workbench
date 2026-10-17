@@ -25,6 +25,7 @@ Android 开发调试与设备验收使用本机启动的专用 AVD；执行位�
 - **多服务商 BYOK 对话**：支持 OpenAI、Anthropic、Google Vertex AI、DeepSeek、GLM、Kimi 及 OpenAI-compatible 接口，包含 SSE 流式响应、多模态输入、Markdown/LaTeX/Mermaid/ECharts 渲染和会话内模型切换。
 - **历史 Provider 安全恢复**：无法识别的历史主/额外 Provider 会在管理页显式显示且保持零联网；用户可保留名称与地址进入修复流程，明确选择新协议并处理凭证后恢复使用。
 - **完整文档上下文与会话分支**：输入栏可把 TXT/Markdown 全文作为当前消息上下文发送，超出最终路由模型预算时在网络请求前阻止；会话可导出为可回传的 Markdown/TXT，并可从稳定消息创建独立分支。
+- **设置界面**：设置页共用 48dp/56dp 设置行，窄屏长标题与放大字号可自然增高；首页导航不显示脚注，详情页说明使用阅读换行。同组图标统一有或无，数值由“当前值 + 箭头”进入底部选择弹层，少量整数用行内步进器。会话设置依次为模型、参数、工具、上下文；范围、默认值和偏好键见各设置说明。
 - **会话上下文管理**：未达阈值时发送全部未摘要历史；达到阈值后先折叠较早工具结果，再将最近 N 轮之前的对话总结。会话设置可调整阈值与保留轮数，用量面板和设置均提供“立即压缩”；压缩使用当前会话模型，完整记录保留。规则与兼容说明见[上下文管理](docs/context-management.md)。
 - **媒体查看与实机诊断**：用户图片、Markdown 图片和工具生成图片可全屏缩放、旋转、保存与分享；设置页可导出有界、脱敏的 JSONL 诊断事件，辅助定位真机上的 Provider、生成和会话删除问题。
 - **RAG 与知识图谱**：导入 TXT、Markdown、PDF、Word、HTML 文档，提供向量检索、FTS5、Rerank、查询重写、引用追踪、持久知识图谱聊天检索和有界图谱浏览。检索高级设置可调整图谱扩展、即时抽取回退及文档抽取预算；大文档建图需确认，超预算展示部分完成进度。
@@ -63,7 +64,7 @@ SSH 路线复用 SSH 主机管理：在 Termux 安装 `openssh`、配置密码�
 
 `exec_js(code, allow_network=false, timeout_seconds=30)` 使用 QuickJS 1.0.15，在独立隔离 UID 服务中执行；优先返回 `result` 变量，未定义时返回最后表达式。支持顶层 `await`、Promise 和 `console.log/warn/error`；异步返回使用顶层 `await` 或将 Promise 赋给 `result`。`run_script(path, args=[], allow_network=false, timeout_seconds=30)` 执行会话工作区或 `/mnt/<别名>/...` 中的 `.js` / `.mjs`；模块通过 `result` 返回值，导入只接受入口所在目录内的相对 `.js` / `.mjs`，允许目录内的父级引用，拒绝越根、绝对路径、远程与裸包导入。每次调用创建全新引擎上下文，同一会话可复用隔离进程。
 
-脚本仅通过主进程代理获得能力：`fs.read(path)` 返回 `{content, sha256, path}`，`fs.readFile(path)` 返回文本；`fs.stat/list/createFile/mkdir/writeFile/deleteFile` 复用文件工具的路径、只读、保留名、挂载身份与回收规则。覆盖写入使用 `fs.writeFile(path, content, {expected_sha256})`，删除可传同名版本条件。默认对写入按 `FILE_WRITE`、删除按 `DELETE` 单独审批，弹窗显示来源会话与文件目标；可记住会话内该文件操作的授权。工具设置的“单独审批脚本文件写入”可让写入继承脚本审批，删除仍单独审批。默认开启是因为批准脚本代码不等于已经看过它运行时生成的文件目标与内容。
+脚本仅通过主进程代理获得能力：`fs.read(path)` 返回 `{content, sha256, path}`，`fs.readFile(path)` 返回文本；`fs.stat/list/createFile/mkdir/writeFile/deleteFile` 复用文件工具的路径、只读、保留名、挂载身份与回收规则。覆盖写入使用 `fs.writeFile(path, content, {expected_sha256})`，删除可传同名版本条件。默认对写入按 `FILE_WRITE`、删除按 `DELETE` 单独审批，弹窗显示来源会话与文件目标；可记住会话内该文件操作的授权。工具设置的“脚本写入审批”可让写入继承脚本审批，删除仍单独审批。默认开启是因为批准脚本代码不等于已经看过它运行时生成的文件目标与内容。
 
 `fetch(url, options)` 支持文本请求体、请求头、HTTP 方法，以及响应的 `status/ok/headers/text()/json()`。默认禁网，开启时共享 `web_fetch` 公网地址判定。局域网精确主机白名单在工具设置维护，默认为空；不支持通配符，任意本地、链路本地和组播地址始终拒绝。网络逐跳验证并固定 DNS，不携带应用 Key、Cookie 或系统代理；白名单不放宽发行版的明文 HTTP 禁令。网络与写入授权设置属于本机状态，不随备份迁移。
 

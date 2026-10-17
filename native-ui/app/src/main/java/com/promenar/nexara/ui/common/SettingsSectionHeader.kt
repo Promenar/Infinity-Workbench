@@ -33,7 +33,7 @@ fun SettingsSectionHeader(
     ) {
         Text(
             text = title,
-            style = (titleStyle ?: MaterialTheme.typography.labelLarge).copy(
+            style = (titleStyle ?: MaterialTheme.typography.labelMedium).copy(
                 fontWeight = FontWeight.Medium,
             ),
             color = MaterialTheme.colorScheme.primary,

@@ -1,0 +1,9 @@
+<resources>
+    <string name="numeric_unlimited">Unlimited</string>
+    <string name="numeric_default_value">%1$s (default)</string>
+    <string name="numeric_custom">Custom…</string>
+    <string name="numeric_done">Done</string>
+    <string name="numeric_range">Allowed range: %1$s–%2$s</string>
+    <string name="numeric_restore_default">Restore default</string>
+    <string name="numeric_color_value">Color #%1$s</string>
+</resources>

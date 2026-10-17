@@ -26,7 +26,7 @@
     <string name="termux_step_pending">Setup required</string>
     <string name="termux_step_optional">Optional</string>
     <string name="termux_step_attention">Needs attention</string>
-    <string name="termux_install_description">Install from F-Droid or GitHub. Result delivery requires version 0.109 or newer. Open Termux after installation and wait for initialization to finish.</string>
+    <string name="termux_install_description">Install from F-Droid or GitHub. Result delivery requires a recognizable version number of 0.109 or newer. Open Termux after installation and wait for initialization to finish.</string>
     <string name="termux_fdroid">F-Droid</string>
     <string name="termux_github">GitHub</string>
     <string name="termux_external_apps_description">Run this command in Termux to set allow-external-apps=true and reload the configuration.</string>

@@ -24,8 +24,8 @@ class RagSettingsMaterialContractTest {
             assertThat(screen).doesNotContain("Color(0x")
             assertThat(screen).doesNotContain("Card(")
             assertThat(screen).doesNotContain("Surface(")
-            assertThat(screen).contains("MaterialTheme.colorScheme")
-            assertThat(screen).contains("MaterialTheme.typography")
+            assertThat(screen.contains("MaterialTheme.colorScheme") || screen.contains("NexaraSettingsSection(")).isTrue()
+            assertThat(screen.contains("MaterialTheme.typography") || screen.contains("NexaraSettingsSection(")).isTrue()
             if (key != "agentAdvanced") {
                 assertThat(screen).contains("NexaraSettingsPageLayout(")
             }
@@ -52,12 +52,13 @@ class RagSettingsMaterialContractTest {
     }
 
     @Test
-    fun `global configuration uses segmented presets rows sliders and confirmation`() {
+    fun `全局检索使用主维度分段与值行弹层及确认`() {
         val screen = sources.getValue("global")
         assertThat(screen).contains("SingleChoiceSegmentedButtonRow(")
         assertThat(screen).contains("SegmentedButton(")
-        assertThat(screen).contains("ListItem(")
-        assertThat(screen).contains("Slider(")
+        assertThat(screen).contains("NexaraSettingsSection(")
+        assertThat(screen).contains("NexaraNumericSetting(")
+        assertThat(screen).doesNotContain("NexaraSlider(")
         assertThat(screen).contains("AlertDialog(")
         assertThat(screen).contains("TextButton(")
     }
@@ -66,10 +67,10 @@ class RagSettingsMaterialContractTest {
     fun `global and advanced retrieval pages use continuous list sections`() {
         listOf("advanced", "ragAdvanced").forEach { key ->
             val screen = sources.getValue(key)
-            // 列表行可以是 ListItem，也可以是与卡片内边距对齐的整行 toggleable 开关行。
-            assertThat(screen.contains("ListItem(") || screen.contains(".toggleable(")).isTrue()
-            assertThat(screen).contains("HorizontalDivider(")
-            assertThat(screen).contains("Slider(")
+            assertThat(screen).contains("NexaraSettingsSection(")
+            assertThat(screen).doesNotContain("ListItem(")
+            assertThat(screen).contains("NexaraNumericSetting(")
+            assertThat(screen).doesNotContain("NexaraSlider(")
             assertThat(screen).doesNotContain("Modifier.alpha(")
         }
     }
@@ -78,10 +79,11 @@ class RagSettingsMaterialContractTest {
     fun `agent retrieval keeps independent state with standard controls`() {
         val screen = sources.getValue("agentAdvanced")
         assertThat(screen).contains("AgentEditViewModel")
-        assertThat(screen).contains("ListItem(")
-        assertThat(screen).contains("Switch(")
-        assertThat(screen).contains("FilterChip(")
-        assertThat(screen).contains("Slider(")
+        assertThat(screen).contains("NexaraSettingsSection(")
+        assertThat(screen).contains("SettingsToggle(")
+        assertThat(screen).contains("RetrievalStrategySetting(")
+        assertThat(screen).contains("NexaraNumericSetting(")
+        assertThat(screen).doesNotContain("NexaraSlider(")
         assertThat(screen).contains("AlertDialog(")
     }
 

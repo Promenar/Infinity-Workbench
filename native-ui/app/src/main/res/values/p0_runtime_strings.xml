@@ -5,9 +5,9 @@
     <string name="p0_disabled">Off</string>
     <string name="p0_runtime_limits">Long task controls</string>
     <string name="p0_token_limit">Tokens per task</string>
-    <string name="p0_repeat_limit">Pause after repeated calls</string>
+    <string name="p0_repeat_limit">Repeat limit</string>
     <string name="p0_runtime_limits_desc">Token limits include input and output across all requests in a task. Providers without usage reports use estimates. A final summary request may exceed the limit. Large outputs are stored privately and can be read with read_tool_output.</string>
-    <string name="p0_reset_consent">Require unlimited automatic execution confirmation again</string>
+    <string name="p0_reset_consent">Reset authorization</string>
     <string name="p0_decrease_setting">Decrease %1$s</string>
     <string name="p0_increase_setting">Increase %1$s</string>
     <string name="p0_auto_confirm_title">Allow unlimited automatic execution?</string>

@@ -30,7 +30,7 @@ class SettingsToolsDataVisualContractTest {
             "BackupSettingsScreen.kt",
             "LocalModelsScreen.kt",
         ).forEach { fileName ->
-            assertThat(source(fileName)).contains("SettingsSectionHeader(")
+            assertThat(source(fileName)).contains("NexaraSettingsSection(")
         }
     }
 

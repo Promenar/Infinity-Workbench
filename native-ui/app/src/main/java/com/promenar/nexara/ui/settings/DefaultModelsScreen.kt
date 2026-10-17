@@ -141,7 +141,11 @@ internal fun DefaultModelsScreenContent(
     ) { contentPadding ->
         LazyColumn(contentPadding = contentPadding) {
             item("models") {
-                NexaraSettingsSection(title = stringResource(R.string.settings_section_ai_models)) {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.settings_section_ai_models),
+                    footer = stringResource(R.string.settings_model_quick_description),
+                    footerModifier = Modifier.testTag("default_model_quick_description"),
+                ) {
                     DefaultModelRole.entries.forEach { role ->
                         val selectedModelName = when (role) {
                             DefaultModelRole.SUMMARY -> state.summaryModelName
@@ -178,6 +182,7 @@ internal fun DefaultModelSettingItem(
             subtitle = selectedModelName.ifEmpty { stringResource(R.string.settings_not_set) },
             subtitleIsIdentifier = selectedModelName.isNotEmpty(),
             onClick = onSelectModel,
+            showChevron = selectedModelName.isEmpty(),
             modifier = Modifier
                 .heightIn(min = NexaraSpacing.MinimumTouchTarget)
                 .testTag("default_model_role:${role.type}"),
@@ -195,16 +200,6 @@ internal fun DefaultModelSettingItem(
                 }
             },
         )
-        if (role == DefaultModelRole.SUMMARY) {
-            Text(
-                text = stringResource(R.string.settings_model_quick_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .padding(horizontal = NexaraSpacing.Large)
-                    .padding(bottom = NexaraSpacing.Large)
-                    .testTag("default_model_quick_description"),
-            )
-        }
+
     }
 }

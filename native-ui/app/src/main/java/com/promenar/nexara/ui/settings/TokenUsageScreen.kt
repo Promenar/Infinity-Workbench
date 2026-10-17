@@ -23,11 +23,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,6 +50,9 @@ import com.promenar.nexara.domain.repository.SessionTokenUsage
 import com.promenar.nexara.ui.common.ConfirmDialog
 import com.promenar.nexara.ui.common.NexaraCollapsibleSection
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsSection
 import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.bettboxListGroup
 
@@ -72,6 +74,27 @@ fun TokenUsageScreen(
         destructive = true
     )
 
+    TokenUsageScreenContent(
+        state = state,
+        onNavigateBack = onNavigateBack,
+        onRetry = {
+            when (state.error) {
+                TokenStatsErrorCode.LOAD_FAILED -> viewModel.loadStats()
+                TokenStatsErrorCode.CLEAR_FAILED -> viewModel.clearStats()
+                null -> Unit
+            }
+        },
+        onClear = viewModel::showClearConfirm,
+    )
+}
+
+@Composable
+internal fun TokenUsageScreenContent(
+    state: TokenStatsState,
+    onNavigateBack: () -> Unit = {},
+    onRetry: () -> Unit = {},
+    onClear: () -> Unit = {},
+) {
     NexaraSettingsPageLayout(
         title = stringResource(R.string.token_title),
         onBack = onNavigateBack
@@ -99,13 +122,8 @@ fun TokenUsageScreen(
                 ),
                 color = MaterialTheme.colorScheme.error,
             )
-            OutlinedButton(
-                onClick = {
-                    when (error) {
-                        TokenStatsErrorCode.LOAD_FAILED -> viewModel.loadStats()
-                        TokenStatsErrorCode.CLEAR_FAILED -> viewModel.clearStats()
-                    }
-                },
+            TextButton(
+                onClick = onRetry,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) {
                 Text(stringResource(R.string.common_retry))
@@ -130,30 +148,27 @@ fun TokenUsageScreen(
 
             if (state.categoryBreakdown.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(20.dp))
-                SettingsSectionHeader(stringResource(R.string.token_usage_categories))
-                Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.token_usage_categories),
+                    footer = if (state.categoryBreakdown.any { it.usage.estimated }) stringResource(R.string.kg_usage_estimated) else null,
+                ) {
                     state.categoryBreakdown.forEach { category ->
-                        ListItem(
-                            headlineContent = {
-                                Text(stringResource(if (category.category == "kg") R.string.token_usage_kg else R.string.token_usage_chat))
+                        NexaraSettingsRowLayout(
+                            title = stringResource(if (category.category == "kg") R.string.token_usage_kg else R.string.token_usage_chat),
+                            subtitle = stringResource(R.string.token_category_counts,
+                                formatTokenCount(category.usage.inputTokens), formatTokenCount(category.usage.outputTokens)),
+                                                        trailingContent = {
+                                if (category.category == "kg") Text(
+                                    stringResource(R.string.kg_usage_calls, category.calls),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+                                )
                             },
-                            supportingContent = {
-                                Column {
-                                    Text(stringResource(R.string.token_category_counts,
-                                        formatTokenCount(category.usage.inputTokens), formatTokenCount(category.usage.outputTokens)))
-                                    if (category.usage.estimated) Text(stringResource(R.string.kg_usage_estimated))
-                                }
-                            },
-                            trailingContent = {
-                                if (category.category == "kg") Text(stringResource(R.string.kg_usage_calls, category.calls))
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            if (state.categoryBreakdown.isEmpty()) Spacer(modifier = Modifier.height(24.dp))
 
             if (state.topSessions.isNotEmpty()) {
                 SettingsSectionHeader(stringResource(R.string.token_top_sessions))
@@ -215,20 +230,12 @@ fun TokenUsageScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         if (state.operation != TokenStatsOperation.LOADING) {
-            OutlinedButton(
-                onClick = { viewModel.showClearConfirm() },
+            NexaraSettingsItem(
+                title = stringResource(R.string.token_clear_history),
+                titleColor = MaterialTheme.colorScheme.error,
+                onClick = onClear,
                 enabled = state.operation == TokenStatsOperation.READY,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
-            ) {
-                Text(
-                    text = stringResource(R.string.token_clear_history),
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
+            )
         }
         }
     }
@@ -241,7 +248,7 @@ private fun GlobalStatsCard(state: TokenStatsState) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         )
     ) {
         Column(
@@ -267,6 +274,7 @@ private fun GlobalStatsCard(state: TokenStatsState) {
                 Text(
                     text = formatTokenCount(totalTokens),
                     style = MaterialTheme.typography.headlineLarge.copy(
+                        fontFeatureSettings = "tnum",
                         fontSize = 36.sp,
                         fontWeight = FontWeight.Bold
                     ),
@@ -325,65 +333,19 @@ private fun GlobalStatsCard(state: TokenStatsState) {
 
 @Composable
 private fun SessionRankingRow(rank: Int, session: SessionTokenUsage) {
-    ListItem(
-        modifier = Modifier.fillMaxWidth(),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    NexaraSettingsRowLayout(
+        title = session.title ?: session.sessionId.take(8),
+        subtitle = stringResource(R.string.token_in_out, formatTokenCount(session.inputTokens), formatTokenCount(session.outputTokens)),
         leadingContent = {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(
-                        when (rank) {
-                            1 -> MaterialTheme.colorScheme.tertiaryContainer
-                            2 -> MaterialTheme.colorScheme.secondaryContainer
-                            3 -> MaterialTheme.colorScheme.primaryContainer
-                            else -> MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "$rank",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    ),
-                    color = when (rank) {
-                        1 -> MaterialTheme.colorScheme.onTertiaryContainer
-                        2 -> MaterialTheme.colorScheme.onSecondaryContainer
-                        3 -> MaterialTheme.colorScheme.onPrimaryContainer
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-            }
+            Text(rank.toString(), style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"))
         },
-        headlineContent = {
-            Text(
-                text = session.title ?: session.sessionId.take(8),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1
-            )
-        },
-        supportingContent = {
-            Text(
-                text = stringResource(
-                    R.string.token_in_out,
-                    formatTokenCount(session.inputTokens),
-                    formatTokenCount(session.outputTokens)
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        },
-        trailingContent = {
+                trailingContent = {
             Text(
                 text = formatTokenCount(session.totalTokens),
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.primary
+                style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
+        },
     )
 }
 
@@ -518,48 +480,26 @@ private fun TrendChart(dailyTrend: List<DailyTokenStats>) {
 
 @Composable
 private fun ModelBreakdownRow(model: ModelCostInfo) {
-    ListItem(
-        modifier = Modifier.fillMaxWidth(),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        headlineContent = {
-            Text(
-                text = if (model.modelId == com.promenar.nexara.data.rag.KgUsageStore.OTHER_MODEL_ID) {
-                    stringResource(R.string.kg_usage_other_models)
-                } else model.name,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+    NexaraSettingsSection(
+        title = if (model.modelId == com.promenar.nexara.data.rag.KgUsageStore.OTHER_MODEL_ID) stringResource(R.string.kg_usage_other_models) else model.name,
+        footer = when {
+            model.pricingAvailable && model.costUSD > 0.0 -> "$%.4f".format(model.costUSD)
+            !model.pricingAvailable -> stringResource(R.string.token_pricing_unavailable)
+            else -> null
         },
-        supportingContent = {
-            Column {
+    ) {
+        NexaraSettingsRowLayout(
+            title = stringResource(R.string.token_total_usage),
+            subtitle = stringResource(R.string.token_in_out, formatTokenCount(model.inputTokens), formatTokenCount(model.outputTokens)),
+                        trailingContent = {
                 Text(
-                    text = stringResource(R.string.token_in_out, formatTokenCount(model.inputTokens), formatTokenCount(model.outputTokens)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = formatTokenCount(model.inputTokens + model.outputTokens),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (model.pricingAvailable && model.costUSD > 0.0) {
-                    Text(
-                        text = "$%.4f".format(model.costUSD),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
-                } else if (!model.pricingAvailable) {
-                    Text(
-                        text = stringResource(R.string.token_pricing_unavailable),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
-                }
-            }
-        },
-        trailingContent = {
-            Text(
-                text = formatTokenCount(model.inputTokens + model.outputTokens),
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-    )
+            },
+        )
+    }
 }
 
 private fun formatTokenCount(count: Long): String {

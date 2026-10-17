@@ -1,10 +1,8 @@
 package com.promenar.nexara.ui.rag
 
 import android.app.Application
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,13 +23,9 @@ import androidx.compose.material.icons.rounded.OfflineBolt
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -46,22 +40,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.ui.common.BettboxListGroup
-import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
-import com.promenar.nexara.ui.common.NexaraSlider
-import com.promenar.nexara.ui.common.SettingsSectionHeader
-import com.promenar.nexara.ui.common.UnifiedPromptEditor
 import com.promenar.nexara.data.rag.RagConfiguration
+import com.promenar.nexara.ui.common.NexaraNumericSetting
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.UnifiedPromptEditor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -119,225 +110,100 @@ internal fun GlobalRagConfigScreenContent(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(contentPadding),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
 
-            SettingsSectionHeader(stringResource(R.string.rag_config_presets))
-
-            val balancedLabel = stringResource(R.string.rag_config_preset_balanced)
-            val writingLabel = stringResource(R.string.rag_config_preset_writing)
-            val codingLabel = stringResource(R.string.rag_config_preset_coding)
-            val presets = listOf(
-                Triple(Icons.Rounded.OfflineBolt, balancedLabel, "balanced"),
-                Triple(Icons.Rounded.Edit, writingLabel, "writing"),
-                Triple(Icons.Rounded.Code, codingLabel, "coding")
-            )
-
-            BettboxListGroup {
+            NexaraSettingsSection(title = stringResource(R.string.rag_config_presets)) {
+                val presets = listOf(
+                    Triple(Icons.Rounded.OfflineBolt, stringResource(R.string.rag_config_preset_balanced), "balanced"),
+                    Triple(Icons.Rounded.Edit, stringResource(R.string.rag_config_preset_writing), "writing"),
+                    Triple(Icons.Rounded.Code, stringResource(R.string.rag_config_preset_coding), "coding"),
+                )
                 SingleChoiceSegmentedButtonRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
                         .sizeIn(minHeight = 48.dp)
-                        .testTag("rag_global_presets")
+                        .testTag("rag_global_presets"),
                 ) {
                     presets.forEachIndexed { index, (icon, title, presetId) ->
-                        val isSelected = config.currentPreset == presetId
+                        val selected = config.currentPreset == presetId
                         SegmentedButton(
                             modifier = Modifier
                                 .sizeIn(minHeight = 48.dp)
                                 .testTag("rag_global_preset_$presetId"),
-                            selected = isSelected,
+                            selected = selected,
                             onClick = { actions.onPresetSelected(presetId) },
                             shape = SegmentedButtonDefaults.itemShape(index = index, count = presets.size),
                             icon = {
-                                SegmentedButtonDefaults.Icon(active = isSelected) {
-                                    Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp))
+                                SegmentedButtonDefaults.Icon(active = selected) {
+                                    Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
                                 }
                             },
-                            label = {
-                                Text(
-                                    text = title,
-                                    style = MaterialTheme.typography.labelMedium
-                                )
-                            }
+                            label = { Text(title, style = MaterialTheme.typography.labelMedium) },
                         )
                     }
                 }
             }
 
-            // 检索参数分组
-            BettboxListGroup {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.rag_config_retrieval_params),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = stringResource(R.string.rag_config_chunk_size),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "${config.docChunkSize}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        NexaraSlider(
-                            modifier = Modifier
-                                .minimumInteractiveComponentSize()
-                                .testTag("rag_global_chunk_size_slider"),
-                            value = config.docChunkSize.toFloat(),
-                            onValueChange = { actions.onConfigChanged { copy(docChunkSize = it.toInt()) } },
-                            valueRange = 100f..2000f,
-                            steps = 18
-                        )
-                    }
-
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = stringResource(R.string.rag_config_overlap),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "${config.chunkOverlap}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        NexaraSlider(
-                            modifier = Modifier
-                                .minimumInteractiveComponentSize()
-                                .testTag("rag_global_chunk_overlap_slider"),
-                            value = config.chunkOverlap.toFloat(),
-                            onValueChange = { actions.onConfigChanged { copy(chunkOverlap = it.toInt()) } },
-                            valueRange = 0f..500f,
-                            steps = 9
-                        )
-                    }
-                }
-            }
-
-            // === 摘要提示词 ===
-            BettboxListGroup {
-                ListItem(
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showSummaryTemplateEditor = true },
-                    headlineContent = {
-                        Text(
-                            text = stringResource(R.string.rag_config_section_template),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = config.summaryTemplate.take(100) + if (config.summaryTemplate.length > 100) "..." else "",
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+            NexaraSettingsSection(title = stringResource(R.string.rag_config_retrieval_params)) {
+                NexaraNumericSetting(
+                    title = stringResource(R.string.rag_config_chunk_size),
+                    value = config.docChunkSize,
+                    spec = RetrievalSettingSpecs.globalChunkSize,
+                    onValueChange = { value -> actions.onConfigChanged { copy(docChunkSize = value.toInt()) } },
+                    modifier = Modifier.testTag("rag_global_chunk_size_slider"),
+                )
+                NexaraNumericSetting(
+                    title = stringResource(R.string.rag_config_overlap),
+                    value = config.chunkOverlap,
+                    spec = RetrievalSettingSpecs.globalChunkOverlap,
+                    onValueChange = { value -> actions.onConfigChanged { copy(chunkOverlap = value.toInt()) } },
+                    modifier = Modifier.testTag("rag_global_chunk_overlap_slider"),
                 )
             }
 
-            // === 导航链接 ===
-            BettboxListGroup {
-                ListItem(
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { actions.onNavigateToAdvanced() },
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Rounded.Tune,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    headlineContent = {
-                        Text(
-                            text = stringResource(R.string.rag_config_advanced_link),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = stringResource(R.string.rag_config_advanced_desc),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                )
-                ListItem(
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { actions.onNavigateToDebug() },
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Rounded.Storage,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    headlineContent = {
-                        Text(
-                            text = stringResource(R.string.rag_config_details_link),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = stringResource(R.string.rag_config_details_desc),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                )
-            }
-
-            // === 清空按钮 ===
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
+            NexaraSettingsSection(
+                title = stringResource(R.string.settings_batch1_generation_template),
             ) {
-                TextButton(
+                NexaraSettingsItem(
+                    title = stringResource(R.string.rag_config_section_template),
+                    subtitle = stringResource(
+                        if (config.summaryTemplate == RagConfiguration().summaryTemplate) R.string.settings_retrieval_template_default
+                        else R.string.settings_retrieval_template_custom,
+                    ),
+                    onClick = { showSummaryTemplateEditor = true },
+                    showChevron = true,
+                )
+            }
+
+            NexaraSettingsSection(
+                title = stringResource(R.string.settings_retrieval_management_section),
+            ) {
+                NexaraSettingsItem(
+                    icon = Icons.Rounded.Tune,
+                    title = stringResource(R.string.rag_config_advanced_link),
+                    subtitle = stringResource(R.string.settings_retrieval_graph_short),
+                    onClick = actions.onNavigateToAdvanced,
+                    showChevron = true,
+                )
+                NexaraSettingsItem(
+                    icon = Icons.Rounded.Storage,
+                    title = stringResource(R.string.rag_config_details_link),
+                    subtitle = stringResource(R.string.rag_config_details_desc),
+                    onClick = actions.onNavigateToDebug,
+                    showChevron = true,
+                )
+            }
+
+            NexaraSettingsSection(title = stringResource(R.string.settings_retrieval_data_section)) {
+                NexaraSettingsItem(
+                    icon = Icons.Rounded.Delete,
+                    title = stringResource(R.string.rag_config_clear_vectors),
+                    titleColor = MaterialTheme.colorScheme.error,
                     onClick = { showClearDialog = true },
                     modifier = Modifier.testTag("rag_global_clear_action"),
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Delete,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = stringResource(R.string.rag_config_clear_vectors),
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                }
+                )
             }
 
             Spacer(modifier = Modifier.height(40.dp))
@@ -368,7 +234,7 @@ internal fun GlobalRagConfigScreenContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // Option 1: 仅向量
+                        // 仅清理向量。
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -393,7 +259,7 @@ internal fun GlobalRagConfigScreenContent(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
-                        // Option 2: 含图谱
+                        // 同时清理图谱。
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

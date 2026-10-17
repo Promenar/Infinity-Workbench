@@ -14,12 +14,13 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -223,7 +224,7 @@ class ProviderFormInteractionTest {
     }
 
     @Test
-    fun presetAndCustomProtocolDropdownsUseExplicitSelectionCallbacks() {
+    fun presetAndCustomProtocolSelectorsUseExplicitSelectionCallbacks() {
         val selectedPreset = AtomicReference<ProviderPreset?>(null)
         val selectedProtocol = AtomicReference<ProtocolType?>(null)
         val state = mutableStateOf(
@@ -244,6 +245,9 @@ class ProviderFormInteractionTest {
                             selectedProtocol.set(it)
                             state.value = state.value.copy(localProtocol = it, protocolMenuExpanded = false)
                         },
+                        onProtocolMenuExpandedChange = {
+                            state.value = state.value.copy(protocolMenuExpanded = it)
+                        },
                     ),
                 )
             }
@@ -255,9 +259,10 @@ class ProviderFormInteractionTest {
         rule.runOnIdle {
             state.value = state.value.copy(
                 selectedPreset = PROVIDER_PRESETS.first { it.name == "Custom" },
-                protocolMenuExpanded = true,
+                protocolMenuExpanded = false,
             )
         }
+        rule.onNodeWithTag("provider_protocol_picker").performScrollTo().performClick()
         rule.onNodeWithText(ProtocolType.OpenAI_Responses.displayName).performClick()
         assertThat(selectedProtocol.get()).isEqualTo(ProtocolType.OpenAI_Responses)
     }
@@ -315,13 +320,11 @@ class ProviderFormInteractionTest {
             }
         }
 
-        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(1)
         listOf(
             R.string.provider_form_preset_title,
         ).forEach { id ->
-            rule.onNodeWithText(resources.getString(id)).assertIsDisplayed()
+            rule.onNodeWithText(resources.getString(id)).performScrollTo().assertIsDisplayed()
         }
-        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(2)
         listOf(
             R.string.provider_form_label_name,
             R.string.provider_form_label_url,
@@ -356,12 +359,14 @@ class ProviderFormInteractionTest {
             }
         }
 
-        rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToIndex(2)
-        rule.onNodeWithText(resources.getString(R.string.provider_form_label_name))
-            .assertIsDisplayed()
-        rule.onNodeWithText(resources.getString(R.string.provider_form_label_api_key))
-            .performScrollTo()
-            .assertIsDisplayed()
+        listOf(
+            R.string.provider_form_label_name,
+            R.string.provider_form_label_api_key,
+        ).forEach { id ->
+            // 表单是懒加载列表：先在列表内滚动到目标，再断言可见。
+            rule.onNodeWithTag(PROVIDER_FORM_LIST_TAG).performScrollToNode(hasText(resources.getString(id)))
+            rule.onNodeWithText(resources.getString(id)).assertIsDisplayed()
+        }
         rule.onNodeWithText(resources.getString(R.string.provider_form_btn_test))
             .assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)

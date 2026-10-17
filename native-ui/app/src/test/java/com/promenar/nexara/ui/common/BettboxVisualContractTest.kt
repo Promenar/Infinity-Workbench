@@ -23,15 +23,17 @@ class BettboxVisualContractTest {
         assertThat(group).contains("MaterialTheme.colorScheme.surfaceContainerLow")
         assertThat(group).contains("RoundedCornerShape(20.dp)")
         assertThat(section).contains("groupHorizontalPadding")
-        assertThat(section).contains("NexaraSpacing.Small")
+        assertThat(section).contains("NexaraSpacing.SectionGap")
     }
 
     @Test
-    fun `设置行应使用标准 ListItem 与二十四 dp 前导图标`() {
+    fun `设置行应共享紧凑布局与二十 dp 图标令牌`() {
         val item = common("NexaraSettingsItem.kt")
 
-        assertThat(item).contains("ListItem(")
-        assertThat(item).contains("modifier = Modifier.size(24.dp)")
+        assertThat(item).contains("NexaraSettingsRowLayout(")
+        assertThat(item).doesNotContain("ListItem(")
+        assertThat(item).contains("NexaraSpacing.RowIconSize")
+        assertThat(item).contains("NexaraSpacing.RowIconGap")
     }
 
     @Test

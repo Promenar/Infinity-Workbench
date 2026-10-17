@@ -1,0 +1,12 @@
+<resources>
+    <string name="session_thinking_style">思考强度</string>
+    <string name="session_numeric_seconds">秒</string>
+    <string name="session_retrieval_section">检索</string>
+    <string name="session_memory_scope">记忆来源</string>
+    <string name="session_memory_scope_both">本会话及跨会话</string>
+    <string name="session_memory_scope_off">已关闭</string>
+    <string name="session_compaction_running">正在压缩上下文</string>
+    <string name="session_compaction_generating">回复完成后可用</string>
+    <string name="session_revoke_tool">撤销 %1$s</string>
+    <string name="session_grant_target">%1$d. %2$s</string>
+</resources>

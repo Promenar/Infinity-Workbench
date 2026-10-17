@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -138,7 +139,7 @@ private fun SearchSecretEditor(
                     ),
                     color = MaterialTheme.colorScheme.error,
                 )
-                Button(
+                TextButton(
                     onClick = {
                         actions.onRetry(
                             operation.code,

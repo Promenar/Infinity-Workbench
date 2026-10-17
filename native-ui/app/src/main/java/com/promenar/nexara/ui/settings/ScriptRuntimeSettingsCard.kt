@@ -41,10 +41,13 @@ internal fun ScriptRuntimeSettingsCard(
     var draft by remember(storedHosts) { mutableStateOf(storedHosts) }
     var hasError by remember { mutableStateOf(false) }
     val hostCount = remember(storedHosts) { scriptLanHostCount(storedHosts) }
-    NexaraSettingsSection(stringResource(R.string.script_runtime_title)) {
+    NexaraSettingsSection(
+        title = stringResource(R.string.script_runtime_title),
+        footer = stringResource(R.string.script_approve_writes_desc),
+    ) {
         SettingsToggle(
             title = stringResource(R.string.script_approve_writes),
-            description = stringResource(R.string.script_approve_writes_desc),
+            description = stringResource(R.string.settings_batch1_script_write_summary),
             checked = approveWrites,
             onCheckedChange = onApproveWritesChange,
             icon = Icons.Rounded.Security,

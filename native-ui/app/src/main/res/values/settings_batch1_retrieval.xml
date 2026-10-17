@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_retrieval_management_section">Retrieval management</string>
+    <string name="settings_retrieval_data_section">Data management</string>
+    <string name="settings_retrieval_graph_section">Knowledge graph</string>
+    <string name="settings_retrieval_graph_short">Extraction and graph options</string>
+    <string name="settings_retrieval_template_default">Default template</string>
+    <string name="settings_retrieval_template_custom">Custom template</string>
+    <string name="settings_retrieval_config_source_title">Configuration source</string>
+    <string name="settings_retrieval_reset_global_title">Restore global settings</string>
+    <string name="settings_retrieval_model_unavailable_short">No default rerank model</string>
+    <string name="settings_retrieval_hybrid_short">Vector and keyword matching</string>
+    <string name="settings_retrieval_rewrite_short">Rewrite queries for retrieval</string>
+    <string name="settings_retrieval_rerank_managed">Memory and document limits and thresholds are unavailable while reranking is enabled.</string>
+    <string name="settings_retrieval_rerank_batch_title">Documents per rerank call</string>
+    <string name="settings_retrieval_jit_short">Fill gaps in graph coverage</string>
+    <string name="settings_retrieval_kg_context_title">Context token limit</string>
+    <string name="settings_retrieval_kg_context_footer">Graph context tokens use a conservative estimate.</string>
+    <string name="settings_retrieval_kg_calls_title">Document call limit</string>
+    <string name="settings_retrieval_kg_output_title">Document output tokens</string>
+    <string name="settings_retrieval_kg_request_output_title">Tokens per request</string>
+    <string name="settings_retrieval_kg_duration_title">Time limit (sec)</string>
+    <string name="settings_retrieval_kg_confirm_title">Large document threshold</string>
+    <string name="settings_retrieval_kg_budget_footer">Call and output limits apply to each document version. Confirmation is required when estimated calls exceed the threshold.</string>
+    <string name="settings_retrieval_agent_rag_short">Chunking and memory settings</string>
+    <string name="settings_retrieval_agent_advanced_short">Rerank, rewrite and hybrid search</string>
+    <string name="settings_retrieval_agent_model_selected">Agent model selected</string>
+    <string name="settings_retrieval_agent_actions_section">Agent management</string>
+    <string name="settings_retrieval_icon_sparkles">Sparkles</string>
+    <string name="settings_retrieval_icon_code">Code</string>
+    <string name="settings_retrieval_icon_note">Note</string>
+    <string name="settings_retrieval_icon_robot">Robot</string>
+    <string name="settings_retrieval_icon_brain">Brain</string>
+    <string name="settings_retrieval_icon_star">Star</string>
+    <string name="settings_retrieval_icon_fire">Fire</string>
+    <string name="settings_retrieval_icon_light">Light</string>
+    <string name="settings_retrieval_icon_bolt">Bolt</string>
+    <string name="settings_retrieval_icon_target">Target</string>
+    <string name="settings_retrieval_default_prompt_footer">Default prompt: %1$s</string>
+</resources>

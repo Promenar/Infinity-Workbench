@@ -155,8 +155,8 @@ private fun ToolsHeaderPreview(dark: Boolean) = SettingsVisualTheme(dark) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding)) {
             SkillsSettingsHeaderContent(
                 state = SkillsSettingsVisualState(
-                    loopLimit = if (dark) 0 else 50,
-                    tokenLimit = if (dark) 10_000_000 else 0,
+                    loopLimit = 50,
+                    tokenLimit = 0,
                     repeatLimit = 3,
                     scriptHosts = if (dark) "nas.local\n192.168.1.2" else "",
                     approveScriptWrites = true,
@@ -226,24 +226,15 @@ private fun StepperVisualPreview(dark: Boolean) = SettingsVisualTheme(dark) {
     Column(Modifier.fillMaxSize().padding(NexaraSpacing.Large)) {
         NexaraSettingsSection(stringResource(R.string.settings_execution_budget)) {
             NexaraStepperSetting(
-                title = stringResource(R.string.skills_loop_limit),
-                description = stringResource(R.string.skills_loop_limit_desc),
-                value = stringResource(R.string.p0_unlimited),
-                canDecrease = false, canIncrease = false, onDecrease = {}, onIncrease = {},
-            )
-            NexaraStepperSetting(
-                title = stringResource(R.string.p0_token_limit),
-                value = stringResource(R.string.p0_disabled),
+                title = stringResource(R.string.p0_repeat_limit), value = "2",
                 canDecrease = false, onDecrease = {}, onIncrease = {},
             )
             NexaraStepperSetting(
-                title = stringResource(R.string.p0_token_limit), value = "10000000",
-                canIncrease = false, onDecrease = {}, onIncrease = {},
+                title = stringResource(R.string.p0_repeat_limit), value = "3",
+                onDecrease = {}, onIncrease = {},
             )
             NexaraStepperSetting(
-                title = stringResource(R.string.p0_repeat_limit),
-                description = stringResource(R.string.settings_repeat_limit_description),
-                value = "20",
+                title = stringResource(R.string.p0_repeat_limit), value = "20",
                 canIncrease = false, onDecrease = {}, onIncrease = {},
             )
         }

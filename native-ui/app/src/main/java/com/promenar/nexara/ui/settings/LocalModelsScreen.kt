@@ -41,8 +41,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,6 +71,9 @@ import com.promenar.nexara.ui.common.BettboxListGroup
 import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.ui.common.SettingsToggle
 import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsRowLayout
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsSection
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,15 +89,51 @@ fun LocalModelsScreen(
     val embeddingSlot by viewModel.embeddingSlot.collectAsState()
     val rerankSlot by viewModel.rerankSlot.collectAsState()
     val isImporting by viewModel.isImporting.collectAsState()
-    val configuration = LocalConfiguration.current
-    val stackActiveSlots = configuration.screenWidthDp < 600 || LocalDensity.current.fontScale >= 1.5f
-
     val ggufPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) viewModel.importModel(uri)
     }
 
+    LocalModelsScreenContent(
+        availableModels = availableModels,
+        engineEnabled = engineEnabled,
+        mainSlot = mainSlot,
+        embeddingSlot = embeddingSlot,
+        rerankSlot = rerankSlot,
+        isImporting = isImporting,
+        gpuAvailable = viewModel.gpuAvailable,
+        onNavigateBack = onNavigateBack,
+        onImport = { ggufPickerLauncher.launch(arrayOf("*/*")) },
+        onEngineEnabledChange = viewModel::setEngineEnabled,
+        onLoadModel = viewModel::loadModel,
+        onUnloadModel = viewModel::unloadModel,
+        onDeleteModel = viewModel::deleteModel,
+        isModelLoadedInSlot = viewModel::isModelLoadedInSlot,
+        findSlotForModel = viewModel::findSlotForModel,
+        formatFileSize = viewModel::formatFileSize,
+    )
+}
+
+@Composable
+internal fun LocalModelsScreenContent(
+    availableModels: List<StoredModel> = emptyList(),
+    engineEnabled: Boolean = false,
+    mainSlot: SlotState = SlotState(),
+    embeddingSlot: SlotState = SlotState(),
+    rerankSlot: SlotState = SlotState(),
+    isImporting: Boolean = false,
+    gpuAvailable: Boolean = false,
+    onNavigateBack: () -> Unit = {},
+    onImport: () -> Unit = {},
+    onEngineEnabledChange: (Boolean) -> Unit = {},
+    onLoadModel: (SlotType, String) -> Unit = { _, _ -> },
+    onUnloadModel: (SlotType) -> Unit = {},
+    onDeleteModel: (String) -> Unit = {},
+    isModelLoadedInSlot: (String) -> Boolean = { false },
+    findSlotForModel: (String) -> SlotType? = { null },
+    formatFileSize: (Long) -> String = { it.toString() },
+) {
     NexaraSettingsPageLayout(
         title = stringResource(R.string.local_models_title),
         onBack = onNavigateBack,
@@ -104,155 +141,57 @@ fun LocalModelsScreen(
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = paddingValues,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             item {
-                Text(
-                    text = stringResource(R.string.local_models_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            item {
-                BettboxListGroup {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.local_models_engine_status),
+                    footer = stringResource(R.string.settings_batch1_local_models_footer),
+                ) {
                     SettingsToggle(
                         title = stringResource(R.string.local_models_enable_engine),
-                        description = stringResource(R.string.local_models_engine_subtitle),
+                        description = stringResource(R.string.settings_batch1_local_engine_summary),
+                        icon = Icons.Rounded.Memory,
                         checked = engineEnabled,
-                        onCheckedChange = viewModel::setEngineEnabled,
+                        onCheckedChange = onEngineEnabledChange,
+                    )
+                    NexaraSettingsItem(
+                        icon = Icons.Rounded.UploadFile,
+                        title = stringResource(if (isImporting) R.string.local_models_importing else R.string.local_models_import_title),
+                        subtitle = stringResource(if (isImporting) R.string.local_models_please_wait else R.string.settings_batch1_local_import_summary),
+                        onClick = onImport,
+                        enabled = !isImporting,
+                        showChevron = true,
+                        trailingContent = if (isImporting) ({ CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) }) else null,
                     )
                 }
             }
 
             item {
-                BettboxListGroup {
-                    ListItem(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !isImporting) {
-                            ggufPickerLauncher.launch(arrayOf("*/*"))
-                        },
-                    headlineContent = {
-                        Text(
-                            text = if (isImporting) stringResource(R.string.local_models_importing) else stringResource(R.string.local_models_import_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            text = if (isImporting) stringResource(R.string.local_models_please_wait) else stringResource(R.string.local_models_import_subtitle),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    leadingContent = {
-                        if (isImporting) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(
-                                imageVector = Icons.Rounded.UploadFile,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
-                }
-            }
-
-            item { SettingsSectionHeader(stringResource(R.string.local_models_active_slots)) }
-
-            item {
-                if (stackActiveSlots) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
+                NexaraSettingsSection(
+                    title = stringResource(R.string.local_models_active_slots),
+                    footer = listOf(
+                        mainSlot to R.string.local_models_slot_main,
+                        embeddingSlot to R.string.local_models_slot_embeddings,
+                        rerankSlot to R.string.local_models_slot_reranker,
+                    ).mapNotNull { (slot, label) ->
+                        (slot.error ?: slot.modelSize.takeIf(String::isNotBlank))?.let { stringResource(label) + ": " + it }
+                    }.takeIf { it.isNotEmpty() }?.joinToString("\n"),
+                ) {
+                    listOf(
+                        Triple(SlotType.MAIN, mainSlot, R.string.local_models_slot_main),
+                        Triple(SlotType.EMBEDDING, embeddingSlot, R.string.local_models_slot_embeddings),
+                        Triple(SlotType.RERANK, rerankSlot, R.string.local_models_slot_reranker),
+                    ).forEach { (type, slot, labelRes) ->
                         SlotCard(
-                            label = stringResource(R.string.local_models_slot_main),
-                            slotState = mainSlot,
-                            color = MaterialTheme.colorScheme.primary,
+                            label = stringResource(labelRes),
+                            slotState = slot,
                             enabled = engineEnabled,
-                            onLoadClick = { path -> viewModel.loadModel(SlotType.MAIN, path) },
-                            onUnloadClick = { viewModel.unloadModel(SlotType.MAIN) },
+                            onLoadClick = { path -> onLoadModel(type, path) },
                             models = availableModels,
-                            formatFileSize = { viewModel.formatFileSize(it) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        SlotCard(
-                            label = stringResource(R.string.local_models_slot_embeddings),
-                            slotState = embeddingSlot,
-                            color = MaterialTheme.colorScheme.tertiary,
-                            enabled = engineEnabled,
-                            onLoadClick = { path -> viewModel.loadModel(SlotType.EMBEDDING, path) },
-                            onUnloadClick = { viewModel.unloadModel(SlotType.EMBEDDING) },
-                            models = availableModels,
-                            formatFileSize = { viewModel.formatFileSize(it) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        SlotCard(
-                            label = stringResource(R.string.local_models_slot_reranker),
-                            slotState = rerankSlot,
-                            color = MaterialTheme.colorScheme.outline,
-                            enabled = engineEnabled,
-                            onLoadClick = { path -> viewModel.loadModel(SlotType.RERANK, path) },
-                            onUnloadClick = { viewModel.unloadModel(SlotType.RERANK) },
-                            models = availableModels,
-                            formatFileSize = { viewModel.formatFileSize(it) },
-                            modifier = Modifier.fillMaxWidth(),
+                            formatFileSize = formatFileSize,
                         )
                     }
-                } else {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(IntrinsicSize.Min),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                    SlotCard(
-                        label = stringResource(R.string.local_models_slot_main),
-                        slotState = mainSlot,
-                        color = MaterialTheme.colorScheme.primary,
-                        enabled = engineEnabled,
-                        onLoadClick = { path -> viewModel.loadModel(SlotType.MAIN, path) },
-                        onUnloadClick = { viewModel.unloadModel(SlotType.MAIN) },
-                        models = availableModels,
-                        formatFileSize = { viewModel.formatFileSize(it) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                    )
-                    SlotCard(
-                        label = stringResource(R.string.local_models_slot_embeddings),
-                        slotState = embeddingSlot,
-                        color = MaterialTheme.colorScheme.tertiary,
-                        enabled = engineEnabled,
-                        onLoadClick = { path -> viewModel.loadModel(SlotType.EMBEDDING, path) },
-                        onUnloadClick = { viewModel.unloadModel(SlotType.EMBEDDING) },
-                        models = availableModels,
-                        formatFileSize = { viewModel.formatFileSize(it) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                    )
-                    SlotCard(
-                        label = stringResource(R.string.local_models_slot_reranker),
-                        slotState = rerankSlot,
-                        color = MaterialTheme.colorScheme.outline,
-                        enabled = engineEnabled,
-                        onLoadClick = { path -> viewModel.loadModel(SlotType.RERANK, path) },
-                        onUnloadClick = { viewModel.unloadModel(SlotType.RERANK) },
-                        models = availableModels,
-                        formatFileSize = { viewModel.formatFileSize(it) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                    )
-                }
                 }
             }
 
@@ -260,15 +199,10 @@ fun LocalModelsScreen(
 
             if (availableModels.isEmpty()) {
                 item {
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                text = stringResource(R.string.local_models_none_imported),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    NexaraSettingsItem(
+                        title = stringResource(R.string.local_models_none_imported),
+                        enabled = !isImporting,
+                        onClick = onImport,
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
@@ -276,19 +210,19 @@ fun LocalModelsScreen(
                 items(availableModels, key = { it.id }) { model ->
                     ModelCard(
                         model = model,
-                        isLoadedInSlot = viewModel.isModelLoadedInSlot(model.filePath),
-                        loadedSlot = viewModel.findSlotForModel(model.filePath),
+                        isLoadedInSlot = isModelLoadedInSlot(model.filePath),
+                        loadedSlot = findSlotForModel(model.filePath),
                         engineEnabled = engineEnabled,
-                        formatFileSize = { viewModel.formatFileSize(it) },
+                        formatFileSize = { formatFileSize(it) },
                         onLoad = { slot ->
-                            if (viewModel.isModelLoadedInSlot(model.filePath)) {
-                                val s = viewModel.findSlotForModel(model.filePath)
-                                if (s != null) viewModel.unloadModel(s)
+                            if (isModelLoadedInSlot(model.filePath)) {
+                                val s = findSlotForModel(model.filePath)
+                                if (s != null) onUnloadModel(s)
                             } else {
-                                viewModel.loadModel(slot, model.filePath)
+                                onLoadModel(slot, model.filePath)
                             }
                         },
-                        onDelete = { viewModel.deleteModel(model.filePath) }
+                        onDelete = { onDeleteModel(model.filePath) }
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
@@ -299,7 +233,7 @@ fun LocalModelsScreen(
             item {
                 Column(modifier = Modifier.fillMaxWidth().bettboxListGroup()) {
                     NexaraMetaLine(
-                        segments = listOf("llama.cpp", if (viewModel.gpuAvailable) "Vulkan GPU" else "CPU"),
+                        segments = listOf("llama.cpp", if (gpuAvailable) "Vulkan GPU" else "CPU"),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -338,153 +272,46 @@ fun LocalModelsScreen(
 private fun SlotCard(
     label: String,
     slotState: SlotState,
-    color: Color,
     enabled: Boolean,
     onLoadClick: (String) -> Unit,
-    onUnloadClick: () -> Unit,
     models: List<StoredModel>,
     formatFileSize: (Long) -> String,
-    modifier: Modifier = Modifier
 ) {
     var showModelPicker by remember { mutableStateOf(false) }
+    Column {
+        NexaraSettingsItem(
+            icon = Icons.Rounded.Memory,
+            title = label,
+            subtitle = when {
+                slotState.isLoading -> stringResource(R.string.shared_loading)
+                slotState.isLoaded -> slotState.modelName
+                slotState.error != null -> stringResource(R.string.common_cd_failed)
+                models.isEmpty() -> stringResource(R.string.local_models_slot_empty)
+                else -> stringResource(R.string.local_models_load_model)
+            },
+            onClick = {
+                if (!slotState.isLoaded) {
+                    if (models.size == 1) onLoadClick(models.first().filePath) else showModelPicker = true
+                }
+            },
+            enabled = enabled && !slotState.isLoading && (slotState.isLoaded || models.isNotEmpty()),
+            showChevron = !slotState.isLoaded,
+            trailingContent = {
+                if (slotState.isLoading) {
+                    CircularProgressIndicator(progress = { slotState.loadProgress }, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Text(slotState.backendType.displayName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+        )
 
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-        ),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(0.5.dp, color.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 1.dp)
-                ) {
-                    Text(
-                        text = if (slotState.isLoading) stringResource(R.string.shared_loading) else slotState.backendType.displayName,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = color
-                    )
-                }
-            }
-
-            if (slotState.isLoading) {
-                LinearProgressIndicator(
-                    progress = { slotState.loadProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp)),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            }
-
-            if (slotState.isLoaded && slotState.modelName.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Rounded.Memory,
-                        contentDescription = null,
-                        tint = color,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = slotState.modelName,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = slotState.modelSize,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(MaterialTheme.colorScheme.primary, CircleShape)
-                    )
-                }
-            } else if (slotState.error != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Rounded.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = slotState.error.take(30),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        maxLines = 2
-                    )
-                }
-            } else if (!slotState.isLoading) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = enabled && models.isNotEmpty()) {
-                            if (models.size == 1) {
-                                onLoadClick(models.first().filePath)
-                            } else {
-                                showModelPicker = true
-                            }
-                        },
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.AddCircle,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (models.isEmpty()) stringResource(R.string.local_models_slot_empty) else stringResource(R.string.local_models_load_model),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
     }
-
     if (showModelPicker) {
         ModelPickerDialog(
             models = models,
             formatFileSize = formatFileSize,
             onDismiss = { showModelPicker = false },
-            onSelect = { model ->
-                showModelPicker = false
-                onLoadClick(model.filePath)
-            }
+            onSelect = { model -> showModelPicker = false; onLoadClick(model.filePath) },
         )
     }
 }
@@ -550,148 +377,38 @@ private fun ModelCard(
     onLoad: (SlotType) -> Unit,
     onDelete: () -> Unit
 ) {
-    val isHighMemory = model.quantization.contains("Q8", ignoreCase = true)
-
-    ListItem(
-        modifier = Modifier.fillMaxWidth(),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        headlineContent = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                NexaraIdentifierText(
-                    text = model.fileName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (isHighMemory) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f))
-                            .border(0.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 1.dp)
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.Warning,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(10.dp)
-                            )
-                            Text(
-                                text = stringResource(R.string.local_models_memory_heavy),
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
+    NexaraSettingsSection(
+        title = stringResource(R.string.local_models_imported),
+        footer = listOfNotNull(
+            formatFileSize(model.sizeBytes), model.quantization.ifEmpty { "N/A" }, model.architecture.ifEmpty { null },
+            if (model.quantization.contains("Q8", ignoreCase = true)) stringResource(R.string.local_models_memory_heavy) else null,
+            if (isLoadedInSlot && loadedSlot != null) stringResource(when (loadedSlot) {
+                SlotType.MAIN -> R.string.local_models_active_main
+                SlotType.EMBEDDING -> R.string.settings_batch1_local_active_embeddings
+                SlotType.RERANK -> R.string.settings_batch1_local_active_reranker
+            }) else null,
+        ).joinToString(", "),
+    ) {
+        NexaraSettingsItem(
+            title = model.fileName,
+            onClick = {
+                if (engineEnabled) onLoad(if (isLoadedInSlot && loadedSlot != null) loadedSlot else SlotType.MAIN)
+            },
+            trailingContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = {
+                if (engineEnabled) onLoad(if (isLoadedInSlot && loadedSlot != null) loadedSlot else SlotType.MAIN)
+            },
+                        enabled = engineEnabled,
+                    ) { Text(stringResource(if (isLoadedInSlot) R.string.local_models_loaded else R.string.local_models_load)) }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.local_models_cd_delete), tint = MaterialTheme.colorScheme.error)
                     }
                 }
-                if (isLoadedInSlot && loadedSlot != null) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
-                            .border(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = when (loadedSlot) {
-                                SlotType.MAIN -> stringResource(R.string.local_models_active_main)
-                                SlotType.EMBEDDING -> "Active Emb"
-                                SlotType.RERANK -> "Active Rerank"
-                            },
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-        },
-        supportingContent = {
-            Column {
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.SdCard,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            text = formatFileSize(model.sizeBytes),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.Speed,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            text = model.quantization.ifEmpty { "N/A" },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    if (model.architecture.isNotEmpty()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.Memory,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(
-                                text = model.architecture,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        trailingContent = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = {
-                        if (isLoadedInSlot && loadedSlot != null) {
-                            onLoad(loadedSlot)
-                        } else {
-                            onLoad(SlotType.MAIN)
-                        }
-                    },
-                    enabled = engineEnabled
-                ) {
-                    Text(
-                        text = if (isLoadedInSlot) stringResource(R.string.local_models_loaded) else stringResource(R.string.local_models_load),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
-                IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) {
-                    Icon(
-                        imageVector = Icons.Rounded.Delete,
-                        contentDescription = stringResource(R.string.local_models_cd_delete),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        }
-    )
+            },
+        )
+    }
 }
 
 @Composable
@@ -702,51 +419,19 @@ private fun EngineSlotStatus(
     isLoading: Boolean,
     badge: String
 ) {
-    ListItem(
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        headlineContent = {
+    NexaraSettingsRowLayout(
+        title = label,
+        subtitle = when {
+            isLoading -> stringResource(R.string.shared_loading)
+            modelName != null -> modelName
+            else -> stringResource(R.string.local_models_not_loaded)
+        },
+                trailingContent = {
             Text(
-                text = label,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = if (isLoading) "…" else if (active) badge else stringResource(R.string.local_models_slot_idle),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
-        supportingContent = {
-            Text(
-                text = when {
-                    isLoading -> "Loading..."
-                    modelName != null -> modelName
-                    else -> stringResource(R.string.local_models_not_loaded)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        },
-        trailingContent = {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(
-                        if (active) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceVariant
-                    )
-                    .border(
-                        0.5.dp,
-                        if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                        RoundedCornerShape(4.dp)
-                    )
-                    .padding(horizontal = 6.dp, vertical = 1.dp)
-            ) {
-                Text(
-                    text = when {
-                        isLoading -> "..."
-                        active -> badge
-                        else -> stringResource(R.string.local_models_slot_idle)
-                    },
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                    color = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
     )
 }

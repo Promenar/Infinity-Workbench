@@ -61,7 +61,8 @@ class BettboxGroupedSurfacesContractTest {
                 page.contains("BettboxListGroup(") ||
                     page.contains("BettboxListGroup {") ||
                     page.contains("bettboxListGroup()") ||
-                    page.contains("NexaraSettingsSection("),
+                    page.contains("NexaraSettingsSection(") ||
+                    page.contains("NexaraSettingsGroup("),
             ).isTrue()
         }
     }
@@ -85,7 +86,10 @@ class BettboxGroupedSurfacesContractTest {
         val content = globalRag.substringAfter("internal fun GlobalRagConfigScreenContent(")
 
         assertThat(globalRag).doesNotContain("HorizontalDivider")
-        assertThat(content.split("BettboxListGroup")).hasSize(5)
+        assertThat(content).contains("NexaraSettingsSection(")
+        listOf("rag_config_presets", "rag_config_retrieval_params", "settings_retrieval_data_section").forEach {
+            assertThat(content).contains(it)
+        }
         assertThat(globalRag).doesNotContain(".verticalScroll(rememberScrollState())\n                .padding(contentPadding)\n                .bettboxListGroup()")
     }
 }

@@ -1,11 +1,9 @@
 package com.promenar.nexara.ui.rag
 
+import androidx.compose.foundation.layout.heightIn
+
 import android.app.Application
-import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,56 +11,52 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.nexara.R
-import com.promenar.nexara.data.rag.RagConfiguration
-import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
-import com.promenar.nexara.ui.common.NexaraSlider
-import com.promenar.nexara.ui.common.bettboxListGroup
 import com.promenar.nexara.data.manager.ProviderManager
+import com.promenar.nexara.data.rag.RagConfiguration
+import com.promenar.nexara.ui.common.NexaraBottomSheet
+import com.promenar.nexara.ui.common.NexaraNumericSetting
+import com.promenar.nexara.ui.common.NexaraSettingsPageLayout
+import com.promenar.nexara.ui.common.NexaraSettingsSection
+import com.promenar.nexara.ui.common.NexaraStepperSetting
+import com.promenar.nexara.ui.common.NexaraValueRow
+import com.promenar.nexara.ui.common.NumericSettingKind
+import com.promenar.nexara.ui.common.NumericSettingSpec
+import com.promenar.nexara.ui.common.SettingsToggle
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdvancedRetrievalScreen(
     viewModel: RagViewModel = viewModel(factory = RagViewModel.factory(LocalContext.current.applicationContext as Application)),
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
 ) {
     val config by viewModel.config.collectAsState()
     val presetRerankModel by ProviderManager.getInstance().rerankModelId.collectAsState()
-    val isRerankAvailable = presetRerankModel.isNotBlank()
-
     AdvancedRetrievalScreenContent(
         state = AdvancedRetrievalScreenState(
             config = config,
-            isRerankAvailable = isRerankAvailable,
+            isRerankAvailable = presetRerankModel.isNotBlank(),
         ),
         actions = AdvancedRetrievalScreenActions(
             onBack = onNavigateBack,
@@ -81,355 +75,273 @@ internal data class AdvancedRetrievalScreenActions(
     val onConfigChanged: (RagConfiguration.() -> RagConfiguration) -> Unit = {},
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AdvancedRetrievalScreenContent(
     state: AdvancedRetrievalScreenState,
     actions: AdvancedRetrievalScreenActions = AdvancedRetrievalScreenActions(),
 ) {
     val config = state.config
-    val isRerankAvailable = state.isRerankAvailable
+    val rerankHint = if (config.enableRerank) stringResource(R.string.settings_retrieval_rerank_managed) else null
 
     NexaraSettingsPageLayout(
         title = stringResource(R.string.retrieval_title),
-        onBack = actions.onBack
+        onBack = actions.onBack,
     ) { contentPadding ->
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(contentPadding)
-                .bettboxListGroup()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .padding(contentPadding),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-
-            Text(
-                text = stringResource(R.string.retrieval_desc),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            // === Memory Section ===
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+            NexaraSettingsSection(
+                title = stringResource(R.string.retrieval_memory_section),
+                footer = listOfNotNull(stringResource(R.string.retrieval_desc), rerankHint).joinToString("\n"),
             ) {
-                Text(
-                    text = stringResource(R.string.retrieval_memory_section),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                AdaptiveSlider(
-                    label = stringResource(R.string.retrieval_memory_limit),
-                    value = config.memoryLimit.toFloat(),
-                    valueRange = 1f..50f,
-                    displayValue = "${config.memoryLimit}",
+                NexaraNumericSetting(
+                    title = stringResource(R.string.retrieval_memory_limit),
+                    value = config.memoryLimit,
+                    spec = RetrievalSettingSpecs.globalMemoryLimit,
+                    onValueChange = { value -> actions.onConfigChanged { copy(memoryLimit = value.toInt()) } },
                     enabled = !config.enableRerank,
-                    rerankBadge = config.enableRerank,
-                    onValueChange = { v -> actions.onConfigChanged { copy(memoryLimit = v.toInt()) } },
-                    sliderModifier = Modifier.testTag("advanced_retrieval_memory_limit_slider"),
+                    modifier = Modifier.testTag("advanced_retrieval_memory_limit_slider"),
                 )
-                AdaptiveSlider(
-                    label = stringResource(R.string.retrieval_similarity_threshold),
+                NexaraNumericSetting(
+                    title = stringResource(R.string.retrieval_similarity_threshold),
                     value = config.memoryThreshold,
-                    valueRange = 0f..1f,
-                    displayValue = "%.2f".format(config.memoryThreshold),
+                    spec = RetrievalSettingSpecs.globalMemoryThreshold,
+                    onValueChange = { value -> actions.onConfigChanged { copy(memoryThreshold = value.toFloat()) } },
                     enabled = !config.enableRerank,
-                    rerankBadge = config.enableRerank,
-                    onValueChange = { v -> actions.onConfigChanged { copy(memoryThreshold = v) } }
                 )
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            // === Doc Section ===
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+            NexaraSettingsSection(
+                title = stringResource(R.string.retrieval_doc_section),
+                footer = rerankHint,
             ) {
-                Text(
-                    text = stringResource(R.string.retrieval_doc_section),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                AdaptiveSlider(
-                    label = stringResource(R.string.retrieval_doc_limit),
-                    value = config.docLimit.toFloat(),
-                    valueRange = 1f..50f,
-                    displayValue = "${config.docLimit}",
+                NexaraNumericSetting(
+                    title = stringResource(R.string.retrieval_doc_limit),
+                    value = config.docLimit,
+                    spec = RetrievalSettingSpecs.globalDocLimit,
+                    onValueChange = { value -> actions.onConfigChanged { copy(docLimit = value.toInt()) } },
                     enabled = !config.enableRerank,
-                    rerankBadge = config.enableRerank,
-                    onValueChange = { v -> actions.onConfigChanged { copy(docLimit = v.toInt()) } }
                 )
-                AdaptiveSlider(
-                    label = stringResource(R.string.retrieval_similarity_threshold),
+                NexaraNumericSetting(
+                    title = stringResource(R.string.retrieval_similarity_threshold),
                     value = config.docThreshold,
-                    valueRange = 0f..1f,
-                    displayValue = "%.2f".format(config.docThreshold),
+                    spec = RetrievalSettingSpecs.globalDocThreshold,
+                    onValueChange = { value -> actions.onConfigChanged { copy(docThreshold = value.toFloat()) } },
                     enabled = !config.enableRerank,
-                    rerankBadge = config.enableRerank,
-                    onValueChange = { v -> actions.onConfigChanged { copy(docThreshold = v) } }
                 )
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            // === Hybrid Section ===
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+            NexaraSettingsSection(
+                title = stringResource(R.string.retrieval_hybrid_section),
+                footer = stringResource(R.string.retrieval_hybrid_desc),
             ) {
-                Text(
-                    text = stringResource(R.string.retrieval_hybrid_section),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                InlineToggleRow(
+                SettingsToggle(
                     title = stringResource(R.string.retrieval_hybrid_enable),
-                    description = stringResource(R.string.retrieval_hybrid_desc),
+                    description = stringResource(R.string.settings_retrieval_hybrid_short),
                     checked = config.enableHybridSearch,
-                    onCheckedChange = { enabled -> actions.onConfigChanged { copy(enableHybridSearch = enabled) } },
-                    rowTag = "advanced_retrieval_hybrid_toggle",
-                    switchTag = "advanced_retrieval_hybrid_switch",
+                    onCheckedChange = { value -> actions.onConfigChanged { copy(enableHybridSearch = value) } },
+                    modifier = Modifier.testTag("advanced_retrieval_hybrid_toggle"),
+                    switchModifier = Modifier.testTag("advanced_retrieval_hybrid_switch"),
                 )
-
                 if (config.enableHybridSearch) {
-                    AdaptiveSlider(
-                        label = stringResource(R.string.retrieval_vector_weight),
-                        value = config.hybridAlpha,
-                        valueRange = 0f..1f,
-                        displayValue = "${(config.hybridAlpha * 100).toInt()}%",
-                        enabled = true,
-                        rerankBadge = false,
-                        onValueChange = { v -> actions.onConfigChanged { copy(hybridAlpha = v) } }
+                    NexaraNumericSetting(
+                        title = stringResource(R.string.retrieval_vector_weight),
+                        value = config.hybridAlpha.toString().toDouble() * 100.0,
+                        spec = RetrievalSettingSpecs.globalVectorWeight,
+                        onValueChange = { value -> actions.onConfigChanged { copy(hybridAlpha = (value / 100).toFloat()) } },
                     )
-                    AdaptiveSlider(
-                        label = stringResource(R.string.retrieval_bm25_boost),
+                    NexaraNumericSetting(
+                        title = stringResource(R.string.retrieval_bm25_boost),
                         value = config.hybridBM25Boost,
-                        valueRange = 0.5f..2f,
-                        displayValue = "%.1fx".format(config.hybridBM25Boost),
-                        enabled = true,
-                        rerankBadge = false,
-                        onValueChange = { v -> actions.onConfigChanged { copy(hybridBM25Boost = v) } }
+                        spec = RetrievalSettingSpecs.globalBm25Boost,
+                        onValueChange = { value -> actions.onConfigChanged { copy(hybridBM25Boost = value.toFloat()) } },
                     )
                 }
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            // === Rerank Section ===
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+            NexaraSettingsSection(
+                title = stringResource(R.string.retrieval_rerank_section),
+                footer = if (!state.isRerankAvailable) stringResource(R.string.retrieval_rerank_model_unavailable_message) else null,
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = stringResource(R.string.retrieval_rerank_section),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (!isRerankAvailable) {
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    shape = RoundedCornerShape(4.dp)
-                                )
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                stringResource(R.string.retrieval_rerank_model_unconfigured),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
-                    }
-                }
-                if (!isRerankAvailable) {
-                    Text(
-                        text = stringResource(R.string.retrieval_rerank_model_unavailable_message),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-                AdaptiveSlider(
-                    label = stringResource(R.string.retrieval_rerank_top_n),
-                    value = config.rerankTopK.toFloat(),
-                    valueRange = 5f..100f,
-                    displayValue = "${config.rerankTopK}",
-                    enabled = isRerankAvailable,
-                    rerankBadge = false,
-                    onValueChange = { v -> actions.onConfigChanged { copy(rerankTopK = v.toInt()) } }
+                NexaraNumericSetting(
+                    title = stringResource(R.string.retrieval_rerank_top_n),
+                    value = config.rerankTopK,
+                    spec = RetrievalSettingSpecs.globalRerankTopK,
+                    onValueChange = { value -> actions.onConfigChanged { copy(rerankTopK = value.toInt()) } },
+                    enabled = state.isRerankAvailable,
+                    subtitle = if (!state.isRerankAvailable) stringResource(R.string.settings_retrieval_model_unavailable_short) else null,
                 )
-                AdaptiveSlider(
-                    label = stringResource(R.string.retrieval_rerank_final),
-                    value = config.rerankFinalK.toFloat(),
-                    valueRange = 1f..20f,
-                    displayValue = "${config.rerankFinalK}",
-                    enabled = isRerankAvailable,
-                    rerankBadge = false,
-                    onValueChange = { v -> actions.onConfigChanged { copy(rerankFinalK = v.toInt()) } }
+                RetrievalStepperSetting(
+                    title = stringResource(R.string.retrieval_rerank_final),
+                    value = config.rerankFinalK,
+                    range = 1..20,
+                    onValueChange = { value -> actions.onConfigChanged { copy(rerankFinalK = value) } },
+                    enabled = state.isRerankAvailable,
                 )
-                AdaptiveSlider(
-                    label = stringResource(R.string.rag_config_rerank_max_per_call),
-                    value = config.rerankMaxPerCall.toFloat(),
-                    valueRange = 8f..200f,
-                    displayValue = "${config.rerankMaxPerCall}",
-                    enabled = isRerankAvailable,
-                    rerankBadge = false,
-                    onValueChange = { v -> actions.onConfigChanged { copy(rerankMaxPerCall = v.toInt()) } }
+                NexaraNumericSetting(
+                    title = stringResource(R.string.settings_retrieval_rerank_batch_title),
+                    value = config.rerankMaxPerCall,
+                    spec = RetrievalSettingSpecs.rerankMaxPerCall,
+                    onValueChange = { value -> actions.onConfigChanged { copy(rerankMaxPerCall = value.toInt()) } },
+                    enabled = state.isRerankAvailable,
+                    description = stringResource(R.string.rag_config_rerank_max_per_call_desc),
                 )
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            // === Rewrite Section ===
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+            NexaraSettingsSection(
+                title = stringResource(R.string.retrieval_rewrite_section),
+                footer = stringResource(R.string.retrieval_rewrite_desc),
             ) {
-                Text(
-                    text = stringResource(R.string.retrieval_rewrite_section),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                InlineToggleRow(
+                SettingsToggle(
                     title = stringResource(R.string.retrieval_rewrite_enable),
-                    description = stringResource(R.string.retrieval_rewrite_desc),
+                    description = stringResource(R.string.settings_retrieval_rewrite_short),
                     checked = config.enableQueryRewrite,
-                    onCheckedChange = { enabled -> actions.onConfigChanged { copy(enableQueryRewrite = enabled) } },
-                    rowTag = "advanced_retrieval_rewrite_toggle",
-                    switchTag = "advanced_retrieval_rewrite_switch",
+                    onCheckedChange = { value -> actions.onConfigChanged { copy(enableQueryRewrite = value) } },
+                    modifier = Modifier.testTag("advanced_retrieval_rewrite_toggle"),
+                    switchModifier = Modifier.testTag("advanced_retrieval_rewrite_switch"),
                 )
-
                 if (config.enableQueryRewrite) {
-                    SingleChoiceSegmentedButtonRow(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        val strategies = listOf("hyde" to "HyDE", "multi-query" to "Multi-Query", "expansion" to "Expansion")
-                        strategies.forEachIndexed { index, (value, label) ->
-                            val isSelected = config.queryRewriteStrategy == value
-                            SegmentedButton(
-                                selected = isSelected,
-                                onClick = {
-                                    actions.onConfigChanged { copy(queryRewriteStrategy = value) }
-                                },
-                                shape = SegmentedButtonDefaults.itemShape(index = index, count = strategies.size),
-                                label = { Text(label, style = MaterialTheme.typography.labelMedium) }
-                            )
-                        }
-                    }
+                    RetrievalStrategySetting(
+                        strategy = config.queryRewriteStrategy,
+                        onValueChange = { value -> actions.onConfigChanged { copy(queryRewriteStrategy = value) } },
+                    )
                 }
             }
 
             KgRetrievalSettings(config, actions.onConfigChanged)
-
             Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }
 
 @Composable
-internal fun AdaptiveSlider(
-    label: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    displayValue: String,
-    enabled: Boolean,
-    rerankBadge: Boolean,
-    onValueChange: (Float) -> Unit,
-    sliderModifier: Modifier = Modifier,
+internal fun RetrievalStepperSetting(
+    title: String,
+    value: Int,
+    range: IntRange,
+    onValueChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+    NexaraStepperSetting(
+        title = title,
+        value = value.toString(),
+        onDecrease = { onValueChange((value - 1).coerceIn(range)) },
+        onIncrease = { onValueChange((value + 1).coerceIn(range)) },
+        modifier = modifier,
+        canDecrease = value > range.first,
+        canIncrease = value < range.last,
+        enabled = enabled,
+    )
+}
+
+@Composable
+internal fun RetrievalStrategySetting(
+    strategy: String,
+    onValueChange: (String) -> Unit,
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    val options = listOf(
+        "hyde" to stringResource(R.string.agent_retrieval_strategy_hyde),
+        "multi-query" to stringResource(R.string.agent_retrieval_strategy_multi),
+        "expansion" to stringResource(R.string.agent_retrieval_strategy_expansion),
+    )
+    NexaraValueRow(
+        title = stringResource(R.string.agent_retrieval_strategy_label),
+        value = options.firstOrNull { it.first == strategy }?.second ?: strategy,
+        onClick = { showPicker = true },
+    )
+    NexaraBottomSheet(
+        show = showPicker,
+        scrollContent = true,
+        onDismiss = { showPicker = false },
+        title = stringResource(R.string.agent_retrieval_strategy_label),
+    ) {
+        options.forEach { (id, label) ->
             Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .selectable(
+                        selected = strategy == id,
+                        role = Role.RadioButton,
+                        onClick = {
+                            onValueChange(id)
+                            showPicker = false
+                        },
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (rerankBadge) {
-                    Box(
-                        modifier = Modifier
-                            .background(
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(4.dp)
-                            )
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            stringResource(R.string.retrieval_rerank_badge),
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
+                Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                if (strategy == id) {
+                    Icon(
+                        Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
-                Text(
-                    text = displayValue,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
-        Spacer(modifier = Modifier.height(6.dp))
-        NexaraSlider(
-            modifier = sliderModifier,
-            value = value,
-            onValueChange = if (enabled) onValueChange else { {} },
-            valueRange = valueRange,
-            enabled = enabled
-        )
     }
 }
 
-/** 卡片内的开关行：与同卡片的标题、滑块左缘对齐（卡片已有 16dp 内边距，不再叠加列表项内边距）。 */
-@Composable
-internal fun InlineToggleRow(
-    title: String,
-    description: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    rowTag: String,
-    switchTag: String,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(rowTag)
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Switch(checked = checked, onCheckedChange = null, modifier = Modifier.testTag(switchTag))
-    }
+/** 各页保留自身的数值范围和档位；连续参数的 0 步长表示原始无档位滑块。 */
+internal object RetrievalSettingSpecs {
+    val globalChunkSize = retrievalIntegerSpec(100, 2000, 800, listOf(100, 400, 800, 1200, 1600, 2000), step = 100)
+    val globalChunkOverlap = retrievalIntegerSpec(0, 500, 100, listOf(0, 50, 100, 200, 300, 500), step = 50)
+    val extractionTimeout = retrievalIntegerSpec(5, 120, 120, listOf(5, 30, 60, 90, 120))
+    val globalMemoryLimit = retrievalIntegerSpec(1, 50, 5, listOf(1, 5, 10, 20, 30, 50))
+    val globalDocLimit = retrievalIntegerSpec(1, 50, 8, listOf(1, 5, 8, 10, 20, 50))
+    val globalRerankTopK = retrievalIntegerSpec(5, 100, 30, listOf(5, 10, 30, 50, 100))
+    val rerankMaxPerCall = retrievalIntegerSpec(8, 200, 100, listOf(8, 32, 64, 100, 200))
+    val globalMemoryThreshold = continuousSpec(0.0, 1.0, 0.7, listOf(0.0, 0.5, 0.7, 0.9, 1.0))
+    val globalDocThreshold = continuousSpec(0.0, 1.0, 0.45, listOf(0.0, 0.3, 0.45, 0.7, 1.0))
+    val globalVectorWeight = continuousSpec(0.0, 100.0, 60.0, listOf(0.0, 25.0, 50.0, 60.0, 100.0), unit = "%", decimalPlaces = 0)
+    val globalBm25Boost = continuousSpec(0.5, 2.0, 1.0, listOf(0.5, 1.0, 1.5, 2.0), unit = "×", decimalPlaces = 1)
+    val agentChunkSize = retrievalIntegerSpec(100, 2000, 800, listOf(100, 400, 800, 1200, 1600, 2000), step = 50)
+    val agentChunkOverlap = retrievalIntegerSpec(0, 500, 100, listOf(0, 50, 100, 200, 300, 500), step = 10)
+    val agentMemoryChunk = retrievalIntegerSpec(500, 3000, 1000, listOf(500, 1000, 1500, 2000, 3000), step = 100)
+    val agentMemoryThreshold = continuousSpec(50.0, 95.0, 70.0, listOf(50.0, 60.0, 70.0, 80.0, 95.0), step = 5.0, unit = "%", decimalPlaces = 0)
+    val agentDocThreshold = continuousSpec(30.0, 80.0, 45.0, listOf(30.0, 45.0, 60.0, 70.0, 80.0), step = 5.0, unit = "%", decimalPlaces = 0)
+    val agentRerankTopK = retrievalIntegerSpec(10, 100, 30, listOf(10, 20, 30, 50, 100), step = 5)
+    val agentVectorWeight = continuousSpec(0.0, 100.0, 60.0, listOf(0.0, 25.0, 50.0, 60.0, 100.0), step = 5.0, unit = "%", decimalPlaces = 0)
+    val agentBm25Boost = continuousSpec(0.5, 2.0, 1.0, listOf(0.5, 1.0, 1.5, 2.0), step = 0.1, unit = "×", decimalPlaces = 1)
 }
+
+internal fun retrievalIntegerSpec(
+    min: Int,
+    max: Int,
+    defaultValue: Int,
+    presets: List<Int>,
+    step: Int = 1,
+): NumericSettingSpec = NumericSettingSpec(
+    min = min.toDouble(),
+    max = max.toDouble(),
+    step = step.toDouble(),
+    defaultValue = defaultValue.toDouble(),
+    presets = presets.map { NumericSettingSpec.Preset(it.toDouble()) },
+)
+
+private fun continuousSpec(
+    min: Double,
+    max: Double,
+    defaultValue: Double,
+    presets: List<Double>,
+    step: Double = 0.0,
+    unit: String = "",
+    decimalPlaces: Int = 2,
+): NumericSettingSpec = NumericSettingSpec(
+    min = min,
+    max = max,
+    step = step,
+    defaultValue = defaultValue,
+    presets = presets.map { NumericSettingSpec.Preset(it) },
+    kind = NumericSettingKind.Continuous,
+    unit = unit,
+    decimalPlaces = decimalPlaces,
+)

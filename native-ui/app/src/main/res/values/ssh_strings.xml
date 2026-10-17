@@ -2,7 +2,7 @@
 <resources>
     <!-- SSH 页面使用独立资源文件，默认语言为英文。 -->
     <string name="ssh_settings_title">SSH hosts</string>
-    <string name="ssh_settings_description">Configure a host for the terminal and SSH tools. Tools receive only the host alias.</string>
+    <string name="ssh_settings_description">Configure hosts for terminal and SSH tools. Tools receive only host aliases.</string>
     <string name="ssh_backup_notice">SSH host settings and credentials stay on this device and are excluded from exported backups.</string>
     <string name="ssh_termux_notice">For a local Termux terminal, start sshd in Termux, then add host 127.0.0.1 with port 8022 and your Termux username.</string>
     <string name="ssh_add_host">Add host</string>

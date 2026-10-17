@@ -26,10 +26,9 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.then
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.Role
@@ -107,9 +106,10 @@ class RagSettingsAccessibilityTest {
             .assertHeightIsAtLeast(48.dp)
         rule.onNodeWithTag("rag_global_chunk_size_slider")
             .assertIsDisplayed()
-            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress ->
-                assertThat(setProgress(500f)).isTrue()
-            }
+            .performClick()
+        rule.onNodeWithTag("numeric_custom").performScrollTo().performClick()
+        rule.onNodeWithTag("numeric_custom_input").performScrollTo().performTextReplacement("500")
+        rule.onNodeWithTag("numeric_done").performScrollTo().performClick()
         rule.runOnIdle { assertThat(state.config.docChunkSize).isEqualTo(500) }
         rule.onNodeWithText(resources.getString(R.string.rag_config_preset_coding)).performClick()
         rule.runOnIdle { assertThat(selectedPreset.get()).isEqualTo("coding") }
@@ -387,9 +387,9 @@ class RagSettingsAccessibilityTest {
         }
 
         rule.onNodeWithTag("advanced_retrieval_memory_limit_slider")
-            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress ->
-                assertThat(setProgress(20f)).isTrue()
-            }
+            .assertHasClickAction()
+            .performClick()
+        rule.onNodeWithText("20").performScrollTo().performClick()
         rule.runOnIdle { assertThat(state.config.memoryLimit).isEqualTo(20) }
         rule.onNodeWithTag("advanced_retrieval_hybrid_toggle")
             .performScrollTo()
@@ -410,7 +410,7 @@ class RagSettingsAccessibilityTest {
     }
 
     @Test
-    fun ragAdvancedDispatchesSliderAndGraphNavigationFromProductionContent() {
+    fun ragAdvancedDispatchesValuePickerAndGraphNavigationFromProductionContent() {
         var state by mutableStateOf(
             RagAdvancedScreenState(
                 config = RagConfiguration(kgExtractionTimeoutSeconds = 120),
@@ -433,9 +433,9 @@ class RagSettingsAccessibilityTest {
         }
 
         rule.onNodeWithTag("rag_advanced_timeout_slider")
-            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress ->
-                assertThat(setProgress(30f)).isTrue()
-            }
+            .assertHasClickAction()
+            .performClick()
+        rule.onNodeWithText("30").performScrollTo().performClick()
         rule.runOnIdle { assertThat(state.config.kgExtractionTimeoutSeconds).isEqualTo(30) }
         rule.onNodeWithTag("rag_advanced_graph_row")
             .performScrollTo()
@@ -446,6 +446,7 @@ class RagSettingsAccessibilityTest {
 
     @Test
     fun agentRetrievalParameterAndResetActionsUseProductionContent() {
+        val resources = InstrumentationRegistry.getInstrumentation().targetContext.resources
         val reset = AtomicBoolean(false)
         var state by mutableStateOf(
             AgentAdvancedRetrievalScreenState(
@@ -477,9 +478,13 @@ class RagSettingsAccessibilityTest {
         }
 
         rule.onNodeWithTag("agent_retrieval_memory_limit_slider")
-            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress ->
-                assertThat(setProgress(8f)).isTrue()
-            }
+            .performScrollTo()
+        repeat(3) {
+            rule.onNodeWithContentDescription(
+                resources.getString(R.string.p0_increase_setting, resources.getString(R.string.agent_retrieval_memory_limit)),
+                useUnmergedTree = true,
+            ).performClick()
+        }
         rule.runOnIdle { assertThat(state.retrievalConfig.memoryLimit).isEqualTo(8) }
         val semanticOrder = buildList<String> {
             fun collect(node: SemanticsNode) {

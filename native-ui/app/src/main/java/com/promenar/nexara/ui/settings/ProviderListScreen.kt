@@ -30,8 +30,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -64,6 +62,9 @@ import com.promenar.nexara.data.model.UnsupportedProviderListItem
 import com.promenar.nexara.data.remote.protocol.ProtocolType
 import com.promenar.nexara.navigation.NavDestinations
 import com.promenar.nexara.ui.common.BettboxListGroup
+import com.promenar.nexara.ui.common.NexaraSettingsItem
+import com.promenar.nexara.ui.common.NexaraSettingsGroup
+import com.promenar.nexara.ui.common.SettingsSectionHeader
 import com.promenar.nexara.ui.common.NexaraMetaLine
 import com.promenar.nexara.ui.common.NexaraConfirmDialog
 import com.promenar.nexara.ui.common.NexaraDropdownMenu
@@ -175,15 +176,20 @@ internal fun ProviderListScreenContent(
                 }
             } else {
                 item("provider-group") {
-                    BettboxListGroup(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 5.dp),
-                    ) {
-                        Column {
-                            val allRows = state.providers.size + state.unsupportedProviders.size
-                            var renderedRows = 0
-                            state.providers.forEach { provider ->
+                    Column(Modifier.padding(horizontal = 16.dp)) {
+                        SettingsSectionHeader(
+                            title = stringResource(R.string.settings_section_ai_models),
+                            titleStyle = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                        )
+                        state.providers.forEach { provider ->
+                            NexaraSettingsGroup(
+                                footer = provider.baseUrl + "\n" + stringResource(
+                                    R.string.settings_provider_status_summary,
+                                    stringResource(if (provider.enabled) R.string.settings_provider_state_enabled else R.string.settings_provider_state_disabled),
+                                    providerCredentialStatus(provider),
+                                ),
+                            ) {
                                 ProviderCard(
                                     provider = provider,
                                     onClick = { actions.onProviderModels(provider.id) },
@@ -192,10 +198,10 @@ internal fun ProviderListScreenContent(
                                         { actions.onRequestDeleteProvider(provider.id) }
                                     },
                                 )
-                                renderedRows += 1
-                                if (renderedRows < allRows) ProviderGroupDivider()
                             }
-                            state.unsupportedProviders.forEach { provider ->
+                        }
+                        state.unsupportedProviders.forEach { provider ->
+                            NexaraSettingsGroup(footer = provider.rawProtocolId) {
                                 UnsupportedProviderCard(
                                     provider = provider,
                                     onEdit = { actions.onEditProvider(provider.id) },
@@ -203,8 +209,6 @@ internal fun ProviderListScreenContent(
                                         { actions.onRequestDeleteProvider(provider.id) }
                                     },
                                 )
-                                renderedRows += 1
-                                if (renderedRows < allRows) ProviderGroupDivider()
                             }
                         }
                     }
@@ -212,15 +216,6 @@ internal fun ProviderListScreenContent(
             }
         }
     }
-}
-
-@Composable
-private fun ProviderGroupDivider() {
-    // 分隔线从正文起点开始，与头像列对齐。
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 72.dp, end = 16.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-    )
 }
 
 @Composable
@@ -232,42 +227,16 @@ private fun UnsupportedProviderCard(
     var menuExpanded by remember(provider.id) { mutableStateOf(false) }
     val unsupportedDescription = stringResource(R.string.settings_provider_protocol_unsupported)
     val deleteDescription = stringResource(R.string.shared_btn_delete)
-    ListItem(
+    NexaraSettingsItem(
+        title = provider.name,
+        subtitle = unsupportedDescription,
+        titleColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        leadingContent = { ProviderAvatar(provider.name, baseUrl = null) },
+        onClick = onEdit,
         modifier = Modifier
             .fillMaxWidth()
-            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
-            .clickable(onClick = onEdit)
             .testTag(UiTags.settingsProviderCard(provider.id))
-            .semantics {
-                stateDescription = unsupportedDescription
-            },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        leadingContent = { ProviderAvatar(provider.name, baseUrl = null) },
-        headlineContent = {
-            Text(
-                text = provider.name,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        supportingContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    text = unsupportedDescription,
-                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 19.sp),
-                    color = MaterialTheme.colorScheme.error,
-                )
-                Text(
-                    text = provider.rawProtocolId,
-                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 17.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        },
+            .semantics { stateDescription = unsupportedDescription },
         trailingContent = {
             if (onDelete == null) {
                 IconButton(onClick = onEdit) {
@@ -412,28 +381,7 @@ private fun ProviderCard(
             R.string.settings_provider_state_disabled
         },
     )
-    val credentialStatus = when (provider.protocolType) {
-        ProtocolType.Google_VertexAI -> stringResource(
-            if (provider.hasVertexCredentials) {
-                R.string.settings_provider_vertex_credentials_configured
-            } else {
-                R.string.settings_provider_vertex_credentials_not_configured
-            },
-        )
-        ProtocolType.Local -> stringResource(R.string.settings_provider_credentials_not_required)
-        else -> stringResource(
-            if (provider.hasApiKey) {
-                R.string.settings_provider_api_key_configured
-            } else {
-                R.string.settings_provider_api_key_not_configured
-            },
-        )
-    }
-    val credentialMissing = when (provider.protocolType) {
-        ProtocolType.Google_VertexAI -> !provider.hasVertexCredentials
-        ProtocolType.Local -> false
-        else -> !provider.hasApiKey
-    }
+    val credentialStatus = providerCredentialStatus(provider)
     val providerStateDescription = stringResource(
         R.string.settings_provider_status_summary,
         enabledStatus,
@@ -446,60 +394,17 @@ private fun ProviderCard(
             stringResource(R.string.settings_provider_type_local)
         else -> provider.typeName
     }
-    ListItem(
+    NexaraSettingsItem(
+        title = provider.name,
+        subtitle = localizedTypeName,
+        titleColor = if (provider.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+        leadingContent = { ProviderAvatar(provider.name, provider.baseUrl) },
+        onClick = onClick,
+        onClickLabel = manageDescription,
         modifier = Modifier
             .fillMaxWidth()
-            .sizeIn(minHeight = NexaraSpacing.MinimumTouchTarget)
             .testTag(UiTags.settingsProviderCard(provider.id))
-            .semantics { stateDescription = providerStateDescription }
-            .clickable(
-                role = Role.Button,
-                onClickLabel = manageDescription,
-                onClick = onClick,
-            ),
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        leadingContent = { ProviderAvatar(provider.name, provider.baseUrl) },
-        headlineContent = {
-            Text(
-                text = provider.name,
-                style = MaterialTheme.typography.titleMedium,
-                color = if (provider.enabled) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        supportingContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                // 常态（已启用）不占位；停用时在详情首行给出中性标记，不挤占名称宽度。
-                if (!provider.enabled) ProviderStatePill(enabledStatus)
-                Text(
-                    text = localizedTypeName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                NexaraIdentifierText(
-                    text = provider.baseUrl.removePrefix("https://").removePrefix("http://"),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                // 凭据就绪是常态，只在缺失时提示需要处理。
-                if (credentialMissing) {
-                    Text(
-                        text = credentialStatus,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-        },
+            .semantics { stateDescription = providerStateDescription },
         trailingContent = {
             Box {
                 IconButton(
@@ -583,35 +488,32 @@ private fun ProviderCard(
 private fun ProviderAvatar(name: String, baseUrl: String?) {
     val brand = remember(name, baseUrl) { ModelBrandResolver.brandKey(name, baseUrl) }
     if (brand != null) {
-        ModelBrandTile(modelId = brand, size = 40.dp)
+        ModelBrandTile(modelId = brand, size = 20.dp)
         return
     }
     Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(20.dp)
             .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = name.trim().take(1).uppercase().ifEmpty { "?" },
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSecondaryContainer,
         )
     }
 }
 
 @Composable
-private fun ProviderStatePill(label: String) {
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-        )
-    }
+private fun providerCredentialStatus(provider: ProviderListItem): String = when (provider.protocolType) {
+    ProtocolType.Google_VertexAI -> stringResource(
+        if (provider.hasVertexCredentials) R.string.settings_provider_vertex_credentials_configured
+        else R.string.settings_provider_vertex_credentials_not_configured,
+    )
+    ProtocolType.Local -> stringResource(R.string.settings_provider_credentials_not_required)
+    else -> stringResource(
+        if (provider.hasApiKey) R.string.settings_provider_api_key_configured
+        else R.string.settings_provider_api_key_not_configured,
+    )
 }
