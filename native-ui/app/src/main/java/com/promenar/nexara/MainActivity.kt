@@ -128,7 +128,7 @@ open class MainActivity : ComponentActivity() {
                 }
             }
         }
-        stageShareIntent(intent)
+        stageShareIntent(intent, ShareDelivery.of(savedInstanceState != null, intent?.flags ?: 0))
         routeOpenGenerationIntent(intent)
         val app = application as NexaraApplication
         setContent {
@@ -231,7 +231,7 @@ open class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         if (ShareIntentQueue.isShareIntent(intent)) {
             setIntent(intent)
-            stageShareIntent(intent)
+            stageShareIntent(intent, ShareDelivery.of(restoredInstanceState = false, intentFlags = intent.flags))
         } else if (!routeOpenGenerationIntent(intent) && currentShareSubmissionId == null) {
             setIntent(intent)
         }
@@ -251,9 +251,9 @@ open class MainActivity : ComponentActivity() {
     @VisibleForTesting
     internal fun onboardingStateStoreForTesting(): OnboardingStateStore = onboardingStore
 
-    private fun stageShareIntent(candidate: Intent?) {
+    private fun stageShareIntent(candidate: Intent?, delivery: ShareDelivery) {
         if (!ShareIntentQueue.isShareIntent(candidate)) return
-        currentShareSubmissionId = shareIntentViewModel.stagingCoordinator.submit(candidate!!)
+        currentShareSubmissionId = shareIntentViewModel.stagingCoordinator.submit(candidate!!, delivery)
     }
 
     private fun handleShareStageOutcome(outcome: ShareStageOutcome) {
@@ -264,6 +264,10 @@ open class MainActivity : ComponentActivity() {
                     if (isCurrent) {
                         setIntent(cleanMainIntent())
                         currentShareSubmissionId = null
+                    }
+                    // 系统重放保持静默；用户新的分享与待处理请求重复时必须告知，避免看似被丢弃。
+                    if (outcome.result == ShareEnqueueResult.Duplicate && outcome.delivery == ShareDelivery.Fresh) {
+                        showShareFeedback(R.string.share_intent_already_pending)
                     }
                     consumeShareIntentsIfReady()
                 } finally {

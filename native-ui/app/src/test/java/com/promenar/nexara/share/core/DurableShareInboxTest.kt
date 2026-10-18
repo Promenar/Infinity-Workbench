@@ -6,6 +6,7 @@ import android.database.MatrixCursor
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.google.common.truth.Truth.assertThat
+import com.promenar.nexara.ShareDelivery
 import com.promenar.nexara.ShareEnqueueResult
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
@@ -35,7 +36,7 @@ class DurableShareInboxTest {
         val inbox = DurableShareInbox(root)
         val intent = share(uri, "application/json")
 
-        assertThat(inbox.stage(intent, resolver)).isEqualTo(ShareEnqueueResult.Accepted)
+        assertThat(inbox.stageFresh(intent, resolver)).isEqualTo(ShareEnqueueResult.Accepted)
         assertThat(opens).isEqualTo(1)
         val first = inbox.claimNext()!!
 
@@ -46,7 +47,8 @@ class DurableShareInboxTest {
         assertThat(afterProcessRecreation.contentSource().open(recovered.request.uris.single()).readBytes())
             .isEqualTo("{\"ok\":true}".toByteArray())
         assertThat(afterProcessRecreation.ack(recovered.token)).isTrue()
-        assertThat(DurableShareInbox(root).stage(intent, resolver)).isEqualTo(ShareEnqueueResult.Duplicate)
+        assertThat(DurableShareInbox(root).stage(intent, resolver, ShareDelivery.Redelivered))
+            .isEqualTo(ShareEnqueueResult.Duplicate)
     }
 
     @Test
@@ -65,7 +67,7 @@ class DurableShareInboxTest {
             type = "text/plain"
             putParcelableArrayListExtra(Intent.EXTRA_STREAM, arrayListOf(good, fakePdf))
         }
-        assertThat(inbox.stage(intent, resolver)).isEqualTo(ShareEnqueueResult.Accepted)
+        assertThat(inbox.stageFresh(intent, resolver)).isEqualTo(ShareEnqueueResult.Accepted)
         val lease = inbox.claimNext()!!
         val source = inbox.contentSource()
         val goodStaged = lease.request.uris.first()
@@ -104,7 +106,7 @@ class DurableShareInboxTest {
         val uri = Uri.parse("content://fixture/a.txt")
         val root = temporary.newFolder("lease")
         val inbox = DurableShareInbox(root, now = { clock })
-        assertThat(inbox.stage(share(uri, "text/plain"), resolver(
+        assertThat(inbox.stageFresh(share(uri, "text/plain"), resolver(
             mapOf(uri to Fixture("a.txt", "text/plain", "a".toByteArray()))
         ))).isEqualTo(ShareEnqueueResult.Accepted)
         val first = inbox.claimNext()!!
@@ -119,7 +121,7 @@ class DurableShareInboxTest {
     fun `非法JSON以逐项拒绝持久化而非伪装文本`() = runTest {
         val uri = Uri.parse("content://fixture/bad.json")
         val inbox = DurableShareInbox(temporary.newFolder("json"))
-        assertThat(inbox.stage(share(uri, "application/json"), resolver(
+        assertThat(inbox.stageFresh(share(uri, "application/json"), resolver(
             mapOf(uri to Fixture("bad.json", "application/json", "{bad".toByteArray()))
         ))).isEqualTo(ShareEnqueueResult.Accepted)
         val lease = inbox.claimNext()!!
@@ -139,7 +141,7 @@ class DurableShareInboxTest {
         """.trimIndent().toByteArray(Charsets.UTF_8)
         val inbox = DurableShareInbox(temporary.newFolder("html"))
 
-        assertThat(inbox.stage(share(uri, "text/html"), resolver(
+        assertThat(inbox.stageFresh(share(uri, "text/html"), resolver(
             mapOf(uri to Fixture("offline.html", "text/html", html)),
         ))).isEqualTo(ShareEnqueueResult.Accepted)
 
@@ -154,7 +156,7 @@ class DurableShareInboxTest {
         val uri = Uri.parse("content://fixture/large.txt")
         val root = temporary.newFolder("oversize")
         val inbox = DurableShareInbox(root, maxItemBytes = 4, maxBatchBytes = 4)
-        assertThat(inbox.stage(share(uri, "text/plain"), resolver(
+        assertThat(inbox.stageFresh(share(uri, "text/plain"), resolver(
             mapOf(uri to Fixture("large.txt", "text/plain", "12345".toByteArray(), reportedSize = null))
         ))).isEqualTo(ShareEnqueueResult.Accepted)
         val lease = inbox.claimNext()!!
@@ -171,7 +173,7 @@ class DurableShareInboxTest {
             maxItemBytes = 10,
             maxBatchBytes = 4,
         )
-        assertThat(inbox.stage(share(uri, "text/plain"), resolver(
+        assertThat(inbox.stageFresh(share(uri, "text/plain"), resolver(
             mapOf(uri to Fixture("batch.txt", "text/plain", "12345".toByteArray(), reportedSize = null))
         ))).isEqualTo(ShareEnqueueResult.Accepted)
 
@@ -185,7 +187,7 @@ class DurableShareInboxTest {
         val uri = Uri.parse("content://fixture/limit.docx")
         val bytes = docxWithEntries(2_048)
         val inbox = DurableShareInbox(temporary.newFolder("docx-limit"))
-        assertThat(inbox.stage(share(uri, DOCX_MIME), resolver(
+        assertThat(inbox.stageFresh(share(uri, DOCX_MIME), resolver(
             mapOf(uri to Fixture("limit.docx", DOCX_MIME, bytes))
         ))).isEqualTo(ShareEnqueueResult.Accepted)
 
@@ -208,7 +210,7 @@ class DurableShareInboxTest {
 
         var crashed = false
         try {
-            crashing.stage(share(uri, "text/plain"), resolver(
+            crashing.stageFresh(share(uri, "text/plain"), resolver(
                 mapOf(uri to Fixture("crash.txt", "text/plain", "durable".toByteArray()))
             ))
         } catch (_: SimulatedProcessDeath) {
@@ -228,7 +230,7 @@ class DurableShareInboxTest {
         val uri = Uri.parse("content://fixture/missing.txt")
         val root = temporary.newFolder("missing-directory")
         val inbox = DurableShareInbox(root)
-        assertThat(inbox.stage(share(uri, "text/plain"), resolver(
+        assertThat(inbox.stageFresh(share(uri, "text/plain"), resolver(
             mapOf(uri to Fixture("missing.txt", "text/plain", "data".toByteArray()))
         ))).isEqualTo(ShareEnqueueResult.Accepted)
         root.resolve("share-inbox-v1/requests").listFiles()!!.single { !it.name.startsWith(".stage-") }
@@ -242,7 +244,7 @@ class DurableShareInboxTest {
         val uri = Uri.parse("content://fixture/tampered.txt")
         val root = temporary.newFolder("tampered-request")
         val inbox = DurableShareInbox(root)
-        assertThat(inbox.stage(share(uri, "text/plain"), resolver(
+        assertThat(inbox.stageFresh(share(uri, "text/plain"), resolver(
             mapOf(uri to Fixture("tampered.txt", "text/plain", "original".toByteArray()))
         ))).isEqualTo(ShareEnqueueResult.Accepted)
         root.resolve("share-inbox-v1/requests").walkTopDown().single { it.isFile && it.name == "item-000" }
@@ -251,6 +253,118 @@ class DurableShareInboxTest {
         val restored = DurableShareInbox(root)
         assertThat(restored.pendingCount.value).isEqualTo(0)
         assertThat(root.resolve("share-inbox-v1/requests").listFiles().orEmpty()).isEmpty()
+    }
+
+    @Test
+    fun `已消费后用户再次分享同一URI会重新入队`() = runTest {
+        val uri = Uri.parse("content://media/external/file/42")
+        val resolver = resolver(mapOf(uri to Fixture("again.txt", "text/plain", "again".toByteArray())))
+        val root = temporary.newFolder("fresh-reshare")
+        val intent = share(uri, "text/plain")
+        val inbox = DurableShareInbox(root)
+        assertThat(inbox.stageFresh(intent, resolver)).isEqualTo(ShareEnqueueResult.Accepted)
+        assertThat(inbox.ack(inbox.claimNext()!!.token)).isTrue()
+
+        val daysLater = DurableShareInbox(root)
+        assertThat(daysLater.stageFresh(intent, resolver)).isEqualTo(ShareEnqueueResult.Accepted)
+        assertThat(daysLater.pendingCount.value).isEqualTo(1)
+        val lease = daysLater.claimNext()!!
+        assertThat(daysLater.contentSource().open(lease.request.uris.single()).readBytes())
+            .isEqualTo("again".toByteArray())
+    }
+
+    @Test
+    fun `新分享与待处理请求重复时仍返回Duplicate`() = runTest {
+        val uri = Uri.parse("content://fixture/pending.txt")
+        val resolver = resolver(mapOf(uri to Fixture("pending.txt", "text/plain", "p".toByteArray())))
+        val inbox = DurableShareInbox(temporary.newFolder("fresh-pending"))
+        val intent = share(uri, "text/plain")
+
+        assertThat(inbox.stageFresh(intent, resolver)).isEqualTo(ShareEnqueueResult.Accepted)
+        assertThat(inbox.stageFresh(intent, resolver)).isEqualTo(ShareEnqueueResult.Duplicate)
+        assertThat(inbox.stage(intent, resolver, ShareDelivery.Redelivered)).isEqualTo(ShareEnqueueResult.Duplicate)
+        assertThat(inbox.pendingCount.value).isEqualTo(1)
+    }
+
+    @Test
+    fun `已消费指纹的再次分享在index写入前崩溃仍可恢复`() = runTest {
+        val uri = Uri.parse("content://fixture/reshare-crash.txt")
+        val resolver = resolver(mapOf(uri to Fixture("reshare-crash.txt", "text/plain", "second".toByteArray())))
+        val root = temporary.newFolder("reshare-crash")
+        val intent = share(uri, "text/plain")
+        val first = DurableShareInbox(root)
+        assertThat(first.stageFresh(intent, resolver)).isEqualTo(ShareEnqueueResult.Accepted)
+        assertThat(first.ack(first.claimNext()!!.token)).isTrue()
+
+        val crashing = DurableShareInbox(
+            noBackupFilesDir = root,
+            faultInjector = { checkpoint ->
+                if (checkpoint == DurableShareCheckpoint.AfterRequestRenameBeforeIndexWrite) {
+                    throw SimulatedProcessDeath()
+                }
+            },
+        )
+        var crashed = false
+        try {
+            crashing.stageFresh(intent, resolver)
+        } catch (_: SimulatedProcessDeath) {
+            crashed = true
+        }
+
+        assertThat(crashed).isTrue()
+        val restored = DurableShareInbox(root)
+        assertThat(restored.pendingCount.value).isEqualTo(1)
+        val lease = restored.claimNext()!!
+        assertThat(restored.contentSource().open(lease.request.uris.single()).readBytes())
+            .isEqualTo("second".toByteArray())
+    }
+
+    @Test
+    fun `ack写入index后目录删除前崩溃不会复活已消费请求`() = runTest {
+        val uri = Uri.parse("content://fixture/acked.txt")
+        val root = temporary.newFolder("ack-crash")
+        val inbox = DurableShareInbox(root)
+        assertThat(inbox.stageFresh(share(uri, "text/plain"), resolver(
+            mapOf(uri to Fixture("acked.txt", "text/plain", "done".toByteArray()))
+        ))).isEqualTo(ShareEnqueueResult.Accepted)
+        val lease = inbox.claimNext()!!
+        val requests = root.resolve("share-inbox-v1/requests")
+        val directory = requests.resolve(lease.request.requestId)
+        val backup = temporary.newFolder("ack-crash-backup").resolve(directory.name)
+        directory.copyRecursively(backup)
+        assertThat(inbox.ack(lease.token)).isTrue()
+        backup.copyRecursively(directory)
+
+        val restored = DurableShareInbox(root)
+        assertThat(restored.pendingCount.value).isEqualTo(0)
+        assertThat(requests.listFiles().orEmpty()).isEmpty()
+    }
+
+    @Test
+    fun `旧版index缺少已消费requestId时按指纹过滤残留目录`() = runTest {
+        val uri = Uri.parse("content://fixture/legacy.txt")
+        val root = temporary.newFolder("legacy-index")
+        val inbox = DurableShareInbox(root)
+        assertThat(inbox.stageFresh(share(uri, "text/plain"), resolver(
+            mapOf(uri to Fixture("legacy.txt", "text/plain", "legacy".toByteArray()))
+        ))).isEqualTo(ShareEnqueueResult.Accepted)
+        val lease = inbox.claimNext()!!
+        val requests = root.resolve("share-inbox-v1/requests")
+        val directory = requests.resolve(lease.request.requestId)
+        val backup = temporary.newFolder("legacy-backup").resolve(directory.name)
+        directory.copyRecursively(backup)
+        assertThat(inbox.ack(lease.token)).isTrue()
+        backup.copyRecursively(directory)
+        val indexFile = root.resolve("share-inbox-v1/index.json")
+        val payload = org.json.JSONObject(
+            org.json.JSONObject(indexFile.readText()).getString("payload")
+        ).apply { remove("consumedRequestIds") }.toString()
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(payload.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        indexFile.writeText(org.json.JSONObject().put("payload", payload).put("sha256", digest).toString())
+
+        assertThat(DurableShareInbox(root).pendingCount.value).isEqualTo(0)
+        assertThat(requests.listFiles().orEmpty()).isEmpty()
     }
 
     private fun resolver(fixtures: Map<Uri, Fixture>, onOpen: () -> Unit = {}): ContentResolver {
@@ -268,6 +382,9 @@ class DurableShareInboxTest {
         }
         return resolver
     }
+
+    private suspend fun DurableShareInbox.stageFresh(intent: Intent, resolver: ContentResolver) =
+        stage(intent, resolver, ShareDelivery.Fresh)
 
     private fun share(uri: Uri, mime: String) = Intent(Intent.ACTION_SEND).apply {
         type = mime

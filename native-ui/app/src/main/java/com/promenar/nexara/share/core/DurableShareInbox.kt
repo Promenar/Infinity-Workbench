@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.AtomicFile
 import android.util.JsonReader
+import com.promenar.nexara.ShareDelivery
 import com.promenar.nexara.ShareEnqueueResult
 import com.promenar.nexara.ShareLease
 import com.promenar.nexara.ShareRequest
@@ -38,6 +39,8 @@ enum class DurableShareCheckpoint {
 /**
  * 进程死亡安全的分享收件箱。原始 ContentResolver grant 只在 stage() 内使用一次；
  * 后续 UI、导入和重试只读取 noBackupFilesDir 下的应用私有副本。
+ * 已消费指纹只拦截系统重放的同一 Intent（[ShareDelivery.Redelivered]）；用户新的分享即使 URI 与历史请求相同也重新入队。
+ * 已消费 requestId 用于区分“ack 已落盘但目录未删除”的残留与“目录已提交但 index 未写入”的新请求。
  * 清单 SHA-256 只用于检测应用私有目录内的损坏与不完整写入，不是跨信任边界的 HMAC。
  */
 class DurableShareInbox(
@@ -55,14 +58,15 @@ class DurableShareInbox(
     private val _pendingCount = MutableStateFlow(index.requests.size)
     val pendingCount: StateFlow<Int> = _pendingCount.asStateFlow()
 
-    suspend fun stage(intent: Intent, resolver: ContentResolver): ShareEnqueueResult =
+    suspend fun stage(intent: Intent, resolver: ContentResolver, delivery: ShareDelivery): ShareEnqueueResult =
         withContext(Dispatchers.IO + NonCancellable) {
             mutex.withLock {
                 val raw = RawShareIntent.parse(intent) ?: return@withLock ShareEnqueueResult.RejectedInvalid
                 recoverStaleLeasesLocked()
-                if (index.consumed.contains(raw.fingerprint) ||
-                    index.requests.any { it.fingerprint == raw.fingerprint }
-                ) return@withLock ShareEnqueueResult.Duplicate
+                val replayOfConsumed = delivery == ShareDelivery.Redelivered && raw.fingerprint in index.consumed
+                if (replayOfConsumed || index.requests.any { it.fingerprint == raw.fingerprint }) {
+                    return@withLock ShareEnqueueResult.Duplicate
+                }
                 if (index.requests.size >= MAX_PENDING) return@withLock ShareEnqueueResult.RejectedCapacity
 
                 val requestId = UUID.randomUUID().toString()
@@ -246,14 +250,19 @@ class DurableShareInbox(
             val record = index.requests.firstOrNull { it.state == STATE_LEASED && it.leaseToken == token }
                 ?: return@withLock false
             val consumedBefore = LinkedHashSet(index.consumed)
+            val consumedRequestIdsBefore = LinkedHashSet(index.consumedRequestIds)
             index.requests.remove(record)
+            index.consumed.remove(record.fingerprint)
             index.consumed.add(record.fingerprint)
+            index.consumedRequestIds.add(record.requestId)
             trimConsumedLocked()
             try {
                 persistIndexLocked()
             } catch (failure: Exception) {
                 index.consumed.clear()
                 index.consumed.addAll(consumedBefore)
+                index.consumedRequestIds.clear()
+                index.consumedRequestIds.addAll(consumedRequestIdsBefore)
                 index.requests.add(0, record)
                 throw failure
             }
@@ -392,9 +401,15 @@ class DurableShareInbox(
         val loaded = try {
             readIndex()
         } catch (_: RecoverableInboxException) {
-            InboxIndex(mutableListOf(), linkedSetOf())
+            InboxIndex(mutableListOf(), linkedSetOf(), linkedSetOf())
         }
-        val activeManifests = manifests.filterNot { it.fingerprint in loaded.consumed }
+        val indexedRequestIds = loaded.requests.mapTo(hashSetOf()) { it.requestId }
+        val activeManifests = manifests.filterNot { manifest ->
+            val requestId = manifest.request.requestId
+            requestId in loaded.consumedRequestIds ||
+                // 旧版 index 只记录指纹：仅对未被索引的残留目录按指纹判定已消费。
+                (loaded.legacyConsumedOnly && requestId !in indexedRequestIds && manifest.fingerprint in loaded.consumed)
+        }
         val indexedById = loaded.requests.associateBy { it.requestId }
         val repairedRecords = activeManifests.map { manifest ->
             indexedById[manifest.request.requestId]
@@ -408,8 +423,10 @@ class DurableShareInbox(
                     createdAt = manifest.createdAt,
                 )
         }.sortedBy { it.createdAt }.toMutableList()
-        val repaired = InboxIndex(repairedRecords, loaded.consumed)
-        if (repaired.requests != loaded.requests || !indexFile.baseFile.exists()) writeIndex(repaired)
+        val repaired = InboxIndex(repairedRecords, loaded.consumed, loaded.consumedRequestIds)
+        if (repaired.requests != loaded.requests || loaded.legacyConsumedOnly || !indexFile.baseFile.exists()) {
+            writeIndex(repaired)
+        }
         cleanupOrphans(activeManifests.mapTo(hashSetOf()) { it.request.requestId })
         return repaired
     }
@@ -423,6 +440,7 @@ class DurableShareInbox(
             .put("version", VERSION)
             .put("requests", JSONArray(value.requests.map { it.toJson() }))
             .put("consumed", JSONArray(value.consumed.toList()))
+            .put("consumedRequestIds", JSONArray(value.consumedRequestIds.toList()))
             .toString()
         writeAuthenticated(indexFile, payload)
     }
@@ -438,6 +456,15 @@ class DurableShareInbox(
                 consumed += fingerprint
             }
         }
+        val consumedRequestIdsJson = json.optJSONArray("consumedRequestIds")
+        val consumedRequestIds = linkedSetOf<String>()
+        consumedRequestIdsJson?.let { array ->
+            repeat(array.length()) {
+                val requestId = array.getString(it)
+                require(UUID.fromString(requestId).toString() == requestId)
+                consumedRequestIds += requestId
+            }
+        }
         val requests = mutableListOf<InboxRecord>()
         json.optJSONArray("requests")?.let { array ->
             repeat(array.length()) {
@@ -447,7 +474,7 @@ class DurableShareInbox(
                 requests += record
             }
         }
-        InboxIndex(requests, consumed)
+        InboxIndex(requests, consumed, consumedRequestIds, legacyConsumedOnly = consumedRequestIdsJson == null)
     }
 
     private fun validateRecord(record: InboxRecord) {
@@ -570,6 +597,9 @@ class DurableShareInbox(
 
     private fun trimConsumedLocked() {
         while (index.consumed.size > MAX_CONSUMED) index.consumed.remove(index.consumed.first())
+        while (index.consumedRequestIds.size > MAX_CONSUMED) {
+            index.consumedRequestIds.remove(index.consumedRequestIds.first())
+        }
     }
 
     private fun cleanupOrphans(known: Set<String>) {
@@ -769,7 +799,12 @@ class DurableShareInbox(
         val createdAt: Long,
         val items: List<StagedItem>,
     )
-    private data class InboxIndex(var requests: MutableList<InboxRecord>, val consumed: LinkedHashSet<String>)
+    private data class InboxIndex(
+        var requests: MutableList<InboxRecord>,
+        val consumed: LinkedHashSet<String>,
+        val consumedRequestIds: LinkedHashSet<String>,
+        val legacyConsumedOnly: Boolean = false,
+    )
     private data class InboxRecord(
         val requestId: String,
         val fingerprint: String,

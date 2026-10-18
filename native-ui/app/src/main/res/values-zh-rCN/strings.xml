@@ -130,6 +130,7 @@
     <string name="startup_importing_files">正在导入 %1$d 个文件</string>
     <string name="share_intent_invalid">此分享内容无法安全导入</string>
     <string name="share_intent_queue_full">待处理分享内容过多，请稍后重试</string>
+    <string name="share_intent_already_pending">该文件已在待导入队列中</string>
     <string name="share_import_title">导入分享文件</string>
     <string name="share_import_target_label">导入到</string>
     <string name="share_import_knowledge_base">知识库</string>

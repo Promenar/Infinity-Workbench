@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicLong
 data class ShareStageOutcome(
     val submissionId: Long,
     val candidate: Intent,
+    val delivery: ShareDelivery,
     val result: ShareEnqueueResult,
 )
 
@@ -22,10 +23,10 @@ data class ShareStageOutcome(
  */
 class ShareIntentStagingCoordinator(
     scope: CoroutineScope,
-    private val stage: suspend (Intent) -> ShareEnqueueResult,
+    private val stage: suspend (Intent, ShareDelivery) -> ShareEnqueueResult,
     private val awaitCapacity: suspend () -> Unit,
 ) {
-    private data class Submission(val id: Long, val key: String, val candidate: Intent)
+    private data class Submission(val id: Long, val key: String, val candidate: Intent, val delivery: ShareDelivery)
 
     private val nextId = AtomicLong(0)
     private val lock = Any()
@@ -41,19 +42,21 @@ class ShareIntentStagingCoordinator(
             for (submission in submissions) {
                 var result: ShareEnqueueResult
                 do {
-                    result = stage(submission.candidate)
+                    result = stage(submission.candidate, submission.delivery)
                     if (result != ShareEnqueueResult.RejectedCapacity) {
                         synchronized(lock) { terminalSubmissionIds += submission.id }
                     }
-                    outcomeChannel.send(ShareStageOutcome(submission.id, submission.candidate, result))
+                    outcomeChannel.send(
+                        ShareStageOutcome(submission.id, submission.candidate, submission.delivery, result)
+                    )
                     if (result == ShareEnqueueResult.RejectedCapacity) awaitCapacity()
                 } while (result == ShareEnqueueResult.RejectedCapacity)
             }
         }
     }
 
-    /** 返回稳定 submission id；同一未完成 payload 的配置重放只复用已有 id。 */
-    fun submit(intent: Intent): Long {
+    /** 返回稳定 submission id；同一未完成 payload 的配置重放只复用已有 id 及其首次投递来源。 */
+    fun submit(intent: Intent, delivery: ShareDelivery): Long {
         val candidate = Intent(intent)
         val key = stableKey(candidate)
         synchronized(lock) {
@@ -61,7 +64,7 @@ class ShareIntentStagingCoordinator(
             val id = nextId.incrementAndGet()
             inFlightByKey[key] = id
             keyBySubmissionId[id] = key
-            if (submissions.trySend(Submission(id, key, candidate)).isFailure) {
+            if (submissions.trySend(Submission(id, key, candidate, delivery)).isFailure) {
                 inFlightByKey.remove(key)
                 keyBySubmissionId.remove(id)
             }

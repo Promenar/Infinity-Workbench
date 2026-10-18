@@ -11,8 +11,10 @@ import androidx.test.runner.lifecycle.Stage
 import com.google.common.truth.Truth.assertThat
 import com.promenar.nexara.NexaraApplication
 import com.promenar.nexara.MainActivity
+import com.promenar.nexara.ShareDelivery
 import com.promenar.nexara.ShareEnqueueResult
 import com.promenar.nexara.ShareIntentQueue
+import com.promenar.nexara.data.backup.BackupStartupState
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.SessionEntity
 import com.promenar.nexara.data.rag.DocumentReferenceExtractor
@@ -73,6 +75,38 @@ class ShareImportAndroidEndToEndTest {
             }
         }
         runBlocking { drainInbox(DurableShareInbox.get(context.noBackupFilesDir)) }
+    }
+
+    @Test
+    fun reshareOfConsumedStableUriMountsSheetAgain() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<NexaraApplication>()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val authority = "${com.promenar.nexara.test.BuildConfig.APPLICATION_ID}.sharefixture"
+        val uri = Uri.parse("content://$authority/${ShareFixtureProvider.VALID_FILE}")
+        val inbox = DurableShareInbox.get(app.noBackupFilesDir)
+        drainInbox(inbox)
+
+        repeat(2) { attempt ->
+            val activity = instrumentation.startActivitySync(shareActivityIntent(app, uri)) as MainActivity
+            try {
+                assertThat(waitForShareSheet(instrumentation, activity)).isTrue()
+                instrumentation.runOnMainSync {
+                    assertThat(activity.shareImportStateForTesting().pendingCount).isAtLeast(1)
+                }
+            } finally {
+                instrumentation.runOnMainSync {
+                    if (!activity.isFinishing && !activity.isDestroyed) activity.finish()
+                }
+                waitForDestroyed(instrumentation, activity)
+            }
+            // 第一次 drain 让固定 URI 的指纹进入已消费记录；第二次分享必须仍被视为用户新的分享。
+            drainInbox(inbox)
+            assertThat(inbox.pendingCount.value).isEqualTo(0)
+            if (attempt == 0) {
+                val replay = inbox.stage(shareActivityIntent(app, uri), app.contentResolver, ShareDelivery.Redelivered)
+                assertThat(replay).isEqualTo(ShareEnqueueResult.Duplicate)
+            }
+        }
     }
 
     @Test
@@ -151,7 +185,7 @@ class ShareImportAndroidEndToEndTest {
             flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
             putParcelableArrayListExtra(Intent.EXTRA_STREAM, arrayListOf(uri, invalidPdf))
         }
-        assertThat(queue.stageDurably(intent, app.contentResolver)).isEqualTo(ShareEnqueueResult.Accepted)
+        assertThat(queue.stageDurably(intent, app.contentResolver, ShareDelivery.Fresh)).isEqualTo(ShareEnqueueResult.Accepted)
         val lease = checkNotNull(queue.claimNextDurably())
 
         try {
@@ -238,7 +272,7 @@ class ShareImportAndroidEndToEndTest {
                 flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
                 putExtra(Intent.EXTRA_STREAM, uri)
             }
-            assertThat(queue.stageDurably(intent, app.contentResolver))
+            assertThat(queue.stageDurably(intent, app.contentResolver, ShareDelivery.Fresh))
                 .isEqualTo(ShareEnqueueResult.Accepted)
             val lease = checkNotNull(queue.claimNextDurably())
             leaseToken = lease.token
@@ -308,7 +342,7 @@ class ShareImportAndroidEndToEndTest {
                 flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
                 putExtra(Intent.EXTRA_STREAM, uri)
             }
-            assertThat(queue.stageDurably(intent, app.contentResolver))
+            assertThat(queue.stageDurably(intent, app.contentResolver, ShareDelivery.Fresh))
                 .isEqualTo(ShareEnqueueResult.Accepted)
             val lease = checkNotNull(queue.claimNextDurably())
             leaseToken = lease.token
@@ -362,7 +396,9 @@ class ShareImportAndroidEndToEndTest {
     private fun waitForShareSheet(scenario: ActivityScenario<MainActivity>): Boolean {
         repeat(200) {
             var visible = false
-            scenario.onActivity { activity -> visible = activity.shareImportStateForTesting().visible }
+            scenario.onActivity { activity ->
+                visible = activity.startupReady() && activity.shareImportStateForTesting().visible
+            }
             if (visible) return true
             android.os.SystemClock.sleep(100)
         }
@@ -376,13 +412,19 @@ class ShareImportAndroidEndToEndTest {
         repeat(200) {
             var visible = false
             instrumentation.runOnMainSync {
-                if (!activity.isDestroyed) visible = activity.shareImportStateForTesting().visible
+                if (!activity.isDestroyed && activity.startupReady()) {
+                    visible = activity.shareImportStateForTesting().visible
+                }
             }
             if (visible) return true
             android.os.SystemClock.sleep(100)
         }
         return false
     }
+
+    /** 分享弹层 ViewModel 依赖启动恢复后才初始化的 Provider；Ready 之前读取会触发未初始化异常。 */
+    private fun MainActivity.startupReady(): Boolean =
+        (application as NexaraApplication).startupState.value == BackupStartupState.Ready
 
     private fun waitForDestroyed(
         instrumentation: android.app.Instrumentation,
