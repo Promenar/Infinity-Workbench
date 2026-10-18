@@ -38,7 +38,9 @@ AGP 只打包 CMake 产出的共享库，不打包可执行目标，所以探针
 
 `avc: granted` 是 SELinux 的 auditallow 记录：策略当前放行，但被标记为需要审计的行为。依赖 linker64 或数据目录 dlopen 的方案（例如 pip 安装的原生扩展）存在被后续系统版本收紧的风险。
 
-## 后台存活（OPPO PKH110，ColorOS V16.1.0，USB 充电中）
+## 后台存活（OPPO PKH110，ColorOS V16.1.0）
+
+默认电池策略、USB 充电中：
 
 | 场景 | 结果 |
 | --- | --- |
@@ -46,9 +48,9 @@ AGP 只打包 CMake 产出的共享库，不打包可执行目标，所以探针
 | 前台服务（`specialUse`），熄屏 | 服务确在前台（`isForeground=true`、`procState=4`、oom adj 200），仍在启动约 10 秒后被 Hans 冻结，60 秒内只写 2 行心跳 |
 | 透明 Activity 保持“前台” | 不被视为前台，同样冻结 |
 
-冻结来自厂商的 `OplusHansManager`/`OFreezer`（日志 `FROZEN_TRANS`），AOSP `dumpsys activity` 的 `isFrozen` 始终为 false。冻结的是整个应用 uid，子进程一并停下。未测：设为“完全允许后台行为”后的表现，以及不充电时的表现。
+设为“完全允许后台行为”后另测一次（未充电，锁屏 15 分钟，前台服务心跳 900 秒、每 5 秒一行）：Hans 不再冻结（日志中没有该 uid 的 `FROZEN_TRANS`），子进程运行到结束并写出 `done`；但 14.5 分钟只写了 49 行（约应 175 行），最长间隔 66 秒，是 CPU 深度休眠造成的，持续计算需要持有 `PARTIAL_WAKE_LOCK`。
 
-结论：B 不能靠前台服务绕过 ColorOS 后台管理，长任务仍需要用户把 Nexara 设为“完全允许后台行为”；与 D（Termux）相比，需要放行的应用从两个减为一个。
+冻结来自厂商的 `OplusHansManager`/`OFreezer`（日志 `FROZEN_TRANS`），AOSP `dumpsys activity` 的 `isFrozen` 始终为 false。冻结的是整个应用 uid，子进程一并停下。结论：B 不能靠前台服务绕过 ColorOS 后台管理，长任务需要用户把 Nexara 设为“完全允许后台行为”，并在命令运行期间持有唤醒锁；与 D（Termux）相比，需要放行的应用从两个减为一个。
 
 ## Python
 
@@ -93,4 +95,8 @@ AGP 只打包 CMake 产出的共享库，不打包可执行目标，所以探针
 
 ## Termux SAF 挂载
 
-在 Nexara 设置 → 工具设置 → Termux 接入与诊断 → “挂载 Termux 主目录”中以读写方式挂载（系统选择器侧栏选 Termux，授权对话框允许），得到 `/mnt/termux`（可读写、所有会话）。Termux 中新建的文件立即出现在 Nexara 资源管理器的挂载浏览中，内容一致。Nexara 界面的挂载浏览只读，写入需经文件工具。
+在 Nexara 设置 → 工具设置 → Termux 接入与诊断 → “挂载 Termux 主目录”中以读写方式挂载（系统选择器侧栏选 Termux，授权对话框允许），得到 `/mnt/termux`（可读写、所有会话）。Termux 中新建的文件立即出现在 Nexara 资源管理器的挂载浏览中，内容一致；Nexara 界面的挂载浏览只读，写入经文件工具：在会话中让模型对 `/mnt/termux/nexara-poc-n2t.txt` 调用 `create_file` 后，Termux 主目录可见该文件（属主为 Termux uid），内容一致。模型先误用只覆盖已有文件的 `write_file`，只得到“未找到条目”，多用了两轮才改用 `create_file`。
+
+共享存储：Termux 执行 `termux-setup-storage` 后，Termux、adb 与 Nexara（“挂载存储路径”挂载 `Download/nexara-poc`）各写一个文件，三方都能读到另外两方的文件，内容一致。
+
+测试结束后已删除挂载（Nexara 不再持有任何 URI 授权）与全部测试文件。
