@@ -37,7 +37,7 @@ All notable changes to this project will be documented in this file.
 
 ### 内置 git 与 pip
 
-- `shell_exec` 新增 `git`：基于随 APK 打包的 dulwich 1.2.17（纯 Python，与 urllib3 一起合成 `libpysite.so`，构建时按 SHA-256 校验 PyPI wheel），开放 clone、status、add、commit、log、diff、branch、checkout、fetch、pull、push、remote、stash、tag 等常用子命令与 `-C <目录>`；`add -A`、`commit -F`、`remote -v`/`get-url`/`set-url`/`remove` 由包装补齐。不支持的子命令、全局选项与 SSH 远端返回 `GIT_UNSUPPORTED` 与改用 Termux/SSH 的指引；未配置提交身份时返回 `GIT_IDENTITY_MISSING`，不再以 `u0_aNNN@localhost` 提交。`python_exec` 可直接 `import dulwich.porcelain`。
+- `shell_exec` 新增 `git`：基于随 APK 打包的 dulwich 1.2.17（纯 Python，与 urllib3 一起合成 `libpysite.so`，构建时按 SHA-256 校验 PyPI wheel），开放 clone、status、add、commit、log、diff、branch、checkout、fetch、pull、push、remote、stash、tag 等常用子命令与 `-C <目录>`；`add -A`、`commit -F`、`log -<N>`、`branch -a`/`-r`、`remote -v`/`get-url`/`set-url`/`remove` 由包装补齐；克隆、拉取等以回车刷新的进度只保留最终状态，不再挤占输出尾部。`clone` 与 `fetch` 像 git 一样只取 HEAD、分支与标签，不再下载 GitHub 为每个 PR 通告的 `refs/pull/*`（`--depth 1` 克隆 octocat/Spoon-Knife 由约 636 MiB 降到约 60 KB）。不支持的子命令、全局选项与 SSH 远端返回 `GIT_UNSUPPORTED` 与改用 Termux/SSH 的指引；未配置提交身份时返回 `GIT_IDENTITY_MISSING`，不再以 `u0_aNNN@localhost` 提交。`python_exec` 可直接 `import dulwich.porcelain`。
 - 侧载版新增 `pip`/`pip3`：运行标准库自带的 pip 26.2.1，把纯 Python 包装到应用用户目录并可直接 import；安装出原生扩展时提醒其无法加载。Play 版 `pip` 返回 `PIP_UNSUPPORTED`。
 - 命令结果的 `workspace_changes` 不再逐条列出 `.git` 内部文件，改为 `git_internal_changes` 计数；这些文件照常入索引，但不发布知识库向量化事件（`.git/config` 的远端地址可能带令牌）。
 - 发行扫描对 `libpysite.so` 只放行 urllib3 文档中的占位口令 URL。

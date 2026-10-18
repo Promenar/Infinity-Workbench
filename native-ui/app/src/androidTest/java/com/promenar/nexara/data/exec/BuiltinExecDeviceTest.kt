@@ -215,9 +215,17 @@ class BuiltinExecDeviceTest {
     fun builtinGitClonesOverHttps() = runBlocking<Unit> {
         if (!PackagedPython.from(context).isAvailable) return@runBlocking
         assumeNetwork("github.com")
-        val result = shell("git clone --depth 1 https://github.com/octocat/Hello-World.git hw && git -C hw log --oneline", timeout = 120).json()
+        val result = shell("git clone --depth 1 https://github.com/octocat/Hello-World.git hw && git -C hw log --oneline -1", timeout = 180).json()
         assertWithMessage(result.toString()).that(result.getValue("exit_code").jsonPrimitive.int).isEqualTo(0)
         assertThat(File(workspace, "hw/README").isFile).isTrue()
+        // git 的 -<N> 写法要有输出；回车刷新的进度只保留最终状态，不挤占输出尾部。
+        assertThat(result.getValue("stdout").jsonPrimitive.content.trim()).isNotEmpty()
+        val stderr = result.getValue("stderr").jsonPrimitive.content
+        assertThat(stderr).doesNotContain("\r")
+        assertThat(stderr.length).isLessThan(4_000)
+        // 只取分支与标签：不取 GitHub 为每个 PR 通告的 refs/pull/*（否则约 20 MiB）。
+        val gitBytes = File(workspace, "hw/.git").walkTopDown().filter(File::isFile).sumOf(File::length)
+        assertWithMessage("hw/.git 大小").that(gitBytes).isLessThan(1_000_000L)
         assertThat(result.paths("added")).contains("/hw/README")
     }
 

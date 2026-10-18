@@ -4,6 +4,7 @@
 其它失败输出单行 fatal 信息，退出码 128，与 git 一致。
 """
 
+import io
 import os
 import re
 import sys
@@ -83,8 +84,91 @@ def _has_message(args):
     return False
 
 
+class _ProgressCollapser(io.RawIOBase):
+    """只保留以回车刷新的进度行的最终状态：输出不接终端，逐次刷新会把真正的结果挤出输出尾部。"""
+
+    def __init__(self, raw):
+        super().__init__()
+        self._raw = raw
+        self._line = bytearray()
+        self._carriage = False
+
+    def writable(self):
+        return True
+
+    def write(self, data):
+        for byte in bytes(data):
+            if self._carriage:
+                self._carriage = False
+                if byte != 10:
+                    self._line.clear()
+            if byte == 13:
+                self._carriage = True
+            elif byte == 10:
+                self._raw.write(bytes(self._line) + b"\n")
+                self._line.clear()
+            else:
+                self._line.append(byte)
+        return len(data)
+
+    def finish(self):
+        if self._line:
+            self._raw.write(bytes(self._line) + b"\n")
+            self._line.clear()
+        self._raw.flush()
+
+
+def _collapse_progress():
+    """返回结束时调用的收尾函数；必须在导入 dulwich.cli 之前替换，其参数默认值在导入时绑定 sys.stderr.buffer。"""
+    if sys.stderr is None or sys.stderr.isatty():
+        return lambda: None
+    original = sys.stderr
+    collapser = _ProgressCollapser(original.buffer)
+    sys.stderr = io.TextIOWrapper(io.BufferedWriter(collapser), encoding=original.encoding or "utf-8",
+                                  errors="backslashreplace", line_buffering=True)
+
+    def finish():
+        sys.stderr.flush()
+        collapser.finish()
+        sys.stderr = original
+
+    return finish
+
+
+_COUNT_SHORTHAND = re.compile(r"^-([0-9]+)$")
+# git 默认只取分支与标签；dulwich 的 clone/fetch 默认要远端通告的全部引用，
+# GitHub 会通告每个 PR 的 refs/pull/*，--depth 1 克隆热门仓库也会下载数百 MB。
+DEFAULT_FETCH_REFS = (b"HEAD", b"refs/heads/", b"refs/tags/")
+
+
+def _limit_fetched_refs():
+    from dulwich.client import GitClient
+
+    original = GitClient.fetch
+    if getattr(original, "_nexara_limited", False):
+        return
+
+    def fetch(self, path, target, *args, **kwargs):
+        if not args and kwargs.get("ref_prefix") is None:
+            kwargs["ref_prefix"] = list(DEFAULT_FETCH_REFS)
+        return original(self, path, target, *args, **kwargs)
+
+    fetch._nexara_limited = True
+    GitClient.fetch = fetch
+
+
 def _rewrite(command, args):
     """把常见 git 写法转换为 dulwich 接受的形式；无法表达时返回错误信息。"""
+    if command == "log":
+        # git 的 -<N> 等同 -n <N>；dulwich 会把它当成路径，静默输出空结果。
+        rewritten = []
+        for arg in args:
+            match = _COUNT_SHORTHAND.match(arg)
+            rewritten += ["-n", match.group(1)] if match else [arg]
+        return rewritten, None
+    if command == "branch":
+        aliases = {"-a": "--all", "-r": "--remotes"}
+        return [aliases.get(arg, arg) for arg in args], None
     if command == "add":
         return [("." if arg in ("-A", "--all") else arg) for arg in args], None
     if command == "clone":
@@ -220,7 +304,18 @@ def main(argv):
     # 没有终端与编辑器：需要编辑器的路径立即失败，而不是等待超时。
     os.environ.setdefault("GIT_EDITOR", "false")
     os.environ.setdefault("GIT_TERMINAL_PROMPT", "0")
+    finish = _collapse_progress()
+    try:
+        return _run_dulwich(command, rest)
+    finally:
+        finish()
+
+
+def _run_dulwich(command, rest):
     from dulwich import cli
+
+    if command in ("clone", "fetch"):
+        _limit_fetched_refs()
 
     try:
         result = cli.main(["--no-pager", command, *rest])
