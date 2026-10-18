@@ -17,10 +17,9 @@ class ChatScreenRagSelectionTest {
     )
 
     @Test
-    fun `只有未命中不可用或失败轨迹的消息均提供检索入口`() {
+    fun `只有未命中或失败轨迹的消息均提供检索入口`() {
         listOf(
             RagRetrievalTrace.OUTCOME_EMPTY,
-            RagRetrievalTrace.OUTCOME_UNAVAILABLE,
             RagRetrievalTrace.OUTCOME_FAILED,
         ).forEach { outcome ->
             val message = Message(
@@ -35,12 +34,29 @@ class ChatScreenRagSelectionTest {
     }
 
     @Test
+    fun `历史消息中未配置嵌入模型或没有检索范围的轨迹不再显示检索步骤`() {
+        listOf(
+            RagRetrievalTrace.OUTCOME_UNAVAILABLE,
+            RagRetrievalTrace.OUTCOME_NO_SCOPE,
+        ).forEach { outcome ->
+            val message = Message(
+                id = outcome,
+                role = MessageRole.ASSISTANT,
+                content = "回复",
+                ragMetadata = RagMetadata(trace = RagRetrievalTrace(outcome = outcome)),
+            )
+
+            assertThat(message.hasRagArtifacts()).isFalse()
+        }
+    }
+
+    @Test
     fun `工具续轮后仍选中持有检索轨迹的首条回复`() {
         val first = Message(
             id = "first",
             role = MessageRole.ASSISTANT,
             content = "调用工具",
-            ragMetadata = RagMetadata(trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE)),
+            ragMetadata = RagMetadata(trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_EMPTY)),
         )
         val continuation = Message(id = "next", role = MessageRole.ASSISTANT, content = "后续回复")
 

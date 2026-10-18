@@ -152,10 +152,11 @@ data class RagRetrievalTrace(
         const val OUTCOME_HIT = "hit"
         /** 已检索但没有候选达到阈值。 */
         const val OUTCOME_EMPTY = "empty"
-        /** 嵌入模型不可用，未能检索。 */
+        /** 未配置嵌入模型（无远程配置、无本地模型），检索未执行。 */
         const val OUTCOME_UNAVAILABLE = "unavailable"
         /** 未选择可检索的文档且未启用记忆。 */
         const val OUTCOME_NO_SCOPE = "no_scope"
+        /** 已尝试检索但出错（含嵌入请求全部失败），属于真正的失败。 */
         const val OUTCOME_FAILED = "failed"
 
         const val SCORING_VECTOR = "vector"
@@ -169,6 +170,10 @@ data class RagRetrievalTrace(
         /** 已启用但重排失败，保持召回顺序。 */
         const val RERANK_FAILED = "failed"
     }
+
+    /** 未配置或无检索范围：检索没有执行，不属于失败，会话中不显示检索步骤。 */
+    val isSkipped: Boolean
+        get() = outcome == OUTCOME_UNAVAILABLE || outcome == OUTCOME_NO_SCOPE
 }
 
 @Serializable

@@ -114,7 +114,8 @@ class MemoryManager(
             }
         }
         if (queryEmbeddings.isEmpty()) {
-            return emptyResult(System.currentTimeMillis() - startTime, RagRetrievalTrace.OUTCOME_UNAVAILABLE)
+            // 嵌入模型已配置但请求全部失败（网络、鉴权、模型名等），属于真正的检索失败。
+            return emptyResult(System.currentTimeMillis() - startTime, RagRetrievalTrace.OUTCOME_FAILED)
         }
         onProgress?.invoke("Embedding done", 25, "${queryEmbeddings.first().second.size}d vector in ${firstEmbedMs}ms")
 

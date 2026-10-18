@@ -89,7 +89,7 @@ private fun CompactStepsPreview(dark: Boolean) {
                 )
                 RagProgressCard(
                     phases = emptyList(), references = emptyList(), isComplete = true,
-                    trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE),
+                    trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_FAILED),
                 )
                 Spacer(Modifier.height(8.dp))
                 MarkdownText(

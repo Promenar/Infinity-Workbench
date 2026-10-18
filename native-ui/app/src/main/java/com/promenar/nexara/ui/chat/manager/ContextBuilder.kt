@@ -115,7 +115,9 @@ class ContextBuilder(
     private val webSearchProvider: WebSearchProvider? = null,
     private val ragProvider: RagProvider? = null,
     private val kgProvider: KgProvider? = null,
-    private val taskRepository: ITaskRepository? = null
+    private val taskRepository: ITaskRepository? = null,
+    /** 记忆或文档检索已开启但未配置嵌入模型时调用，用于给出一次性配置引导。 */
+    private val onEmbeddingNotConfigured: () -> Unit = {},
 ) {
     suspend fun buildContext(params: ContextBuilderParams): ContextBuilderResult {
         val retrieval = params.cachedRetrieval ?: retrieve(params)
@@ -198,7 +200,8 @@ class ContextBuilder(
             ragUsage = ragResult.usage,
             kgContext = kgContext,
             kgPaths = kgPaths,
-            ragTrace = ragResult.trace,
+            // 未配置嵌入模型或没有检索范围时检索并未执行：不记录轨迹，回复中不出现检索步骤。
+            ragTrace = ragResult.trace?.takeUnless { it.isSkipped },
         )
     }
 
@@ -322,8 +325,8 @@ class ContextBuilder(
         val isRagEnabled = effectiveRagOptions.enableMemory || effectiveRagOptions.enableDocs
         if (!isRagEnabled) return skipped
         if (ragProvider == null) {
-            NexaraLogger.log("[ContextBuilder] 检索 Provider 不可用")
-            return skipped.copy(trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE))
+            NexaraLogger.log("[ContextBuilder] 检索 Provider 不可用，跳过检索")
+            return skipped
         }
 
         NexaraLogger.log("[ContextBuilder] effective ragOptions: docs=${effectiveRagOptions.enableDocs}/memory=${effectiveRagOptions.enableMemory}, isGlobal=${effectiveRagOptions.isGlobal}, rerank=${effectiveRagOptions.enableRerank}, kg=${effectiveRagOptions.enableKnowledgeGraph}")
@@ -332,6 +335,7 @@ class ContextBuilder(
             val result = ragProvider.retrieveContext(
                 params.content, params.sessionId, effectiveRagOptions, params.onRagProgress
             )
+            if (result.trace?.outcome == RagRetrievalTrace.OUTCOME_UNAVAILABLE) onEmbeddingNotConfigured()
             if (result.trace != null) result else result.copy(
                 trace = RagRetrievalTrace(
                     outcome = if (result.context.isNotBlank() || result.references.isNotEmpty()) {

@@ -669,6 +669,8 @@
     <string name="chat_task_step_done">已完成</string>
     <string name="chat_task_step_dropped">已放弃</string>
     <string name="chat_task_marked_completed">剩余步骤已标记为完成</string>
+    <string name="chat_embedding_setup_hint">未选择嵌入模型，记忆与知识库检索已跳过</string>
+    <string name="chat_embedding_setup_action">去设置</string>
     <string name="chat_task_continue_prompt">继续处理当前计划中的未完成任务。</string>
     <string name="workspace_sprint_pipeline">Sprint 流水线</string>
     <string name="workspace_x_of_y_completed">%1$d / %2$d 已完成</string>
@@ -1400,7 +1402,7 @@
     <string name="rag_details_retry">重试</string>
     <string name="chat_rag_summary_hit">命中 %1$d 条</string>
     <string name="chat_rag_summary_empty">未命中</string>
-    <string name="chat_rag_summary_unavailable">未能检索</string>
+    <string name="chat_rag_summary_unavailable">未检索</string>
     <string name="chat_rag_summary_no_scope">未能检索</string>
     <string name="chat_rag_summary_failed">未能检索</string>
     <string name="chat_rag_summary_web">联网 %1$d 条</string>
@@ -1419,9 +1421,9 @@
     <string name="rag_trace_rerank_failed">重排失败，保持召回顺序</string>
     <string name="rag_trace_rerank_off">未启用重排</string>
     <string name="rag_trace_empty_hint">没有候选达到相似度阈值。</string>
-    <string name="rag_trace_unavailable_hint">嵌入模型未配置或没有响应，本次没有检索知识库。</string>
+    <string name="rag_trace_unavailable_hint">未选择嵌入模型，本次没有检索记忆与知识库。可在 设置 → 默认模型 中选择。</string>
     <string name="rag_trace_no_scope_hint">本会话未开启记忆，也没有选择可检索的文档。</string>
-    <string name="rag_trace_failed_hint">知识库检索出错，本次回复未使用知识库。</string>
+    <string name="rag_trace_failed_hint">知识库检索出错（嵌入请求失败或检索异常），本次回复未使用知识库。</string>
     <string name="rag_trace_time">检索用时 %1$d 毫秒</string>
     <string name="rag_details_kind_memory">记忆</string>
     <string name="rag_details_kind_document">文档</string>

@@ -185,6 +185,7 @@ fun ChatRoute(
     onNavigateBack: () -> Unit = {},
     onNavigateToSession: (String) -> Unit = {},
     dependencies: ChatRouteDependencies? = null,
+    onOpenDefaultModels: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val application = context.applicationContext as NexaraApplication
@@ -429,6 +430,33 @@ fun ChatRoute(
         snackbarHostState.showSnackbar(
             message = warning.message,
             actionLabel = dismissLabel,
+            duration = SnackbarDuration.Long,
+        )
+    }
+
+    // 未选择嵌入模型时检索静默跳过；首次遇到时给一次指向“默认模型”的引导，之后不再提醒。
+    val embeddingSetupHintPending by application.embeddingSetupHint.pending.collectAsStateWithLifecycle()
+    val embeddingSetupMessage = stringResource(R.string.chat_embedding_setup_hint)
+    val embeddingSetupAction = stringResource(R.string.chat_embedding_setup_action)
+    LaunchedEffect(
+        embeddingSetupHintPending,
+        uiState.generationNotice,
+        uiState.error,
+        permissionDialogVisible,
+    ) {
+        if (
+            !embeddingSetupHintPending ||
+            permissionDialogVisible ||
+            uiState.generationNotice != null ||
+            uiState.error != null
+        ) return@LaunchedEffect
+        application.embeddingSetupHint.markShown()
+        snackbarAction = onOpenDefaultModels
+        snackbarData = NexaraSnackbarData(embeddingSetupMessage, SnackbarType.INFO, embeddingSetupAction)
+        snackbarHostState.currentSnackbarData?.dismiss()
+        snackbarHostState.showSnackbar(
+            message = embeddingSetupMessage,
+            actionLabel = embeddingSetupAction,
             duration = SnackbarDuration.Long,
         )
     }

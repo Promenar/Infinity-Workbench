@@ -73,7 +73,7 @@ graph TD
 
 ### 架构决策记录 (ADR)
 - **ADR-001 (2026-05-13)**: **取消 Super Assistant 概念** — 统一 Agent 模型，移除 `isSuperAssistant` 特殊逻辑。✅ 已实施（Phase 3, 2026-05-13）。
-- **ADR-002 (2026-05-14)**: **Embedding/Rerank 配置回退策略** — 当专用键为空时回退到主 LLM Provider 配置。✅ 已实施。
+- **ADR-002 (2026-05-14)**: **Embedding/Rerank 配置回退策略** — Rerank 专用键为空时回退到主 LLM Provider 配置；Embedding 只使用手动配置的地址或“默认模型”中选定的嵌入模型，Provider 中已有嵌入模型也不会被自动选用。未配置嵌入模型时记忆与文档检索静默跳过（检索轨迹 `unavailable`，不在回复中显示检索步骤），会话页给出一次指向“默认模型”的引导。✅ 已实施。
 - **ADR-003 (2026-05-14)**: **图像生成工具设计** — 以 Skill 模式实现 `generate_image` 工具。✅ 已实施，详见 [ADR/image-generation-tool.md](./ADR/image-generation-tool.md)。
 - **ADR-004 (2026-05-14；2026-07-13 落地)**: **后台生成架构** — 由应用级 `GenerationCoordinator` 承载唯一任务状态，`GenerationForegroundService` 观察同一状态并维持前台发起的 SSE 生成；UI 不复制任务。✅ 已实施，发行级设备矩阵仍待最终门禁。
 - **ADR-005 (2026-05-16)**: **NexaraPageLayout 架构重构** — 迁移至 Scaffold 架构，通过局部按需应用 `imePadding` 与 `weight(1f)` 彻底解决键盘避让与测量崩溃问题。✅ 已实施。

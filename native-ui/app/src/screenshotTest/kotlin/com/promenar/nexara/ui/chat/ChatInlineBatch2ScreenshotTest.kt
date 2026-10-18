@@ -93,7 +93,7 @@ fun retrievalFailedBatch2Preview() = InlineBatch2Frame {
         phases = emptyList(),
         references = emptyList(),
         isComplete = true,
-        trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE),
+        trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_FAILED),
     )
 }
 
@@ -146,7 +146,7 @@ fun retrievalPartialWebBatch2Preview() = InlineBatch2Frame {
             )
         },
         isComplete = true,
-        trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE),
+        trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_FAILED),
     )
 }
 

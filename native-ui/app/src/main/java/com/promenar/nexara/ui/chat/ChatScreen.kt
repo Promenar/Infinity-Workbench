@@ -155,9 +155,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
+/** 未配置嵌入模型或无检索范围的历史轨迹表示检索未执行，不单独构成检索步骤。 */
 internal fun Message.hasRagArtifacts(): Boolean =
     !ragReferences.isNullOrEmpty() || !kgPaths.isNullOrEmpty() ||
-        !citations.isNullOrEmpty() || ragReferencesLoading || ragMetadata?.trace != null
+        !citations.isNullOrEmpty() || ragReferencesLoading ||
+        ragMetadata?.trace?.takeUnless { it.isSkipped } != null
 
 internal fun selectRagActiveMessage(messages: List<Message>): Message? =
     messages.find { it.hasRagArtifacts() } ?: messages.lastOrNull()
