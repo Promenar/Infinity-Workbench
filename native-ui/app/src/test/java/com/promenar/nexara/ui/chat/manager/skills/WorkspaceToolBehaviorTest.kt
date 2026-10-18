@@ -225,4 +225,38 @@ class WorkspaceToolBehaviorTest {
         assertThat(result.status).isEqualTo("error")
         assertThat(result.content).doesNotContain("/physical")
     }
+
+    @Test
+    fun `write to a missing path points the model to create_file`() = runTest {
+        val workspace = mockk<IWorkspaceRepository>()
+        coEvery { workspace.getByMaterializedPath("root", "/mnt/termux/new.txt") } returns null
+
+        val result = FileWriteSkill(mockk(), workspace).execute(
+            skillArgs("path" to "/mnt/termux/new.txt", "content" to "x", "expectedHash" to "h"),
+            context,
+        )
+
+        assertThat(result.status).isEqualTo("error")
+        assertThat(result.content).contains("未找到条目：/mnt/termux/new.txt")
+        assertThat(result.content).contains("新建文件请用 create_file")
+    }
+
+    @Test
+    fun `missing path guidance depends on the operation and argument`() = runTest {
+        val workspace = mockk<IWorkspaceRepository>()
+        coEvery { workspace.getByMaterializedPath("root", any()) } returns null
+        coEvery { workspace.getByUuid("root", "gone") } returns null
+
+        val patch = FilePatchSkill(mockk(), workspace).execute(skillArgs("path" to "/a.md", "edits" to "[]"), context)
+        val read = FileReadSkill(mockk(), workspace).execute(skillArgs("path" to "/a.md"), context)
+        val byUuid = DeleteFileSkill(workspace).execute(skillArgs("uuid" to "gone"), context)
+        val create = CreateFileSkill(workspace, mockk()).execute(skillArgs("name" to "a.md", "parentPath" to "/docs"), context)
+
+        assertThat(patch.content).contains("新建文件请用 create_file")
+        assertThat(read.content).contains("list_files")
+        assertThat(read.content).doesNotContain("create_file")
+        assertThat(byUuid.content).contains("uuid 可能已失效")
+        assertThat(create.content).contains("父目录不存在")
+        assertThat(create.content).contains("create_directory")
+    }
 }

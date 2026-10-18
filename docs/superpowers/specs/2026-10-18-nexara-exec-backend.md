@@ -138,13 +138,15 @@ ABI：发行包随 App Bundle 按 ABI 拆分，包含 arm64-v8a 与 x86_64（模
 
 ## 6. 失败文案结构化
 
+状态：已实施（`ui/chat/manager/ToolFailureSummary.kt`、`WorkspaceToolSupport.missingEntryGuidance`）。
+
 `ToolExecutor` 失败分支当前为 `"工具执行失败：${result.content.take(200)}"`，同一字符串既写入执行步骤（界面）也写入工具消息（模型）。Termux 结果 JSON 的 `stdout` 排在 `stderr`、`exit_code` 之前，stdout 稍长就会把退出码和 stderr 截掉；纯文本失败也只剩 200 字符。
 
 改为 `ToolFailureSummary.format(content)`：
 
-1. `content` 能解析为 JSON 对象时，按顺序取 `error_code`、`guidance`、`exit_code`、`timed_out`、`err`、`errmsg`，再取 `stderr` 尾部与 `stdout` 尾部，组装为紧凑 JSON；字段值为 null 的省略。
-2. 总长上限 4,000 UTF-16 字符；超出时先压缩 `stdout`，再压缩 `stderr`，`error_code`、`guidance`、`exit_code` 始终完整保留。截断处标注 `…(已截断，原始 N 字符)`。
-3. 非 JSON 内容保留前 1,000 字符并标注原始长度。
+1. `content` 能解析为 JSON 对象且含任一根因或输出字段时，按顺序取 `error_code`、`guidance`、`exit_code`、`timed_out`、`err`、`errmsg`，再取其余标量字段（如 `truncated`、`length_unit`），最后取 `stderr` 与 `stdout`，组装为紧凑 JSON；值为 null 或空输出的字段省略。
+2. 总长上限 4,000 UTF-16 字符（按 JSON 编码后长度计）；超出时依次压缩 `stdout`（保留尾部）、`stderr`（保留尾部）、`errmsg`（保留开头），`error_code`、`guidance`、`exit_code` 始终完整保留。截断处标注 `…(已截断，原始 N 字符)`，结果自带 `<字段>_original_length` 时取其与当前长度的较大值。
+3. 非 JSON 内容，以及不含上述字段的 JSON，保留前 1,000 字符并标注原始长度。
 4. 前缀“工具执行失败：”保留，供界面识别。
 5. 执行步骤与工具消息使用同一摘要。
 

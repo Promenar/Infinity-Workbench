@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 工具失败文案
+
+- 工具失败时，执行步骤与发给模型的工具消息不再只截取前 200 字符：结构化结果优先保留错误码、指引、退出码与 stderr，stdout 与 stderr 超长时保留尾部并标注原始长度，总长 4000 字符；纯文本失败保留前 1000 字符。
+- 文件工具找不到路径时附带下一步指引：`write_file`/`patch_file` 提示新建文件用 `create_file`，父目录缺失提示 `create_directory`，uuid 失效提示改用 path。
+
 ### 会话界面视觉重设计
 
 - 自动跟随覆盖生成结束后的操作行、积压放出与长回复异步解析，用户上滑后保持阅读位置；复制操作包含整轮全部正文，展开思考支持 Markdown。

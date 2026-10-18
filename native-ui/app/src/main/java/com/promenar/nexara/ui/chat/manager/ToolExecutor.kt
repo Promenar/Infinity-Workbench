@@ -314,7 +314,7 @@ class ToolExecutor internal constructor(
 
         val finalContent = if (failed) {
             // 审计缺陷 P0-4：统一文案会让模型失去自我修正依据（盲试三次），透传技能层具体原因
-            "工具执行失败：${result.content.take(200)}"
+            ToolFailureSummary.format(result.content)
         } else {
             result.content
         }

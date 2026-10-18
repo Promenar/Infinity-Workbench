@@ -60,8 +60,19 @@ internal suspend fun resolveWorkspaceEntry(
     }
     return entry?.let(WorkspaceEntryResolution::Found)
         ?: WorkspaceEntryResolution.Failed(
-            workspaceToolError(operation, "未找到条目：${uuid ?: normalizeWorkspaceToolPath(path!!)}"),
+            workspaceToolError(
+                operation,
+                "未找到条目：${uuid ?: normalizeWorkspaceToolPath(path!!)}。" + missingEntryGuidance(operation, uuid != null, pathKey != "path"),
+            ),
         )
+}
+
+/** 未找到条目时给模型的下一步指引，避免对新路径反复调用只修改已有文件的工具。 */
+private fun missingEntryGuidance(operation: String, byUuid: Boolean, isParent: Boolean): String = when {
+    byUuid -> "uuid 可能已失效，请用 list_files 获取最新 uuid 或改用 path。"
+    isParent -> "父目录不存在，请先用 create_directory 创建，或用 list_files 确认路径。"
+    operation == "write_file" || operation == "patch_file" -> "$operation 只修改已存在的文件，新建文件请用 create_file；可先用 list_files 确认路径。"
+    else -> "请先用 list_files 或 search_files 确认路径。"
 }
 
 /**

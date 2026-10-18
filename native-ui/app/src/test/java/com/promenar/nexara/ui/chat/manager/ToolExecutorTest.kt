@@ -1594,6 +1594,34 @@ class ToolExecutorTest {
     }
 
     @Test
+    fun failedCommandResultKeepsExitCodeAndStderrForModelAndStep() = testScope.runTest {
+        seedSessionWithAssistant()
+        val content = com.promenar.nexara.data.termux.TermuxCommandResult(
+            stdout = "progress\n".repeat(3_000),
+            stderr = "error: pathspec 'x' did not match",
+            exitCode = 1,
+        ).toJson().toString()
+        val skill = testSkill("termux_exec") { ToolResult("r1", content, status = "error") }
+        val registry = object : SkillRegistry {
+            override fun getSkill(name: String) = skill
+            override fun getAllSkills() = listOf<SkillDefinition>(skill)
+            override fun getAllTools(allowedIds: List<String>?) = emptyList<ProtocolTool>()
+        }
+        val executor = ToolExecutor(store, messageManager, registry, testToolResolver(registry), ledger = RecordingLedger())
+
+        executor.executeTools("s1", "m1", listOf(ToolCall("cmd", "termux_exec", "{}")), preparedTools = preparedFor(registry, "termux_exec"))
+        advanceUntilIdle()
+
+        val message = store.getSession("s1")!!.messages.last { it.role == MessageRole.TOOL }
+        assertThat(message.content).startsWith("工具执行失败：")
+        assertThat(message.content).contains("\"exit_code\":1")
+        assertThat(message.content).contains("error: pathspec 'x' did not match")
+        assertThat(message.content.length).isLessThan(ToolFailureSummary.MAX_CHARS + 20)
+        val step = store.getSession("s1")!!.messages.first { it.id == "m1" }.executionSteps!!.last { it.toolCallId == "cmd" }
+        assertThat(step.content).isEqualTo(message.content)
+    }
+
+    @Test
     fun successfulUnstructuredResultDataIsDiscardedBeforePersistence() = testScope.runTest {
         seedSessionWithAssistant()
         val ledger = RecordingLedger()
