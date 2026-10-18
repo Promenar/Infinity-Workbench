@@ -22,6 +22,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
+import org.apache.sshd.common.session.Session
+import org.apache.sshd.common.session.SessionListener
 import org.apache.sshd.server.Environment
 import org.apache.sshd.server.ExitCallback
 import org.apache.sshd.server.SshServer
@@ -39,6 +41,7 @@ class SshRuntimeIntegrationTest {
     private val root = Files.createTempDirectory("nexara-ssh-test")
     private val commands = AtomicInteger()
     private val authentications = AtomicInteger()
+    private val createdSessions = AtomicInteger()
     private lateinit var server: SshServer
     private lateinit var runtime: SshRuntime
     private val hostStore = MemorySshHosts()
@@ -56,6 +59,9 @@ class SshRuntimeIntegrationTest {
             fileSystemFactory = VirtualFileSystemFactory(root)
             commandFactory = org.apache.sshd.server.command.CommandFactory { _, command -> TestCommand(command, false, commands) }
             shellFactory = org.apache.sshd.server.shell.ShellFactory { TestCommand("", true, commands) }
+            addSessionListener(object : SessionListener {
+                override fun sessionCreated(session: Session) { createdSessions.incrementAndGet() }
+            })
             start()
         }
         hostStore.host = SshHost(alias = "termux", hostname = "127.0.0.1", port = server.port, username = "synthetic-user", authType = SshAuthType.PASSWORD)
@@ -75,8 +81,7 @@ class SshRuntimeIntegrationTest {
         runtime.exec("chat", "termux", "hello")
         assertThat(server.activeSessions.size).isEqualTo(1)
         runtime.closeOwner("chat")
-        repeat(20) { if (server.activeSessions.isNotEmpty()) delay(25) }
-        assertThat(server.activeSessions).isEmpty()
+        awaitServerSessionsClosed()
     }
 
     @Test fun `生成Ed25519公钥认证执行与错误脱敏`() = runBlocking {
@@ -265,8 +270,7 @@ class SshRuntimeIntegrationTest {
         trust()
         runtime.exec("chat", "termux", "hello")
         hostStore.host = hostStore.host.copy(keepTerminal = true)
-        repeat(40) { if (server.activeSessions.isNotEmpty()) delay(25) }
-        assertThat(server.activeSessions).isEmpty()
+        awaitServerSessionsClosed()
         assertThat(runtime.exec("chat", "termux", "hello").exitCode).isEqualTo(7)
     }
 
@@ -317,6 +321,15 @@ class SshRuntimeIntegrationTest {
     private suspend fun trust() {
         val key = runtime.probe("termux")
         hostStore.host = hostStore.host.copy(trustedKeyType = key.type, trustedFingerprint = key.fingerprint)
+        // 探测在客户端断开后立即返回，服务端会话由后台 IO 线程异步移除；等它移除，后续会话断言只反映被测操作。
+        awaitServerSessionsClosed()
+    }
+
+    /** 等待服务端会话全部移除；期限只作失败兜底，条件满足即返回。 */
+    private suspend fun awaitServerSessionsClosed() {
+        val deadline = System.nanoTime() + 5_000_000_000L
+        while (server.activeSessions.isNotEmpty() && System.nanoTime() < deadline) delay(10)
+        assertWithMessage("服务端会话未在期限内关闭").that(server.activeSessions).isEmpty()
     }
 
     private fun withoutHostNotifications() {
@@ -328,9 +341,11 @@ class SshRuntimeIntegrationTest {
 
     @Test fun `旧格式SSH批准目标在执行入口被拒绝`() = runBlocking {
         trust()
+        val sessionsBefore = createdSessions.get()
         val result = executeApproved("""["process","termux","[PTY]"]""")
         assertThat(result.status).isEqualTo("error")
         assertThat(result.content).contains("HOST_AUTHORIZATION_CHANGED")
+        assertThat(createdSessions.get()).isEqualTo(sessionsBefore)
         assertThat(server.activeSessions).isEmpty()
     }
 
@@ -345,9 +360,11 @@ class SshRuntimeIntegrationTest {
         trust()
         val target = requireNotNull(approvalTarget())
         hostStore.host = hostStore.host.copy(username = "different-user")
+        val sessionsBefore = createdSessions.get()
         val result = executeApproved(target)
         assertThat(result.status).isEqualTo("error")
         assertThat(result.content).contains("HOST_AUTHORIZATION_CHANGED")
+        assertThat(createdSessions.get()).isEqualTo(sessionsBefore)
         assertThat(server.activeSessions).isEmpty()
     }
 
