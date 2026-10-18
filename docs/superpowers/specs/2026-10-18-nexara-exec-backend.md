@@ -38,6 +38,7 @@
 | TLS | Python ssl 读不了 Android CA 目录（旧式哈希文件名）；需把 `/apex/com.android.conscrypt/cacerts` 拼成 bundle 并设 `SSL_CERT_FILE` |
 | git | 无官方 Android git；dulwich（纯 Python）可 HTTPS 克隆、add、commit、status |
 | 后台（默认电池策略） | ColorOS Hans 在熄屏后冻结整个应用 uid，前台服务（`isForeground=true`、procState 4）同样被冻结；AOSP `isFrozen` 不反映该冻结 |
+| 亮屏无前台界面 | 内置执行设备测试（instrumentation，无 Activity）在亮屏时启动约 3 秒后被 Hans 冻结，连同刚 fork 尚未 exec 的子进程；冻结期间测试与子进程都不推进，收到 SIGQUIT 后解冻并继续，SIGCONT 不解冻；超时按单调时钟计算，冻结时长计入超时（推断，未单独实测） |
 | 后台（“完全允许后台行为”，未充电锁屏 15 分钟） | 不再被冻结，前台服务内的子进程运行到结束；但 CPU 会深度休眠，每 5 秒一次的心跳只写了 49/约 175 行，最长间隔 66 秒。持续计算需要 `PARTIAL_WAKE_LOCK` |
 | 对账耗时 | 2 万个 4 KB 文件：元数据遍历 171 ms，size+mtime 差异检测并重算差异文件哈希 266 ms；全量 SHA-256 483 ms |
 | Termux SAF 挂载 | 读写挂载 Termux 主目录后双向可用：Termux 新建的文件立即在 Nexara `/mnt/<别名>` 可见；Nexara 经 `create_file` 写入的文件在 Termux 主目录可见，属主为 Termux uid |
@@ -138,7 +139,7 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 
 ### 4.5 后台与生命周期
 
-- 命令运行期间以前台服务持有 `:exec` 进程，通知显示命令摘要与停止按钮。服务类型：侧载渠道用 `specialUse`；Play 渠道的类型与政策声明需单独评审。
+- 命令运行期间以前台服务保持主进程处于前台优先级，通知显示命令摘要与停止按钮。服务类型：侧载渠道用 `specialUse`；Play 渠道的类型与政策声明需单独评审。
 - 命令运行期间持有 `PARTIAL_WAKE_LOCK`，超时上限即持有上限，命令结束、超时或取消时立即释放；不持有时锁屏后 CPU 休眠，命令会大幅变慢。
 - 运行中若检测到心跳停滞（子进程 CPU 时间不增长且应用不在前台），结果追加 `guidance`：系统可能冻结了后台进程，请将 Nexara 设为“完全允许后台行为”。Termux 设置页已有同类文案，内置后端复用。
 - 进程被系统结束时返回 `error_code = EXEC_PROCESS_KILLED`，对账照常执行。
@@ -203,5 +204,5 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 | 命令自行 `setsid`/守护化的进程不在进程组内，结束后可能继续改动工作区 | 未处理；对账只反映结束时刻的磁盘状态 |
 | 对账重算大文件哈希的耗时（数 GB 文件需数秒）与 inode 复用导致的误判移动（要求文件 size 与 mtime 同时未变） | 已知限制 |
 | 命令在对账之后才写入的文件、或进程被杀后到下一次修改之间的磁盘变化 | 由 `.nexara_command_pending` 恢复对账收敛；根身份标记若在进程被杀前已被删除则无法自动恢复 |
-| 前台服务与 `PARTIAL_WAKE_LOCK` 未接入，锁屏后长命令变慢或被冻结 | 第 7 步 |
+| 前台服务与 `PARTIAL_WAKE_LOCK` 未接入，离开应用或锁屏后命令变慢或被 ColorOS 等厂商冻结 | 第 7 步 |
 | `ssh_exec` 超限时保留开头，长输出的结尾（通常是错误）会丢失 | 改为保留尾部需先实现流式遮蔽（跨块识别凭据与私钥块） |
