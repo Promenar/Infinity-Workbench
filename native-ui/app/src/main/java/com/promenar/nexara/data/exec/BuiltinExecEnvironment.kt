@@ -16,9 +16,14 @@ class BuiltinExecEnvironment(
     private val homeDirectory: File,
     private val tempDirectory: File,
     private val caBundle: () -> File?,
+    /** 为 null 时（Play 渠道）不开放 pip 与用户站点目录。 */
+    private val userPackages: PythonUserPackages? = null,
     private val inherited: Map<String, String> = System.getenv(),
 ) {
     val pythonAvailable: Boolean get() = python.isAvailable
+
+    /** 侧载渠道开放 pip；Play 渠道 `pip` 返回 PIP_UNSUPPORTED。 */
+    val pipAvailable: Boolean get() = userPackages != null
 
     fun forWorkspace(workspace: File): Map<String, String> {
         homeDirectory.mkdirs()
@@ -36,6 +41,16 @@ class BuiltinExecEnvironment(
             environment["PYTHONUTF8"] = "1"
             environment["NEXARA_PYTHON"] = python.launcher.path
             caBundle()?.let { environment["SSL_CERT_FILE"] = it.path }
+            userPackages?.let { packages ->
+                environment.remove("PYTHONNOUSERSITE")
+                environment["PYTHONUSERBASE"] = packages.userBase.path
+                environment["NEXARA_PIP"] = "1"
+                environment["NEXARA_PIP_DIR"] = packages.pipDirectory.path
+                environment["PIP_CACHE_DIR"] = packages.cacheDirectory.path
+                environment["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+                environment["PIP_NO_INPUT"] = "1"
+                environment["PIP_PROGRESS_BAR"] = "off"
+            }
         }
         return environment
     }
@@ -46,11 +61,17 @@ class BuiltinExecEnvironment(
 
     val pythonLauncher: File get() = python.launcher
 
-    /** sh 不能 execve 数据目录中的包装脚本，`python3`/`python` 以 shell 函数提供。 */
+    /**
+     * sh 不能 execve 数据目录中的包装脚本，`python3`/`python`、`git`（dulwich）与 `pip` 以 shell 函数提供；
+     * 函数只在本次命令的 shell 中有效，子 shell 与 Python 的 subprocess 找不到它们。
+     */
     fun shellPrelude(): String = if (python.isAvailable) {
-        "python3() { LD_LIBRARY_PATH=\"\$NEXARA_PYEXT_DIR\" \"\$NEXARA_PYTHON\" \"\$@\"; }; python() { python3 \"\$@\"; }"
+        "python3() { LD_LIBRARY_PATH=\"\$NEXARA_PYEXT_DIR\" \"\$NEXARA_PYTHON\" \"\$@\"; }; python() { python3 \"\$@\"; }; " +
+            "git() { python3 -m nexara_git \"\$@\"; }; pip() { python3 -m nexara_pip \"\$@\"; }; pip3() { pip \"\$@\"; }"
     } else {
-        "python3() { echo \"python3: $PYTHON_UNAVAILABLE_SHORT\" >&2; return 127; }; python() { python3 \"\$@\"; }"
+        listOf("python3", "git", "pip").joinToString("; ") { name ->
+            "$name() { echo \"$name: $PYTHON_UNAVAILABLE_SHORT\" >&2; return 127; }"
+        } + "; python() { python3 \"\$@\"; }; pip3() { pip \"\$@\"; }"
     }
 
     companion object {
@@ -61,17 +82,27 @@ class BuiltinExecEnvironment(
             "PATH", "ANDROID_ROOT", "ANDROID_DATA", "ANDROID_ART_ROOT", "ANDROID_I18N_ROOT", "ANDROID_TZDATA_ROOT",
         )
 
-        fun create(context: Context): BuiltinExecEnvironment {
+        fun create(context: Context, pipEnabled: Boolean): BuiltinExecEnvironment {
             val bundle = SystemCaBundle(File(context.noBackupFilesDir, "exec-ca"))
             return BuiltinExecEnvironment(
                 python = PackagedPython.from(context),
                 homeDirectory = File(context.filesDir, "exec-home"),
                 tempDirectory = File(context.cacheDir, "exec-tmp"),
                 caBundle = bundle::ensure,
+                userPackages = if (pipEnabled) {
+                    PythonUserPackages(
+                        userBase = File(context.filesDir, "python-user"),
+                        pipDirectory = File(context.noBackupFilesDir, "python-pip"),
+                        cacheDirectory = File(context.cacheDir, "pip"),
+                    )
+                } else null,
             )
         }
     }
 }
+
+/** pip 安装位置：[userBase] 为用户站点根目录，[pipDirectory] 存放从标准库取出的 pip wheel。 */
+data class PythonUserPackages(val userBase: File, val pipDirectory: File, val cacheDirectory: File)
 
 /**
  * Python ssl 无法读取 Android 以哈希命名的系统证书目录；把系统证书拼成 PEM bundle。

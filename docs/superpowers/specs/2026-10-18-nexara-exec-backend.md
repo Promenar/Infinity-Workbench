@@ -98,19 +98,21 @@ ToolExecutor
 
 ### 4.1 打包内容
 
-状态：Python 打包、shell 入口与 CA bundle 已实施（构建见 `docs/distribution-builds.md#打包-python`，运行时见 `data/exec/PackagedPython.kt`、`BuiltinExecEnvironment.kt`）；git 与 pip 随第 6 步实施。
+状态：已实施（构建见 `docs/distribution-builds.md#打包-python`，运行时见 `data/exec/PackagedPython.kt`、`BuiltinExecEnvironment.kt`，git 与 pip 包装见 `app/python/site/`）。
 
 | 组件 | 形式 | 说明 |
 | --- | --- | --- |
 | shell | 系统 `/system/bin/sh` | 不打包 busybox/toybox；命令文案声明“POSIX sh + 系统 toybox，具体命令随设备不同” |
 | Python 3.14 | `libnxpython.so`、`libpython3.14.so`、`lib*_python.so`、`libpystdlib.so`、`libpyext_*.so` | 打包库方案；stdlib 裁剪同第 2 节 |
-| `python3` / `python` 入口 | `shell_exec` 预置的 `sh` 函数 | 数据目录里的包装脚本无法经 PATH 执行（execve 被拒），因此以函数提供；函数只在该次 `sh -c` 内有效，`xargs`、`find -exec` 等外部程序调用 `python3` 时找不到。`pip` 随第 6 步提供 |
-| git | dulwich（纯 Python，随 stdlib zip 打包）+ `git` 包装 | 支持 clone、status、add、commit、log、diff、push、pull 的常用子集；不支持的子命令返回 `GIT_UNSUPPORTED` 与指引 |
+| `python3` / `python`、`git`、`pip`/`pip3` 入口 | `shell_exec` 预置的 `sh` 函数 | 数据目录里的包装脚本无法经 PATH 执行（execve 被拒），因此以函数提供；函数只在该次 `sh -c` 内有效，子 `sh` 脚本、`xargs`、`find -exec` 与 Python 的 `subprocess` 找不到，可改用 `python3 -m nexara_git` / `python3 -m nexara_pip` 或以 `.` 在当前 shell 执行脚本 |
+| 纯 Python 依赖 | `libpysite.so`：dulwich 1.2.17、urllib3 2.8.0 的 PyPI wheel（版本、地址与 SHA-256 见 `app/python/python-site.properties`）与 `app/python/site/` 中的 Nexara 模块合成的不压缩 zip | 排在标准库之后进入 `PYTHONPATH`；`python_exec` 中可直接 `import dulwich.porcelain`。用户用 pip 装的同名包排在其后，不会覆盖打包版本 |
+| git | `nexara_git`：把子命令转交 `dulwich.cli` | 开放 add、blame、branch、cat-file、checkout、cherry-pick、clean、clone、commit、config、describe、diff、fetch、for-each-ref、grep、init、log、ls-files、ls-remote、ls-tree、merge、merge-base、mv、pull、push、rebase、reflog、remote、reset、restore、rev-list、rev-parse、revert、rm、shortlog、show、show-ref、stash、status、switch、tag；全局选项只支持 `-C <目录>`。其它子命令与全局选项、SSH 远端（`ssh://`、`user@host:path`）返回 `GIT_UNSUPPORTED` 与改用 Termux/SSH 的指引，退出码 2；其它失败输出单行 `fatal:`，退出码 128。补齐 dulwich 缺少的写法：`add -A`、`commit -F <文件>`、`remote [-v]`/`get-url`/`set-url`/`remove`，本地克隆源记为绝对路径。没有编辑器，`commit` 缺少 `-m`/`-F` 时直接报错；未配置 `user.name`/`user.email`（仓库、`$HOME/.gitconfig` 或 `GIT_AUTHOR_*`/`GIT_COMMITTER_*`）时 commit、merge、cherry-pick、revert、rebase、stash 返回 `GIT_IDENTITY_MISSING`，不使用 `u0_aNNN@localhost` 兜底 |
+| pip（仅侧载） | `nexara_pip`：运行标准库 `ensurepip/_bundled` 中的 pip wheel（首次使用时复制到 `noBackupFilesDir/python-pip`，zip 中的 zip 无法直接导入） | 包安装到用户站点 `filesDir/python-user`（`PYTHONUSERBASE`，侧载渠道不设 `PYTHONNOUSERSITE`），缓存在 `cacheDir/pip`，关闭版本检查与交互输入。安装后若新出现原生扩展文件，在 stderr 提醒其无法导入。Play 渠道不设 `NEXARA_PIP`，`pip` 返回 `PIP_UNSUPPORTED`，退出码 2 |
 | CA bundle | 首次运行由 `/apex/com.android.conscrypt/cacerts`（不存在时为 `/system/etc/security/cacerts`）中的 PEM 块拼出，存于 `noBackupFilesDir/exec-ca` | 证书目录的文件名、大小或修改时间变化时重建 |
 
 ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过滤打包；发行产物是不按 ABI 拆分的通用 APK，只带 arm64-v8a Python（x86_64 约 11.5 MB 只服务 x86_64 设备）。armeabi-v7a、x86 与 x86_64 设备上的 Release 中 `PackagedPython.isAvailable` 为 false，内置后端须给出不可用指引。
 
-清单变更：`packaging.jniLibs.useLegacyPackaging = true`，全部原生库改为压缩存放并在安装时解压到 `nativeLibraryDir`。实测：单 ABI 打包 Python 后 deviceTest APK 增加 11.3 MB，安装后 `nativeLibraryDir` 为 33 MB；Release 通用 APK 由约 20.8 MB 增至约 29.8 MB。需在发布说明中披露。
+清单变更：`packaging.jniLibs.useLegacyPackaging = true`，全部原生库改为压缩存放并在安装时解压到 `nativeLibraryDir`。实测：单 ABI 打包 Python 后 deviceTest APK 增加 11.3 MB，安装后 `nativeLibraryDir` 为 33 MB；Release 通用 APK 由约 20.8 MB 增至约 29.8 MB；内置 git 依赖 `libpysite.so`（不压缩 3.5 MB）再增约 0.8 MB，至约 30.6 MB。需在发布说明中披露。
 
 ### 4.2 进程与安全
 
@@ -138,6 +140,7 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 5. 根身份标记 `.nexara_root_identity` 被命令删除或改写会让后续全部工作区操作失败：命令前读取原始字节，结束后在根目录 fileKey 未变时写回，并列入保留路径警告；标记被替换为目录时对账失败。
 6. 命令运行期间工作区根存在 `.nexara_command_pending` 标记，对账成功后删除。进程在命令中途被杀时标记残留，下一次经工作区仓储的修改（新建、移动、回收、删除或再次运行命令）前先以无前快照方式对账（全部文件重算哈希、不识别移动）；恢复对账失败只记日志，不阻断后续修改。`write_file`、`patch_file` 不经工作区仓储，在恢复对账之前对已被改动的文件会因哈希与索引不一致而拒绝写入。
 7. 共享存储是 FUSE，不支持符号链接与可执行位，不适合放 git 仓库或虚拟环境；内置后端只把会话工作区作为工作目录。
+8. `.git` 目录之下的条目照常入索引（工作区与磁盘一致，移动、删除仓库时一并处理），但不发布向量化事件：仓库元数据对检索无用，`.git/config` 的远端地址可能带令牌，不应发给嵌入服务。命令结果的 `workspace_changes` 不逐条列出这些路径，只给 `git_internal_changes` 计数；`.git` 目录本身照常列出。
 
 ### 4.5 后台与生命周期
 
@@ -157,8 +160,8 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 | 能力 | 侧载 | Play |
 | --- | --- | --- |
 | shell_exec、python_exec、沙箱模式 | 有 | 有（全部代码随 APK 分发） |
-| pip 安装 | 有，仅纯 Python 包，安装到 `filesDir/python-user` | 默认关闭，待政策评审 |
-| git clone/pull | 有 | 有 |
+| pip 安装 | 有，仅纯 Python 包，安装到 `filesDir/python-user` | 不提供（`PIP_UNSUPPORTED`），待政策评审 |
+| git（dulwich） | 有 | 有（代码随 APK 分发） |
 | 前台服务类型 | `specialUse`（已声明） | 不声明，只持有唤醒锁；待评审 |
 
 ## 5. Termux 与 SSH 后端（D）
@@ -192,7 +195,7 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 3. 打包 Python（构建脚本纳入 Gradle 任务，产物不入库，按版本与 SHA-256 校验官方包）与 `useLegacyPackaging`。（已完成）标准库未预编译 `.pyc`（需要同版本的宿主 Python），冷启动沿用第 2 节实测值。
 4. `shell_exec`、`python_exec`、审批卡片、工作区写锁与对账。（已完成）不设 `:exec` 进程，原因见第 4.2 节；前台服务与唤醒锁属于第 7 步。
 5. 沙箱模式。
-6. dulwich 与 `git` 包装、pip（侧载）。
+6. dulwich 与 `git` 包装、pip（侧载）。（已完成）不改动 `ensurepip` 与标准库 zip；dulwich 依赖单独打包为 `libpysite.so`，便于独立升级与发行扫描。
 7. 前台服务、唤醒锁与冻结检测文案。（已完成）停止按钮返回结构化结果 `EXEC_STOPPED` 而非取消整轮生成；冻结检测以轮询间隔判断并把暂停时间排除在超时之外，没有采用子进程 CPU 时间心跳。
 
 每一步的验收：单元测试覆盖结果格式、对账差异、失败摘要；设备测试在 API 31、API 35 模拟器与真机上覆盖命令执行、超时、取消、对账与审批。
@@ -204,7 +207,9 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 | 持有 `PARTIAL_WAKE_LOCK` 后锁屏未充电时心跳是否连续，以及耗电 | 未测 |
 | Play Feature Delivery 按需模块中的原生库是否进入可执行的 `nativeLibraryDir`，可否把 Python 改为按需下载 | 未测 |
 | Play 政策对解释器加载 pip 包的适用性 | 未评审 |
-| dulwich 的 push、pull 与认证（已实测 clone、add、commit、status） | 未测 |
+| dulwich 经 HTTPS 推送与认证（已实测：HTTPS 浅克隆公开仓库；本地裸仓库的 push、pull；init、add、commit、log、diff、status、branch、remote） | HTTPS push 未测；私有仓库只能把令牌写进远端 URL（会存入工作区的 `.git/config`），未接入凭据存储 |
+| shell 函数在子 `sh` 脚本与 `subprocess` 中不可见 | 已知限制；工具说明给出 `python3 -m nexara_git` 等替代写法 |
+| 用户 pip 安装的包排在打包依赖之后（如更新的 urllib3 被打包版本遮蔽） | 已知限制；保证内置 git 行为稳定 |
 | 沙箱模式下 Binder 传输大文件（超过 1 MB 需分块） | 未实现 |
 | `linker64` / 数据目录 dlopen 的 auditallow 在后续系统版本被收紧 | 设计不依赖该行为 |
 | 命令绕过回收区，删除与覆盖不可恢复 | 审批时明示；是否加硬链接快照另行评估 |

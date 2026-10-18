@@ -47,13 +47,15 @@ Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得
 - `lib-dynload` 中的扩展改名为 `libpyext_<模块>.so`，由 `sitecustomize.py` 的 meta_path finder 从 `NEXARA_PYEXT_DIR` 加载；
 - 启动器 `python/pylauncher.c` 用 AGP 所选 NDK 的 clang 编译为 `libnxpython.so`（`-Wl,-rpath,$ORIGIN`，16 KB 页对齐）。
 
+内置 git 的纯 Python 依赖单独打包：`fetchPackagedPythonWheel<名称>` 按 `native-ui/app/python/python-site.properties` 中的 PyPI 地址与 SHA-256 下载 dulwich、urllib3 的 `py3-none-any` wheel（缓存在同一目录的 `wheels/` 下，`-Pnexara.pythonDistDir` 同样适用）；`preparePackagedSite<ABI>` 把 wheel 内容（去掉 `*.data/`、`__pycache__` 与 `dulwich/tests/`）与 `python/site/` 中的 `nexara_git.py`、`nexara_pip.py` 合成不压缩 zip `libpysite.so`，含原生库、路径越界或模块重名时构建失败。两个 zip 都不是 ELF，`keepDebugSymbols` 跳过符号剥离。
+
 同一输入生成的 zip 与启动器字节一致。`packaging.jniLibs.useLegacyPackaging = true` 让安装器把全部原生库解压到 `nativeLibraryDir`，启动器才能被 execve；代价是 APK 内原生库改为压缩存放、安装后多占约 33 MB（单 ABI）。运行时由 `data/exec/PackagedPython` 定位启动器、标准库并给出解释器环境变量。
 
 设备回归类为 `com.promenar.nexara.data.exec.PackagedPythonDeviceTest`，已纳入 `android-device-core-e2e.sh`：检查原生库已解压、版本与 `BuildConfig.PACKAGED_PYTHON_VERSION` 一致、ssl/sqlite3/hashlib/zlib/ctypes/decimal/socket 可用且扩展来自 `nativeLibraryDir`、`test` 包已裁剪，以及退出码与 stderr 原样返回。
 
-发行校验 `scripts/verify-release-apk.py` 的敏感信息扫描对这些条目有窄豁免：`libpython3.*`、`lib*_python.so`、`libpyext_*.so` 与 `libpystdlib.so` 放行 python.org 构建机的 `/Users/runner/`、`/home/runner/`；`libpystdlib.so` 另放行标准库中的保留地址常量与 venv 激活脚本里的 `C:\Users\` 示例。凭据类模式、其它用户路径和自编译的 `libnxpython.so` 不在豁免内。Release 通用 APK 实测约 29.8 MB，校验上限 50 MB。
+发行校验 `scripts/verify-release-apk.py` 的敏感信息扫描对这些条目有窄豁免：`libpython3.*`、`lib*_python.so`、`libpyext_*.so` 与 `libpystdlib.so` 放行 python.org 构建机的 `/Users/runner/`、`/home/runner/`；`libpystdlib.so` 另放行标准库中的保留地址常量与 venv 激活脚本里的 `C:\Users\` 示例；`libpysite.so` 只放行 urllib3 文档中的占位地址 `https://username:password@`。凭据类模式、其它用户路径和自编译的 `libnxpython.so` 不在豁免内。Release 通用 APK 实测约 30.6 MB（其中内置 git 依赖约 0.8 MB），校验上限 50 MB。
 
-升级 Python：在 python.org 发布页、sigstore 包内摘要与本地下载三处核对 SHA-256 后修改 `python-android.properties`，再运行设备回归。
+升级 Python：在 python.org 发布页、sigstore 包内摘要与本地下载三处核对 SHA-256 后修改 `python-android.properties`，再运行设备回归。升级 dulwich 或 urllib3：核对 PyPI 文件页的 SHA-256 与 dulwich 的依赖要求后修改 `python-site.properties`，再运行 `BuiltinExecDeviceTest`（含本地提交、裸仓库推拉、HTTPS 克隆与侧载 pip 安装）。
 
 ## 富内容 WebView
 

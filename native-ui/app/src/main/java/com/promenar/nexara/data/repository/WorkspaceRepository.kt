@@ -1075,16 +1075,18 @@ class WorkspaceRepository(
         }
         dao.commitCommandReconcile(inserts, updates.values.toList())
 
-        (inserts + updates.values).filter(DocumentReferenceExtractor::supports).forEach { entry ->
-            try {
-                indexEventSink.publish(FileIndexEvent.Changed(root.uuid, entry.uuid, entry.hash, entry.updatedAt.coerceAtLeast(1)))
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                // 索引记录已提交；未发布的事件由待处理索引协调器按 vectorized_at 补偿。
-                NexaraLogger.logError("WorkspaceCommand.publishIndex", failure)
+        (inserts + updates.values)
+            .filter { DocumentReferenceExtractor.supports(it) && !isGitInternalWorkspacePath(it.materializedPath) }
+            .forEach { entry ->
+                try {
+                    indexEventSink.publish(FileIndexEvent.Changed(root.uuid, entry.uuid, entry.hash, entry.updatedAt.coerceAtLeast(1)))
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    // 索引记录已提交；未发布的事件由待处理索引协调器按 vectorized_at 补偿。
+                    NexaraLogger.logError("WorkspaceCommand.publishIndex", failure)
+                }
             }
-        }
     }
 
     override suspend fun getNextSeqForDate(dateKey: String): Int = seqDao.getNextSeqForDate(dateKey)

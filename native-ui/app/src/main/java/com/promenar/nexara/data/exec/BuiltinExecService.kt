@@ -2,6 +2,7 @@ package com.promenar.nexara.data.exec
 
 import com.promenar.nexara.data.repository.WorkspaceChangeReport
 import com.promenar.nexara.data.repository.WorkspaceCommandHost
+import com.promenar.nexara.data.repository.isGitInternalWorkspacePath
 import com.promenar.nexara.domain.tool.CommandToolResult
 import com.promenar.nexara.domain.tool.CommandTruncation
 import kotlinx.coroutines.CancellationException
@@ -30,6 +31,8 @@ class BuiltinExecService(
     private val keepAlive: ExecKeepAlive = NoExecKeepAlive,
     private val wallClockMillis: () -> Long = System::currentTimeMillis,
 ) {
+    val pipAvailable: Boolean get() = environment.pipAvailable
+
     suspend fun runShell(
         workspaceRootUuid: String,
         sessionId: String?,
@@ -184,24 +187,32 @@ class BuiltinExecService(
                 put("workspace_changes", kotlinx.serialization.json.JsonNull)
                 return@buildJsonObject
             }
-            val total = changes.added.size + changes.modified.size + changes.removed.size + changes.moved.size
+            // .git 内部对象照常入索引，但不逐条列出，免得一次提交的对象文件挤占真正的改动。
+            val added = changes.added.filterNot(::isGitInternalWorkspacePath)
+            val modified = changes.modified.filterNot(::isGitInternalWorkspacePath)
+            val removed = changes.removed.filterNot(::isGitInternalWorkspacePath)
+            val moved = changes.moved.filterNot { (from, to) -> isGitInternalWorkspacePath(from) || isGitInternalWorkspacePath(to) }
+            val gitInternal = changes.added.size + changes.modified.size + changes.removed.size + changes.moved.size -
+                (added.size + modified.size + removed.size + moved.size)
+            val total = added.size + modified.size + removed.size + moved.size
             var budget = MAX_LISTED_PATHS
             fun take(paths: List<String>): List<String> = paths.take(budget).also { budget -= it.size }
             putJsonObject("workspace_changes") {
-                putJsonArray("added") { take(changes.added).forEach { add(JsonPrimitive(it)) } }
-                putJsonArray("modified") { take(changes.modified).forEach { add(JsonPrimitive(it)) } }
-                putJsonArray("removed") { take(changes.removed).forEach { add(JsonPrimitive(it)) } }
+                putJsonArray("added") { take(added).forEach { add(JsonPrimitive(it)) } }
+                putJsonArray("modified") { take(modified).forEach { add(JsonPrimitive(it)) } }
+                putJsonArray("removed") { take(removed).forEach { add(JsonPrimitive(it)) } }
                 putJsonArray("moved") {
-                    changes.moved.take(budget).also { budget -= it.size }.forEach { (from, to) ->
+                    moved.take(budget).also { budget -= it.size }.forEach { (from, to) ->
                         add(buildJsonObject { put("from", from); put("to", to) })
                     }
                 }
                 put("counts", buildJsonObject {
-                    put("added", changes.added.size)
-                    put("modified", changes.modified.size)
-                    put("removed", changes.removed.size)
-                    put("moved", changes.moved.size)
+                    put("added", added.size)
+                    put("modified", modified.size)
+                    put("removed", removed.size)
+                    put("moved", moved.size)
                 })
+                if (gitInternal > 0) put("git_internal_changes", gitInternal)
                 put("truncated", total > MAX_LISTED_PATHS)
             }
             val warnings = buildList {

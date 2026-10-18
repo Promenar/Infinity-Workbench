@@ -3,7 +3,9 @@ import com.android.compose.screenshot.tasks.PreviewScreenshotValidationTask
 import com.promenar.nexara.buildlogic.FetchVerifiedFile
 import com.promenar.nexara.buildlogic.GenerateLauncherIcons
 import com.promenar.nexara.buildlogic.PackagedPythonRelease
+import com.promenar.nexara.buildlogic.PackagedPythonWheels
 import com.promenar.nexara.buildlogic.PreparePackagedPython
+import com.promenar.nexara.buildlogic.PreparePackagedSite
 import groovy.json.JsonSlurper
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
@@ -215,6 +217,27 @@ val preparePackagedPython = packagedPythonAbis.mapValues { (abi, arch) ->
     }
 }
 
+// 内置 git 的纯 Python 依赖：wheel 按 SHA-256 校验后与 python/site 中的 Nexara 模块合成 libpysite.so。
+val packagedPythonWheels = PackagedPythonWheels.load(file("python/python-site.properties").toPath())
+val fetchPackagedPythonWheels = packagedPythonWheels.names.map { name ->
+    tasks.register<FetchVerifiedFile>("fetchPackagedPythonWheel${name.replaceFirstChar { it.uppercaseChar() }}") {
+        description = "下载并校验 ${packagedPythonWheels.fileName(name)}。"
+        url.set(packagedPythonWheels.url(name))
+        sha256.set(packagedPythonWheels.sha256(name))
+        outputFile.set(layout.file(packagedPythonDistDir.map { File(it, "wheels/${packagedPythonWheels.fileName(name)}") }))
+    }
+}
+val preparePackagedSite = packagedPythonAbis.keys.associateWith { abi ->
+    val taskSuffix = abi.split('-', '_').joinToString("") { part -> part.replaceFirstChar { it.uppercaseChar() } }
+    tasks.register<PreparePackagedSite>("preparePackagedSite$taskSuffix") {
+        wheels.from(fetchPackagedPythonWheels.map { fetch -> fetch.flatMap { it.outputFile } })
+        moduleDirectory.set(layout.projectDirectory.dir("python/site"))
+        excludedPrefixes.set(listOf("dulwich/tests/"))
+        this.abi.set(abi)
+        outputDirectory.set(layout.buildDirectory.dir("generated/packagedPythonSite/$abi"))
+    }
+}
+
 androidComponents.onVariants { variant ->
     val capitalizedName = variant.name.replaceFirstChar { it.uppercaseChar() }
     // 只为变体实际打包的 ABI 准备 Python。未设 abiFilters 的通用包（Release）只带 arm64-v8a：
@@ -223,6 +246,9 @@ androidComponents.onVariants { variant ->
     val pythonAbis = variantAbis.ifEmpty { setOf("arm64-v8a") }
     preparePackagedPython.filterKeys { it in pythonAbis }.values.forEach { prepare ->
         variant.sources.jniLibs?.addGeneratedSourceDirectory(prepare, PreparePackagedPython::getOutputDirectory)
+    }
+    preparePackagedSite.filterKeys { it in pythonAbis }.values.forEach { prepare ->
+        variant.sources.jniLibs?.addGeneratedSourceDirectory(prepare, PreparePackagedSite::getOutputDirectory)
     }
     val generateIcons = tasks.register<GenerateLauncherIcons>("generate${capitalizedName}NexaraLauncherIcons") {
         masterSvg.set(rootProject.layout.projectDirectory.file("../assets/branding/nexara-fold-master.svg"))
@@ -393,8 +419,8 @@ android {
         jniLibs.excludes += "**/libtermux.so"
         // 打包的 Python 启动器与扩展需要真实文件路径才能 execve/dlopen，安装时必须解压到 nativeLibraryDir。
         jniLibs.useLegacyPackaging = true
-        // libpystdlib.so 是标准库 zip，不是 ELF，跳过符号剥离。
-        jniLibs.keepDebugSymbols += "**/libpystdlib.so"
+        // libpystdlib.so 与 libpysite.so 是 Python 模块 zip，不是 ELF，跳过符号剥离。
+        jniLibs.keepDebugSymbols += listOf("**/libpystdlib.so", "**/libpysite.so")
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }

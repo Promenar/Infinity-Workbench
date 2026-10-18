@@ -20,14 +20,18 @@ private const val WORKSPACE_NOTE = "命令直接读写会话工作区：删除�
     "timeout_seconds 默认 60，最多 600；超时或结束时结束整个进程组（含后台进程）；Nexara 被系统暂停的时间不计入超时（结果给出 paused_ms）。" +
     "用户可在通知栏停止命令（error_code 为 EXEC_STOPPED，不要自动重试）。stdout、stderr 各保留尾部 32000 字符。"
 
-/** 内置后端的 sh 命令；需要 apt 包、编译工具链或原生 Python 扩展时改用 Termux 或 SSH。 */
+/** 内置后端的 sh 命令，附带 python3、git（dulwich）与侧载渠道的 pip 函数；需要 apt 包、编译工具链或原生 Python 扩展时改用 Termux 或 SSH。 */
 class ShellExecSkill(private val service: BuiltinExecService) : SkillDefinition {
     override val id = "shell_exec"
     override val name = id
     override val risk = ToolRisk.PROCESS
     override val description = "在本机用系统 /system/bin/sh 执行命令（POSIX sh 与系统 toybox，可用命令随设备不同），无需 Termux；" +
-        "python3/python 调用内置 Python 3.14（仅 arm64 设备）。" + WORKSPACE_NOTE +
-        "需要 apt 包、编译工具链或原生 Python 扩展时改用 termux_exec 或 ssh_exec。"
+        "python3/python 调用内置 Python 3.14（仅 arm64 设备）；git 为内置 dulwich 包装，支持 clone/status/add/commit/log/diff/branch/checkout/pull/push 等常用子命令，" +
+        "远端只支持 HTTPS，提交前需 git config user.name 与 user.email，不支持的子命令返回 GIT_UNSUPPORTED。" +
+        (if (service.pipAvailable) "pip install 可安装纯 Python 包到应用用户目录（含原生扩展的包即使装上也无法导入），安装后可直接 import。" else "") +
+        "python3、git" + (if (service.pipAvailable) "、pip" else "") + " 是本次 shell 中的函数，子 sh 脚本与 subprocess 中不可见" +
+        "（可改用 python3 -m nexara_git" + (if (service.pipAvailable) " / python3 -m nexara_pip" else "") + "，或用 . 脚本 在当前 shell 执行）。" + WORKSPACE_NOTE +
+        "需要 apt 包、编译工具链、SSH 远端 git 或原生 Python 扩展时改用 termux_exec 或 ssh_exec。"
     override val mcpServerId: String? = null
     override val parametersSchema = """{"type":"object","properties":{"command":{"type":"string","description":"在 sh -c 中执行的命令"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"stdin":{"type":"string","description":"可选标准输入"}},"required":["command"],"additionalProperties":false}"""
     private val validator = ToolSchemaValidator()
@@ -51,12 +55,13 @@ class ShellExecSkill(private val service: BuiltinExecService) : SkillDefinition 
     }
 }
 
-/** 内置 Python 3.14：标准库完整（已裁剪 test、tkinter 等），无第三方包。 */
+/** 内置 Python 3.14：标准库完整（已裁剪 test、tkinter 等），附带 dulwich；侧载渠道可用 pip 安装纯 Python 包。 */
 class PythonExecSkill(private val service: BuiltinExecService) : SkillDefinition {
     override val id = "python_exec"
     override val name = id
     override val risk = ToolRisk.PROCESS
-    override val description = "用内置 Python 3.14 以 python -c 执行代码（仅 arm64 设备；含 ssl、sqlite3、json、csv、zipfile 等标准库，无 numpy/pandas 等第三方包），" +
+    override val description = "用内置 Python 3.14 以 python -c 执行代码（仅 arm64 设备；含 ssl、sqlite3、json、csv、zipfile 等标准库与 dulwich（import dulwich.porcelain 操作 git 仓库）；" +
+        (if (service.pipAvailable) "其它第三方包需先用 shell_exec 运行 pip install（仅纯 Python 包）），" else "无 numpy/pandas 等其它第三方包），") +
         "sys.path 包含工作区根，可导入工作区中的模块。" + WORKSPACE_NOTE +
         "需要原生扩展包时改用 termux_exec 或 ssh_exec。"
     override val mcpServerId: String? = null

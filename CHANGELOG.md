@@ -35,6 +35,13 @@ All notable changes to this project will be documented in this file.
 - 原生库改为安装时解压（`useLegacyPackaging`）：Release 通用 APK 由约 20.8 MB 增至约 29.8 MB，安装后原生库目录约 33 MB（单 ABI）。
 - 发行 APK 敏感信息扫描对打包的官方 Python 条目放行上游构建机 `runner` 路径，并对标准库 zip 放行保留地址常量与 venv 示例路径；凭据类模式、其它用户路径及自编译启动器照常检查。
 
+### 内置 git 与 pip
+
+- `shell_exec` 新增 `git`：基于随 APK 打包的 dulwich 1.2.17（纯 Python，与 urllib3 一起合成 `libpysite.so`，构建时按 SHA-256 校验 PyPI wheel），开放 clone、status、add、commit、log、diff、branch、checkout、fetch、pull、push、remote、stash、tag 等常用子命令与 `-C <目录>`；`add -A`、`commit -F`、`remote -v`/`get-url`/`set-url`/`remove` 由包装补齐。不支持的子命令、全局选项与 SSH 远端返回 `GIT_UNSUPPORTED` 与改用 Termux/SSH 的指引；未配置提交身份时返回 `GIT_IDENTITY_MISSING`，不再以 `u0_aNNN@localhost` 提交。`python_exec` 可直接 `import dulwich.porcelain`。
+- 侧载版新增 `pip`/`pip3`：运行标准库自带的 pip 26.2.1，把纯 Python 包装到应用用户目录并可直接 import；安装出原生扩展时提醒其无法加载。Play 版 `pip` 返回 `PIP_UNSUPPORTED`。
+- 命令结果的 `workspace_changes` 不再逐条列出 `.git` 内部文件，改为 `git_internal_changes` 计数；这些文件照常入索引，但不发布知识库向量化事件（`.git/config` 的远端地址可能带令牌）。
+- 发行扫描对 `libpysite.so` 只放行 urllib3 文档中的占位口令 URL。
+
 ### 内置命令执行
 
 - 新增 `shell_exec` 与 `python_exec`：不安装 Termux 也能在会话工作区根目录运行系统 sh 命令与内置 Python 3.14 代码（Python 仅 arm64-v8a 设备；其它架构返回 `EXEC_PYTHON_UNAVAILABLE` 与改用 Termux/SSH 的指引）。两者为 PROCESS 风险，半自动与手动模式下逐次审批并绑定完整命令或代码；审批卡提示可访问 Nexara 私有数据与网络、删除或覆盖的文件不进回收站。

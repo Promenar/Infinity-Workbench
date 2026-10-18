@@ -21,11 +21,8 @@ import javax.inject.Inject;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -33,9 +30,6 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.CRC32;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 /**
  * 把官方 CPython Android 嵌入包整理成可放进 jniLibs 的打包库：
@@ -44,9 +38,6 @@ import java.util.zip.ZipOutputStream;
  * 安装后全部位于 nativeLibraryDir，运行时不解压、不从数据目录加载代码。
  */
 public abstract class PreparePackagedPython extends DefaultTask {
-    /** zip 条目使用固定本地时间，保证同一输入在任意时区得到相同字节。 */
-    private static final LocalDateTime ZIP_TIME = LocalDateTime.of(1980, 2, 1, 0, 0);
-
     @InputFile @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getArchive();
 
@@ -149,10 +140,7 @@ public abstract class PreparePackagedPython extends DefaultTask {
         if (modules.isEmpty()) throw new GradleException("Python 包结构不符：lib-dynload 中没有扩展模块");
     }
 
-    /**
-     * 标准库存为 STORED zip：zlib 本身是扩展模块，解释器启动早期尚不可用，压缩条目无法读取。
-     * 条目按路径排序并使用固定时间；目录条目保留，供命名空间包识别。
-     */
+    /** 标准库存为 STORED zip（见 {@link StoredZip}）；条目按路径排序，目录条目保留，供命名空间包识别。 */
     private static void writeStdlibZip(Path stdlib, Path siteCustomize, Path target) throws IOException {
         List<Path> entries = new ArrayList<>();
         try (Stream<Path> walk = Files.walk(stdlib)) {
@@ -167,35 +155,20 @@ public abstract class PreparePackagedPython extends DefaultTask {
         if (Files.exists(stdlib.resolve("sitecustomize.py"))) {
             throw new GradleException("官方标准库已包含 sitecustomize.py，需评估后再覆盖");
         }
-        try (OutputStream file = Files.newOutputStream(target); ZipOutputStream zip = new ZipOutputStream(file, StandardCharsets.UTF_8)) {
-            zip.setMethod(ZipOutputStream.STORED);
+        try (StoredZip zip = new StoredZip(target)) {
             for (Path path : entries) {
                 if (Files.isDirectory(path)) {
-                    putStored(zip, entryName(stdlib, path) + "/", new byte[0]);
+                    zip.directory(entryName(stdlib, path));
                 } else {
-                    putStored(zip, entryName(stdlib, path), Files.readAllBytes(path));
+                    zip.put(entryName(stdlib, path), Files.readAllBytes(path));
                 }
             }
-            putStored(zip, "sitecustomize.py", Files.readAllBytes(siteCustomize));
+            zip.put("sitecustomize.py", Files.readAllBytes(siteCustomize));
         }
     }
 
     private static String entryName(Path root, Path path) {
         return root.relativize(path).toString().replace(File.separatorChar, '/');
-    }
-
-    private static void putStored(ZipOutputStream zip, String name, byte[] content) throws IOException {
-        CRC32 crc = new CRC32();
-        crc.update(content);
-        ZipEntry entry = new ZipEntry(name);
-        entry.setMethod(ZipEntry.STORED);
-        entry.setSize(content.length);
-        entry.setCompressedSize(content.length);
-        entry.setCrc(crc.getValue());
-        entry.setTimeLocal(ZIP_TIME);
-        zip.putNextEntry(entry);
-        zip.write(content);
-        zip.closeEntry();
     }
 
     private void compileLauncher(Path prefix, Path abiDir) {

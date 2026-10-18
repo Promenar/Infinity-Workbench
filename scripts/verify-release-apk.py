@@ -83,6 +83,12 @@ STDLIB_ALLOWANCES: dict[str, re.Pattern[bytes]] = {
     "私网或 CGNAT 测试地址": re.compile(rb".+", re.DOTALL),
 }
 
+# 内置 git 的纯 Python 依赖（PyPI wheel，构建时按 SHA-256 校验）：urllib3 文档示例中的占位口令 URL。
+PACKAGED_PYTHON_SITE_PATTERN = re.compile(r"lib/[^/]+/libpysite\.so\Z")
+SITE_ALLOWANCES: dict[str, re.Pattern[bytes]] = {
+    "URL 内嵌明文口令": re.compile(rb"https?://username:password@"),
+}
+
 LOCAL_INFERENCE_LIBRARY_PATTERN = re.compile(
     r"(?:libnexara_llama|libllama.*|libggml.*)\.so\Z",
     re.IGNORECASE,
@@ -276,6 +282,8 @@ def verify_signature(apk: Path, expected_digest: str) -> None:
 def upstream_allowances(entry_name: str) -> dict[str, re.Pattern[bytes]]:
     if PACKAGED_PYTHON_STDLIB_PATTERN.fullmatch(entry_name):
         return STDLIB_ALLOWANCES
+    if PACKAGED_PYTHON_SITE_PATTERN.fullmatch(entry_name):
+        return SITE_ALLOWANCES
     if PACKAGED_PYTHON_LIBRARY_PATTERN.fullmatch(entry_name):
         return UPSTREAM_BUILD_PATHS
     return {}

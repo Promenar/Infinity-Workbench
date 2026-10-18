@@ -60,21 +60,32 @@ class BuiltinExecDeviceTest {
         val now = System.currentTimeMillis()
         db.sessionDao().insert(SessionEntity(id = "s", agentId = "agent", workspacePath = workspace.path, createdAt = now, updatedAt = now))
         root = repo.ensureSessionRoot("s")
-        service = BuiltinExecService(
-            workspace = repo,
-            runner = BuiltinCommandRunner(
-                groupLauncher = listOf("/system/bin/setsid"),
-                shell = "/system/bin/sh",
-                signaller = AndroidProcessGroupSignaller,
-                scratchDirectory = { File(base, "scratch") },
-            ),
-            environment = BuiltinExecEnvironment(
-                python = PackagedPython.from(context),
-                homeDirectory = File(base, "home"),
-                tempDirectory = File(base, "tmp"),
-                caBundle = SystemCaBundle(File(base, "ca"))::ensure,
-            ),
-        )
+        service = execService(userPackages = null)
+    }
+
+    private fun execService(userPackages: PythonUserPackages?) = BuiltinExecService(
+        workspace = repo,
+        runner = BuiltinCommandRunner(
+            groupLauncher = listOf("/system/bin/setsid"),
+            shell = "/system/bin/sh",
+            signaller = AndroidProcessGroupSignaller,
+            scratchDirectory = { File(base, "scratch") },
+        ),
+        environment = BuiltinExecEnvironment(
+            python = PackagedPython.from(context),
+            homeDirectory = File(base, "home"),
+            tempDirectory = File(base, "tmp"),
+            caBundle = SystemCaBundle(File(base, "ca"))::ensure,
+            userPackages = userPackages,
+        ),
+    )
+
+    private fun pythonUserPackages() = PythonUserPackages(File(base, "python-user"), File(base, "python-pip"), File(base, "pip-cache"))
+
+    /** 测试进程能解析域名时才运行联网用例；执行后端的子进程与应用同 uid，网络权限一致。 */
+    private fun assumeNetwork(host: String) {
+        val reachable = runCatching { java.net.InetAddress.getByName(host); true }.getOrDefault(false)
+        org.junit.Assume.assumeTrue("无法解析 $host，跳过联网用例", reachable)
     }
 
     @After
@@ -158,6 +169,79 @@ class BuiltinExecDeviceTest {
         assertThat(report.getValue("ca").jsonPrimitive.int).isGreaterThan(50)
         assertThat(value.paths("added")).containsExactly("/note.txt")
         assertThat(File(workspace, "note.txt").readText()).isEqualTo("中文")
+    }
+
+    @Test
+    fun builtinGitCommitsAndClonesLocallyAndCollapsesGitInternals() = runBlocking<Unit> {
+        if (!PackagedPython.from(context).isAvailable) return@runBlocking
+        val result = shell(
+            "git --version && git init repo && cd repo && git config user.name Tester && git config user.email t@example.com && " +
+                "echo hi > a.txt && mkdir d && echo x > d/b.txt && git add -A && git commit -m first && " +
+                "echo more >> a.txt && git commit -am second && git log --oneline && cd .. && " +
+                "git clone repo copy && git -C copy log --oneline && git -C copy status",
+        ).json()
+        assertWithMessage(result.toString()).that(result.getValue("exit_code").jsonPrimitive.int).isEqualTo(0)
+        val stdout = result.getValue("stdout").jsonPrimitive.content
+        assertThat(stdout).contains("dulwich")
+        assertThat(Regex("second").findAll(stdout).count()).isEqualTo(2)
+        assertThat(File(workspace, "copy/d/b.txt").readText().trim()).isEqualTo("x")
+        val added = result.paths("added")
+        assertThat(added).containsAtLeast("/repo/.git", "/repo/a.txt", "/copy/.git", "/copy/a.txt")
+        assertThat(added.none { "/.git/" in it }).isTrue()
+        assertThat(result.getValue("workspace_changes").jsonObject.getValue("git_internal_changes").jsonPrimitive.int).isGreaterThan(0)
+        assertThat(repo.getByMaterializedPath(root.uuid, "/repo/.git/HEAD")).isNotNull()
+
+        val sync = shell(
+            "git init --bare hub.git && git -C repo remote add origin ../hub.git && git -C repo push origin master && " +
+                "git clone hub.git peer && cd repo && echo three >> a.txt && git commit -am third && git push origin master && " +
+                "cd ../peer && git pull origin && git log --oneline && git remote -v",
+        ).json()
+        assertWithMessage(sync.toString()).that(sync.getValue("exit_code").jsonPrimitive.int).isEqualTo(0)
+        assertThat(sync.getValue("stdout").jsonPrimitive.content).contains("third")
+        assertThat(sync.getValue("stdout").jsonPrimitive.content).contains("(push)")
+        assertThat(File(workspace, "peer/a.txt").readText()).contains("three")
+
+        val unsupported = shell("git -C repo bisect start").json()
+        assertThat(unsupported.getValue("exit_code").jsonPrimitive.int).isEqualTo(2)
+        assertThat(unsupported.getValue("stderr").jsonPrimitive.content).contains("GIT_UNSUPPORTED")
+        val ssh = shell("git clone git@github.com:octocat/Hello-World.git ssh-copy").json()
+        assertThat(ssh.getValue("stderr").jsonPrimitive.content).contains("SSH")
+        val anonymous = shell("git init other && cd other && echo y > y.txt && git add y.txt && git commit -m nope").json()
+        assertThat(anonymous.getValue("exit_code").jsonPrimitive.int).isEqualTo(128)
+        assertThat(anonymous.getValue("stderr").jsonPrimitive.content).contains("GIT_IDENTITY_MISSING")
+    }
+
+    @Test
+    fun builtinGitClonesOverHttps() = runBlocking<Unit> {
+        if (!PackagedPython.from(context).isAvailable) return@runBlocking
+        assumeNetwork("github.com")
+        val result = shell("git clone --depth 1 https://github.com/octocat/Hello-World.git hw && git -C hw log --oneline", timeout = 120).json()
+        assertWithMessage(result.toString()).that(result.getValue("exit_code").jsonPrimitive.int).isEqualTo(0)
+        assertThat(File(workspace, "hw/README").isFile).isTrue()
+        assertThat(result.paths("added")).contains("/hw/README")
+    }
+
+    @Test
+    fun pipInstallsPurePackageIntoUserSiteWhenEnabled() = runBlocking<Unit> {
+        if (!PackagedPython.from(context).isAvailable) return@runBlocking
+        val disabled = shell("pip --version").json()
+        assertThat(disabled.getValue("exit_code").jsonPrimitive.int).isEqualTo(2)
+        assertThat(disabled.getValue("stderr").jsonPrimitive.content).contains("PIP_UNSUPPORTED")
+
+        val enabled = execService(pythonUserPackages())
+        val version = enabled.runShell(root.uuid, "s", "pip --version", null, 60).json()
+        assertWithMessage(version.toString()).that(version.getValue("exit_code").jsonPrimitive.int).isEqualTo(0)
+        assertThat(version.getValue("stdout").jsonPrimitive.content).startsWith("pip ")
+        assumeNetwork("pypi.org")
+        val install = enabled.runShell(
+            root.uuid, "s", "pip install six==1.17.0 && python3 -c 'import six, sys; print(six.__version__, six.__file__)'", null, 180,
+        ).json()
+        assertWithMessage(install.toString()).that(install.getValue("exit_code").jsonPrimitive.int).isEqualTo(0)
+        val stdout = install.getValue("stdout").jsonPrimitive.content
+        assertThat(stdout).contains("1.17.0")
+        assertThat(stdout).contains(File(base, "python-user").path)
+        // 安装位置在应用目录，不进入工作区索引。
+        assertThat(install.paths("added")).isEmpty()
     }
 
     @Test

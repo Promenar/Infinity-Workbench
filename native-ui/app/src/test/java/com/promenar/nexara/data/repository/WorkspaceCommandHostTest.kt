@@ -114,6 +114,24 @@ class WorkspaceCommandHostTest {
     }
 
     @Test
+    fun `git 目录内部文件入索引但不发布向量化事件`() = runBlocking<Unit> {
+        val root = root()
+        events.clear()
+        repo.runCommandInWorkspace(root.uuid, "s") { physical ->
+            File(physical, "repo/.git/refs/heads").mkdirs()
+            File(physical, "repo/.git/config").writeText("[remote \"origin\"]\n\turl = https://user:token@example.com/r.git\n")
+            File(physical, "repo/.git/HEAD").writeText("ref: refs/heads/master\n")
+            File(physical, "repo/README.md").writeText("# r\n")
+        }
+        val config = checkNotNull(repo.getByMaterializedPath(root.uuid, "/repo/.git/config"))
+        val readme = checkNotNull(repo.getByMaterializedPath(root.uuid, "/repo/README.md"))
+        val changed = events.filterIsInstance<FileIndexEvent.Changed>().map { it.fileUuid }
+        assertThat(changed).contains(readme.uuid)
+        assertThat(changed).doesNotContain(config.uuid)
+        assertThat(changed).hasSize(1)
+    }
+
+    @Test
     fun `命令删除根身份标记时写回并给出保留路径警告`() = runBlocking<Unit> {
         val root = root()
         val outcome = repo.runCommandInWorkspace(root.uuid, "s") { physical ->

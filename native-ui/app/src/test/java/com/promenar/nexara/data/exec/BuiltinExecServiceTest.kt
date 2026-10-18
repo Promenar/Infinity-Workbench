@@ -144,6 +144,9 @@ class BuiltinExecServiceTest {
         val shell = json(ShellExecSkill(service()).execute(args("command" to "python3 -V"), context).content)
         assertThat(shell.getValue("exit_code").jsonPrimitive.int).isEqualTo(127)
         assertThat(shell.getValue("stderr").jsonPrimitive.content).contains("termux_exec")
+        val git = json(ShellExecSkill(service()).execute(args("command" to "git status"), context).content)
+        assertThat(git.getValue("exit_code").jsonPrimitive.int).isEqualTo(127)
+        assertThat(git.getValue("stderr").jsonPrimitive.content).contains("git: ")
         val python = PythonExecSkill(service()).execute(args("code" to "print(1)"), context)
         assertThat(python.status).isEqualTo("error")
         val value = json(python.content)
@@ -205,6 +208,24 @@ class BuiltinExecServiceTest {
         assertThat(changesJson.getValue("truncated").jsonPrimitive.boolean).isTrue()
         val warnings = fields.getValue("workspace_warnings").jsonArray.map { it.jsonObject.getValue("code").jsonPrimitive.content }
         assertThat(warnings).containsExactly("WORKSPACE_RESERVED_PATH", "WORKSPACE_UNSUPPORTED_ENTRY").inOrder()
+    }
+
+    @Test
+    fun `git 内部对象不逐条列出，只给总数，git 目录本身与工作文件照常列出`() {
+        val report = WorkspaceChangeReport(
+            added = listOf("/repo/.git", "/repo/.git/HEAD", "/repo/.git/objects/ab/cdef", "/repo/a.txt", "/.github/ci.yml"),
+            modified = listOf("/repo/.git/index"),
+            moved = listOf("/repo/.git/x" to "/repo/.git/y", "/b" to "/c"),
+        )
+        val changesJson = BuiltinExecService.workspaceFields(report).getValue("workspace_changes").jsonObject
+        assertThat(changesJson.getValue("added").jsonArray.map { it.jsonPrimitive.content })
+            .containsExactly("/repo/.git", "/repo/a.txt", "/.github/ci.yml").inOrder()
+        assertThat(changesJson.getValue("modified").jsonArray).isEmpty()
+        assertThat(changesJson.getValue("moved").jsonArray).hasSize(1)
+        assertThat(changesJson.getValue("counts").jsonObject.getValue("added").jsonPrimitive.int).isEqualTo(3)
+        assertThat(changesJson.getValue("git_internal_changes").jsonPrimitive.int).isEqualTo(4)
+        assertThat(BuiltinExecService.workspaceFields(WorkspaceChangeReport(added = listOf("/a")))
+            .getValue("workspace_changes").jsonObject.containsKey("git_internal_changes")).isFalse()
     }
 
     @Test

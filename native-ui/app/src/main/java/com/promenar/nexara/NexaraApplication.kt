@@ -639,7 +639,7 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory,
                 scratchDirectory = { File(cacheDir, "exec-run") },
                 clockNanos = android.os.SystemClock::elapsedRealtimeNanos,
             ),
-            environment = com.promenar.nexara.data.exec.BuiltinExecEnvironment.create(this),
+            environment = com.promenar.nexara.data.exec.BuiltinExecEnvironment.create(this, pipEnabled = BuildConfig.DISTRIBUTION == "sideload"),
             unavailablePythonAbi = { android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown" },
             keepAlive = com.promenar.nexara.background.exec.AndroidExecKeepAlive(
                 this,

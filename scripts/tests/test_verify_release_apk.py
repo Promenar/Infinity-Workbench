@@ -327,6 +327,7 @@ class PackagedPythonUpstreamContentTest(ApkFixtureTestCase):
         "lib/x86_64/libpyext__zstd.so": b"/home/runner/work/zstd/lib",
         "lib/x86_64/libpython3.14.so": b"/Users/runner/work/cpython",
         "lib/arm64-v8a/libssl_python.so": b"/home/runner/openssl",
+        "lib/arm64-v8a/libpysite.so": b"urllib3 url.py https://username:password@host.com:80/path",
     }
 
     def test_allows_upstream_build_paths_and_stdlib_address_constants(self) -> None:
@@ -341,6 +342,9 @@ class PackagedPythonUpstreamContentTest(ApkFixtureTestCase):
             "自编译启动器": {"lib/arm64-v8a/libnxpython.so": b"/home/runner/work"},
             "应用代码": {"classes.dex": b"/home/runner/work"},
             "伪装文件名": {"assets/libpystdlib.so": b"192.168.0.1"},
+            "站点包中的真实口令 URL": {"lib/arm64-v8a/libpysite.so": b"https://deploy:s3cretValue@example.com/"},
+            "站点包中的私网地址": {"lib/arm64-v8a/libpysite.so": b"192.168.0.1"},
+            "站点包中的构建机路径": {"lib/arm64-v8a/libpysite.so": b"/home/runner/work"},
         }
         for label, entries in cases.items():
             with self.subTest(label=label):

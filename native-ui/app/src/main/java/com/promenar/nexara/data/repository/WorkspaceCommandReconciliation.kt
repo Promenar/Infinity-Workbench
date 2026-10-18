@@ -45,6 +45,12 @@ fun interface WorkspaceTreeScanner {
 internal fun isReservedWorkspaceName(name: String): Boolean =
     name.startsWith(".nexara", ignoreCase = true) || name == ".recycle_bin"
 
+/**
+ * `.git` 目录之下的路径（不含 `.git` 目录本身）：照常入索引以保持与磁盘一致，
+ * 但不发布向量化事件（仓库元数据对检索无用，config 中的远端地址可能带令牌），命令结果也只给计数。
+ */
+fun isGitInternalWorkspacePath(path: String): Boolean = "/.git/" in path
+
 /** 现有文件工具拒绝的名称：命令可以创建，但不进入索引。 */
 internal fun isIndexableWorkspaceName(name: String): Boolean =
     name.isNotBlank() && name != "." && name != ".." && '/' !in name && '\\' !in name && '\u0000' !in name
