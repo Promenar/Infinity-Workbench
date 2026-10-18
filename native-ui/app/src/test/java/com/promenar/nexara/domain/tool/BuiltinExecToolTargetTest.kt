@@ -20,6 +20,10 @@ class BuiltinExecToolTargetTest {
             .isEqualTo("""["process","builtin","ls"]""")
         assertThat(target("shell_exec", """{"command":"  "}""")).isNull()
         assertThat(ToolExecutionTargets.display("""["process","builtin","ls -la"]""")).isEqualTo("builtin · ls -la")
+        assertThat(ToolExecutionTargets.processScope("""["process","builtin","ls -la"]""")).isEqualTo("builtin")
+        assertThat(ToolExecutionTargets.processScope("""["process","termux","ls",{"sshHostId":"h"}]""")).isEqualTo("termux")
+        assertThat(ToolExecutionTargets.processScope("""["path","/a"]""")).isNull()
+        assertThat(ToolExecutionTargets.processScope("not json")).isNull()
     }
 
     @Test fun `python_exec 审批绑定完整代码`() {

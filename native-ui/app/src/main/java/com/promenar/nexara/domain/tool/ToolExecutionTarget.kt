@@ -87,6 +87,15 @@ object ToolExecutionTargets {
     }.getOrDefault(true)
 
     /** 清除不可见控制字符与格式控制后按 UTF-16 长度限制显示，保留完整代理对。 */
+    /** 进程目标的执行位置（如 builtin、python、termux）；命令正文另行完整展示时用它代替整条目标，避免重复。 */
+    fun processScope(target: String): String? {
+        val parts = runCatching { Json.parseToJsonElement(target) as? JsonArray }.getOrNull()
+            ?.let { array -> if (array.lastOrNull() is JsonObject) JsonArray(array.dropLast(1)) else array }
+            ?.map { (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content ?: return null }
+            ?: return null
+        return parts.takeIf { it.size == 3 && it[0] == "process" }?.get(1)?.let { display(it) }?.takeIf(String::isNotBlank)
+    }
+
     fun display(target: String, maxChars: Int = 240): String {
         if (maxChars <= 0) return ""
         val parts = runCatching { Json.parseToJsonElement(target) as? JsonArray }.getOrNull()

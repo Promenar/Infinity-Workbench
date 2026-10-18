@@ -982,9 +982,13 @@ fun ApprovalCard(
                             val preview = call.preview
                             val target = call.executionTarget?.let(ToolExecutionTargets::display)
                                 ?: preview?.target?.takeIf(String::isNotBlank)
+                            // 命令正文在下方完整展示时，标题行只给执行位置，不再重复命令。
+                            val headerTarget = if (preview?.action == ApprovalPreview.Action.SCRIPT && !preview.detail.isNullOrBlank()) {
+                                call.executionTarget?.let(ToolExecutionTargets::processScope) ?: target
+                            } else target
                             NexaraMetaLine(
                                 segments = listOf(toolFriendlyName(call.name),
-                                    target ?: stringResource(R.string.chat_approval_execution_target_unknown)),
+                                    headerTarget ?: stringResource(R.string.chat_approval_execution_target_unknown)),
                                 style = MaterialTheme.typography.bodyMedium.forReading(),
                                 color = MaterialTheme.colorScheme.onSurface,
                             )

@@ -59,6 +59,28 @@ fun approvalMultipleBatch2Preview() = InlineBatch2Frame {
 }
 
 @PreviewTest
+@Preview(name = "内置命令审批 深中411", widthDp = 411, heightDp = 520, locale = "zh-rCN")
+@Composable
+fun approvalBuiltinShellBatch2Preview() = InlineBatch2Frame {
+    val command = "cd notes\nls -la\ngrep -rn \"TODO\" ."
+    ApprovalCard(
+        toolName = "shell_exec",
+        description = "",
+        calls = listOf(
+            ApprovalDisplayCall(
+                name = "shell_exec",
+                argumentsSummary = "{\"command\":\"cd notes\"}",
+                riskLabel = "命令执行",
+                preview = ApprovalPreview.Preview(ApprovalPreview.Action.SCRIPT, "", command, commandRunsInWorkspace = true),
+                executionTarget = "[\"process\",\"builtin\",\"cd notes\\nls -la\\ngrep -rn \\\"TODO\\\" .\"]",
+                highRisk = true,
+            ),
+        ),
+        onAlwaysAllow = {},
+    )
+}
+
+@PreviewTest
 @Preview(name = "已执行审批 深中411", widthDp = 411, heightDp = 520, locale = "zh-rCN")
 @Composable
 fun approvalExecutedBatch2Preview() = InlineBatch2Frame {
