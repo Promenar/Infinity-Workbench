@@ -445,6 +445,8 @@ run_test rag-workspace-source-selector "${APP_RUNNER}" \
     -e class com.promenar.nexara.ui.rag.RagWorkspaceSourceSelectorDeviceTest
 run_test agent-hub-content "${APP_RUNNER}" \
     -e class com.promenar.nexara.ui.hub.AgentHubScreenContentTest
+run_test packaged-python "${APP_RUNNER}" \
+    -e class com.promenar.nexara.data.exec.PackagedPythonDeviceTest
 
 if [[ "${DEVICE_E2E_SCOPE}" == "full" ]]; then
     if (( API_LEVEL >= 33 )); then

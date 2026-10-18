@@ -315,6 +315,44 @@ class SensitiveContentVerificationTest(ApkFixtureTestCase):
         verify_release_apk.scan_sensitive_content(apk)
 
 
+class PackagedPythonUpstreamContentTest(ApkFixtureTestCase):
+    """官方 CPython 包自带构建机路径与地址常量；豁免只覆盖这些上游值与对应条目。"""
+
+    upstream = {
+        "lib/arm64-v8a/libpystdlib.so": (
+            b"ipaddress 10.0.0.0/8 100.64.0.0/10 172.16.0.0/12 192.168.0.1 "
+            b"/Users/runner/work/cpython /home/runner/work/cpython "
+            b"venv/scripts/common/Activate.ps1 C:\\Users\\"
+        ),
+        "lib/x86_64/libpyext__zstd.so": b"/home/runner/work/zstd/lib",
+        "lib/x86_64/libpython3.14.so": b"/Users/runner/work/cpython",
+        "lib/arm64-v8a/libssl_python.so": b"/home/runner/openssl",
+    }
+
+    def test_allows_upstream_build_paths_and_stdlib_address_constants(self) -> None:
+        verify_release_apk.scan_sensitive_content(self.make_apk(self.upstream))
+
+    def test_still_rejects_local_paths_credentials_and_out_of_scope_entries(self) -> None:
+        cases = {
+            "本机用户路径": {"lib/arm64-v8a/libpystdlib.so": b"/Users/fixture-user/Projects"},
+            "凭据": {"lib/arm64-v8a/libpystdlib.so": b"sk-fixture_0123456789_ABCDEFGH"},
+            "扩展中的私网地址": {"lib/arm64-v8a/libpyext__socket.so": b"192.168.0.1"},
+            "扩展中的 Windows 路径": {"lib/arm64-v8a/libpyext__socket.so": b"C:\\Users\\"},
+            "自编译启动器": {"lib/arm64-v8a/libnxpython.so": b"/home/runner/work"},
+            "应用代码": {"classes.dex": b"/home/runner/work"},
+            "伪装文件名": {"assets/libpystdlib.so": b"192.168.0.1"},
+        }
+        for label, entries in cases.items():
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(verify_release_apk.VerificationError, "敏感信息"):
+                    verify_release_apk.scan_sensitive_content(self.make_apk(entries))
+
+    def test_upstream_allowance_does_not_hide_local_path_in_same_entry(self) -> None:
+        entries = {"lib/x86_64/libpython3.14.so": b"/home/runner/work /home/fixture-user/src"}
+        with self.assertRaisesRegex(verify_release_apk.VerificationError, "Linux 用户绝对路径"):
+            verify_release_apk.scan_sensitive_content(self.make_apk(entries))
+
+
 class ChecksumVerificationTest(ApkFixtureTestCase):
     def test_writes_standard_checksum_with_apk_basename(self) -> None:
         apk = self.make_apk({"AndroidManifest.xml": b"manifest"})

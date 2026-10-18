@@ -36,6 +36,25 @@ Release 构建需要安全注入既有四个 `NEXARA_*` 签名变量，在获得
 
 发行工作流整理侧载主资产 `dist/nexara-v0.2.2-beta.apk` 和 Play 资产 `dist/nexara-v0.2.2-beta-play.apk`；二者各有 `.sha256`。R8 证据分别进入 `dist/r8/sideload/` 与 `dist/r8/play/`。冷安装冒烟覆盖每个渠道的 API 35/36，校验对应哈希、包名、版本与发行证书；v0.1 升级只使用侧载主资产。准备发行链路不构成公开发布，也不代表 Play 商店审核通过。
 
+## 打包 Python
+
+两个渠道都随 APK 打包官方 CPython Android 嵌入包（版本与 SHA-256 见 `native-ui/app/python/python-android.properties`，与 python.org 发布页及 sigstore 包内摘要一致）。官方只提供 arm64-v8a 与 x86_64：变体的 `abiFilters` 包含哪些就准备哪些，未设过滤的 Release 两者都带；armeabi-v7a 与 x86 设备上没有 Python。
+
+构建任务 `fetchPackagedPython<ABI>` 下载到 Gradle 用户目录的 `caches/nexara-python-android/`，摘要不符时失败且不落盘；缓存命中时不联网。离线构建可用 `-Pnexara.pythonDistDir=<目录>` 指向已放好官方压缩包的目录，文件仍按 SHA-256 校验。`preparePackagedPython<ABI>` 把压缩包整理到 `app/build/generated/packagedPython/<ABI>/` 并作为生成的 jniLibs 目录接入，不入库：
+
+- `libpython3.14.so` 与 `lib*_python.so`（OpenSSL、SQLite）原样保留；
+- 标准库纯 Python 部分存为不压缩 zip `libpystdlib.so`（解释器启动早期 zlib 尚不可用），裁剪 `test/`、`idlelib/`、`tkinter/`、`turtledemo/`、`pydoc_data/`，根目录附 `python/sitecustomize.py`；
+- `lib-dynload` 中的扩展改名为 `libpyext_<模块>.so`，由 `sitecustomize.py` 的 meta_path finder 从 `NEXARA_PYEXT_DIR` 加载；
+- 启动器 `python/pylauncher.c` 用 AGP 所选 NDK 的 clang 编译为 `libnxpython.so`（`-Wl,-rpath,$ORIGIN`，16 KB 页对齐）。
+
+同一输入生成的 zip 与启动器字节一致。`packaging.jniLibs.useLegacyPackaging = true` 让安装器把全部原生库解压到 `nativeLibraryDir`，启动器才能被 execve；代价是 APK 内原生库改为压缩存放、安装后多占约 33 MB（单 ABI）。运行时由 `data/exec/PackagedPython` 定位启动器、标准库并给出解释器环境变量。
+
+设备回归类为 `com.promenar.nexara.data.exec.PackagedPythonDeviceTest`，已纳入 `android-device-core-e2e.sh`：检查原生库已解压、版本与 `BuildConfig.PACKAGED_PYTHON_VERSION` 一致、ssl/sqlite3/hashlib/zlib/ctypes/decimal/socket 可用且扩展来自 `nativeLibraryDir`、`test` 包已裁剪，以及退出码与 stderr 原样返回。
+
+发行校验 `scripts/verify-release-apk.py` 的敏感信息扫描对这些条目有窄豁免：`libpython3.*`、`lib*_python.so`、`libpyext_*.so` 与 `libpystdlib.so` 放行 python.org 构建机的 `/Users/runner/`、`/home/runner/`；`libpystdlib.so` 另放行标准库中的保留地址常量与 venv 激活脚本里的 `C:\Users\` 示例。凭据类模式、其它用户路径和自编译的 `libnxpython.so` 不在豁免内。Release 通用 APK 实测约 41.3 MB，校验上限 50 MB。
+
+升级 Python：在 python.org 发布页、sigstore 包内摘要与本地下载三处核对 SHA-256 后修改 `python-android.properties`，再运行设备回归。
+
 ## 富内容 WebView
 
 富内容池及所有派生客户端统一应用协议、地址与导航策略。打包的 KaTeX、Mermaid、ECharts、知识图谱模板通过 `https://appassets.androidplatform.net/assets/` 受控读取；其它应用资产、路径穿越和缺失文件直接拒绝。复用现有 OkHttp，无新增 AndroidX WebKit 依赖。

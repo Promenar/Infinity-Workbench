@@ -66,6 +66,23 @@ SENSITIVE_PATTERNS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
     ),
 )
 
+# 打包的官方 CPython（构建时按 SHA-256 校验）自带上游内容：python.org 构建机 runner 用户的路径、
+# ipaddress/random/urllib 中的保留地址常量与文档示例、venv 的 PowerShell 激活脚本。
+# 只对这些条目放行这些具体值；凭据类模式与其它用户路径照常报警，自编译的 libnxpython.so 不在豁免内。
+UPSTREAM_BUILD_PATHS: dict[str, re.Pattern[bytes]] = {
+    "macOS 用户绝对路径": re.compile(rb"/Users/runner/"),
+    "Linux 用户绝对路径": re.compile(rb"/home/runner/"),
+}
+PACKAGED_PYTHON_LIBRARY_PATTERN = re.compile(
+    r"lib/[^/]+/(?:libpyext_[A-Za-z0-9_]+|libpython3\.\d+|lib[a-z0-9]+_python)\.so\Z"
+)
+PACKAGED_PYTHON_STDLIB_PATTERN = re.compile(r"lib/[^/]+/libpystdlib\.so\Z")
+STDLIB_ALLOWANCES: dict[str, re.Pattern[bytes]] = {
+    **UPSTREAM_BUILD_PATHS,
+    "Windows 本机绝对路径": re.compile(rb"(?i)C:[\\/]Users[\\/]"),
+    "私网或 CGNAT 测试地址": re.compile(rb".+", re.DOTALL),
+}
+
 LOCAL_INFERENCE_LIBRARY_PATTERN = re.compile(
     r"(?:libnexara_llama|libllama.*|libggml.*)\.so\Z",
     re.IGNORECASE,
@@ -256,6 +273,14 @@ def verify_signature(apk: Path, expected_digest: str) -> None:
         raise VerificationError("APK 签名证书与登记的发行证书不一致")
 
 
+def upstream_allowances(entry_name: str) -> dict[str, re.Pattern[bytes]]:
+    if PACKAGED_PYTHON_STDLIB_PATTERN.fullmatch(entry_name):
+        return STDLIB_ALLOWANCES
+    if PACKAGED_PYTHON_LIBRARY_PATTERN.fullmatch(entry_name):
+        return UPSTREAM_BUILD_PATHS
+    return {}
+
+
 def scan_stream(
     stream,
     entry_name: str,
@@ -263,6 +288,7 @@ def scan_stream(
     chunk_bytes: int = READ_CHUNK_BYTES,
 ) -> list[tuple[str, str]]:
     findings: list[tuple[str, str]] = []
+    allowances = upstream_allowances(entry_name)
     tail = b""
     while True:
         chunk = stream.read(chunk_bytes)
@@ -270,7 +296,11 @@ def scan_stream(
             break
         candidate = tail + chunk
         for label, pattern in SENSITIVE_PATTERNS:
-            if pattern.search(candidate):
+            allowed = allowances.get(label)
+            if allowed is None:
+                if pattern.search(candidate):
+                    findings.append((entry_name, label))
+            elif any(not allowed.fullmatch(match.group()) for match in pattern.finditer(candidate)):
                 findings.append((entry_name, label))
         tail = candidate[-SCAN_OVERLAP_BYTES:]
     return findings

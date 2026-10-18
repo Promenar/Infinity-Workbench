@@ -1,6 +1,9 @@
 import com.android.compose.screenshot.tasks.PreviewScreenshotUpdateTask
 import com.android.compose.screenshot.tasks.PreviewScreenshotValidationTask
+import com.promenar.nexara.buildlogic.FetchVerifiedFile
 import com.promenar.nexara.buildlogic.GenerateLauncherIcons
+import com.promenar.nexara.buildlogic.PackagedPythonRelease
+import com.promenar.nexara.buildlogic.PreparePackagedPython
 import groovy.json.JsonSlurper
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
@@ -182,8 +185,43 @@ val currentRoomSchemaContracts = tasks.register<GenerateCurrentRoomSchemaContrac
     })
     outputDirectory.set(layout.buildDirectory.dir("generated/sources/currentRoomSchemaContracts"))
 }
+// 官方 CPython Android 包：下载后按 SHA-256 校验，整理为 jniLibs 打包库；产物只在 build 与 Gradle 缓存目录，不入库。
+val packagedPython = PackagedPythonRelease.load(file("python/python-android.properties").toPath())
+val packagedPythonVersion: String = packagedPython.version
+val packagedPythonDistDir = providers.gradleProperty("nexara.pythonDistDir")
+    .map { File(it) }
+    .orElse(provider { File(gradle.gradleUserHomeDir, "caches/nexara-python-android") })
+/** 官方只提供这两个 ABI；其它 ABI 的设备运行时报告 Python 不可用。 */
+val packagedPythonAbis = mapOf("arm64-v8a" to "aarch64", "x86_64" to "x86_64")
+val preparePackagedPython = packagedPythonAbis.mapValues { (abi, arch) ->
+    val taskSuffix = abi.split('-', '_').joinToString("") { part -> part.replaceFirstChar { it.uppercaseChar() } }
+    val archiveName = packagedPython.archiveName(arch)
+    val fetch = tasks.register<FetchVerifiedFile>("fetchPackagedPython$taskSuffix") {
+        description = "下载并校验 $archiveName。"
+        url.set(packagedPython.archiveUrl(arch))
+        sha256.set(packagedPython.sha256(arch))
+        outputFile.set(layout.file(packagedPythonDistDir.map { File(it, archiveName) }))
+    }
+    tasks.register<PreparePackagedPython>("preparePackagedPython$taskSuffix") {
+        archive.set(fetch.flatMap { it.outputFile })
+        this.abi.set(abi)
+        clangTarget.set("$arch-linux-android${android.defaultConfig.minSdk}")
+        pythonMajorMinor.set(packagedPython.majorMinor)
+        excludedStdlibDirectories.set(listOf("test", "idlelib", "tkinter", "turtledemo", "pydoc_data"))
+        launcherSource.set(layout.projectDirectory.file("python/pylauncher.c"))
+        siteCustomize.set(layout.projectDirectory.file("python/sitecustomize.py"))
+        ndkDirectory.set(androidComponents.sdkComponents.ndkDirectory)
+        outputDirectory.set(layout.buildDirectory.dir("generated/packagedPython/$abi"))
+    }
+}
+
 androidComponents.onVariants { variant ->
     val capitalizedName = variant.name.replaceFirstChar { it.uppercaseChar() }
+    // 只为变体实际打包的 ABI 准备 Python；未设 abiFilters 的变体打包全部官方 ABI。
+    val variantAbis = android.defaultConfig.ndk.abiFilters + android.buildTypes.getByName(variant.buildType!!).ndk.abiFilters
+    preparePackagedPython.filterKeys { variantAbis.isEmpty() || it in variantAbis }.values.forEach { prepare ->
+        variant.sources.jniLibs?.addGeneratedSourceDirectory(prepare, PreparePackagedPython::getOutputDirectory)
+    }
     val generateIcons = tasks.register<GenerateLauncherIcons>("generate${capitalizedName}NexaraLauncherIcons") {
         masterSvg.set(rootProject.layout.projectDirectory.file("../assets/branding/nexara-fold-master.svg"))
         sourceRoots.from(layout.projectDirectory.dir("src"))
@@ -211,6 +249,7 @@ android {
         versionName = "0.2.2-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "PACKAGED_PYTHON_VERSION", "\"$packagedPythonVersion\"")
 
         androidResources {
             localeFilters += listOf("en", "zh-rCN")
@@ -350,6 +389,10 @@ android {
     packaging {
         // 远端终端只使用 Java 仿真与渲染，不打包 Termux 的本地进程 JNI 桥。
         jniLibs.excludes += "**/libtermux.so"
+        // 打包的 Python 启动器与扩展需要真实文件路径才能 execve/dlopen，安装时必须解压到 nativeLibraryDir。
+        jniLibs.useLegacyPackaging = true
+        // libpystdlib.so 是标准库 zip，不是 ELF，跳过符号剥离。
+        jniLibs.keepDebugSymbols += "**/libpystdlib.so"
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }

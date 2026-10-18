@@ -91,6 +91,8 @@ ToolExecutor
 
 ### 4.1 打包内容
 
+状态：Python 打包已实施（构建见 `docs/distribution-builds.md#打包-python`，运行时定位见 `data/exec/PackagedPython.kt`）；shell 入口、包装脚本、git 与 CA bundle 随第 4、6 步实施。
+
 | 组件 | 形式 | 说明 |
 | --- | --- | --- |
 | shell | 系统 `/system/bin/sh` | 不打包 busybox/toybox；命令文案声明“POSIX sh + 系统 toybox，具体命令随设备不同” |
@@ -99,9 +101,9 @@ ToolExecutor
 | git | dulwich（纯 Python，随 stdlib zip 打包）+ `git` 包装 | 支持 clone、status、add、commit、log、diff、push、pull 的常用子集；不支持的子命令返回 `GIT_UNSUPPORTED` 与指引 |
 | CA bundle | 首次运行由 conscrypt 证书拼出，存于 `noBackupFilesDir` | 系统证书更新后按 apex 版本重建 |
 
-ABI：发行包随 App Bundle 按 ABI 拆分，包含 arm64-v8a 与 x86_64（模拟器与测试），不打 armeabi-v7a。
+ABI：官方包只有 arm64-v8a 与 x86_64。变体的 `abiFilters` 决定打包哪些；当前发行产物是不按 ABI 拆分的通用 APK，两者都带，armeabi-v7a 与 x86 设备上 `PackagedPython.isAvailable` 为 false，内置后端须给出不可用指引。
 
-清单变更：Nexara 当前 `extractNativeLibs=false`，需改为 `useLegacyPackaging = true`。代价是安装占用增加约 32.5 MB 且 Play 下载大小略增，需在 CHANGELOG 与发布说明中披露。
+清单变更：`packaging.jniLibs.useLegacyPackaging = true`，全部原生库改为压缩存放并在安装时解压到 `nativeLibraryDir`。实测：单 ABI 打包 Python 后 deviceTest APK 增加 11.3 MB，安装后 `nativeLibraryDir` 为 33 MB；Release 通用 APK 由约 20.8 MB 增至约 41.3 MB（两个 ABI 各约 11.3 MB）。需在发布说明中披露。
 
 ### 4.2 进程与安全
 
@@ -167,7 +169,7 @@ ABI：发行包随 App Bundle 按 ABI 拆分，包含 arm64-v8a 与 x86_64（模
 
 1. 失败文案结构化与文件工具“未找到条目”指引（第 6 节），独立于执行后端，可先合入。（已完成）
 2. 统一结果格式（第 3.1 节）；`termux_exec`、`ssh_exec` 结果对齐。（已完成）`ExecBackend` 接口随第 4 步内置后端一起引入，避免只有现有两个实现时的空抽象。
-3. 打包 Python（构建脚本纳入 Gradle 任务，产物不入库，按版本与 SHA-256 校验官方包）与 `useLegacyPackaging`。
+3. 打包 Python（构建脚本纳入 Gradle 任务，产物不入库，按版本与 SHA-256 校验官方包）与 `useLegacyPackaging`。（已完成）标准库未预编译 `.pyc`（需要同版本的宿主 Python），冷启动沿用第 2 节实测值。
 4. `:exec` 进程、`shell_exec`、`python_exec`、审批卡片、工作区写锁与对账。
 5. 沙箱模式。
 6. dulwich 与 `git` 包装、pip（侧载）。
@@ -186,4 +188,5 @@ ABI：发行包随 App Bundle 按 ABI 拆分，包含 arm64-v8a 与 x86_64（模
 | 沙箱模式下 Binder 传输大文件（超过 1 MB 需分块） | 未实现 |
 | `linker64` / 数据目录 dlopen 的 auditallow 在后续系统版本被收紧 | 设计不依赖该行为 |
 | 命令绕过回收区，删除与覆盖不可恢复 | 审批时明示；是否加硬链接快照另行评估 |
+| Release 通用 APK 41.3 MB，距发行校验上限 50 MB 只剩约 8.7 MB；x86_64 Python（约 11.5 MB）只服务 x86_64 设备 | 后续新增依赖前需评估；可选方案是 Release 只带 arm64-v8a Python，或改发按 ABI 拆分的 APK |
 | `ssh_exec` 超限时保留开头，长输出的结尾（通常是错误）会丢失 | 改为保留尾部需先实现流式遮蔽（跨块识别凭据与私钥块） |
