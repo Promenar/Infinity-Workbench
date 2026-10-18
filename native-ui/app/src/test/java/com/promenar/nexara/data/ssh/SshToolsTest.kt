@@ -12,6 +12,7 @@ import com.promenar.nexara.ui.chat.manager.skills.sshTools
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Test
 
 class SshToolsTest {
@@ -65,7 +66,9 @@ class SshToolsTest {
             cases.forEach { (name, arguments, code) ->
                 val result = tools.getValue(name).execute(Json.parseToJsonElement(arguments).jsonObject, context)
                 assertWithMessage(result.content).that(result.status).isEqualTo("error")
-                assertThat(result.content).contains("SSH_ERROR:$code")
+                val body = Json.parseToJsonElement(result.content).jsonObject
+                assertThat(body.getValue("error_code").jsonPrimitive.content).isEqualTo("SSH_$code")
+                assertThat(body.getValue("guidance").jsonPrimitive.content).isNotEmpty()
             }
         }
     }

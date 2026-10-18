@@ -42,7 +42,21 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 
 // 连接资源归属于生成任务或用户终端，禁止按模型参数创建任意主机连接。
-data class SshExecOutput(val exitCode: Int, val stdout: String, val stderr: String, val truncated: Boolean, val timedOut: Boolean)
+data class SshExecOutput(
+    val exitCode: Int, val stdout: String, val stderr: String, val truncated: Boolean, val timedOut: Boolean,
+    /** 遮蔽后的原始长度（UTF-16）；字节采集已截断时无法得知，为 null。 */
+    val stdoutOriginalLength: Long? = stdout.length.toLong(),
+    val stderrOriginalLength: Long? = stderr.length.toLong(),
+)
+
+/**
+ * 在 stdout 与 stderr 之间分配输出上限：两者合计不超限时全部保留；
+ * 否则一方不足一半时把余量让给另一方，双方都超过一半时各取一半，避免大量 stdout 挤掉 stderr。
+ */
+internal fun splitOutputBudget(stdoutLength: Int, stderrLength: Int, limit: Int): Pair<Int, Int> {
+    val stderrKeep = minOf(stderrLength, maxOf(limit / 2, limit - stdoutLength))
+    return minOf(stdoutLength, limit - stderrKeep) to stderrKeep
+}
 data class SshFilePage(val content: String, val nextOffset: Long, val eof: Boolean)
 data class SshRemoteEntry(val name: String, val size: Long, val directory: Boolean)
 data class SshDirectoryPage(val entries: List<SshRemoteEntry>, val truncated: Boolean)
@@ -172,9 +186,17 @@ class SshRuntime(
                 val rawErr = stderr.text()
                 val cleanOut = usedConnection.get()?.filter?.whole(rawOut) ?: ""
                 val cleanErr = usedConnection.get()?.filter?.whole(rawErr) ?: ""
-                val out = cleanOut.take(maxOutputChars)
-                val err = cleanErr.take((maxOutputChars - out.length).coerceAtLeast(0))
-                SshExecOutput(exit ?: -1, out, err, stdout.truncated || stderr.truncated || out.length < cleanOut.length || err.length < cleanErr.length, exit == null)
+                // 遮蔽依赖完整前文识别凭据与私钥块，因此截断在遮蔽之后进行，并保留开头。
+                val (outKeep, errKeep) = splitOutputBudget(cleanOut.length, cleanErr.length, maxOutputChars)
+                val out = cleanOut.take(outKeep)
+                val err = cleanErr.take(errKeep)
+                SshExecOutput(
+                    exit ?: -1, out, err,
+                    stdout.truncated || stderr.truncated || out.length < cleanOut.length || err.length < cleanErr.length,
+                    exit == null,
+                    stdoutOriginalLength = cleanOut.length.toLong().takeUnless { stdout.truncated },
+                    stderrOriginalLength = cleanErr.length.toLong().takeUnless { stderr.truncated },
+                )
             } finally { stdout.wipe(); stderr.wipe() }
         }
     }

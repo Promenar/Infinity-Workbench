@@ -57,7 +57,9 @@ ToolExecutor
 
 ### 3.1 统一结果格式
 
-所有命令类后端返回同一 JSON 对象，键顺序固定，根因字段在前：
+状态：已实施（`domain/tool/CommandToolResult.kt`；`termux_exec`、`ssh_exec` 已接入）。
+
+所有命令类后端返回同一 JSON 对象，键顺序固定，根因字段在前，后端专有字段排在共有字段之后：
 
 | 字段 | 说明 |
 | --- | --- |
@@ -65,12 +67,19 @@ ToolExecutor
 | `guidance` | 面向模型的下一步指引，可为 null |
 | `exit_code` | 进程退出码；未启动或超时为 null |
 | `timed_out` | 是否超时 |
-| `stderr` / `stdout` | 输出，超限时保留尾部 |
-| `stdout_original_length` / `stderr_original_length` | 原始长度，`length_unit` 为 `UTF-16` |
-| `truncated` / `truncation` | 是否截断及方式（`head_removed`、`none`） |
+| `stderr` / `stdout` | 输出；超限时的保留方向见 `truncation` |
+| `stdout_original_length` / `stderr_original_length` | 原始长度，`length_unit` 为 `UTF-16`；后端无法得知时为 null |
+| `stdout_truncated` / `stderr_truncated` | 各输出流是否截断 |
+| `truncated` / `truncation` | 是否截断及去掉的部分（`head_removed`、`tail_removed`、`none`） |
 | `workspace_changes` | 仅内置后端：命令结束对账得到的 `added` / `modified` / `removed` 虚拟路径列表（超过 200 项时给计数并截断） |
 
-`TermuxCommandResult.toJson()` 已符合前八项；`ssh_exec` 需补 `error_code`、`guidance` 与原始长度字段。`status` 规则统一为：`error_code == null && !timed_out && exit_code == 0` 为 `success`，否则 `error`。
+`status` 规则统一为：`error_code == null && !timed_out && exit_code == 0` 为 `success`，否则 `error`。因此 `ssh_exec` 退出码非 0（如 `grep` 无匹配、`diff` 有差异）也记为失败步骤，模型收到第 6 节的失败摘要（不超过 4,000 字符，保留根因字段与输出尾部），与 `termux_exec` 一致。
+
+各后端的差异：
+
+- `termux_exec`：输出由 Termux 截断并保留尾部（`head_removed`），专有字段 `err`、`errmsg`、`errmsg_original_length`、`errmsg_truncation_possible` 排在共有字段之后。
+- `ssh_exec`：凭据与私钥块遮蔽需要完整前文，输出在遮蔽之后截断并保留开头（`tail_removed`）。stdout 与 stderr 合计超过 `max_output_chars` 时按 `splitOutputBudget` 分配：一方不足一半时余量让给另一方，双方都超过一半时各取一半。字节采集上限（`max_output_chars × 4` 字节）被触发时原始长度未知，对应字段为 null。超时返回 `error_code` = `SSH_TIMEOUT`、`exit_code` = null。
+- SSH 其余失败（参数、主机、凭据、指纹、连接、会话上限、SFTP 冲突等）返回 `{"error_code":"SSH_<码>","guidance":"..."}`，指引按错误码给出，不含主机地址、用户名或凭据。
 
 ### 3.2 统一路径与环境
 
@@ -156,8 +165,8 @@ ABI：发行包随 App Bundle 按 ABI 拆分，包含 arm64-v8a 与 x86_64（模
 
 ## 7. 实施顺序
 
-1. 失败文案结构化与文件工具“未找到条目”指引（第 6 节），独立于执行后端，可先合入。
-2. `ExecBackend` 契约与统一结果格式；`ssh_exec` 结果对齐。
+1. 失败文案结构化与文件工具“未找到条目”指引（第 6 节），独立于执行后端，可先合入。（已完成）
+2. 统一结果格式（第 3.1 节）；`termux_exec`、`ssh_exec` 结果对齐。（已完成）`ExecBackend` 接口随第 4 步内置后端一起引入，避免只有现有两个实现时的空抽象。
 3. 打包 Python（构建脚本纳入 Gradle 任务，产物不入库，按版本与 SHA-256 校验官方包）与 `useLegacyPackaging`。
 4. `:exec` 进程、`shell_exec`、`python_exec`、审批卡片、工作区写锁与对账。
 5. 沙箱模式。
@@ -177,3 +186,4 @@ ABI：发行包随 App Bundle 按 ABI 拆分，包含 arm64-v8a 与 x86_64（模
 | 沙箱模式下 Binder 传输大文件（超过 1 MB 需分块） | 未实现 |
 | `linker64` / 数据目录 dlopen 的 auditallow 在后续系统版本被收紧 | 设计不依赖该行为 |
 | 命令绕过回收区，删除与覆盖不可恢复 | 审批时明示；是否加硬链接快照另行评估 |
+| `ssh_exec` 超限时保留开头，长输出的结尾（通常是错误）会丢失 | 改为保留尾部需先实现流式遮蔽（跨块识别凭据与私钥块） |

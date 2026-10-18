@@ -1,5 +1,7 @@
 package com.promenar.nexara.data.termux
 
+import com.promenar.nexara.domain.tool.CommandToolResult
+import com.promenar.nexara.domain.tool.CommandTruncation
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -38,27 +40,21 @@ data class TermuxCommandResult(
 ) {
     val stdoutTruncated: Boolean get() = stdoutOriginalLength > stdout.length
     val stderrTruncated: Boolean get() = stderrOriginalLength > stderr.length
-    fun toJson(): JsonObject = buildJsonObject {
-        // 错误码与指引置于开头：失败卡片和日志只截取前段时仍可见根因。
-        put("error_code", errorCode?.let(::JsonPrimitive) ?: JsonNull)
-        put("guidance", guidance?.let(::JsonPrimitive) ?: JsonNull)
-        put("timed_out", timedOut)
-        put("stdout", stdout)
-        put("stderr", stderr)
-        put("exit_code", exitCode?.let(::JsonPrimitive) ?: JsonNull)
-        put("err", err?.let(::JsonPrimitive) ?: JsonNull)
-        put("errmsg", errmsg?.let(::JsonPrimitive) ?: JsonNull)
-        put("stdout_original_length", stdoutOriginalLength)
-        put("stderr_original_length", stderrOriginalLength)
-        put("length_unit", "UTF-16")
-        put("stdout_truncated", stdoutTruncated)
-        put("stderr_truncated", stderrTruncated)
-        put("truncated", stdoutTruncated || stderrTruncated)
-        put("truncation", if (stdoutTruncated || stderrTruncated) "head_removed" else "none")
-        // 官方协议未提供 errmsg 的原始长度，不能从已截断文本推算。
-        put("errmsg_original_length", JsonNull)
-        put("errmsg_truncation_possible", (errmsg?.length ?: 0) >= 25_000)
-    }
+    /** Termux 输出超限时去掉开头；err、errmsg 为 RUN_COMMAND 协议专有字段。 */
+    fun toCommandResult(): CommandToolResult = CommandToolResult(
+        errorCode = errorCode, guidance = guidance, exitCode = exitCode, timedOut = timedOut,
+        stdout = stdout, stderr = stderr,
+        stdoutOriginalLength = stdoutOriginalLength, stderrOriginalLength = stderrOriginalLength,
+        removedWhenTruncated = CommandTruncation.HEAD_REMOVED,
+        backendFields = buildJsonObject {
+            put("err", err?.let(::JsonPrimitive) ?: JsonNull)
+            put("errmsg", errmsg?.let(::JsonPrimitive) ?: JsonNull)
+            // 官方协议未提供 errmsg 的原始长度，不能从已截断文本推算。
+            put("errmsg_original_length", JsonNull)
+            put("errmsg_truncation_possible", (errmsg?.length ?: 0) >= 25_000)
+        },
+    )
+    fun toJson(): JsonObject = toCommandResult().toJson()
 }
 
 object TermuxResultParser {

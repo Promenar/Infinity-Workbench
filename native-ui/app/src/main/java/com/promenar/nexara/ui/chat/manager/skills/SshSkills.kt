@@ -4,6 +4,8 @@ import com.promenar.nexara.data.model.ToolResult
 import com.promenar.nexara.data.ssh.SshFailure
 import com.promenar.nexara.data.ssh.SshPolicy
 import com.promenar.nexara.data.ssh.SshRuntime
+import com.promenar.nexara.domain.tool.CommandToolResult
+import com.promenar.nexara.domain.tool.CommandTruncation
 import com.promenar.nexara.domain.tool.ToolRisk
 import com.promenar.nexara.domain.tool.ToolSchemaValidation
 import com.promenar.nexara.domain.tool.ToolSchemaValidator
@@ -68,11 +70,28 @@ private class SshSkill(private val runtime: SshRuntime, private val operation: S
                 val target = ToolExecutionTargets.extract(toProtocolTool(), args.toString(), resolved, mapOf(snapshot.alias to snapshot.executionIdentity()))
                 if (target == null || target != context.approvedExecutionTarget) throw SshFailure("HOST_AUTHORIZATION_CHANGED")
             }
+            var status = "success"
             // 协程局部快照贯穿连接获取与实际操作，禁止按别名换源或跨等待窗口复用旧连接。
             val result = runtime.withHostSnapshot(snapshot) { when (operation) {
                 SshOperation.EXEC -> {
-                    val value = runtime.exec(owner, args.text("host"), args.text("command"), args.integer("timeout_seconds", 60), args.integer("max_output_chars", 32_000))
-                    buildJsonObject { put("exit_code", value.exitCode); put("stdout", value.stdout); put("stderr", value.stderr); put("truncated", value.truncated); put("timed_out", value.timedOut) }
+                    val timeout = args.integer("timeout_seconds", 60)
+                    val value = runtime.exec(owner, args.text("host"), args.text("command"), timeout, args.integer("max_output_chars", 32_000))
+                    val command = CommandToolResult(
+                        errorCode = if (value.timedOut) "SSH_TIMEOUT" else null,
+                        guidance = if (value.timedOut) "命令在 $timeout 秒内未结束，已断开通道；远端进程可能仍在运行，重试前请先检查。" else null,
+                        exitCode = value.exitCode.takeUnless { value.timedOut },
+                        timedOut = value.timedOut,
+                        stdout = value.stdout,
+                        stderr = value.stderr,
+                        stdoutOriginalLength = value.stdoutOriginalLength,
+                        stderrOriginalLength = value.stderrOriginalLength,
+                        stdoutTruncated = value.stdoutOriginalLength?.let { it > value.stdout.length } ?: true,
+                        stderrTruncated = value.stderrOriginalLength?.let { it > value.stderr.length } ?: true,
+                        // 凭据遮蔽需要完整前文，SSH 输出保留开头、去掉结尾。
+                        removedWhenTruncated = CommandTruncation.TAIL_REMOVED,
+                    )
+                    status = command.toolStatus
+                    command.toJson()
                 }
                 SshOperation.LIST -> {
                     val value = runtime.list(owner, args.text("host"), args.text("path"))
@@ -99,13 +118,41 @@ private class SshSkill(private val runtime: SshRuntime, private val operation: S
                 }
                 SshOperation.CLOSE -> { runtime.closeSession(owner, args.text("session_id")); buildJsonObject { put("closed", true) } }
             } }
-            ToolResult(id = "ssh_${UUID.randomUUID()}", content = result.toString())
+            ToolResult(id = "ssh_${UUID.randomUUID()}", content = result.toString(), status = status)
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (failure: SshFailure) { failure(failure.code)
         } catch (_: Exception) { failure("SSH_OPERATION_FAILED") }
     }
-    private fun failure(code: String) = ToolResult(id = "ssh_${UUID.randomUUID()}", content = "SSH_ERROR:$code；请检查设置中的主机配置、凭据和指纹信任。", status = "error")
+    private fun failure(code: String) = ToolResult(
+        id = "ssh_${UUID.randomUUID()}",
+        content = buildJsonObject {
+            put("error_code", if (code.startsWith("SSH_")) code else "SSH_$code")
+            put("guidance", sshGuidance(code))
+        }.toString(),
+        status = "error",
+    )
     private fun JsonObject.text(key: String): String = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content ?: throw SshFailure("INVALID_ARGUMENTS")
     private fun JsonObject.integer(key: String, default: Int): Int = if (key !in this) default else (get(key) as? JsonPrimitive)?.takeUnless { it.isString }?.intOrNull ?: throw SshFailure("INVALID_ARGUMENTS")
     private fun JsonObject.number(key: String, default: Long): Long = if (key !in this) default else (get(key) as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull ?: throw SshFailure("INVALID_ARGUMENTS")
+}
+
+/** 与 SSH 错误码配套的下一步指引；不含主机地址、用户名或凭据。 */
+internal fun sshGuidance(code: String): String = when (code.removePrefix("SSH_")) {
+    "INVALID_ARGUMENTS", "INVALID_HOST_ALIAS", "INVALID_REMOTE_PATH", "INVALID_TIMEOUT", "INVALID_OUTPUT_LIMIT",
+    "INVALID_COMMAND", "INVALID_READ_RANGE", "INVALID_WAIT", "INVALID_SHA256", "INPUT_TOO_LARGE", "WRITE_TOO_LARGE" ->
+        "参数不符合工具定义的取值范围，请按工具说明修正后重试。"
+    "HOST_NOT_FOUND" -> "主机别名未配置，请只使用用户在设置中创建的主机别名。"
+    "CREDENTIAL_MISSING", "INVALID_PRIVATE_KEY", "INVALID_KEY_PASSPHRASE", "UNSUPPORTED_USER_KEY", "UNSUPPORTED_KEY_FORMAT", "UNSUPPORTED_KEY_CIPHER" ->
+        "主机凭据不可用，需要用户在设置中重新配置凭据；不要重试。"
+    "HOST_KEY_UNTRUSTED", "HOST_KEY_CHANGED", "HOST_CONFIGURATION_CHANGED", "HOST_AUTHORIZATION_CHANGED" ->
+        "主机指纹或配置未经确认，需要用户在设置中处理；不要重试。"
+    "AUTH_OR_CONNECTION_FAILED", "CONNECTION_FAILED", "HOST_UNAVAILABLE", "TIMEOUT" ->
+        "连接或认证失败，请确认主机在线后再重试一次；仍失败时请用户检查设置中的主机配置。"
+    "SESSION_NOT_FOUND" -> "会话不存在或已关闭，请先用 ssh_session_open 打开新会话。"
+    "SESSION_LIMIT", "CONNECTION_LIMIT", "CLEANUP_BACKLOG_LIMIT" -> "已达到并发上限，请先用 ssh_session_close 关闭不再使用的会话。"
+    "FILE_TOO_LARGE_OR_DIRECTORY" -> "目标是目录或超过 16MiB，目录请用 sftp_list，大文件请用 ssh_exec 处理。"
+    "BINARY_FILE" -> "目标不是 UTF-8 文本，sftp_read 只读取文本文件。"
+    "SHA256_CONFLICT" -> "远端文件已变化，请先重新读取并计算 sha256，再决定是否写入。"
+    "UNSUPPORTED_WRITE_TARGET" -> "目标是目录或符号链接，sftp_write 只写入普通文件。"
+    else -> "请检查设置中的主机配置、凭据和指纹信任。"
 }

@@ -19,6 +19,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
@@ -211,6 +213,52 @@ class SshRuntimeIntegrationTest {
         assertWithMessage(read.content).that(read.status).isEqualTo("success")
         assertThat(Json.parseToJsonElement(read.content).jsonObject.getValue("content").jsonPrimitive.content).isEqualTo("条件写入成功")
         assertThat(Files.readAllBytes(root.resolve("tool.txt")).toString(Charsets.UTF_8)).isEqualTo("条件写入成功")
+    }
+
+    @Test fun `ssh_exec按统一命令结果格式返回退出码与超时`() = runBlocking {
+        trust()
+        val exec = sshTools(runtime).single { it.name == "ssh_exec" }
+        val context = object : SkillExecutionContext {
+            override val sessionId = "chat"
+            override val agentId = "agent"
+            override val workspacePath: String? = null
+            override val workspaceRootUuid = "root"
+        }
+        suspend fun call(arguments: String) = exec.execute(Json.parseToJsonElement(arguments).jsonObject, context)
+        fun field(content: String, key: String) = Json.parseToJsonElement(content).jsonObject.getValue(key)
+
+        val zero = call("""{"host":"termux","command":"zero"}""")
+        assertWithMessage(zero.content).that(zero.status).isEqualTo("success")
+        assertThat(field(zero.content, "exit_code").jsonPrimitive.int).isEqualTo(0)
+        assertThat(field(zero.content, "truncation").jsonPrimitive.content).isEqualTo("none")
+
+        val failed = call("""{"host":"termux","command":"hello"}""")
+        assertThat(failed.status).isEqualTo("error")
+        assertThat(field(failed.content, "exit_code").jsonPrimitive.int).isEqualTo(7)
+        assertThat(field(failed.content, "stderr").jsonPrimitive.content).isEqualTo("stderr-ok")
+        assertThat(failed.content).doesNotContain("synthetic-password")
+
+        val noisy = call("""{"host":"termux","command":"noisy-fail","max_output_chars":1000}""")
+        assertThat(field(noisy.content, "stderr").jsonPrimitive.content).isEqualTo("fatal: boom")
+        assertThat(field(noisy.content, "stdout").jsonPrimitive.content.length + "fatal: boom".length).isAtMost(1000)
+        assertThat(field(noisy.content, "stdout_truncated").jsonPrimitive.content).isEqualTo("true")
+        assertThat(field(noisy.content, "truncation").jsonPrimitive.content).isEqualTo("tail_removed")
+        assertThat(field(noisy.content, "stdout_original_length")).isEqualTo(JsonNull)
+
+        val timeout = call("""{"host":"termux","command":"sleep","timeout_seconds":1}""")
+        assertThat(timeout.status).isEqualTo("error")
+        assertThat(field(timeout.content, "error_code").jsonPrimitive.content).isEqualTo("SSH_TIMEOUT")
+        assertThat(field(timeout.content, "timed_out").jsonPrimitive.content).isEqualTo("true")
+        assertThat(field(timeout.content, "exit_code")).isEqualTo(JsonNull)
+        runtime.closeOwner("chat")
+    }
+
+    @Test fun `输出预算在stdout与stderr之间分配且不让一方挤掉另一方`() {
+        assertThat(splitOutputBudget(10, 5, 100)).isEqualTo(10 to 5)
+        assertThat(splitOutputBudget(100_000, 11, 1000)).isEqualTo(989 to 11)
+        assertThat(splitOutputBudget(3, 100_000, 1000)).isEqualTo(3 to 997)
+        assertThat(splitOutputBudget(100_000, 100_000, 1000)).isEqualTo(500 to 500)
+        assertThat(splitOutputBudget(100_000, 100_000, 1)).isEqualTo(1 to 0)
     }
 
     @Test fun `PTY往返调整窗口按owner隔离并在生成结束关闭`() = runBlocking {
@@ -445,9 +493,11 @@ private class TestCommand(private val command: String, private val shell: Boolea
                     command == "sleep" -> Thread.sleep(30_000)
                     command == "large" -> output.write("x".repeat(100_000).toByteArray())
                     command == "unicode-secret" -> output.write("合成口令-只用于测试".toByteArray())
+                    command == "zero" -> output.write("zero-ok".toByteArray())
+                    command == "noisy-fail" -> { output.write("x".repeat(100_000).toByteArray()); error.write("fatal: boom".toByteArray()) }
                     else -> { output.write("stdout-ok synthetic-password".toByteArray()); error.write("stderr-ok".toByteArray()) }
                 }
-                output.flush(); error.flush(); callback.onExit(7)
+                output.flush(); error.flush(); callback.onExit(if (command == "zero") 0 else 7)
             } catch (_: Exception) { } finally { active.decrementAndGet() }
         }.apply { isDaemon = true; start() }
     }

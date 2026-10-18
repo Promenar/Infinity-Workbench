@@ -77,6 +77,6 @@ class TermuxRuntimeDispatchTest {
         assertThat(result.errorCode).isEqualTo("TERMUX_START_FAILED")
         assertThat(result.errmsg).contains("应用关联启动")
         val keys = result.toJson().jsonObject.keys.toList()
-        assertThat(keys.take(3)).containsExactly("error_code", "guidance", "timed_out").inOrder()
+        assertThat(keys.take(4)).containsExactly("error_code", "guidance", "exit_code", "timed_out").inOrder()
     }
 }

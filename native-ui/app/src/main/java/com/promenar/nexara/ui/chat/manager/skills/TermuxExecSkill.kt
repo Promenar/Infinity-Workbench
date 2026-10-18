@@ -46,8 +46,7 @@ class TermuxExecSkill(
             TermuxCommandResult(errorCode = "TERMUX_EXEC_FAILED", guidance = "Termux 调用失败；请打开工具设置中的 Termux 接入与诊断检查状态。")
         }
         return ToolResult(
-            id = "termux_${UUID.randomUUID()}", content = result.toJson().toString(),
-            status = if (result.errorCode == null && !result.timedOut && result.exitCode == 0) "success" else "error",
+            id = "termux_${UUID.randomUUID()}", content = result.toJson().toString(), status = result.toCommandResult().toolStatus,
         )
     }
     private fun invalidArguments(reason: String?) = TermuxCommandResult(

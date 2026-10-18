@@ -273,9 +273,11 @@ class SshDeviceTest {
             assertThat(ledger.decideExactToolApproval(sessionId, request, true)).isInstanceOf(ExactToolApprovalDecision.Decided::class.java)
             chat.upsertSession(sessions.getById(sessionId)!!)
             executor.executeTools(sessionId, assistant.id, listOf(call), allowedToolCallIds = setOf(call.id), preparedTools = prepared)
-            assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.SUCCEEDED)
+            // 退出码非 0 按统一命令结果格式记为失败，模型收到带根因字段的失败摘要。
+            assertThat(ledger.state(key)).isEqualTo(ToolLedgerState.FAILED)
             val result = messages.getBySession(sessionId).single { it.role == MessageRole.TOOL && it.toolCallId == call.id }
-            val value = Json.parseToJsonElement(result.content).jsonObject
+            assertThat(result.content).startsWith("工具执行失败：")
+            val value = Json.parseToJsonElement(result.content.removePrefix("工具执行失败：")).jsonObject
             assertThat(value.getValue("stdout").jsonPrimitive.content).isEqualTo("stdout-ok\n")
             assertThat(value.getValue("stderr").jsonPrimitive.content).isEqualTo("stderr-ok\n")
             assertThat(value.getValue("exit_code").jsonPrimitive.int).isEqualTo(7)

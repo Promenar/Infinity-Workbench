@@ -23,6 +23,12 @@ All notable changes to this project will be documented in this file.
 - 工具失败时，执行步骤与发给模型的工具消息不再只截取前 200 字符：结构化结果优先保留错误码、指引、退出码与 stderr，stdout 与 stderr 超长时保留尾部并标注原始长度，总长 4000 字符；纯文本失败保留前 1000 字符。
 - 文件工具找不到路径时附带下一步指引：`write_file`/`patch_file` 提示新建文件用 `create_file`，父目录缺失提示 `create_directory`，uuid 失效提示改用 path。
 
+### 命令结果格式统一
+
+- `termux_exec` 与 `ssh_exec` 返回同一结构：`error_code`、`guidance`、`exit_code`、`timed_out` 在前，随后为 stderr、stdout、各流原始长度与截断标记（`truncation` 区分 `head_removed`/`tail_removed`/`none`），后端专有字段在后。
+- `ssh_exec` 退出码非 0 或超时记为失败步骤（与 `termux_exec` 一致）；超时返回 `SSH_TIMEOUT` 与“远端进程可能仍在运行”的指引。stdout 与 stderr 合计超限时平分额度，大量 stdout 不再把 stderr 挤成空。
+- SSH 各类失败由 `SSH_ERROR:<码>` 纯文本改为 `error_code` + 按错误码给出的 `guidance`（如会话不存在提示 `ssh_session_open`、SHA256 冲突提示重新读取）。
+
 ### 会话界面视觉重设计
 
 - 自动跟随覆盖生成结束后的操作行、积压放出与长回复异步解析，用户上滑后保持阅读位置；复制操作包含整轮全部正文，展开思考支持 Markdown。
