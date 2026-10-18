@@ -583,7 +583,7 @@ internal fun ThinkingTrace(
         )
         if (internalExpanded && reasoning.isNotBlank()) {
             val ruleColor = MaterialTheme.colorScheme.outlineVariant
-            Box(modifier = Modifier.fillMaxWidth().testTag(UiTags.CHAT_THINKING_CONTENT)) {
+            Box(modifier = Modifier.fillMaxWidth().padding(bottom = ExpandedStepBottomPadding).testTag(UiTags.CHAT_THINKING_CONTENT)) {
                 Box(Modifier.matchParentSize()) {
                     Spacer(Modifier.width(2.dp).fillMaxHeight().background(ruleColor))
                 }
@@ -755,6 +755,9 @@ private fun stepDurationText(durationMs: Long): String = if (durationMs < 1_000)
 //  InlineToolRow — 工具摘要与按需展开的调用详情
 // ─────────────────────────────────────────────────────────────────
 
+/** 步骤展开内容的底部留白。 */
+internal val ExpandedStepBottomPadding = 8.dp
+
 @Composable
 internal fun InlineToolRow(
     steps: List<ExecutionStep>,
@@ -783,7 +786,8 @@ internal fun InlineToolRow(
             onClick = { isExpanded = !isExpanded },
         )
         if (isExpanded) {
-            Column(modifier = Modifier.fillMaxWidth().testTag("CHAT_TOOL_DETAILS"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 展开内容底部 8dp，与流水线块间 8dp 合计 16dp，与段落间距一致。
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = ExpandedStepBottomPadding).testTag("CHAT_TOOL_DETAILS"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 invocations.forEach { invocation ->
                     key(invocation.steps.firstOrNull()?.id) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

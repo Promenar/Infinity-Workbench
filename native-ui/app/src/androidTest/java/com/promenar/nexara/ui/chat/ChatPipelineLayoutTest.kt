@@ -108,6 +108,27 @@ class ChatPipelineLayoutTest {
     }
 
     @Test
+    fun expandedToolAndThinkingContentKeepEightDpBottomGap() {
+        rule.setContent {
+            NexaraTheme {
+                Column(Modifier.width(371.dp)) {
+                    Box(Modifier.testTag("TOOL_ROW")) { InlineToolRow(toolSteps(), isExecuting = false, fontSize = 15, initiallyExpanded = true) }
+                    Box(Modifier.testTag("THINKING_ROW")) { ThinkingTrace("推理内容", false, 15, initiallyExpanded = true) }
+                }
+            }
+        }
+        val tolerance = with(rule.density) { 0.5.dp.toPx() }
+        val eight = with(rule.density) { 8.dp.toPx() }
+        val toolRow = rule.onNodeWithTag("TOOL_ROW").fetchSemanticsNode().boundsInRoot
+        val details = rule.onNodeWithTag("CHAT_TOOL_DETAILS").fetchSemanticsNode().boundsInRoot
+        // 展开内容与下一块之间：自身 8dp + 流水线块间 8dp = 16dp，与段落间距一致。
+        assertThat(abs(toolRow.bottom - details.bottom - eight)).isAtMost(tolerance)
+        val thinkingRow = rule.onNodeWithTag("THINKING_ROW").fetchSemanticsNode().boundsInRoot
+        val thinking = rule.onNodeWithTag(UiTags.CHAT_THINKING_CONTENT, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertThat(abs(thinkingRow.bottom - thinking.bottom - eight)).isAtMost(tolerance)
+    }
+
+    @Test
     fun userBubbleUsesAtMost82PercentAndAttachmentsAreAboveWithSixDpGap() {
         rule.setContent {
             NexaraTheme {
