@@ -43,7 +43,18 @@ class SettingsLayoutTest {
             NexaraValueRow(title = "Value two", subtitle = "Status", value = "80%", onClick = {}, modifier = Modifier.testTag("value2"))
         }
         listOf("item", "toggle", "value", "interactive").forEach { assertHeight(it, 48f) }
-        listOf("item2", "toggle2", "value2").forEach { assertHeight(it, 56f) }
+        // 带副标题：默认字号下内容（含 12dp 内边距与 2dp 间距）低于 64dp，由最小高度决定。
+        listOf("item2", "toggle2", "value2").forEach { assertHeight(it, 64f) }
+    }
+
+    @Test fun twoLineRowKeepsTwelveDpPaddingAndTwoDpGap() {
+        content { NexaraSettingsItem(title = "Title", subtitle = "Subtitle", onClick = {}, modifier = Modifier.testTag("row")) }
+        val row = boundsTag("row"); val title = boundsText("Title"); val subtitle = boundsText("Subtitle")
+        fun dp(px: Float) = with(rule.density) { px.toDp().value }
+        val top = dp(title.top - row.top); val bottom = dp(row.bottom - subtitle.bottom)
+        assertEquals(2f, dp(subtitle.top - title.bottom), 0.5f)
+        assertTrue("上内边距 $top", top >= 11.5f)
+        assertEquals(top, bottom, 1f)
     }
 
     @Test fun controlsShareTextBlockCentre() {

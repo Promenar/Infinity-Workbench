@@ -13,7 +13,9 @@ object NexaraSpacing {
     val MinimumTouchTarget = 48.dp
     val RowHorizontal = 16.dp
     val RowSingleLineHeight = 48.dp
-    val RowTwoLineHeight = 56.dp
+    val RowTwoLineHeight = 64.dp
+    val RowTwoLineVertical = 12.dp
+    val RowTwoLineGap = 2.dp
     val RowIconSize = 20.dp
     val RowIconGap = 16.dp
     val SectionGap = 24.dp

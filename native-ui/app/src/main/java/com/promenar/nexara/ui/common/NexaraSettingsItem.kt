@@ -91,7 +91,7 @@ internal fun NexaraSettingsRowLayout(
         Row(
             Modifier.fillMaxWidth()
                 .heightIn(min = if (subtitle == null) NexaraSpacing.RowSingleLineHeight else NexaraSpacing.RowTwoLineHeight)
-                .padding(horizontal = horizontalPadding),
+                .padding(horizontal = horizontalPadding, vertical = if (subtitle == null) 0.dp else NexaraSpacing.RowTwoLineVertical),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null || leadingContent != null || leadingSpacer) {
@@ -109,6 +109,7 @@ internal fun NexaraSettingsRowLayout(
                     maxLines = if (expandTitle) Int.MAX_VALUE else if (subtitle == null) 2 else 1,
                     overflow = TextOverflow.Ellipsis)
                 if (subtitle != null) {
+                    Spacer(Modifier.height(NexaraSpacing.RowTwoLineGap))
                     Text(if (subtitleIsIdentifier) subtitle.breakableIdentifier() else subtitle,
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = subtitleModifier,
