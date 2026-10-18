@@ -65,7 +65,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class DefaultChatGenerationRuntimeRagTraceTest {
     @Test
-    fun `嵌入不可用且没有引用时在网络建连前持久化轨迹并显示检索入口`() = runTest {
+    fun `未选择嵌入模型时静默跳过检索且回复不显示检索步骤`() = runTest {
         val embedding = mockk<EmbeddingClient>()
         every { embedding.isConfigured } returns false
         every { embedding.hasLocalFallback } returns false
@@ -80,13 +80,8 @@ class DefaultChatGenerationRuntimeRagTraceTest {
 
         fixture.buildAndEnterProvider()
 
-        val reloaded = requireNotNull(fixture.repository.getById("assistant"))
-        assertThat(reloaded.ragMetadata?.trace?.outcome).isEqualTo(RagRetrievalTrace.OUTCOME_UNAVAILABLE)
-        assertThat(reloaded.ragReferences).isNull()
-        assertThat(reloaded.hasRagArtifacts()).isTrue()
-        val trace = requireNotNull(reloaded.ragMetadata?.trace)
-        assertThat(fixture.networkEntries.single().last().ragMetadata?.trace).isEqualTo(trace)
-        assertThat(fixture.store.getSession("session")?.messages?.last()?.ragMetadata?.trace).isEqualTo(trace)
+        fixture.assertNoRetrievalStep()
+        assertThat(fixture.networkEntries.single().last().ragMetadata).isNull()
     }
 
     @Test
@@ -135,12 +130,12 @@ class DefaultChatGenerationRuntimeRagTraceTest {
     }
 
     @Test
-    fun `检索开启但Provider缺失时持久化不可用轨迹`() = runTest {
+    fun `检索开启但Provider缺失时静默跳过`() = runTest {
         val fixture = fixture(provider = null)
 
         fixture.buildAndEnterProvider()
 
-        fixture.assertPersistedTrace(RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE))
+        fixture.assertNoRetrievalStep()
     }
 
     @Test
@@ -161,7 +156,7 @@ class DefaultChatGenerationRuntimeRagTraceTest {
 
     @Test
     fun `工具续轮复用检索且轨迹只归属首条回复并可被页面选中`() = runTest {
-        val trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE)
+        val trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_EMPTY)
         val provider = RecordingRagProvider(RagRetrievalResult("", emptyList(), null, trace))
         val fixture = fixture(provider)
         fixture.buildAndEnterProvider()
@@ -230,6 +225,14 @@ class DefaultChatGenerationRuntimeRagTraceTest {
             runtime.prepare(request)
             assertThat(runtime.buildContext(request)).isEqualTo(GenerationPreparationOutcome.Ready)
             runtime.stream(request, attempt = 0).toList()
+        }
+
+        suspend fun assertNoRetrievalStep() {
+            val reloaded = requireNotNull(repository.getById("assistant"))
+            assertThat(reloaded.ragMetadata).isNull()
+            assertThat(reloaded.ragReferences).isNull()
+            assertThat(reloaded.hasRagArtifacts()).isFalse()
+            assertThat(store.getSession("session")?.messages?.last()?.hasRagArtifacts()).isFalse()
         }
 
         suspend fun assertPersistedTrace(expected: RagRetrievalTrace) {

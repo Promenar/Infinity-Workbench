@@ -41,7 +41,8 @@ internal fun ragInlineSummary(
         RagInlineSource.KNOWLEDGE
     }
     if (!ready) return RagInlineSummary(source, RagInlineStatus.RUNNING)
-    val hasFailedSource = trace != null &&
+    // 未配置嵌入模型或没有检索范围时检索未执行，不算失败来源。
+    val hasFailedSource = trace != null && !trace.isSkipped &&
         trace.outcome !in setOf(RagRetrievalTrace.OUTCOME_HIT, RagRetrievalTrace.OUTCOME_EMPTY)
     if (hasFailedSource && actualKnowledgeCount == 0 && actualWebCount == 0) {
         return RagInlineSummary(source, RagInlineStatus.FAILED)

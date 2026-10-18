@@ -2148,7 +2148,7 @@ fun ragCardOutcomesReleasePreview() {
                 references = emptyList(),
                 isComplete = true,
                 trace = com.promenar.nexara.data.model.RagRetrievalTrace(
-                    outcome = com.promenar.nexara.data.model.RagRetrievalTrace.OUTCOME_UNAVAILABLE,
+                    outcome = com.promenar.nexara.data.model.RagRetrievalTrace.OUTCOME_FAILED,
                 ),
             )
         }

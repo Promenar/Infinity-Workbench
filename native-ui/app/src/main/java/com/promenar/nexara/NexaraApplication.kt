@@ -487,7 +487,11 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
             ragProvider = com.promenar.nexara.data.rag.MemoryManagerRagAdapter(memoryManager),
             kgProvider = kgProvider,
             taskRepository = taskRepository,
+            onEmbeddingNotConfigured = embeddingSetupHint::onEmbeddingNotConfigured,
         )
+    }
+    val embeddingSetupHint by lazy {
+        com.promenar.nexara.data.rag.EmbeddingSetupHint(getSharedPreferences("nexara_settings", MODE_PRIVATE))
     }
     private val generationToolExecutor by lazy {
         com.promenar.nexara.ui.chat.manager.ToolExecutor(

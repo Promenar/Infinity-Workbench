@@ -103,6 +103,7 @@ typealias ChatDestination = @Composable (
     sessionId: String,
     onNavigateBack: () -> Unit,
     onNavigateToSession: (String) -> Unit,
+    onOpenDefaultModels: () -> Unit,
 ) -> Unit
 
 @Composable
@@ -114,11 +115,12 @@ fun NexaraNavGraph(
     forceLocalProbeFailureForTesting: Boolean = false,
     openGenerationRequest: OpenGenerationRequest? = null,
     onOpenGenerationConsumed: (String) -> Boolean = { false },
-    chatDestination: ChatDestination = { sessionId, onNavigateBack, onNavigateToSession ->
+    chatDestination: ChatDestination = { sessionId, onNavigateBack, onNavigateToSession, onOpenDefaultModels ->
         ChatRoute(
             sessionId = sessionId,
             onNavigateBack = onNavigateBack,
             onNavigateToSession = onNavigateToSession,
+            onOpenDefaultModels = onOpenDefaultModels,
         )
     },
 ) {
@@ -346,6 +348,11 @@ fun NexaraNavGraph(
                         navController.navigate(NavDestinations.chatHero(branchedSessionId)) {
                             launchSingleTop = true
                         }
+                    }
+                },
+                {
+                    navController.navigate(NavDestinations.DEFAULT_MODELS) {
+                        launchSingleTop = true
                     }
                 },
             )

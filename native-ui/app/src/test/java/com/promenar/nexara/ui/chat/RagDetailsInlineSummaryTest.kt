@@ -113,10 +113,8 @@ class RagDetailsInlineSummaryTest {
     }
 
     @Test
-    fun `没有实际结果时不可用未选范围及失败均隐藏轨迹中的结果数`() {
+    fun `没有实际结果时检索失败隐藏轨迹中的结果数`() {
         listOf(
-            RagRetrievalTrace.OUTCOME_UNAVAILABLE,
-            RagRetrievalTrace.OUTCOME_NO_SCOPE,
             RagRetrievalTrace.OUTCOME_FAILED,
             "unknown-outcome",
         ).forEach { outcome ->
@@ -133,7 +131,7 @@ class RagDetailsInlineSummaryTest {
 
     @Test
     fun `知识库检索失败时独立图谱命中仍显示结果并提示部分失败`() {
-        listOf(RagRetrievalTrace.OUTCOME_FAILED, RagRetrievalTrace.OUTCOME_UNAVAILABLE).forEach { outcome ->
+        listOf(RagRetrievalTrace.OUTCOME_FAILED).forEach { outcome ->
             val summary = ragInlineSummary(
                 phases = emptyList(), referenceCount = 0, knowledgePathCount = 2, isComplete = true,
                 trace = RagRetrievalTrace(outcome = outcome),
@@ -149,15 +147,41 @@ class RagDetailsInlineSummaryTest {
     }
 
     @Test
-    fun `知识库不可用时网页引用显示网页命中并提示部分失败`() {
+    fun `知识库检索失败时网页引用显示网页命中并提示部分失败`() {
         val summary = ragInlineSummary(
             phases = emptyList(), referenceCount = 0, citationCount = 3, isComplete = true,
-            trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE, selectedCount = 8),
+            trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_FAILED, selectedCount = 8),
         )
 
         assertThat(summary).isEqualTo(
             RagInlineSummary(RagInlineSource.WEB, RagInlineStatus.COMPLETED, resultCount = 3, partialFailure = true),
         )
+    }
+
+    @Test
+    fun `未配置嵌入模型或没有检索范围不算失败也不提示部分失败`() {
+        listOf(RagRetrievalTrace.OUTCOME_UNAVAILABLE, RagRetrievalTrace.OUTCOME_NO_SCOPE).forEach { outcome ->
+            val withWeb = ragInlineSummary(
+                phases = emptyList(), referenceCount = 0, citationCount = 3, isComplete = true,
+                trace = RagRetrievalTrace(outcome = outcome),
+            )
+            val withGraph = ragInlineSummary(
+                phases = emptyList(), referenceCount = 0, knowledgePathCount = 2, isComplete = true,
+                trace = RagRetrievalTrace(outcome = outcome),
+            )
+            val nothing = ragInlineSummary(
+                phases = emptyList(), referenceCount = 0, isComplete = true,
+                trace = RagRetrievalTrace(outcome = outcome),
+            )
+
+            assertThat(withWeb).isEqualTo(
+                RagInlineSummary(RagInlineSource.WEB, RagInlineStatus.COMPLETED, resultCount = 3),
+            )
+            assertThat(withGraph).isEqualTo(
+                RagInlineSummary(RagInlineSource.KNOWLEDGE, RagInlineStatus.COMPLETED, resultCount = 2),
+            )
+            assertThat(nothing.status).isNotEqualTo(RagInlineStatus.FAILED)
+        }
     }
 
     @Test

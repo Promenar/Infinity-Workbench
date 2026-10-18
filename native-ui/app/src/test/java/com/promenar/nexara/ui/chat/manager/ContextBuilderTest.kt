@@ -14,6 +14,7 @@ import com.promenar.nexara.data.model.TaskState
 import com.promenar.nexara.data.model.TaskStep
 import com.promenar.nexara.data.model.json
 import com.promenar.nexara.domain.repository.PlanPatchOp
+import com.promenar.nexara.ui.chat.hasPersistableRagContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
@@ -373,16 +374,74 @@ class ContextBuilderTest {
     }
 
     @Test
-    fun `检索开启但Provider缺失时记录不可用轨迹`() = testScope.runTest {
+    fun `检索开启但Provider缺失时静默跳过`() = testScope.runTest {
         val session = Session(id = "s1", agentId = "a1", ragOptions = RagOptions(enableMemory = true))
 
         val result = ContextBuilder().buildContext(
             ContextBuilderParams("s1", "问题", assistantMsgId = "m1", session = session),
         )
 
-        assertThat(result.ragTrace?.outcome).isEqualTo(RagRetrievalTrace.OUTCOME_UNAVAILABLE)
-        assertThat(result.retrieval.ragTrace).isEqualTo(result.ragTrace)
+        assertThat(result.ragTrace).isNull()
+        assertThat(result.retrieval.ragTrace).isNull()
         assertThat(result.ragReferences).isEmpty()
+    }
+
+    @Test
+    fun `未选择嵌入模型时静默跳过检索并通知配置引导`() = testScope.runTest {
+        var notConfiguredSignals = 0
+        val builder = ContextBuilder(
+            ragProvider = fixedTraceProvider(RagRetrievalTrace.OUTCOME_UNAVAILABLE),
+            onEmbeddingNotConfigured = { notConfiguredSignals++ },
+        )
+        val session = Session(id = "s1", agentId = "a1", ragOptions = RagOptions(enableMemory = true))
+
+        val result = builder.buildContext(ContextBuilderParams("s1", "问题", assistantMsgId = "m1", session = session))
+
+        assertThat(result.ragTrace).isNull()
+        assertThat(result.retrieval.ragTrace).isNull()
+        assertThat(result.hasPersistableRagContext()).isFalse()
+        assertThat(notConfiguredSignals).isEqualTo(1)
+    }
+
+    @Test
+    fun `没有可检索范围时静默跳过且不提示配置嵌入模型`() = testScope.runTest {
+        var notConfiguredSignals = 0
+        val builder = ContextBuilder(
+            ragProvider = fixedTraceProvider(RagRetrievalTrace.OUTCOME_NO_SCOPE),
+            onEmbeddingNotConfigured = { notConfiguredSignals++ },
+        )
+        val session = Session(id = "s1", agentId = "a1", ragOptions = RagOptions(enableMemory = false, enableDocs = true))
+
+        val result = builder.buildContext(ContextBuilderParams("s1", "问题", assistantMsgId = "m1", session = session))
+
+        assertThat(result.ragTrace).isNull()
+        assertThat(result.hasPersistableRagContext()).isFalse()
+        assertThat(notConfiguredSignals).isEqualTo(0)
+    }
+
+    @Test
+    fun `嵌入请求失败仍记录失败轨迹且不提示配置嵌入模型`() = testScope.runTest {
+        var notConfiguredSignals = 0
+        val builder = ContextBuilder(
+            ragProvider = fixedTraceProvider(RagRetrievalTrace.OUTCOME_FAILED),
+            onEmbeddingNotConfigured = { notConfiguredSignals++ },
+        )
+        val session = Session(id = "s1", agentId = "a1", ragOptions = RagOptions(enableMemory = true))
+
+        val result = builder.buildContext(ContextBuilderParams("s1", "问题", assistantMsgId = "m1", session = session))
+
+        assertThat(result.ragTrace?.outcome).isEqualTo(RagRetrievalTrace.OUTCOME_FAILED)
+        assertThat(result.hasPersistableRagContext()).isTrue()
+        assertThat(notConfiguredSignals).isEqualTo(0)
+    }
+
+    private fun fixedTraceProvider(outcome: String) = object : RagProvider {
+        override suspend fun retrieveContext(
+            query: String,
+            sessionId: String,
+            options: RagOptions,
+            onProgress: ((stage: String, percentage: Int, subStage: String?) -> Unit)?
+        ) = RagRetrievalResult("", emptyList(), null, RagRetrievalTrace(outcome = outcome))
     }
 
     @Test

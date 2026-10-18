@@ -208,7 +208,7 @@ class RagDetailsAccessibilityTest {
                     references = emptyList(),
                     citations = longCitations().take(3),
                     isComplete = true,
-                    trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_UNAVAILABLE),
+                    trace = RagRetrievalTrace(outcome = RagRetrievalTrace.OUTCOME_FAILED),
                 )
             }
         }

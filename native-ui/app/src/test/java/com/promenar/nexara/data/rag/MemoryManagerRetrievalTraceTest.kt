@@ -163,4 +163,14 @@ class MemoryManagerRetrievalTraceTest {
         assertThat(result.references).isEmpty()
         assertThat(result.trace!!.outcome).isEqualTo(RagRetrievalTrace.OUTCOME_UNAVAILABLE)
     }
+
+    @Test
+    fun `嵌入已配置但查询向量请求全部失败时记录检索失败而非未配置`() = runTest {
+        coEvery { embedding.embedQuery(any()) } throws IllegalStateException("HTTP 503")
+
+        val result = manager().retrieve()
+
+        assertThat(result.references).isEmpty()
+        assertThat(result.trace!!.outcome).isEqualTo(RagRetrievalTrace.OUTCOME_FAILED)
+    }
 }
