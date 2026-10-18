@@ -14,10 +14,12 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 
 /**
  * 内置执行后端：命令以 Nexara uid 直接在会话工作区物理根内运行，期间持有工作区写锁，结束后对账索引。
- * 命令可读写应用私有目录并访问网络，不构成隔离；调用方必须逐次审批。
+ * 命令可读写应用私有目录并访问网络，不构成隔离；调用方按执行模式审批。
+ * 运行期间经 [keepAlive] 持有唤醒锁与前台服务通知，通知的停止按钮结束整个进程组并返回 `EXEC_STOPPED`。
  */
 class BuiltinExecService(
     private val workspace: WorkspaceCommandHost,
@@ -25,6 +27,8 @@ class BuiltinExecService(
     private val environment: BuiltinExecEnvironment,
     private val shell: String = "/system/bin/sh",
     private val unavailablePythonAbi: () -> String = { "unknown" },
+    private val keepAlive: ExecKeepAlive = NoExecKeepAlive,
+    private val wallClockMillis: () -> Long = System::currentTimeMillis,
 ) {
     suspend fun runShell(
         workspaceRootUuid: String,
@@ -32,7 +36,7 @@ class BuiltinExecService(
         command: String,
         stdin: String?,
         timeoutSeconds: Int,
-    ): CommandToolResult = execute(workspaceRootUuid, sessionId, timeoutSeconds) { root ->
+    ): CommandToolResult = execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.SHELL, command) { root ->
         BuiltinCommandRequest(
             argv = listOf(shell, "-c", environment.shellPrelude() + "\n__nexara_command=\"\$1\"; shift; eval \"\$__nexara_command\"", "sh", command),
             workingDirectory = root,
@@ -56,7 +60,7 @@ class BuiltinExecService(
                     "请改用 termux_exec 或 ssh_exec。shell_exec 仍可使用系统命令。",
             )
         }
-        return execute(workspaceRootUuid, sessionId, timeoutSeconds) { root ->
+        return execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.PYTHON, code) { root ->
             BuiltinCommandRequest(
                 argv = listOf(environment.pythonLauncher.path, "-c", code),
                 workingDirectory = root,
@@ -71,16 +75,22 @@ class BuiltinExecService(
         workspaceRootUuid: String,
         sessionId: String?,
         timeoutSeconds: Int,
+        kind: ExecRunKind,
+        source: String,
         request: (File) -> BuiltinCommandRequest,
     ): CommandToolResult {
         var physicalRoot: File? = null
-        val outcome = try {
-            workspace.runCommandInWorkspace(workspaceRootUuid, sessionId) { root ->
-                physicalRoot = root
-                try {
-                    runner.run(request(root))
-                } catch (failure: IOException) {
-                    null
+        val control = BuiltinCommandControl()
+        val run = ExecRunInfo(UUID.randomUUID().toString(), kind, ExecRunInfo.summarize(source), timeoutSeconds, wallClockMillis())
+        val held = try {
+            keepAlive.hold(run, control::requestStop) {
+                workspace.runCommandInWorkspace(workspaceRootUuid, sessionId) { root ->
+                    physicalRoot = root
+                    try {
+                        runner.run(request(root), control)
+                    } catch (failure: IOException) {
+                        null
+                    }
                 }
             }
         } catch (cancelled: CancellationException) {
@@ -96,6 +106,7 @@ class BuiltinExecService(
                 guidance = "会话工作区当前不可修改（可能有尚未恢复的文件操作）；稍后重试，或先用文件工具确认工作区状态。",
             )
         }
+        val outcome = held.value
         val output = outcome.value ?: return CommandToolResult(
             errorCode = "EXEC_START_FAILED",
             guidance = "无法启动命令进程；请确认设备上的 /system/bin/sh 与 setsid 可用，或改用 termux_exec。",
@@ -103,6 +114,8 @@ class BuiltinExecService(
         )
         val root = checkNotNull(physicalRoot)
         val (errorCode, guidance) = when {
+            output.stoppedByUser -> "EXEC_STOPPED" to
+                "用户在通知栏停止了命令，已结束整个进程组；工作区已按当前磁盘状态对账。不要自动重试，先询问用户。"
             output.timedOut -> "EXEC_TIMEOUT" to
                 "命令在 $timeoutSeconds 秒内未结束，已结束整个进程组；工作区已按当前磁盘状态对账。可增大 timeout_seconds（最多 600）或拆分任务。"
             output.killedExternally -> "EXEC_PROCESS_KILLED" to
@@ -113,7 +126,7 @@ class BuiltinExecService(
         }
         return CommandToolResult(
             errorCode = errorCode,
-            guidance = guidance,
+            guidance = listOfNotNull(guidance, pauseGuidance(output.pausedMillis, held.foreground)).joinToString("").ifEmpty { null },
             exitCode = output.exitCode,
             timedOut = output.timedOut,
             stdout = virtualize(output.stdout, root),
@@ -123,8 +136,24 @@ class BuiltinExecService(
             stdoutTruncated = output.stdoutTruncated,
             stderrTruncated = output.stderrTruncated,
             removedWhenTruncated = CommandTruncation.HEAD_REMOVED,
-            backendFields = workspaceFields(outcome.changes),
+            backendFields = JsonObject(
+                workspaceFields(outcome.changes) +
+                    (if (output.pausedMillis >= PAUSE_REPORT_MILLIS) mapOf("paused_ms" to JsonPrimitive(output.pausedMillis)) else emptyMap()),
+            ),
         )
+    }
+
+    /** 进程被系统暂停时提示原因与设置；暂停时间不计入超时。 */
+    private fun pauseGuidance(pausedMillis: Long, foreground: ExecForegroundState): String? {
+        if (pausedMillis < PAUSE_REPORT_MILLIS) return null
+        val seconds = (pausedMillis + 500) / 1000
+        val service = when (foreground) {
+            ExecForegroundState.STARTED -> ""
+            ExecForegroundState.UNSUPPORTED -> "当前版本命令期间不启动前台服务，离开 Nexara 后更容易被暂停。"
+            ExecForegroundState.NOT_ALLOWED -> "本次系统未允许启动前台服务（应用在后台）。"
+        }
+        return "命令运行期间 Nexara 被系统暂停约 $seconds 秒（后台冻结或设备休眠），暂停时间不计入超时。$service" +
+            "如需离开 Nexara 时命令继续运行，请在系统的应用耗电管理中把 Nexara 设为“完全允许后台行为”（ColorOS、MIUI 等）。"
     }
 
     private fun warningGuidance(changes: WorkspaceChangeReport?): String? {
@@ -137,6 +166,8 @@ class BuiltinExecService(
 
     companion object {
         const val MAX_LISTED_PATHS = 200
+        /** 低于该值的暂停多为调度抖动，不提示。 */
+        const val PAUSE_REPORT_MILLIS = 3_000L
         private const val MAX_WARNING_PATHS = 20
 
         /** 输出中的工作区物理路径替换为 `$NEXARA_WORKSPACE`，既不暴露应用目录，也可直接用于下一条命令。 */

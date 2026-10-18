@@ -102,12 +102,16 @@ object ToolExecutionTargets {
             "process", "remote_path" -> parts.takeIf { it.size == 3 }?.let { "${it[1]} · ${it[2]}" }
             else -> null
         } ?: target
+        // 换行与制表符显示为可见符号，多行命令不会被拼成看似不同的单行；其它控制与双向格式字符剥离。
         val safe = buildString {
             var offset = 0
             while (offset < readable.length) {
                 val point = readable.codePointAt(offset)
-                if (!Character.isISOControl(point) && Character.getType(point) != Character.FORMAT.toInt()) {
-                    appendCodePoint(point)
+                when {
+                    point == '\n'.code -> append('↵')
+                    point == '\r'.code -> if (readable.getOrNull(offset + 1) != '\n') append('↵')
+                    point == '\t'.code -> append('⇥')
+                    !Character.isISOControl(point) && Character.getType(point) != Character.FORMAT.toInt() -> appendCodePoint(point)
                 }
                 offset += Character.charCount(point)
             }

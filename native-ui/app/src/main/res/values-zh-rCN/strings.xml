@@ -1374,6 +1374,15 @@
     <string name="generation_notification_finishing">正在结束生成任务</string>
     <string name="generation_notification_current_session">当前会话 · 已生成 %1$d 字</string>
     <string name="generation_notification_stop">停止</string>
+    <string name="exec_notification_channel">命令执行</string>
+    <string name="exec_notification_channel_description">显示正在运行的 shell_exec / python_exec 命令与停止按钮</string>
+    <string name="exec_notification_title">正在运行命令</string>
+    <string name="exec_notification_title_many">正在运行 %1$d 个命令</string>
+    <string name="exec_notification_public">Nexara 正在运行命令</string>
+    <string name="exec_notification_kind_shell">Shell</string>
+    <string name="exec_notification_kind_python">Python</string>
+    <string name="exec_notification_stop">停止</string>
+    <string name="exec_notification_stop_all">全部停止</string>
     <string name="generation_background_unavailable">当前回复仍在生成，但离开应用后可能中断。</string>
     <string name="generation_notifications_unavailable">后台生成已启动，但通知进度与快捷操作不可用。可在系统设置中开启通知。</string>
     <string name="generation_notification_permission_title">保持后台生成可见</string>

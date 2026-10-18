@@ -6,7 +6,12 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-PERMISSION = "android.permission.MANAGE_EXTERNAL_STORAGE"
+# 只允许侧载渠道声明的权限：所有文件访问，以及内置命令前台服务的 specialUse 类型（Play 待政策评审）。
+SIDELOAD_ONLY_PERMISSIONS = (
+    "android.permission.MANAGE_EXTERNAL_STORAGE",
+    "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+)
+SIDELOAD_ONLY_SERVICE = "com.promenar.nexara.background.exec.ExecForegroundService"
 ANDROID_NAME = "{http://schemas.android.com/apk/res/android}name"
 
 
@@ -16,12 +21,13 @@ def check_manifests(play: Path, sideload: Path) -> None:
     if not packages[0] or packages[0] != packages[1]:
         raise ValueError("两个风味的 applicationId 必须相同且非空")
     for flavor, manifest, expected in zip(("play", "sideload"), manifests, (False, True)):
-        present = any(
-            item.tag.startswith("uses-permission") and item.get(ANDROID_NAME) == PERMISSION
-            for item in manifest
-        )
-        if present != expected:
-            raise ValueError(f"{flavor} 合并清单的 MANAGE_EXTERNAL_STORAGE 不符合渠道契约")
+        permissions = {item.get(ANDROID_NAME) for item in manifest if item.tag.startswith("uses-permission")}
+        for permission in SIDELOAD_ONLY_PERMISSIONS:
+            if (permission in permissions) != expected:
+                raise ValueError(f"{flavor} 合并清单的 {permission.rsplit('.', 1)[-1]} 不符合渠道契约")
+        services = {service.get(ANDROID_NAME) for service in manifest.iter("service")}
+        if (SIDELOAD_ONLY_SERVICE in services) != expected:
+            raise ValueError(f"{flavor} 合并清单的内置命令前台服务声明不符合渠道契约")
 
 
 def main() -> int:
@@ -39,7 +45,7 @@ def main() -> int:
     except (OSError, ValueError, ET.ParseError) as error:
         print(f"发行清单检查失败：{error}", file=sys.stderr)
         return 1
-    print(f"发行清单检查通过（{args.build_type}）：play 无所有文件访问权限，sideload 包含；包身份一致")
+    print(f"发行清单检查通过（{args.build_type}）：play 无所有文件访问与命令前台服务，sideload 包含；包身份一致")
     return 0
 
 

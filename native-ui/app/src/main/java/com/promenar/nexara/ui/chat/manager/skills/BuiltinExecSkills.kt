@@ -17,7 +17,8 @@ import java.util.UUID
 
 private const val WORKSPACE_NOTE = "命令直接读写会话工作区：删除或覆盖的文件不进回收站、无法恢复；结束后自动对账，结果的 workspace_changes 列出新增、修改、删除与移动的工作区路径。" +
     "工作目录即工作区根，命令中请用相对路径或 \$NEXARA_WORKSPACE；/mnt/<别名> 挂载对命令不可见，需要时先用文件工具复制到工作区。" +
-    "timeout_seconds 默认 60，最多 600；超时或结束时结束整个进程组（含后台进程）。stdout、stderr 各保留尾部 32000 字符。"
+    "timeout_seconds 默认 60，最多 600；超时或结束时结束整个进程组（含后台进程）；Nexara 被系统暂停的时间不计入超时（结果给出 paused_ms）。" +
+    "用户可在通知栏停止命令（error_code 为 EXEC_STOPPED，不要自动重试）。stdout、stderr 各保留尾部 32000 字符。"
 
 /** 内置后端的 sh 命令；需要 apt 包、编译工具链或原生 Python 扩展时改用 Termux 或 SSH。 */
 class ShellExecSkill(private val service: BuiltinExecService) : SkillDefinition {

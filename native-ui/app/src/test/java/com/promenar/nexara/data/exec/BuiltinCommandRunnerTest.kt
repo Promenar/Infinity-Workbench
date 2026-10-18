@@ -111,6 +111,27 @@ class BuiltinCommandRunnerTest {
     }
 
     @Test
+    fun `用户停止时结束整个进程组并标记为停止而非超时`() = runBlocking<Unit> {
+        val pidFile = File(work, "bg.pid")
+        val control = BuiltinCommandControl()
+        val job = async { runner.run(request("sleep 60 & echo \$! > ${pidFile.path}; sleep 60"), control) }
+        withTimeout(5_000) { while (!pidFile.isFile || pidFile.readText().isBlank()) delay(20) }
+        control.requestStop()
+        val output = withTimeout(10_000) { job.await() }
+        assertThat(output.stoppedByUser).isTrue()
+        assertThat(output.timedOut).isFalse()
+        assertThat(output.exitCode).isNull()
+        assertThat(alive(pidFile.readText().trim().toInt())).isFalse()
+    }
+
+    @Test
+    fun `正常运行的等待间隔不记为暂停`() = runBlocking<Unit> {
+        val output = runner.run(request("sleep 1"))
+        assertThat(output.exitCode).isEqualTo(0)
+        assertThat(output.pausedMillis).isEqualTo(0)
+    }
+
+    @Test
     fun `临时目录在结束后清理`() = runBlocking<Unit> {
         runner.run(request("true"))
         assertThat(File(work, "scratch").listFiles().orEmpty().toList()).isEmpty()

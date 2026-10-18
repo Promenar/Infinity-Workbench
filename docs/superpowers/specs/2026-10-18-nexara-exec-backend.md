@@ -76,12 +76,13 @@ ToolExecutor
 | `truncated` / `truncation` | 是否截断及去掉的部分（`head_removed`、`tail_removed`、`none`） |
 | `workspace_changes` | 仅内置后端：命令结束对账得到的 `added`、`modified`、`removed`（整目录删除只列最上层）与 `moved`（`{from,to}`，整目录移动只列最上层）虚拟路径，`counts` 给各类总数，四类合计超过 200 项时按此顺序截断并置 `truncated`；对账失败时为 null |
 | `workspace_warnings` | 仅内置后端，可省略：`[{code, count, paths}]`，`code` 为 `WORKSPACE_RESERVED_PATH`（改动 `.nexara*`、`.recycle_bin` 或新建顶层 `mnt`）或 `WORKSPACE_UNSUPPORTED_ENTRY`（新建或改动的符号链接、特殊文件、文件工具不接受的名称），`paths` 最多 20 项 |
+| `paused_ms` | 仅内置后端，可省略：等待期间 Nexara 被系统暂停（后台冻结或深度休眠）的累计毫秒数，达到 3 秒才给出；暂停时间不计入超时 |
 
 `status` 规则统一为：`error_code == null && !timed_out && exit_code == 0` 为 `success`，否则 `error`。因此 `ssh_exec` 退出码非 0（如 `grep` 无匹配、`diff` 有差异）也记为失败步骤，模型收到第 6 节的失败摘要（不超过 4,000 字符，保留根因字段与输出尾部），与 `termux_exec` 一致。
 
 各后端的差异：
 
-- 内置后端（`shell_exec`、`python_exec`）：stdout、stderr 各保留尾部 32,000 UTF-16 字符（`head_removed`），原始长度按完整解码计数。命令本身运行（无论退出码）时 `error_code` 为 null；后端错误码为 `EXEC_INVALID_ARGUMENTS`、`EXEC_PYTHON_UNAVAILABLE`、`EXEC_WORKSPACE_UNAVAILABLE`、`EXEC_START_FAILED`、`EXEC_TIMEOUT`（`exit_code` 为 null）、`EXEC_PROCESS_KILLED`（退出码 137 且不是本端发出的 SIGKILL）与 `WORKSPACE_RECONCILE_FAILED`（命令已执行但索引未更新，`exit_code` 照常给出）。只有警告时 `guidance` 说明警告含义，状态不受影响。
+- 内置后端（`shell_exec`、`python_exec`）：stdout、stderr 各保留尾部 32,000 UTF-16 字符（`head_removed`），原始长度按完整解码计数。命令本身运行（无论退出码）时 `error_code` 为 null；后端错误码为 `EXEC_INVALID_ARGUMENTS`、`EXEC_PYTHON_UNAVAILABLE`、`EXEC_WORKSPACE_UNAVAILABLE`、`EXEC_START_FAILED`、`EXEC_TIMEOUT`（`exit_code` 为 null）、`EXEC_STOPPED`（用户在通知栏停止，`exit_code` 为 null，指引要求不自动重试）、`EXEC_PROCESS_KILLED`（退出码 137 且不是本端发出的 SIGKILL）与 `WORKSPACE_RECONCILE_FAILED`（命令已执行但索引未更新，`exit_code` 照常给出）。只有警告时 `guidance` 说明警告含义，状态不受影响；出现 `paused_ms` 时 `guidance` 追加冻结原因与“完全允许后台行为”设置指引。
 - `termux_exec`：输出由 Termux 截断并保留尾部（`head_removed`），专有字段 `err`、`errmsg`、`errmsg_original_length`、`errmsg_truncation_possible` 排在共有字段之后。
 - `ssh_exec`：凭据与私钥块遮蔽需要完整前文，输出在遮蔽之后截断并保留开头（`tail_removed`）。stdout 与 stderr 合计超过 `max_output_chars` 时按 `splitOutputBudget` 分配：一方不足一半时余量让给另一方，双方都超过一半时各取一半。字节采集上限（`max_output_chars × 4` 字节）被触发时原始长度未知，对应字段为 null。超时返回 `error_code` = `SSH_TIMEOUT`、`exit_code` = null。
 - SSH 其余失败（参数、主机、凭据、指纹、连接、会话上限、SFTP 冲突等）返回 `{"error_code":"SSH_<码>","guidance":"..."}`，指引按错误码给出，不含主机地址、用户名或凭据。
@@ -139,9 +140,15 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 
 ### 4.5 后台与生命周期
 
-- 命令运行期间以前台服务保持主进程处于前台优先级，通知显示命令摘要与停止按钮。服务类型：侧载渠道用 `specialUse`；Play 渠道的类型与政策声明需单独评审。
-- 命令运行期间持有 `PARTIAL_WAKE_LOCK`，超时上限即持有上限，命令结束、超时或取消时立即释放；不持有时锁屏后 CPU 休眠，命令会大幅变慢。
-- 运行中若检测到心跳停滞（子进程 CPU 时间不增长且应用不在前台），结果追加 `guidance`：系统可能冻结了后台进程，请将 Nexara 设为“完全允许后台行为”。Termux 设置页已有同类文案，内置后端复用。
+状态：已实施（`background/exec/AndroidExecKeepAlive.kt`、`background/exec/ExecForegroundService.kt`、`data/exec/ExecKeepAlive.kt`）。
+
+- 每条命令从等待工作区写锁到对账结束都持有 `PARTIAL_WAKE_LOCK`（标签 `Nexara:builtin-exec`，超时上限加 5 分钟兜底，结束、超时、停止或取消时在 finally 中释放）。
+- 侧载渠道同时启动 `ExecForegroundService`（`specialUse`，子类型说明写在清单 `PROPERTY_SPECIAL_USE_FGS_SUBTYPE`）：通知显示“Shell/Python · 命令首行”与计时，锁屏只显示“Nexara 正在运行命令”；按钮“停止”（多条命令时“全部停止”）只结束通知渲染时列出的命令。登记表清空即退出前台。服务不持有命令，主进程被结束时命令随之结束。
+- 生成任务自身的前台服务在等待审批时退出；半自动与手动模式下批准后的命令在界面协程中执行，正是这里的命令前台服务提供保活与停止入口。全自动模式下两者可能同时显示，各自的停止分别作用于生成与命令。
+- Play 渠道不声明命令前台服务与 `FOREGROUND_SERVICE_SPECIAL_USE`（政策待评审），只持有唤醒锁；`scripts/ci/check-distribution-manifests.py` 校验该渠道差异。
+- 系统拒绝启动前台服务（应用在后台且无豁免）时命令照常运行，只有唤醒锁。
+- 停止：通知按钮经 `BuiltinCommandControl` 请求停止，等待循环（250 ms 步长）发现后 SIGTERM→2 秒→SIGKILL 整个进程组，返回 `EXEC_STOPPED` 并照常对账；模型据此继续本轮，而不是整轮生成被取消。
+- 冻结检测：等待循环的时钟为 `SystemClock.elapsedRealtimeNanos`（含深度休眠）。相邻两次轮询间隔超出步长 2 秒以上即视为本进程被暂停，超出部分计入 `paused_ms` 而不消耗超时；累计达到 3 秒时 `guidance` 说明暂停时长、前台服务状态，并提示在应用耗电管理中设为“完全允许后台行为”。
 - 进程被系统结束时返回 `error_code = EXEC_PROCESS_KILLED`，对账照常执行。
 
 ### 4.6 分发渠道
@@ -151,7 +158,7 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 | shell_exec、python_exec、沙箱模式 | 有 | 有（全部代码随 APK 分发） |
 | pip 安装 | 有，仅纯 Python 包，安装到 `filesDir/python-user` | 默认关闭，待政策评审 |
 | git clone/pull | 有 | 有 |
-| 前台服务类型 | `specialUse` | 待评审 |
+| 前台服务类型 | `specialUse`（已声明） | 不声明，只持有唤醒锁；待评审 |
 
 ## 5. Termux 与 SSH 后端（D）
 
@@ -185,7 +192,7 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 4. `shell_exec`、`python_exec`、审批卡片、工作区写锁与对账。（已完成）不设 `:exec` 进程，原因见第 4.2 节；前台服务与唤醒锁属于第 7 步。
 5. 沙箱模式。
 6. dulwich 与 `git` 包装、pip（侧载）。
-7. 前台服务、唤醒锁与冻结检测文案。
+7. 前台服务、唤醒锁与冻结检测文案。（已完成）停止按钮返回结构化结果 `EXEC_STOPPED` 而非取消整轮生成；冻结检测以轮询间隔判断并把暂停时间排除在超时之外，没有采用子进程 CPU 时间心跳。
 
 每一步的验收：单元测试覆盖结果格式、对账差异、失败摘要；设备测试在 API 31、API 35 模拟器与真机上覆盖命令执行、超时、取消、对账与审批。
 
@@ -200,9 +207,9 @@ ABI：官方包只有 arm64-v8a 与 x86_64。设了 `abiFilters` 的变体按过
 | 沙箱模式下 Binder 传输大文件（超过 1 MB 需分块） | 未实现 |
 | `linker64` / 数据目录 dlopen 的 auditallow 在后续系统版本被收紧 | 设计不依赖该行为 |
 | 命令绕过回收区，删除与覆盖不可恢复 | 审批时明示；是否加硬链接快照另行评估 |
-| 命令运行期间同一工作区的文件读写（含界面打开文档）最长等待约 600 秒 | 已知限制；第 7 步加入通知与停止按钮后可由用户提前结束 |
+| 命令运行期间同一工作区的文件读写（含界面打开文档）最长等待约 600 秒（被系统暂停的时间另计） | 已知限制；侧载渠道可从通知停止，Play 渠道只能在界面停止生成 |
 | 命令自行 `setsid`/守护化的进程不在进程组内，结束后可能继续改动工作区 | 未处理；对账只反映结束时刻的磁盘状态 |
 | 对账重算大文件哈希的耗时（数 GB 文件需数秒）与 inode 复用导致的误判移动（要求文件 size 与 mtime 同时未变） | 已知限制 |
 | 命令在对账之后才写入的文件、或进程被杀后到下一次修改之间的磁盘变化 | 由 `.nexara_command_pending` 恢复对账收敛；根身份标记若在进程被杀前已被删除则无法自动恢复 |
-| 前台服务与 `PARTIAL_WAKE_LOCK` 未接入，离开应用或锁屏后命令变慢或被 ColorOS 等厂商冻结 | 第 7 步 |
+| ColorOS 默认电池策略下前台服务在熄屏后仍被冻结（探针实测） | 不能由应用解决；结果的 `paused_ms` 与指引提示用户设为“完全允许后台行为” |
 | `ssh_exec` 超限时保留开头，长输出的结尾（通常是错误）会丢失 | 改为保留尾部需先实现流式遮蔽（跨块识别凭据与私钥块） |

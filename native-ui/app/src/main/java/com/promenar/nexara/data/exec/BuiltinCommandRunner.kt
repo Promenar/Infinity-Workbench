@@ -33,7 +33,22 @@ data class BuiltinCommandOutput(
     val stderrTruncated: Boolean,
     /** 进程被非本端发出的 SIGKILL 结束（常见于系统内存回收或冻结）。 */
     val killedExternally: Boolean = false,
+    /** 用户经 [BuiltinCommandControl.requestStop] 结束了命令。 */
+    val stoppedByUser: Boolean = false,
+    /** 等待期间本进程被系统暂停（后台冻结或设备休眠）的累计毫秒数；不计入超时。 */
+    val pausedMillis: Long = 0L,
 )
+
+/** 运行中命令的外部控制；可在任意线程调用。 */
+class BuiltinCommandControl {
+    @Volatile
+    var stopRequested: Boolean = false
+        private set
+
+    fun requestStop() {
+        stopRequested = true
+    }
+}
 
 /** 向整个进程组发送信号；进程组已不存在时静默返回。 */
 fun interface ProcessGroupSignaller {
@@ -44,6 +59,10 @@ fun interface ProcessGroupSignaller {
  * 在独立进程组中启动命令：[groupLauncher]（Android 为 toybox `setsid`）让命令成为新会话首进程，
  * 包装 sh 把自身 pid（即进程组号）写入临时文件后 exec 目标程序。超时或取消时先 SIGTERM 整个进程组，
  * [killGraceMillis] 后 SIGKILL；命令正常结束后同组残留的后台进程也会被 SIGKILL，避免在释放工作区写锁后继续改动文件。
+ *
+ * 等待以 [pollMillis] 为步长轮询，期间响应用户停止。相邻两次轮询的间隔超出步长 [pauseThresholdMillis] 以上，
+ * 说明本进程被系统暂停（ColorOS 等后台冻结、无唤醒锁时的深度休眠），超出部分计入 [BuiltinCommandOutput.pausedMillis]
+ * 而不消耗超时；[clockNanos] 在 Android 上应包含深度休眠时间（`SystemClock.elapsedRealtimeNanos`）。
  */
 class BuiltinCommandRunner(
     private val groupLauncher: List<String>,
@@ -53,8 +72,14 @@ class BuiltinCommandRunner(
     private val outputLimit: Int = OUTPUT_LIMIT,
     private val killGraceMillis: Long = 2_000,
     private val drainTimeoutMillis: Long = 2_000,
+    private val pollMillis: Long = 250,
+    private val pauseThresholdMillis: Long = 2_000,
+    private val clockNanos: () -> Long = System::nanoTime,
 ) {
-    suspend fun run(request: BuiltinCommandRequest): BuiltinCommandOutput = withContext(Dispatchers.IO) {
+    suspend fun run(
+        request: BuiltinCommandRequest,
+        control: BuiltinCommandControl = BuiltinCommandControl(),
+    ): BuiltinCommandOutput = withContext(Dispatchers.IO) {
         require(request.argv.isNotEmpty()) { "命令不能为空" }
         require(request.timeoutSeconds in 1..MAX_TIMEOUT_SECONDS) { "timeout_seconds 必须为 1–$MAX_TIMEOUT_SECONDS" }
         val scratch = File(scratchDirectory(), "exec-${UUID.randomUUID()}").apply { mkdirs() }
@@ -74,15 +99,14 @@ class BuiltinCommandRunner(
             daemon("nexara-exec-stdin") {
                 process.outputStream.use { output -> request.stdin?.let { output.write(it.toByteArray(Charsets.UTF_8)) } }
             }
-            var signalled = false
-            val finished = try {
-                runInterruptible { process.waitFor(request.timeoutSeconds.toLong(), TimeUnit.SECONDS) }
+            val wait = try {
+                runInterruptible { await(process, request.timeoutSeconds, control) }
             } catch (cancelled: CancellationException) {
                 withContext(NonCancellable) { terminate(process, pidFile) }
                 throw cancelled
             }
-            if (!finished) {
-                signalled = true
+            val signalled = wait.outcome != WaitOutcome.EXITED
+            if (signalled) {
                 terminate(process, pidFile)
             } else {
                 // 主进程已退出；同组后台进程不能跨过写锁继续运行。
@@ -92,7 +116,7 @@ class BuiltinCommandRunner(
             val exit = if (signalled) null else process.exitValue()
             BuiltinCommandOutput(
                 exitCode = exit,
-                timedOut = !finished,
+                timedOut = wait.outcome == WaitOutcome.TIMED_OUT,
                 stdout = stdout.text(),
                 stderr = stderr.text(),
                 stdoutOriginalLength = stdout.totalChars,
@@ -100,9 +124,42 @@ class BuiltinCommandRunner(
                 stdoutTruncated = stdout.truncated,
                 stderrTruncated = stderr.truncated,
                 killedExternally = exit == SIGNAL_EXIT_BASE + SIGKILL,
+                stoppedByUser = wait.outcome == WaitOutcome.STOPPED,
+                pausedMillis = wait.pausedNanos / 1_000_000,
             )
         } finally {
             scratch.deleteRecursively()
+        }
+    }
+
+    private enum class WaitOutcome { EXITED, TIMED_OUT, STOPPED }
+    private class WaitResult(val outcome: WaitOutcome, val pausedNanos: Long)
+
+    /** 阻塞等待进程结束、超时或用户停止；被系统暂停的时间不消耗超时预算。 */
+    private fun await(process: Process, timeoutSeconds: Int, control: BuiltinCommandControl): WaitResult {
+        val step = TimeUnit.MILLISECONDS.toNanos(pollMillis)
+        val pauseThreshold = TimeUnit.MILLISECONDS.toNanos(pauseThresholdMillis)
+        var remaining = TimeUnit.SECONDS.toNanos(timeoutSeconds.toLong())
+        var paused = 0L
+        var last = clockNanos()
+        while (true) {
+            if (control.stopRequested) return WaitResult(WaitOutcome.STOPPED, paused)
+            if (process.waitFor(minOf(step, remaining.coerceAtLeast(1)), TimeUnit.NANOSECONDS)) {
+                return WaitResult(WaitOutcome.EXITED, paused)
+            }
+            val now = clockNanos()
+            val elapsed = (now - last).coerceAtLeast(0)
+            last = now
+            val excess = elapsed - step
+            remaining -= if (excess > pauseThreshold) {
+                paused += excess
+                step
+            } else {
+                elapsed
+            }
+            if (remaining <= 0) {
+                return if (control.stopRequested) WaitResult(WaitOutcome.STOPPED, paused) else WaitResult(WaitOutcome.TIMED_OUT, paused)
+            }
         }
     }
 

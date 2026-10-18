@@ -19,9 +19,17 @@ class DistributionManifestTest(unittest.TestCase):
         self.play = Path(self.tmp.name) / "play.xml"
         self.sideload = Path(self.tmp.name) / "sideload.xml"
 
-    def write(self, path, permission=False, package="com.promenar.nexara.native.debug"):
-        access = '<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />' if permission else ""
-        path.write_text(f'<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{package}">{access}</manifest>')
+    def write(self, path, permission=False, package="com.promenar.nexara.native.debug", special_use=None, service=None):
+        special_use = permission if special_use is None else special_use
+        service = permission if service is None else service
+        items = ""
+        if permission:
+            items += '<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />'
+        if special_use:
+            items += '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />'
+        if service:
+            items += f'<application><service android:name="{check.SIDELOAD_ONLY_SERVICE}" /></application>'
+        path.write_text(f'<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{package}">{items}</manifest>')
 
     def test_permission_is_exclusive_to_sideload(self):
         self.write(self.play)
@@ -33,6 +41,20 @@ class DistributionManifestTest(unittest.TestCase):
             with self.subTest(play=play_permission, sideload=sideload_permission):
                 self.write(self.play, play_permission)
                 self.write(self.sideload, sideload_permission)
+                with self.assertRaises(ValueError):
+                    check.check_manifests(self.play, self.sideload)
+
+    def test_exec_foreground_service_is_exclusive_to_sideload(self):
+        cases = (
+            ({"special_use": True}, {}),
+            ({"service": True}, {}),
+            ({}, {"special_use": False}),
+            ({}, {"service": False}),
+        )
+        for play_extra, sideload_extra in cases:
+            with self.subTest(play=play_extra, sideload=sideload_extra):
+                self.write(self.play, **play_extra)
+                self.write(self.sideload, True, **sideload_extra)
                 with self.assertRaises(ValueError):
                     check.check_manifests(self.play, self.sideload)
 

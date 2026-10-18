@@ -171,9 +171,11 @@ class ToolExecutionTargetTest {
     }
 
     @Test
-    fun `显示剥离实际控制和双向字符且不会截断代理对`() {
+    fun `显示把换行与制表符变为可见符号、剥离其它控制和双向字符且不会截断代理对`() {
         val target = extract("write_file", args("path" to "/a\n\u0007\u202E\u2066b"))!!
-        assertThat(ToolExecutionTargets.display(target)).isEqualTo("/ab")
+        assertThat(ToolExecutionTargets.display(target)).isEqualTo("/a↵b")
+        assertThat(ToolExecutionTargets.display("""["process","python","import csv\r\nwith x:\n\tpass\r"]"""))
+            .isEqualTo("python · import csv↵with x:↵⇥pass↵")
         assertThat(ToolExecutionTargets.display("😀😀😀", maxChars = 3)).isEqualTo("😀…")
         assertThat(ToolExecutionTargets.display("abc", maxChars = 1)).isEqualTo("…")
         assertThat(ToolExecutionTargets.display("abc", maxChars = 0)).isEmpty()

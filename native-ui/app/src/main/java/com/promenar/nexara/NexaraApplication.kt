@@ -142,7 +142,8 @@ import coil3.svg.SvgDecoder
 import coil3.video.VideoFrameDecoder
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 
-open class NexaraApplication : Application(), SingletonImageLoader.Factory {
+open class NexaraApplication : Application(), SingletonImageLoader.Factory,
+    com.promenar.nexara.background.exec.ExecRunRegistryOwner {
     companion object {
         lateinit var instance: NexaraApplication
             private set
@@ -636,10 +637,21 @@ open class NexaraApplication : Application(), SingletonImageLoader.Factory {
                 shell = "/system/bin/sh",
                 signaller = com.promenar.nexara.data.exec.AndroidProcessGroupSignaller,
                 scratchDirectory = { File(cacheDir, "exec-run") },
+                clockNanos = android.os.SystemClock::elapsedRealtimeNanos,
             ),
             environment = com.promenar.nexara.data.exec.BuiltinExecEnvironment.create(this),
             unavailablePythonAbi = { android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown" },
+            keepAlive = com.promenar.nexara.background.exec.AndroidExecKeepAlive(
+                this,
+                execRunRegistry,
+                // 命令前台服务（specialUse）只在侧载渠道声明；Play 渠道待政策评审，只持有唤醒锁。
+                foregroundServiceAvailable = BuildConfig.DISTRIBUTION == "sideload",
+            ),
         )
+    }
+
+    override val execRunRegistry: com.promenar.nexara.data.exec.ExecRunRegistry by lazy {
+        com.promenar.nexara.data.exec.ExecRunRegistry()
     }
 
     internal val globalKnowledgeWorkspaceProvisioner: RagWorkspaceProvisioner by lazy {

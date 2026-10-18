@@ -61,7 +61,11 @@ class BuiltinExecServiceTest {
         if (::work.isInitialized) work.deleteRecursively()
     }
 
-    private fun service(pythonDir: File = File(work, "no-python")) = BuiltinExecService(
+    private fun service(
+        pythonDir: File = File(work, "no-python"),
+        keepAlive: ExecKeepAlive = NoExecKeepAlive,
+        clockNanos: () -> Long = System::nanoTime,
+    ) = BuiltinExecService(
         workspace = host,
         runner = BuiltinCommandRunner(
             groupLauncher = listOf("/usr/bin/perl", "-e", "setpgrp(0, 0); exec @ARGV or exit 127"),
@@ -69,6 +73,7 @@ class BuiltinExecServiceTest {
             signaller = { group, signal -> ProcessBuilder("/bin/kill", "-$signal", "-$group").start().waitFor() },
             scratchDirectory = { File(work, "scratch") },
             killGraceMillis = 300,
+            clockNanos = clockNanos,
         ),
         environment = BuiltinExecEnvironment(
             python = PackagedPython(pythonDir),
@@ -79,7 +84,26 @@ class BuiltinExecServiceTest {
         ),
         shell = "/bin/sh",
         unavailablePythonAbi = { "x86" },
+        keepAlive = keepAlive,
     )
+
+    /** 记录保活请求；[stopOnStart] 模拟用户立即点击通知的停止按钮。 */
+    private class RecordingKeepAlive(
+        private val foreground: ExecForegroundState,
+        private val stopOnStart: Boolean = false,
+    ) : ExecKeepAlive {
+        val runs = mutableListOf<ExecRunInfo>()
+        var released = false
+        override suspend fun <T> hold(run: ExecRunInfo, stop: () -> Unit, block: suspend () -> T): ExecHeld<T> {
+            runs += run
+            if (stopOnStart) stop()
+            try {
+                return ExecHeld(block(), foreground)
+            } finally {
+                released = true
+            }
+        }
+    }
 
     private fun json(content: String): JsonObject = Json.parseToJsonElement(content).jsonObject
     private fun args(vararg pairs: Pair<String, Any>) = JsonObject(pairs.associate { (key, value) ->
@@ -188,5 +212,47 @@ class BuiltinExecServiceTest {
         val root = File(work, "ws")
         assertThat(BuiltinExecService.virtualize("${root.path}/a.txt and ${root.path}", root))
             .isEqualTo("\$NEXARA_WORKSPACE/a.txt and \$NEXARA_WORKSPACE")
+    }
+
+    @Test
+    fun `通知停止结束命令并返回 EXEC_STOPPED，保活登记命令摘要`() = runBlocking<Unit> {
+        val keepAlive = RecordingKeepAlive(ExecForegroundState.STARTED, stopOnStart = true)
+        val started = System.nanoTime()
+        val result = service(keepAlive = keepAlive).runShell("root", "s", "sleep 30\necho never", null, 60)
+        val value = json(result.toJson().toString())
+        assertThat(value.getValue("error_code").jsonPrimitive.content).isEqualTo("EXEC_STOPPED")
+        assertThat(value.getValue("guidance").jsonPrimitive.content).contains("不要自动重试")
+        assertThat(result.exitCode).isNull()
+        assertThat(result.timedOut).isFalse()
+        assertThat((System.nanoTime() - started) / 1_000_000).isLessThan(10_000)
+        assertThat(keepAlive.runs.single().kind).isEqualTo(ExecRunKind.SHELL)
+        assertThat(keepAlive.runs.single().summary).isEqualTo("sleep 30 …")
+        assertThat(keepAlive.runs.single().timeoutSeconds).isEqualTo(60)
+        assertThat(keepAlive.released).isTrue()
+    }
+
+    @Test
+    fun `进程被系统暂停时不计入超时并给出后台设置指引`() = runBlocking<Unit> {
+        // 第 3 次读时钟起整体前跳 10 秒，模拟冻结后解冻。
+        var reads = 0
+        val clock = { System.nanoTime() + if (++reads >= 3) 10_000_000_000L else 0L }
+        val keepAlive = RecordingKeepAlive(ExecForegroundState.NOT_ALLOWED)
+        val result = service(keepAlive = keepAlive, clockNanos = clock).runShell("root", "s", "sleep 1; echo ok", null, 2)
+        val value = json(result.toJson().toString())
+        assertThat(result.succeeded).isTrue()
+        assertThat(result.stdout).isEqualTo("ok\n")
+        assertThat(value.getValue("paused_ms").jsonPrimitive.content.toLong()).isAtLeast(9_000L)
+        val guidance = value.getValue("guidance").jsonPrimitive.content
+        assertThat(guidance).contains("不计入超时")
+        assertThat(guidance).contains("未允许启动前台服务")
+        assertThat(guidance).contains("完全允许后台行为")
+    }
+
+    @Test
+    fun `没有暂停时不输出 paused_ms 与后台指引`() = runBlocking<Unit> {
+        val result = service(keepAlive = RecordingKeepAlive(ExecForegroundState.STARTED)).runShell("root", "s", "true", null, 5)
+        val value = json(result.toJson().toString())
+        assertThat(value.containsKey("paused_ms")).isFalse()
+        assertThat(value["guidance"]?.toString()).isEqualTo("null")
     }
 }

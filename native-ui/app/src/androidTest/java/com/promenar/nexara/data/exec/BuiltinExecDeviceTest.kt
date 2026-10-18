@@ -1,12 +1,19 @@
 package com.promenar.nexara.data.exec
 
+import android.Manifest
+import android.app.NotificationManager
 import android.content.Context
+import android.os.Build
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import com.google.common.truth.Truth.assertWithMessage
 import com.promenar.nexara.BuildConfig
+import com.promenar.nexara.background.exec.AndroidExecKeepAlive
+import com.promenar.nexara.background.exec.ExecForegroundService
+import com.promenar.nexara.background.exec.ExecRunRegistryOwner
 import com.promenar.nexara.data.local.db.NexaraDatabase
 import com.promenar.nexara.data.local.db.entity.FileEntry
 import com.promenar.nexara.data.local.db.entity.SessionEntity
@@ -75,6 +82,24 @@ class BuiltinExecDeviceTest {
         db.close()
         base.deleteRecursively()
     }
+
+    private fun shellOutput(command: String): String =
+        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command).use { descriptor ->
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().readText()
+        }
+
+    /** 只取当前持有的唤醒锁段；dumpsys power 另有包含已释放记录的历史日志。 */
+    private fun heldWakeLocks(): List<String> = shellOutput("dumpsys power").lines()
+        .dropWhile { !it.trimStart().startsWith("Wake Locks: size=") }.drop(1)
+        .takeWhile { it.startsWith(" ") && it.isNotBlank() }
+
+    @Suppress("DEPRECATION")
+    private fun execServiceInForeground(): Boolean = context.getSystemService(android.app.ActivityManager::class.java)
+        .getRunningServices(Int.MAX_VALUE)
+        .any { it.service.className == ExecForegroundService::class.java.name && it.foreground }
+
+    private fun execNotification() = context.getSystemService(NotificationManager::class.java)
+        .activeNotifications.firstOrNull { it.id == ExecForegroundService.NOTIFICATION_ID }?.notification
 
     private fun CommandToolResult.json(): JsonObject = Json.parseToJsonElement(toJson().toString()).jsonObject
     private fun JsonObject.paths(key: String) =
@@ -193,5 +218,58 @@ class BuiltinExecDeviceTest {
         assertThat(snapshot.nodes.getValue("/link").kind).isEqualTo(WorkspaceScanKind.UNSUPPORTED)
         assertThat(snapshot.nodes.getValue("/docs/a.txt").sizeBytes).isEqualTo(3)
         assertThat(snapshot.reserved.keys).contains("/.nexara_root_identity")
+    }
+
+    @Test
+    fun notificationStopEndsCommandAndReleasesWakeLock() = runBlocking<Unit> {
+        if (Build.VERSION.SDK_INT >= 33) {
+            // ColorOS 未开“USB 调试（安全设置）”时 shell 无权授予；此时改从运行中服务列表核对前台状态。
+            runCatching {
+                InstrumentationRegistry.getInstrumentation().uiAutomation
+                    .grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        val notificationsVisible = context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
+        val registry = (context.applicationContext as ExecRunRegistryOwner).execRunRegistry
+        val kept = BuiltinExecService(
+            workspace = repo,
+            runner = BuiltinCommandRunner(
+                groupLauncher = listOf("/system/bin/setsid"),
+                shell = "/system/bin/sh",
+                signaller = AndroidProcessGroupSignaller,
+                scratchDirectory = { File(base, "scratch") },
+                clockNanos = android.os.SystemClock::elapsedRealtimeNanos,
+            ),
+            environment = BuiltinExecEnvironment(
+                python = PackagedPython.from(context),
+                homeDirectory = File(base, "home"),
+                tempDirectory = File(base, "tmp"),
+                caBundle = { null },
+            ),
+            keepAlive = AndroidExecKeepAlive(context, registry, foregroundServiceAvailable = true),
+        )
+        val job = async(kotlinx.coroutines.Dispatchers.IO) { kept.runShell(root.uuid, "s", "echo \$\$ > main.pid; sleep 60", null, 120) }
+        val pidFile = File(workspace, "main.pid")
+        withTimeout(10_000) { while (!pidFile.isFile || pidFile.readText().isBlank()) delay(50) }
+        val pid = pidFile.readText().trim()
+
+        withTimeout(10_000) { while (!execServiceInForeground()) delay(100) }
+        assertThat(heldWakeLocks().any { "Nexara:builtin-exec" in it }).isTrue()
+        if (notificationsVisible) {
+            val notification = withTimeout(10_000) { var found = execNotification(); while (found == null) { delay(100); found = execNotification() }; found }
+            assertThat(notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT).toString())
+                .isEqualTo("Shell · echo \$\$ > main.pid; sleep 60")
+            notification.actions.single().actionIntent.send()
+        } else {
+            context.startService(ExecForegroundService.stopIntent(context, registry.runs.value.map { it.info.id }))
+        }
+        val result = withTimeout(15_000) { job.await() }
+        val value = result.json()
+        assertWithMessage(value.toString()).that(value.getValue("error_code").jsonPrimitive.content).isEqualTo("EXEC_STOPPED")
+        withTimeout(5_000) { while (File("/proc/$pid").exists()) delay(50) }
+        withTimeout(5_000) { while (execNotification() != null || execServiceInForeground()) delay(100) }
+        assertThat(registry.runs.value).isEmpty()
+        assertThat(heldWakeLocks().none { "Nexara:builtin-exec" in it }).isTrue()
+        assertThat(value.paths("added")).containsExactly("/main.pid")
     }
 }
