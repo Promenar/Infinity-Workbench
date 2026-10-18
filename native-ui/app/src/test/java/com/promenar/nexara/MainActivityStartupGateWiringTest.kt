@@ -35,9 +35,13 @@ class MainActivityStartupGateWiringTest {
 
         assertThat(source).contains("ShareIntentViewModel.factory(durableShareInbox, applicationContext.contentResolver)")
         assertThat(source).contains("shareIntentViewModel.stagingCoordinator.submit")
-        assertThat(onCreate).contains("stageShareIntent(intent)")
+        assertThat(onCreate).contains(
+            "stageShareIntent(intent, ShareDelivery.of(savedInstanceState != null, intent?.flags ?: 0))"
+        )
         assertThat(onCreate).doesNotContain("restoreConsumedState")
-        assertThat(onNewIntent).contains("stageShareIntent(intent)")
+        assertThat(onNewIntent).contains(
+            "stageShareIntent(intent, ShareDelivery.of(restoredInstanceState = false, intentFlags = intent.flags))"
+        )
         assertThat(consume).contains("BackupStartupState.Ready")
         assertThat(consume).contains("shareImportViewModel.presentNext()")
         assertThat(source).doesNotContain("TODO: Implement workspace-based file import")
@@ -73,6 +77,10 @@ class MainActivityStartupGateWiringTest {
         assertThat(acceptedBranch).doesNotContain("revokeShareReadGrants")
         assertThat(capacityBranch).doesNotContain("revokeShareReadGrants")
         assertThat(acceptedBranch).contains("stagingCoordinator.acknowledge")
+        assertThat(acceptedBranch).contains(
+            "outcome.result == ShareEnqueueResult.Duplicate && outcome.delivery == ShareDelivery.Fresh"
+        )
+        assertThat(acceptedBranch).contains("R.string.share_intent_already_pending")
         assertThat(invalidBranch).contains("stagingCoordinator.acknowledge")
         assertThat(capacityBranch).doesNotContain("stagingCoordinator.acknowledge")
         assertThat(source).doesNotContain("saveConsumedState(outState)")
@@ -85,7 +93,7 @@ class MainActivityStartupGateWiringTest {
         assertThat(source).doesNotContain("shareStaging")
         val onNewIntent = functionBody("override fun onNewIntent(intent: Intent)")
         assertThat(onNewIntent.indexOf("setIntent(intent)")).isAtLeast(0)
-        assertThat(onNewIntent.indexOf("stageShareIntent(intent)"))
+        assertThat(onNewIntent.indexOf("stageShareIntent(intent, "))
             .isGreaterThan(onNewIntent.indexOf("setIntent(intent)"))
     }
 

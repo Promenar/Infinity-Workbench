@@ -130,6 +130,7 @@
     <string name="startup_importing_files">Importing %1$d files</string>
     <string name="share_intent_invalid">This shared content cannot be imported safely</string>
     <string name="share_intent_queue_full">Too many shared items are waiting. Try again shortly</string>
+    <string name="share_intent_already_pending">This file is already waiting to be imported</string>
     <string name="share_import_title">Import shared files</string>
     <string name="share_import_target_label">Import to</string>
     <string name="share_import_knowledge_base">Knowledge Base</string>

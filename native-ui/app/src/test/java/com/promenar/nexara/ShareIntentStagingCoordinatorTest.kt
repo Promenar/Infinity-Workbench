@@ -23,7 +23,7 @@ class ShareIntentStagingCoordinatorTest {
         val calls = mutableListOf<String>()
         val coordinator = ShareIntentStagingCoordinator(
             scope = backgroundScope,
-            stage = { intent ->
+            stage = { intent, _ ->
                 val label = intent.getStringExtra(LABEL)!!
                 calls += label
                 if (label == "first") firstGate.await()
@@ -35,9 +35,9 @@ class ShareIntentStagingCoordinatorTest {
         backgroundScope.launch { coordinator.outcomes.take(2).toList(outcomes) }
         runCurrent()
 
-        coordinator.submit(share("first"))
+        coordinator.submit(share("first"), ShareDelivery.Fresh)
         runCurrent()
-        coordinator.submit(share("second"))
+        coordinator.submit(share("second"), ShareDelivery.Fresh)
         runCurrent()
         firstGate.complete(Unit)
         runCurrent()
@@ -54,7 +54,7 @@ class ShareIntentStagingCoordinatorTest {
         var calls = 0
         val coordinator = ShareIntentStagingCoordinator(
             scope = backgroundScope,
-            stage = {
+            stage = { _, _ ->
                 calls++
                 gate.await()
                 ShareEnqueueResult.Accepted
@@ -63,9 +63,9 @@ class ShareIntentStagingCoordinatorTest {
         )
         val candidate = share("same")
 
-        val firstId = coordinator.submit(candidate)
+        val firstId = coordinator.submit(candidate, ShareDelivery.Fresh)
         runCurrent()
-        val replayId = coordinator.submit(Intent(candidate))
+        val replayId = coordinator.submit(Intent(candidate), ShareDelivery.Redelivered)
         runCurrent()
         gate.complete(Unit)
         runCurrent()
@@ -84,7 +84,7 @@ class ShareIntentStagingCoordinatorTest {
         var capacityWaits = 0
         val coordinator = ShareIntentStagingCoordinator(
             scope = backgroundScope,
-            stage = { stageCalls++; results.removeFirst() },
+            stage = { _, _ -> stageCalls++; results.removeFirst() },
             awaitCapacity = {
                 capacityWaits++
                 capacityReleased.await()
@@ -94,7 +94,7 @@ class ShareIntentStagingCoordinatorTest {
         backgroundScope.launch { coordinator.outcomes.take(2).toList(outcomes) }
         runCurrent()
 
-        val id = coordinator.submit(share("capacity"))
+        val id = coordinator.submit(share("capacity"), ShareDelivery.Fresh)
         runCurrent()
         assertThat(stageCalls).isEqualTo(1)
         assertThat(capacityWaits).isEqualTo(1)
@@ -114,13 +114,13 @@ class ShareIntentStagingCoordinatorTest {
     fun `Activity尚未收集时所有完成结果仍逐个保留`() = runTest {
         val coordinator = ShareIntentStagingCoordinator(
             scope = backgroundScope,
-            stage = { ShareEnqueueResult.Accepted },
+            stage = { _, _ -> ShareEnqueueResult.Accepted },
             awaitCapacity = {},
         )
 
-        val firstId = coordinator.submit(share("first"))
+        val firstId = coordinator.submit(share("first"), ShareDelivery.Fresh)
         runCurrent()
-        val secondId = coordinator.submit(share("second"))
+        val secondId = coordinator.submit(share("second"), ShareDelivery.Fresh)
         runCurrent()
         val outcomes = mutableListOf<ShareStageOutcome>()
         backgroundScope.launch { coordinator.outcomes.take(2).toList(outcomes) }
@@ -134,14 +134,14 @@ class ShareIntentStagingCoordinatorTest {
         var stageCalls = 0
         val coordinator = ShareIntentStagingCoordinator(
             scope = backgroundScope,
-            stage = { stageCalls++; ShareEnqueueResult.Accepted },
+            stage = { _, _ -> stageCalls++; ShareEnqueueResult.Accepted },
             awaitCapacity = {},
         )
         val candidate = share("accepted-before-collector")
 
-        val firstId = coordinator.submit(candidate)
+        val firstId = coordinator.submit(candidate, ShareDelivery.Fresh)
         runCurrent()
-        val recreatedId = coordinator.submit(Intent(candidate))
+        val recreatedId = coordinator.submit(Intent(candidate), ShareDelivery.Redelivered)
         runCurrent()
         val outcome = mutableListOf<ShareStageOutcome>()
         backgroundScope.launch { coordinator.outcomes.take(1).toList(outcome) }
@@ -150,7 +150,7 @@ class ShareIntentStagingCoordinatorTest {
         assertThat(recreatedId).isEqualTo(firstId)
         assertThat(stageCalls).isEqualTo(1)
         coordinator.acknowledge(outcome.single().submissionId)
-        val nextId = coordinator.submit(Intent(candidate))
+        val nextId = coordinator.submit(Intent(candidate), ShareDelivery.Redelivered)
         runCurrent()
         assertThat(nextId).isNotEqualTo(firstId)
         assertThat(stageCalls).isEqualTo(2)
@@ -161,14 +161,14 @@ class ShareIntentStagingCoordinatorTest {
         var stageCalls = 0
         val coordinator = ShareIntentStagingCoordinator(
             scope = backgroundScope,
-            stage = { stageCalls++; ShareEnqueueResult.RejectedInvalid },
+            stage = { _, _ -> stageCalls++; ShareEnqueueResult.RejectedInvalid },
             awaitCapacity = {},
         )
         val candidate = share("invalid-before-collector")
 
-        val firstId = coordinator.submit(candidate)
+        val firstId = coordinator.submit(candidate, ShareDelivery.Fresh)
         runCurrent()
-        val recreatedId = coordinator.submit(Intent(candidate))
+        val recreatedId = coordinator.submit(Intent(candidate), ShareDelivery.Redelivered)
         runCurrent()
         val outcomes = mutableListOf<ShareStageOutcome>()
         backgroundScope.launch { coordinator.outcomes.take(1).toList(outcomes) }
@@ -178,6 +178,40 @@ class ShareIntentStagingCoordinatorTest {
         assertThat(stageCalls).isEqualTo(1)
         assertThat(outcomes.single().result).isEqualTo(ShareEnqueueResult.RejectedInvalid)
         coordinator.acknowledge(firstId)
+    }
+
+    @Test
+    fun `投递来源随submission传给stage并回到结果`() = runTest {
+        val seen = mutableListOf<ShareDelivery>()
+        val coordinator = ShareIntentStagingCoordinator(
+            scope = backgroundScope,
+            stage = { _, delivery -> seen += delivery; ShareEnqueueResult.Duplicate },
+            awaitCapacity = {},
+        )
+        val outcomes = mutableListOf<ShareStageOutcome>()
+        backgroundScope.launch { coordinator.outcomes.take(2).toList(outcomes) }
+        runCurrent()
+
+        coordinator.submit(share("fresh"), ShareDelivery.Fresh)
+        coordinator.submit(share("replayed"), ShareDelivery.Redelivered)
+        runCurrent()
+
+        assertThat(seen).containsExactly(ShareDelivery.Fresh, ShareDelivery.Redelivered).inOrder()
+        assertThat(outcomes.map { it.delivery })
+            .containsExactly(ShareDelivery.Fresh, ShareDelivery.Redelivered).inOrder()
+    }
+
+    @Test
+    fun `仅无保存状态且非最近任务重启的onCreate与onNewIntent视为新分享`() {
+        assertThat(ShareDelivery.of(restoredInstanceState = false, intentFlags = 0)).isEqualTo(ShareDelivery.Fresh)
+        assertThat(ShareDelivery.of(restoredInstanceState = true, intentFlags = 0))
+            .isEqualTo(ShareDelivery.Redelivered)
+        assertThat(
+            ShareDelivery.of(
+                restoredInstanceState = false,
+                intentFlags = Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY or Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        ).isEqualTo(ShareDelivery.Redelivered)
     }
 
     private fun share(label: String) = Intent(Intent.ACTION_SEND).apply {

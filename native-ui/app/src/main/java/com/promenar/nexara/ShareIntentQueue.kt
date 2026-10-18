@@ -17,6 +17,26 @@ enum class ShareEnqueueResult {
     RejectedCapacity,
 }
 
+/**
+ * 分享 Intent 的投递来源。Fresh 是用户刚发起的一次分享；Redelivered 是系统在 Activity 重建、
+ * 进程死亡恢复或从最近任务重启时重放的同一 Intent 实例，只有它需要与已消费记录去重。
+ */
+enum class ShareDelivery {
+    Fresh,
+    Redelivered,
+    ;
+
+    companion object {
+        /** onCreate 携带保存状态或从最近任务重启时，Intent 必为系统重放而非用户新的分享。 */
+        fun of(restoredInstanceState: Boolean, intentFlags: Int): ShareDelivery =
+            if (restoredInstanceState || intentFlags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) {
+                Redelivered
+            } else {
+                Fresh
+            }
+    }
+}
+
 class ShareRequest internal constructor(
     val uris: List<Uri>,
     val mimeType: String,
@@ -38,7 +58,7 @@ class ShareIntentViewModel(
     val queue = ShareIntentQueue(inbox)
     val stagingCoordinator = ShareIntentStagingCoordinator(
         scope = viewModelScope,
-        stage = { intent -> queue.stageDurably(intent, resolver) },
+        stage = { intent, delivery -> queue.stageDurably(intent, resolver, delivery) },
         awaitCapacity = queue::awaitDurableCapacity,
     )
 
@@ -58,8 +78,11 @@ class ShareIntentQueue(
 ) {
     val durablePendingCount: StateFlow<Int> = durableInbox.pendingCount
 
-    suspend fun stageDurably(intent: Intent, resolver: ContentResolver): ShareEnqueueResult =
-        durableInbox.stage(intent, resolver)
+    suspend fun stageDurably(
+        intent: Intent,
+        resolver: ContentResolver,
+        delivery: ShareDelivery,
+    ): ShareEnqueueResult = durableInbox.stage(intent, resolver, delivery)
 
     suspend fun claimNextDurably(): ShareLease? = durableInbox.claimNext()
     suspend fun ackDurably(token: String): Boolean = durableInbox.ack(token)
