@@ -37,9 +37,11 @@
 | pip | 纯 Python 包可装；numpy、pandas、pillow、cryptography、pydantic-core、lxml、pyyaml 等常用原生包在 PyPI 上无 android-arm64 wheel |
 | TLS | Python ssl 读不了 Android CA 目录（旧式哈希文件名）；需把 `/apex/com.android.conscrypt/cacerts` 拼成 bundle 并设 `SSL_CERT_FILE` |
 | git | 无官方 Android git；dulwich（纯 Python）可 HTTPS 克隆、add、commit、status |
-| 后台 | ColorOS Hans 在熄屏后冻结整个应用 uid，前台服务（`isForeground=true`、procState 4）同样被冻结；AOSP `isFrozen` 不反映该冻结 |
+| 后台（默认电池策略） | ColorOS Hans 在熄屏后冻结整个应用 uid，前台服务（`isForeground=true`、procState 4）同样被冻结；AOSP `isFrozen` 不反映该冻结 |
+| 后台（“完全允许后台行为”，未充电锁屏 15 分钟） | 不再被冻结，前台服务内的子进程运行到结束；但 CPU 会深度休眠，每 5 秒一次的心跳只写了 49/约 175 行，最长间隔 66 秒。持续计算需要 `PARTIAL_WAKE_LOCK` |
 | 对账耗时 | 2 万个 4 KB 文件：元数据遍历 171 ms，size+mtime 差异检测并重算差异文件哈希 266 ms；全量 SHA-256 483 ms |
-| Termux SAF 挂载 | 读写挂载 Termux 主目录后，Termux 新建的文件立即在 Nexara `/mnt/<别名>` 可见，内容一致 |
+| Termux SAF 挂载 | 读写挂载 Termux 主目录后双向可用：Termux 新建的文件立即在 Nexara `/mnt/<别名>` 可见；Nexara 经 `create_file` 写入的文件在 Termux 主目录可见，属主为 Termux uid |
+| 共享存储 | Termux（`termux-setup-storage` 后）、adb 与 Nexara（“挂载存储路径”，需所有文件访问）在同一 `Download` 子目录中互相读写可见，内容一致 |
 
 ## 3. 总体结构
 
@@ -115,6 +117,7 @@ ABI：发行包随 App Bundle 按 ABI 拆分，包含 arm64-v8a 与 x86_64（模
 ### 4.5 后台与生命周期
 
 - 命令运行期间以前台服务持有 `:exec` 进程，通知显示命令摘要与停止按钮。服务类型：侧载渠道用 `specialUse`；Play 渠道的类型与政策声明需单独评审。
+- 命令运行期间持有 `PARTIAL_WAKE_LOCK`，超时上限即持有上限，命令结束、超时或取消时立即释放；不持有时锁屏后 CPU 休眠，命令会大幅变慢。
 - 运行中若检测到心跳停滞（子进程 CPU 时间不增长且应用不在前台），结果追加 `guidance`：系统可能冻结了后台进程，请将 Nexara 设为“完全允许后台行为”。Termux 设置页已有同类文案，内置后端复用。
 - 进程被系统结束时返回 `error_code = EXEC_PROCESS_KILLED`，对账照常执行。
 
@@ -145,17 +148,19 @@ ABI：发行包随 App Bundle 按 ABI 拆分，包含 arm64-v8a 与 x86_64（模
 4. 前缀“工具执行失败：”保留，供界面识别。
 5. 执行步骤与工具消息使用同一摘要。
 
+文件工具的“未找到条目”同样缺少下一步指引：`write_file` 只覆盖已有文件，模型对新路径调用时只得到“未找到条目：<路径>”，真机上多用了两轮才改用 `create_file`。`WorkspaceToolSupport` 的该错误追加指引：“新建文件请使用 create_file；先用 list_files 确认路径”。
+
 测试（`ToolFailureSummaryTest`）：stdout 2 万字符的 Termux 失败结果保留 `exit_code` 与 stderr 尾部；只有 `error_code`/`guidance` 的结果原样保留；超长 guidance 不被截断；非 JSON 文本按 1,000 字符截断并带原始长度；中文与代理对不被截断在半个字符上。
 
 ## 7. 实施顺序
 
-1. 失败文案结构化（第 6 节），独立于执行后端，可先合入。
+1. 失败文案结构化与文件工具“未找到条目”指引（第 6 节），独立于执行后端，可先合入。
 2. `ExecBackend` 契约与统一结果格式；`ssh_exec` 结果对齐。
 3. 打包 Python（构建脚本纳入 Gradle 任务，产物不入库，按版本与 SHA-256 校验官方包）与 `useLegacyPackaging`。
 4. `:exec` 进程、`shell_exec`、`python_exec`、审批卡片、工作区写锁与对账。
 5. 沙箱模式。
 6. dulwich 与 `git` 包装、pip（侧载）。
-7. 前台服务与冻结检测文案。
+7. 前台服务、唤醒锁与冻结检测文案。
 
 每一步的验收：单元测试覆盖结果格式、对账差异、失败摘要；设备测试在 API 31、API 35 模拟器与真机上覆盖命令执行、超时、取消、对账与审批。
 
@@ -163,7 +168,7 @@ ABI：发行包随 App Bundle 按 ABI 拆分，包含 arm64-v8a 与 x86_64（模
 
 | 项目 | 状态 |
 | --- | --- |
-| “完全允许后台行为”后，熄屏且未充电时前台服务内的命令能否持续运行 | 未测 |
+| 持有 `PARTIAL_WAKE_LOCK` 后锁屏未充电时心跳是否连续，以及耗电 | 未测 |
 | Play Feature Delivery 按需模块中的原生库是否进入可执行的 `nativeLibraryDir`，可否把 Python 改为按需下载 | 未测 |
 | Play 政策对解释器加载 pip 包的适用性 | 未评审 |
 | dulwich 的 push、pull 与认证（已实测 clone、add、commit、status） | 未测 |
