@@ -1,0 +1,7 @@
+local.properties
+.gradle/
+build/
+app/build/
+app/src/main/assets/python/
+# 预编译产物与官方 Python 包内容均由脚本生成，不入库。
+app/src/main/jniLibs/
