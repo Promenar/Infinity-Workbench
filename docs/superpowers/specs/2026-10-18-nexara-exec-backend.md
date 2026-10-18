@@ -38,7 +38,8 @@
 | TLS | Python ssl 读不了 Android CA 目录（旧式哈希文件名）；需把 `/apex/com.android.conscrypt/cacerts` 拼成 bundle 并设 `SSL_CERT_FILE` |
 | git | 无官方 Android git；dulwich（纯 Python）可 HTTPS 克隆、add、commit、status |
 | 后台（默认电池策略） | ColorOS Hans 在熄屏后冻结整个应用 uid，前台服务（`isForeground=true`、procState 4）同样被冻结；AOSP `isFrozen` 不反映该冻结 |
-| 亮屏无前台界面 | 内置执行设备测试（instrumentation，无 Activity）在亮屏时启动约 3 秒后被 Hans 冻结，连同刚 fork 尚未 exec 的子进程；冻结期间测试与子进程都不推进，收到 SIGQUIT 后解冻并继续，SIGCONT 不解冻；超时按单调时钟计算，冻结时长计入超时（推断，未单独实测） |
+| 亮屏无前台界面 | 内置执行设备测试（instrumentation，无 Activity）在亮屏时启动约 3 秒后被 Hans 冻结，连同刚 fork 尚未 exec 的子进程；冻结期间测试与子进程都不推进，收到 SIGQUIT 后解冻并继续，SIGCONT 不解冻；内置后端改以轮询间隔检测暂停并把暂停时间排除在超时之外（第 4.5 节） |
+| 亮屏后台（命令前台服务） | 正式包在真机上运行 `sleep 90` 时回到桌面，`specialUse` 前台服务在前台、通知计时持续，约 50 秒内 Hans 无冻结记录；通知“停止”后模型收到 `EXEC_STOPPED` 并按指引不重试 |
 | 后台（“完全允许后台行为”，未充电锁屏 15 分钟） | 不再被冻结，前台服务内的子进程运行到结束；但 CPU 会深度休眠，每 5 秒一次的心跳只写了 49/约 175 行，最长间隔 66 秒。持续计算需要 `PARTIAL_WAKE_LOCK` |
 | 对账耗时 | 2 万个 4 KB 文件：元数据遍历 171 ms，size+mtime 差异检测并重算差异文件哈希 266 ms；全量 SHA-256 483 ms |
 | Termux SAF 挂载 | 读写挂载 Termux 主目录后双向可用：Termux 新建的文件立即在 Nexara `/mnt/<别名>` 可见；Nexara 经 `create_file` 写入的文件在 Termux 主目录可见，属主为 Termux uid |
